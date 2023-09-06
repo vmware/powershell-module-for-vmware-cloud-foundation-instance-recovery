@@ -1,0 +1,167 @@
+# Project Information
+site_name: VMware.CloudFoundation.InstanceRecovery
+site_description: PowerShell Module for VMware Cloud Foundation Instance Recovery
+site_url: https://vmware.github.io/powershell-module-for-vmware-cloud-foundation-instance-recovery
+site_author: Broadcom
+docs_dir: docs
+site_dir: .site
+use_directory_urls: true
+
+# Repository
+repo_url: https://github.com/vmware/powershell-module-for-vmware-cloud-foundation-instance-recovery
+edit_uri: blob/main/docs/
+
+# Copyright
+copyright: |
+  Copyright &copy; 2005-2024 Broadcom. All Rights Reserved.<br/>
+  The term “Broadcom” refers to Broadcom Inc. and/or its subsidiaries.<br/><br/>
+
+# Configuration
+theme:
+  name: material
+  favicon: favicon.ico
+  logo: assets/images/icon-white.svg
+  icon:
+    repo: fontawesome/brands/github
+  palette:
+  - media: "(prefers-color-scheme: light)"
+    scheme: default
+    primary: indigo
+    accent: indigo
+    toggle:
+      icon: material/toggle-switch
+      name: Dark Theme
+  - media: "(prefers-color-scheme: dark)"
+    scheme: slate
+    primary: indigo
+    accent: indigo
+    toggle:
+      icon: material/toggle-switch-off-outline
+      name: Light Theme
+  font:
+    text: Roboto
+    code: Roboto Mono
+  features:
+  - content.action.edit
+  - content.action.view
+  - content.code.annotate
+  - content.code.copy
+  - content.tabs.link
+  - navigation.expand
+  - navigation.footer
+  - navigation.header
+  - navigation.indexes
+  - navigation.instant
+  - navigation.tabs
+  - navigation.tabs.sticky
+  - navigation.top
+  - navigation.tracking
+  - search.highlight
+  - search.share
+  - search.suggest
+  - toc.follow
+
+# Plugins
+plugins:
+- search:
+    separator: '[\s\u200b\-,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
+- open-in-new-tab
+- markdownextradata:
+    jinja_options:
+      variable_start_string: "${{"
+      variable_end_string: "}}"
+- git-revision-date-localized:
+    enabled: !ENV [CI, false]
+    enable_creation_date: false
+    exclude:
+      - index.md
+    fallback_to_build_date: true
+    type: timeago
+
+# Customization
+extra:
+  config:
+    repo_url: https://github.com/vmware/powershell-module-for-vmware-cloud-foundation-instance-recovery
+    repo_url_raw: https://raw.githubusercontent.com/vmware/powershell-module-for-vmware-cloud-foundation-instance-recovery
+  version:
+    default: latest
+    provider: mike
+extra_css:
+  - assets/stylesheets/extra.css
+
+# Extensions
+markdown_extensions:
+- admonition
+- attr_list
+- md_in_html
+- pymdownx.emoji:
+    emoji_index: !!python/name:material.extensions.emoji.twemoji
+    emoji_generator: !!python/name:material.extensions.emoji.to_svg
+    options:
+      custom_icons:
+      - material/.icons
+- pymdownx.inlinehilite
+- pymdownx.highlight:
+    use_pygments: true
+- pymdownx.snippets:
+    check_paths: true
+- pymdownx.superfences:
+    custom_fences:
+    - name: mermaid
+      class: mermaid
+      format: !!python/name:pymdownx.superfences.fence_code_format
+- pymdownx.tabbed:
+    alternate_style: true
+- pymdownx.details
+- tables
+- toc:
+    permalink: true
+
+# Navigation
+nav:
+- Getting Started:
+  - index.md
+  - Installation: install.md
+  - Updating: update.md
+  - User Access: user-access.md
+  - Release Notes: release-notes.md
+  - Release Milestones: https://github.com/vmware/powershell-module-for-vmware-cloud-foundation-instance-recovery/milestones
+  - License: license.md
+- Reference:
+  - Functions:
+    - documentation/functions/Add-HostsToCluster.md
+    - documentation/functions/Add-VMKernelsToHost.md
+    - documentation/functions/Backup-ClusterDRSGroupsAndRules.md
+    - documentation/functions/Backup-ClusterVMLocations.md
+    - documentation/functions/Backup-ClusterVMOverrides.md
+    - documentation/functions/Confirm-VCFInstanceRecoveryPreReqs.md
+    - documentation/functions/Invoke-NSXEdgeClusterRecovery.md
+    - documentation/functions/Move-ClusterHostNetworkingToVss.md
+    - documentation/functions/Move-ClusterHostsToRestoredVcenter.md
+    - documentation/functions/Move-ClusterVMsToFirstHost.md
+    - documentation/functions/Move-ClusterVmnicTovSwitch.md
+    - documentation/functions/Move-MgmtVmsToTempPg.md
+    - documentation/functions/New-ExtractDataFromSDDCBackup.md
+    - documentation/functions/New-NSXManagerOvaDeployment.md
+    - documentation/functions/New-ReconstructedPartialBringupJsonSpec.md
+    - documentation/functions/New-SDDCManagerOvaDeployment.md
+    - documentation/functions/New-UploadAndModifySDDCManagerBackup.md
+    - documentation/functions/New-vCenterOvaDeployment.md
+    - documentation/functions/Remove-ClusterHostsFromVds.md
+    - documentation/functions/Remove-NonResponsiveHosts.md
+    - documentation/functions/Remove-StandardSwitch.md
+    - documentation/functions/Resolve-PhysicalHostServiceAccounts.md
+    - documentation/functions/Resolve-PhysicalHostTransportNodes.md
+    - documentation/functions/Restore-ClusterDRSGroupsAndRules.md
+    - documentation/functions/Restore-ClusterVMLocations.md
+    - documentation/functions/Restore-ClusterVMOverrides.md
+    - documentation/functions/Set-ClusterDRSLevel.md
+    - documentation/functions/Set-ClusterHostsvSanIgnoreClusterMemberList.md
+- Community:
+  - community/index.md
+  - Contributing: community/contributing.md
+  - Discussions: https://github.com/vmware/powershell-module-for-vmware-cloud-foundation-instance-recovery/discussions
+  - Search Issues: https://github.com/vmware/powershell-module-for-vmware-cloud-foundation-instance-recovery/issues
+  - Open an Issue: https://github.com/vmware/powershell-module-for-vmware-cloud-foundation-instance-recovery/issues/new/choose
+  - Support: community/support.md
+  - Code of Conduct: community/code-of-conduct.md
