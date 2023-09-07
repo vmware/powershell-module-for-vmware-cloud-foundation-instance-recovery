@@ -139,9 +139,9 @@ Function Resolve-PhysicalHostTransportNodes
     #Resolve Hosts
     Foreach ($hostID in $hostIDs)
     {
-        $body = "{`"id`":5726703,`"method`":`"resolveError`",`"params`":[{`"errors`":[{`"user_metadata`":{`"user_input_list`":[]},`"error_id`":26080,`"entity_id`":$hostID}]}]}"
+        $body = "{`"id`":5726703,`"method`":`"resolveError`",`"params`":[{`"errors`":[{`"user_metadata`":{`"user_input_list`":[]},`"error_id`":26080,`"entity_id`":`"$hostID`"}]}]}"
         $uri =  "https://$nsxManager/nsxapi/rpc/call/ErrorResolverFacade"
-        $response = Invoke-WebRequest -Method PATCH -URI $uri -ContentType application/json -headers $headers -body $body
+        $response = Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -headers $headers -body $body
     }    
 }
 #EndRegion NSXT Functions
