@@ -1,4 +1,25 @@
 #Module to Assist in VCF Full Instance Recovery
+
+#Region Execute
+$vCenterFQDN = "sfo-w02-vc01.sfo.rainpole.io"
+$vCenterAdmin = "Administrator@vsphere.local"
+$vCenterAdminPassword = "VMw@re1!"
+$clusterName = "sfo-w02-cl01"
+$esxiRootPassword = "VMw@re1!"
+$nsxManager = "sfo-w02-nsx01a.sfo.rainpole.io"
+$nsxAdmin = "admin"
+$nsxAdminPassword = "VMw@re1!VMw@re1!"
+$sddcManagerFQDN = "sfo-vcf01.sfo.rainpole.io"
+$sddcManagerUser = "Administrator@vsphere.local"
+$sddcManagerPassword = "VMw@re1!"
+
+
+#Resolve-PhysicalHostServiceAccounts -vCenterFQDN $vCenterFQDN -vCenterAdmin $vCenterAdmin -vCenterAdminPassword $vCenterAdminPassword -clusterName $clusterName -esxiRootPassword $esxiRootPassword
+#Resolve-PhysicalHostTransportNodes -vCenterFQDN $vCenterFQDN -vCenterAdmin $vCenterAdmin -vCenterAdminPassword $vCenterAdminPassword -clusterName $clusterName -nsxManager $nsxManager -username $nsxAdmin -password $nsxAdminPassword
+#Remove-NonResponsiveHosts -vCenterFQDN $vCenterFQDN -vCenterAdmin $vCenterAdmin -vCenterAdminPassword $vCenterAdminPassword -clusterName $cluster
+#Add-HostsToCluster -vCenterFQDN $vCenterFQDN -vCenterAdmin $vCenterAdmin -vCenterAdminPassword $vCenterAdminPassword -clusterName $clusterName -esxiRootPassword $esxiRootPassword -sddcManagerFQDN $sddcManagerFQDN -sddcManagerUser $sddcManagerUser -sddcManagerPassword $sddcManagerPassword
+
+#EndRegion Execute
 #Region vCenter Functions
 Function Resolve-PhysicalHostServiceAccounts
 {
@@ -93,6 +114,76 @@ Function Set-PhysicalHostServiceAccountPasswords
         Disconnect-VIServer $hostInstance.name -confirm:$false
     }
 }
+
+Function Set-ClusterDRSLevel 
+{
+    Param(
+        [Parameter (Mandatory=$true)][String] $vCenterFQDN,
+        [Parameter (Mandatory=$true)][String] $vCenterAdmin,
+        [Parameter (Mandatory=$true)][String] $vCenterAdminPassword,
+        [Parameter (Mandatory=$true)][String] $clusterName,
+        [Parameter (Mandatory=$true)][String] $DrsAutomationLevel
+        
+    )
+    $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
+    set-cluster -cluster $clusterName -DrsAutomationLevel $DrsAutomationLevel -confirm:$false
+    Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+}
+
+Function Remove-NonResponsiveHosts 
+{
+    Param(
+        [Parameter (Mandatory=$true)][String] $vCenterFQDN,
+        [Parameter (Mandatory=$true)][String] $vCenterAdmin,
+        [Parameter (Mandatory=$true)][String] $vCenterAdminPassword,
+        [Parameter (Mandatory=$true)][String] $clusterName
+        
+    )
+    $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
+    $nonResponsiveHosts = get-cluster -name $clusterName | get-vmhost | Where-Object { $_.ConnectionState -eq "NotResponding"}
+    foreach ($nonResponsiveHost in $nonResponsiveHosts) {
+        Get-VMHost | Where-Object {$_.Name -eq $nonResponsiveHost.Name} | Remove-VMHost -Confirm:$false
+    }
+    Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+}
+
+Function Add-HostsToCluster 
+{
+    Param(
+        [Parameter (Mandatory=$true)][String] $vCenterFQDN,
+        [Parameter (Mandatory=$true)][String] $vCenterAdmin,
+        [Parameter (Mandatory=$true)][String] $vCenterAdminPassword,
+        [Parameter (Mandatory=$true)][String] $clusterName,
+        [Parameter (Mandatory=$true)][String] $esxiRootPassword,
+        [Parameter (Mandatory=$true)][String] $sddcManagerFQDN,
+        [Parameter (Mandatory=$true)][String] $sddcManagerUser,
+        [Parameter (Mandatory=$true)][String] $sddcManagerPassword
+        )
+    $tokenRequest = Request-VCFToken -fqdn $sddcManagerFQDN -username $sddcManagerUser -password $sddcManagerPassword
+    $newHosts = (get-vcfhost | where-object {$_.id -in ((get-vcfcluster -name $clusterName).hosts.id)}).fqdn
+    $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
+    foreach ($newHost in $newHosts) {
+        $vmHosts = (Get-cluster -name $clusterName | Get-VMHost).Name
+        if ($newHost -notin $vmHosts) 
+        {
+            $esxiConnection = connect-viserver $newHost -user root -password $esxiRootPassword
+            if ($esxiConnection) 
+            {
+                Add-VMHost $newHost -username root -password $esxiRootPassword -Location $clusterName -Force -Confirm:$false | Out-Null
+            }
+            else 
+            {
+                Write-Error "Unable to connect to $newHost. Host will not be added to the cluster"
+            }
+        }
+        else 
+        {
+            Write-Output "$newHost already part of $clusterName. Skipping"
+        }
+    }
+    Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+}
+
 #EndRegion vCenter Functions
 
 #Region NSXT Functions
@@ -163,20 +254,3 @@ Function Resolve-PhysicalHostTransportNodes
 }
 #EndRegion NSXT Functions
 
-#Region Execute
-$vCenterFQDN = "sfo-w02-vc01.sfo.rainpole.io"
-$vCenterAdmin = "Administrator@vsphere.local"
-$vCenterAdminPassword = "VMw@re1!"
-$cluster = "sfo-w02-cl01"
-$esxiRootPassword = "VMw@re1!"
-$nsxManager = "sfo-w02-nsx01a.sfo.rainpole.io"
-$nsxAdmin = "admin"
-$nsxAdminPassword = "VMw@re1!VMw@re1!"
-$sddcManagerFQDN = "sfo-vcf01.sfo.rainpole.io"
-$sddcManagerUser = "Administrator@vsphere.local"
-$sddcManagerPassword = "VMw@re1!"
-
-
-Resolve-PhysicalHostServiceAccounts -vCenterFQDN $vCenterFQDN -vCenterAdmin $vCenterAdmin -vCenterAdminPassword $vCenterAdminPassword -clusterName $clusterName -esxiRootPassword $esxiRootPassword
-Resolve-PhysicalHostTransportNodes -vCenterFQDN $vCenterFQDN -vCenterAdmin $vCenterAdmin -vCenterAdminPassword $vCenterAdminPassword -clusterName $clusterName -nsxManager $nsxManager -username $nsxAdmin -password $nsxAdminPassword
-#EndRegion Execute
