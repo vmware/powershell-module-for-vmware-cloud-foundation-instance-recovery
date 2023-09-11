@@ -299,6 +299,180 @@ Function Add-VMKernelsToHost
     }
 }
 
+Function Get-ClusterVMOverrides
+{   <#
+    .SYNOPSIS
+        Retrieves and saves configured VM Overrides.
+
+    .DESCRIPTION
+        Saves details for configured VM Overrides for the passed cluster to a JSON file
+
+    .EXAMPLE
+        Get-ClusterVMOverrides -clusterName 'sfo-m01-cl01'
+    #>
+    Param(
+        [Parameter(Mandatory=$true)]
+        [String]$clusterName
+        )
+    $cluster = Get-Cluster -Name $clusterName
+    $overRiddenVMs = $cluster.ExtensionData.ConfigurationEx.DrsVmConfig
+    $clusterVMs = Get-Cluster | Get-VM | Select-Object Name, id
+    $overRiddenData =@()
+    Foreach ($overRiddenVM in $overRiddenVMs) 
+    {
+        $overRiddenData += @{ 
+            'type' = $overRiddenVM.key.type
+            'behavior' = [STRING]$overRiddenVM.Behavior
+            'key' = $overRiddenVM.key.value
+            'name' = ($clusterVMs | Where-Object {$_.id -eq ($overRiddenVM.key.type +"-"+$overRiddenVM.key.value)}).name
+        }
+    }
+    $overRiddenData | ConvertTo-Json -depth 10 | Out-File "$clusterName-vmOverrides.json"
+}
+
+Function Get-ClusterVMLocations
+{
+    <#
+    .SYNOPSIS
+        Retrieves the folder and resource pool settings.
+
+    .DESCRIPTION
+        Saves the folder and resource pool settings for the passed cluster to a JSON file
+
+    .EXAMPLE
+        Get-ClusterVMLocationss -clusterName 'sfo-m01-cl01'
+    #>
+    Param(
+        [Parameter(Mandatory=$true)]
+        [String]$clusterName
+        )
+    Try
+    {
+
+        $clusterVMs = Get-Cluster -Name $clusterName | Get-VM | Select-Object Name, id, folder, resourcePool    
+        $allVMs = @()
+        Foreach ($vm in $clusterVMs)
+        {
+            $vmSettings = @()
+            $vmSettings += [pscustomobject]@{
+                'name' = $vm.name
+                'id' = $vm.id
+                'folder' = $vm.folder.name
+                'resourcePool' = $vm.resourcePool.name
+            }
+            $allVMs += $vmSettings
+        }
+        $allVMs | ConvertTo-Json -depth 10 | Out-File "$clusterName-vmLocations.json"
+    }
+    Catch
+    {
+        catchWriter -object $_
+    }
+}
+
+Function Get-ClusterDRSGroupsAndRules
+{
+        <#
+    .SYNOPSIS
+        Retrieves the DRS Groups And Rules for a Cluster
+
+    .DESCRIPTION
+        Saves the DRS Group and Rule settings for the passed cluster to a JSON file 
+
+    .EXAMPLE
+        Get-ClusterDRSGroupsAndRules -clusterName "sfo-m01-cl01"
+    #>
+    Param(
+        [Parameter(Mandatory=$true)]
+        [PSObject]$clusterName
+        )
+    Try
+    {
+        $retrievedVmDrsGroups = Get-DrsClusterGroup -cluster $clusterName
+        $drsGroupsObject = @()
+        Foreach ($drsGroup in $retrievedVmDrsGroups)
+        {
+            $drsGroupsObject += [pscustomobject]@{
+            'name' = $drsGroup.name
+            'type' = [STRING]$drsGroup.GroupType
+            'vmNames' = $drsGroup.Member.name -join (",")
+            }
+        }
+        
+        #$drsGroupsObject | ConvertTo-Json -depth 10
+
+        $retrievedDrsRules = Get-DrsRule -type VMAffinity -Cluster $clusterName
+        $vmAffinityRulesObject = @()
+        Foreach ($drsRule in $retrievedDrsRules)
+        {
+            $vmNames =@()
+            Foreach ($vmId in $drsRule.vmids)
+            {
+                $vmName = (Get-Cluster -name $clusterName | Get-VM | Where-Object {$_.id -eq $vmId}).name
+                $vmNames += $vmName    
+            }
+            $vmNames = $vmNames -join (",")
+            $vmAffinityRulesObject += [pscustomobject]@{
+                'name' = $drsrule.name
+                'type' = [String]$drsRule.type
+                'vmNames' = $vmNames
+            }
+        }
+        #$vmAffinityRulesObject | ConvertTo-Json -depth 10
+
+        $retrievedDrsRules = Get-DrsRule -type VMAntiAffinity -Cluster $clusterName
+        $vmAntiAffinityRulesObject = @()
+        Foreach ($drsRule in $retrievedDrsRules)
+        {
+            $vmNames =@()
+            Foreach ($vmId in $drsRule.vmids)
+            {
+                $vmName = (Get-Cluster -name $clusterName | Get-VM | Where-Object {$_.id -eq $vmId}).name
+                $vmNames += $vmName    
+            }
+            $vmNames = $vmNames -join (",")
+            $vmAntiAffinityRulesObject += [pscustomobject]@{
+                'name' = $drsrule.name
+                'type' = [String]$drsRule.type
+                'vmNames' = $vmNames
+            }
+        }
+        #$vmAntiAffinityRulesObject | ConvertTo-Json -depth 10
+
+        $retrievedDrsRules = Get-DrsRule -type VMHostAffinity -Cluster $clusterName
+        $VMHostAffinityRulesObject = @()
+        Foreach ($drsRule in $retrievedDrsRules)
+        {
+            $vmNames =@()
+            Foreach ($vmId in $drsRule.vmids)
+            {
+                $vmName = (Get-Cluster -name $clusterName | Get-VM | Where-Object {$_.id -eq $vmId}).name
+                $vmNames += $vmName    
+            }
+            $vmNames = $vmNames -join (",")
+            $VMHostAffinityRulesObject += [pscustomobject]@{
+                'name' = $drsrule.name
+                'variant' = If ($drsRule.ExtensionData.Mandatory -eq $true){If ($drsRule.ExtensionData.AffineHostGroupName) {"Must"} else {"MustNot"}} else {If ($drsRule.ExtensionData.AffineHostGroupName) {"Should"} else {"ShouldNot"}}
+                'vmGroupName' = $drsRule.ExtensionData.VmGroupName
+                'hostGroupName' = If ($drsRule.ExtensionData.AffineHostGroupName) {$drsRule.ExtensionData.AffineHostGroupName} else {$drsRule.ExtensionData.AntiAffineHostGroupName}
+            }
+        }
+        #$VMHostAffinityRulesObject | ConvertTo-Json -depth 10
+
+        $drsBackup += [pscustomobject]@{
+            'vmDrsGroups' = $drsGroupsObject
+            'vmAffinityRules' = $vmAffinityRulesObject
+            'vmAntiAffinityRules' = $vmAntiAffinityRulesObject
+            'vmHostAffinityRules' = $VMHostAffinityRulesObject
+        }
+         $drsBackup | ConvertTo-Json -depth 10  | Out-File "$clusterName-drsConfiguration.json"
+    }
+    Catch
+    {
+        catchWriter -object $_
+    }
+}
+
 #EndRegion vCenter Functions
 
 #Region NSXT Functions
