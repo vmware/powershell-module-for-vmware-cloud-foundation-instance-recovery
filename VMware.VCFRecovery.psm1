@@ -519,8 +519,8 @@ Function Resolve-PhysicalHostTransportNodes
     [Parameter (Mandatory=$true)][String] $password
     )
     $vCenterConnection = Connect-VIServer -server $vCenterFQDN -username $vCenterAdmin -password $vCenterAdminPassword
-    Write-Output "Getting Hosts for Cluster $cluster"
-    $clusterHosts = (Get-Cluster -name $cluster | Get-VMHost).name
+    Write-Output "Getting Hosts for Cluster $clusterName"
+    $clusterHosts = (Get-Cluster -name $clusterName | Get-VMHost).name
     
     $headers = createHeader -username $username -password $password
     
@@ -529,7 +529,7 @@ Function Resolve-PhysicalHostTransportNodes
     Write-Output "Getting Transport Nodes from $nsxManager"
     $transportNodeContents = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
     $allHostTransportNodes = ($transportNodeContents.results | Where-Object {($_.resource_type -eq "TransportNode") -and ($_.node_deployment_info.os_type -eq "ESXI")})
-    Write-Output "Filtering Transport Nodes to members of cluster $cluster"
+    Write-Output "Filtering Transport Nodes to members of cluster $clusterName"
     $hostIDs = ($allHostTransportNodes |  Where-Object {$_.display_name -in $clusterHosts}).id
 
     #Resolve Hosts
