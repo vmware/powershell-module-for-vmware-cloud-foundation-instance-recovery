@@ -459,11 +459,25 @@ Function Get-ClusterDRSGroupsAndRules
         }
         #$VMHostAffinityRulesObject | ConvertTo-Json -depth 10
 
+        $dependencyRules = (Get-Cluster -Name $clusterName).ExtensionData.Configuration.Rule | Where-Object {$_.DependsOnVmGroup}
+        $vmToVmDependencyRulesObject = @()
+        Foreach ($dependencyRule in $dependencyRules)
+        {
+             $vmToVmDependencyRulesObject += [pscustomobject]@{
+                'name' = $dependencyRule.name
+                'vmGroup' = $dependencyRule.vmGroup
+                'DependsOnVmGroup' = $dependencyRule.DependsOnVmGroup
+            }
+        }
+        #$vmToVmDependencyRulesObject | ConvertTo-Json -depth 10
+
         $drsBackup += [pscustomobject]@{
             'vmDrsGroups' = $drsGroupsObject
             'vmAffinityRules' = $vmAffinityRulesObject
             'vmAntiAffinityRules' = $vmAntiAffinityRulesObject
             'vmHostAffinityRules' = $VMHostAffinityRulesObject
+            'vmToVmDependencyRules' = $vmToVmDependencyRulesObject
+
         }
          $drsBackup | ConvertTo-Json -depth 10  | Out-File "$clusterName-drsConfiguration.json"
     }
