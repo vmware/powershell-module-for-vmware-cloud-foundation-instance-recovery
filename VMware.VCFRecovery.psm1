@@ -1,25 +1,5 @@
 #Module to Assist in VCF Full Instance Recovery
 
-#Region Execute
-$vCenterFQDN = "sfo-w02-vc01.sfo.rainpole.io"
-$vCenterAdmin = "Administrator@vsphere.local"
-$vCenterAdminPassword = "VMw@re1!"
-$clusterName = "sfo-w02-cl01"
-$esxiRootPassword = "VMw@re1!"
-$nsxManager = "sfo-w02-nsx01a.sfo.rainpole.io"
-$nsxAdmin = "admin"
-$nsxAdminPassword = "VMw@re1!VMw@re1!"
-$sddcManagerFQDN = "sfo-vcf01.sfo.rainpole.io"
-$sddcManagerUser = "Administrator@vsphere.local"
-$sddcManagerPassword = "VMw@re1!"
-
-
-#Resolve-PhysicalHostServiceAccounts -vCenterFQDN $vCenterFQDN -vCenterAdmin $vCenterAdmin -vCenterAdminPassword $vCenterAdminPassword -clusterName $clusterName -esxiRootPassword $esxiRootPassword
-#Resolve-PhysicalHostTransportNodes -vCenterFQDN $vCenterFQDN -vCenterAdmin $vCenterAdmin -vCenterAdminPassword $vCenterAdminPassword -clusterName $clusterName -nsxManager $nsxManager -username $nsxAdmin -password $nsxAdminPassword
-#Remove-NonResponsiveHosts -vCenterFQDN $vCenterFQDN -vCenterAdmin $vCenterAdmin -vCenterAdminPassword $vCenterAdminPassword -clusterName $cluster
-#Add-HostsToCluster -vCenterFQDN $vCenterFQDN -vCenterAdmin $vCenterAdmin -vCenterAdminPassword $vCenterAdminPassword -clusterName $clusterName -esxiRootPassword $esxiRootPassword -sddcManagerFQDN $sddcManagerFQDN -sddcManagerUser $sddcManagerUser -sddcManagerPassword $sddcManagerPassword
-
-#EndRegion Execute
 #Region vCenter Functions
 Function Resolve-PhysicalHostServiceAccounts
 {
@@ -295,11 +275,11 @@ Function Add-VMKernelsToHost
             interfacename = $interface[0].Name
             gateway = $vsanGW
         }
-        $esxcli.network.ip.interface.ipv4.set.Invoke($interfaceArg)
+        $esxcli.network.ip.interface.ipv4.set.Invoke($interfaceArg) *>$null
     }
 }
 
-Function Get-ClusterVMOverrides
+Function Backup-ClusterVMOverrides
 {   <#
     .SYNOPSIS
         Retrieves and saves configured VM Overrides.
@@ -330,7 +310,7 @@ Function Get-ClusterVMOverrides
     $overRiddenData | ConvertTo-Json -depth 10 | Out-File "$clusterName-vmOverrides.json"
 }
 
-Function Get-ClusterVMLocations
+Function Backup-ClusterVMLocations
 {
     <#
     .SYNOPSIS
@@ -370,7 +350,7 @@ Function Get-ClusterVMLocations
     }
 }
 
-Function Get-ClusterDRSGroupsAndRules
+Function Backup-ClusterDRSGroupsAndRules
 {
         <#
     .SYNOPSIS
@@ -380,7 +360,7 @@ Function Get-ClusterDRSGroupsAndRules
         Saves the DRS Group and Rule settings for the passed cluster to a JSON file 
 
     .EXAMPLE
-        Get-ClusterDRSGroupsAndRules -clusterName "sfo-m01-cl01"
+        Backup-ClusterDRSGroupsAndRules -clusterName 'sfo-m01-cl01'
     #>
     Param(
         [Parameter(Mandatory=$true)]
@@ -395,13 +375,13 @@ Function Get-ClusterDRSGroupsAndRules
             $drsGroupsObject += [pscustomobject]@{
             'name' = $drsGroup.name
             'type' = [STRING]$drsGroup.GroupType
-            'vmNames' = $drsGroup.Member.name -join (",")
+            'members' = $drsGroup.Member.name -join (",")
             }
         }
         
         #$drsGroupsObject | ConvertTo-Json -depth 10
 
-        $retrievedDrsRules = Get-DrsRule -type VMAffinity -Cluster $clusterName
+        $retrievedDrsRules = Get-DrsRule -Cluster $clusterName
         $vmAffinityRulesObject = @()
         Foreach ($drsRule in $retrievedDrsRules)
         {
@@ -415,29 +395,11 @@ Function Get-ClusterDRSGroupsAndRules
             $vmAffinityRulesObject += [pscustomobject]@{
                 'name' = $drsrule.name
                 'type' = [String]$drsRule.type
+                'keepTogether' = $drsRule.keepTogether
                 'vmNames' = $vmNames
             }
         }
         #$vmAffinityRulesObject | ConvertTo-Json -depth 10
-
-        $retrievedDrsRules = Get-DrsRule -type VMAntiAffinity -Cluster $clusterName
-        $vmAntiAffinityRulesObject = @()
-        Foreach ($drsRule in $retrievedDrsRules)
-        {
-            $vmNames =@()
-            Foreach ($vmId in $drsRule.vmids)
-            {
-                $vmName = (Get-Cluster -name $clusterName | Get-VM | Where-Object {$_.id -eq $vmId}).name
-                $vmNames += $vmName    
-            }
-            $vmNames = $vmNames -join (",")
-            $vmAntiAffinityRulesObject += [pscustomobject]@{
-                'name' = $drsrule.name
-                'type' = [String]$drsRule.type
-                'vmNames' = $vmNames
-            }
-        }
-        #$vmAntiAffinityRulesObject | ConvertTo-Json -depth 10
 
         $retrievedDrsRules = Get-DrsRule -type VMHostAffinity -Cluster $clusterName
         $VMHostAffinityRulesObject = @()
@@ -452,7 +414,7 @@ Function Get-ClusterDRSGroupsAndRules
             $vmNames = $vmNames -join (",")
             $VMHostAffinityRulesObject += [pscustomobject]@{
                 'name' = $drsrule.name
-                'variant' = If ($drsRule.ExtensionData.Mandatory -eq $true){If ($drsRule.ExtensionData.AffineHostGroupName) {"Must"} else {"MustNot"}} else {If ($drsRule.ExtensionData.AffineHostGroupName) {"Should"} else {"ShouldNot"}}
+                'variant' = If ($drsRule.ExtensionData.Mandatory -eq $true){If ($drsRule.ExtensionData.AffineHostGroupName) {"MustRunOn"} else {"MustNotRunOn"}} else {If ($drsRule.ExtensionData.AffineHostGroupName) {"ShouldRunOn"} else {"ShouldNotRunOn"}}
                 'vmGroupName' = $drsRule.ExtensionData.VmGroupName
                 'hostGroupName' = If ($drsRule.ExtensionData.AffineHostGroupName) {$drsRule.ExtensionData.AffineHostGroupName} else {$drsRule.ExtensionData.AntiAffineHostGroupName}
             }
@@ -467,6 +429,7 @@ Function Get-ClusterDRSGroupsAndRules
                 'name' = $dependencyRule.name
                 'vmGroup' = $dependencyRule.vmGroup
                 'DependsOnVmGroup' = $dependencyRule.DependsOnVmGroup
+                'mandatory' = $dependencyRule.mandatory
             }
         }
         #$vmToVmDependencyRulesObject | ConvertTo-Json -depth 10
@@ -474,7 +437,6 @@ Function Get-ClusterDRSGroupsAndRules
         $drsBackup += [pscustomobject]@{
             'vmDrsGroups' = $drsGroupsObject
             'vmAffinityRules' = $vmAffinityRulesObject
-            'vmAntiAffinityRules' = $vmAntiAffinityRulesObject
             'vmHostAffinityRules' = $VMHostAffinityRulesObject
             'vmToVmDependencyRules' = $vmToVmDependencyRulesObject
 
@@ -483,6 +445,210 @@ Function Get-ClusterDRSGroupsAndRules
     }
     Catch
     {
+        catchWriter -object $_
+    }
+}
+
+Function Restore-ClusterVMOverrides
+{
+    <#
+    .SYNOPSIS
+        Restores previously saved configured VM Overrides for a cluster
+
+    .DESCRIPTION
+        Restores VM Overrides for the passed cluster from a JSON file
+
+    .EXAMPLE
+        Restore-ClusterVMOverrides -clusterName 'sfo-m01-cl01' -jsonfile .\sfo-m01-cl01-vmOverrides.json
+    #>
+    Param(
+        [Parameter(Mandatory=$true)][String]$clusterName,
+        [Parameter(Mandatory=$true)][String]$jsonFile
+    )
+    try 
+    {
+        If (Test-Path -path $jsonFile)
+        {
+            $vmOverRides = Get-Content -path $jsonFile | ConvertFrom-Json
+            Foreach ($vmOverRide in $vmOverRides)
+            {
+                Write-Output "Setting VM Overide for $($vmOverRide.name) to $($vmOverRide.behavior)"
+                Get-Cluster -name $clusterName | Get-VM -name $vmOverRide.name | Set-VM -DrsAutomationLevel $vmOverRide.behavior -Confirm:$false | Out-Null
+            }
+        }
+        else 
+        {
+            Write-Error "$jsonfile not found"
+        }
+    }
+    catch {
+        catchWriter -object $_
+    }
+}
+
+Function Restore-ClusterVMLocations
+{
+    <#
+    .SYNOPSIS
+        Restores folder and resource pool settings for VMs on a cluster
+
+    .DESCRIPTION
+        Restores the folder and resource pool settings for VMs on the the passed cluster from a JSON file
+
+    .EXAMPLE
+        Restore-ClusterVMLocations -clusterName 'sfo-m01-cl01' -jsonfile .\sfo-m01-cl01-vmLocations.json
+    #>
+    Param(
+        [Parameter(Mandatory=$true)][String]$clusterName,
+        [Parameter(Mandatory=$true)][String]$jsonFile
+    )
+    try 
+    {
+        If (Test-Path -path $jsonFile)
+        {
+            $vmLocations = Get-Content -path $jsonFile | ConvertFrom-Json
+            Foreach ($vmLocation in $vmLocations)
+            {
+                If (Get-VM -name $vmLocation.name  -notlike "vCLS*")
+                {
+                    $vm =Get-VM -name $vmLocation.name -errorAction SilentlyContinue
+                    If ($vm)
+                    {
+                        If ($vm.folder -ne $vmLocation.folder)
+                        {
+                            Write-Output "Setting VM Folder Location for $($vmLocation.name) to $($vmLocation.folder)"
+                            Move-VM -VM $vm -Destination $vmLocation.folder -confirm:$false
+                        }
+                        If ($vm.resourcePool -ne $vmLocation.resourcePool)
+                        {
+                            Write-Output "Setting ResourcePool for $($vmLocation.name) to $($vmLocation.resourcePool)"
+                            Move-VM -VM $vm -Destination $vmLocation.folder -confirm:$false
+                        }
+                    } 
+                    else 
+                    {
+                        Write-Error "VM $(Get-VM -name $vmLocation.name) not found. Check that it has been restored"
+                    }
+                }
+            }
+        }
+        else 
+        {
+            Write-Error "$jsonfile not found"
+        }
+    }
+    catch {
+        catchWriter -object $_
+    }
+}
+
+Function Restore-ClusterDRSGroupsAndRules
+{
+    <#
+    .SYNOPSIS
+        Restores DRS Groups and Rules for a cluster
+
+    .DESCRIPTION
+        Restores the DRS Groups and Rules for a passed cluster from a JSON file
+
+    .EXAMPLE
+        Restore-ClusterDRSGroupsAndRules -clusterName 'sfo-m01-cl01' -jsonfile .\sfo-m01-cl01-drsConfiguration.json
+    #>
+    Param(
+        [Parameter(Mandatory=$true)][String]$clusterName,
+        [Parameter(Mandatory=$true)][String]$jsonFile
+    )
+    try 
+    {
+        If (Test-Path -path $jsonFile)
+        {
+            $drsRulesAndGroups = Get-Content -path $jsonFile | ConvertFrom-Json
+            Foreach ($vmDrsGroup in $drsRulesAndGroups.vmDrsGroups)
+            {
+                $group = Get-DrsClusterGroup -name $vmDrsGroup.name -errorAction SilentlyContinue
+                If ($group)
+                {
+                    If ($vmDrsGroup.type -eq "VMHostGroup")
+                    {
+                        Write-Output "Setting VMHostGroup $($vmLocation.name) Members to $($vmDrsGroup.members)"
+                        Set-DrsClusterGroup -Name $vmDrsGroup.name -VMHost $vmDrsGroup.members -Cluster $clusterName -confirm:$false | Out-Null
+                    }
+                    elseif ($vmDrsGroup.type -eq "VMGroup")
+                    {
+                        Write-Output "Setting VMGroup $($vmLocation.name) Members to $($vmDrsGroup.members)"
+                        Set-DrsClusterGroup -Name $vmDrsGroup.name -VM $vmDrsGroup.members -Cluster $clusterName -confirm:$false | Out-Null
+                    }
+
+                }
+                else 
+                {
+                    If ($vmDrsGroup.type -eq "VMHostGroup")
+                    {
+                        Write-Output "Creating VMHostGroup $($vmLocation.name) with Members $($vmDrsGroup.members)"
+                        New-DrsClusterGroup -Name $vmDrsGroup.name -VMHost $vmDrsGroup.members -Cluster $clusterName | Out-Null
+                    }
+                    elseif ($vmDrsGroup.type -eq "VMGroup")
+                    {
+                        Write-Output "Creating VMGroup $($vmLocation.name) with Members $($vmDrsGroup.members)"
+                        New-DrsClusterGroup -Name $vmDrsGroup.name -VM $vmDrsGroup.members -Cluster $clusterName | Out-Null
+                    }
+                }
+            }
+            Foreach ($vmAffinityRule in $drsRulesAndGroups.vmAffinityRules)
+            {
+                $vmRule = Get-DrsRule -name $vmAffinityRule -errorAction SilentlyContinue
+                If ($vmRule)
+                {
+                    Write-Output "Setting VM Rule $($vmAffinityRule.name) with Members $($vmAffinityRule.vmNames)"
+                    Set-DrsRule -cluster $clusterName -rule $vmRule -VM $vmAffinityRule.vmNames -keepTogether $vmAffinityRule.keepTogether -Enabled $true -confirm:$false | Out-Null
+                }
+                else
+                {
+                    Write-Output "Creating VM Rule $($vmAffinityRule.name) with Members $($vmAffinityRule.vmNames)"
+                    New-DrsRule -cluster $clusterName -name $vmAffinityRule.name -VM $vmAffinityRule.vmNames -keepTogether $vmAffinityRule.keepTogether -Enabled $true | Out-Null
+                }
+            }
+            Foreach ($vmHostAffinityRule in $drsRulesAndGroups.vmHostAffinityRules)
+            {
+                $hostRule = Get-DrsRule -type VMHostAffinity -Cluster $clusterName -name $vmHostAffinityRule -errorAction SilentlyContinue
+                If ($hostRule)
+                {
+                    Write-Output "Setting VMHost Rule $($vmHostAffinityRule.name) with VM Group $($vmHostAffinityRule.vmGroupName) and Host Group $($vmHostAffinityRule.hostGroupName)"
+                    Set-DrsVMHostRule - name $vmHostAffinityRule.name -VMGroup $vmHostAffinityRule.vmGroupName -VMHostGroup $vmHostAffinityRule.hostGroupName -Type $vmHostAffinityRule.variant -confirm:$false | Out-Null
+                }
+                else 
+                {
+                    Write-Output "Creating VMHost Rule $($vmHostAffinityRule.name) with VM Group $($vmHostAffinityRule.vmGroupName) and Host Group $($vmHostAffinityRule.hostGroupName)"
+                    New-DrsVMHostRule -Name $vmHostAffinityRule.name -Cluster $clusterName -VMGroup $vmHostAffinityRule.vmGroupName -VMHostGroup $vmHostAffinityRule.hostGroupName -Type $vmHostAffinityRule.variant | Out-Null
+                }
+            }
+            Foreach ($vmToVmDependencyRule in $drsRulesAndGroups.vmToVmDependencyRules)
+            {
+                $dependencyRule = (Get-Cluster -Name $clusterName).ExtensionData.Configuration.Rule | Where-Object {$_.DependsOnVmGroup -and $_.name -eq $vmToVmDependencyRule.name -and $_.vmGroup -eq $vmToVmDependencyRule.vmGroup -and $_.DependsOnVmGroup -eq $vmToVmDependencyRule.DependsOnVmGroup}
+                If (!$dependencyRule)
+                {
+                    $cluster = Get-Cluster -Name $clusterName
+                    $spec = New-Object VMware.Vim.ClusterConfigSpecEx
+                    $newRule = New-Object VMware.Vim.ClusterDependencyRuleInfo
+                    $newRule.VmGroup = $vmToVmDependencyRule.vmGroup
+                    $newRule.DependsOnVmGroup = $vmToVmDependencyRule.DependsOnVmGroup
+                    $newRule.Enabled = $true
+                    $newRule.Name = $vmToVmDependencyRule.name
+                    $newRule.Mandatory = $vmToVmDependencyRule.Mandatory
+                    $newRule.UserCreated = $true
+                    $ruleSpec = New-Object VMware.Vim.ClusterRuleSpec
+                    $ruleSpec.Info = $newRule
+                    $spec.RulesSpec += $ruleSpec
+                    $cluster.ExtensionData.ReconfigureComputeResource($spec,$True)
+                }
+            }
+        }
+        else 
+        {
+            Write-Error "$jsonfile not found"
+        }
+    }
+    catch {
         catchWriter -object $_
     }
 }
@@ -521,6 +687,7 @@ Function ResponseException
     Return $errorString
 }
 
+
 Function Resolve-PhysicalHostTransportNodes
 {
     Param(
@@ -557,3 +724,32 @@ Function Resolve-PhysicalHostTransportNodes
 }
 #EndRegion NSXT Functions
 
+#Region Supporting Functions
+
+Function catchWriter
+{
+    <#
+    .SYNOPSIS
+        Prints a controlled error message after a failure
+
+    .DESCRIPTION
+        Accepts the invocation object from a failure in a Try/Catch block and prints back more precise information regarding
+        the cause of the failure
+
+    .EXAMPLE
+        catchWriter -object $_
+        This example when placed in a catch block will return error message, line number and line text (command) issued
+
+    #>
+    Param(
+        [Parameter(mandatory=$true)]
+        [PSObject]$object
+        )
+    $lineNumber = $object.InvocationInfo.ScriptLineNumber
+    $lineText = $object.InvocationInfo.Line.trim()
+    $errorMessage = $object.Exception.Message
+    Write-Error "Error at Script Line $lineNumber"
+    Write-Error "Relevant Command: $lineText"
+    Write-Error "Error Message: $errorMessage"
+}
+#EndRegion Supporting Functions
