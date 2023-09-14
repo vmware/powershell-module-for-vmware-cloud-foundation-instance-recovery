@@ -288,7 +288,7 @@ Function Backup-ClusterVMOverrides
         Saves details for configured VM Overrides for the passed cluster to a JSON file
 
     .EXAMPLE
-        Get-ClusterVMOverrides -clusterName 'sfo-m01-cl01'
+        Backup-ClusterVMOverrides -clusterName 'sfo-m01-cl01'
     #>
     Param(
         [Parameter(Mandatory=$true)]
@@ -320,7 +320,7 @@ Function Backup-ClusterVMLocations
         Saves the folder and resource pool settings for the passed cluster to a JSON file
 
     .EXAMPLE
-        Get-ClusterVMLocationss -clusterName 'sfo-m01-cl01'
+        Backup-ClusterVMLocations -clusterName 'sfo-m01-cl01'
     #>
     Param(
         [Parameter(Mandatory=$true)]
@@ -375,7 +375,7 @@ Function Backup-ClusterDRSGroupsAndRules
             $drsGroupsObject += [pscustomobject]@{
             'name' = $drsGroup.name
             'type' = [STRING]$drsGroup.GroupType
-            'members' = $drsGroup.Member.name -join (",")
+            'members' = $drsGroup.Member.name
             }
         }
         
@@ -385,18 +385,17 @@ Function Backup-ClusterDRSGroupsAndRules
         $vmAffinityRulesObject = @()
         Foreach ($drsRule in $retrievedDrsRules)
         {
-            $vmNames =@()
+            $members = @()
             Foreach ($vmId in $drsRule.vmids)
             {
                 $vmName = (Get-Cluster -name $clusterName | Get-VM | Where-Object {$_.id -eq $vmId}).name
-                $vmNames += $vmName    
+                $members += $vmName    
             }
-            $vmNames = $vmNames -join (",")
             $vmAffinityRulesObject += [pscustomobject]@{
                 'name' = $drsrule.name
                 'type' = [String]$drsRule.type
                 'keepTogether' = $drsRule.keepTogether
-                'vmNames' = $vmNames
+                'members' = $members
             }
         }
         #$vmAffinityRulesObject | ConvertTo-Json -depth 10
@@ -509,7 +508,7 @@ Function Restore-ClusterVMLocations
             $vmLocations = Get-Content -path $jsonFile | ConvertFrom-Json
             Foreach ($vmLocation in $vmLocations)
             {
-                If (Get-VM -name $vmLocation.name  -notlike "vCLS*")
+                If ($vmLocation.name -notlike "vCLS*")
                 {
                     $vm =Get-VM -name $vmLocation.name -errorAction SilentlyContinue
                     If ($vm)
@@ -517,12 +516,12 @@ Function Restore-ClusterVMLocations
                         If ($vm.folder -ne $vmLocation.folder)
                         {
                             Write-Output "Setting VM Folder Location for $($vmLocation.name) to $($vmLocation.folder)"
-                            Move-VM -VM $vm -Destination $vmLocation.folder -confirm:$false
+                            Move-VM -VM $vm -InventoryLocation $vmLocation.folder -confirm:$false
                         }
                         If ($vm.resourcePool -ne $vmLocation.resourcePool)
                         {
                             Write-Output "Setting ResourcePool for $($vmLocation.name) to $($vmLocation.resourcePool)"
-                            Move-VM -VM $vm -Destination $vmLocation.folder -confirm:$false
+                            Move-VM -VM $vm -Destination $vmLocation.resourcePool -confirm:$false
                         }
                     } 
                     else 
@@ -570,51 +569,56 @@ Function Restore-ClusterDRSGroupsAndRules
                 {
                     If ($vmDrsGroup.type -eq "VMHostGroup")
                     {
-                        Write-Output "Setting VMHostGroup $($vmLocation.name) Members to $($vmDrsGroup.members)"
-                        Set-DrsClusterGroup -Name $vmDrsGroup.name -VMHost $vmDrsGroup.members -Cluster $clusterName -confirm:$false | Out-Null
+                        Foreach ($member in $vmDrsGroup.members)
+                        {
+                            Write-Output "Adding $member to VMHostGroup $($vmDrsGroup.name)"
+                            Set-DrsClusterGroup -DrsClusterGroup $vmDrsGroup.name -Add -VMHost $member -confirm:$false | Out-Null    
+                        }
                     }
                     elseif ($vmDrsGroup.type -eq "VMGroup")
                     {
-                        Write-Output "Setting VMGroup $($vmLocation.name) Members to $($vmDrsGroup.members)"
-                        Set-DrsClusterGroup -Name $vmDrsGroup.name -VM $vmDrsGroup.members -Cluster $clusterName -confirm:$false | Out-Null
+                        Foreach ($member in $vmDrsGroup.members)
+                        {
+                            Write-Output "Adding $member to VMGroup $($vmDrsGroup.name)"
+                            Set-DrsClusterGroup -DrsClusterGroup $vmDrsGroup.name -Add -VM $member -confirm:$false | Out-Null    
+                        }
                     }
-
                 }
                 else 
                 {
                     If ($vmDrsGroup.type -eq "VMHostGroup")
                     {
-                        Write-Output "Creating VMHostGroup $($vmLocation.name) with Members $($vmDrsGroup.members)"
+                        Write-Output "Creating VMHostGroup $($vmDrsGroup.name) with Members $($vmDrsGroup.members)"
                         New-DrsClusterGroup -Name $vmDrsGroup.name -VMHost $vmDrsGroup.members -Cluster $clusterName | Out-Null
                     }
                     elseif ($vmDrsGroup.type -eq "VMGroup")
                     {
-                        Write-Output "Creating VMGroup $($vmLocation.name) with Members $($vmDrsGroup.members)"
+                        Write-Output "Creating VMGroup $($vmDrsGroup.name) with Members $($vmDrsGroup.members)"
                         New-DrsClusterGroup -Name $vmDrsGroup.name -VM $vmDrsGroup.members -Cluster $clusterName | Out-Null
                     }
                 }
             }
             Foreach ($vmAffinityRule in $drsRulesAndGroups.vmAffinityRules)
             {
-                $vmRule = Get-DrsRule -name $vmAffinityRule -errorAction SilentlyContinue
+                $vmRule = Get-DrsRule -name $vmAffinityRule.name -cluster $clusterName -errorAction SilentlyContinue
                 If ($vmRule)
                 {
-                    Write-Output "Setting VM Rule $($vmAffinityRule.name) with Members $($vmAffinityRule.vmNames)"
-                    Set-DrsRule -cluster $clusterName -rule $vmRule -VM $vmAffinityRule.vmNames -keepTogether $vmAffinityRule.keepTogether -Enabled $true -confirm:$false | Out-Null
+                    Write-Output "Setting VM Rule $($vmAffinityRule.name) with Members $($vmAffinityRule.members)"
+                    Set-DrsRule -rule $vmRule -VM $vmAffinityRule.members -Enabled $true -confirm:$false | Out-Null
                 }
                 else
                 {
-                    Write-Output "Creating VM Rule $($vmAffinityRule.name) with Members $($vmAffinityRule.vmNames)"
-                    New-DrsRule -cluster $clusterName -name $vmAffinityRule.name -VM $vmAffinityRule.vmNames -keepTogether $vmAffinityRule.keepTogether -Enabled $true | Out-Null
+                    Write-Output "Creating VM Rule $($vmAffinityRule.name) with Members $($vmAffinityRule.members)"
+                    New-DrsRule -cluster $clusterName -name $vmAffinityRule.name -VM $vmAffinityRule.members -keepTogether $vmAffinityRule.keepTogether -Enabled $true | Out-Null
                 }
             }
             Foreach ($vmHostAffinityRule in $drsRulesAndGroups.vmHostAffinityRules)
             {
-                $hostRule = Get-DrsRule -type VMHostAffinity -Cluster $clusterName -name $vmHostAffinityRule -errorAction SilentlyContinue
+                $hostRule = Get-DrsVMHostRule -Cluster $clusterName -name $vmHostAffinityRule.name -errorAction SilentlyContinue
                 If ($hostRule)
                 {
                     Write-Output "Setting VMHost Rule $($vmHostAffinityRule.name) with VM Group $($vmHostAffinityRule.vmGroupName) and Host Group $($vmHostAffinityRule.hostGroupName)"
-                    Set-DrsVMHostRule - name $vmHostAffinityRule.name -VMGroup $vmHostAffinityRule.vmGroupName -VMHostGroup $vmHostAffinityRule.hostGroupName -Type $vmHostAffinityRule.variant -confirm:$false | Out-Null
+                    Set-DrsVMHostRule -rule $hostRule -VMGroup $vmHostAffinityRule.vmGroupName -VMHostGroup $vmHostAffinityRule.hostGroupName -Type $vmHostAffinityRule.variant -confirm:$false | Out-Null
                 }
                 else 
                 {
@@ -627,6 +631,7 @@ Function Restore-ClusterDRSGroupsAndRules
                 $dependencyRule = (Get-Cluster -Name $clusterName).ExtensionData.Configuration.Rule | Where-Object {$_.DependsOnVmGroup -and $_.name -eq $vmToVmDependencyRule.name -and $_.vmGroup -eq $vmToVmDependencyRule.vmGroup -and $_.DependsOnVmGroup -eq $vmToVmDependencyRule.DependsOnVmGroup}
                 If (!$dependencyRule)
                 {
+                    Write-Output "Creating VM to VM Dependency Rule where $($vmToVmDependencyRule.vmGroup) depends on $($vmToVmDependencyRule.DependsOnVmGroup) "
                     $cluster = Get-Cluster -Name $clusterName
                     $spec = New-Object VMware.Vim.ClusterConfigSpecEx
                     $newRule = New-Object VMware.Vim.ClusterDependencyRuleInfo
