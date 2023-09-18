@@ -295,16 +295,32 @@ Function Backup-ClusterVMOverrides
         [String]$clusterName
         )
     $cluster = Get-Cluster -Name $clusterName
-    $overRiddenVMs = $cluster.ExtensionData.ConfigurationEx.DrsVmConfig
-    $clusterVMs = Get-Cluster | Get-VM | Select-Object Name, id
+    #$overRiddenVMs = $cluster.ExtensionData.ConfigurationEx.DrsVmConfig
+    $clusterVMs = Get-Cluster -name $clusterName | Get-VM | Select-Object Name, id
     $overRiddenData =@()
-    Foreach ($overRiddenVM in $overRiddenVMs) 
+    Foreach ($clusterVM in $clusterVMs) 
     {
-        $overRiddenData += @{ 
-            'type' = $overRiddenVM.key.type
-            'behavior' = [STRING]$overRiddenVM.Behavior
-            'key' = $overRiddenVM.key.value
-            'name' = ($clusterVMs | Where-Object {$_.id -eq ($overRiddenVM.key.type +"-"+$overRiddenVM.key.value)}).name
+        $vmMonitoringSettings = ($cluster.ExtensionData.Configuration.DasVmConfig | Where-Object {$_.Key -eq $clusterVM.id}).DasSettings
+        $vmVmReadinessSettings = ($cluster.ExtensionData.ConfigurationEx.VmOrchestration | Where-Object {$_.vm -eq $clusterVM.id}).VmReadiness
+        $overRiddenData += [pscustomobject]@{ 
+            #VM Basic Settings
+            'name' = $clusterVM.name
+            'id' = $clusterVM.id
+            #DRS Automation Settings
+            'drsAutomationLevel' = $clusterVM.DrsAutomationLevel
+            #VM Monitoring Settings
+            'VmMonitoring' = $vmMonitoringSettings.VmToolsMonitoringSettings.VmMonitoring
+            'ClusterSettings' = $vmMonitoringSettings.VmToolsMonitoringSettings.ClusterSettings
+            'FailureInterval' = $vmMonitoringSettings.VmToolsMonitoringSettings.FailureInterval
+            'MinUpTime' = $vmMonitoringSettings.VmToolsMonitoringSettings.MinUpTime
+            'MaxFailures' = $vmMonitoringSettings.VmToolsMonitoringSettings.MaxFailures
+            'MaxFailureWindow' = $vmMonitoringSettings.VmToolsMonitoringSettings.MaxFailureWindow
+            #vSphereHASettings
+            'RestartPriorityTimeout' = $vmMonitoringSettings.RestartPriorityTimeout
+            'RestartPriority' = $vmMonitoringSettings.RestartPriority
+            'IsolationResponse' = $vmMonitoringSettings.IsolationResponse
+            'ReadyCondition' = $vmVmReadinessSettings.ReadyCondition
+            'PostReadyDelay' = $vmVmReadinessSettings.PostReadyDelay
         }
     }
     $overRiddenData | ConvertTo-Json -depth 10 | Out-File "$clusterName-vmOverrides.json"
