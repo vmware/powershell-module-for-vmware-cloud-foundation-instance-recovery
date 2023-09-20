@@ -1,6 +1,25 @@
 #Module to Assist in VCF Full Instance Recovery
 
 #Region vCenter Functions
+Function Move-ClusterVMsToFirstHost
+{
+#TODO Tidy Up
+$vms = Get-Cluster -Name "sfo-m01-cl01" | get-vm | where-object {$_.Name -notlike "vCLS*"} | Select-Object Name,VMhost
+$firstHost = ((Get-cluster -name "sfo-m01-cl01" | get-vmhost | sort-object -property Name)[0]).Name
+Foreach ($vm in $vms) {
+    if ($vm.vmHost.Name -ne $firstHost) {
+        Get-VM -Name $vm.name | move-vm -Location $firstHost -Runasync
+        Write-Host "moving $($vm.name) to $firstHost"
+    }
+}
+Do {
+   $runningTasks = get-task | where-object {($_.Name -eq "RelocateVM_Task") -and ($_.State -eq "running")} 
+   Sleep 5
+}
+until (!$runningTasks)
+
+}
+
 Function Resolve-PhysicalHostServiceAccounts
 {
     Param(
