@@ -3,21 +3,29 @@
 #Region vCenter Functions
 Function Move-ClusterVMsToFirstHost
 {
-#TODO Tidy Up
-$vms = Get-Cluster -Name "sfo-m01-cl01" | get-vm | where-object {$_.Name -notlike "vCLS*"} | Select-Object Name,VMhost
-$firstHost = ((Get-cluster -name "sfo-m01-cl01" | get-vmhost | sort-object -property Name)[0]).Name
-Foreach ($vm in $vms) {
-    if ($vm.vmHost.Name -ne $firstHost) {
-        Get-VM -Name $vm.name | move-vm -Location $firstHost -Runasync
-        Write-Host "moving $($vm.name) to $firstHost"
+    Param(
+        [Parameter (Mandatory=$true)][String] $vCenterFQDN,
+        [Parameter (Mandatory=$true)][String] $vCenterAdmin,
+        [Parameter (Mandatory=$true)][String] $vCenterAdminPassword,
+        [Parameter (Mandatory=$true)][String] $clusterName
+        
+    )
+    $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
+    $vms = Get-Cluster -Name $clusterName | Get-VM | Where-Object {$_.Name -notlike "vCLS*"} | Select-Object Name,VMhost
+    $firstHost = ((Get-cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)[0]).Name
+    Foreach ($vm in $vms)
+    {
+        if ($vm.vmHost.Name -ne $firstHost)
+        {
+            Get-VM -Name $vm.name | Move-VM -Location $firstHost -Runasync | Out-Null
+            Write-Host "Moving $($vm.name) to $firstHost"
+        }
     }
-}
-Do {
-   $runningTasks = get-task | where-object {($_.Name -eq "RelocateVM_Task") -and ($_.State -eq "running")} 
-   Sleep 5
-}
-until (!$runningTasks)
-
+    Do 
+    {
+        $runningTasks = Get-Task | Where-Object {($_.Name -eq "RelocateVM_Task") -and ($_.State -eq "running")} 
+        Sleep 5
+    } Until (!$runningTasks)
 }
 
 Function Resolve-PhysicalHostServiceAccounts
@@ -340,6 +348,8 @@ Function Backup-ClusterVMOverrides
             'IsolationResponse' = $vmMonitoringSettings.IsolationResponse
             'ReadyCondition' = $vmVmReadinessSettings.ReadyCondition
             'PostReadyDelay' = $vmVmReadinessSettings.PostReadyDelay
+            #APD
+            'VmStorageProtectionForAPD' = $vmMonitoringSettings.VmComponentProtectionSettings.VmStorageProtectionForAPD
         }
     }
     $overRiddenData | ConvertTo-Json -depth 10 | Out-File "$clusterName-vmOverrides.json"
