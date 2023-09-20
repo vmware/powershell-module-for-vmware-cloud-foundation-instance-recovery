@@ -1,6 +1,28 @@
 #Module to Assist in VCF Full Instance Recovery
 
 #Region vCenter Functions
+Function Set-HostvSanIgnoreClusterMemberList
+{
+    Param(
+    [Parameter (Mandatory=$true)][String] $vCenterFQDN,
+    [Parameter (Mandatory=$true)][String] $vCenterAdmin,
+    [Parameter (Mandatory=$true)][String] $vCenterAdminPassword,
+    [Parameter (Mandatory=$true)][String] $clusterName,
+    [Parameter (Mandatory=$true)][String] $esxiRootPassword
+    )
+    # prepare ESXi hosts for cluster migration - Tested
+    $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
+    $esxiHosts = get-cluster -name $clusterName | get-vmhost
+    $esxCommand = "esxcli system settings advanced set --int-value=1 --option=/VSAN/IgnoreClusterMemberListUpdates"
+    $password = ConvertTo-SecureString $esxiRootPassword -AsPlainText -Force
+    $mycreds = New-Object System.Management.Automation.PSCredential ("root", $password)
+    foreach ($esxiHost in $esxiHosts) {
+        $sshSession = New-SSHSession -computername $esxiHost -credential $mycreds -AcceptKey
+        Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $esxCommand   
+    }
+    Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+}
+
 Function Move-ClusterVMsToFirstHost
 {
     Param(
@@ -26,6 +48,7 @@ Function Move-ClusterVMsToFirstHost
         $runningTasks = Get-Task | Where-Object {($_.Name -eq "RelocateVM_Task") -and ($_.State -eq "running")} 
         Sleep 5
     } Until (!$runningTasks)
+    Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
 }
 
 Function Resolve-PhysicalHostServiceAccounts
