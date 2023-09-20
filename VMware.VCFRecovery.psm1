@@ -1,24 +1,35 @@
 #Module to Assist in VCF Full Instance Recovery
 
 #Region vCenter Functions
-Function Set-HostvSanIgnoreClusterMemberList
+Function Set-ClusterHostsvSanIgnoreClusterMemberList
 {
     Param(
     [Parameter (Mandatory=$true)][String] $vCenterFQDN,
     [Parameter (Mandatory=$true)][String] $vCenterAdmin,
     [Parameter (Mandatory=$true)][String] $vCenterAdminPassword,
     [Parameter (Mandatory=$true)][String] $clusterName,
-    [Parameter (Mandatory=$true)][String] $esxiRootPassword
+    [Parameter (Mandatory=$true)][String] $esxiRootPassword,
+    [Parameter (Mandatory=$true)][ValidateSet("enable", "disable")][String] $setting
     )
     # prepare ESXi hosts for cluster migration - Tested
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
+    Get-Cluster -name $clusterName | Get-VMHost | Get-VMHostService | Where-Object {$_.label -eq "SSH"} | Start-VMHostService | Out-Null
     $esxiHosts = get-cluster -name $clusterName | get-vmhost
-    $esxCommand = "esxcli system settings advanced set --int-value=1 --option=/VSAN/IgnoreClusterMemberListUpdates"
+    if ($setting -eq "enable")
+    {
+        $value = 1
+    }
+    else
+    {
+        $value = 0
+    }
+    $esxCommand = "esxcli system settings advanced set --int-value=$value --option=/VSAN/IgnoreClusterMemberListUpdates"
     $password = ConvertTo-SecureString $esxiRootPassword -AsPlainText -Force
     $mycreds = New-Object System.Management.Automation.PSCredential ("root", $password)
     foreach ($esxiHost in $esxiHosts) {
+        Write-Host "Setting vSAN Ignore Cluster Member to `'$setting`' for $esxiHost"
         $sshSession = New-SSHSession -computername $esxiHost -credential $mycreds -AcceptKey
-        Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $esxCommand   
+        Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $esxCommand | Out-Null
     }
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
 }
