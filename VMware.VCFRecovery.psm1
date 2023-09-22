@@ -465,7 +465,7 @@ Function Add-VMKernelsToHost {
             interfacename = $interface[0].Name
             gateway       = $vmotionGW
         }
-        $esxcli.network.ip.interface.ipv4.set.Invoke($interfaceArg)
+        $esxcli.network.ip.interface.ipv4.set.Invoke($interfaceArg) *>$null
 
         Write-Output "Creating vSAN vMK on $vmHost"
         $dvportgroup = Get-VDPortgroup -name $vsanPG -VDSwitch $vsanVDSName
@@ -873,19 +873,19 @@ Function Resolve-PhysicalHostTransportNodes {
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
         [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
         [Parameter (Mandatory = $true)][String] $clusterName,
-        [Parameter (Mandatory = $true)][String] $nsxManager,
-        [Parameter (Mandatory = $true)][String] $username,
-        [Parameter (Mandatory = $true)][String] $password
+        [Parameter (Mandatory = $true)][String] $nsxManagerFqdn,
+        [Parameter (Mandatory = $true)][String] $nsxManagerAdmin,
+        [Parameter (Mandatory = $true)][String] $nsxManagerAdminPassword
     )
     $vCenterConnection = Connect-VIServer -server $vCenterFQDN -username $vCenterAdmin -password $vCenterAdminPassword
     Write-Output "Getting Hosts for Cluster $clusterName"
     $clusterHosts = (Get-Cluster -name $clusterName | Get-VMHost).name
     
-    $headers = createHeader -username $username -password $password
+    $headers = createHeader -username $nsxManagerAdmin -password $nsxManagerAdminPassword
     
     #Get TransportNodes
-    $uri = "https://$nsxManager/api/v1/transport-nodes/"
-    Write-Output "Getting Transport Nodes from $nsxManager"
+    $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/"
+    Write-Output "Getting Transport Nodes from $nsxManagerFqdn"
     $transportNodeContents = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
     $allHostTransportNodes = ($transportNodeContents.results | Where-Object { ($_.resource_type -eq "TransportNode") -and ($_.node_deployment_info.os_type -eq "ESXI") })
     Write-Output "Filtering Transport Nodes to members of cluster $clusterName"
@@ -894,7 +894,7 @@ Function Resolve-PhysicalHostTransportNodes {
     #Resolve Hosts
     Foreach ($hostID in $hostIDs) {
         $body = "{`"id`":5726703,`"method`":`"resolveError`",`"params`":[{`"errors`":[{`"user_metadata`":{`"user_input_list`":[]},`"error_id`":26080,`"entity_id`":`"$hostID`"}]}]}"
-        $uri = "https://$nsxManager/nsxapi/rpc/call/ErrorResolverFacade"
+        $uri = "https://$nsxManagerFqdn/nsxapi/rpc/call/ErrorResolverFacade"
         Write-Output "Resolving NSX Installation on $(($allHostTransportNodes | Where-Object {$_.id -eq $hostID}).display_name) "
         $response = Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -headers $headers -body $body
     }    
