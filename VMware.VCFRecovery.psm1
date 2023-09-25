@@ -205,13 +205,13 @@ Function Set-ClusterHostsvSanIgnoreClusterMemberList {
 
 Function Move-ClusterVMsToFirstHost {
     Param(
-        [Parameter (Mandatory = $true)][String] $vCenterFQDN,
+       <#  [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
-        [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
+        [Parameter (Mandatory = $true)][String] $vCenterAdminPassword, #>
         [Parameter (Mandatory = $true)][String] $clusterName
         
     )
-    $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
+    #$vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
     $vms = Get-Cluster -Name $clusterName | Get-VM | Where-Object { $_.Name -notlike "vCLS*" } | Select-Object Name, VMhost
     $firstHost = ((Get-cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)[0]).Name
     Foreach ($vm in $vms) {
