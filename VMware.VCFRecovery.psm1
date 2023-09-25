@@ -234,7 +234,6 @@ Function Resolve-PhysicalHostServiceAccounts {
         [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
         [Parameter (Mandatory = $true)][String] $clusterName,
         [Parameter (Mandatory = $true)][String] $svcAccountPassword,
-        [Parameter (Mandatory = $true)][String] $esxiRootPassword,
         [Parameter (Mandatory = $true)][String] $sddcManagerFQDN,
         [Parameter (Mandatory = $true)][String] $sddcManagerUser,
         [Parameter (Mandatory = $true)][String] $sddcManagerPassword
@@ -242,20 +241,20 @@ Function Resolve-PhysicalHostServiceAccounts {
     $vCenterConnection = Connect-VIServer -server $vCenterFQDN -username $vCenterAdmin -password $vCenterAdminPassword
     $clusterHosts = Get-Cluster -name $clusterName | Get-VMHost
     Disconnect-VIServer * -confirm:$false
+    $tokenRequest = Request-VCFToken -fqdn $sddcManagerFQDN -username $sddcManagerUser -password $sddcManagerPassword
 
     Foreach ($hostInstance in $clusterHosts) {
-        Connect-VIServer -Server $hostInstance.name -User root -Password $esxiRootPassword | Out-Null
+        [system.String]$esxiRootPassword = (Get-VCFCredential | ? {$_.resource.resourceName -eq $hostInstance.name}).password
+        Connect-VIServer -Server $hostInstance.name -User root -Password $esxiRootPassword.Trim() | Out-Null
         $esxiHostName = $hostInstance.name.Split(".")[0]
         $svcAccountName = "svc-vcf-$esxiHostName"
         $accountExists = Get-VMHostAccount -Server $hostInstance.Name -User $svcAccountName -erroraction SilentlyContinue *>$null
         If (!$accountExists) {
-            New-VMHostAccount -Id $svcAccountName -Password VMw@re1! -Description "ESXi User" | Out-Null
+            New-VMHostAccount -Id $svcAccountName -Password $sddcManagerPassword -Description "ESXi User" | Out-Null
             New-VIPermission -Entity (Get-Folder root) -Principal $svcAccountName -Role Admin | Out-Null
             Disconnect-VIServer $hostInstance.name -confirm:$false | Out-Null
         }
     }
-
-    $tokenRequest = Request-VCFToken -fqdn $sddcManagerFQDN -username $sddcManagerUser -password $sddcManagerPassword
 
     Foreach ($hostInstance in $clusterHosts) {
         Remove-Variable credentialsObject -ErrorAction SilentlyContinue
