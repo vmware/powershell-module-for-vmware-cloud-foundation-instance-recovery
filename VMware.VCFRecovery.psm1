@@ -105,7 +105,7 @@ Function Move-ClusterHostNetworkingTovSS {
     $storage_name = "vSAN"
 
     foreach ($vmhost in $vmhost_array) {
-        Write-Host "[$vmhost] `nEntering Maintenance Mode" 
+        Write-Host "[$vmhost] Entering Maintenance Mode" 
         Get-VMHost -Name $vmhost | set-vmhost -State Maintenance -VsanDataMigrationMode NoDataMigration | Out-Null
 
         Get-VMHostNetworkAdapter -VMHost $vmhost -Physical -Name $vmnic | Remove-VDSwitchPhysicalNetworkAdapter -Confirm:$false | Out-Null
@@ -113,7 +113,7 @@ Function Move-ClusterHostNetworkingTovSS {
         New-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $vmhost -Name "vSwitch0") -Name "mgmt_temp" -VLanId $mgmtVlanId | Out-Null
 
         # pNICs to migrate to VSS
-        Write-Host "Retrieving pNIC info for vmnic1"
+        Write-Host "[$vmhost] Retrieving pNIC info for vmnic1"
         $vmnicToMove = Get-VMHostNetworkAdapter -VMHost $vmhost -Name $vmnic
 
         # Array of pNICs to migrate to VSS
@@ -123,13 +123,13 @@ Function Move-ClusterHostNetworkingTovSS {
         $vss = Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name $vss_name
 
         # Create destination portgroups
-        Write-Host "`Creating" $mgmt_name "portrgroup on" $vss_name
+        Write-Host "[$vmhost] Creating $mgmt_name portrgroup on $vss_name"
         $mgmt_pg = New-VirtualPortGroup -VirtualSwitch $vss -Name $mgmt_name -VLanId $mgmtVlanId
 
-        Write-Host "`Creating" $vmotion_name "portrgroup on" $vss_name
+        Write-Host "[$vmhost] Creating $vmotion_name portrgroup on $vss_name"
         $vmotion_pg = New-VirtualPortGroup -VirtualSwitch $vss -Name $vmotion_name -VLanId $vMotionVlanId
 
-        Write-Host "`Creating" $storage_name "Network portrgroup on" $vss_name
+        Write-Host "[$vmhost] Creating $storage_name Network portrgroup on $vss_name"
         $storage_pg = New-VirtualPortGroup -VirtualSwitch $vss -Name $storage_name -VLanId $vSanVlanId
 
         # Array of portgroups to map VMkernel interfaces (order matters!)
@@ -144,9 +144,9 @@ Function Move-ClusterHostNetworkingTovSS {
         $vmk_array = @($mgmt_vmk, $vmotion_vmk, $storage_vmk)
 
         # Perform the migration
-        Write-Host "Migrating from" $vdsName "to" $vss_name"`n"
+        Write-Host "[$vmhost] Migrating from $vdsName to $vss_name"
         Add-VirtualSwitchPhysicalNetworkAdapter -VirtualSwitch $vss -VMHostPhysicalNic $pnic_array -VMHostVirtualNic $vmk_array -VirtualNicPortgroup $pg_array  -Confirm:$false
-        Write-Host "[$vmhost] `nExiting Maintenance Mode" 
+        Write-Host "[$vmhost] Exiting Maintenance Mode" 
         Get-VMHost -Name $vmhost | set-vmhost -State Connected | Out-Null
     }
 }
