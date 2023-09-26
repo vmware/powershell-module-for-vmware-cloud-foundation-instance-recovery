@@ -197,6 +197,7 @@ Function Set-ClusterHostsvSanIgnoreClusterMemberList {
     $password = ConvertTo-SecureString $esxiRootPassword -AsPlainText -Force
     $mycreds = New-Object System.Management.Automation.PSCredential ("root", $password)
     foreach ($esxiHost in $esxiHosts) {
+        Get-SSHTrustedHost -HostName $esxiHost | Remove-SSHTrustedHost | Out-Null
         Write-Host "Setting vSAN Ignore Cluster Member to `'$setting`' for $esxiHost"
         $sshSession = New-SSHSession -computername $esxiHost -credential $mycreds -AcceptKey
         Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $esxCommand | Out-Null
