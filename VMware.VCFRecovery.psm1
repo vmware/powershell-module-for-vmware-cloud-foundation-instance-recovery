@@ -21,7 +21,7 @@ Function Add-ClusterHostsToVds {
 }
 
 
-Function Move-ClusterHostsToRestoredVc {
+Function Move-ClusterHostsToRestoredVcenter {
     Param(
         [Parameter (Mandatory = $true)][String] $tempvCenterFQDN,
         [Parameter (Mandatory = $true)][String] $tempvCenterAdmin,
