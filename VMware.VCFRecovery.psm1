@@ -53,7 +53,7 @@ Function Remove-ClusterHostsFromVds {
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
     $esxiHosts = get-cluster -name $clusterName | get-vmhost
     Foreach ($esxiHost in $esxiHosts) {
-        Get-VMHostNetworkAdapter -VMHost $esxiHost -Physical | Remove-VDSwitchPhysicalNetworkAdapter -Confirm:$false | Out-Null
+        Get-VDSwitch -Name $vdsName | Get-VMHostNetworkAdapter -VMHost $esxiHost -Physical | Remove-VDSwitchPhysicalNetworkAdapter -Confirm:$false | Out-Null
         Get-VDSwitch -Name $vdsName | Remove-VDSwitchVMHost -VMHost $esxiHost -Confirm:$false | Out-Null
     }
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
@@ -148,6 +148,7 @@ Function Move-ClusterHostNetworkingTovSS {
         Add-VirtualSwitchPhysicalNetworkAdapter -VirtualSwitch $vss -VMHostPhysicalNic $pnic_array -VMHostVirtualNic $vmk_array -VirtualNicPortgroup $pg_array  -Confirm:$false
         Write-Host "[$vmhost] Exiting Maintenance Mode" 
         Get-VMHost -Name $vmhost | set-vmhost -State Connected | Out-Null
+        Start-Sleep 5
     }
 }
 
