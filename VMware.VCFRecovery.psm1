@@ -246,15 +246,19 @@ Function Resolve-PhysicalHostServiceAccounts {
     $tokenRequest = Request-VCFToken -fqdn $sddcManagerFQDN -username $sddcManagerUser -password $sddcManagerPassword
 
     Foreach ($hostInstance in $clusterHosts) {
-        [system.String]$esxiRootPassword = (Get-VCFCredential | ? {$_.resource.resourceName -eq $hostInstance.name}).password
+        $esxiRootPassword = [String](Get-VCFCredential | ? {$_.resource.resourceName -eq $hostInstance.name}).password
         Connect-VIServer -Server $hostInstance.name -User root -Password $esxiRootPassword.Trim() | Out-Null
         $esxiHostName = $hostInstance.name.Split(".")[0]
         $svcAccountName = "svc-vcf-$esxiHostName"
         $accountExists = Get-VMHostAccount -Server $hostInstance.Name -User $svcAccountName -erroraction SilentlyContinue *>$null
         If (!$accountExists) {
-            New-VMHostAccount -Id $svcAccountName -Password $sddcManagerPassword -Description "ESXi User" | Out-Null
+            New-VMHostAccount -Id $svcAccountName -Password $svcAccountPassword -Description "ESXi User" | Out-Null
             New-VIPermission -Entity (Get-Folder root) -Principal $svcAccountName -Role Admin | Out-Null
             Disconnect-VIServer $hostInstance.name -confirm:$false | Out-Null
+        }
+        else
+        {
+            Set-VMHostAccount -UserAccount $svcAccountName -Password $svcAccountPassword | Out-Null
         }
     }
 
