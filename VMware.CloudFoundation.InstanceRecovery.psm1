@@ -1,4 +1,26 @@
 #Module to Assist in VCF Full Instance Recovery
+If ($PSEdition -eq 'Core') {
+    $Script:PSDefaultParameterValues = @{
+        "invoke-restmethod:SkipCertificateCheck" = $true
+        "invoke-webrequest:SkipCertificateCheck" = $true
+    }
+}
+else
+{
+	Add-Type @"
+		using System.Net;
+		using System.Security.Cryptography.X509Certificates;
+		public class TrustAllCertsPolicy : ICertificatePolicy {
+			public bool CheckValidationResult(
+				ServicePoint srvPoint, X509Certificate certificate,
+				WebRequest request, int certificateProblem) {
+				return true;
+			}
+		}
+"@
+
+	[System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy
+}
 
 #Region vCenter Functions
 Function Add-ClusterHostsToVds {
@@ -899,7 +921,7 @@ Function Resolve-PhysicalHostTransportNodes {
     #Get TransportNodes
     $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/"
     Write-Output "Getting Transport Nodes from $nsxManagerFqdn"
-    $transportNodeContents = (Invoke-WebRequest -Method GET -URI $uri -SkipCertificateCheck -ContentType application/json -headers $headers).content | ConvertFrom-Json
+    $transportNodeContents = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
     $allHostTransportNodes = ($transportNodeContents.results | Where-Object { ($_.resource_type -eq "TransportNode") -and ($_.node_deployment_info.os_type -eq "ESXI") })
     Write-Output "Filtering Transport Nodes to members of cluster $clusterName"
     $hostIDs = ($allHostTransportNodes | Where-Object { $_.display_name -in $clusterHosts }).id
@@ -909,7 +931,7 @@ Function Resolve-PhysicalHostTransportNodes {
         $body = "{`"id`":5726703,`"method`":`"resolveError`",`"params`":[{`"errors`":[{`"user_metadata`":{`"user_input_list`":[]},`"error_id`":26080,`"entity_id`":`"$hostID`"}]}]}"
         $uri = "https://$nsxManagerFqdn/nsxapi/rpc/call/ErrorResolverFacade"
         Write-Output "Resolving NSX Installation on $(($allHostTransportNodes | Where-Object {$_.id -eq $hostID}).display_name) "
-        $response = Invoke-WebRequest -Method POST -URI $uri -SkipCertificateCheck -ContentType application/json -headers $headers -body $body
+        $response = Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -headers $headers -body $body
     }    
 }
 #EndRegion NSXT Functions
