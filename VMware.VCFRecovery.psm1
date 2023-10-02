@@ -105,9 +105,9 @@ Function Move-ClusterHostNetworkingTovSS {
     $storage_name = "vSAN"
 
     foreach ($vmhost in $vmhost_array) {
-        Write-Host "[$vmhost] Entering Maintenance Mode" 
+        <# Write-Host "[$vmhost] Entering Maintenance Mode" 
         Get-VMHost -Name $vmhost | set-vmhost -State Maintenance -VsanDataMigrationMode NoDataMigration | Out-Null
-
+ #>
         Get-VMHostNetworkAdapter -VMHost $vmhost -Physical -Name $vmnic | Remove-VDSwitchPhysicalNetworkAdapter -Confirm:$false | Out-Null
         New-VirtualSwitch -VMHost $vmhost -Name vSwitch0 -mtu $mtu | Out-Null
         New-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $vmhost -Name "vSwitch0") -Name "mgmt_temp" -VLanId $mgmtVlanId | Out-Null
@@ -146,8 +146,8 @@ Function Move-ClusterHostNetworkingTovSS {
         # Perform the migration
         Write-Host "[$vmhost] Migrating from $vdsName to $vss_name"
         Add-VirtualSwitchPhysicalNetworkAdapter -VirtualSwitch $vss -VMHostPhysicalNic $pnic_array -VMHostVirtualNic $vmk_array -VirtualNicPortgroup $pg_array  -Confirm:$false
-        Write-Host "[$vmhost] Exiting Maintenance Mode" 
-        Get-VMHost -Name $vmhost | set-vmhost -State Connected | Out-Null
+       <#  Write-Host "[$vmhost] Exiting Maintenance Mode" 
+        Get-VMHost -Name $vmhost | set-vmhost -State Connected | Out-Null #>
         Start-Sleep 5
     }
 }
@@ -244,20 +244,28 @@ Function Resolve-PhysicalHostServiceAccounts {
     $clusterHosts = Get-Cluster -name $clusterName | Get-VMHost
     Disconnect-VIServer * -confirm:$false
     $tokenRequest = Request-VCFToken -fqdn $sddcManagerFQDN -username $sddcManagerUser -password $sddcManagerPassword
+    #verify SDDC Manager credential API state
+    $credentialAPILastTask = ((Get-VCFCredentialTask | Sort-Object -Property creationTimeStamp)[-1]).status
+    if ($credentialAPILastTask -eq "FAILED")
+    {
+        Write-Host "Failed credential operation detected. Please resolve in SDDC Manager and try again" ; break
+    }
 
     Foreach ($hostInstance in $clusterHosts) {
         $esxiRootPassword = [String](Get-VCFCredential | ? {$_.resource.resourceName -eq $hostInstance.name}).password
-        Connect-VIServer -Server $hostInstance.name -User root -Password $esxiRootPassword.Trim() | Out-Null
+        $esxiConnection = Connect-VIServer -Server $hostInstance.name -User root -Password $esxiRootPassword.Trim() | Out-Null
         $esxiHostName = $hostInstance.name.Split(".")[0]
         $svcAccountName = "svc-vcf-$esxiHostName"
-        $accountExists = Get-VMHostAccount -Server $hostInstance.Name -User $svcAccountName -erroraction SilentlyContinue *>$null
+        $accountExists = Get-VMHostAccount -Server $esxiConnection -User $svcAccountName -erroraction SilentlyContinue
         If (!$accountExists) {
+            Write-Host "[$($hostInstance.name)] VCF Service Account Not Found: Creating"
             New-VMHostAccount -Id $svcAccountName -Password $svcAccountPassword -Description "ESXi User" | Out-Null
             New-VIPermission -Entity (Get-Folder root) -Principal $svcAccountName -Role Admin | Out-Null
             Disconnect-VIServer $hostInstance.name -confirm:$false | Out-Null
         }
         else
         {
+            Write-Host "[$($hostInstance.name)] VCF Service Account Found: Setting Password"
             Set-VMHostAccount -UserAccount $svcAccountName -Password $svcAccountPassword | Out-Null
         }
     }
@@ -287,13 +295,13 @@ Function Resolve-PhysicalHostServiceAccounts {
         }
 
         $esxiHostJson = $esxHostObject | Convertto-Json -depth 10
-
+        Write-Host "[$($hostInstance.name)] Remediating VCF Service Account Password: " -nonewline
         $taskID = (Set-VCFCredential -json $esxiHostJson).id
         Do {
             Sleep 5
             $taskStatus = (Get-VCFCredentialTask -id $taskID).status
-        } Until ($taskStatus -eq "SUCCESSFUL")
-        Write-Output "[$($hostInstance.name)] Password Remediation $taskStatus"
+        } Until ($taskStatus -ne "IN_PROGRESS")
+        Write-Output "$taskStatus"
     }
 }
 
