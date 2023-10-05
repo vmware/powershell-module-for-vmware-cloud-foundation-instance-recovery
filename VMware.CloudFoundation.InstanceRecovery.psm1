@@ -565,6 +565,10 @@ Function Backup-ClusterVMOverrides {
             'PostReadyDelay'            = $vmVmReadinessSettings.PostReadyDelay
             #APD
             'VmStorageProtectionForAPD' = $vmMonitoringSettings.VmComponentProtectionSettings.VmStorageProtectionForAPD
+            'VmTerminateDelayForAPDSec' = $vmMonitoringSettings.VmComponentProtectionSettings.VmTerminateDelayForAPDSec
+            'VmReactionOnAPDCleared' = $vmMonitoringSettings.VmComponentProtectionSettings.VmReactionOnAPDCleared
+            #PDL
+            'VmStorageProtectionForPDL' = $vmMonitoringSettings.VmComponentProtectionSettings.VmStorageProtectionForPDL
         }
     }
     $overRiddenData | ConvertTo-Json -depth 10 | Out-File "$clusterName-vmOverrides.json"
@@ -714,7 +718,7 @@ Function Restore-ClusterVMOverrides {
         If (Test-Path -path $jsonFile) {
             $vmOverRides = Get-Content -path $jsonFile | ConvertFrom-Json
             Foreach ($vmOverRide in $vmOverRides) {
-                Write-Output "Setting VM Overide for $($vmOverRide.name) to $($vmOverRide.behavior)"
+                Write-Output "Setting VM Overide for $($vmOverRide.name) to $($vmOverRide.drsAutomationLevel)"
                 Get-Cluster -name $clusterName | Get-VM -name $vmOverRide.name | Set-VM -DrsAutomationLevel $vmOverRide.behavior -Confirm:$false | Out-Null
             }
         }
