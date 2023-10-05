@@ -539,7 +539,7 @@ Function Backup-ClusterVMOverrides {
     )
     $cluster = Get-Cluster -Name $clusterName
     #$overRiddenVMs = $cluster.ExtensionData.ConfigurationEx.DrsVmConfig
-    $clusterVMs = Get-Cluster -name $clusterName | Get-VM | Select-Object Name, id
+    $clusterVMs = Get-Cluster -name $clusterName | Get-VM | Select-Object Name, id, DrsAutomationLevel
     $overRiddenData = @()
     Foreach ($clusterVM in $clusterVMs) {
         $vmMonitoringSettings = ($cluster.ExtensionData.Configuration.DasVmConfig | Where-Object { $_.Key -eq $clusterVM.id }).DasSettings
@@ -549,7 +549,7 @@ Function Backup-ClusterVMOverrides {
             'name'                      = $clusterVM.name
             'id'                        = $clusterVM.id
             #DRS Automation Settings
-            'drsAutomationLevel'        = $clusterVM.DrsAutomationLevel
+            'drsAutomationLevel'        = [STRING]$clusterVM.DrsAutomationLevel
             #VM Monitoring Settings
             'VmMonitoring'              = $vmMonitoringSettings.VmToolsMonitoringSettings.VmMonitoring
             'ClusterSettings'           = $vmMonitoringSettings.VmToolsMonitoringSettings.ClusterSettings
@@ -716,10 +716,122 @@ Function Restore-ClusterVMOverrides {
     )
     try {
         If (Test-Path -path $jsonFile) {
-            $vmOverRides = Get-Content -path $jsonFile | ConvertFrom-Json
-            Foreach ($vmOverRide in $vmOverRides) {
-                Write-Output "Setting VM Overide for $($vmOverRide.name) to $($vmOverRide.drsAutomationLevel)"
-                Get-Cluster -name $clusterName | Get-VM -name $vmOverRide.name | Set-VM -DrsAutomationLevel $vmOverRide.behavior -Confirm:$false | Out-Null
+            $vmOverRideInstances = Get-Content -path $jsonFile | ConvertFrom-Json
+            Foreach ($vmOverRideInstance in $vmOverRideInstances)
+            {
+                If ($vmOverRideInstance.name -notlike "vCLS*")
+                {
+                    Write-Output "[$($vmOverRideInstance.name)] Restoring VM Overide Settings"
+                    $dasVmConfigSpecRequired = $false
+                    $drsVmConfigSpecRequired = $false
+                    $vmOverRideInstanceOrchestrationSpecRequired = $false
+                    $dasVmConfigSpecSettings = @("VmMonitoring","ClusterSettings","FailureInterval","MinUpTime","MaxFailures","MaxFailureWindow","VmStorageProtectionForAPD","VmTerminateDelayForAPDSec","VmReactionOnAPDCleared","VmStorageProtectionForPDL","RestartPriority","RestartPriorityTimeout","IsolationResponse")
+                    $vmOverRideInstanceOrchestrationSpecSettings = @("readyCondition","PostReadyDelay")
+                    
+                    Foreach ($dasVmConfigSpecSetting in $dasVmConfigSpecSettings)
+                    {
+                        If ($vmOverRideInstance.$dasVmConfigSpecSetting -ne $null) {$dasVmConfigSpecRequired = $true}
+                    }
+                    If (($vmOverRideInstance.DrsAutomationLevel -ne $null) -and ($vmOverRideInstance.DrsAutomationLevel -ne 'AsSpecifiedByCluster')) 
+                    {
+                        $drsVmConfigSpecRequired = $true
+                    }
+                    Foreach ($vmOverRideInstanceOrchestrationSpecSetting in $vmOverRideInstanceOrchestrationSpecSettings)
+                    {
+                        If ($vmOverRideInstance.$vmOverRideInstanceOrchestrationSpecSetting -ne $null) {$vmOverRideInstanceOrchestrationSpecRequired = $true}
+                    }
+                    $cluster = Get-Cluster -Name $clusterName
+                    $vm = Get-VM $vmOverRideInstance.name
+                    $spec = New-Object VMware.Vim.ClusterConfigSpecEx
+                    If ($dasVmConfigSpecRequired)
+                    {
+                        $spec.dasVmConfigSpec = New-Object VMware.Vim.ClusterDasVmConfigSpec[] (1)
+                        $spec.dasVmConfigSpec[0] = New-Object VMware.Vim.ClusterDasVmConfigSpec
+                        $spec.dasVmConfigSpec[0].operation = "add"
+                        $spec.dasVmConfigSpec[0].info = New-Object VMware.Vim.ClusterDasVmConfigInfo
+                        $spec.dasVmConfigSpec[0].info.key = New-Object VMware.Vim.ManagedObjectReference
+                        $spec.dasVmConfigSpec[0].info.key.type = "VirtualMachine"
+                        $spec.dasVmConfigSpec[0].info.key.value = $vm.ExtensionData.MoRef.Value
+                        $spec.dasVmConfigSpec[0].info.dasSettings = New-Object VMware.Vim.ClusterDasVmSettings    
+                    }
+                    If ($drsVmConfigSpecRequired)
+                    {
+                        $spec.drsVmConfigSpec = New-Object VMware.Vim.ClusterDrsVmConfigSpec[] (1)
+                        $spec.drsVmConfigSpec[0] = New-Object VMware.Vim.ClusterDrsVmConfigSpec
+                        $spec.drsVmConfigSpec[0].operation = "add"
+                        $spec.drsVmConfigSpec[0].info = New-Object VMware.Vim.ClusterDrsVmConfigInfo
+                        $spec.drsVmConfigSpec[0].info.key = New-Object VMware.Vim.ManagedObjectReference
+                        $spec.drsVmConfigSpec[0].info.key.type = "VirtualMachine"
+                        $spec.drsVmConfigSpec[0].info.key.value = $vm.ExtensionData.MoRef.Value    
+                    }
+                    If ($vmOverRideInstanceOrchestrationSpecRequired)
+                    {
+                        $spec.vmOrchestrationSpec = New-Object VMware.Vim.ClusterVmOrchestrationSpec[] (1)
+                        $spec.vmOrchestrationSpec[0] = New-Object VMware.Vim.ClusterVmOrchestrationSpec
+                        $spec.vmOrchestrationSpec[0].operation = "add"
+                        $spec.vmOrchestrationSpec[0].info = New-Object VMware.Vim.ClusterVmOrchestrationInfo
+                        $spec.vmOrchestrationSpec[0].info.vm = New-Object VMware.Vim.ManagedObjectReference
+                        $spec.vmOrchestrationSpec[0].info.vm.type = "VirtualMachine"
+                        $spec.vmOrchestrationSpec[0].info.vm.value = $vm.ExtensionData.MoRef.Value
+                    }
+                
+                    #Set VM Monitoring settings [Done]
+                    $vmOverRideInstanceMonitoringSettings = @("VmMonitoring","ClusterSettings","FailureInterval","MinUpTime","MaxFailures","MaxFailureWindow")
+                    $vmOverRideInstanceMonitoringRequired = $false
+                    Foreach ($vmOverRideInstanceMonitoringSetting in $vmOverRideInstanceMonitoringSettings)
+                    {
+                        If ($vmOverRideInstance.$vmOverRideInstanceMonitoringSetting -ne $null) {$vmOverRideInstanceMonitoringRequired = $true}
+                    }
+                    If ($vmOverRideInstanceMonitoringRequired)
+                    {
+                        $spec.dasVmConfigSpec[0].info.dasSettings.vmToolsMonitoringSettings = New-Object VMware.Vim.ClusterVmToolsMonitoringSettings
+                        Foreach ($vmOverRideInstanceMonitoringSetting in $vmOverRideInstanceMonitoringSettings)
+                        {
+                            If ($vmOverRideInstance.$vmOverRideInstanceMonitoringSetting -ne $null) { $spec.dasVmConfigSpec[0].info.dasSettings.vmToolsMonitoringSettings.$vmOverRideInstanceMonitoringSetting = $vmOverRideInstance.$vmOverRideInstanceMonitoringSetting }
+                        }
+                    }
+                
+                    $vmOverRideInstanceComponentProtectionSettings = @("VmStorageProtectionForAPD","VmTerminateDelayForAPDSec","VmReactionOnAPDCleared","VmStorageProtectionForPDL")
+                    $vmOverRideInstanceComponentProtectionRequired = $false
+                    Foreach ($vmOverRideInstanceComponentProtectionSetting in $vmOverRideInstanceComponentProtectionSettings)
+                    {
+                        If ($vmOverRideInstance.$vmOverRideInstanceComponentProtectionSetting -ne $null) {$vmOverRideInstanceComponentProtectionRequired = $true}
+                    }
+                    If ($vmOverRideInstanceComponentProtectionRequired)
+                    {
+                        $spec.dasVmConfigSpec[0].info.dasSettings.vmComponentProtectionSettings = New-Object VMware.Vim.ClusterVmComponentProtectionSettings
+                        Foreach ($vmOverRideInstanceComponentProtectionSetting in $vmOverRideInstanceComponentProtectionSettings)
+                        {
+                            If ($vmOverRideInstance.$vmOverRideInstanceComponentProtectionSetting -ne $null) { $spec.dasVmConfigSpec[0].info.dasSettings.vmComponentProtectionSettings.$vmOverRideInstanceComponentProtectionSetting = $vmOverRideInstance.$vmOverRideInstanceComponentProtectionSetting }
+                        }
+                    }
+                
+                    #Set DRS Level [Done]
+                    If (($vmOverRideInstance.DrsAutomationLevel -ne "AsSpecifiedByCluster") -AND ($vmOverRideInstance.DrsAutomationLevel -ne $null))
+                    {
+                        $spec.drsVmConfigSpec[0].info.Behavior = $vmOverRideInstance.DrsAutomationLevel #$vmOverRideInstance.DrsAutomationLevel AsSpecifiedByCluster
+                        $spec.drsVmConfigSpec[0].info.enabled = $true    
+                    }
+
+                    #Set vSphere HA Settings [Done]
+                    If ($vmOverRideInstanceOrchestrationSpecRequired)
+                    {
+                        $spec.vmOrchestrationSpec[0].info.vmReadiness = New-Object VMware.Vim.ClusterVmReadiness
+                        Foreach ($vmOverRideInstanceOrchestrationSpecSetting in $vmOverRideInstanceOrchestrationSpecSettings)
+                        {
+                            If ($vmOverRideInstance.$vmOverRideInstanceOrchestrationSpecSetting -ne $null) { $spec.vmOrchestrationSpec[0].info.vmReadiness.$vmOverRideInstanceOrchestrationSpecSetting = $vmOverRideInstance.$vmOverRideInstanceOrchestrationSpecSetting }
+                        }
+                
+                    }
+                    $haDasVmConfigSpecSettings = @("RestartPriority","RestartPriorityTimeout","IsolationResponse")
+                    Foreach ($haDasVmConfigSpecSetting in $haDasVmConfigSpecSettings)
+                    {
+                        If ($vmOverRideInstance.$haDasVmConfigSpecSetting -ne $null) { $spec.dasVmConfigSpec[0].info.dasSettings.$haDasVmConfigSpecSetting = $vmOverRideInstance.$haDasVmConfigSpecSetting }
+                    }
+                
+                    #Configure Cluster
+                    $cluster.ExtensionData.ReconfigureComputeResource($spec,$True)
+                }
             }
         }
         else {
