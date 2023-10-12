@@ -92,6 +92,7 @@ Function New-UploadAndModifySDDCManagerBackup
 {
     Param(
         [Parameter (Mandatory = $true)][String] $rootUserPassword,
+        [Parameter (Mandatory = $true)][String] $vcfUserPassword,
         [Parameter (Mandatory = $true)][String] $backupFilePath,
         [Parameter (Mandatory = $true)][String] $encryptionPassword,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
@@ -103,7 +104,7 @@ Function New-UploadAndModifySDDCManagerBackup
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
 
-    #$vcfUser = "vcf"
+    $vcfUser = "vcf"
     $mgmtVcenterFqdn = $extractedSddcData.mgmtComponents.mgmtVcenterFqdn
     $sddcManagerFQDN = $extractedSddcData.mgmtComponents.sddcManagerFQDN
     $sddcManagerVmName = $extractedSddcData.mgmtComponents.sddcManagerVmName
@@ -112,7 +113,7 @@ Function New-UploadAndModifySDDCManagerBackup
     $extractedBackupFolder = ($backupFileName -Split(".tar.gz"))[0]
     
     #Establish SSH Connection to SDDC Manager
-<#     Write-Output "Establishing Connection to SDDC Manager Appliance"
+    Write-Output "Establishing Connection to SDDC Manager Appliance"
     $SecurePassword = ConvertTo-SecureString -String $vcfUserPassword -AsPlainText -Force
     $mycreds = New-Object System.Management.Automation.PSCredential ($vcfUser, $SecurePassword)
     Get-SSHTrustedHost | Remove-SSHTrustedHost
@@ -121,15 +122,11 @@ Function New-UploadAndModifySDDCManagerBackup
     Do
     {
         $sshSession = New-SSHSession -computername $sddcManagerFQDN -Credential $mycreds -KnownHost $inmem
-    } Until ($sshSession) #>
-
-    $vCenterConnection = Connect-VIServer -server $tempvCenterFQDN -user $tempvCenterAdmin -password $tempvCenterAdminPassword
+    } Until ($sshSession)
 
     #Perform KeyScan
     Write-Output "Performing Keyscan on SDDC Manager Appliance"
-    #$result = Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command "ssh-keyscan $mgmtVcenterFqdn"
-    $command = "ssh-keyscan $mgmtVcenterFqdn"
-    $result = ((Invoke-VMScript -ScriptText $command -VM $sddcManagerVmName -GuestUser 'root' -GuestPassword $rootUserPassword).ScriptOutput) -replace "(`n|`r)"
+    $result = (Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command "ssh-keyscan $mgmtVcenterFqdn").output
     
     #Determine new SSH Keys
     $newNistKey = '"' + (($result | Where-Object {$_ -like "*ecdsa-sha2-nistp256*"}).split("ecdsa-sha2-nistp256 "))[1] + '"'
@@ -138,6 +135,7 @@ Function New-UploadAndModifySDDCManagerBackup
     If ($newRSAKey) { Write-Output "New RSA Key for $mgmtVcenterFqdn retrieved" }
 
     #Upload Backup
+    $vCenterConnection = Connect-VIServer -server $tempvCenterFQDN -user $tempvCenterAdmin -password $tempvCenterAdminPassword
     Write-Output "Uploading Backup File to SDDC Manager Appliance"
     $copyFile = Copy-VMGuestFile -Source $backupFilePath -Destination "/tmp/$backupFileName" -LocalToGuest -VM $sddcManagerVmName -GuestUser "root" -GuestPassword $rootUserPassword -Force -WarningAction SilentlyContinue -WarningVariable WarnMsg
 
