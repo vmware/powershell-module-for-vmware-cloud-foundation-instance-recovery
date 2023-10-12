@@ -161,14 +161,14 @@ Function New-UploadAndModifySDDCManagerBackup
     Write-Output "Old RSA Key for $mgmtVcenterFqdn retrieved"
 
     #Sed File
-    Write-Output "Replacing NIST Key in SDDC Manager Backup"
-    $command = "sed -i `'s@$oldNistKey@$newNistKey@`' /tmp/$extractedBackupFolder/appliancemanager_ssh_knownHosts.json"
+    Write-Output "Replacing NIST and RSA Keys in SDDC Manager Backup"
+    $command = "sed -i `'s@$oldNistKey@$newNistKey@`' /tmp/$extractedBackupFolder/appliancemanager_ssh_knownHosts.json; sed -i `'s@$oldRSAKey@$newRSAKey@`' /tmp/$extractedBackupFolder/appliancemanager_ssh_knownHosts.json"
     $result = ((Invoke-VMScript -ScriptText $command -VM $sddcManagerVmName -GuestUser 'root' -GuestPassword $rootUserPassword).ScriptOutput) -replace "(`n|`r)"
 
-    Write-Output "Replacing RSA Key in SDDC Manager Backup"
+    <# Write-Output "Replacing RSA Key in SDDC Manager Backup"
     $command = "sed -i `'s@$oldRSAKey@$newRSAKey@`' /tmp/$extractedBackupFolder/appliancemanager_ssh_knownHosts.json"
     $result = ((Invoke-VMScript -ScriptText $command -VM $sddcManagerVmName -GuestUser 'root' -GuestPassword $rootUserPassword).ScriptOutput) -replace "(`n|`r)"
-    
+     #>
     #Save Original Backup
     Write-Output "Retaining Original Backup"
     $command = "mv /tmp/$backupFileName /tmp/$backupFileName.original"
