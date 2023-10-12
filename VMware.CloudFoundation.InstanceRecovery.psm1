@@ -143,7 +143,7 @@ Function New-UploadAndModifySDDCManagerBackup
 
     #Decrypt/Extract Backup
     Write-Output "Decrypting Backup on SDDC Manager Appliance"
-    $command = "OPENSSL_FIPS=1 openssl enc -d -aes-256-cbc -md sha256 -in /tmp/$backupFileName -pass pass:`'$encryptionPassword`' | tar -xz"
+    $command = "cd /tmp; OPENSSL_FIPS=1 openssl enc -d -aes-256-cbc -md sha256 -in /tmp/$backupFileName -pass pass:`'$encryptionPassword`' | tar -xz"
     #$result = Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $command
     $result = ((Invoke-VMScript -ScriptText $command -VM $sddcManagerVmName -GuestUser 'root' -GuestPassword $rootUserPassword).ScriptOutput) -replace "(`n|`r)"
 
