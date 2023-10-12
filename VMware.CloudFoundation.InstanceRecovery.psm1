@@ -145,8 +145,6 @@ Function New-UploadAndModifySDDCManagerBackup
     #$result = Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $command
     $result = ((Invoke-VMScript -ScriptText $command -VM $sddcManagerVmName -GuestUser 'root' -GuestPassword $rootUserPassword).ScriptOutput) -replace "(`n|`r)"
 
-    $result.ScriptOutput -replace "(`n|`r)"
-
     #Modfiy JSON file  
     #Existing Nist Key
     Write-Output "Parsing Backup on SDDC Manager Appliance for Old NIST Key for $mgmtVcenterFqdn"
