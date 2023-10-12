@@ -22,6 +22,162 @@ else
 	[System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy
 }
 
+$is7Zip4PowerShellInstalled = Get-InstalledModule -name 7Zip4PowerShell
+If (!$is7Zip4PowerShellInstalled)
+{
+    Write-Output "Installing 7Zip4PowerShell Module"
+    Install-Module 7Zip4PowerShell -Scope AllUsers
+} 
+
+#Region Data Gathering
+
+Function New-GatherDataFromSDDCBackup
+{
+    Param(
+        [Parameter (Mandatory = $true)][String] $backupFilePath,
+        [Parameter (Mandatory = $true)][String] $encryptionPassword
+    )
+    $backupFilePath = (Resolve-Path -Path $backupFilePath).path
+    $backupFileName = (Get-ChildItem -path $backupFilePath).name
+    $parentFolder = Split-Path -Path $backupFilePath
+    $extractedBackupFolder = ($backupFileName.split(".tar.gz"))[0]
+
+    
+    #Decrypt Backup
+    Write-Output "Decrypting Backup"
+    $command = "openssl enc -d -aes-256-cbc -md sha256 -in $backupFilePath -pass pass:`"$encryptionPassword`" -out `"$parentFolder\decrypted-sddc-manager-backup.tar.gz`""
+    Invoke-Expression "& $command" *>$null
+
+    #Extract Backup
+    Write-Output "Extracting Backup"
+    Expand-7Zip -ArchiveFileName "$parentFolder\decrypted-sddc-manager-backup.tar.gz" -TargetPath $parentFolder
+    Expand-7Zip -ArchiveFileName "$parentFolder\decrypted-sddc-manager-backup.tar" -TargetPath $parentFolder
+
+    #Get Content of Password Vault
+    Write-Output "Reading Password Vault"
+    $passwordVaultJson = Get-Content "$parentFolder\$extractedBackupFolder\security_password_vault.json" | ConvertFrom-JSON
+    $passwordVaultObject = @()
+    Foreach ($object in $passwordVaultJson)
+    {
+        $passwordVaultObject += [pscustomobject]@{
+            'entityId'   = $object.entityId
+            'entityName' = $object.entityName
+            'entityType'     = $object.entityType
+            'credentialType'   = $object.credentialType
+            'entityIpAddress'   = $object.entityIpAddress
+            'username'   = $object.username
+            'domainName'   = $object.domainName
+            'password'   = $object.password
+        }
+    }
+    Write-Output "Retrieving Management Component Detail"
+
+    $mgmtDomainName = ($passwordVaultObject | Where-Object {$_.entityType -eq "BACKUP"}).domainName
+    $mgmtComponentObject = @()
+    $mgmtComponentObject += [pscustomobject]@{
+        'sddcManagerFqdn' = ($passwordVaultObject | Where-Object {$_.entityType -eq "BACKUP"}).entityName
+        'sddcManagerVmname' = ((($passwordVaultObject | Where-Object {$_.entityType -eq "BACKUP"}).entityName).split("."))[0]
+        'mgmtDomainName'   = $mgmtDomainName
+        'mgmtvCenterFqdn'   = ($passwordVaultObject | Where-Object {($_.entityType -eq "VCENTER") -and ($_.domainName -eq $mgmtDomainName) -and ($_.credentialType -eq "SSO")}).entityName
+    }
+
+    Write-Output "Creating extracted-sddc-data.json"
+    $sddcDataObject = New-Object -TypeName psobject
+    $sddcDataObject | Add-Member -notepropertyname 'mgmtComponents' -notepropertyvalue $mgmtComponentObject
+    $sddcDataObject | Add-Member -notepropertyname 'passwords' -notepropertyvalue $passwordVaultObject
+    $sddcDataObject | ConvertTo-Json -Depth 10 | Out-File "$parentFolder\extracted-sddc-data.json"
+}
+
+Function New-UploadAndModifySDDCManagerBackup
+{
+    Param(
+        [Parameter (Mandatory = $true)][String] $vcfUserPassword,
+        [Parameter (Mandatory = $true)][String] $backupFilePath,
+        [Parameter (Mandatory = $true)][String] $encryptionPassword,
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
+        [Parameter (Mandatory = $true)][String] $tempvCenterFQDN,
+        [Parameter (Mandatory = $true)][String] $tempvCenterAdmin,
+        [Parameter (Mandatory = $true)][String] $tempvCenterAdminPassword
+    )
+    Write-Output "Reading Extracted Data"
+    $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
+    $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
+
+    $vcfUser = "vcf"
+    $mgmtVcenterFqdn = $extractedSddcData.mgmtComponents.mgmtVcenterFqdn
+    $sddcManagerFQDN = $extractedSddcData.mgmtComponents.sddcManagerFQDN
+    $sddcManagerVmName = $extractedSddcData.mgmtComponents.sddcManagerVmName
+    $backupFilePath = (Resolve-Path -Path $backupFilePath).path
+    $backupFileName = (Get-ChildItem -path $backupFilePath).name
+    $extractedBackupFolder = ($backupFileName.split(".tar.gz"))[0]
+    
+    #Establish SSH Connection to SDDC Manager
+    Write-Output "Establishing Connection to SDDC Manager Appliance"
+    $SecurePassword = ConvertTo-SecureString -String $vcfUserPassword -AsPlainText -Force
+    $mycreds = New-Object System.Management.Automation.PSCredential ($vcfUser, $SecurePassword)
+    Get-SSHTrustedHost | Remove-SSHTrustedHost
+    $inmem = New-SSHMemoryKnownHost
+    New-SSHTrustedHost -KnownHostStore $inmem -HostName $sddcManagerFQDN -FingerPrint ((Get-SSHHostKey -ComputerName $sddcManagerFQDN).fingerprint) | Out-Null
+    Do
+    {
+        $sshSession = New-SSHSession -computername $sddcManagerFQDN -Credential $mycreds -KnownHost $inmem
+    } Until ($sshSession)
+
+    #Perform KeyScan
+    Write-Output "Performing Keyscan on SDDC Manager Appliance"
+    $result = Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command "ssh-keyscan $mgmtVcenterFqdn"
+    
+    #Determine new SSH Keys
+    $newNistKey = '"' + (($result.output | Where-Object {$_ -like "*ecdsa-sha2-nistp256*"}).split("ecdsa-sha2-nistp256 "))[1] + '"'
+    If ($newNistKey) { Write-Output "New NIST Key for $mgmtVcenterFqdn retrieved" }
+    $newRSAKey = '"' + (($result.output | Where-Object {$_ -like "*ssh-rsa*"}).split("ssh-rsa "))[1] + '"'
+    If ($newRSAKey) { Write-Output "New RSA Key for $mgmtVcenterFqdn retrieved" }
+
+    #Upload Backup
+    $vCenterConnection = Connect-VIServer -server $tempvCenterFQDN -user $tempvCenterAdmin -password $tempvCenterAdminPassword
+    Write-Output "Uploading Backup File to SDDC Manager Appliance"
+    $copyFile = Copy-VMGuestFile -Source $backupFilePath -Destination "/tmp/$backupFileName" -LocalToGuest -VM $sddcManagerVmName -GuestUser $vcfUser -GuestPassword $vcfUserPassword -Force -WarningAction SilentlyContinue -WarningVariable WarnMsg
+    Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+
+    #Decrypt/Extract Backup
+    Write-Output "Decrypting Backup on SDDC Manager Appliance"
+    $command = "cd /tmp; OPENSSL_FIPS=1 openssl enc -d -aes-256-cbc -md sha256 -in /tmp/$backupFileName -pass pass:`'$encryptionPassword`' | tar -xz"
+    $result = Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $command
+
+    #Modfiy JSON file  
+    #Existing Nist Key
+    Write-Output "Parsing Backup on SDDC Manager Appliance for Old NIST Key for $mgmtVcenterFqdn"
+    $command = "cat /tmp/$extractedBackupFolder/appliancemanager_ssh_knownHosts.json  | jq `'.knownHosts[] | select(.host==`"$mgmtVcenterFqdn`") | select(.keyType==`"ecdsa-sha2-nistp256`")| .key`'"
+    $oldNistKey = (Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $command).output
+    Write-Output "Old NIST Key for $mgmtVcenterFqdn retrieved"
+
+    #Existing rsa Key
+    Write-Output "Parsing Backup on SDDC Manager Appliance for Old RSA Key for $mgmtVcenterFqdn"
+    $command = "cat /tmp/$extractedBackupFolder/appliancemanager_ssh_knownHosts.json  | jq `'.knownHosts[] | select(.host==`"$mgmtVcenterFqdn`") | select(.keyType==`"ssh-rsa`")| .key`'"
+    $oldRSAKey = (Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $command).output
+    Write-Output "Old RSA Key for $mgmtVcenterFqdn retrieved"
+
+    #Sed File
+    Write-Output "Replacing NIST Key in SDDC Manager Backup"
+    $command = "sed -i `'s@$oldNistKey@$newNistKey@`' /tmp/$extractedBackupFolder/appliancemanager_ssh_knownHosts.json"
+    $result = Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $command
+
+    Write-Output "Replacing RSA Key in SDDC Manager Backup"
+    $command = "sed -i `'s@$oldRSAKey@$newRSAKey@`' /tmp/$extractedBackupFolder/appliancemanager_ssh_knownHosts.json"
+    $result = Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $command
+    
+    #Save Original Backup
+    Write-Output "Retaining Original Backup"
+    $command = "mv /tmp/$backupFileName /tmp/$backupFileName.original"
+    $result = Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $command
+
+    #Encrypt/Compress Backup
+    Write-Output "Re-encrypting and Re-compressing Modified Backup"
+    $command = "tar -cz /tmp/$extractedBackupFolder | OPENSSL_FIPS=1 openssl enc -aes-256-cbc -md sha256 -out /tmp/$backupFileName -pass pass:`'$encryptionPassword`'"
+    $result = Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $command
+}
+#EndRegion Data Gathering
+
 #Region vCenter Functions
 Function Add-ClusterHostsToVds {
     Param(
