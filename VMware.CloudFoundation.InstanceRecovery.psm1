@@ -128,6 +128,7 @@ Function New-UploadAndModifySDDCManagerBackup
     #Perform KeyScan
     Write-Output "Performing Keyscan on SDDC Manager Appliance"
     #$result = Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command "ssh-keyscan $mgmtVcenterFqdn"
+    $command = "ssh-keyscan $mgmtVcenterFqdn"
     $result = ((Invoke-VMScript -ScriptText $command -VM $sddcManagerVmName -GuestUser 'root' -GuestPassword $rootUserPassword).ScriptOutput) -replace "(`n|`r)"
     
     #Determine new SSH Keys
