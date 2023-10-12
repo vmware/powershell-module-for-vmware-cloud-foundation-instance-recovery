@@ -22,7 +22,7 @@ else
 	[System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy
 }
 
-$is7Zip4PowerShellInstalled = Get-InstalledModule -name 7Zip4PowerShell
+$is7Zip4PowerShellInstalled = Get-InstalledModule -name 7Zip4PowerShell -ErrorAction SilentlyContinue
 If (!$is7Zip4PowerShellInstalled)
 {
     Write-Output "Installing 7Zip4PowerShell Module"
@@ -40,7 +40,7 @@ Function New-GatherDataFromSDDCBackup
     $backupFilePath = (Resolve-Path -Path $backupFilePath).path
     $backupFileName = (Get-ChildItem -path $backupFilePath).name
     $parentFolder = Split-Path -Path $backupFilePath
-    $extractedBackupFolder = ($backupFileName.split(".tar.gz"))[0]
+    $extractedBackupFolder = ($backupFileName -Split(".tar.gz"))[0]
 
     
     #Decrypt Backup
@@ -109,7 +109,7 @@ Function New-UploadAndModifySDDCManagerBackup
     $sddcManagerVmName = $extractedSddcData.mgmtComponents.sddcManagerVmName
     $backupFilePath = (Resolve-Path -Path $backupFilePath).path
     $backupFileName = (Get-ChildItem -path $backupFilePath).name
-    $extractedBackupFolder = ($backupFileName.split(".tar.gz"))[0]
+    $extractedBackupFolder = ($backupFileName -Split(".tar.gz"))[0]
     
     #Establish SSH Connection to SDDC Manager
     Write-Output "Establishing Connection to SDDC Manager Appliance"
