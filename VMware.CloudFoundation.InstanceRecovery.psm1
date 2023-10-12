@@ -91,7 +91,7 @@ Function New-GatherDataFromSDDCBackup
 Function New-UploadAndModifySDDCManagerBackup
 {
     Param(
-        [Parameter (Mandatory = $true)][String] $vcfUserPassword,
+        [Parameter (Mandatory = $true)][String] $rootUserPassword,
         [Parameter (Mandatory = $true)][String] $backupFilePath,
         [Parameter (Mandatory = $true)][String] $encryptionPassword,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
@@ -137,44 +137,49 @@ Function New-UploadAndModifySDDCManagerBackup
     $vCenterConnection = Connect-VIServer -server $tempvCenterFQDN -user $tempvCenterAdmin -password $tempvCenterAdminPassword
     Write-Output "Uploading Backup File to SDDC Manager Appliance"
     $copyFile = Copy-VMGuestFile -Source $backupFilePath -Destination "/home/vcf/$backupFileName" -LocalToGuest -VM $sddcManagerVmName -GuestUser $vcfUser -GuestPassword $vcfUserPassword -Force -WarningAction SilentlyContinue -WarningVariable WarnMsg
-    Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
 
     #Decrypt/Extract Backup
     Write-Output "Decrypting Backup on SDDC Manager Appliance"
     $command = "OPENSSL_FIPS=1 openssl enc -d -aes-256-cbc -md sha256 -in /home/vcf/$backupFileName -pass pass:`'$encryptionPassword`' | tar -xz"
-    $result = Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $command
+    #$result = Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $command
+    $result = ((Invoke-VMScript -ScriptText $command -VM $sddcManagerVmName -GuestUser 'root' -GuestPassword $rootUserPassword).ScriptOutput) -replace "(`n|`r)"
+
+    $result.ScriptOutput -replace "(`n|`r)"
 
     #Modfiy JSON file  
     #Existing Nist Key
     Write-Output "Parsing Backup on SDDC Manager Appliance for Old NIST Key for $mgmtVcenterFqdn"
-    $command = "cat /home/vcf/$extractedBackupFolder/appliancemanager_ssh_knownHosts.json  | jq `'.knownHosts[] | select(.host==`"$mgmtVcenterFqdn`") | select(.keyType==`"ecdsa-sha2-nistp256`")| .key`'"
-    $oldNistKey = (Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $command).output
+    $command = "cat /tmp/$extractedBackupFolder/appliancemanager_ssh_knownHosts.json  | jq `'.knownHosts[] | select(.host==`"$mgmtVcenterFqdn`") | select(.keyType==`"ecdsa-sha2-nistp256`")| .key`'"
+    $oldNistKey = ((Invoke-VMScript -ScriptText $command -VM $sddcManagerVmName -GuestUser 'root' -GuestPassword $rootUserPassword).ScriptOutput) -replace "(`n|`r)"
     Write-Output "Old NIST Key for $mgmtVcenterFqdn retrieved"
 
     #Existing rsa Key
     Write-Output "Parsing Backup on SDDC Manager Appliance for Old RSA Key for $mgmtVcenterFqdn"
     $command = "cat /home/vcf/$extractedBackupFolder/appliancemanager_ssh_knownHosts.json  | jq `'.knownHosts[] | select(.host==`"$mgmtVcenterFqdn`") | select(.keyType==`"ssh-rsa`")| .key`'"
-    $oldRSAKey = (Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $command).output
+    $oldRSAKey = ((Invoke-VMScript -ScriptText $command -VM $sddcManagerVmName -GuestUser 'root' -GuestPassword $rootUserPassword).ScriptOutput) -replace "(`n|`r)"
     Write-Output "Old RSA Key for $mgmtVcenterFqdn retrieved"
 
     #Sed File
     Write-Output "Replacing NIST Key in SDDC Manager Backup"
     $command = "sed -i `'s@$oldNistKey@$newNistKey@`' /home/vcf/$extractedBackupFolder/appliancemanager_ssh_knownHosts.json"
-    $result = Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $command
+    $result = ((Invoke-VMScript -ScriptText $command -VM $sddcManagerVmName -GuestUser 'root' -GuestPassword $rootUserPassword).ScriptOutput) -replace "(`n|`r)"
 
     Write-Output "Replacing RSA Key in SDDC Manager Backup"
     $command = "sed -i `'s@$oldRSAKey@$newRSAKey@`' /home/vcf/$extractedBackupFolder/appliancemanager_ssh_knownHosts.json"
-    $result = Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $command
+    $result = ((Invoke-VMScript -ScriptText $command -VM $sddcManagerVmName -GuestUser 'root' -GuestPassword $rootUserPassword).ScriptOutput) -replace "(`n|`r)"
     
     #Save Original Backup
     Write-Output "Retaining Original Backup"
     $command = "mv /home/vcf/$backupFileName /home/vcf/$backupFileName.original"
-    $result = Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $command
+    $result = ((Invoke-VMScript -ScriptText $command -VM $sddcManagerVmName -GuestUser 'root' -GuestPassword $rootUserPassword).ScriptOutput) -replace "(`n|`r)"
 
     #Encrypt/Compress Backup
     Write-Output "Re-encrypting and Re-compressing Modified Backup"
     $command = "tar -cz /home/vcf/$extractedBackupFolder | OPENSSL_FIPS=1 openssl enc -aes-256-cbc -md sha256 -out /home/vcf/$backupFileName -pass pass:`'$encryptionPassword`'"
-    $result = Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $command
+    $result = ((Invoke-VMScript -ScriptText $command -VM $sddcManagerVmName -GuestUser 'root' -GuestPassword $rootUserPassword).ScriptOutput) -replace "(`n|`r)"
+
+    #Disconnect from vCenter
+    Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
 }
 #EndRegion Data Gathering
 
