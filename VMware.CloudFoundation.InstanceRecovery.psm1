@@ -161,8 +161,8 @@ Function New-UploadAndModifySDDCManagerBackup
     Write-Output "Old RSA Key for $mgmtVcenterFqdn retrieved"
 
     #Sed File
-    Write-Output "Replacing NIST and RSA Keys in SDDC Manager Backup"
-    $command = "sed -i `'s@$oldNistKey@$newNistKey@`' /tmp/$extractedBackupFolder/appliancemanager_ssh_knownHosts.json; sed -i `'s@$oldRSAKey@$newRSAKey@`' /tmp/$extractedBackupFolder/appliancemanager_ssh_knownHosts.json"
+    Write-Output "Replacing NIST and RSA Keys and Re-encrypting SDDC Manager Backup"
+    $command = "sed -i `'s@$oldNistKey@$newNistKey@`' /tmp/$extractedBackupFolder/appliancemanager_ssh_knownHosts.json; sed -i `'s@$oldRSAKey@$newRSAKey@`' /tmp/$extractedBackupFolder/appliancemanager_ssh_knownHosts.json; mv /tmp/$backupFileName /tmp/$backupFileName.original; tar -cz /tmp/$extractedBackupFolder | OPENSSL_FIPS=1 openssl enc -aes-256-cbc -md sha256 -out /tmp/$backupFileName -pass pass:`'$encryptionPassword`'"
     $result = ((Invoke-VMScript -ScriptText $command -VM $sddcManagerVmName -GuestUser 'root' -GuestPassword $rootUserPassword).ScriptOutput) -replace "(`n|`r)"
 
     <# Write-Output "Replacing RSA Key in SDDC Manager Backup"
@@ -170,15 +170,14 @@ Function New-UploadAndModifySDDCManagerBackup
     $result = ((Invoke-VMScript -ScriptText $command -VM $sddcManagerVmName -GuestUser 'root' -GuestPassword $rootUserPassword).ScriptOutput) -replace "(`n|`r)"
      #>
     #Save Original Backup
-    Write-Output "Retaining Original Backup"
-    $command = "mv /tmp/$backupFileName /tmp/$backupFileName.original"
+    <# $command = "mv /tmp/$backupFileName /tmp/$backupFileName.original"
     $result = ((Invoke-VMScript -ScriptText $command -VM $sddcManagerVmName -GuestUser 'root' -GuestPassword $rootUserPassword).ScriptOutput) -replace "(`n|`r)"
 
     #Encrypt/Compress Backup
     Write-Output "Re-encrypting and Re-compressing Modified Backup"
     $command = "tar -cz /tmp/$extractedBackupFolder | OPENSSL_FIPS=1 openssl enc -aes-256-cbc -md sha256 -out /tmp/$backupFileName -pass pass:`'$encryptionPassword`'"
     $result = ((Invoke-VMScript -ScriptText $command -VM $sddcManagerVmName -GuestUser 'root' -GuestPassword $rootUserPassword).ScriptOutput) -replace "(`n|`r)"
-
+ #>
     #Disconnect from vCenter
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
 }
