@@ -132,9 +132,9 @@ Function New-UploadAndModifySDDCManagerBackup
     $result = ((Invoke-VMScript -ScriptText $command -VM $sddcManagerVmName -GuestUser 'root' -GuestPassword $rootUserPassword).ScriptOutput) -replace "(`n|`r)"
     
     #Determine new SSH Keys
-    $newNistKey = '"' + (($result.output | Where-Object {$_ -like "*ecdsa-sha2-nistp256*"}).split("ecdsa-sha2-nistp256 "))[1] + '"'
+    $newNistKey = '"' + (($result | Where-Object {$_ -like "*ecdsa-sha2-nistp256*"}).split("ecdsa-sha2-nistp256 "))[1] + '"'
     If ($newNistKey) { Write-Output "New NIST Key for $mgmtVcenterFqdn retrieved" }
-    $newRSAKey = '"' + (($result.output | Where-Object {$_ -like "*ssh-rsa*"}).split("ssh-rsa "))[1] + '"'
+    $newRSAKey = '"' + (($result | Where-Object {$_ -like "*ssh-rsa*"}).split("ssh-rsa "))[1] + '"'
     If ($newRSAKey) { Write-Output "New RSA Key for $mgmtVcenterFqdn retrieved" }
 
     #Upload Backup
