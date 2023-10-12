@@ -123,6 +123,8 @@ Function New-UploadAndModifySDDCManagerBackup
         $sshSession = New-SSHSession -computername $sddcManagerFQDN -Credential $mycreds -KnownHost $inmem
     } Until ($sshSession) #>
 
+    $vCenterConnection = Connect-VIServer -server $tempvCenterFQDN -user $tempvCenterAdmin -password $tempvCenterAdminPassword
+
     #Perform KeyScan
     Write-Output "Performing Keyscan on SDDC Manager Appliance"
     #$result = Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command "ssh-keyscan $mgmtVcenterFqdn"
@@ -135,7 +137,6 @@ Function New-UploadAndModifySDDCManagerBackup
     If ($newRSAKey) { Write-Output "New RSA Key for $mgmtVcenterFqdn retrieved" }
 
     #Upload Backup
-    $vCenterConnection = Connect-VIServer -server $tempvCenterFQDN -user $tempvCenterAdmin -password $tempvCenterAdminPassword
     Write-Output "Uploading Backup File to SDDC Manager Appliance"
     $copyFile = Copy-VMGuestFile -Source $backupFilePath -Destination "/tmp/$backupFileName" -LocalToGuest -VM $sddcManagerVmName -GuestUser "root" -GuestPassword $rootUserPassword -Force -WarningAction SilentlyContinue -WarningVariable WarnMsg
 
