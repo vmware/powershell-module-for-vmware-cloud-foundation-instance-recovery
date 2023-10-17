@@ -1249,16 +1249,16 @@ Function Resolve-PhysicalHostTransportNodes {
     }    
 }
 
-Function New-VsphereClusterNsxEdgeClusterRedeployment
+Function Invoke-NSXEdgeClusterRecovery
 {
     Param(
+        [Parameter (Mandatory = $true)][String] $nsxManagerFqdn,
+        [Parameter (Mandatory = $true)][String] $nsxManagerAdmin,
+        [Parameter (Mandatory = $true)][String] $nsxManagerAdminPassword,
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
         [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
-        [Parameter (Mandatory = $true)][String] $clusterName,
-        [Parameter (Mandatory = $true)][String] $nsxManagerFqdn,
-        [Parameter (Mandatory = $true)][String] $nsxManagerAdmin,
-        [Parameter (Mandatory = $true)][String] $nsxManagerAdminPassword
+        [Parameter (Mandatory = $true)][String] $clusterName
     )
     $vcenterConnection = Connect-VIServer -server $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
     $cluster = Get-Cluster -name $clusterName
