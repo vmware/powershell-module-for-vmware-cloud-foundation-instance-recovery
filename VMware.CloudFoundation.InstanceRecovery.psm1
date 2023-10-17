@@ -41,7 +41,6 @@ Function New-GatherDataFromSDDCBackup
     $backupFileName = (Get-ChildItem -path $backupFilePath).name
     $parentFolder = Split-Path -Path $backupFilePath
     $extractedBackupFolder = ($backupFileName -Split(".tar.gz"))[0]
-
     
     #Decrypt Backup
     Write-Output "Decrypting Backup"
@@ -70,8 +69,8 @@ Function New-GatherDataFromSDDCBackup
             'password'   = $object.password
         }
     }
-    Write-Output "Retrieving Management Component Detail"
 
+    Write-Output "Retrieving Management Component Detail"
     $mgmtDomainName = ($passwordVaultObject | Where-Object {$_.entityType -eq "BACKUP"}).domainName
     $mgmtComponentObject = @()
     $mgmtComponentObject += [pscustomobject]@{
@@ -80,10 +79,66 @@ Function New-GatherDataFromSDDCBackup
         'mgmtDomainName'   = $mgmtDomainName
         'mgmtvCenterFqdn'   = ($passwordVaultObject | Where-Object {($_.entityType -eq "VCENTER") -and ($_.domainName -eq $mgmtDomainName) -and ($_.credentialType -eq "SSO")}).entityName
     }
+    
+    Write-Output "Retrieving NSX Manager Details"
+    $psqlContent = Get-Content "$extractedBackupFolder\database\sddc-postgres.bkp"
+
+    #Get All NSX Manager Clusters
+    $nsxManagerstartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.nsxt (id" | Select Line,LineNumber).LineNumber
+    $nsxManagerlineIndex = $nsxManagerstartingLineNumber
+    $nsxtManagerClusters = @()
+    Do 
+    {
+        $lineContent = $psqlContent | Select-Object -Index $nsxManagerlineIndex
+        If ($lineContent -ne '\.')
+        {
+            $nodeContent = (($lineContent.split("`t")[9]).replace("\n","")) | ConvertFrom-Json
+            $nodeIPs = ($nodeContent.managerIpsFqdnMap | Get-Member -type NoteProperty).name
+            $nsxNodes = @()
+            Foreach ($nodeIP in $nodeIPs)
+            {
+                $hostname = $nodeContent.managerIpsFqdnMap.$($nodeIP)
+                $nsxNodes += [pscustomobject]@{
+                    'hostname' = $hostname
+                    'ip' =  $nodeIP
+                }
+            }
+            $nsxtManagerClusters += [pscustomobject]@{
+                'domainIDs' = $nodeContent.domainIds
+                'nsxNodes' = $nsxNodes
+            }
+        }
+        $nsxManagerlineIndex++
+    }
+    Until ($lineContent -eq '\.')
+
+
+    #GetDomainDetails
+    $domainsStartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.domain (id" | Select Line,LineNumber).LineNumber
+    $domainLineIndex = $domainsStartingLineNumber
+    $workloadDomains = @()
+    Do 
+    {
+        $lineContent = $psqlContent | Select-Object -Index $domainLineIndex
+        If ($lineContent -ne '\.')
+        {
+            $domainId = $lineContent.split("`t")[0]
+            $domainName = $lineContent.split("`t")[3]
+            $domainType = $lineContent.split("`t")[6]
+            $workloadDomains += [pscustomobject]@{
+                'domainName' = $domainName
+                'domainID' = $domainID
+                'domainType' = $domainType
+                'nsxNodeDetails' = ($nsxtManagerClusters | Where-Object {$_.domainIDs -contains $domainId}).nsxNodes
+            }
+        }
+        $domainLineIndex++
+    } Until ($lineContent -eq '\.')
 
     Write-Output "Creating extracted-sddc-data.json"
     $sddcDataObject = New-Object -TypeName psobject
     $sddcDataObject | Add-Member -notepropertyname 'mgmtComponents' -notepropertyvalue $mgmtComponentObject
+    $sddcDataObject | Add-Member -notepropertyname 'workloadDomains' -notepropertyvalue $workloadDomains
     $sddcDataObject | Add-Member -notepropertyname 'passwords' -notepropertyvalue $passwordVaultObject
     $sddcDataObject | ConvertTo-Json -Depth 10 | Out-File "$parentFolder\extracted-sddc-data.json"
 }
