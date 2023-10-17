@@ -1,4 +1,4 @@
-#Module to Assist in VCF Full Instance Recovery
+     #Module to Assist in VCF Full Instance Recovery
 If ($PSEdition -eq 'Core') {
     $Script:PSDefaultParameterValues = @{
         "invoke-restmethod:SkipCertificateCheck" = $true
@@ -1247,6 +1247,51 @@ Function Resolve-PhysicalHostTransportNodes {
         Write-Output "Resolving NSX Installation on $(($allHostTransportNodes | Where-Object {$_.id -eq $hostID}).display_name) "
         $response = Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -headers $headers -body $body
     }    
+}
+
+Function New-VsphereClusterNsxEdgeClusterRedeployment
+{
+    Param(
+        [Parameter (Mandatory = $true)][String] $vCenterFQDN,
+        [Parameter (Mandatory = $true)][String] $vCenterAdmin,
+        [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
+        [Parameter (Mandatory = $true)][String] $clusterName,
+        [Parameter (Mandatory = $true)][String] $nsxManagerFqdn,
+        [Parameter (Mandatory = $true)][String] $nsxManagerAdmin,
+        [Parameter (Mandatory = $true)][String] $nsxManagerAdminPassword
+    )
+    $vcenterConnection = Connect-VIServer -server $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
+    $cluster = Get-Cluster -name $clusterName
+    $clusterMoRef = $cluster.ExtensionData.MoRef.Value
+
+    #Get TransportNodes
+    $headers = createHeader -username $nsxManagerAdmin -password $nsxManagerAdminPassword
+    $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/"
+    $transportNodeContents = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
+    $allEdgeTransportNodes = ($transportNodeContents.results | Where-Object { ($_.node_deployment_info.resource_type -eq "EdgeNode") -and ($_.node_deployment_info.deployment_config.vm_deployment_config.compute_id) -eq $clusterMoRef})
+
+    #Redeploy Failed Edges
+    Foreach ($edge in $allEdgeTransportNodes)
+    {
+        $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($edge.node_id)/state"
+        $edgeState = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
+        If ($edgeState.node_deployment_state.state -ne "success")
+        {
+            Write-Host "[$($edge.display_name)] is in state $($edgeState.node_deployment_state.state)"
+            If ($edgeState.node_deployment_state.state -eq "MPA_DISCONNECTED")
+            {
+                Write-Host "[$($edge.display_name)] Redeploying"
+                $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($edge.node_id)"
+                $edgeResponse = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content
+                $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($edge.node_id)?action=redeploy"
+                $edgeRedeploy = Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -body $edgeResponse -headers $headers
+            }
+            else 
+            {   
+                Write-Host "[$($edge.display_name)] Not in a suitable state for redeployment. Please review and retry"
+            }
+        }
+    }
 }
 #EndRegion NSXT Functions
 
