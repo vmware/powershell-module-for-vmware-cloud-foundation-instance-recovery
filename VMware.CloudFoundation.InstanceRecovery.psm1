@@ -111,7 +111,7 @@ Function Confirm-VCFInstanceRecoveryPreReqs
         Write-Output "PowerCLI Module found"
     }
 
-    $isPowerVCFInstalled = Get-InstalledModule -name "VMware.PowerCLI" -MinimumVersion "2.4.0" -ErrorAction SilentlyContinue
+    $isPowerVCFInstalled = Get-InstalledModule -name "PowerVCF" -MinimumVersion "2.4.0" -ErrorAction SilentlyContinue
     If (!$isPowerVCFInstalled)
     {
         Write-Output "PowerVCF Module Missing. Please install"
