@@ -25,8 +25,7 @@ else
 $is7Zip4PowerShellInstalled = Get-InstalledModule -name 7Zip4PowerShell -ErrorAction SilentlyContinue
 If (!$is7Zip4PowerShellInstalled)
 {
-    Write-Output "Installing 7Zip4PowerShell Module"
-    Install-Module 7Zip4PowerShell -Scope AllUsers
+    Write-Output "Installing 7Zip4PowerShell Module Missing. Please install"
 } 
 
 #Region Data Gathering
