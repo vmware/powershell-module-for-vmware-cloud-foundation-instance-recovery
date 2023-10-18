@@ -142,7 +142,7 @@ Function New-ExtractDataFromSDDCBackup
 
     $managementDomainDeploymentInfo = [pscustomobject]@{
         'port_group' = $metadataJSON.port_group
-        'datastore' =  $metadataJSON.vsan_datastore
+        'vsan_datastore' =  $metadataJSON.vsan_datastore
         'cluster' = $metaDataJSON.cluster
         'datacenter' = $metaDataJSON.datacenter
         'netmask' = $metaDataJSON.netmask
@@ -170,7 +170,8 @@ Function New-NSXManagerOvaDeployment
         [Parameter (Mandatory = $true)][String] $tempvCenterAdmin,
         [Parameter (Mandatory = $true)][String] $tempvCenterAdminPassword,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
-        [Parameter (Mandatory = $true)][String] $workloadDomain
+        [Parameter (Mandatory = $true)][String] $workloadDomain,
+        [Parameter (Mandatory = $true)][String] $nsxManagerOvaFile
     )
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
@@ -203,32 +204,30 @@ Function New-NSXManagerOvaDeployment
         $nsxManagerSelection = Read-Host
     } Until (($nsxManagerSelection -in $nsxManagersDisplayObject.ID) -OR ($nsxManagerSelection -eq "c"))
     If ($nsxManagerSelection -eq "c") {Break}
+    $selectedNsxManager = $nsxNodes | Where-Object {$_.vmName -eq ($nsxManagersDisplayObject | Where-Object {$_.id -eq $nsxManagerSelection}).manager }
     
-    <# $vCenterAdminPassword="VMw@re1!" 
-    $vCenterFqdn="sfo-m01-vc01.sfo.rainpole.io" 
-    $vmNetwork="sfo-m01-cl01-vds01-mgmt" 
-    $vmDatastore="sfo-m01-cl01-ds-vsan01" 
-    $datacenterName="sfo-m01-dc01" 
-    $clusterName="sfo-m01-cl01"
-    $nsxManagerOva="F:\OVA\nsx-unified-appliance-3.2.2.1.0.21487565.ova" 
+    $vmNetwork = $extractedSDDCData.managementDomainDeploymentInfo.port_group
+    $vmDatastore = $extractedSDDCData.managementDomainDeploymentInfo.vsan_datastore
+    $datacenterName = $extractedSDDCData.managementDomainDeploymentInfo.datacenter
+    $clusterName = $extractedSDDCData.managementDomainDeploymentInfo.cluster
 
     # NSX Manager Appliance Configuration 
-    $nsxManagerVMName="sfo-m01-nsx01a" 
-    $nsxManagerIp="172.16.11.72" 
-    $nsxManagerNetworkMask="255.255.255.0"
-    $nsxManagerGateway="172.16.11.1" 
-    $nsxManagerDns="172.16.11.5,172.16.11.4" 
-    $nsxManagerDnsDomain="sfo.rainpole.io"
-    $nsxManagerNtpServer="ntp.sfo.rainpole.io"
-    $nsxManagerAdminUsername="admin"
-    $nsxManagerAdminPassword="VMw@re1!VMw@re1!"
-    $nsxManagerCliPassword="VMw@re1!VMw@re1!"
-    $nsxManagerCliAuditUsername="audit"
-    $nsxManagerCliAuditPassword="VMw@re1!VMw@re1!"
-    $nsxManagerHostName="sfo-m01-nsx01a.sfo.rainpole.io"
+    $nsxManagerVMName = $selectedNsxManager.vmName
+    $nsxManagerIp = $selectedNsxManager.vip
+    $nsxManagerHostName = $selectedNsxManager.hostname
+    $nsxManagerNetworkMask = $extractedSddcData.managementDomainDeploymentInfo.netmask
+    $nsxManagerGateway = $extractedSddcData.managementDomainDeploymentInfo.gateway
+    $nsxManagerDns = "$($extractedSddcData.managementDomainDeploymentInfo.primaryDnsServer),$($extractedSddcData.managementDomainDeploymentInfo.secondaryDnsServer)" 
+    $nsxManagerDnsDomain = $extractedSddcData.managementDomainDeploymentInfo.domain
+    $nsxManagerNtpServer = $extractedSddcData.managementDomainDeploymentInfo.ntpServers -join(",")
+    $nsxManagerAdminUsername = ($extractedSddcData.passwords | Where-Object {($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "API")}).username
+    $nsxManagerAdminPassword = ($extractedSddcData.passwords | Where-Object {($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "API")}).password
+    $nsxManagerCliPassword  = ($extractedSddcData.passwords | Where-Object {($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "API")}).password
+    $nsxManagerCliAuditUsername = ($extractedSddcData.passwords | Where-Object {($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "AUDIT")}).username
+    $nsxManagerCliAuditPassword = ($extractedSddcData.passwords | Where-Object {($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "AUDIT")}).password
 
     $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowExtraConfig --diskMode=thin --X:injectOvfEnv --X:logFile=ovftool.log --powerOn --name="' + $nsxManagerVMName + '" --datastore="' + $vmDatastore + '" --network="' + $vmNetwork + '" --prop:nsx_role="NSX Manager" --prop:nsx_ip_0="' + $nsxManagerIp + '" --prop:nsx_netmask_0="' + $nsxManagerNetworkMask + '" --prop:nsx_gateway_0="' + $nsxManagerGateway + '" --prop:nsx_dns1_0="' + $nsxManagerDns + '" --prop:nsx_domain_0="' + $nsxManagerDnsDomain + '" --prop:nsx_ntp_0="' + $nsxManagerNtpServer + '" --prop:nsx_isSSHEnabled=True --prop:nsx_allowSSHRootLogin=False --prop:nsx_passwd_0="' + $nsxManagerAdminPassword + '" --prop:nsx_cli_username="' + $nsxManagerAdminUsername+ '" --prop:nsx_cli_passwd_0="' + $nsxManagerCliPassword + '" --prop:nsx_cli_audit_passwd_0="' + $nsxManagerCliAuditPassword + '" --prop:nsx_cli_audit_username="' + $nsxManagerCliAuditUsername + '" --prop:nsx_hostname="' + $nsxManagerHostName + '" "' + $nsxManagerOva + '" ' + '"vi://' + $vCenterAdmin + ':' + $vCenterAdminPassword + '@' + $vCenterFqdn + '/' + $datacenterName + '/host/' + $clusterName + '/"'
-    Invoke-Expression "& $command" #>
+    Invoke-Expression "& $command"
 }
 
 Function New-UploadAndModifySDDCManagerBackup
