@@ -142,7 +142,7 @@ Function Confirm-VCFInstanceRecoveryPreReqs
         Write-Output "OpenSSL Module found"
     }
 }
-
+Export-ModuleMember -Function Confirm-VCFInstanceRecoveryPreReqs
 #Region Data Gathering
 
 Function New-ExtractDataFromSDDCBackup
@@ -276,7 +276,7 @@ Function New-ExtractDataFromSDDCBackup
     $sddcDataObject | Add-Member -notepropertyname 'passwords' -notepropertyvalue $passwordVaultObject
     $sddcDataObject | ConvertTo-Json -Depth 10 | Out-File "$parentFolder\extracted-sddc-data.json"
 }
-
+Export-ModuleMember -Function New-ExtractDataFromSDDCBackup
 Function New-NSXManagerOvaDeployment
 {
     Param(
@@ -351,6 +351,7 @@ Function New-NSXManagerOvaDeployment
     
     Invoke-Expression "& $command"
 }
+Export-ModuleMember -Function New-NSXManagerOvaDeployment
 
 Function New-UploadAndModifySDDCManagerBackup
 {
@@ -427,6 +428,7 @@ Function New-UploadAndModifySDDCManagerBackup
     #Disconnect from vCenter
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
 }
+Export-ModuleMember -Function New-UploadAndModifySDDCManagerBackup
 #EndRegion Data Gathering
 
 #Region vCenter Functions
@@ -449,7 +451,8 @@ Function New-UploadAndModifySDDCManagerBackup
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
 } #>
 
-Function Move-ClusterHostsToRestoredVcenter {
+Function Move-ClusterHostsToRestoredVcenter
+{
     Param(
         [Parameter (Mandatory = $true)][String] $tempvCenterFQDN,
         [Parameter (Mandatory = $true)][String] $tempvCenterAdmin,
@@ -473,8 +476,10 @@ Function Move-ClusterHostsToRestoredVcenter {
         Add-VMHost -Name $esxiHost.Name -Location $restoredclusterName -User root -Password $esxiRootPassword -Force -Confirm:$false | Out-Null
     }
 }
+Export-ModuleMember -Function Move-ClusterHostsToRestoredVcenter
 
-Function Remove-ClusterHostsFromVds {
+Function Remove-ClusterHostsFromVds
+{
     Param(
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
@@ -490,8 +495,10 @@ Function Remove-ClusterHostsFromVds {
     }
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
 }
+Export-ModuleMember -Function Remove-ClusterHostsFromVds
 
-Function Move-MgmtVmsToTempPg {
+Function Move-MgmtVmsToTempPg 
+{
     Param(
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
@@ -505,8 +512,10 @@ Function Move-MgmtVmsToTempPg {
     }
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
 }
+Export-ModuleMember -Function Move-MgmtVmsToTempPg
 
-Function Move-ClusterHostNetworkingTovSS {
+Function Move-ClusterHostNetworkingTovSS 
+{
     Param(
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
@@ -583,8 +592,10 @@ Function Move-ClusterHostNetworkingTovSS {
         Start-Sleep 5
     }
 }
+Export-ModuleMember -Function Move-ClusterHostNetworkingTovSS
 
-Function Move-ClusterVmnicTovSwitch {
+Function Move-ClusterVmnicTovSwitch
+{
     Param(
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
@@ -605,8 +616,10 @@ Function Move-ClusterVmnicTovSwitch {
     }
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
 }
+Export-ModuleMember -Function Move-ClusterVmnicTovSwitch
 
-Function Set-ClusterHostsvSanIgnoreClusterMemberList {
+Function Set-ClusterHostsvSanIgnoreClusterMemberList
+{
     Param(
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
@@ -641,8 +654,10 @@ Function Set-ClusterHostsvSanIgnoreClusterMemberList {
     }
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
 }
+Export-ModuleMember -Function Set-ClusterHostsvSanIgnoreClusterMemberList
 
-Function Move-ClusterVMsToFirstHost {
+Function Move-ClusterVMsToFirstHost
+{
     Param(
        <#  [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
@@ -665,8 +680,10 @@ Function Move-ClusterVMsToFirstHost {
     } Until (!$runningTasks)
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
 }
+Export-ModuleMember -Function Move-ClusterVMsToFirstHost
 
-Function Resolve-PhysicalHostServiceAccounts {
+Function Resolve-PhysicalHostServiceAccounts 
+{
     Param(
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
@@ -741,8 +758,10 @@ Function Resolve-PhysicalHostServiceAccounts {
         Write-Output "$taskStatus"
     }
 }
+Export-ModuleMember -Function Resolve-PhysicalHostServiceAccounts
 
-Function Set-ClusterDRSLevel {
+Function Set-ClusterDRSLevel 
+{
     Param(
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
@@ -755,8 +774,10 @@ Function Set-ClusterDRSLevel {
     set-cluster -cluster $clusterName -DrsAutomationLevel $DrsAutomationLevel -confirm:$false
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
 }
+Export-ModuleMember -Function Set-ClusterDRSLevel
 
-Function Remove-NonResponsiveHosts {
+Function Remove-NonResponsiveHosts 
+{
     Param(
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
@@ -771,8 +792,10 @@ Function Remove-NonResponsiveHosts {
     }
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
 }
+Export-ModuleMember -Function Remove-NonResponsiveHosts
 
-Function Add-HostsToCluster {
+Function Add-HostsToCluster 
+{
     Param(
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
@@ -809,37 +832,11 @@ Function Add-HostsToCluster {
     }
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
 }
+Export-ModuleMember -Function Add-HostsToCluster
 
-<# Function Add-HostsToVDS
+
+Function Remove-StandardSwitch 
 {
-    Param(
-        [Parameter (Mandatory=$true)][String] $vCenterFQDN,
-        [Parameter (Mandatory=$true)][String] $vCenterAdmin,
-        [Parameter (Mandatory=$true)][String] $vCenterAdminPassword,
-        [Parameter (Mandatory=$true)][String] $clusterName,
-        [Parameter (Mandatory=$true)][String] $sddcManagerFQDN,
-        [Parameter (Mandatory=$true)][String] $sddcManagerUser,
-        [Parameter (Mandatory=$true)][String] $sddcManagerPassword
-        )
-    $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
-    $vmHosts = (Get-cluster -name $clusterName | Get-VMHost).Name
-    $tokenRequest = Request-VCFToken -fqdn $sddcManagerFQDN -username $sddcManagerUser -password $sddcManagerPassword
-    $vdsName = ((get-vcfCluster -name $clusterName -vdses) | ? {$_.portGroups.transportType -contains "MANAGEMENT"}).name
-    # Put Host in Maintenance Mode
-    foreach ($vmhost in $vmHosts) 
-    {
-    Write-Output "`nEntering Maintenance Mode for" $vmhost
-    Get-VMHost -Name $vmhost | set-vmhost -State Maintenance -VsanDataMigrationMode NoDataMigration | Out-Null
-    # Add host to VDS
-    Write-Output "`nAdding $vmhost to $vdsName " 
-    $vds = Get-VDSwitch -Name $vdsName | Add-VDSwitchVMHost -VMHost $vmhost
-    $vmhostNetworkAdapter = Get-VMHost $vmhost | Get-VMHostNetworkAdapter -Physical -Name vmnic1
-    $vds | Add-VDSwitchPhysicalNetworkAdapter -VMHostNetworkAdapter $vmhostNetworkAdapter -Confirm:$false
-    }
-    Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
-} #>
-
-Function Remove-StandardSwitch {
     Param(
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
@@ -854,8 +851,10 @@ Function Remove-StandardSwitch {
     }
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
 }
+Export-ModuleMember -Function Remove-StandardSwitch
 
-Function Add-VMKernelsToHost {
+Function Add-VMKernelsToHost 
+{
     Param(
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
@@ -919,8 +918,10 @@ Function Add-VMKernelsToHost {
         $esxcli.network.ip.interface.ipv4.set.Invoke($interfaceArg) *>$null
     }
 }
+Export-ModuleMember -Function Add-VMKernelsToHost
 
-Function Backup-ClusterVMOverrides {
+Function Backup-ClusterVMOverrides
+{
     <#
     .SYNOPSIS
         Retrieves and saves configured VM Overrides.
@@ -971,8 +972,10 @@ Function Backup-ClusterVMOverrides {
     }
     $overRiddenData | ConvertTo-Json -depth 10 | Out-File "$clusterName-vmOverrides.json"
 }
+Export-ModuleMember -Function Backup-ClusterVMOverrides
 
-Function Backup-ClusterVMLocations {
+Function Backup-ClusterVMLocations
+{
     <#
     .SYNOPSIS
         Retrieves the folder and resource pool settings.
@@ -1007,8 +1010,10 @@ Function Backup-ClusterVMLocations {
         catchWriter -object $_
     }
 }
+Export-ModuleMember -Function Backup-ClusterVMLocations
 
-Function Backup-ClusterDRSGroupsAndRules {
+Function Backup-ClusterDRSGroupsAndRules
+{
     <#
     .SYNOPSIS
         Retrieves the DRS Groups And Rules for a Cluster
@@ -1096,8 +1101,10 @@ Function Backup-ClusterDRSGroupsAndRules {
         catchWriter -object $_
     }
 }
+Export-ModuleMember -Function Backup-ClusterDRSGroupsAndRules
 
-Function Restore-ClusterVMOverrides {
+Function Restore-ClusterVMOverrides
+{
     <#
     .SYNOPSIS
         Restores previously saved configured VM Overrides for a cluster
@@ -1240,8 +1247,10 @@ Function Restore-ClusterVMOverrides {
         catchWriter -object $_
     }
 }
+Export-ModuleMember -Function Restore-ClusterVMOverrides
 
-Function Restore-ClusterVMLocations {
+Function Restore-ClusterVMLocations
+{
     <#
     .SYNOPSIS
         Restores folder and resource pool settings for VMs on a cluster
@@ -1286,8 +1295,10 @@ Function Restore-ClusterVMLocations {
         catchWriter -object $_
     }
 }
+Export-ModuleMember -Function Restore-ClusterVMLocations
 
-Function Restore-ClusterDRSGroupsAndRules {
+Function Restore-ClusterDRSGroupsAndRules
+{
     <#
     .SYNOPSIS
         Restores DRS Groups and Rules for a cluster
@@ -1382,11 +1393,13 @@ Function Restore-ClusterDRSGroupsAndRules {
         catchWriter -object $_
     }
 }
+Export-ModuleMember -Function Restore-ClusterDRSGroupsAndRules
 
 #EndRegion vCenter Functions
 
 #Region NSXT Functions
-Function VCFIRCreateHeader {
+Function VCFIRCreateHeader
+{
     Param(
         [Parameter (Mandatory = $true)]
         [String] $username,
@@ -1400,8 +1413,8 @@ Function VCFIRCreateHeader {
     Return $headers
 }
 
-
-Function Resolve-PhysicalHostTransportNodes {
+Function Resolve-PhysicalHostTransportNodes
+{
     Param(
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
@@ -1433,6 +1446,7 @@ Function Resolve-PhysicalHostTransportNodes {
         $response = Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -headers $headers -body $body
     }    
 }
+Export-ModuleMember -Function Resolve-PhysicalHostTransportNodes
 
 Function Invoke-NSXEdgeClusterRecovery
 {
@@ -1478,4 +1492,5 @@ Function Invoke-NSXEdgeClusterRecovery
         }
     }
 }
+Export-ModuleMember -Function Invoke-NSXEdgeClusterRecovery
 #EndRegion NSXT Functions
