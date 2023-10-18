@@ -22,33 +22,92 @@ else
 	[System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy
 }
 
-#Check Dependencies
-$is7Zip4PowerShellInstalled = Get-InstalledModule -name "7Zip4PowerShell" -ErrorAction SilentlyContinue
-If (!$is7Zip4PowerShellInstalled)
-{
-    Write-Output "7Zip4PowerShell Module Missing. Please install"
+#Region Supporting Functions
+
+Function catchWriter {
+    <#
+    .SYNOPSIS
+        Prints a controlled error message after a failure
+
+    .DESCRIPTION
+        Accepts the invocation object from a failure in a Try/Catch block and prints back more precise information regarding
+        the cause of the failure
+
+    .EXAMPLE
+        catchWriter -object $_
+        This example when placed in a catch block will return error message, line number and line text (command) issued
+
+    #>
+    Param(
+        [Parameter(mandatory = $true)]
+        [PSObject]$object
+    )
+    $lineNumber = $object.InvocationInfo.ScriptLineNumber
+    $lineText = $object.InvocationInfo.Line.trim()
+    $errorMessage = $object.Exception.Message
+    Write-Error "Error at Script Line $lineNumber"
+    Write-Error "Relevant Command: $lineText"
+    Write-Error "Error Message: $errorMessage"
 }
 
-$isPoshSSHInstalled = Get-InstalledModule -name "Posh-SSH" -ErrorAction SilentlyContinue
-If (!$isPoshSSHInstalled)
+Function Get-InstalledSoftware
 {
-    Write-Output "Posh-SSH Module Missing. Please install"
-} 
-
-$installedSoftware = Get-InstalledSoftware
-If (!($installedSoftware -match "OpenSSL"))
-{
-    $openSslUrlPath = "https://slproweb.com/products/Win32OpenSSL.html"
-    Try {$openSslLinks = Invoke-WebRequest $openSslUrlPath -UseBasicParsing -ErrorAction silentlycontinue}Catch{}
-    $openSslLink = (($openSslLinks.Links | Where-Object { $_.href -like "/download/Win64OpenSSL_Light*.exe" }).href)[0]
-    $Global:openSSLUrl = "https://slproweb.com"+$openSslLink
-    If ($openSSLUrl)
-    {
-        Write-Output "OpenSSL  Missing. Please install. Latest version detected is here: $openSSLUrl"
+    $software = @()
+    $reg = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey('LocalMachine', $env:COMPUTERNAME)
+    $apps = $reg.OpenSubKey("SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall").GetSubKeyNames()
+    foreach ($app in $apps) {
+        $program = $reg.OpenSubKey("SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\$app")
+        $name = $program.GetValue('DisplayName')
+        $software += $name
     }
-    else 
+    $reg = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey('LocalMachine', $env:COMPUTERNAME)
+    $apps = $reg.OpenSubKey("SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall").GetSubKeyNames()
+    foreach ($app in $apps) {
+        $program = $reg.OpenSubKey("SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$app")
+        $name = $program.GetValue('DisplayName')
+        $software += $name
+    }
+    $reg = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey('CurrentUser', $env:COMPUTERNAME)
+    $apps = $reg.OpenSubKey("SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall").GetSubKeyNames()
+    foreach ($app in $apps) {
+        $program = $reg.OpenSubKey("SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$app")
+        $name = $program.GetValue('DisplayName')
+        $software += $name
+    }
+    Return $software
+}
+#EndRegion Supporting Functions
+
+Function Check-VCFInstanceRecoveryPreReqs
+{
+    #Check Dependencies
+    $is7Zip4PowerShellInstalled = Get-InstalledModule -name "7Zip4PowerShell" -ErrorAction SilentlyContinue
+    If (!$is7Zip4PowerShellInstalled)
     {
-        Write-Output "OpenSSL  Missing. Please install. Unable to detect latest version on web"
+        Write-Output "7Zip4PowerShell Module Missing. Please install"
+    }
+
+    $isPoshSSHInstalled = Get-InstalledModule -name "Posh-SSH" -ErrorAction SilentlyContinue
+    If (!$isPoshSSHInstalled)
+    {
+        Write-Output "Posh-SSH Module Missing. Please install"
+    } 
+
+    $installedSoftware = Get-InstalledSoftware
+    If (!($installedSoftware -match "OpenSSL"))
+    {
+        $openSslUrlPath = "https://slproweb.com/products/Win32OpenSSL.html"
+        Try {$openSslLinks = Invoke-WebRequest $openSslUrlPath -UseBasicParsing -ErrorAction silentlycontinue}Catch{}
+        $openSslLink = (($openSslLinks.Links | Where-Object { $_.href -like "/download/Win64OpenSSL_Light*.exe" }).href)[0]
+        $Global:openSSLUrl = "https://slproweb.com"+$openSslLink
+        If ($openSSLUrl)
+        {
+            Write-Output "OpenSSL  Missing. Please install. Latest version detected is here: $openSSLUrl"
+        }
+        else 
+        {
+            Write-Output "OpenSSL  Missing. Please install. Unable to detect latest version on web"
+        }
     }
 }
 
@@ -1403,59 +1462,3 @@ Function Invoke-NSXEdgeClusterRecovery
     }
 }
 #EndRegion NSXT Functions
-
-#Region Supporting Functions
-
-Function catchWriter {
-    <#
-    .SYNOPSIS
-        Prints a controlled error message after a failure
-
-    .DESCRIPTION
-        Accepts the invocation object from a failure in a Try/Catch block and prints back more precise information regarding
-        the cause of the failure
-
-    .EXAMPLE
-        catchWriter -object $_
-        This example when placed in a catch block will return error message, line number and line text (command) issued
-
-    #>
-    Param(
-        [Parameter(mandatory = $true)]
-        [PSObject]$object
-    )
-    $lineNumber = $object.InvocationInfo.ScriptLineNumber
-    $lineText = $object.InvocationInfo.Line.trim()
-    $errorMessage = $object.Exception.Message
-    Write-Error "Error at Script Line $lineNumber"
-    Write-Error "Relevant Command: $lineText"
-    Write-Error "Error Message: $errorMessage"
-}
-
-Function Get-InstalledSoftware
-{
-    $software = @()
-    $reg = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey('LocalMachine', $env:COMPUTERNAME)
-    $apps = $reg.OpenSubKey("SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall").GetSubKeyNames()
-    foreach ($app in $apps) {
-        $program = $reg.OpenSubKey("SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\$app")
-        $name = $program.GetValue('DisplayName')
-        $software += $name
-    }
-    $reg = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey('LocalMachine', $env:COMPUTERNAME)
-    $apps = $reg.OpenSubKey("SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall").GetSubKeyNames()
-    foreach ($app in $apps) {
-        $program = $reg.OpenSubKey("SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$app")
-        $name = $program.GetValue('DisplayName')
-        $software += $name
-    }
-    $reg = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey('CurrentUser', $env:COMPUTERNAME)
-    $apps = $reg.OpenSubKey("SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall").GetSubKeyNames()
-    foreach ($app in $apps) {
-        $program = $reg.OpenSubKey("SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$app")
-        $name = $program.GetValue('DisplayName')
-        $software += $name
-    }
-    Return $software
-}
-#EndRegion Supporting Functions
