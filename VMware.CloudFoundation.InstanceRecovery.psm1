@@ -78,19 +78,31 @@ Function Get-InstalledSoftware
 }
 #EndRegion Supporting Functions
 
-Function Check-VCFInstanceRecoveryPreReqs
+Function Confirm-VCFInstanceRecoveryPreReqs
 {
     #Check Dependencies
-    $is7Zip4PowerShellInstalled = Get-InstalledModule -name "7Zip4PowerShell" -ErrorAction SilentlyContinue
+    $is7Zip4PowerShellInstalled = Get-InstalledModule -name "7Zip4PowerShell" -MinimumVersion "2.4.0" -ErrorAction SilentlyContinue
     If (!$is7Zip4PowerShellInstalled)
     {
         Write-Output "7Zip4PowerShell Module Missing. Please install"
     }
 
-    $isPoshSSHInstalled = Get-InstalledModule -name "Posh-SSH" -ErrorAction SilentlyContinue
+    $isPoshSSHInstalled = Get-InstalledModule -name "Posh-SSH" -MinimumVersion "3.0.8" -ErrorAction SilentlyContinue
     If (!$isPoshSSHInstalled)
     {
         Write-Output "Posh-SSH Module Missing. Please install"
+    } 
+    
+    $isPowerCLIInstalled = Get-InstalledModule -name "VMware.PowerCLI" -ErrorAction SilentlyContinue
+    If (!$isPowerCLIInstalled)
+    {
+        Write-Output "PowerCLI Module Missing. Please install"
+    } 
+
+    $isPowerVCFInstalled = Get-InstalledModule -name "VMware.PowerCLI" -MinimumVersion "2.4.0" -ErrorAction SilentlyContinue
+    If (!$isPowerVCFInstalled)
+    {
+        Write-Output "PowerVCF Module Missing. Please install"
     } 
 
     $installedSoftware = Get-InstalledSoftware
@@ -102,11 +114,11 @@ Function Check-VCFInstanceRecoveryPreReqs
         $Global:openSSLUrl = "https://slproweb.com"+$openSslLink
         If ($openSSLUrl)
         {
-            Write-Output "OpenSSL  Missing. Please install. Latest version detected is here: $openSSLUrl"
+            Write-Output "OpenSSL missing. Please install. Latest version detected is here: $openSSLUrl"
         }
         else 
         {
-            Write-Output "OpenSSL  Missing. Please install. Unable to detect latest version on web"
+            Write-Output "OpenSSL missing. Please install. Unable to detect latest version on web"
         }
     }
 }
