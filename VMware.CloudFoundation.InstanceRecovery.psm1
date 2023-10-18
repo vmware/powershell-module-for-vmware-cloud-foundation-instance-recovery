@@ -31,7 +31,7 @@ If (!$is7Zip4PowerShellInstalled)
 
 #Region Data Gathering
 
-Function New-GatherDataFromSDDCBackup
+Function New-ExtractDataFromSDDCBackup
 {
     Param(
         [Parameter (Mandatory = $true)][String] $backupFilePath,
@@ -112,7 +112,6 @@ Function New-GatherDataFromSDDCBackup
     }
     Until ($lineContent -eq '\.')
 
-
     #GetDomainDetails
     $domainsStartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.domain (id" | Select Line,LineNumber).LineNumber
     $domainLineIndex = $domainsStartingLineNumber
@@ -135,12 +134,43 @@ Function New-GatherDataFromSDDCBackup
         $domainLineIndex++
     } Until ($lineContent -eq '\.')
 
+    #Get Management Domain Deployment Objects
+    $metdataJSON = Get-Content "$parentFolder\$extractedBackupFolder\metadata.json" | ConvertFrom-JSON
+    $dnsJSON = Get-Content "$parentFolder\$extractedBackupFolder\appliancemanager_dns_configuration.json" | ConvertFrom-JSON
+    $ntpJSON = Get-Content "$parentFolder\$extractedBackupFolder\appliancemanager_ntp_configuration.json" | ConvertFrom-JSON
+
+    $managementDomainDeploymentInfo = [pscustomobject]@{
+        'port_group' = $metdataJSON.port_group
+        'datastore' =  $metdataJSON.vsan_datastore
+        'cluster' = $metaDataJSON.cluster
+        'datacenter' = $metaDataJSON.datacenter
+        'netmask' = $metaDataJSON.netmask
+        'gateway' = $metaDataJSON.gateway
+        'domain' = $metaDataJSON.domain
+        'search_path' = $metaDataJSON.search_path
+        'primaryDnsServer' = $dnsJSON.primaryDnsServer
+        'secondaryDnsServer' = $dnsJSON.secondaryDnsServer
+        'ntpServers' = @($ntpJSON.ntpServers)
+    }
+    
     Write-Output "Creating extracted-sddc-data.json"
     $sddcDataObject = New-Object -TypeName psobject
     $sddcDataObject | Add-Member -notepropertyname 'mgmtComponents' -notepropertyvalue $mgmtComponentObject
+    $sddcDataObject | Add-Member -notepropertyname 'managementDomainDeploymentInfo' -notepropertyvalue $managementDomainDeploymentInfo
     $sddcDataObject | Add-Member -notepropertyname 'workloadDomains' -notepropertyvalue $workloadDomains
     $sddcDataObject | Add-Member -notepropertyname 'passwords' -notepropertyvalue $passwordVaultObject
     $sddcDataObject | ConvertTo-Json -Depth 10 | Out-File "$parentFolder\extracted-sddc-data.json"
+}
+
+Function New-NSXManagerOvaDeployment
+{
+    Param(
+        [Parameter (Mandatory = $true)][String] $tempvCenterFQDN,
+        [Parameter (Mandatory = $true)][String] $tempvCenterAdmin,
+        [Parameter (Mandatory = $true)][String] $tempvCenterAdminPassword,
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
+        [Parameter (Mandatory = $true)][String] $workloadDomain
+    )
 }
 
 Function New-UploadAndModifySDDCManagerBackup
