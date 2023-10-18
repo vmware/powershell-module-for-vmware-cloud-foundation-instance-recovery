@@ -86,24 +86,40 @@ Function Confirm-VCFInstanceRecoveryPreReqs
     {
         Write-Output "7Zip4PowerShell Module Missing. Please install"
     }
+    else 
+    {
+        Write-Output "7Zip4PowerShell Module found"
+    }
 
     $isPoshSSHInstalled = Get-InstalledModule -name "Posh-SSH" -MinimumVersion "3.0.8" -ErrorAction SilentlyContinue
     If (!$isPoshSSHInstalled)
     {
         Write-Output "Posh-SSH Module Missing. Please install"
     } 
+    else 
+    {
+        Write-Output "Posh-SSH Module found"
+    }
     
     $isPowerCLIInstalled = Get-InstalledModule -name "VMware.PowerCLI" -ErrorAction SilentlyContinue
     If (!$isPowerCLIInstalled)
     {
         Write-Output "PowerCLI Module Missing. Please install"
-    } 
+    }
+    else
+    {
+        Write-Output "PowerCLI Module found"
+    }
 
     $isPowerVCFInstalled = Get-InstalledModule -name "VMware.PowerCLI" -MinimumVersion "2.4.0" -ErrorAction SilentlyContinue
     If (!$isPowerVCFInstalled)
     {
         Write-Output "PowerVCF Module Missing. Please install"
     } 
+    else
+    {
+        Write-Output "PowerVCF Module found"
+    }
 
     $installedSoftware = Get-InstalledSoftware
     If (!($installedSoftware -match "OpenSSL"))
@@ -120,6 +136,10 @@ Function Confirm-VCFInstanceRecoveryPreReqs
         {
             Write-Output "OpenSSL missing. Please install. Unable to detect latest version on web"
         }
+    }
+    else
+    {
+        Write-Output "OpenSSL Module found"
     }
 }
 
