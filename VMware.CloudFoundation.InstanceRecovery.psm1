@@ -99,6 +99,7 @@ Function New-ExtractDataFromSDDCBackup
             {
                 $hostname = $nodeContent.managerIpsFqdnMap.$($nodeIP)
                 $nsxNodes += [pscustomobject]@{
+                    'vmName' = $hostname.split(".")[0]
                     'hostname' = $hostname
                     'ip' =  $nodeIP
                 }
