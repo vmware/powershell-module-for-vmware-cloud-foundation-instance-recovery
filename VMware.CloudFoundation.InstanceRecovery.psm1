@@ -1386,7 +1386,7 @@ Function Restore-ClusterDRSGroupsAndRules {
 #EndRegion vCenter Functions
 
 #Region NSXT Functions
-Function createHeader {
+Function VCFIRCreateHeader {
     Param(
         [Parameter (Mandatory = $true)]
         [String] $username,
@@ -1398,21 +1398,6 @@ Function createHeader {
     $headers.Add("Authorization", "Basic $base64AuthInfo")
     
     Return $headers
-}
-
-Function ResponseException {
-    #Get response from the exception
-    $response = $_.exception.response
-    if ($response) {
-        $responseStream = $_.exception.response.GetResponseStream()
-        $reader = New-Object system.io.streamreader($responseStream)
-        $responseBody = $reader.readtoend()
-        $errorString = "Exception occured calling invoke-restmethod. $($response.StatusCode.value__) : $($response.StatusDescription) : Response Body: $($responseBody)"
-    }
-    else {
-        Throw $_
-    }
-    Return $errorString
 }
 
 
@@ -1430,7 +1415,7 @@ Function Resolve-PhysicalHostTransportNodes {
     Write-Output "Getting Hosts for Cluster $clusterName"
     $clusterHosts = (Get-Cluster -name $clusterName | Get-VMHost).name
     
-    $headers = createHeader -username $nsxManagerAdmin -password $nsxManagerAdminPassword
+    $headers = VCFIRCreateHeader -username $nsxManagerAdmin -password $nsxManagerAdminPassword
     
     #Get TransportNodes
     $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/"
@@ -1465,7 +1450,7 @@ Function Invoke-NSXEdgeClusterRecovery
     $clusterMoRef = $cluster.ExtensionData.MoRef.Value
 
     #Get TransportNodes
-    $headers = createHeader -username $nsxManagerAdmin -password $nsxManagerAdminPassword
+    $headers = VCFIRCreateHeader -username $nsxManagerAdmin -password $nsxManagerAdminPassword
     $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/"
     $transportNodeContents = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
     $allEdgeTransportNodes = ($transportNodeContents.results | Where-Object { ($_.node_deployment_info.resource_type -eq "EdgeNode") -and ($_.node_deployment_info.deployment_config.vm_deployment_config.compute_id) -eq $clusterMoRef})
