@@ -22,10 +22,15 @@ else
 	[System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy
 }
 
-$is7Zip4PowerShellInstalled = Get-InstalledModule -name 7Zip4PowerShell -ErrorAction SilentlyContinue
+$is7Zip4PowerShellInstalled = Get-InstalledModule -name "7Zip4PowerShell" -ErrorAction SilentlyContinue
 If (!$is7Zip4PowerShellInstalled)
 {
-    Write-Output "Installing 7Zip4PowerShell Module Missing. Please install"
+    Write-Output "7Zip4PowerShell Module Missing. Please install"
+}
+$isPoshSSHInstalled = Get-InstalledModule -name "Posh-SSH" -ErrorAction SilentlyContinue
+If (!$isPoshSSHInstalled)
+{
+    Write-Output "Posh-SSH Module Missing. Please install"
 } 
 
 #Region Data Gathering
