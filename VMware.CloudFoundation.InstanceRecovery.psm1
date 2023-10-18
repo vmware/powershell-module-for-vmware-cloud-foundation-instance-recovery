@@ -136,13 +136,13 @@ Function New-ExtractDataFromSDDCBackup
     } Until ($lineContent -eq '\.')
 
     #Get Management Domain Deployment Objects
-    $metdataJSON = Get-Content "$parentFolder\$extractedBackupFolder\metadata.json" | ConvertFrom-JSON
+    $metadataJSON = Get-Content "$parentFolder\$extractedBackupFolder\metadata.json" | ConvertFrom-JSON
     $dnsJSON = Get-Content "$parentFolder\$extractedBackupFolder\appliancemanager_dns_configuration.json" | ConvertFrom-JSON
     $ntpJSON = Get-Content "$parentFolder\$extractedBackupFolder\appliancemanager_ntp_configuration.json" | ConvertFrom-JSON
 
     $managementDomainDeploymentInfo = [pscustomobject]@{
-        'port_group' = $metdataJSON.port_group
-        'datastore' =  $metdataJSON.vsan_datastore
+        'port_group' = $metadataJSON.port_group
+        'datastore' =  $metadataJSON.vsan_datastore
         'cluster' = $metaDataJSON.cluster
         'datacenter' = $metaDataJSON.datacenter
         'netmask' = $metaDataJSON.netmask
