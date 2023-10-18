@@ -316,7 +316,7 @@ Function New-UploadAndModifySDDCManagerBackup
 #EndRegion Data Gathering
 
 #Region vCenter Functions
-Function Add-ClusterHostsToVds {
+<# Function Add-ClusterHostsToVds {
     Param(
         [Parameter (Mandatory = $true)][String] $restoredvCenterFQDN,
         [Parameter (Mandatory = $true)][String] $restoredvCenterAdmin,
@@ -333,8 +333,7 @@ Function Add-ClusterHostsToVds {
         Get-VDSwitch $restoredVdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostNetworkAdapter $vmNicToAdd -Confirm:$false | Out-Null
     }
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
-}
-
+} #>
 
 Function Move-ClusterHostsToRestoredVcenter {
     Param(
@@ -346,13 +345,17 @@ Function Move-ClusterHostsToRestoredVcenter {
         [Parameter (Mandatory = $true)][String] $restoredvCenterAdmin,
         [Parameter (Mandatory = $true)][String] $restoredvCenterAdminPassword,
         [Parameter (Mandatory = $true)][String] $restoredclusterName,
-        [Parameter (Mandatory = $true)][String] $esxiRootPassword
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile
     )
+    $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
+    $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
+    
     $tempvCenterConnection = connect-viserver $tempvCenterFQDN -user $tempvCenterAdmin -password $tempvCenterAdminPassword
     $esxiHosts = get-cluster -name $tempclusterName | get-vmhost
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
     $restoredvCenterConnection = connect-viserver $restoredvCenterFQDN -user $restoredvCenterAdmin -password $restoredvCenterAdminPassword
     Foreach ($esxiHost in $esxiHosts) {
+        $esxiRootPassword = ($extractedSddcData.passwords | Where-Object {($_.entityType -eq "ESXI") -and ($_.entityName -eq $esxiHost.Name) -and ($_.username -eq "root")}).password
         Add-VMHost -Name $esxiHost.Name -Location $restoredclusterName -User root -Password $esxiRootPassword -Force -Confirm:$false | Out-Null
     }
 }
@@ -495,9 +498,13 @@ Function Set-ClusterHostsvSanIgnoreClusterMemberList {
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
         [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
         [Parameter (Mandatory = $true)][String] $clusterName,
-        [Parameter (Mandatory = $true)][String] $esxiRootPassword,
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
         [Parameter (Mandatory = $true)][ValidateSet("enable", "disable")][String] $setting
     )
+
+    $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
+    $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
+
     # prepare ESXi hosts for cluster migration - Tested
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
     Get-Cluster -name $clusterName | Get-VMHost | Get-VMHostService | Where-Object { $_.label -eq "SSH" } | Start-VMHostService | Out-Null
@@ -509,9 +516,10 @@ Function Set-ClusterHostsvSanIgnoreClusterMemberList {
         $value = 0
     }
     $esxCommand = "esxcli system settings advanced set --int-value=$value --option=/VSAN/IgnoreClusterMemberListUpdates"
-    $password = ConvertTo-SecureString $esxiRootPassword -AsPlainText -Force
-    $mycreds = New-Object System.Management.Automation.PSCredential ("root", $password)
     foreach ($esxiHost in $esxiHosts) {
+        $esxiRootPassword = ($extractedSddcData.passwords | Where-Object {($_.entityType -eq "ESXI") -and ($_.entityName -eq $esxiHost.Name) -and ($_.username -eq "root")}).password
+        $password = ConvertTo-SecureString $esxiRootPassword -AsPlainText -Force
+        $mycreds = New-Object System.Management.Automation.PSCredential ("root", $password)    
         Get-SSHTrustedHost -HostName $esxiHost | Remove-SSHTrustedHost | Out-Null
         Write-Host "Setting vSAN Ignore Cluster Member to `'$setting`' for $esxiHost"
         $sshSession = New-SSHSession -computername $esxiHost -credential $mycreds -AcceptKey
@@ -620,28 +628,6 @@ Function Resolve-PhysicalHostServiceAccounts {
     }
 }
 
-Function Set-PhysicalHostServiceAccountPasswords {
-    Param(
-        [Parameter (Mandatory = $true)][String] $vCenterFQDN,
-        [Parameter (Mandatory = $true)][String] $vCenterAdmin,
-        [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
-        [Parameter (Mandatory = $true)][String] $clusterName,
-        [Parameter (Mandatory = $true)][String] $svcAccountPassword,
-        [Parameter (Mandatory = $true)][String] $esxiRootPassword
-        
-    )
-    $vCenterConnection = Connect-VIServer -server $vCenterFQDN -username $vCenterAdmin -password $vCenterAdminPassword
-    $clusterHosts = Get-Cluster -name $clusterName | Get-VMHost
-    Disconnect-VIServer * -confirm:$false
-    Foreach ($hostInstance in $clusterHosts) {
-        Connect-VIServer -Server $hostInstance.name -User root -Password $esxiRootPassword | Out-Null
-        $esxiHostName = $hostInstance.name.Split(".")[0]
-        $svcAccountName = "svc-vcf-$esxiHostName"
-        Set-VMHostAccount -UserAccount $svcAccountName -Password $svcAccountPassword -confirm:$false | Out-Null
-        Disconnect-VIServer $hostInstance.name -confirm:$false
-    }
-}
-
 Function Set-ClusterDRSLevel {
     Param(
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
@@ -678,17 +664,22 @@ Function Add-HostsToCluster {
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
         [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
         [Parameter (Mandatory = $true)][String] $clusterName,
-        [Parameter (Mandatory = $true)][String] $esxiRootPassword,
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
         [Parameter (Mandatory = $true)][String] $sddcManagerFQDN,
         [Parameter (Mandatory = $true)][String] $sddcManagerUser,
         [Parameter (Mandatory = $true)][String] $sddcManagerPassword
     )
+
+    $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
+    $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
+
     $tokenRequest = Request-VCFToken -fqdn $sddcManagerFQDN -username $sddcManagerUser -password $sddcManagerPassword
     $newHosts = (get-vcfhost | where-object { $_.id -in ((get-vcfcluster -name $clusterName).hosts.id) }).fqdn
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
     foreach ($newHost in $newHosts) {
         $vmHosts = (Get-cluster -name $clusterName | Get-VMHost).Name
         if ($newHost -notin $vmHosts) {
+            $esxiRootPassword = ($extractedSddcData.passwords | Where-Object {($_.entityType -eq "ESXI") -and ($_.entityName -eq $newHost) -and ($_.username -eq "root")}).password
             $esxiConnection = connect-viserver $newHost -user root -password $esxiRootPassword
             if ($esxiConnection) {
                 Write-Output "Adding $newHost to cluster $clusterName"
