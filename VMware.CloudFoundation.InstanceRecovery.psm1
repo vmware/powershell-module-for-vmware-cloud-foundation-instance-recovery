@@ -172,6 +172,63 @@ Function New-NSXManagerOvaDeployment
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
         [Parameter (Mandatory = $true)][String] $workloadDomain
     )
+    $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
+    $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
+
+    $workloadDomainDetails = ($extractedSDDCData.workloadDomains | Where-Object {$_.domainName -eq $workloadDomain})
+    $nsxNodes = $workloadDomainDetails.nsxNodeDetails
+
+    $nsxManagersDisplayObject=@()
+        $nsxManagersIndex = 1
+        $nsxManagersDisplayObject += [pscustomobject]@{
+                'ID'    = "ID"
+                'Manager' = "NSX Manager"
+            }
+        $nsxManagersDisplayObject += [pscustomobject]@{
+                'ID'    = "--"
+                'Manager' = "------------------"
+            }
+        Foreach ($nsxNode in $nsxNodes)
+        {
+            $nsxManagersDisplayObject += [pscustomobject]@{
+                'ID'    = $nsxManagersIndex
+                'Manager' = $nsxNode.vmName
+            }
+            $nsxManagersIndex++
+        }
+    $nsxManagersDisplayObject | format-table -Property @{Expression=" "},id,Manager -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
+    Do
+    {
+        Write-Host ""; Write-Host " Enter the ID of the Manager you wish to redeploy, or C to Cancel: " -ForegroundColor Yellow -nonewline
+        $nsxManagerSelection = Read-Host
+    } Until (($nsxManagerSelection -in $nsxManagersDisplayObject.ID) -OR ($nsxManagerSelection -eq "c"))
+    If ($nsxManagerSelection -eq "c") {Break}
+    
+    <# $vCenterAdminPassword="VMw@re1!" 
+    $vCenterFqdn="sfo-m01-vc01.sfo.rainpole.io" 
+    $vmNetwork="sfo-m01-cl01-vds01-mgmt" 
+    $vmDatastore="sfo-m01-cl01-ds-vsan01" 
+    $datacenterName="sfo-m01-dc01" 
+    $clusterName="sfo-m01-cl01"
+    $nsxManagerOva="F:\OVA\nsx-unified-appliance-3.2.2.1.0.21487565.ova" 
+
+    # NSX Manager Appliance Configuration 
+    $nsxManagerVMName="sfo-m01-nsx01a" 
+    $nsxManagerIp="172.16.11.72" 
+    $nsxManagerNetworkMask="255.255.255.0"
+    $nsxManagerGateway="172.16.11.1" 
+    $nsxManagerDns="172.16.11.5,172.16.11.4" 
+    $nsxManagerDnsDomain="sfo.rainpole.io"
+    $nsxManagerNtpServer="ntp.sfo.rainpole.io"
+    $nsxManagerAdminUsername="admin"
+    $nsxManagerAdminPassword="VMw@re1!VMw@re1!"
+    $nsxManagerCliPassword="VMw@re1!VMw@re1!"
+    $nsxManagerCliAuditUsername="audit"
+    $nsxManagerCliAuditPassword="VMw@re1!VMw@re1!"
+    $nsxManagerHostName="sfo-m01-nsx01a.sfo.rainpole.io"
+
+    $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowExtraConfig --diskMode=thin --X:injectOvfEnv --X:logFile=ovftool.log --powerOn --name="' + $nsxManagerVMName + '" --datastore="' + $vmDatastore + '" --network="' + $vmNetwork + '" --prop:nsx_role="NSX Manager" --prop:nsx_ip_0="' + $nsxManagerIp + '" --prop:nsx_netmask_0="' + $nsxManagerNetworkMask + '" --prop:nsx_gateway_0="' + $nsxManagerGateway + '" --prop:nsx_dns1_0="' + $nsxManagerDns + '" --prop:nsx_domain_0="' + $nsxManagerDnsDomain + '" --prop:nsx_ntp_0="' + $nsxManagerNtpServer + '" --prop:nsx_isSSHEnabled=True --prop:nsx_allowSSHRootLogin=False --prop:nsx_passwd_0="' + $nsxManagerAdminPassword + '" --prop:nsx_cli_username="' + $nsxManagerAdminUsername+ '" --prop:nsx_cli_passwd_0="' + $nsxManagerCliPassword + '" --prop:nsx_cli_audit_passwd_0="' + $nsxManagerCliAuditPassword + '" --prop:nsx_cli_audit_username="' + $nsxManagerCliAuditUsername + '" --prop:nsx_hostname="' + $nsxManagerHostName + '" "' + $nsxManagerOva + '" ' + '"vi://' + $vCenterAdmin + ':' + $vCenterAdminPassword + '@' + $vCenterFqdn + '/' + $datacenterName + '/host/' + $clusterName + '/"'
+    Invoke-Expression "& $command" #>
 }
 
 Function New-UploadAndModifySDDCManagerBackup
