@@ -345,6 +345,8 @@ Function New-ExtractDataFromSDDCBackup
     $sddcManagerObject += [pscustomobject]@{
         'fqdn' = ($passwordVaultObject | Where-Object {$_.entityType -eq "BACKUP"}).entityName
         'vmname' = ((($passwordVaultObject | Where-Object {$_.entityType -eq "BACKUP"}).entityName).split("."))[0]
+        'ip' = $metadataJSON.ip
+        'fips_enabled' = $metadataJSON.fips_enabled 
     }
     
     Write-Output "Creating extracted-sddc-data.json"
@@ -440,8 +442,8 @@ Function New-vCenterOvaDeployment
         [Parameter (Mandatory = $true)][String] $tempvCenterAdminPassword,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
         [Parameter (Mandatory = $true)][String] $workloadDomain,
-        [Parameter (Mandatory = $true)][String] $vCenterOvaFile,
-        [Parameter (Mandatory = $true)][String] $restoredvCenterDeploymentSize
+        [Parameter (Mandatory = $true)][String] $restoredvCenterDeploymentSize,
+        [Parameter (Mandatory = $true)][String] $vCenterOvaFile
     )
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
@@ -467,6 +469,46 @@ Function New-vCenterOvaDeployment
 
 }
 Export-ModuleMember -Function New-vCenterOvaDeployment
+
+Function New-SDDCManagerOvaDeployment
+{
+    Param(
+        [Parameter (Mandatory = $true)][String] $tempvCenterFQDN,
+        [Parameter (Mandatory = $true)][String] $tempvCenterAdmin,
+        [Parameter (Mandatory = $true)][String] $tempvCenterAdminPassword,
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
+        [Parameter (Mandatory = $true)][String] $workloadDomain,
+        [Parameter (Mandatory = $true)][String] $restoredvCenterDeploymentSize,
+        [Parameter (Mandatory = $true)][String] $sddcManagerOvaFile
+    )
+    $sddcManagerRootPassword="VMw@re1!"
+    $sddcManagerVcfPassword="VMw@re1!"
+    $sddcManagerBasicAuthPassword="VMw@re1!"
+    $sddcManagerLocalUserPassword="VMw@re1!"
+
+    $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
+    $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
+
+    # SDDC Manager Configuration
+    $sddcManagerVMName = $extractedSDDCData.sddcManager.vmname  
+    $sddcManagerBackupPassword = ($extractedSddcData.passwords | Where-Object {$_.entityType -eq "BACKUP"}).password
+    $sddcManagerNetworkMask = $extractedSddcData.mgmtDomainInfrastructure.netmask
+    $sddcManagerHostName = $extractedSDDCData.sddcManager.fqdn
+    $sddcManagerIp = $extractedSDDCData.sddcManager.ip
+    $sddcManagerGateway = $extractedSddcData.mgmtDomainInfrastructure.gateway
+    $sddcManagerDns = "$($extractedSddcData.mgmtDomainInfrastructure.primaryDnsServer),$($extractedSddcData.mgmtDomainInfrastructure.secondaryDnsServer)"
+    $sddcManagerDomainSearch =  $extractedSddcData.mgmtDomainInfrastructure.search_path
+    $sddcManagerDnsDomain = $extractedSddcData.mgmtDomainInfrastructure.domain
+    $sddcManagerFipsSetting = $extractedSDDCData.sddcManager.fips_enabled
+    $ntpServers = $extractedSddcData.mgmtDomainInfrastructure.ntpServers -join(",")
+
+    $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowAllExtraConfig --diskMode=thin --X:enableHiddenProperties --X:waitForIp --powerOn --name="' + $sddcManagerVMName + '" --network="' + $vmNetwork + '" --datastore="' + $vmDatastore + '" --prop:vami.hostname="' + $sddcManagerHostName + '" --prop:vami.ip0.SDDC-Manager="' + $sddcManagerIp + '" --prop:vami.netmask0.SDDC-Manager="' + $sddcManagerNetworkMask + '" --prop:vami.DNS.SDDC-Manager="' + $sddcManagerDns + '" --prop:vami.gateway.SDDC-Manager="' + $sddcManagerGateway + '" --prop:ROOT_PASSWORD="' + $sddcManagerRootPassword + '" --prop:VCF_PASSWORD="' + $sddcManagerVcfPassword + '" --prop:BASIC_AUTH_PASSWORD="' + $sddcManagerBasicAuthPassword + '" --prop:LOCAL_USER_PASSWORD="' + $sddcManagerLocalUserPassword + '" --prop:vami.searchpath.SDDC-Manager="' + $sddcManagerDomainSearch + '" --prop:vami.domain.SDDC-Manager="' + $sddcManagerDnsDomain + '" --prop:FIPS_ENABLE="' + $sddcManagerFipsSetting + '" --prop:guestinfo.ntp="' + $ntpServers + '" "' + $sddcManagerOvaFile + '" "vi://' + $tempvCenterAdmin + ':' + $tempvCenterAdminPassword + '@' + $tempvCenterFQDN + '/' + $datacenterName + '/host/' + $clusterName + '/"'
+    Invoke-Expression "& $command"
+
+}
+Export-ModuleMember -Function New-SDDCManagerOvaDeployment
+
+Funct
 
 Function New-UploadAndModifySDDCManagerBackup
 {
