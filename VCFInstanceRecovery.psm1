@@ -183,16 +183,6 @@ Function New-ExtractDataFromSDDCBackup
             'password'   = $object.password
         }
     }
-
-    Write-Output "Retrieving Management Component Detail"
-    $mgmtDomainName = ($passwordVaultObject | Where-Object {$_.entityType -eq "BACKUP"}).domainName
-    $mgmtComponentObject = @()
-    $mgmtComponentObject += [pscustomobject]@{
-        'sddcManagerFqdn' = ($passwordVaultObject | Where-Object {$_.entityType -eq "BACKUP"}).entityName
-        'sddcManagerVmname' = ((($passwordVaultObject | Where-Object {$_.entityType -eq "BACKUP"}).entityName).split("."))[0]
-        'mgmtDomainName'   = $mgmtDomainName
-        'mgmtvCenterFqdn'   = ($passwordVaultObject | Where-Object {($_.entityType -eq "VCENTER") -and ($_.domainName -eq $mgmtDomainName) -and ($_.credentialType -eq "SSO")}).entityName
-    }
     
     $psqlContent = Get-Content "$extractedBackupFolder\database\sddc-postgres.bkp"
     Write-Output "Retrieving NSX Manager Details"
@@ -336,7 +326,7 @@ Function New-ExtractDataFromSDDCBackup
     $dnsJSON = Get-Content "$parentFolder\$extractedBackupFolder\appliancemanager_dns_configuration.json" | ConvertFrom-JSON
     $ntpJSON = Get-Content "$parentFolder\$extractedBackupFolder\appliancemanager_ntp_configuration.json" | ConvertFrom-JSON
 
-    $managementDomainDeploymentInfo = [pscustomobject]@{
+    $mgmtDomainInfrastructure = [pscustomobject]@{
         'port_group' = $metadataJSON.port_group
         'vsan_datastore' =  $metadataJSON.vsan_datastore
         'cluster' = $metaDataJSON.cluster
@@ -349,16 +339,24 @@ Function New-ExtractDataFromSDDCBackup
         'secondaryDnsServer' = $dnsJSON.secondaryDnsServer
         'ntpServers' = @($ntpJSON.ntpServers)
     }
+
+    Write-Output "Retrieving SDDC Manager Detail"
+    $sddcManagerObject = @()
+    $sddcManagerObject += [pscustomobject]@{
+        'fqdn' = ($passwordVaultObject | Where-Object {$_.entityType -eq "BACKUP"}).entityName
+        'vmname' = ((($passwordVaultObject | Where-Object {$_.entityType -eq "BACKUP"}).entityName).split("."))[0]
+    }
     
     Write-Output "Creating extracted-sddc-data.json"
     $sddcDataObject = New-Object -TypeName psobject
-    $sddcDataObject | Add-Member -notepropertyname 'mgmtComponents' -notepropertyvalue $mgmtComponentObject
-    $sddcDataObject | Add-Member -notepropertyname 'managementDomainDeploymentInfo' -notepropertyvalue $managementDomainDeploymentInfo
+    $sddcDataObject | Add-Member -notepropertyname 'sddcManager' -notepropertyvalue $sddcManagerObject
+    $sddcDataObject | Add-Member -notepropertyname 'mgmtDomainInfrastructure' -notepropertyvalue $mgmtDomainInfrastructure
     $sddcDataObject | Add-Member -notepropertyname 'workloadDomains' -notepropertyvalue $workloadDomains
     $sddcDataObject | Add-Member -notepropertyname 'passwords' -notepropertyvalue $passwordVaultObject
     $sddcDataObject | ConvertTo-Json -Depth 10 | Out-File "$parentFolder\extracted-sddc-data.json"
 }
 Export-ModuleMember -Function New-ExtractDataFromSDDCBackup
+
 Function New-NSXManagerOvaDeployment
 {
     Param(
@@ -402,20 +400,20 @@ Function New-NSXManagerOvaDeployment
     If ($nsxManagerSelection -eq "c") {Break}
     $selectedNsxManager = $nsxNodes | Where-Object {$_.vmName -eq ($nsxManagersDisplayObject | Where-Object {$_.id -eq $nsxManagerSelection}).manager }
     
-    $vmNetwork = $extractedSDDCData.managementDomainDeploymentInfo.port_group
-    $vmDatastore = $extractedSDDCData.managementDomainDeploymentInfo.vsan_datastore
-    $datacenterName = $extractedSDDCData.managementDomainDeploymentInfo.datacenter
-    $clusterName = $extractedSDDCData.managementDomainDeploymentInfo.cluster
+    $vmNetwork = $extractedSDDCData.mgmtDomainInfrastructure.port_group
+    $vmDatastore = $extractedSDDCData.mgmtDomainInfrastructure.vsan_datastore
+    $datacenterName = $extractedSDDCData.mgmtDomainInfrastructure.datacenter
+    $clusterName = $extractedSDDCData.mgmtDomainInfrastructure.cluster
 
     # NSX Manager Appliance Configuration 
     $nsxManagerVMName = $selectedNsxManager.vmName
     $nsxManagerIp = $selectedNsxManager.ip
     $nsxManagerHostName = $selectedNsxManager.hostname
-    $nsxManagerNetworkMask = $extractedSddcData.managementDomainDeploymentInfo.netmask
-    $nsxManagerGateway = $extractedSddcData.managementDomainDeploymentInfo.gateway
-    $nsxManagerDns = "$($extractedSddcData.managementDomainDeploymentInfo.primaryDnsServer),$($extractedSddcData.managementDomainDeploymentInfo.secondaryDnsServer)" 
-    $nsxManagerDnsDomain = $extractedSddcData.managementDomainDeploymentInfo.domain
-    $nsxManagerNtpServer = $extractedSddcData.managementDomainDeploymentInfo.ntpServers -join(",")
+    $nsxManagerNetworkMask = $extractedSddcData.mgmtDomainInfrastructure.netmask
+    $nsxManagerGateway = $extractedSddcData.mgmtDomainInfrastructure.gateway
+    $nsxManagerDns = "$($extractedSddcData.mgmtDomainInfrastructure.primaryDnsServer),$($extractedSddcData.mgmtDomainInfrastructure.secondaryDnsServer)" 
+    $nsxManagerDnsDomain = $extractedSddcData.mgmtDomainInfrastructure.domain
+    $nsxManagerNtpServer = $extractedSddcData.mgmtDomainInfrastructure.ntpServers -join(",")
     $nsxManagerAdminUsername = ($extractedSddcData.passwords | Where-Object {($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "API")}).username
     $nsxManagerAdminPassword = ($extractedSddcData.passwords | Where-Object {($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "API")}).password
     $nsxManagerCliPassword  = ($extractedSddcData.passwords | Where-Object {($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "API")}).password
@@ -430,10 +428,45 @@ Function New-NSXManagerOvaDeployment
     {
         $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowExtraConfig --diskMode=thin --X:injectOvfEnv --X:logFile=ovftool.log --powerOn --name="' + $nsxManagerVMName + '" --datastore="' + $vmDatastore + '" --network="' + $vmNetwork + '" --prop:nsx_role="NSX Manager" --prop:nsx_ip_0="' + $nsxManagerIp + '" --prop:nsx_netmask_0="' + $nsxManagerNetworkMask + '" --prop:nsx_gateway_0="' + $nsxManagerGateway + '" --prop:nsx_dns1_0="' + $nsxManagerDns + '" --prop:nsx_domain_0="' + $nsxManagerDnsDomain + '" --prop:nsx_ntp_0="' + $nsxManagerNtpServer + '" --prop:nsx_isSSHEnabled=True --prop:nsx_allowSSHRootLogin=False --prop:nsx_passwd_0="' + $nsxManagerAdminPassword + '" --prop:nsx_cli_username="' + $nsxManagerAdminUsername+ '" --prop:nsx_cli_passwd_0="' + $nsxManagerCliPassword + '" --prop:nsx_hostname="' + $nsxManagerHostName + '" "' + $nsxManagerOvaFile + '" ' + '"vi://' + $tempVcenterAdmin + ':' + $tempVcenterAdminPassword + '@' + $tempVcenterFqdn + '/' + $datacenterName + '/host/' + $clusterName + '/"'    <# Action when all if and elseif conditions are false #>
     }
-    
     Invoke-Expression "& $command"
 }
 Export-ModuleMember -Function New-NSXManagerOvaDeployment
+
+Function New-vCenterOvaDeployment
+{
+    Param(
+        [Parameter (Mandatory = $true)][String] $tempvCenterFQDN,
+        [Parameter (Mandatory = $true)][String] $tempvCenterAdmin,
+        [Parameter (Mandatory = $true)][String] $tempvCenterAdminPassword,
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
+        [Parameter (Mandatory = $true)][String] $workloadDomain,
+        [Parameter (Mandatory = $true)][String] $vCenterOvaFile,
+        [Parameter (Mandatory = $true)][String] $restoredvCenterDeploymentSize
+    )
+    $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
+    $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
+
+    $workloadDomainDetails = ($extractedSDDCData.workloadDomains | Where-Object {$_.domainName -eq $workloadDomain})
+    $vmNetwork = $extractedSDDCData.mgmtDomainInfrastructure.port_group
+    $vmDatastore = $extractedSDDCData.mgmtDomainInfrastructure.vsan_datastore
+    $datacenterName = $extractedSDDCData.mgmtDomainInfrastructure.datacenter
+    $clusterName = $extractedSDDCData.mgmtDomainInfrastructure.cluster
+    $restoredvCenterVMName = $workloadDomainDetails.vCenterDetails.vmname
+    $restoredvCenterIpAddress = $workloadDomainDetails.vCenterDetails.ip
+    $restoredvCenterFqdn = $workloadDomainDetails.vCenterDetails.fqdn
+    $restoredvCenterNetworkPrefix = 0
+    [IPAddress] $ip = $extractedSddcData.mgmtDomainInfrastructure.netmask
+    $octets = $ip.IPAddressToString.Split('.')
+    Foreach($octet in $octets) { while(0 -ne $octet) { $octet = ($octet -shl 1) -band [byte]::MaxValue; $restoredvCenterNetworkPrefix++; }}
+    $restoredvCenterDnsServers = "$($extractedSddcData.mgmtDomainInfrastructure.primaryDnsServer),$($extractedSddcData.mgmtDomainInfrastructure.secondaryDnsServer)" 
+    $restoredvCenterGateway = $extractedSddcData.mgmtDomainInfrastructure.gateway
+    $restoredvCenterRootPassword = ($extractedSddcData.passwords | Where-Object {($_.entityType -eq "VCENTER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "SSH")}).password
+
+    $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowExtraConfig --X:enableHiddenProperties --diskMode=thin --X:injectOvfEnv --X:waitForIp --X:logFile=ovftool.log --name="' + $restoredvCenterVMName + '" --net:"Network 1"="' +$vmNetwork + '" --datastore="' + $vmDatastore + '" --deploymentOption="' + $restoredvCenterDeploymentSize + '" --prop:guestinfo.cis.appliance.net.addr.family="ipv4" --prop:guestinfo.cis.appliance.net.addr="' + $restoredvCenterIpAddress + '" --prop:guestinfo.cis.appliance.net.pnid="' + $restoredvCenterFqdn + '" --prop:guestinfo.cis.appliance.net.prefix="' + $restoredvCenterNetworkPrefix + '" --prop:guestinfo.cis.appliance.net.mode="static" --prop:guestinfo.cis.appliance.net.dns.servers="' + $restoredvCenterDnsServers + '" --prop:guestinfo.cis.appliance.net.gateway="' + $restoredvCenterGateway + '" --prop:guestinfo.cis.appliance.root.passwd="' + $restoredvCenterRootPassword + '" --prop:guestinfo.cis.appliance.ssh.enabled="True" "' + $vCenterOvaFile + '" ' + '"vi://' + $tempvCenterAdmin + ':' + $tempvCenterAdminPassword + '@' + $tempvCenterFQDN + '/' + $datacenterName + '/host/' + $clusterName + '/"'
+    Invoke-Expression "& $command"
+
+}
+Export-ModuleMember -Function New-vCenterOvaDeployment
 
 Function New-UploadAndModifySDDCManagerBackup
 {
@@ -451,9 +484,10 @@ Function New-UploadAndModifySDDCManagerBackup
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
 
-    $mgmtVcenterFqdn = $extractedSddcData.mgmtComponents.mgmtVcenterFqdn
-    $sddcManagerFQDN = $extractedSddcData.mgmtComponents.sddcManagerFQDN
-    $sddcManagerVmName = $extractedSddcData.mgmtComponents.sddcManagerVmName
+    $mgmtWorkloadDomain = $extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}
+    $mgmtVcenterFqdn =  $mgmtWorkloadDomain.vCenterDetails.fqdn
+    $sddcManagerFQDN = $extractedSddcData.sddcManager.fqdn
+    $sddcManagerVmName = $extractedSddcData.sddcManager.vmName
     $backupFilePath = (Resolve-Path -Path $backupFilePath).path
     $backupFileName = (Get-ChildItem -path $backupFilePath).name
     $extractedBackupFolder = ($backupFileName -Split(".tar.gz"))[0]
