@@ -324,8 +324,8 @@ Function New-ExtractDataFromSDDCBackup
                 'domainName' = $domainName
                 'domainID' = $domainID
                 'domainType' = $domainType
-                'nsxNodeDetails' = ($nsxtManagerClusters | Where-Object {$_.domainIDs -contains $domainId}).nsxNodes
                 'vCenterDetails' = $vCenterDetails
+                'nsxNodeDetails' = ($nsxtManagerClusters | Where-Object {$_.domainIDs -contains $domainId}).nsxNodes
             }
         }
         $domainLineIndex++
