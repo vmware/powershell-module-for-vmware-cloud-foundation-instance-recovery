@@ -194,9 +194,9 @@ Function New-ExtractDataFromSDDCBackup
         'mgmtvCenterFqdn'   = ($passwordVaultObject | Where-Object {($_.entityType -eq "VCENTER") -and ($_.domainName -eq $mgmtDomainName) -and ($_.credentialType -eq "SSO")}).entityName
     }
     
-    Write-Output "Retrieving NSX Manager Details"
     $psqlContent = Get-Content "$extractedBackupFolder\database\sddc-postgres.bkp"
-
+    Write-Output "Retrieving NSX Manager Details"
+    
     #Get All NSX Manager Clusters
     $nsxManagerstartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.nsxt (id" | Select Line,LineNumber).LineNumber
     $nsxManagerlineIndex = $nsxManagerstartingLineNumber
@@ -227,6 +227,7 @@ Function New-ExtractDataFromSDDCBackup
     }
     Until ($lineContent -eq '\.')
     
+    Write-Output "Retrieving vCenter Details"
     #Get Host and Domain Details
     $hostsAndDomainsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.host_and_domain " | Select Line,LineNumber).LineNumber
     $hostsAndDomainsLineIndex = $hostsAndDomainsLineNumber
@@ -267,9 +268,6 @@ Function New-ExtractDataFromSDDCBackup
     }
     Until ($lineContent -eq '\.')
 
-    #Link vCenter to Domain by cross referencing using first host in domain
-    $uniqueVcenters = $hostsandVcentersLineIndex.vCenterID.unique
-
     #Get Host and vCenter Details
     $vCentersStartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.vcenter " | Select Line,LineNumber).LineNumber
     $vCenterLineIndex = $vCentersStartingLineNumber
@@ -300,6 +298,7 @@ Function New-ExtractDataFromSDDCBackup
     }
     Until ($lineContent -eq '\.')
  
+    Write-Output "Assembling Workload Domain Data"
     #GetDomainDetails
     $domainsStartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.domain (id" | Select Line,LineNumber).LineNumber
     $domainLineIndex = $domainsStartingLineNumber
@@ -314,12 +313,12 @@ Function New-ExtractDataFromSDDCBackup
             $domainType = $lineContent.split("`t")[6]
             $vCenter = $vCenters | Where-Object {$_.vCenterDomainID -eq $domainId}
             $vCenterDetails = [pscustomobject]@{
-                'vCenterID' = $vCenter.vCenterID
-                'vCenterDatastore' = $vCenter.vCenterDatastore
-                'vCenterVersion' = $vCenter.vCenterVersion
-                'vCenterFqdn' = $vCenter.vCenterFqdn
-                'vCenterIp' = $vCenter.vCenterIp
-                'vCenterVMname' = $vCenter.vCenterVMname
+                'id' = $vCenter.vCenterID
+                'datastore' = $vCenter.vCenterDatastore
+                'version' = $vCenter.vCenterVersion
+                'fqdn' = $vCenter.vCenterFqdn
+                'ip' = $vCenter.vCenterIp
+                'vmname' = $vCenter.vCenterVMname
             }
             $workloadDomains += [pscustomobject]@{
                 'domainName' = $domainName
