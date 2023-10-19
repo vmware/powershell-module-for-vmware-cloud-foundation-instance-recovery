@@ -313,7 +313,7 @@ Function New-ExtractDataFromSDDCBackup
             $domainName = $lineContent.split("`t")[3]
             $domainType = $lineContent.split("`t")[6]
             $vCenter = $vCenters | Where-Object {$_.vCenterDomainID -eq $domainId}
-            $vCenterDetails += [pscustomobject]@{
+            $vCenterDetails = [pscustomobject]@{
                 'vCenterID' = $vCenter.vCenterID
                 'vCenterDatastore' = $vCenter.vCenterDatastore
                 'vCenterVersion' = $vCenter.vCenterVersion
