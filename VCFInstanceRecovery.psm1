@@ -932,19 +932,43 @@ Function Move-ClusterHostNetworkingTovSS
 {
     <#
     .SYNOPSIS
-    Describe the purpose
+    Moves all hosts in a cluster from a vsphere Distributed switch to a vSphere Standard switch
 
     .DESCRIPTION
-    The xxx cmdlet Describe the purpose
+    The Move-ClusterHostNetworkingTovSS cmdlet moves all hosts in a cluster from a vsphere Distributed switch to a vSphere Standard switch
 
     .EXAMPLE
-    Show sample usage
+    Move-ClusterHostNetworkingTovSS -vCenterFQDN "sfo-m01-vc02.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01" -vdsName "sfo-m01-cl01-vds01" -mtu 9000 -vmnic "vmnic1" -mgmtVlanId 1611 -vMotionVlanId 1612 -vSanVlanId 1613
 
-    .PARAMETER xxxx
-    Description of the parameter
+    .PARAMETER vCenterFQDN
+    FQDN of the vCenter instance hosting the cluster which should be moved
 
-    .PARAMETER yyyy
-    Description of the parameter
+    .PARAMETER vCenterAdmin
+    Admin user of the vCenter instance hosting the cluster which should be moved
+    
+    .PARAMETER vCenterAdminPassword
+    Admin password for the vCenter instance hosting the cluster which should be moved
+
+    .PARAMETER clusterName
+    Name of the vSphere cluster instance hosting the VMS to be moved
+
+    .PARAMETER vdsName
+    Name of the vDS from which the hosts should be moved
+
+    .PARAMETER mtu
+    MTU to be assigned to the temporary standard switch
+    
+    .PARAMETER vmnic
+    vmnic to be moved from teh vDS to the vSS
+
+    .PARAMETER mgmtVlanId
+    Management network vLan ID
+
+    .PARAMETER vMotionVlanId
+    vMotion network vLan ID
+
+    .PARAMETER vSanVlanId
+    vSAN network vLan ID
     #>
     
     Param(
