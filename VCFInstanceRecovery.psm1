@@ -959,7 +959,7 @@ Function Move-ClusterHostNetworkingTovSS
     MTU to be assigned to the temporary standard switch
     
     .PARAMETER vmnic
-    vmnic to be moved from teh vDS to the vSS
+    vmnic to be moved from the vDS to the vSS
 
     .PARAMETER mgmtVlanId
     Management network vLan ID
@@ -1053,19 +1053,35 @@ Function Move-ClusterVmnicTovSwitch
 {
     <#
     .SYNOPSIS
-    Describe the purpose
+    Moves VMs to the temporary vSS
 
     .DESCRIPTION
-    The xxx cmdlet Describe the purpose
+    The Move-ClusterVmnicTovSwitch cmdlet moves VMs to the temporary vSS
 
     .EXAMPLE
-    Show sample usage
+    Move-ClusterVmnicTovSwitch -vCenterFQDN "sfo-m01-vc02.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01" -mtu 9000 -VLanId 1611 -vmnic "vmnic1" 
 
-    .PARAMETER xxxx
-    Description of the parameter
+    .PARAMETER vCenterFQDN
+    FQDN of the vCenter instance hosting the VMs to be moved
 
-    .PARAMETER yyyy
-    Description of the parameter
+    .PARAMETER vCenterAdmin
+    Admin user of the vCenter instance hosting the VMs to be moved
+    
+    .PARAMETER vCenterAdminPassword
+    Admin password for the vCenter instance hosting the VMs to be moved
+
+    .PARAMETER clusterName
+    Name of the vSphere cluster instance hosting the VMS to be moved
+
+    .PARAMETER mtu
+    MTU to be assigned to the temporary standard switch
+
+    .PARAMETER VLanId
+    Management network vLan ID
+        
+    .PARAMETER vmnic
+    vmnic to be used for the vSS
+
     #>
     
     Param(
