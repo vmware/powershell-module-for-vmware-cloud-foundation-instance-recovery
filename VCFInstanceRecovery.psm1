@@ -384,6 +384,12 @@ Function New-ExtractDataFromSDDCBackup
     $sddcDataObject | Add-Member -notepropertyname 'workloadDomains' -notepropertyvalue $workloadDomains
     $sddcDataObject | Add-Member -notepropertyname 'passwords' -notepropertyvalue $passwordVaultObject
     $sddcDataObject | ConvertTo-Json -Depth 10 | Out-File "$parentFolder\extracted-sddc-data.json"
+
+    #Cleanup
+    Write-Output "Cleaning up extracted files"
+    Remove-Item -Path "$parentFolder\decrypted-sddc-manager-backup.tar.gz" -force -confirm:$false
+    Remove-Item -Path "$parentFolder\decrypted-sddc-manager-backup.tar" -force -confirm:$false
+    Remove-Item -path "$parentFolder\$extractedBackupFolder" -Recurse 
 }
 Export-ModuleMember -Function New-ExtractDataFromSDDCBackup
 
