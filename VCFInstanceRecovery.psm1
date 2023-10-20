@@ -478,14 +478,12 @@ Function New-SDDCManagerOvaDeployment
         [Parameter (Mandatory = $true)][String] $tempvCenterAdminPassword,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
         [Parameter (Mandatory = $true)][String] $workloadDomain,
-        [Parameter (Mandatory = $true)][String] $restoredvCenterDeploymentSize,
-        [Parameter (Mandatory = $true)][String] $sddcManagerOvaFile
+        [Parameter (Mandatory = $true)][String] $sddcManagerOvaFile,
+        [Parameter (Mandatory = $true)][String] $rootPassword,
+        [Parameter (Mandatory = $true)][String] $vcfPassword,
+        [Parameter (Mandatory = $true)][String] $localUserPassword,
+        [Parameter (Mandatory = $true)][String] $basicAuthPassword
     )
-    $sddcManagerRootPassword="VMw@re1!"
-    $sddcManagerVcfPassword="VMw@re1!"
-    $sddcManagerBasicAuthPassword="VMw@re1!"
-    $sddcManagerLocalUserPassword="VMw@re1!"
-
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
 
@@ -502,13 +500,12 @@ Function New-SDDCManagerOvaDeployment
     $sddcManagerFipsSetting = $extractedSDDCData.sddcManager.fips_enabled
     $ntpServers = $extractedSddcData.mgmtDomainInfrastructure.ntpServers -join(",")
 
-    $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowAllExtraConfig --diskMode=thin --X:enableHiddenProperties --X:waitForIp --powerOn --name="' + $sddcManagerVMName + '" --network="' + $vmNetwork + '" --datastore="' + $vmDatastore + '" --prop:vami.hostname="' + $sddcManagerHostName + '" --prop:vami.ip0.SDDC-Manager="' + $sddcManagerIp + '" --prop:vami.netmask0.SDDC-Manager="' + $sddcManagerNetworkMask + '" --prop:vami.DNS.SDDC-Manager="' + $sddcManagerDns + '" --prop:vami.gateway.SDDC-Manager="' + $sddcManagerGateway + '" --prop:ROOT_PASSWORD="' + $sddcManagerRootPassword + '" --prop:VCF_PASSWORD="' + $sddcManagerVcfPassword + '" --prop:BASIC_AUTH_PASSWORD="' + $sddcManagerBasicAuthPassword + '" --prop:LOCAL_USER_PASSWORD="' + $sddcManagerLocalUserPassword + '" --prop:vami.searchpath.SDDC-Manager="' + $sddcManagerDomainSearch + '" --prop:vami.domain.SDDC-Manager="' + $sddcManagerDnsDomain + '" --prop:FIPS_ENABLE="' + $sddcManagerFipsSetting + '" --prop:guestinfo.ntp="' + $ntpServers + '" "' + $sddcManagerOvaFile + '" "vi://' + $tempvCenterAdmin + ':' + $tempvCenterAdminPassword + '@' + $tempvCenterFQDN + '/' + $datacenterName + '/host/' + $clusterName + '/"'
+    $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowAllExtraConfig --diskMode=thin --X:enableHiddenProperties --X:waitForIp --powerOn --name="' + $sddcManagerVMName + '" --network="' + $vmNetwork + '" --datastore="' + $vmDatastore + '" --prop:vami.hostname="' + $sddcManagerHostName + '" --prop:vami.ip0.SDDC-Manager="' + $sddcManagerIp + '" --prop:vami.netmask0.SDDC-Manager="' + $sddcManagerNetworkMask + '" --prop:vami.DNS.SDDC-Manager="' + $sddcManagerDns + '" --prop:vami.gateway.SDDC-Manager="' + $sddcManagerGateway + '" --prop:ROOT_PASSWORD="' + $rootPassword + '" --prop:VCF_PASSWORD="' + $vcfPassword + '" --prop:BASIC_AUTH_PASSWORD="' + $basicAuthPassword + '" --prop:LOCAL_USER_PASSWORD="' + $localUserPassword + '" --prop:vami.searchpath.SDDC-Manager="' + $sddcManagerDomainSearch + '" --prop:vami.domain.SDDC-Manager="' + $sddcManagerDnsDomain + '" --prop:FIPS_ENABLE="' + $sddcManagerFipsSetting + '" --prop:guestinfo.ntp="' + $ntpServers + '" "' + $sddcManagerOvaFile + '" "vi://' + $tempvCenterAdmin + ':' + $tempvCenterAdminPassword + '@' + $tempvCenterFQDN + '/' + $datacenterName + '/host/' + $clusterName + '/"'
     Invoke-Expression "& $command"
 
 }
 Export-ModuleMember -Function New-SDDCManagerOvaDeployment
 
-Funct
 
 Function New-UploadAndModifySDDCManagerBackup
 {
