@@ -1188,13 +1188,19 @@ Function Move-ClusterVMsToFirstHost
     The Move-ClusterVMsToFirstHost cmdlet moves all VMs in a cluster to a single ESXi host
 
     .EXAMPLE
-    Show sample usage
+    Move-ClusterVMsToFirstHost -vCenterFQDN "sfo-m01-vc02.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01"
 
-    .PARAMETER xxxx
-    Description of the parameter
+    .PARAMETER vCenterFQDN
+    FQDN of the vCenter instance hosting the VMs to be moved
 
-    .PARAMETER yyyy
-    Description of the parameter
+    .PARAMETER vCenterAdmin
+    Admin user of the vCenter instance hosting the VMs to be moved
+    
+    .PARAMETER vCenterAdminPassword
+    Admin password for the vCenter instance hosting the VMs to be moved
+
+    .PARAMETER clusterName
+    Name of the vSphere cluster instance hosting the VMs to be moved
     #>
     
     Param(
@@ -1338,19 +1344,28 @@ Function Set-ClusterDRSLevel
 {
     <#
     .SYNOPSIS
-    Describe the purpose
+    Modifies the DRS level of a vSphere cluster
 
     .DESCRIPTION
-    The xxx cmdlet Describe the purpose
+    The Set-ClusterDRSLevel cmdlet modifies the DRS level of a vSphere cluster
 
     .EXAMPLE
-    Show sample usage
+    Set-ClusterDRSLevel -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01" -DrsAutomationLevel "Manual"
 
-    .PARAMETER xxxx
-    Description of the parameter
+    .PARAMETER vCenterFQDN
+    FQDN of the vCenter instance hosting the cluster to be updated
 
-    .PARAMETER yyyy
-    Description of the parameter
+    .PARAMETER vCenterAdmin
+    Admin user of the vCenter instance hosting the cluster to be updated
+    
+    .PARAMETER vCenterAdminPassword
+    Admin password for the vCenter instance hosting the cluster to be updated
+
+    .PARAMETER clusterName
+    Name of the vSphere cluster instance to be updated
+
+    .PARAMETER DrsAutomationLevel
+    DrsAutomationLevel to be set. One of: FullyAutomated or Manual
     #>
     
     Param(
@@ -1358,7 +1373,7 @@ Function Set-ClusterDRSLevel
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
         [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
         [Parameter (Mandatory = $true)][String] $clusterName,
-        [Parameter (Mandatory = $true)][String] $DrsAutomationLevel
+        [Parameter (Mandatory = $true)][ValidateSet("FullyAutomated", "Manual")][String] $DrsAutomationLevel
         
     )
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
@@ -1371,19 +1386,25 @@ Function Remove-NonResponsiveHosts
 {
     <#
     .SYNOPSIS
-    Describe the purpose
+    Removes non-responsive hosts from a cluster
 
     .DESCRIPTION
-    The xxx cmdlet Describe the purpose
+    The Remove-NonResponsiveHosts cmdlet removes non-responsive hosts from a cluster
 
     .EXAMPLE
-    Show sample usage
+    Remove-NonResponsiveHosts -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01"
 
-    .PARAMETER xxxx
-    Description of the parameter
+    .PARAMETER vCenterFQDN
+    FQDN of the vCenter instance hosting the cluster from which to remove non-responsive hosts
 
-    .PARAMETER yyyy
-    Description of the parameter
+    .PARAMETER vCenterAdmin
+    Admin user of the vCenter instance hosting the cluster from which to remove non-responsive hosts
+    
+    .PARAMETER vCenterAdminPassword
+    Admin password for the vCenter instance hosting the cluster from which to remove non-responsive hosts
+
+    .PARAMETER clusterName
+    Name of the vSphere cluster instance from which to remove non-responsive hosts
     #>
     
     Param(
@@ -1406,19 +1427,37 @@ Function Add-HostsToCluster
 {
     <#
     .SYNOPSIS
-    Describe the purpose
+    Adds hosts to a vSphere cluster using data from the SDDC Manager backup
 
     .DESCRIPTION
-    The xxx cmdlet Describe the purpose
+    The Add-HostsToCluster cmdlet Adds hosts to a vSphere cluster using data from the SDDC Manager backup
 
     .EXAMPLE
-    Show sample usage
+    Add-HostsToCluster -vCenterFQDN "sfo-m01-vc02.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01"  -extractedSDDCDataFile ".\extracted-sddc-data.json" 
 
-    .PARAMETER xxxx
-    Description of the parameter
+    .PARAMETER vCenterFQDN
+    FQDN of the vCenter instance hosting the cluster to which the hosts will be added
 
-    .PARAMETER yyyy
-    Description of the parameter
+    .PARAMETER vCenterAdmin
+    Admin user of the vCenter instance hosting the cluster to which the hosts will be added
+    
+    .PARAMETER vCenterAdminPassword
+    Admin password for the vCenter instance hosting the cluster to which the hosts will be added
+
+    .PARAMETER clusterName
+    Name of the vSphere cluster instance to which the hosts will be added
+
+    .PARAMETER extractedSDDCDataFile
+    Relative or absolute to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup) somewhere on the local filesystem
+
+    .PARAMETER sddcManagerFQDN
+    FQDN of SDDC Manager
+
+    .PARAMETER sddcManagerUser
+    SDDC Manager API username with ADMIN role
+
+    .PARAMETER sddcManagerPassword
+    SDDC Manager API username password
     #>
     
     Param(
