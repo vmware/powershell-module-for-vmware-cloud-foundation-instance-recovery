@@ -933,7 +933,6 @@ Function Move-ClusterHostNetworkingTovSS
 
     .EXAMPLE
     Show sample usage
-    Describe what example does
 
     .PARAMETER xxxx
     Description of the parameter
@@ -1031,7 +1030,6 @@ Function Move-ClusterVmnicTovSwitch
 
     .EXAMPLE
     Show sample usage
-    Describe what example does
 
     .PARAMETER xxxx
     Description of the parameter
@@ -1073,7 +1071,6 @@ Function Set-ClusterHostsvSanIgnoreClusterMemberList
 
     .EXAMPLE
     Show sample usage
-    Describe what example does
 
     .PARAMETER xxxx
     Description of the parameter
@@ -1129,7 +1126,6 @@ Function Move-ClusterVMsToFirstHost
 
     .EXAMPLE
     Show sample usage
-    Describe what example does
 
     .PARAMETER xxxx
     Description of the parameter
@@ -1173,7 +1169,6 @@ Function Resolve-PhysicalHostServiceAccounts
 
     .EXAMPLE
     Show sample usage
-    Describe what example does
 
     .PARAMETER xxxx
     Description of the parameter
@@ -1269,7 +1264,6 @@ Function Set-ClusterDRSLevel
 
     .EXAMPLE
     Show sample usage
-    Describe what example does
 
     .PARAMETER xxxx
     Description of the parameter
@@ -1303,7 +1297,6 @@ Function Remove-NonResponsiveHosts
 
     .EXAMPLE
     Show sample usage
-    Describe what example does
 
     .PARAMETER xxxx
     Description of the parameter
@@ -1339,7 +1332,6 @@ Function Add-HostsToCluster
 
     .EXAMPLE
     Show sample usage
-    Describe what example does
 
     .PARAMETER xxxx
     Description of the parameter
@@ -1398,7 +1390,6 @@ Function Remove-StandardSwitch
 
     .EXAMPLE
     Show sample usage
-    Describe what example does
 
     .PARAMETER xxxx
     Description of the parameter
@@ -1434,7 +1425,6 @@ Function Add-VMKernelsToHost
 
     .EXAMPLE
     Show sample usage
-    Describe what example does
 
     .PARAMETER xxxx
     Description of the parameter
@@ -1519,7 +1509,6 @@ Function Backup-ClusterVMOverrides
 
     .EXAMPLE
     Show sample usage
-    Describe what example does
 
     .PARAMETER xxxx
     Description of the parameter
@@ -1581,7 +1570,6 @@ Function Backup-ClusterVMLocations
 
     .EXAMPLE
     Show sample usage
-    Describe what example does
 
     .PARAMETER xxxx
     Description of the parameter
@@ -1627,7 +1615,6 @@ Function Backup-ClusterDRSGroupsAndRules
 
     .EXAMPLE
     Show sample usage
-    Describe what example does
 
     .PARAMETER xxxx
     Description of the parameter
@@ -1726,7 +1713,6 @@ Function Restore-ClusterVMOverrides
 
     .EXAMPLE
     Show sample usage
-    Describe what example does
 
     .PARAMETER xxxx
     Description of the parameter
@@ -1880,7 +1866,6 @@ Function Restore-ClusterVMLocations
 
     .EXAMPLE
     Show sample usage
-    Describe what example does
 
     .PARAMETER xxxx
     Description of the parameter
@@ -1936,7 +1921,6 @@ Function Restore-ClusterDRSGroupsAndRules
 
     .EXAMPLE
     Show sample usage
-    Describe what example does
 
     .PARAMETER xxxx
     Description of the parameter
@@ -2060,7 +2044,6 @@ Function Resolve-PhysicalHostTransportNodes
 
     .EXAMPLE
     Show sample usage
-    Describe what example does
 
     .PARAMETER xxxx
     Description of the parameter
@@ -2113,7 +2096,6 @@ Function Invoke-NSXEdgeClusterRecovery
 
     .EXAMPLE
     Show sample usage
-    Describe what example does
 
     .PARAMETER xxxx
     Description of the parameter
