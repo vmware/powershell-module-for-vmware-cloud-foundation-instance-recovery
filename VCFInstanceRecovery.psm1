@@ -1643,13 +1643,13 @@ Function Backup-ClusterVMOverrides
 {
     <#
     .SYNOPSIS
-    Describe the purpose
+    Creates a backup of the VM Overrides for a vSphere cluster
 
     .DESCRIPTION
-    The xxx cmdlet Describe the purpose
+    The Backup-ClusterVMOverrides cmdlet Describe the purpose
 
     .EXAMPLE
-    Show sample usage
+    Backup-ClusterVMOverrides -clusterName "sfo-m01-cl01"
 
     .PARAMETER xxxx
     Description of the parameter
