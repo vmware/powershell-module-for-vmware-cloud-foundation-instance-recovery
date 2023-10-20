@@ -1110,19 +1110,31 @@ Function Set-ClusterHostsvSanIgnoreClusterMemberList
 {
     <#
     .SYNOPSIS
-    Describe the purpose
+    Toggles the vSAN Ignore Cluster Member List Updates setting on a vSAN cluster ESXi host
 
     .DESCRIPTION
-    The xxx cmdlet Describe the purpose
+    The Set-ClusterHostsvSanIgnoreClusterMemberList cmdlet toggles the vSAN Ignore Cluster Member List Updates setting on a vSAN cluster ESXi host
 
     .EXAMPLE
-    Show sample usage
+    Set-ClusterHostsvSanIgnoreClusterMemberList -vCenterFQDN "sfo-m01-vc02.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01"  -extractedSDDCDataFile ".\extracted-sddc-data.json" -setting "enable"
 
-    .PARAMETER xxxx
-    Description of the parameter
+    .PARAMETER vCenterFQDN
+    FQDN of the vCenter instance hosting the ESXi hosts to be updated
 
-    .PARAMETER yyyy
-    Description of the parameter
+    .PARAMETER vCenterAdmin
+    Admin user of the vCenter instance hosting the ESXi hosts to be updated
+    
+    .PARAMETER vCenterAdminPassword
+    Admin password for the vCenter instance hosting the ESXi hosts to be updated
+
+    .PARAMETER clusterName
+    Name of the vSphere cluster instance hosting the ESXi hosts to be updated
+
+    .PARAMETER extractedSDDCDataFile
+    Relative or absolute to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup) somewhere on the local filesystem
+
+    .PARAMETER setting
+    The setting to apply to the hosts - either enable or disable
     #>
     
     Param(
