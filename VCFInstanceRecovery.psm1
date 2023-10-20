@@ -620,7 +620,11 @@ Function New-SDDCManagerOvaDeployment
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
 
     # SDDC Manager Configuration
-    $sddcManagerVMName = $extractedSDDCData.sddcManager.vmname  
+    $vmNetwork = $extractedSDDCData.mgmtDomainInfrastructure.port_group
+    $vmDatastore = $extractedSDDCData.mgmtDomainInfrastructure.vsan_datastore
+    $datacenterName = $extractedSDDCData.mgmtDomainInfrastructure.datacenter
+    $clusterName = $extractedSDDCData.mgmtDomainInfrastructure.cluster
+    $sddcManagerVMName = $extractedSDDCData.sddcManager.vmname
     $sddcManagerBackupPassword = ($extractedSddcData.passwords | Where-Object {$_.entityType -eq "BACKUP"}).password
     $sddcManagerNetworkMask = $extractedSddcData.mgmtDomainInfrastructure.netmask
     $sddcManagerHostName = $extractedSDDCData.sddcManager.fqdn
@@ -631,6 +635,7 @@ Function New-SDDCManagerOvaDeployment
     $sddcManagerDnsDomain = $extractedSddcData.mgmtDomainInfrastructure.domain
     $sddcManagerFipsSetting = $extractedSDDCData.sddcManager.fips_enabled
     $ntpServers = $extractedSddcData.mgmtDomainInfrastructure.ntpServers -join(",")
+    
 
     $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowAllExtraConfig --diskMode=thin --X:enableHiddenProperties --X:waitForIp --powerOn --name="' + $sddcManagerVMName + '" --network="' + $vmNetwork + '" --datastore="' + $vmDatastore + '" --prop:vami.hostname="' + $sddcManagerHostName + '" --prop:vami.ip0.SDDC-Manager="' + $sddcManagerIp + '" --prop:vami.netmask0.SDDC-Manager="' + $sddcManagerNetworkMask + '" --prop:vami.DNS.SDDC-Manager="' + $sddcManagerDns + '" --prop:vami.gateway.SDDC-Manager="' + $sddcManagerGateway + '" --prop:ROOT_PASSWORD="' + $rootPassword + '" --prop:VCF_PASSWORD="' + $vcfPassword + '" --prop:BASIC_AUTH_PASSWORD="' + $basicAuthPassword + '" --prop:LOCAL_USER_PASSWORD="' + $localUserPassword + '" --prop:vami.searchpath.SDDC-Manager="' + $sddcManagerDomainSearch + '" --prop:vami.domain.SDDC-Manager="' + $sddcManagerDnsDomain + '" --prop:FIPS_ENABLE="' + $sddcManagerFipsSetting + '" --prop:guestinfo.ntp="' + $ntpServers + '" "' + $sddcManagerOvaFile + '" "vi://' + $tempvCenterAdmin + ':' + $tempvCenterAdminPassword + '@' + $tempvCenterFQDN + '/' + $datacenterName + '/host/' + $clusterName + '/"'
     Invoke-Expression "& $command"
@@ -1177,10 +1182,10 @@ Function Move-ClusterVMsToFirstHost
 {
     <#
     .SYNOPSIS
-    Describe the purpose
+    Moves all VMs in a cluster to a single ESXi host
 
     .DESCRIPTION
-    The xxx cmdlet Describe the purpose
+    The Move-ClusterVMsToFirstHost cmdlet moves all VMs in a cluster to a single ESXi host
 
     .EXAMPLE
     Show sample usage
@@ -1220,19 +1225,37 @@ Function Resolve-PhysicalHostServiceAccounts
 {
     <#
     .SYNOPSIS
-    Describe the purpose
+    Creates a new VCF Service Account on each ESXi host and remediates the SDDC Manager inventory
 
     .DESCRIPTION
-    The xxx cmdlet Describe the purpose
+    The Resolve-PhysicalHostServiceAccounts cmdlet creates a new VCF Service Account on each ESXi host and remediates the SDDC Manager inventory
 
     .EXAMPLE
-    Show sample usage
+    Resolve-PhysicalHostServiceAccounts -vCenterFQDN "sfo-w01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-w01-cl01" 
 
-    .PARAMETER xxxx
-    Description of the parameter
+    .PARAMETER vCenterFQDN
+    FQDN of the vCenter instance hosting the ESXi hosts to be updated
 
-    .PARAMETER yyyy
-    Description of the parameter
+    .PARAMETER vCenterAdmin
+    Admin user of the vCenter instance hosting the ESXi hosts to be updated
+    
+    .PARAMETER vCenterAdminPassword
+    Admin password for the vCenter instance hosting the ESXi hosts to be updated
+
+    .PARAMETER clusterName
+    Name of the vSphere cluster instance hosting the ESXi hosts to be updated
+
+    .PARAMETER svcAccountPassword
+    Service account password to be used
+
+    .PARAMETER sddcManagerFQDN
+    FQDN of SDDC Manager
+
+    .PARAMETER sddcManagerUser
+    SDDC Manager API username with ADMIN role
+
+    .PARAMETER sddcManagerPassword
+    SDDC Manager API username password
     #>
     
     Param(
