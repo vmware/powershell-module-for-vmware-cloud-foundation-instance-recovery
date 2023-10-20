@@ -1757,7 +1757,7 @@ Function Backup-ClusterDRSGroupsAndRules
  
     Param(
         [Parameter(Mandatory = $true)]
-        [PSObject]$clusterName
+        [String]$clusterName
     )
     Try {
         $retrievedVmDrsGroups = Get-DrsClusterGroup -cluster $clusterName
