@@ -2118,19 +2118,34 @@ Function Resolve-PhysicalHostTransportNodes
 {
     <#
     .SYNOPSIS
-    Describe the purpose
+    Resolves the state of ESXi Transport Nodes in a restored NSX Manager when the ESXi hosts have been rebuilt
 
     .DESCRIPTION
-    The xxx cmdlet Describe the purpose
+    The Resolve-PhysicalHostTransportNodes cmdlet resolves the state of ESXi Transport Nodes in a restored NSX Manager when the ESXi hosts have been rebuilt
 
     .EXAMPLE
-    Show sample usage
+    Resolve-PhysicalHostTransportNodes -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01" -NsxManagerFQDN "sfo-m01-nsx01a.sfo.rainpole.io" -NsxManagerAdmin "admin" -NsxManagerAdminPassword "VMw@re1!VMw@re1!"
 
-    .PARAMETER xxxx
-    Description of the parameter
+    .PARAMETER vCenterFQDN
+    FQDN of the vCenter instance that hosts the cluster whose hosts need to be resolved
 
-    .PARAMETER yyyy
-    Description of the parameter
+    .PARAMETER vCenterAdmin
+    Admin user of the vCenter instance that hosts the cluster whose hosts need to be resolved
+    
+    .PARAMETER vCenterAdminPassword
+    Admin password for the vCenter instance that hosts the cluster  whose hosts need to be resolved
+
+    .PARAMETER clusterName
+    Name of the vSphere cluster instance whose hosts need to be resolved
+
+    .PARAMETER nsxManagerFqdn
+    FQDN of the NSX Manager where hosts need to be resolved
+
+    .PARAMETER nsxManagerAdmin
+    Admin user of the NSX Manager where hosts need to be resolved
+    
+    .PARAMETER nsxManagerAdminPassword
+    Admin Password of the NSX Manager where hosts need to be resolved
     #>
  
     Param(
@@ -2170,19 +2185,34 @@ Function Invoke-NSXEdgeClusterRecovery
 {
     <#
     .SYNOPSIS
-    Describe the purpose
+    Redeploys the NSX Egdes from the provided vSphere Cluster
 
     .DESCRIPTION
-    The xxx cmdlet Describe the purpose
+    The Invoke-NSXEdgeClusterRecovery cmdlet redeploys the NSX Egdes from the provided vSphere Cluster
 
     .EXAMPLE
-    Show sample usage
+    Invoke-NSXEdgeClusterRecovery -nsxManagerFqdn "sfo-m01-nsx01.sfo.rainpole.io" -nsxManagerAdmin "admin" -nsxManagerAdminPassword "VMw@re1!VMw@re1!" -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01"
 
-    .PARAMETER xxxx
-    Description of the parameter
+    .PARAMETER nsxManagerFqdn
+    FQDN of the NSX Manager whose Edges need to be redeployed
 
-    .PARAMETER yyyy
-    Description of the parameter
+    .PARAMETER nsxManagerAdmin
+    Admin user of the NSX Manager whose Edges need to be redeployed
+    
+    .PARAMETER nsxManagerAdminPassword
+    Admin Password of the NSX Manager whose Edges need to be redeployed
+
+    .PARAMETER vCenterFQDN
+    FQDN of the vCenter instance that hosts the cluster whose Egdes need to be redeployed
+
+    .PARAMETER vCenterAdmin
+    Admin user of the vCenter instance that hosts the cluster whose Egdes need to be redeployed
+    
+    .PARAMETER vCenterAdminPassword
+    Admin password for the vCenter instance that hosts the cluster whose Egdes need to be redeployed
+
+    .PARAMETER clusterName
+    Name of the vSphere cluster instance whose Egdes need to be redeployed
     #>
  
     Param(
