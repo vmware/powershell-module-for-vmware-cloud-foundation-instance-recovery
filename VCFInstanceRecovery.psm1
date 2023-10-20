@@ -1237,7 +1237,7 @@ Function Resolve-PhysicalHostServiceAccounts
     The Resolve-PhysicalHostServiceAccounts cmdlet creates a new VCF Service Account on each ESXi host and remediates the SDDC Manager inventory
 
     .EXAMPLE
-    Resolve-PhysicalHostServiceAccounts -vCenterFQDN "sfo-w01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-w01-cl01" 
+    Resolve-PhysicalHostServiceAccounts -vCenterFQDN "sfo-w01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-w01-cl01" -svcAccountPassword "VMw@re123!" -sddcManagerFQDN "sfo-vcf01.sfo.rainpole.io" -sddcManagerUser "administrator@vsphere.local" -sddcManagerPassword "VMw@re1!"
 
     .PARAMETER vCenterFQDN
     FQDN of the vCenter instance hosting the ESXi hosts to be updated
@@ -1433,7 +1433,7 @@ Function Add-HostsToCluster
     The Add-HostsToCluster cmdlet Adds hosts to a vSphere cluster using data from the SDDC Manager backup
 
     .EXAMPLE
-    Add-HostsToCluster -vCenterFQDN "sfo-m01-vc02.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01"  -extractedSDDCDataFile ".\extracted-sddc-data.json" 
+    Add-HostsToCluster -vCenterFQDN "sfo-m01-vc02.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01"  -extractedSDDCDataFile ".\extracted-sddc-data.json" -sddcManagerFQDN "sfo-vcf01.sfo.rainpole.io" -sddcManagerUser "administrator@vsphere.local" -sddcManagerPassword "VMw@re1!"
 
     .PARAMETER vCenterFQDN
     FQDN of the vCenter instance hosting the cluster to which the hosts will be added
@@ -1503,19 +1503,25 @@ Function Remove-StandardSwitch
 {
     <#
     .SYNOPSIS
-    Describe the purpose
+    Removes a temporary standard switch from all hosts in a cluster
 
     .DESCRIPTION
-    The xxx cmdlet Describe the purpose
+    The Remove-StandardSwitch cmdlet removes a temporary standard switch from all hosts in a cluster
 
     .EXAMPLE
-    Show sample usage
+    Remove-StandardSwitch -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01"
 
-    .PARAMETER xxxx
-    Description of the parameter
+    .PARAMETER vCenterFQDN
+    FQDN of the vCenter instance hosting the ESXi hosts from which the standard switch will be removed
 
-    .PARAMETER yyyy
-    Description of the parameter
+    .PARAMETER vCenterAdmin
+    Admin user of the vCenter instance hosting the ESXi hosts from which the standard switch will be removed
+    
+    .PARAMETER vCenterAdminPassword
+    Admin password for the vCenter instance hosting the ESXi hosts from which the standard switch will be removed
+
+    .PARAMETER clusterName
+    Name of the vSphere cluster instance hosting the ESXi hosts from which the standard switch will be removed
     #>
     
     Param(
@@ -1538,19 +1544,34 @@ Function Add-VMKernelsToHost
 {
     <#
     .SYNOPSIS
-    Describe the purpose
+    Adds VMkernels to ESXi hosts using data from the SDDC Manager inventory to map the correct IP addresses
 
     .DESCRIPTION
-    The xxx cmdlet Describe the purpose
+    The Add-VMKernelsToHost cmdlet adds VMkernels to ESXi hosts using data from the SDDC Manager inventory to map the correct IP addresses
 
     .EXAMPLE
-    Show sample usage
+    Add-VMKernelsToHost -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01" -sddcManagerFQDN "sfo-vcf01.sfo.rainpole.io" -sddcManagerUser "administrator@vsphere.local" -sddcManagerPassword "VMw@re1!"
 
-    .PARAMETER xxxx
-    Description of the parameter
+    .PARAMETER vCenterFQDN
+    FQDN of the vCenter instance hosting the ESXi hosts to which VMkernels will be added
 
-    .PARAMETER yyyy
-    Description of the parameter
+    .PARAMETER vCenterAdmin
+    Admin user of the vCenter instance hosting the ESXi hosts to which VMkernels will be added
+    
+    .PARAMETER vCenterAdminPassword
+    Admin password for the vCenter instance hosting the ESXi hosts to which VMkernels will be added
+
+    .PARAMETER clusterName
+    Name of the vSphere cluster instance hosting the ESXi hosts to which VMkernels will be added
+
+    .PARAMETER sddcManagerFQDN
+    FQDN of SDDC Manager
+
+    .PARAMETER sddcManagerUser
+    SDDC Manager API username with ADMIN role
+
+    .PARAMETER sddcManagerPassword
+    SDDC Manager API username password
     #>
     
     Param(
