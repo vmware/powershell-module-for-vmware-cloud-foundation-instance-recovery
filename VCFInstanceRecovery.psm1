@@ -80,6 +80,17 @@ Function Get-InstalledSoftware
 
 Function Confirm-VCFInstanceRecoveryPreReqs
 {
+    <#
+    .SYNOPSIS
+    Checks for the presence of supporting software and modules leveraged by VCFInstanceRecovery
+
+    .DESCRIPTION
+    The Confirm-VCFInstanceRecoveryPreReqs cmdlet checks for the presence of supporting software and modules leveraged by VCFInstanceRecovery
+
+    .EXAMPLE
+    Confirm-VCFInstanceRecoveryPreReqs
+    #>
+
     #Check Dependencies
     $is7Zip4PowerShellInstalled = Get-InstalledModule -name "7Zip4PowerShell" -MinimumVersion "2.4.0" -ErrorAction SilentlyContinue
     If (!$is7Zip4PowerShellInstalled)
@@ -147,6 +158,23 @@ Export-ModuleMember -Function Confirm-VCFInstanceRecoveryPreReqs
 
 Function New-ExtractDataFromSDDCBackup
 {
+    <#
+    .SYNOPSIS
+    Decrypts and extracts the contents of the provided VMware Cloud Foundation SDDC manager backup, parses it for information required for instance recovery and stores the data in a file called extracted-sddc-data.json
+
+    .DESCRIPTION
+    The New-ExtractDataFromSDDCBackup cmdlet decrypts and extracts the contents of the provided VMware Cloud Foundation SDDC manager backup, parses it for information required for instance recovery and stores the data in a file called extracted-sddc-data.json
+
+    .EXAMPLE
+    New-ExtractDataFromSDDCBackup -backupFilePath "F:\backup\vcf-backup-sfo-vcf01-sfo-rainpole-io-2023-09-19-10-53-02.tar.gz" -encryptionPassword "VMw@re1!VMw@re1!"
+
+    .PARAMETER backupFilePath
+    Relative or absolute to the VMware Cloud Foundation SDDC manager backup file somewhere on the local filesystem
+
+    .PARAMETER encryptionPassword
+    The password that should be used to decrypt the VMware Cloud Foundation SDDC manager backup file ie the password that was used to encrypt it originally.
+    #>
+    
     Param(
         [Parameter (Mandatory = $true)][String] $backupFilePath,
         [Parameter (Mandatory = $true)][String] $encryptionPassword
@@ -361,6 +389,35 @@ Export-ModuleMember -Function New-ExtractDataFromSDDCBackup
 
 Function New-NSXManagerOvaDeployment
 {
+    <#
+    .SYNOPSIS
+    Presents a list of NSX Mangers associated with the provided VCF Workload Domain, and deploys an NSX Manager from OVA using data previously extracted from the VCF SDDC Manager Backup
+
+    .DESCRIPTION
+    The New-NSXManagerOvaDeployment resents a list of NSX Mangers associated with the provided VCF Workload Domain, and deploys an NSX Manager from OVA using data previously extracted from the VCF SDDC Manager Backup
+
+    .EXAMPLE
+    New-NSXManagerOvaDeployment -tempvCenterFQDN "sfo-m01-vc02.sfo.rainpole.io" -tempvCenterAdmin "administrator@vsphere.local" -tempvCenterAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -workloadDomain "sfo-m01" -nsxManagerOvaFile "F:\OVA\nsx-unified-appliance-3.2.2.1.0.21487565.ova"
+
+    .PARAMETER tempvCenterFQDN
+    FQDN of the target vCenter to deploy the NSX Manager OVA to
+
+    .PARAMETER tempvCenterAdmin
+    Admin user of the target vCenter to deploy the NSX Manager OVA to
+    
+    .PARAMETER tempvCenterAdminPassword
+    Admin password for the target vCenter to deploy the NSX Manager OVA to
+    
+    .PARAMETER extractedSDDCDataFile
+    Relative or absolute to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup) somewhere on the local filesystem
+    
+    .PARAMETER workloadDomain
+    Name of the VCF workload domain that the NSX Manager to deployed to is associated with
+    
+    .PARAMETER nsxManagerOvaFile
+    Relative or absolute to the NSX Manager OVA somewhere on the local filesystem
+    #>
+    
     Param(
         [Parameter (Mandatory = $true)][String] $tempvCenterFQDN,
         [Parameter (Mandatory = $true)][String] $tempvCenterAdmin,
@@ -436,6 +493,38 @@ Export-ModuleMember -Function New-NSXManagerOvaDeployment
 
 Function New-vCenterOvaDeployment
 {
+    <#
+    .SYNOPSIS
+    Deploys a vCenter appliance from OVA using data previously extracted from the VCF SDDC Manager Backup
+
+    .DESCRIPTION
+    The New-vCenterOvaDeployment deploys a vCenter appliance from OVA using data previously extracted from the VCF SDDC Manager Backup
+
+    .EXAMPLE
+    New-vCenterOvaDeployment -tempvCenterFQDN "sfo-m01-vc02.sfo.rainpole.io" -tempvCenterAdmin "administrator@vsphere.local" -tempvCenterAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -workloadDomain "sfo-m01" -restoredvCenterDeploymentSize "small" -vCenterOvaFile "F:\OVA\VMware-vCenter-Server-Appliance-7.0.3.01400-21477706_OVF10.ova"
+
+    .PARAMETER tempvCenterFQDN
+    FQDN of the target vCenter to deploy the vCenter OVA to
+
+    .PARAMETER tempvCenterAdmin
+    Admin user of the target vCenter to deploy the vCenter OVA to
+    
+    .PARAMETER tempvCenterAdminPassword
+    Admin password for the target vCenter to deploy the vCenter OVA to
+    
+    .PARAMETER extractedSDDCDataFile
+    Relative or absolute to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup) somewhere on the local filesystem
+    
+    .PARAMETER workloadDomain
+    Name of the VCF workload domain that the vCenter to deployed to is associated with
+    
+    .PARAMETER restoredvCenterDeploymentSize
+    Size of the vCenter Appliance to deploy
+    
+    .PARAMETER vCenterOvaFile
+    Relative or absolute to the vCenter OVA somewhere on the local filesystem
+    #>
+    
     Param(
         [Parameter (Mandatory = $true)][String] $tempvCenterFQDN,
         [Parameter (Mandatory = $true)][String] $tempvCenterAdmin,
@@ -472,12 +561,49 @@ Export-ModuleMember -Function New-vCenterOvaDeployment
 
 Function New-SDDCManagerOvaDeployment
 {
+    <#
+    .SYNOPSIS
+    Deploys an SDDC Manager appliance from OVA using data previously extracted from the VCF SDDC Manager Backup
+
+    .DESCRIPTION
+    The New-SDDCManagerOvaDeployment deploys an SDDC Manager appliance from OVA using data previously extracted from the VCF SDDC Manager Backup
+
+    .EXAMPLE
+    New-SDDCManagerOvaDeployment -tempvCenterFQDN "sfo-m01-vc02.sfo.rainpole.io" -tempvCenterAdmin "administrator@vsphere.local" -tempvCenterAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -sddcManagerOvaFile "F:\OVA\VCF-SDDC-Manager-Appliance-4.5.1.0-21682411.ova" -rootPassword "VMw@re1!" -vcfPassword "VMw@re1!" -localUserPassword "VMw@re1!" -basicAuthPassword "VMw@re1!"
+
+    .PARAMETER tempvCenterFQDN
+    FQDN of the target vCenter to deploy the SDDC Manager OVA to
+
+    .PARAMETER tempvCenterAdmin
+    Admin user of the target vCenter to deploy the SDDC Manager OVA to
+    
+    .PARAMETER tempvCenterAdminPassword
+    Admin password for the target vCenter to deploy the SDDC Manager OVA to
+    
+    .PARAMETER extractedSDDCDataFile
+    Relative or absolute to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup) somewhere on the local filesystem
+       
+    .PARAMETER sddcManagerOvaFile
+    Relative or absolute to the SDDC Manager OVA somewhere on the local filesystem
+
+    .PARAMETER rootPassword
+    Password for the root user on the newly deployed appliance
+    
+    .PARAMETER vcfPassword
+    Password for the vcf user on the newly deployed appliance
+
+    .PARAMETER localUserPassword
+    Password for the local admin user on the newly deployed appliance
+
+    .PARAMETER basicAuthPassword
+    Password for the basic auth user on the newly deployed appliance
+    #>
+    
     Param(
         [Parameter (Mandatory = $true)][String] $tempvCenterFQDN,
         [Parameter (Mandatory = $true)][String] $tempvCenterAdmin,
         [Parameter (Mandatory = $true)][String] $tempvCenterAdminPassword,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
-        [Parameter (Mandatory = $true)][String] $workloadDomain,
         [Parameter (Mandatory = $true)][String] $sddcManagerOvaFile,
         [Parameter (Mandatory = $true)][String] $rootPassword,
         [Parameter (Mandatory = $true)][String] $vcfPassword,
@@ -509,6 +635,45 @@ Export-ModuleMember -Function New-SDDCManagerOvaDeployment
 
 Function New-UploadAndModifySDDCManagerBackup
 {
+    <#
+    .SYNOPSIS
+    Uploads the provided VCF SDDC Manager Backup file to SDDC manager, decrypts and extracts it, replaces the SSH keys for the manangement domain vCenter with the current keys, then compresses and reencrypts the files ready for subsequent restore
+
+    .DESCRIPTION
+    The New-UploadAndModifySDDCManagerBackup cmdlet uploads the provided VCF SDDC Manager Backup file to SDDC manager, decrypts and extracts it, replaces the SSH keys for the manangement domain vCenter with the current keys, then compresses and reencrypts the files ready for subsequent restore
+
+    .EXAMPLE
+    New-UploadAndModifySDDCManagerBackup -rootUserPassword "VMw@re1!" -vcfUserPassword "VMw@re1!" -backupFilePath "F:\backup\vcf-backup-sfo-vcf01-sfo-rainpole-io-2023-09-19-10-53-02.tar.gz" -encryptionPassword "VMw@re1!VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -tempvCenterFQDN "sfo-m01-vc02.sfo.rainpole.io" -tempvCenterAdmin "Administrator@vsphere.local" -tempvCenterAdminPassword VMw@re1!"
+
+    .PARAMETER rootUserPassword
+    Password for the root user of the SDDC Manager Appliance
+
+    .PARAMETER vcfUserPassword
+    Password for the vcf user of the SDDC Manager Appliance
+    
+    .PARAMETER backupFilePath
+    Relative or absolute to the VMware Cloud Foundation SDDC manager backup file somewhere on the local filesystem
+
+    .PARAMETER encryptionPassword
+    The password that should be used to decrypt the VMware Cloud Foundation SDDC manager backup file ie the password that was used to encrypt it originally.
+
+    .PARAMETER extractedSDDCDataFile
+    Relative or absolute to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup) somewhere on the local filesystem
+
+    .PARAMETER encryptionPassword
+    The password that should be used to decrypt the VMware Cloud Foundation SDDC manager backup file ie the password that was used to encrypt it originally.
+
+    .PARAMETER tempvCenterFQDN
+    FQDN of the target vCenter that hosts the SDDC Manager VM
+
+    .PARAMETER tempvCenterAdmin
+    Admin user of the target vCenter that hosts the SDDC Manager VM
+    
+    .PARAMETER tempvCenterAdminPassword
+    Admin password for the target vCenter that hosts the SDDC Manager VM
+
+    #>
+    
     Param(
         [Parameter (Mandatory = $true)][String] $rootUserPassword,
         [Parameter (Mandatory = $true)][String] $vcfUserPassword,
@@ -608,6 +773,44 @@ Export-ModuleMember -Function New-UploadAndModifySDDCManagerBackup
 
 Function Move-ClusterHostsToRestoredVcenter
 {
+    <#
+    .SYNOPSIS
+    Moves ESXi Hosts from a temporary vCenter / cluster to the restored vCenter / cluster. Used for VCF Management Domain cluster recovery.
+
+    .DESCRIPTION
+    The Move-ClusterHostsToRestoredVcenter cmdlet moves ESXi Hosts from a temporary vCenter / cluster to the restored vCenter / cluster. Used for VCF Management Domain cluster recovery.
+
+    .EXAMPLE
+    Move-ClusterHostsToRestoredVcenter -tempvCenterFQDN "sfo-m01-vc02.sfo.rainpole.io" -tempvCenterAdmin "administrator@vsphere.local" -tempvCenterAdminPassword "VMw@re1!" -tempClusterName "sfo-m01-cl01" -restoredvCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -restoredvCenterAdmin "administrator@vsphere.local" -restoredvCenterAdminPassword "VMw@re1!" -restoredClusterName "sfo-m01-cl01" -extractedSDDCDataFile ".\extracted-sddc-data.json"
+
+    .PARAMETER tempvCenterFQDN
+    FQDN of the temporary vCenter instance
+
+    .PARAMETER tempvCenterAdmin
+    Admin user of the temporary vCenter instance
+    
+    .PARAMETER tempvCenterAdminPassword
+    Admin password for the temporary vCenter instance
+
+    .PARAMETER tempclusterName
+    Name of the temporary vSphere cluster instance in the temporary vCenter
+
+    .PARAMETER restoredvCenterFQDN
+    FQDN of the restored vCenter instance
+
+    .PARAMETER restoredvCenterAdmin
+    Admin user of the restored vCenter instance
+    
+    .PARAMETER restoredvCenterAdminPassword
+    Admin password for the restored vCenter instance
+
+    .PARAMETER restoredclusterName
+    Name of the restored vSphere cluster instance in the temporary vCenter
+
+    .PARAMETER extractedSDDCDataFile
+    Relative or absolute to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup) somewhere on the local filesystem
+    #>
+    
     Param(
         [Parameter (Mandatory = $true)][String] $tempvCenterFQDN,
         [Parameter (Mandatory = $true)][String] $tempvCenterAdmin,
@@ -635,6 +838,33 @@ Export-ModuleMember -Function Move-ClusterHostsToRestoredVcenter
 
 Function Remove-ClusterHostsFromVds
 {
+     <#
+    .SYNOPSIS
+    Removes all hosts in the provided vSphere cluster from the provided vSphere Distributed Switch
+
+    .DESCRIPTION
+    The Remove-ClusterHostsFromVds cmdlet removes all hosts in the provided vSphere cluster from the provided vSphere Distributed Switch
+
+    .EXAMPLE
+    Remove-ClusterHostsFromVds -vCenterFQDN "sfo-m01-vc02.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01" -vdsName "sfo-m01-cl01-vds01"
+
+    .PARAMETER vCenterFQDN
+    FQDN of the vCenter instance hosting the cluster / vds from which hosts should be removed
+
+    .PARAMETER vCenterAdmin
+    Admin user of the vCenter instance hosting the cluster / vds from which hosts should be removed
+    
+    .PARAMETER vCenterAdminPassword
+    Admin password for the vCenter instance hosting the cluster / vds from which hosts should be removed
+
+    .PARAMETER clusterName
+    Name of the vSphere cluster instance from which hosts should be removed
+
+    .PARAMETER vdsName
+    Name of the vSphere Distributed Switch to remove cluster hosts from
+
+    #>
+    
     Param(
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
@@ -654,6 +884,29 @@ Export-ModuleMember -Function Remove-ClusterHostsFromVds
 
 Function Move-MgmtVmsToTempPg 
 {
+    <#
+    .SYNOPSIS
+    Moves all management VMs in the provided vSphere cluster to a temporary management portgroup
+
+    .DESCRIPTION
+    The Move-MgmtVmsToTempPg cmdlet moves all management VMs in the provided vSphere cluster to a temporary management portgroup
+
+    .EXAMPLE
+    Move-MgmtVmsToTempPg -vCenterFQDN "sfo-m01-vc02.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01"
+
+    .PARAMETER vCenterFQDN
+    FQDN of the vCenter instance hosting the cluster / VMs which should be removed
+
+    .PARAMETER vCenterAdmin
+    Admin user of the vCenter instance hosting the cluster / VMs which should be removed
+    
+    .PARAMETER vCenterAdminPassword
+    Admin password for the vCenter instance hosting the cluster / VMs which should be removed
+
+    .PARAMETER clusterName
+    Name of the vSphere cluster instance hosting the VMS to be moved
+    #>
+    
     Param(
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
@@ -671,6 +924,24 @@ Export-ModuleMember -Function Move-MgmtVmsToTempPg
 
 Function Move-ClusterHostNetworkingTovSS 
 {
+    <#
+    .SYNOPSIS
+    Describe the purpose
+
+    .DESCRIPTION
+    The xxx cmdlet Describe the purpose
+
+    .EXAMPLE
+    Show sample usage
+    Describe what example does
+
+    .PARAMETER xxxx
+    Description of the parameter
+
+    .PARAMETER yyyy
+    Description of the parameter
+    #>
+    
     Param(
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
@@ -751,6 +1022,24 @@ Export-ModuleMember -Function Move-ClusterHostNetworkingTovSS
 
 Function Move-ClusterVmnicTovSwitch
 {
+    <#
+    .SYNOPSIS
+    Describe the purpose
+
+    .DESCRIPTION
+    The xxx cmdlet Describe the purpose
+
+    .EXAMPLE
+    Show sample usage
+    Describe what example does
+
+    .PARAMETER xxxx
+    Description of the parameter
+
+    .PARAMETER yyyy
+    Description of the parameter
+    #>
+    
     Param(
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
@@ -775,6 +1064,24 @@ Export-ModuleMember -Function Move-ClusterVmnicTovSwitch
 
 Function Set-ClusterHostsvSanIgnoreClusterMemberList
 {
+    <#
+    .SYNOPSIS
+    Describe the purpose
+
+    .DESCRIPTION
+    The xxx cmdlet Describe the purpose
+
+    .EXAMPLE
+    Show sample usage
+    Describe what example does
+
+    .PARAMETER xxxx
+    Description of the parameter
+
+    .PARAMETER yyyy
+    Description of the parameter
+    #>
+    
     Param(
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
@@ -813,6 +1120,24 @@ Export-ModuleMember -Function Set-ClusterHostsvSanIgnoreClusterMemberList
 
 Function Move-ClusterVMsToFirstHost
 {
+    <#
+    .SYNOPSIS
+    Describe the purpose
+
+    .DESCRIPTION
+    The xxx cmdlet Describe the purpose
+
+    .EXAMPLE
+    Show sample usage
+    Describe what example does
+
+    .PARAMETER xxxx
+    Description of the parameter
+
+    .PARAMETER yyyy
+    Description of the parameter
+    #>
+    
     Param(
        <#  [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
@@ -839,6 +1164,24 @@ Export-ModuleMember -Function Move-ClusterVMsToFirstHost
 
 Function Resolve-PhysicalHostServiceAccounts 
 {
+    <#
+    .SYNOPSIS
+    Describe the purpose
+
+    .DESCRIPTION
+    The xxx cmdlet Describe the purpose
+
+    .EXAMPLE
+    Show sample usage
+    Describe what example does
+
+    .PARAMETER xxxx
+    Description of the parameter
+
+    .PARAMETER yyyy
+    Description of the parameter
+    #>
+    
     Param(
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
@@ -917,6 +1260,24 @@ Export-ModuleMember -Function Resolve-PhysicalHostServiceAccounts
 
 Function Set-ClusterDRSLevel 
 {
+    <#
+    .SYNOPSIS
+    Describe the purpose
+
+    .DESCRIPTION
+    The xxx cmdlet Describe the purpose
+
+    .EXAMPLE
+    Show sample usage
+    Describe what example does
+
+    .PARAMETER xxxx
+    Description of the parameter
+
+    .PARAMETER yyyy
+    Description of the parameter
+    #>
+    
     Param(
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
@@ -933,6 +1294,24 @@ Export-ModuleMember -Function Set-ClusterDRSLevel
 
 Function Remove-NonResponsiveHosts 
 {
+    <#
+    .SYNOPSIS
+    Describe the purpose
+
+    .DESCRIPTION
+    The xxx cmdlet Describe the purpose
+
+    .EXAMPLE
+    Show sample usage
+    Describe what example does
+
+    .PARAMETER xxxx
+    Description of the parameter
+
+    .PARAMETER yyyy
+    Description of the parameter
+    #>
+    
     Param(
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
@@ -951,6 +1330,24 @@ Export-ModuleMember -Function Remove-NonResponsiveHosts
 
 Function Add-HostsToCluster 
 {
+    <#
+    .SYNOPSIS
+    Describe the purpose
+
+    .DESCRIPTION
+    The xxx cmdlet Describe the purpose
+
+    .EXAMPLE
+    Show sample usage
+    Describe what example does
+
+    .PARAMETER xxxx
+    Description of the parameter
+
+    .PARAMETER yyyy
+    Description of the parameter
+    #>
+    
     Param(
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
@@ -992,6 +1389,24 @@ Export-ModuleMember -Function Add-HostsToCluster
 
 Function Remove-StandardSwitch 
 {
+    <#
+    .SYNOPSIS
+    Describe the purpose
+
+    .DESCRIPTION
+    The xxx cmdlet Describe the purpose
+
+    .EXAMPLE
+    Show sample usage
+    Describe what example does
+
+    .PARAMETER xxxx
+    Description of the parameter
+
+    .PARAMETER yyyy
+    Description of the parameter
+    #>
+    
     Param(
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
@@ -1010,6 +1425,24 @@ Export-ModuleMember -Function Remove-StandardSwitch
 
 Function Add-VMKernelsToHost 
 {
+    <#
+    .SYNOPSIS
+    Describe the purpose
+
+    .DESCRIPTION
+    The xxx cmdlet Describe the purpose
+
+    .EXAMPLE
+    Show sample usage
+    Describe what example does
+
+    .PARAMETER xxxx
+    Description of the parameter
+
+    .PARAMETER yyyy
+    Description of the parameter
+    #>
+    
     Param(
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
@@ -1079,14 +1512,22 @@ Function Backup-ClusterVMOverrides
 {
     <#
     .SYNOPSIS
-        Retrieves and saves configured VM Overrides.
+    Describe the purpose
 
     .DESCRIPTION
-        Saves details for configured VM Overrides for the passed cluster to a JSON file
+    The xxx cmdlet Describe the purpose
 
     .EXAMPLE
-        Backup-ClusterVMOverrides -clusterName 'sfo-m01-cl01'
+    Show sample usage
+    Describe what example does
+
+    .PARAMETER xxxx
+    Description of the parameter
+
+    .PARAMETER yyyy
+    Description of the parameter
     #>
+ 
     Param(
         [Parameter(Mandatory = $true)]
         [String]$clusterName
@@ -1133,14 +1574,22 @@ Function Backup-ClusterVMLocations
 {
     <#
     .SYNOPSIS
-        Retrieves the folder and resource pool settings.
+    Describe the purpose
 
     .DESCRIPTION
-        Saves the folder and resource pool settings for the passed cluster to a JSON file
+    The xxx cmdlet Describe the purpose
 
     .EXAMPLE
-        Backup-ClusterVMLocations -clusterName 'sfo-m01-cl01'
+    Show sample usage
+    Describe what example does
+
+    .PARAMETER xxxx
+    Description of the parameter
+
+    .PARAMETER yyyy
+    Description of the parameter
     #>
+ 
     Param(
         [Parameter(Mandatory = $true)]
         [String]$clusterName
@@ -1171,14 +1620,22 @@ Function Backup-ClusterDRSGroupsAndRules
 {
     <#
     .SYNOPSIS
-        Retrieves the DRS Groups And Rules for a Cluster
+    Describe the purpose
 
     .DESCRIPTION
-        Saves the DRS Group and Rule settings for the passed cluster to a JSON file 
+    The xxx cmdlet Describe the purpose
 
     .EXAMPLE
-        Backup-ClusterDRSGroupsAndRules -clusterName 'sfo-m01-cl01'
+    Show sample usage
+    Describe what example does
+
+    .PARAMETER xxxx
+    Description of the parameter
+
+    .PARAMETER yyyy
+    Description of the parameter
     #>
+ 
     Param(
         [Parameter(Mandatory = $true)]
         [PSObject]$clusterName
@@ -1262,14 +1719,22 @@ Function Restore-ClusterVMOverrides
 {
     <#
     .SYNOPSIS
-        Restores previously saved configured VM Overrides for a cluster
+    Describe the purpose
 
     .DESCRIPTION
-        Restores VM Overrides for the passed cluster from a JSON file
+    The xxx cmdlet Describe the purpose
 
     .EXAMPLE
-        Restore-ClusterVMOverrides -clusterName 'sfo-m01-cl01' -jsonfile .\sfo-m01-cl01-vmOverrides.json
+    Show sample usage
+    Describe what example does
+
+    .PARAMETER xxxx
+    Description of the parameter
+
+    .PARAMETER yyyy
+    Description of the parameter
     #>
+ 
     Param(
         [Parameter(Mandatory = $true)][String]$clusterName,
         [Parameter(Mandatory = $true)][String]$jsonFile
@@ -1408,14 +1873,22 @@ Function Restore-ClusterVMLocations
 {
     <#
     .SYNOPSIS
-        Restores folder and resource pool settings for VMs on a cluster
+    Describe the purpose
 
     .DESCRIPTION
-        Restores the folder and resource pool settings for VMs on the the passed cluster from a JSON file
+    The xxx cmdlet Describe the purpose
 
     .EXAMPLE
-        Restore-ClusterVMLocations -clusterName 'sfo-m01-cl01' -jsonfile .\sfo-m01-cl01-vmLocations.json
+    Show sample usage
+    Describe what example does
+
+    .PARAMETER xxxx
+    Description of the parameter
+
+    .PARAMETER yyyy
+    Description of the parameter
     #>
+ 
     Param(
         [Parameter(Mandatory = $true)][String]$clusterName,
         [Parameter(Mandatory = $true)][String]$jsonFile
@@ -1456,14 +1929,22 @@ Function Restore-ClusterDRSGroupsAndRules
 {
     <#
     .SYNOPSIS
-        Restores DRS Groups and Rules for a cluster
+    Describe the purpose
 
     .DESCRIPTION
-        Restores the DRS Groups and Rules for a passed cluster from a JSON file
+    The xxx cmdlet Describe the purpose
 
     .EXAMPLE
-        Restore-ClusterDRSGroupsAndRules -clusterName 'sfo-m01-cl01' -jsonfile .\sfo-m01-cl01-drsConfiguration.json
+    Show sample usage
+    Describe what example does
+
+    .PARAMETER xxxx
+    Description of the parameter
+
+    .PARAMETER yyyy
+    Description of the parameter
     #>
+ 
     Param(
         [Parameter(Mandatory = $true)][String]$clusterName,
         [Parameter(Mandatory = $true)][String]$jsonFile
@@ -1570,6 +2051,24 @@ Function VCFIRCreateHeader
 
 Function Resolve-PhysicalHostTransportNodes
 {
+    <#
+    .SYNOPSIS
+    Describe the purpose
+
+    .DESCRIPTION
+    The xxx cmdlet Describe the purpose
+
+    .EXAMPLE
+    Show sample usage
+    Describe what example does
+
+    .PARAMETER xxxx
+    Description of the parameter
+
+    .PARAMETER yyyy
+    Description of the parameter
+    #>
+ 
     Param(
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
@@ -1605,6 +2104,24 @@ Export-ModuleMember -Function Resolve-PhysicalHostTransportNodes
 
 Function Invoke-NSXEdgeClusterRecovery
 {
+    <#
+    .SYNOPSIS
+    Describe the purpose
+
+    .DESCRIPTION
+    The xxx cmdlet Describe the purpose
+
+    .EXAMPLE
+    Show sample usage
+    Describe what example does
+
+    .PARAMETER xxxx
+    Description of the parameter
+
+    .PARAMETER yyyy
+    Description of the parameter
+    #>
+ 
     Param(
         [Parameter (Mandatory = $true)][String] $nsxManagerFqdn,
         [Parameter (Mandatory = $true)][String] $nsxManagerAdmin,
