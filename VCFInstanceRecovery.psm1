@@ -1583,19 +1583,16 @@ Function Backup-ClusterVMOverrides
 {
     <#
     .SYNOPSIS
-    Describe the purpose
+    Backs up the VM Overrides for the specified cluster
 
     .DESCRIPTION
-    The xxx cmdlet Describe the purpose
+    The Backup-ClusterVMOverrides cmdlet backs up the VM Overrides for the specified cluster
 
     .EXAMPLE
-    Show sample usage
+    Backup-ClusterVMOverrides -clusterName "sfo-m01-cl01"
 
-    .PARAMETER xxxx
-    Description of the parameter
-
-    .PARAMETER yyyy
-    Description of the parameter
+    .PARAMETER clusterName
+    Cluster whose VM Overrides you wish to backup
     #>
  
     Param(
@@ -1644,19 +1641,16 @@ Function Backup-ClusterVMLocations
 {
     <#
     .SYNOPSIS
-    Describe the purpose
+    Backs up the VM Locations for the specified cluster
 
     .DESCRIPTION
-    The xxx cmdlet Describe the purpose
+    The Backup-ClusterVMLocations cmdlet backs up the VM Locations for the specified cluster
 
     .EXAMPLE
-    Show sample usage
+    Backup-ClusterVMLocations -clusterName "sfo-m01-cl01"
 
-    .PARAMETER xxxx
-    Description of the parameter
-
-    .PARAMETER yyyy
-    Description of the parameter
+    .PARAMETER clusterName
+    Cluster whose VM Locations you wish to backup
     #>
  
     Param(
@@ -1689,19 +1683,16 @@ Function Backup-ClusterDRSGroupsAndRules
 {
     <#
     .SYNOPSIS
-    Describe the purpose
+    Backs up the DRS Groups and Rules for the specified cluster
 
     .DESCRIPTION
-    The xxx cmdlet Describe the purpose
+    The Backup-ClusterDRSGroupsAndRules cmdlet backs up the DRS Groups and Rules for the specified cluster
 
     .EXAMPLE
-    Show sample usage
+    Backup-ClusterDRSGroupsAndRules -clusterName "sfo-m01-cl01"
 
-    .PARAMETER xxxx
-    Description of the parameter
-
-    .PARAMETER yyyy
-    Description of the parameter
+    .PARAMETER clusterName
+    Cluster whose DRS Groups and Rules you wish to backup
     #>
  
     Param(
@@ -1787,19 +1778,19 @@ Function Restore-ClusterVMOverrides
 {
     <#
     .SYNOPSIS
-    Describe the purpose
+    Restores the VM Overrides for the specified cluster
 
     .DESCRIPTION
-    The xxx cmdlet Describe the purpose
+    The Restore-ClusterVMOverrides cmdlet restores the VM Overrides for the specified cluster
 
     .EXAMPLE
-    Show sample usage
+    Restore-ClusterVMOverrides -clusterName "sfo-m01-cl01" -jsonFile ".\sfo-m01-cl01-vmOverrides.json"
 
-    .PARAMETER xxxx
-    Description of the parameter
+    .PARAMETER clusterName
+    Cluster whose VM Overrides you wish to restore
 
-    .PARAMETER yyyy
-    Description of the parameter
+    .PARAMETER jsonFile
+    Path to the JSON File that contains the backup for the VM Overrides for the Cluster
     #>
  
     Param(
@@ -1940,19 +1931,19 @@ Function Restore-ClusterVMLocations
 {
     <#
     .SYNOPSIS
-    Describe the purpose
+    Restores the VM Locations for the specified cluster
 
     .DESCRIPTION
-    The xxx cmdlet Describe the purpose
+    The Restore-ClusterVMLocations cmdlet restores the VM Locations for the specified cluster
 
     .EXAMPLE
-    Show sample usage
+    Restore-ClusterVMLocations -clusterName "sfo-m01-cl01" -jsonFile ".\sfo-m01-cl01-vmLocations.json"
 
-    .PARAMETER xxxx
-    Description of the parameter
+    .PARAMETER clusterName
+    Cluster whose VM Locations you wish to restore
 
-    .PARAMETER yyyy
-    Description of the parameter
+    .PARAMETER jsonFile
+    Path to the JSON File that contains the backup for the VM Locations for the Cluster
     #>
  
     Param(
@@ -1995,19 +1986,19 @@ Function Restore-ClusterDRSGroupsAndRules
 {
     <#
     .SYNOPSIS
-    Describe the purpose
+    Restores the DRS Groups and Rules for the specified cluster
 
     .DESCRIPTION
-    The xxx cmdlet Describe the purpose
+    The Restore-ClusterDRSGroupsAndRules cmdlet restores the DRS Groups and Rules for the specified cluster
 
     .EXAMPLE
-    Show sample usage
+    Restore-ClusterDRSGroupsAndRules -clusterName "sfo-m01-cl01" -jsonFile ".\sfo-m01-cl01-drsConfiguration.json"
 
-    .PARAMETER xxxx
-    Description of the parameter
+    .PARAMETER clusterName
+    Cluster whose DRS Groups and Rules you wish to restore
 
-    .PARAMETER yyyy
-    Description of the parameter
+    .PARAMETER jsonFile
+    Path to the JSON File that contains the backup for the DRS Groups and Rules for the Cluster
     #>
  
     Param(
