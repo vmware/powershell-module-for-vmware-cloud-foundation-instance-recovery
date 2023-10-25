@@ -1415,7 +1415,7 @@ Function Remove-NonResponsiveHosts
         
     )
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
-    $nonResponsiveHosts = get-cluster -name $clusterName | get-vmhost | Where-Object { $_.ConnectionState -eq "NotResponding" }
+    $nonResponsiveHosts = get-cluster -name $clusterName | get-vmhost | Where-Object { $_.ConnectionState -in "NotResponding","Disconnected" }
     foreach ($nonResponsiveHost in $nonResponsiveHosts) {
         Get-VMHost | Where-Object { $_.Name -eq $nonResponsiveHost.Name } | Remove-VMHost -Confirm:$false
     }
