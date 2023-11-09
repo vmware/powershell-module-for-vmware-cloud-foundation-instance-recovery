@@ -211,6 +211,25 @@ Function New-ExtractDataFromSDDCBackup
             'password'   = $object.password
         }
     }
+
+    #Get Management Domain Deployment Objects
+    $metadataJSON = Get-Content "$parentFolder\$extractedBackupFolder\metadata.json" | ConvertFrom-JSON
+    $dnsJSON = Get-Content "$parentFolder\$extractedBackupFolder\appliancemanager_dns_configuration.json" | ConvertFrom-JSON
+    $ntpJSON = Get-Content "$parentFolder\$extractedBackupFolder\appliancemanager_ntp_configuration.json" | ConvertFrom-JSON
+
+    $mgmtDomainInfrastructure = [pscustomobject]@{
+        'port_group' = $metadataJSON.port_group
+        'vsan_datastore' =  $metadataJSON.vsan_datastore
+        'cluster' = $metaDataJSON.cluster
+        'datacenter' = $metaDataJSON.datacenter
+        'netmask' = $metaDataJSON.netmask
+        'gateway' = $metaDataJSON.gateway
+        'domain' = $metaDataJSON.domain
+        'search_path' = $metaDataJSON.search_path
+        'primaryDnsServer' = $dnsJSON.primaryDnsServer
+        'secondaryDnsServer' = $dnsJSON.secondaryDnsServer
+        'ntpServers' = @($ntpJSON.ntpServers)
+    }
     
     $psqlContent = Get-Content "$extractedBackupFolder\database\sddc-postgres.bkp"
     Write-Output "Retrieving NSX Manager Details"
@@ -355,6 +374,127 @@ Function New-ExtractDataFromSDDCBackup
         $networkPoolsLineIndex++
     }
     Until ($lineContent -eq '\.')
+
+    #Get Cluster and VDS
+    $clusterAndVdsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.cluster_and_vds" | Select Line,LineNumber).LineNumber
+    $clusterAndVdsLineIndex = $clusterAndVdsLineNumber
+    $clusterAndVds = @()
+    Do 
+    {
+        $lineContent = $psqlContent | Select-Object -Index $clusterAndVdsLineIndex
+        If ($lineContent -ne '\.')
+        {
+            $clusterID = $lineContent.split("`t")[1]
+            $vdsID = $lineContent.split("`t")[2]
+            $clusterAndVds += [pscustomobject]@{
+                'clusterID' = $clusterID
+                'vdsID' = $vdsID
+            }
+        }
+        $clusterAndVdsLineIndex++
+    }
+    Until ($lineContent -eq '\.')
+
+    #Get Cluster and Domain
+    $clusterAndDomainLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.cluster_and_domain" | Select Line,LineNumber).LineNumber
+    $clusterAndDomainLineIndex = $clusterAndDomainLineNumber
+    $clusterAndDomain = @()
+    Do 
+    {
+        $lineContent = $psqlContent | Select-Object -Index $clusterAndDomainLineIndex
+        If ($lineContent -ne '\.')
+        {
+            $clusterID = $lineContent.split("`t")[0]
+            $domainID = $lineContent.split("`t")[1]
+            $clusterAndDomain += [pscustomobject]@{
+                'clusterID' = $clusterID
+                'domainID' = $domainID
+            }
+        }
+        $clusterAndDomainLineIndex++
+    }
+    Until ($lineContent -eq '\.')
+
+    #Get VDSs
+    $vdsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.vds" | Select Line,LineNumber).LineNumber
+    $vdsLineIndex = $vdsLineNumber
+    $virtualDistributedSwitches = @()
+    Do 
+    {
+        $lineContent = $psqlContent | Select-Object -Index $vdsLineIndex
+        If ($lineContent -ne '\.')
+        {
+            $vdsId = $lineContent.split("`t")[0]
+            $vdsMtu = $lineContent.split("`t")[3]
+            $vdsName = $lineContent.split("`t")[4]
+            $vdsPortgroups = $lineContent.split("`t")[6] | ConvertFrom-Json
+            $version = $lineContent.split("`t")[8]
+            $virtualDistributedSwitches += [pscustomobject]@{
+                'Id' = $vdsId
+                'Mtu' = $vdsMtu
+                'Name' = $vdsName
+                'PortGroups' = $vdsPortgroups
+                'version' = $version
+            }
+        }
+        $vdsLineIndex++
+    }
+    Until ($lineContent -eq '\.')
+
+    #Get Pools and Networks
+    $poolsAndNetworksLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.vcf_network_and_network_pool" | Select Line,LineNumber).LineNumber
+    $poolsAndNetworksLineIndex = $poolsAndNetworksLineNumber
+    $poolsAndNetworks = @()
+    Do 
+    {
+        $lineContent = $psqlContent | Select-Object -Index $poolsAndNetworksLineIndex
+        If ($lineContent -ne '\.')
+        {
+            $networkID = $lineContent.split("`t")[0]
+            $poolID = $lineContent.split("`t")[1]
+            $poolsAndNetworks += [pscustomobject]@{
+                'networkID' = $networkID
+                'poolID' = $poolID
+            }
+        }
+        $poolsAndNetworksLineIndex++
+    }
+    Until ($lineContent -eq '\.')
+
+    #Get Networks
+    $networksLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.vcf_network " | Select Line,LineNumber).LineNumber
+    $networksLineIndex = $networksLineNumber
+    $networks = @()
+    Do 
+    {
+        $lineContent = $psqlContent | Select-Object -Index $networksLineIndex
+        If ($lineContent -ne '\.')
+        {
+            $id = $lineContent.split("`t")[0]
+            $gateway = $lineContent.split("`t")[4]
+            $ipInclusionRanges = $lineContent.split("`t")[5] | ConvertFrom-Json
+            $startIPAddress = $ipInclusionRanges.start
+            $endIPAddress = $ipInclusionRanges.end
+            $mtu = $lineContent.split("`t")[6]
+            $subnet = $lineContent.split("`t")[7]
+            $subnetMask = $lineContent.split("`t")[8]
+            $type = $lineContent.split("`t")[9]
+            $vlanId = $lineContent.split("`t")[11]
+            $networks += [pscustomobject]@{
+                'id' = $id
+                'gateway' = $gateway
+                'startIPAddress' = $startIPAddress
+                'endIPAddress' = $endIPAddress
+                'mtu' = $mtu
+                'subnet' = $subnet
+                'subnetMask' = $subnetMask
+                'type' = $type
+                'vlanId' = $vlanId
+            }
+        }
+        $networksLineIndex++
+    }
+    Until ($lineContent -eq '\.')
  
     Write-Output "Assembling Workload Domain Data"
     #GetDomainDetails
@@ -387,36 +527,61 @@ Function New-ExtractDataFromSDDCBackup
             #poolName from Networkpools based on PoolID
             $poolName = ($networkPools | Where-Object {$_.poolID -eq $poolID}).PoolName
 
+            #networks from poolID
+            $domainNetworks = ($poolsAndNetworks| Where-Object {$_.poolID -eq $poolID}).networkID
+            $vmotionNetwork = $networks | Where-Object {($_.type -eq "VMOTION") -and ($_.id -in $domainNetworks)}
+            $vsanNetwork = $networks | Where-Object {($_.type -eq "VSAN") -and ($_.id -in $domainNetworks)}
+            $sddcManagerIP = $metadataJSON.ip
+            $managementSubnetMask = $metaDataJSON.netmask
+            $ip = [ipaddress]$ipaddress
+            $subnet = [ipaddress]$subnetmask
+            $netid = [ipaddress]($ip.address -band $subnet.address)           
+            $managementSubnet = $($netid.ipaddresstostring)
+
+            $networkSpecs = @()
+            $networkSpecs += [pscustomobject]@{
+                'type' = "MANAGEMENT"
+                'subnet_mask' = $metaDataJSON.netmask
+                'subnet' =  $managementSubnet
+                'mtu' =  "1500" # Review
+                'vlanID' = ($virtualDistributedSwitches.portgroups | Where-Object {$_.name -eq $metadataJSON.port_group}).vlanId
+                'gateway' = $metaDataJSON.gateway
+                'portgroupKey' = $metadataJSON.port_group
+            }
+            $networkSpecs += [pscustomobject]@{
+                'type' = "VMOTION"
+                'subnet_mask' = $vmotionNetwork.subnetMask
+                'subnet' =  $vmotionNetwork.subnet
+                'mtu' =  $vmotionNetwork.mtu
+                'startIpAddress' = $vmotionNetwork.startIpAddress
+                'endIpAddress' = $vmotionNetwork.endIpAddress
+                'vlanID' = $vmotionNetwork.vlanID
+                'gateway' = $vmotionNetwork.gateway
+                'portgroupKey' = ($virtualDistributedSwitches.portgroups | Where-Object {$_.vlanId -eq $vmotionNetwork.vlanID}).name
+            }
+            $networkSpecs += [pscustomobject]@{
+                'type' = "VSAN"
+                'subnet_mask' = $vsanNetwork.subnetMask
+                'subnet' =  $vsanNetwork.subnet
+                'mtu' =  $vsanNetwork.mtu
+                'startIpAddress' = $vsanNetwork.startIpAddress
+                'endIpAddress' = $vsanNetwork.endIpAddress
+                'vlanID' = $vsanNetwork.vlanID
+                'gateway' = $vsanNetwork.gateway
+                'portgroupKey' = ($virtualDistributedSwitches.portgroups | Where-Object {$_.vlanId -eq $vsanNetwork.vlanID}).name
+            }
             $workloadDomains += [pscustomobject]@{
                 'domainName' = $domainName
                 'domainID' = $domainID
                 'domainType' = $domainType
                 'networkPool' = $poolName
                 'vCenterDetails' = $vCenterDetails
+                'networkDetails' = $networkSpecs
                 'nsxNodeDetails' = ($nsxtManagerClusters | Where-Object {$_.domainIDs -contains $domainId}).nsxNodes
             }
         }
         $domainLineIndex++
     } Until ($lineContent -eq '\.')
-
-    #Get Management Domain Deployment Objects
-    $metadataJSON = Get-Content "$parentFolder\$extractedBackupFolder\metadata.json" | ConvertFrom-JSON
-    $dnsJSON = Get-Content "$parentFolder\$extractedBackupFolder\appliancemanager_dns_configuration.json" | ConvertFrom-JSON
-    $ntpJSON = Get-Content "$parentFolder\$extractedBackupFolder\appliancemanager_ntp_configuration.json" | ConvertFrom-JSON
-
-    $mgmtDomainInfrastructure = [pscustomobject]@{
-        'port_group' = $metadataJSON.port_group
-        'vsan_datastore' =  $metadataJSON.vsan_datastore
-        'cluster' = $metaDataJSON.cluster
-        'datacenter' = $metaDataJSON.datacenter
-        'netmask' = $metaDataJSON.netmask
-        'gateway' = $metaDataJSON.gateway
-        'domain' = $metaDataJSON.domain
-        'search_path' = $metaDataJSON.search_path
-        'primaryDnsServer' = $dnsJSON.primaryDnsServer
-        'secondaryDnsServer' = $dnsJSON.secondaryDnsServer
-        'ntpServers' = @($ntpJSON.ntpServers)
-    }
 
     Write-Output "Getting CEIP Status"
     #GetDomainDetails
@@ -2323,7 +2488,7 @@ Function Invoke-NSXEdgeClusterRecovery
     .PARAMETER clusterName
     Name of the vSphere cluster instance whose Egdes need to be redeployed
     #>
- 
+
     Param(
         [Parameter (Mandatory = $true)][String] $nsxManagerFqdn,
         [Parameter (Mandatory = $true)][String] $nsxManagerAdmin,
@@ -2331,18 +2496,26 @@ Function Invoke-NSXEdgeClusterRecovery
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
         [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
-        [Parameter (Mandatory = $true)][String] $clusterName
+        [Parameter (Mandatory = $false)][String] $clusterName,
+        [Parameter (Mandatory = $false)][String] $resourcePoolName
     )
     $vcenterConnection = Connect-VIServer -server $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
-    $cluster = Get-Cluster -name $clusterName
-    $clusterMoRef = $cluster.ExtensionData.MoRef.Value
-
+    If ($clusterName)
+    {
+        $cluster = Get-Cluster -name $clusterName
+        $MoRef = $cluster.ExtensionData.MoRef.Value    
+    }
+    elseif ($resourcePoolName)
+    {
+        $resourcePool = Get-ResourcePool -name $resourcePoolName
+        $MoRef = $resourcePool.ExtensionData.MoRef.Value    
+    }
+    
     #Get TransportNodes
     $headers = VCFIRCreateHeader -username $nsxManagerAdmin -password $nsxManagerAdminPassword
     $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/"
     $transportNodeContents = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
-    $allEdgeTransportNodes = ($transportNodeContents.results | Where-Object { ($_.node_deployment_info.resource_type -eq "EdgeNode") -and ($_.node_deployment_info.deployment_config.vm_deployment_config.compute_id) -eq $clusterMoRef})
-
+    $allEdgeTransportNodes = ($transportNodeContents.results | Where-Object { ($_.node_deployment_info.resource_type -eq "EdgeNode") -and ($_.node_deployment_info.deployment_config.vm_deployment_config.compute_id -eq $MoRef)})
     #Redeploy Failed Edges
     Foreach ($edge in $allEdgeTransportNodes)
     {
