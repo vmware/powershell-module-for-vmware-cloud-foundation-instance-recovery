@@ -315,6 +315,46 @@ Function New-ExtractDataFromSDDCBackup
         $vCentersStartingLineNumber++
     }
     Until ($lineContent -eq '\.')
+
+    #Get Network and Pools
+    $hostsAndPoolsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.host_and_network_pool" | Select Line,LineNumber).LineNumber
+    $hostsAndPoolsLineIndex = $hostsAndPoolsLineNumber
+    $hostsandPools = @()
+    Do 
+    {
+        $lineContent = $psqlContent | Select-Object -Index $hostsAndPoolsLineIndex
+        If ($lineContent -ne '\.')
+        {
+            $hostId = $lineContent.split("`t")[1]
+            $poolID = $lineContent.split("`t")[2]
+            $hostsandPools += [pscustomobject]@{
+                'hostId' = $hostId
+                'poolId' = $poolID
+            }
+        }
+        $hostsAndPoolsLineIndex++
+    }
+    Until ($lineContent -eq '\.')
+
+    #Get Network Pools
+    $networkPoolsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.network_pool " | Select Line,LineNumber).LineNumber
+    $networkPoolsLineIndex = $networkPoolsLineNumber
+    $networkPools = @()
+    Do 
+    {
+        $lineContent = $psqlContent | Select-Object -Index $networkPoolsLineIndex
+        If ($lineContent -ne '\.')
+        {
+            $poolID = $lineContent.split("`t")[0]
+            $poolName = $lineContent.split("`t")[3]
+            $networkPools += [pscustomobject]@{
+                'poolID' = $poolID
+                'poolName' = $poolName
+            }
+        }
+        $networkPoolsLineIndex++
+    }
+    Until ($lineContent -eq '\.')
  
     Write-Output "Assembling Workload Domain Data"
     #GetDomainDetails
@@ -338,10 +378,20 @@ Function New-ExtractDataFromSDDCBackup
                 'ip' = $vCenter.vCenterIp
                 'vmname' = $vCenter.vCenterVMname
             }
+            #HostID from hostsAndDomains of first host in domain based on DomainID
+            $hostID = (($hostsAndDomains | Where-Object {$_.domainID -eq $domainID})[0]).hostId
+
+            #PoolID from HostandPools based on HostID
+            $poolID = ($hostsAndPools | Where-Object {$_.hostId -eq $hostID}).PoolID
+
+            #poolName from Networkpools based on PoolID
+            $poolName = ($networkPools | Where-Object {$_.poolID -eq $poolID}).PoolName
+
             $workloadDomains += [pscustomobject]@{
                 'domainName' = $domainName
                 'domainID' = $domainID
                 'domainType' = $domainType
+                'networkPool' = $poolName
                 'vCenterDetails' = $vCenterDetails
                 'nsxNodeDetails' = ($nsxtManagerClusters | Where-Object {$_.domainIDs -contains $domainId}).nsxNodes
             }
@@ -368,6 +418,13 @@ Function New-ExtractDataFromSDDCBackup
         'ntpServers' = @($ntpJSON.ntpServers)
     }
 
+    Write-Output "Getting CEIP Status"
+    #GetDomainDetails
+    $ceipStartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.sddc_manager_controller" | Select Line,LineNumber).LineNumber
+    $lineContent = $psqlContent | Select-Object -Index $ceipStartingLineNumber
+    If ($lineContent.split("`t")[9] -eq 'ENABLED') { $ceipStatus = $true} else {$ceipStatus = $false}
+    
+
     Write-Output "Retrieving SDDC Manager Detail"
     $sddcManagerObject = @()
     $sddcManagerObject += [pscustomobject]@{
@@ -375,6 +432,7 @@ Function New-ExtractDataFromSDDCBackup
         'vmname' = ((($passwordVaultObject | Where-Object {$_.entityType -eq "BACKUP"}).entityName).split("."))[0]
         'ip' = $metadataJSON.ip
         'fips_enabled' = $metadataJSON.fips_enabled 
+        'ceip_enabled' = $ceipStatus
     }
     
     Write-Output "Creating extracted-sddc-data.json"
@@ -389,7 +447,7 @@ Function New-ExtractDataFromSDDCBackup
     Write-Output "Cleaning up extracted files"
     Remove-Item -Path "$parentFolder\decrypted-sddc-manager-backup.tar.gz" -force -confirm:$false
     Remove-Item -Path "$parentFolder\decrypted-sddc-manager-backup.tar" -force -confirm:$false
-    Remove-Item -path "$parentFolder\$extractedBackupFolder" -Recurse 
+    #Remove-Item -path "$parentFolder\$extractedBackupFolder" -Recurse 
 }
 Export-ModuleMember -Function New-ExtractDataFromSDDCBackup
 
