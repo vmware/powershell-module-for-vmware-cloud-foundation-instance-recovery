@@ -544,7 +544,7 @@ Function New-ExtractDataFromSDDCBackup
             $managementSubnet = $($netid.ipaddresstostring)
 
             $networkSpecs = @()
-            $networkSpecs += [pscustomobject]@{
+            $networkSpecs += [pscustomobject]@{  #Review
                 'type' = "MANAGEMENT"
                 'subnet_mask' = $metaDataJSON.netmask
                 'subnet' =  $managementSubnet
