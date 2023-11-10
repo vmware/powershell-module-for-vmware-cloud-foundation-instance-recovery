@@ -626,7 +626,7 @@ Function New-NSXManagerOvaDeployment
     The New-NSXManagerOvaDeployment resents a list of NSX Mangers associated with the provided VCF Workload Domain, and deploys an NSX Manager from OVA using data previously extracted from the VCF SDDC Manager Backup
 
     .EXAMPLE
-    New-NSXManagerOvaDeployment -tempvCenterFQDN "sfo-m01-vc02.sfo.rainpole.io" -tempvCenterAdmin "administrator@vsphere.local" -tempvCenterAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -workloadDomain "sfo-m01" -nsxManagerOvaFile "F:\OVA\nsx-unified-appliance-3.2.2.1.0.21487565.ova"
+    New-NSXManagerOvaDeployment -tempvCenterFQDN "sfo-m01-vc02.sfo.rainpole.io" -tempvCenterAdmin "administrator@vsphere.local" -tempvCenterAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -workloadDomain "sfo-m01" -restoredNsxManagerDeploymentSize medium -nsxManagerOvaFile "F:\OVA\nsx-unified-appliance-3.2.2.1.0.21487565.ova"
 
     .PARAMETER tempvCenterFQDN
     FQDN of the target vCenter to deploy the NSX Manager OVA to
@@ -643,6 +643,9 @@ Function New-NSXManagerOvaDeployment
     .PARAMETER workloadDomain
     Name of the VCF workload domain that the NSX Manager to deployed to is associated with
     
+    .PARAMETER restoredNsxManagerDeploymentSize
+    Size of the NSX Manager Appliance to deploy
+
     .PARAMETER nsxManagerOvaFile
     Relative or absolute to the NSX Manager OVA somewhere on the local filesystem
     #>
@@ -653,8 +656,8 @@ Function New-NSXManagerOvaDeployment
         [Parameter (Mandatory = $true)][String] $tempvCenterAdminPassword,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
         [Parameter (Mandatory = $true)][String] $workloadDomain,
+        [Parameter (Mandatory = $true)][String] $restoredNsxManagerDeploymentSize,
         [Parameter (Mandatory = $true)][String] $nsxManagerOvaFile
-        [Parameter (Mandatory = $true)][String] $restoredNsxManagerDeploymentSize
     )
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
