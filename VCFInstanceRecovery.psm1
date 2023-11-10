@@ -538,8 +538,8 @@ Function New-ExtractDataFromSDDCBackup
             $vsanNetwork = $networks | Where-Object {($_.type -eq "VSAN") -and ($_.id -in $domainNetworks)}
             $sddcManagerIP = $metadataJSON.ip
             $managementSubnetMask = $metaDataJSON.netmask
-            $ip = [ipaddress]$ipaddress
-            $subnet = [ipaddress]$subnetmask
+            $ip = [ipaddress]$sddcManagerIP
+            $subnet = [ipaddress]$managementSubnetMask
             $netid = [ipaddress]($ip.address -band $subnet.address)           
             $managementSubnet = $($netid.ipaddresstostring)
 
