@@ -78,6 +78,7 @@ Function Get-InstalledSoftware
 }
 #EndRegion Supporting Functions
 
+#Region Pre-Requisites
 Function Confirm-VCFInstanceRecoveryPreReqs
 {
     <#
@@ -154,6 +155,8 @@ Function Confirm-VCFInstanceRecoveryPreReqs
     }
 }
 Export-ModuleMember -Function Confirm-VCFInstanceRecoveryPreReqs
+#EndRegion Pre-Requisites
+
 #Region Data Gathering
 
 Function New-ExtractDataFromSDDCBackup
@@ -2471,6 +2474,9 @@ Function Invoke-NSXEdgeClusterRecovery
     .EXAMPLE
     Invoke-NSXEdgeClusterRecovery -nsxManagerFqdn "sfo-m01-nsx01.sfo.rainpole.io" -nsxManagerAdmin "admin" -nsxManagerAdminPassword "VMw@re1!VMw@re1!" -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01"
 
+    .EXAMPLE
+    Invoke-NSXEdgeClusterRecovery -nsxManagerFqdn "sfo-m01-nsx01.sfo.rainpole.io" -nsxManagerAdmin "admin" -nsxManagerAdminPassword "VMw@re1!VMw@re1!" -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -resourcePoolName "VCF-edge_sfo-m01-ec01_ResourcePool_7d6d6cb0abdfae659f6d36046ac7ddbc"
+
     .PARAMETER nsxManagerFqdn
     FQDN of the NSX Manager whose Edges need to be redeployed
 
@@ -2491,6 +2497,9 @@ Function Invoke-NSXEdgeClusterRecovery
 
     .PARAMETER clusterName
     Name of the vSphere cluster instance whose Egdes need to be redeployed
+
+    .PARAMETER resourcePoolName
+    Name of the Resource Pool whose Egdes need to be redeployed
     #>
 
     Param(
