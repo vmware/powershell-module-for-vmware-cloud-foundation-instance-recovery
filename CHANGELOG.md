@@ -1,8 +1,16 @@
 # Release History
 
+## v1.0.4
+
+> Released: 2023-11-10
+
+- Updated `New-NSXManagerOvaDeployment` to support passing of desired appliance size
+- Updated `Invoke-NSXEdgeClusterRecovery` to support passing of target resourcepool as alternative to cluster
+- Updated `Invoke-NSXEdgeClusterRecovery` to redeploy edges in `VM_PLACEMENT_REFRESH_FAILED` state in addition to `MPA_DISCONNECTED`
+
 ## v1.0.3
 
-> Released: 2023-10-xx
+> Released: 2023-10-20
 
 - Added `New-SDDCManagerOvaDeployment`
 - Added `New-vCenterOvaDeployment`
