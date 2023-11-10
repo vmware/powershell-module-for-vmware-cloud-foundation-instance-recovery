@@ -259,6 +259,8 @@ Function New-ExtractDataFromSDDCBackup
                 }
             }
             $nsxtManagerClusters += [pscustomobject]@{
+                'clusterVip' = $lineContent.split("`t")[5]
+                'clusterFqdn' = $lineContent.split("`t")[6]
                 'domainIDs' = $nodeContent.domainIds
                 'nsxNodes' = $nsxNodes
             }
@@ -573,6 +575,9 @@ Function New-ExtractDataFromSDDCBackup
                 'gateway' = $vsanNetwork.gateway
                 'portgroupKey' = ($virtualDistributedSwitches.portgroups | Where-Object {$_.vlanId -eq $vsanNetwork.vlanID}).name
             }
+            $nsxClusterDetailsObject = New-Object -type psobject
+            $nsxClusterDetailsObject | Add-Member -NotePropertyName 'clusterVip' -NotePropertyValue ($nsxtManagerClusters | Where-Object {$_.domainIDs -contains $domainId}).clusterVip
+            $nsxClusterDetailsObject | Add-Member -NotePropertyName 'clusterFqdn' -NotePropertyValue ($nsxtManagerClusters | Where-Object {$_.domainIDs -contains $domainId}).clusterFqdn
             $workloadDomains += [pscustomobject]@{
                 'domainName' = $domainName
                 'domainID' = $domainID
@@ -580,6 +585,7 @@ Function New-ExtractDataFromSDDCBackup
                 'networkPool' = $poolName
                 'vCenterDetails' = $vCenterDetails
                 'networkDetails' = $networkSpecs
+                'nsxClusterDetails' = $nsxClusterDetailsObject
                 'nsxNodeDetails' = ($nsxtManagerClusters | Where-Object {$_.domainIDs -contains $domainId}).nsxNodes
             }
         }
