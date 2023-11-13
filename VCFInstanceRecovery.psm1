@@ -1147,6 +1147,10 @@ Function New-UploadAndModifySDDCManagerBackup
 }
 Export-ModuleMember -Function New-UploadAndModifySDDCManagerBackup
 
+Function New-TestFunction
+{
+    
+}
 Function New-ReconstructedPartialBringupJsonSpec
 {
     <#
@@ -1413,10 +1417,6 @@ Function New-ReconstructedPartialBringupJsonSpec
 }
 Export-ModuleMember -Function New-ReconstructedPartialBringupJsonSpec
 
-Function New-TestFunction
-{
-    
-}
 #EndRegion Data Gathering
 
 #Region vCenter Functions
