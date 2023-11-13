@@ -1367,27 +1367,10 @@ Function New-ReconstructedJsonSpec
     $mgmtDomainObject | ConvertTo-Json -depth 10 | Out-File (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).domainName + "-partial-bringup-spec.json")
 }
 Export-ModuleMember -Function New-ReconstructedJsonSpec
+
 #EndRegion Data Gathering
 
 #Region vCenter Functions
-<# Function Add-ClusterHostsToVds {
-    Param(
-        [Parameter (Mandatory = $true)][String] $restoredvCenterFQDN,
-        [Parameter (Mandatory = $true)][String] $restoredvCenterAdmin,
-        [Parameter (Mandatory = $true)][String] $restoredvCenterAdminPassword,
-        [Parameter (Mandatory = $true)][String] $restoredclusterName,
-        [Parameter (Mandatory = $true)][String] $esxiRootPassword,
-        [Parameter (Mandatory = $true)][String] $restoredVdsName
-    )
-    $esxiHosts = get-cluster -name $restoredclusterName | get-vmhost
-    Foreach ($esxiHost in $esxiHosts) {
-        Write-Host "[$esxiHost] Adding to $restoredVdsName"
-        Get-VDSwitch -Name $restoredVdsName | Add-VDSwitchVMHost -VMHost $esxiHost | Out-null
-        $vmNicToAdd = Get-VMHostNetworkAdapter -Physical -Name vmnic0
-        Get-VDSwitch $restoredVdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostNetworkAdapter $vmNicToAdd -Confirm:$false | Out-Null
-    }
-    Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
-} #>
 
 Function Move-ClusterHostsToRestoredVcenter
 {
