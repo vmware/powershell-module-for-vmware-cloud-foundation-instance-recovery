@@ -1147,8 +1147,53 @@ Function New-UploadAndModifySDDCManagerBackup
 }
 Export-ModuleMember -Function New-UploadAndModifySDDCManagerBackup
 
-Function New-PartialBringupJsonSpec
+Function New-ReconstructedPartialBringupJsonSpec
 {
+    <#
+    .SYNOPSIS
+    Reconstructs a managment domain bringup JSON spec based on information scraped from the backup being restored from
+
+    .DESCRIPTION
+    The New-ReconstructedPartialBringupJsonSpec cmdlet Reconstructs a managment domain bringup JSON spec based on information scraped from the backup being restored from
+
+    .EXAMPLE
+    New-ReconstructedPartialBringupJsonSpec -extractedSDDCDataFile ".\extracted-sddc-data.json" -tempVcenterIp "172.16.11.170" -tempVcenterHostname "sfo-m01-vc02" -vcfLocalUserPassword "VMw@re1!" -vcfRootUserPassword "VMw@re1!" -vcfRestApiPassword "VMw@re1!" -vcfSecondUserPassword "VMw@re1!" -transportVlanId 1614 -dedupEnabled $false -vds0nics "vmnic0","vmnic1" -vcenterServerSize "small"
+
+    .PARAMETER tempVcenterIp
+    As a temporary vCenter will be used, a temporary IP Address must be provdied for use
+
+    .PARAMETER tempVcenterHostname
+    As a temporary vCenter will be used, a temporary Hostname must be provdied for use
+    
+    .PARAMETER extractedSDDCDataFile
+    Relative or absolute to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup) somewhere on the local filesystem
+
+    .PARAMETER vcfLocalUserPassword
+    Password to be assigned to the local user account
+
+    .PARAMETER vcfRootUserPassword
+    Password to be assigned to the root user account
+
+    .PARAMETER vcfRestApiPassword
+    Password to be assigned to the api user account
+
+    .PARAMETER vcfSecondUserPassword
+    Password to be assigned to the vcf user account
+
+    .PARAMETER transportVlanId
+    VLAN ID to be used for the transport VLAN. Should be the same as that used in the original build
+
+    .PARAMETER dedupEnabled
+    Boolean value to specify with depude should be enabled or not
+
+    .PARAMETER vds0nics
+    Comma seperated list of vmnics to assign to the first vds in the format "vmnic0","vmnic1"
+    
+    .PARAMETER vcenterServerSize
+    Size of the vCenter appliance to be deployed for the temporary vCenter
+
+    #>
+    
     Param(
         [Parameter (Mandatory = $true)][String] $tempVcenterIp,
         [Parameter (Mandatory = $true)][String] $tempVcenterHostname,
@@ -1158,7 +1203,7 @@ Function New-PartialBringupJsonSpec
         [Parameter (Mandatory = $true)][String] $vcfRestApiPassword,
         [Parameter (Mandatory = $true)][String] $vcfSecondUserPassword,
         [Parameter (Mandatory = $true)][String] $transportVlanId,
-        [Parameter (Mandatory = $true)][String] $dedupEnabled,
+        [Parameter (Mandatory = $true)][boolean] $dedupEnabled,
         [Parameter (Mandatory = $true)][Array] $vds0nics,
         [Parameter (Mandatory = $true)][String] $vcenterServerSize
     )
@@ -1366,7 +1411,7 @@ Function New-PartialBringupJsonSpec
 
     $mgmtDomainObject | ConvertTo-Json -depth 10 | Out-File (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).domainName + "-partial-bringup-spec.json")
 }
-Export-ModuleMember -Function New-PartialBringupJsonSpec
+Export-ModuleMember -Function New-ReconstructedPartialBringupJsonSpec
 #EndRegion Data Gathering
 
 #Region vCenter Functions
