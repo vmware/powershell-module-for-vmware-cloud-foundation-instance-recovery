@@ -1147,7 +1147,7 @@ Function New-UploadAndModifySDDCManagerBackup
 }
 Export-ModuleMember -Function New-UploadAndModifySDDCManagerBackup
 
-Function New-PartialBringupJsonSpec
+Function New-ReconstructedJsonSpec
 {
     Param(
         [Parameter (Mandatory = $true)][String] $tempVcenterIp,
@@ -1366,7 +1366,7 @@ Function New-PartialBringupJsonSpec
 
     $mgmtDomainObject | ConvertTo-Json -depth 10 | Out-File (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).domainName + "-partial-bringup-spec.json")
 }
-Export-ModuleMember -Function New-PartialBringupJsonSpec
+Export-ModuleMember -Function New-ReconstructedJsonSpec
 #EndRegion Data Gathering
 
 #Region vCenter Functions
