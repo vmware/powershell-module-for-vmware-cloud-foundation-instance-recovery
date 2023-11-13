@@ -771,7 +771,7 @@ Function New-ExtractDataFromSDDCBackup
     Write-Output "Cleaning up extracted files"
     Remove-Item -Path "$parentFolder\decrypted-sddc-manager-backup.tar.gz" -force -confirm:$false
     Remove-Item -Path "$parentFolder\decrypted-sddc-manager-backup.tar" -force -confirm:$false
-    #Remove-Item -path "$parentFolder\$extractedBackupFolder" -Recurse 
+    Remove-Item -path "$parentFolder\$extractedBackupFolder" -Recurse 
 }
 Export-ModuleMember -Function New-ExtractDataFromSDDCBackup
 
