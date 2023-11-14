@@ -1340,7 +1340,7 @@ Function New-ReconstructedPartialBringupJsonSpec
     $vsanSpecObject = New-Object -type psobject
     $vsanSpecObject | Add-Member -notepropertyname 'vsanName' -notepropertyvalue "vsan-1"
     $vsanSpecObject | Add-Member -notepropertyname 'licenseFile' -notepropertyvalue ($extractedSddcData.licenseKeys | Where-Object {$_.productType -eq "VSAN"}).key
-    $vsanSpecObject | Add-Member -notepropertyname 'vsanDedup' -notepropertyvalue $dedupEnabled
+    $vsanSpecObject | Add-Member -notepropertyname 'vsanDedup' -notepropertyvalue "$dedupEnabled"
     $vsanSpecObject | Add-Member -notepropertyname 'datastoreName' -notepropertyvalue ($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).primaryClusterDetails.primaryDatastoreName
     $mgmtDomainObject | Add-Member -notepropertyname 'vsanSpec' -notepropertyvalue $vsanSpecObject
 
@@ -1398,7 +1398,7 @@ Function New-ReconstructedPartialBringupJsonSpec
         $ipAddressPrivateObject | Add-Member -notepropertyname 'gateway' -notepropertyvalue (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq "MANAGEMENT"}).gateway
         $hostSpecs += [PSCustomObject]@{
             'hostname' = $mgmtHost.entityName.split(".")[0]
-            'vswitch' = "vswitch0"
+            'vSwitch' = "vswitch0"
             'association' = $extractedSddcData.mgmtDomainInfrastructure.datacenter
             'credentials' = $credentialObject
             'ipAddressPrivate' = $ipAddressPrivateObject
@@ -1407,7 +1407,7 @@ Function New-ReconstructedPartialBringupJsonSpec
     $mgmtDomainObject | Add-Member -notepropertyname 'hostSpecs' -notepropertyvalue $hostSpecs
 
     $licenseMode = ($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).licenseModel
-    If ($licenseMode -eq "PERPETUAL") {$subscriptionLicensing = $false } else {$subscriptionLicensing = $true}
+    If ($licenseMode -eq "PERPETUAL") {$subscriptionLicensing = "False" } else {$subscriptionLicensing = "True"}
     $mgmtDomainObject | Add-Member -notepropertyname 'subscriptionLicensing' -notepropertyvalue $subscriptionLicensing
 
     $mgmtDomainObject | ConvertTo-Json -depth 10 | Out-File (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).domainName + "-partial-bringup-spec.json")
