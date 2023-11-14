@@ -2992,6 +2992,7 @@ Function Invoke-NSXEdgeClusterRecovery
             $edgeReConfig = (Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -body $vmDeploymentConfigJson -headers $headers).content | ConvertFrom-Json
 
             #Redeploy Edge
+            Write-Host "[$($edge.display_name)] Getting Edge State"
             $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($edge.node_id)/state"
             $edgeState = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
             If ($edgeState.node_deployment_state.state -ne "success")
