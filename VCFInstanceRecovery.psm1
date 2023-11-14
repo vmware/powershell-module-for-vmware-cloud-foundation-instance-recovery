@@ -2906,6 +2906,9 @@ Function Invoke-NSXEdgeClusterRecovery
 
     .PARAMETER resourcePoolName
     Name of the Resource Pool whose Egdes need to be redeployed
+
+    .PARAMETER extractedSDDCDataFile
+    Relative or absolute to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup) somewhere on the local filesystem
     #>
 
     Param(
@@ -2916,8 +2919,13 @@ Function Invoke-NSXEdgeClusterRecovery
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
         [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
         [Parameter (Mandatory = $false)][String] $clusterName,
-        [Parameter (Mandatory = $false)][String] $resourcePoolName
+        [Parameter (Mandatory = $false)][String] $resourcePoolName,
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile
     )
+
+    $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
+    $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
+
     $vcenterConnection = Connect-VIServer -server $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
     If ($clusterName)
     {
