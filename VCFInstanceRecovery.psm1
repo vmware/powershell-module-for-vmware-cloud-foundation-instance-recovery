@@ -2957,7 +2957,7 @@ Function Invoke-NSXEdgeClusterRecovery
             $vmDeploymentConfig = $edgeConfig.node_deployment_info.deployment_config.vm_deployment_config
             $NumCpu = $vmDeploymentConfig.resource_allocation.cpu_count
             $memoryGB = $vmDeploymentConfig.resource_allocation.memory_allocation_in_mb / 1024
-            $cpuShareLevel = $vmDeploymentConfig.reservation_info.cpu_reservation.reservation_in_shares
+            $cpuShareLevel = (($vmDeploymentConfig.reservation_info.cpu_reservation.reservation_in_shares -split("_"))[0]).tolower()
             $attachedNetworks = $vmDeploymentConfig.data_network_ids
 
             #Create Dummy VM
@@ -2967,8 +2967,8 @@ Function Invoke-NSXEdgeClusterRecovery
             $nestedNetworkPG = Get-VDPortGroup -name $portgroup -ErrorAction silentlyContinue | Where-Object {$_.VDSwitch -match $clusterVdsName}
             $datastore = ($extractedSddcData.workloadDomains | Where-Object {$_.primaryClusterDetails.name -eq $clusterName}).primaryClusterDetails.primaryDatastoreName
             New-VM -VMhost (get-cluster -name $clusterName | Get-VMHost | Get-Random ) -Name $edge.display_name -Datastore $datastore -resourcePool $resourcePoolName -DiskGB 200 -DiskStorageFormat Thin -MemoryGB $MemoryGB -NumCpu $NumCpu -portgroup $portgroup -GuestID "ubuntu64Guest" -Confirm:$false | Out-Null
-            Get-VM -Name $edge.display_name | Get-VMResourceConfiguration | Set-VMResourceConfiguration -MemoryReservation $memoryGB
-            Get-VM -Name $edge.display_name | Get-VMResourceConfiguration | Set-VMResourceConfiguration -CpuSharesLevel $cpuShareLevel
+            Get-VM -Name $edge.display_name | Get-VMResourceConfiguration | Set-VMResourceConfiguration -MemReservationGB $memoryGB | Out-Null
+            Get-VM -Name $edge.display_name | Get-VMResourceConfiguration | Set-VMResourceConfiguration -CpuSharesLevel $cpuShareLevel | Out-Null
             Foreach ($attachedNetwork in $attachedNetworks)
             {
                 $attachedNetworkPg = Get-VDPortGroup -id ("DistributedVirtualPortgroup-" + $attachedNetwork)
