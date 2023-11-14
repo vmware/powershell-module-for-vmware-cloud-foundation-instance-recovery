@@ -469,6 +469,7 @@ Function New-ExtractDataFromSDDCBackup
                 $vdsObject = New-Object -type PSObject
                 $vdsObject | Add-Member -NotePropertyName 'mtu' -NotePropertyValue $virtualDistributedSwitchDetails.mtu
                 $vdsObject | Add-Member -NotePropertyName 'niocSpecs' -NotePropertyValue $niocSpecsObject
+                $vdsObject | Add-Member -NotePropertyName 'portgroups' -NotePropertyValue $virtualDistributedSwitchDetails.portgroups
                 $vdsObject | Add-Member -NotePropertyName 'dvsName' -NotePropertyValue $virtualDistributedSwitchDetails.name
                 $vdsObject | Add-Member -NotePropertyName 'vmnics' -NotePropertyValue $null
                 $vdsObject | Add-Member -NotePropertyName 'networks' -NotePropertyValue ("MANAGEMENT","VSAN","VMOTION" | Where-Object {$_ -in $niocSpecsObject.trafficType})
@@ -1147,10 +1148,6 @@ Function New-UploadAndModifySDDCManagerBackup
 }
 Export-ModuleMember -Function New-UploadAndModifySDDCManagerBackup
 
-Function New-TestFunction
-{
-    
-}
 Function New-ReconstructedPartialBringupJsonSpec
 {
     <#
@@ -2939,24 +2936,62 @@ Function Invoke-NSXEdgeClusterRecovery
     $transportNodeContents = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
     $allEdgeTransportNodes = ($transportNodeContents.results | Where-Object { ($_.node_deployment_info.resource_type -eq "EdgeNode") -and ($_.node_deployment_info.deployment_config.vm_deployment_config.compute_id -eq $MoRef)})
     #Redeploy Failed Edges
+    
     Foreach ($edge in $allEdgeTransportNodes)
     {
-        $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($edge.node_id)/state"
-        $edgeState = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
-        If ($edgeState.node_deployment_state.state -ne "success")
+        $edgeVmPresent = get-vm -name $edge.display_name -ErrorAction SilentlyContinue
+        If (!$edgeVmPresent)
         {
-            Write-Host "[$($edge.display_name)] is in state $($edgeState.node_deployment_state.state)"
-            If ($edgeState.node_deployment_state.state -in "MPA_DISCONNECTED","VM_PLACEMENT_REFRESH_FAILED")
+            #Getting Existing Placement Details
+            Write-Host "[$($edge.display_name)] Getting Placement References"
+            $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($edge.node_id)"
+            $edgeConfig = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
+            $vmDeploymentConfig = $edgeConfig.node_deployment_info.deployment_config.vm_deployment_config
+            $NumCpu = $vmDeploymentConfig.resource_allocation.cpu_count
+            $memoryGB = $vmDeploymentConfig.resource_allocation.memory_allocation_in_mb / 1024
+
+            #Create Dummy VM
+            Write-Host "[$($edge.display_name)] Building Container VM"
+            $clusterVdsName = ($extractedSddcData.workloadDomains | Where-Object {$_.primaryClusterDetails.name -eq $clusterName}).primaryClusterDetails.vdsdetails.dvsName
+            $portgroup = (($extractedSddcData.workloadDomains | Where-Object {$_.primaryClusterDetails.name -eq $clusterName}).primaryClusterDetails.vdsdetails.portgroups | Where-Object {$_.transportType -eq 'MANAGEMENT'}).NAME
+            $nestedNetworkPG = Get-VDPortGroup -name $portgroup -ErrorAction silentlyContinue | Where-Object {$_.VDSwitch -match $clusterVdsName}
+            $datastore = ($extractedSddcData.workloadDomains | Where-Object {$_.primaryClusterDetails.name -eq $clusterName}).primaryClusterDetails.primaryDatastoreName
+            New-VM -VMhost (get-cluster -name $clusterName | Get-VMHost | Get-Random ) -Name $edge.display_name -Datastore $datastore -resourcePool $resourcePoolName -DiskGB 200 -DiskStorageFormat Thin -MemoryGB $MemoryGB -NumCpu $NumCpu -portgroup $portgroup -GuestID "ubuntu64Guest" -Confirm:$false | Out-Null
+            $vmID = (get-vm -name $edge.display_name).extensionData.moref.value
+            
+            #Build Edge DeploymentSpec
+            Write-Host "[$($edge.display_name)] Updating Placement References"
+            $datastoreMoRef = (Get-Datastore -name $datastore).ExtensionData.moref.value
+            $vmDeploymentConfig.storage_id = $datastoreMoRef
+            $nodeUserSettingsObject = New-Object -type psobject
+            $nodeUserSettingsObject | Add-Member -NotePropertyName 'cli_username' -NotePropertyValue 'admin'
+            $nodeUserSettingsObject | Add-Member -NotePropertyName 'audit_username' -NotePropertyValue 'audit'
+            $edgeRefreshObject = New-Object -type psobject
+            $edgeRefreshObject | Add-Member -NotePropertyName 'vm_id' -NotePropertyValue $vmID
+            $edgeRefreshObject | Add-Member -NotePropertyName 'vm_deployment_config' -NotePropertyValue $vmDeploymentConfig
+            $edgeRefreshObject | Add-Member -NotePropertyName 'node_user_settings' -NotePropertyValue $nodeUserSettingsObject
+            $vmDeploymentConfigJson = $edgeRefreshObject | Convertto-Json -depth 10
+            $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($edge.node_id)?action=addOrUpdatePlacementReferences"
+            $edgeReConfig = (Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -body $vmDeploymentConfigJson -headers $headers).content | ConvertFrom-Json
+
+            #Redeploy Edge
+            $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($edge.node_id)/state"
+            $edgeState = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
+            If ($edgeState.node_deployment_state.state -ne "success")
             {
-                Write-Host "[$($edge.display_name)] Redeploying"
-                $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($edge.node_id)"
-                $edgeResponse = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content
-                $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($edge.node_id)?action=redeploy"
-                $edgeRedeploy = Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -body $edgeResponse -headers $headers
-            }
-            else 
-            {   
-                Write-Host "[$($edge.display_name)] Not in a suitable state for redeployment. Please review and retry"
+                Write-Host "[$($edge.display_name)] is in state $($edgeState.node_deployment_state.state)"
+                If ($edgeState.node_deployment_state.state -in "MPA_DISCONNECTED","VM_PLACEMENT_REFRESH_FAILED","NODE_READY")
+                {
+                    Write-Host "[$($edge.display_name)] Redeploying Edge"
+                    $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($edge.node_id)"
+                    $edgeResponse = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content
+                    $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($edge.node_id)?action=redeploy"
+                    $edgeRedeploy = Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -body $edgeResponse -headers $headers
+                }
+                else 
+                {   
+                    Write-Host "[$($edge.display_name)] Not in a suitable state for redeployment. Please review and retry"
+                }
             }
         }
     }
