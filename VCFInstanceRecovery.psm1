@@ -2918,7 +2918,7 @@ Function Invoke-NSXEdgeClusterRecovery
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
         [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
-        [Parameter (Mandatory = $false)][String] $clusterName,
+        [Parameter (Mandatory = $true)][String] $clusterName,
         [Parameter (Mandatory = $false)][String] $resourcePoolName,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile
     )
@@ -2927,17 +2927,16 @@ Function Invoke-NSXEdgeClusterRecovery
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
 
     $vcenterConnection = Connect-VIServer -server $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
-    If ($clusterName)
-    {
-        $cluster = Get-Cluster -name $clusterName
-        $MoRef = $cluster.ExtensionData.MoRef.Value    
-    }
-    elseif ($resourcePoolName)
+    If ($resourcePoolName)
     {
         $resourcePool = Get-ResourcePool -name $resourcePoolName
         $MoRef = $resourcePool.ExtensionData.MoRef.Value    
     }
-    
+    else 
+    {
+        $cluster = Get-Cluster -name $clusterName
+        $MoRef = $cluster.ExtensionData.MoRef.Value    
+    }
     #Get TransportNodes
     $headers = VCFIRCreateHeader -username $nsxManagerAdmin -password $nsxManagerAdminPassword
     $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/"
