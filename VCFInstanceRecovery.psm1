@@ -2996,7 +2996,7 @@ Function Invoke-NSXEdgeClusterRecovery
             $edgeState = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
             If ($edgeState.node_deployment_state.state -ne "success")
             {
-                Write-Host "[$($edge.display_name)] is in state $($edgeState.node_deployment_state.state)"
+                Write-Host "[$($edge.display_name)] State is $($edgeState.node_deployment_state.state)"
                 If ($edgeState.node_deployment_state.state -in "MPA_DISCONNECTED","VM_PLACEMENT_REFRESH_FAILED","NODE_READY")
                 {
                     Write-Host "[$($edge.display_name)] Redeploying Edge"
