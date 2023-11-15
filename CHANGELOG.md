@@ -1,12 +1,25 @@
 # Release History
 
+## v1.0.5
+
+> Released: 2023-11-15
+
+- Added `New-ReconstructedPartialBringupJsonSpec` (experimental) for recreation of VMware Cloud Foundation partial bringup JSON from backup data. Not all bringup configurations have been tested.
+- Modified `Invoke-NSXEdgeClusterRecovery` to redeploy edges in `NODE_READY` state in addition to `MPA_DISCONNECTED` and `VM_PLACEMENT_REFRESH_FAILED`
+- Modified `Invoke-NSXEdgeClusterRecovery` to handle datastore moref being different due to cluster rebuild
+- Modified `New-NSXManagerOvaDeployment` to ensure SSH is enabled
+- Modified `New-SDDCManagerOvaDeployment` to pass BACKUP_USER password retreived from backup data.
+- Modified `New-ExtractDataFromSDDCBackup` to gather significantly more detail to support `New-ReconstructedPartialBringupJsonSpec`
+- Modified `Confirm-VCFInstanceRecoveryPreReqs` to check for presence of OpenSSL in the Windows $PATH variable
+- Modified multiple functions to standardize on input variable names
+
 ## v1.0.4
 
 > Released: 2023-11-10
 
-- Updated `New-NSXManagerOvaDeployment` to support passing of desired appliance size
-- Updated `Invoke-NSXEdgeClusterRecovery` to support passing of target resourcepool as alternative to cluster
-- Updated `Invoke-NSXEdgeClusterRecovery` to redeploy edges in `VM_PLACEMENT_REFRESH_FAILED` state in addition to `MPA_DISCONNECTED`
+- Modified `New-NSXManagerOvaDeployment` to support passing of desired appliance size
+- Modified `Invoke-NSXEdgeClusterRecovery` to support passing of target resourcepool as alternative to cluster
+- Modified `Invoke-NSXEdgeClusterRecovery` to redeploy edges in `VM_PLACEMENT_REFRESH_FAILED` state in addition to `MPA_DISCONNECTED`
 
 ## v1.0.3
 
