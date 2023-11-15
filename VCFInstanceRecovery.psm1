@@ -151,7 +151,26 @@ Function Confirm-VCFInstanceRecoveryPreReqs
     }
     else
     {
-        Write-Output "OpenSSL Module found"
+        Write-Output "OpenSSL Utility found"
+    }
+    $pathEntries = $env:path -split (";")
+    $OpenSSLPath = $pathEntries | Where-Object {$_ -like "*OpenSSL*"}
+    If ($OpenSSLPath)
+    {
+        $testOpenSSExe = Test-Path "$OpenSSLPath\openssl.exe"
+        IF ($testOpenSSExe)
+        {
+            Write-Output "openssl.exe found in $OpenSSLPath"
+        }
+        else 
+        {
+            Write-Output "$OpenSSLPath was found in environment path, but no openssl.exe was found in that path"
+        }
+
+    }
+    else 
+    {
+        Write-Output "No folder path that looks like OpenSSL was discovered in the environment path variable. Please double check that that the location of the OpenSSL is included in the path variable"
     }
 }
 Export-ModuleMember -Function Confirm-VCFInstanceRecoveryPreReqs
