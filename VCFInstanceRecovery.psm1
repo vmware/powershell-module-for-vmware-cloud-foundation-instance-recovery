@@ -170,7 +170,7 @@ Function Confirm-VCFInstanceRecoveryPreReqs
     }
     else 
     {
-        Write-Output "No folder path that looks like OpenSSL was discovered in the environment path variable. Please double check that that the location of the OpenSSL is included in the path variable"
+        Write-Output "No folder path that looks like OpenSSL was discovered in the environment path variable. Please double check that the location of OpenSSL is included in the path variable"
     }
 }
 Export-ModuleMember -Function Confirm-VCFInstanceRecoveryPreReqs
@@ -2148,7 +2148,6 @@ Function Add-HostsToCluster
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
 }
 Export-ModuleMember -Function Add-HostsToCluster
-
 
 Function Remove-StandardSwitch 
 {
