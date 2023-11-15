@@ -786,9 +786,9 @@ Function New-NSXManagerOvaDeployment
     The New-NSXManagerOvaDeployment resents a list of NSX Mangers associated with the provided VCF Workload Domain, and deploys an NSX Manager from OVA using data previously extracted from the VCF SDDC Manager Backup
 
     .EXAMPLE
-    New-NSXManagerOvaDeployment -tempvCenterFQDN "sfo-m01-vc02.sfo.rainpole.io" -tempvCenterAdmin "administrator@vsphere.local" -tempvCenterAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -workloadDomain "sfo-m01" -restoredNsxManagerDeploymentSize medium -nsxManagerOvaFile "F:\OVA\nsx-unified-appliance-3.2.2.1.0.21487565.ova"
+    New-NSXManagerOvaDeployment -tempvCenterFqdn "sfo-m01-vc02.sfo.rainpole.io" -tempvCenterAdmin "administrator@vsphere.local" -tempvCenterAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -workloadDomain "sfo-m01" -restoredNsxManagerDeploymentSize medium -nsxManagerOvaFile "F:\OVA\nsx-unified-appliance-3.2.2.1.0.21487565.ova"
 
-    .PARAMETER tempvCenterFQDN
+    .PARAMETER tempvCenterFqdn
     FQDN of the target vCenter to deploy the NSX Manager OVA to
 
     .PARAMETER tempvCenterAdmin
@@ -811,7 +811,7 @@ Function New-NSXManagerOvaDeployment
     #>
     
     Param(
-        [Parameter (Mandatory = $true)][String] $tempvCenterFQDN,
+        [Parameter (Mandatory = $true)][String] $tempvCenterFqdn,
         [Parameter (Mandatory = $true)][String] $tempvCenterAdmin,
         [Parameter (Mandatory = $true)][String] $tempvCenterAdminPassword,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
@@ -894,9 +894,9 @@ Function New-vCenterOvaDeployment
     The New-vCenterOvaDeployment deploys a vCenter appliance from OVA using data previously extracted from the VCF SDDC Manager Backup
 
     .EXAMPLE
-    New-vCenterOvaDeployment -tempvCenterFQDN "sfo-m01-vc02.sfo.rainpole.io" -tempvCenterAdmin "administrator@vsphere.local" -tempvCenterAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -workloadDomain "sfo-m01" -restoredvCenterDeploymentSize "small" -vCenterOvaFile "F:\OVA\VMware-vCenter-Server-Appliance-7.0.3.01400-21477706_OVF10.ova"
+    New-vCenterOvaDeployment -tempvCenterFqdn "sfo-m01-vc02.sfo.rainpole.io" -tempvCenterAdmin "administrator@vsphere.local" -tempvCenterAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -workloadDomain "sfo-m01" -restoredvCenterDeploymentSize "small" -vCenterOvaFile "F:\OVA\VMware-vCenter-Server-Appliance-7.0.3.01400-21477706_OVF10.ova"
 
-    .PARAMETER tempvCenterFQDN
+    .PARAMETER tempvCenterFqdn
     FQDN of the target vCenter to deploy the vCenter OVA to
 
     .PARAMETER tempvCenterAdmin
@@ -919,7 +919,7 @@ Function New-vCenterOvaDeployment
     #>
     
     Param(
-        [Parameter (Mandatory = $true)][String] $tempvCenterFQDN,
+        [Parameter (Mandatory = $true)][String] $tempvCenterFqdn,
         [Parameter (Mandatory = $true)][String] $tempvCenterAdmin,
         [Parameter (Mandatory = $true)][String] $tempvCenterAdminPassword,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
@@ -946,7 +946,7 @@ Function New-vCenterOvaDeployment
     $restoredvCenterGateway = $extractedSddcData.mgmtDomainInfrastructure.gateway
     $restoredvCenterRootPassword = ($extractedSddcData.passwords | Where-Object {($_.entityType -eq "VCENTER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "SSH")}).password
 
-    $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowExtraConfig --X:enableHiddenProperties --diskMode=thin --X:injectOvfEnv --X:waitForIp --X:logFile=ovftool.log --name="' + $restoredvCenterVMName + '" --net:"Network 1"="' +$vmNetwork + '" --datastore="' + $vmDatastore + '" --deploymentOption="' + $restoredvCenterDeploymentSize + '" --prop:guestinfo.cis.appliance.net.addr.family="ipv4" --prop:guestinfo.cis.appliance.net.addr="' + $restoredvCenterIpAddress + '" --prop:guestinfo.cis.appliance.net.pnid="' + $restoredvCenterFqdn + '" --prop:guestinfo.cis.appliance.net.prefix="' + $restoredvCenterNetworkPrefix + '" --prop:guestinfo.cis.appliance.net.mode="static" --prop:guestinfo.cis.appliance.net.dns.servers="' + $restoredvCenterDnsServers + '" --prop:guestinfo.cis.appliance.net.gateway="' + $restoredvCenterGateway + '" --prop:guestinfo.cis.appliance.root.passwd="' + $restoredvCenterRootPassword + '" --prop:guestinfo.cis.appliance.ssh.enabled="True" "' + $vCenterOvaFile + '" ' + '"vi://' + $tempvCenterAdmin + ':' + $tempvCenterAdminPassword + '@' + $tempvCenterFQDN + '/' + $datacenterName + '/host/' + $clusterName + '/"'
+    $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowExtraConfig --X:enableHiddenProperties --diskMode=thin --X:injectOvfEnv --X:waitForIp --X:logFile=ovftool.log --name="' + $restoredvCenterVMName + '" --net:"Network 1"="' +$vmNetwork + '" --datastore="' + $vmDatastore + '" --deploymentOption="' + $restoredvCenterDeploymentSize + '" --prop:guestinfo.cis.appliance.net.addr.family="ipv4" --prop:guestinfo.cis.appliance.net.addr="' + $restoredvCenterIpAddress + '" --prop:guestinfo.cis.appliance.net.pnid="' + $restoredvCenterFqdn + '" --prop:guestinfo.cis.appliance.net.prefix="' + $restoredvCenterNetworkPrefix + '" --prop:guestinfo.cis.appliance.net.mode="static" --prop:guestinfo.cis.appliance.net.dns.servers="' + $restoredvCenterDnsServers + '" --prop:guestinfo.cis.appliance.net.gateway="' + $restoredvCenterGateway + '" --prop:guestinfo.cis.appliance.root.passwd="' + $restoredvCenterRootPassword + '" --prop:guestinfo.cis.appliance.ssh.enabled="True" "' + $vCenterOvaFile + '" ' + '"vi://' + $tempvCenterAdmin + ':' + $tempvCenterAdminPassword + '@' + $tempvCenterFqdn + '/' + $datacenterName + '/host/' + $clusterName + '/"'
     Invoke-Expression "& $command"
 
 }
@@ -962,9 +962,9 @@ Function New-SDDCManagerOvaDeployment
     The New-SDDCManagerOvaDeployment deploys an SDDC Manager appliance from OVA using data previously extracted from the VCF SDDC Manager Backup
 
     .EXAMPLE
-    New-SDDCManagerOvaDeployment -tempvCenterFQDN "sfo-m01-vc02.sfo.rainpole.io" -tempvCenterAdmin "administrator@vsphere.local" -tempvCenterAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -sddcManagerOvaFile "F:\OVA\VCF-SDDC-Manager-Appliance-4.5.1.0-21682411.ova" -rootPassword "VMw@re1!" -vcfPassword "VMw@re1!" -localUserPassword "VMw@re1!" -basicAuthPassword "VMw@re1!"
+    New-SDDCManagerOvaDeployment -tempvCenterFqdn "sfo-m01-vc02.sfo.rainpole.io" -tempvCenterAdmin "administrator@vsphere.local" -tempvCenterAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -sddcManagerOvaFile "F:\OVA\VCF-SDDC-Manager-Appliance-4.5.1.0-21682411.ova" -rootUserPassword "VMw@re1!" -vcfUserPassword "VMw@re1!" -localUserPassword "VMw@re1!" -basicAuthUserPassword "VMw@re1!"
 
-    .PARAMETER tempvCenterFQDN
+    .PARAMETER tempvCenterFqdn
     FQDN of the target vCenter to deploy the SDDC Manager OVA to
 
     .PARAMETER tempvCenterAdmin
@@ -979,29 +979,29 @@ Function New-SDDCManagerOvaDeployment
     .PARAMETER sddcManagerOvaFile
     Relative or absolute to the SDDC Manager OVA somewhere on the local filesystem
 
-    .PARAMETER rootPassword
+    .PARAMETER rootUserPassword
     Password for the root user on the newly deployed appliance
     
-    .PARAMETER vcfPassword
+    .PARAMETER vcfUserPassword
     Password for the vcf user on the newly deployed appliance
 
     .PARAMETER localUserPassword
     Password for the local admin user on the newly deployed appliance
 
-    .PARAMETER basicAuthPassword
+    .PARAMETER basicAuthUserPassword
     Password for the basic auth user on the newly deployed appliance
     #>
     
     Param(
-        [Parameter (Mandatory = $true)][String] $tempvCenterFQDN,
+        [Parameter (Mandatory = $true)][String] $tempvCenterFqdn,
         [Parameter (Mandatory = $true)][String] $tempvCenterAdmin,
         [Parameter (Mandatory = $true)][String] $tempvCenterAdminPassword,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
         [Parameter (Mandatory = $true)][String] $sddcManagerOvaFile,
-        [Parameter (Mandatory = $true)][String] $rootPassword,
-        [Parameter (Mandatory = $true)][String] $vcfPassword,
+        [Parameter (Mandatory = $true)][String] $rootUserPassword,
+        [Parameter (Mandatory = $true)][String] $vcfUserPassword,
         [Parameter (Mandatory = $true)][String] $localUserPassword,
-        [Parameter (Mandatory = $true)][String] $basicAuthPassword
+        [Parameter (Mandatory = $true)][String] $basicAuthUserPassword
     )
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
@@ -1024,7 +1024,7 @@ Function New-SDDCManagerOvaDeployment
     $ntpServers = $extractedSddcData.mgmtDomainInfrastructure.ntpServers -join(",")
     
 
-    $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowAllExtraConfig --diskMode=thin --X:enableHiddenProperties --X:waitForIp --powerOn --name="' + $sddcManagerVMName + '" --network="' + $vmNetwork + '" --datastore="' + $vmDatastore + '" --prop:vami.hostname="' + $sddcManagerHostName + '" --prop:vami.ip0.SDDC-Manager="' + $sddcManagerIp + '" --prop:vami.netmask0.SDDC-Manager="' + $sddcManagerNetworkMask + '" --prop:vami.DNS.SDDC-Manager="' + $sddcManagerDns + '" --prop:vami.gateway.SDDC-Manager="' + $sddcManagerGateway + '" --prop:ROOT_PASSWORD="' + $rootPassword + '" --prop:VCF_PASSWORD="' + $vcfPassword + '" --prop:BASIC_AUTH_PASSWORD="' + $basicAuthPassword + '" --prop:LOCAL_USER_PASSWORD="' + $localUserPassword + '" --prop:vami.searchpath.SDDC-Manager="' + $sddcManagerDomainSearch + '" --prop:vami.domain.SDDC-Manager="' + $sddcManagerDnsDomain + '" --prop:FIPS_ENABLE="' + $sddcManagerFipsSetting + '" --prop:guestinfo.ntp="' + $ntpServers + '" "' + $sddcManagerOvaFile + '" "vi://' + $tempvCenterAdmin + ':' + $tempvCenterAdminPassword + '@' + $tempvCenterFQDN + '/' + $datacenterName + '/host/' + $clusterName + '/"'
+    $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowAllExtraConfig --diskMode=thin --X:enableHiddenProperties --X:waitForIp --powerOn --name="' + $sddcManagerVMName + '" --network="' + $vmNetwork + '" --datastore="' + $vmDatastore + '" --prop:vami.hostname="' + $sddcManagerHostName + '" --prop:vami.ip0.SDDC-Manager="' + $sddcManagerIp + '" --prop:vami.netmask0.SDDC-Manager="' + $sddcManagerNetworkMask + '" --prop:vami.DNS.SDDC-Manager="' + $sddcManagerDns + '" --prop:vami.gateway.SDDC-Manager="' + $sddcManagerGateway + '" --prop:BACKUP_PASSWORD="' + $sddcManagerBackupPassword + '" --prop:ROOT_PASSWORD="' + $rootUserPassword + '" --prop:VCF_PASSWORD="' + $vcfUserPassword + '" --prop:BASIC_AUTH_PASSWORD="' + $basicAuthUserPassword + '" --prop:LOCAL_USER_PASSWORD="' + $localUserPassword + '" --prop:vami.searchpath.SDDC-Manager="' + $sddcManagerDomainSearch + '" --prop:vami.domain.SDDC-Manager="' + $sddcManagerDnsDomain + '" --prop:FIPS_ENABLE="' + $sddcManagerFipsSetting + '" --prop:guestinfo.ntp="' + $ntpServers + '" "' + $sddcManagerOvaFile + '" "vi://' + $tempvCenterAdmin + ':' + $tempvCenterAdminPassword + '@' + $tempvCenterFqdn + '/' + $datacenterName + '/host/' + $clusterName + '/"'
     Invoke-Expression "& $command"
 
 }
@@ -1041,7 +1041,7 @@ Function New-UploadAndModifySDDCManagerBackup
     The New-UploadAndModifySDDCManagerBackup cmdlet uploads the provided VCF SDDC Manager Backup file to SDDC manager, decrypts and extracts it, replaces the SSH keys for the manangement domain vCenter with the current keys, then compresses and reencrypts the files ready for subsequent restore
 
     .EXAMPLE
-    New-UploadAndModifySDDCManagerBackup -rootUserPassword "VMw@re1!" -vcfUserPassword "VMw@re1!" -backupFilePath "F:\backup\vcf-backup-sfo-vcf01-sfo-rainpole-io-2023-09-19-10-53-02.tar.gz" -encryptionPassword "VMw@re1!VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -tempvCenterFQDN "sfo-m01-vc02.sfo.rainpole.io" -tempvCenterAdmin "Administrator@vsphere.local" -tempvCenterAdminPassword VMw@re1!"
+    New-UploadAndModifySDDCManagerBackup -rootUserPassword "VMw@re1!" -vcfUserPassword "VMw@re1!" -backupFilePath "F:\backup\vcf-backup-sfo-vcf01-sfo-rainpole-io-2023-09-19-10-53-02.tar.gz" -encryptionPassword "VMw@re1!VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -tempvCenterFqdn "sfo-m01-vc02.sfo.rainpole.io" -tempvCenterAdmin "Administrator@vsphere.local" -tempvCenterAdminPassword VMw@re1!"
 
     .PARAMETER rootUserPassword
     Password for the root user of the SDDC Manager Appliance
@@ -1061,7 +1061,7 @@ Function New-UploadAndModifySDDCManagerBackup
     .PARAMETER encryptionPassword
     The password that should be used to decrypt the VMware Cloud Foundation SDDC manager backup file ie the password that was used to encrypt it originally.
 
-    .PARAMETER tempvCenterFQDN
+    .PARAMETER tempvCenterFqdn
     FQDN of the target vCenter that hosts the SDDC Manager VM
 
     .PARAMETER tempvCenterAdmin
@@ -1078,7 +1078,7 @@ Function New-UploadAndModifySDDCManagerBackup
         [Parameter (Mandatory = $true)][String] $backupFilePath,
         [Parameter (Mandatory = $true)][String] $encryptionPassword,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
-        [Parameter (Mandatory = $true)][String] $tempvCenterFQDN,
+        [Parameter (Mandatory = $true)][String] $tempvCenterFqdn,
         [Parameter (Mandatory = $true)][String] $tempvCenterAdmin,
         [Parameter (Mandatory = $true)][String] $tempvCenterAdminPassword
     )
@@ -1117,7 +1117,7 @@ Function New-UploadAndModifySDDCManagerBackup
     If ($newRSAKey) { Write-Output "New ssh-rsa key for $mgmtVcenterFqdn retrieved" }
 
     #Upload Backup
-    $vCenterConnection = Connect-VIServer -server $tempvCenterFQDN -user $tempvCenterAdmin -password $tempvCenterAdminPassword
+    $vCenterConnection = Connect-VIServer -server $tempvCenterFqdn -user $tempvCenterAdmin -password $tempvCenterAdminPassword
     Write-Output "Uploading Backup File to SDDC Manager Appliance"
     $copyFile = Copy-VMGuestFile -Source $backupFilePath -Destination "/tmp/$backupFileName" -LocalToGuest -VM $sddcManagerVmName -GuestUser "root" -GuestPassword $rootUserPassword -Force -WarningAction SilentlyContinue -WarningVariable WarnMsg
 
@@ -1428,9 +1428,9 @@ Function Move-ClusterHostsToRestoredVcenter
     The Move-ClusterHostsToRestoredVcenter cmdlet moves ESXi Hosts from a temporary vCenter / cluster to the restored vCenter / cluster. Used for VCF Management Domain cluster recovery.
 
     .EXAMPLE
-    Move-ClusterHostsToRestoredVcenter -tempvCenterFQDN "sfo-m01-vc02.sfo.rainpole.io" -tempvCenterAdmin "administrator@vsphere.local" -tempvCenterAdminPassword "VMw@re1!" -tempClusterName "sfo-m01-cl01" -restoredvCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -restoredvCenterAdmin "administrator@vsphere.local" -restoredvCenterAdminPassword "VMw@re1!" -restoredClusterName "sfo-m01-cl01" -extractedSDDCDataFile ".\extracted-sddc-data.json"
+    Move-ClusterHostsToRestoredVcenter -tempvCenterFqdn "sfo-m01-vc02.sfo.rainpole.io" -tempvCenterAdmin "administrator@vsphere.local" -tempvCenterAdminPassword "VMw@re1!" -restoredvCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -restoredvCenterAdmin "administrator@vsphere.local" -restoredvCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01" -extractedSDDCDataFile ".\extracted-sddc-data.json"
 
-    .PARAMETER tempvCenterFQDN
+    .PARAMETER tempvCenterFqdn
     FQDN of the temporary vCenter instance
 
     .PARAMETER tempvCenterAdmin
@@ -1438,9 +1438,6 @@ Function Move-ClusterHostsToRestoredVcenter
     
     .PARAMETER tempvCenterAdminPassword
     Admin password for the temporary vCenter instance
-
-    .PARAMETER tempclusterName
-    Name of the temporary vSphere cluster instance in the temporary vCenter
 
     .PARAMETER restoredvCenterFQDN
     FQDN of the restored vCenter instance
@@ -1451,7 +1448,7 @@ Function Move-ClusterHostsToRestoredVcenter
     .PARAMETER restoredvCenterAdminPassword
     Admin password for the restored vCenter instance
 
-    .PARAMETER restoredclusterName
+    .PARAMETER clusterName
     Name of the restored vSphere cluster instance in the temporary vCenter
 
     .PARAMETER extractedSDDCDataFile
@@ -1459,26 +1456,25 @@ Function Move-ClusterHostsToRestoredVcenter
     #>
     
     Param(
-        [Parameter (Mandatory = $true)][String] $tempvCenterFQDN,
+        [Parameter (Mandatory = $true)][String] $tempvCenterFqdn,
         [Parameter (Mandatory = $true)][String] $tempvCenterAdmin,
         [Parameter (Mandatory = $true)][String] $tempvCenterAdminPassword,
-        [Parameter (Mandatory = $true)][String] $tempclusterName,
+        [Parameter (Mandatory = $true)][String] $clusterName,
         [Parameter (Mandatory = $true)][String] $restoredvCenterFQDN,
         [Parameter (Mandatory = $true)][String] $restoredvCenterAdmin,
         [Parameter (Mandatory = $true)][String] $restoredvCenterAdminPassword,
-        [Parameter (Mandatory = $true)][String] $restoredclusterName,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile
     )
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
     
-    $tempvCenterConnection = connect-viserver $tempvCenterFQDN -user $tempvCenterAdmin -password $tempvCenterAdminPassword
-    $esxiHosts = get-cluster -name $tempclusterName | get-vmhost
+    $tempvCenterConnection = connect-viserver $tempvCenterFqdn -user $tempvCenterAdmin -password $tempvCenterAdminPassword
+    $esxiHosts = get-cluster -name $clusterName | get-vmhost
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
     $restoredvCenterConnection = connect-viserver $restoredvCenterFQDN -user $restoredvCenterAdmin -password $restoredvCenterAdminPassword
     Foreach ($esxiHost in $esxiHosts) {
         $esxiRootPassword = ($extractedSddcData.passwords | Where-Object {($_.entityType -eq "ESXI") -and ($_.entityName -eq $esxiHost.Name) -and ($_.username -eq "root")}).password
-        Add-VMHost -Name $esxiHost.Name -Location $restoredclusterName -User root -Password $esxiRootPassword -Force -Confirm:$false | Out-Null
+        Add-VMHost -Name $esxiHost.Name -Location $clusterName -User root -Password $esxiRootPassword -Force -Confirm:$false | Out-Null
     }
 }
 Export-ModuleMember -Function Move-ClusterHostsToRestoredVcenter
@@ -1873,7 +1869,7 @@ Function Resolve-PhysicalHostServiceAccounts
     The Resolve-PhysicalHostServiceAccounts cmdlet creates a new VCF Service Account on each ESXi host and remediates the SDDC Manager inventory
 
     .EXAMPLE
-    Resolve-PhysicalHostServiceAccounts -vCenterFQDN "sfo-w01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-w01-cl01" -svcAccountPassword "VMw@re123!" -sddcManagerFQDN "sfo-vcf01.sfo.rainpole.io" -sddcManagerUser "administrator@vsphere.local" -sddcManagerPassword "VMw@re1!"
+    Resolve-PhysicalHostServiceAccounts -vCenterFQDN "sfo-w01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-w01-cl01" -svcAccountPassword "VMw@re123!" -sddcManagerFQDN "sfo-vcf01.sfo.rainpole.io" -sddcManagerAdmin "administrator@vsphere.local" -sddcManagerAdminPassword "VMw@re1!"
 
     .PARAMETER vCenterFQDN
     FQDN of the vCenter instance hosting the ESXi hosts to be updated
@@ -1893,10 +1889,10 @@ Function Resolve-PhysicalHostServiceAccounts
     .PARAMETER sddcManagerFQDN
     FQDN of SDDC Manager
 
-    .PARAMETER sddcManagerUser
+    .PARAMETER sddcManagerAdmin
     SDDC Manager API username with ADMIN role
 
-    .PARAMETER sddcManagerPassword
+    .PARAMETER sddcManagerAdminPassword
     SDDC Manager API username password
     #>
     
@@ -1907,13 +1903,13 @@ Function Resolve-PhysicalHostServiceAccounts
         [Parameter (Mandatory = $true)][String] $clusterName,
         [Parameter (Mandatory = $true)][String] $svcAccountPassword,
         [Parameter (Mandatory = $true)][String] $sddcManagerFQDN,
-        [Parameter (Mandatory = $true)][String] $sddcManagerUser,
-        [Parameter (Mandatory = $true)][String] $sddcManagerPassword
+        [Parameter (Mandatory = $true)][String] $sddcManagerAdmin,
+        [Parameter (Mandatory = $true)][String] $sddcManagerAdminPassword
     )
     $vCenterConnection = Connect-VIServer -server $vCenterFQDN -username $vCenterAdmin -password $vCenterAdminPassword
     $clusterHosts = Get-Cluster -name $clusterName | Get-VMHost
     Disconnect-VIServer * -confirm:$false
-    $tokenRequest = Request-VCFToken -fqdn $sddcManagerFQDN -username $sddcManagerUser -password $sddcManagerPassword
+    $tokenRequest = Request-VCFToken -fqdn $sddcManagerFQDN -username $sddcManagerAdmin -password $sddcManagerAdminPassword
     #verify SDDC Manager credential API state
     $credentialAPILastTask = ((Get-VCFCredentialTask | Sort-Object -Property creationTimeStamp)[-1]).status
     if ($credentialAPILastTask -eq "FAILED")
@@ -2069,7 +2065,7 @@ Function Add-HostsToCluster
     The Add-HostsToCluster cmdlet Adds hosts to a vSphere cluster using data from the SDDC Manager backup
 
     .EXAMPLE
-    Add-HostsToCluster -vCenterFQDN "sfo-m01-vc02.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01"  -extractedSDDCDataFile ".\extracted-sddc-data.json" -sddcManagerFQDN "sfo-vcf01.sfo.rainpole.io" -sddcManagerUser "administrator@vsphere.local" -sddcManagerPassword "VMw@re1!"
+    Add-HostsToCluster -vCenterFQDN "sfo-m01-vc02.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01"  -extractedSDDCDataFile ".\extracted-sddc-data.json" -sddcManagerFQDN "sfo-vcf01.sfo.rainpole.io" -sddcManagerAdmin "administrator@vsphere.local" -sddcManagerAdminPassword "VMw@re1!"
 
     .PARAMETER vCenterFQDN
     FQDN of the vCenter instance hosting the cluster to which the hosts will be added
@@ -2089,10 +2085,10 @@ Function Add-HostsToCluster
     .PARAMETER sddcManagerFQDN
     FQDN of SDDC Manager
 
-    .PARAMETER sddcManagerUser
+    .PARAMETER sddcManagerAdmin
     SDDC Manager API username with ADMIN role
 
-    .PARAMETER sddcManagerPassword
+    .PARAMETER sddcManagerAdminPassword
     SDDC Manager API username password
     #>
     
@@ -2103,14 +2099,14 @@ Function Add-HostsToCluster
         [Parameter (Mandatory = $true)][String] $clusterName,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
         [Parameter (Mandatory = $true)][String] $sddcManagerFQDN,
-        [Parameter (Mandatory = $true)][String] $sddcManagerUser,
-        [Parameter (Mandatory = $true)][String] $sddcManagerPassword
+        [Parameter (Mandatory = $true)][String] $sddcManagerAdmin,
+        [Parameter (Mandatory = $true)][String] $sddcManagerAdminPassword
     )
 
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
 
-    $tokenRequest = Request-VCFToken -fqdn $sddcManagerFQDN -username $sddcManagerUser -password $sddcManagerPassword
+    $tokenRequest = Request-VCFToken -fqdn $sddcManagerFQDN -username $sddcManagerAdmin -password $sddcManagerAdminPassword
     $newHosts = (get-vcfhost | where-object { $_.id -in ((get-vcfcluster -name $clusterName).hosts.id) }).fqdn
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
     foreach ($newHost in $newHosts) {
@@ -2186,7 +2182,7 @@ Function Add-VMKernelsToHost
     The Add-VMKernelsToHost cmdlet adds VMkernels to ESXi hosts using data from the SDDC Manager inventory to map the correct IP addresses
 
     .EXAMPLE
-    Add-VMKernelsToHost -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01" -sddcManagerFQDN "sfo-vcf01.sfo.rainpole.io" -sddcManagerUser "administrator@vsphere.local" -sddcManagerPassword "VMw@re1!"
+    Add-VMKernelsToHost -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01" -sddcManagerFQDN "sfo-vcf01.sfo.rainpole.io" -sddcManagerAdmin "administrator@vsphere.local" -sddcManagerAdminPassword "VMw@re1!"
 
     .PARAMETER vCenterFQDN
     FQDN of the vCenter instance hosting the ESXi hosts to which VMkernels will be added
@@ -2203,10 +2199,10 @@ Function Add-VMKernelsToHost
     .PARAMETER sddcManagerFQDN
     FQDN of SDDC Manager
 
-    .PARAMETER sddcManagerUser
+    .PARAMETER sddcManagerAdmin
     SDDC Manager API username with ADMIN role
 
-    .PARAMETER sddcManagerPassword
+    .PARAMETER sddcManagerAdminPassword
     SDDC Manager API username password
     #>
     
@@ -2216,10 +2212,10 @@ Function Add-VMKernelsToHost
         [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
         [Parameter (Mandatory = $true)][String] $clusterName,
         [Parameter (Mandatory = $true)][String] $sddcManagerFQDN,
-        [Parameter (Mandatory = $true)][String] $sddcManagerUser,
-        [Parameter (Mandatory = $true)][String] $sddcManagerPassword
+        [Parameter (Mandatory = $true)][String] $sddcManagerAdmin,
+        [Parameter (Mandatory = $true)][String] $sddcManagerAdminPassword
     )
-    $tokenRequest = Request-VCFToken -fqdn $sddcManagerFQDN -username $sddcManagerUser -password $sddcManagerPassword
+    $tokenRequest = Request-VCFToken -fqdn $sddcManagerFQDN -username $sddcManagerAdmin -password $sddcManagerAdminPassword
     
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
     $vmHosts = (Get-cluster -name $clusterName | Get-VMHost).Name
@@ -2960,7 +2956,7 @@ Function Invoke-NSXEdgeClusterRecovery
             $attachedNetworks = $vmDeploymentConfig.data_network_ids
 
             #Create Dummy VM
-            Write-Host "[$($edge.display_name)] Building Container VM"
+            Write-Host "[$($edge.display_name)] Preparing to Update Placement References"
             $clusterVdsName = ($extractedSddcData.workloadDomains | Where-Object {$_.primaryClusterDetails.name -eq $clusterName}).primaryClusterDetails.vdsdetails.dvsName
             $portgroup = (($extractedSddcData.workloadDomains | Where-Object {$_.primaryClusterDetails.name -eq $clusterName}).primaryClusterDetails.vdsdetails.portgroups | Where-Object {$_.transportType -eq 'MANAGEMENT'}).NAME 
             $nestedNetworkPG = Get-VDPortGroup -name $portgroup -ErrorAction silentlyContinue | Where-Object {$_.VDSwitch -match $clusterVdsName}
