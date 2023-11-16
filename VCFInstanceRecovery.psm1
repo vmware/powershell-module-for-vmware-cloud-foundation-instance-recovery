@@ -341,7 +341,6 @@ Function New-ExtractDataFromSDDCBackup
         If ($lineContent -ne '\.')
         {
             $vCenterID = $lineContent.split("`t")[0]
-            $vCenterDatastore= $lineContent.split("`t")[4]
             $vCenterVersion= $lineContent.split("`t")[9]
             $vCenterFqdn= $lineContent.split("`t")[10]
             $vCenterIp= $lineContent.split("`t")[11]
@@ -349,7 +348,6 @@ Function New-ExtractDataFromSDDCBackup
             $vCenterDomainID = ($hostsAndDomains | Where-Object {$_.hostId -eq (($hostsandVcenters | Where-Object {$_.vCenterID -eq $vCenterID})[0].hostID)}).domainID
             $vCenters += [pscustomobject]@{
                 'vCenterID' = $vCenterID
-                'vCenterDatastore' = $vCenterDatastore
                 'vCenterVersion' = $vCenterVersion
                 'vCenterFqdn' = $vCenterFqdn
                 'vCenterIp' = $vCenterIp
@@ -679,7 +677,6 @@ Function New-ExtractDataFromSDDCBackup
             $vCenter = $vCenters | Where-Object {$_.vCenterDomainID -eq $domainId}
             $vCenterDetails = [pscustomobject]@{
                 'id' = $vCenter.vCenterID
-                'datastore' = $vCenter.vCenterDatastore
                 'version' = $vCenter.vCenterVersion
                 'fqdn' = $vCenter.vCenterFqdn
                 'ip' = $vCenter.vCenterIp
