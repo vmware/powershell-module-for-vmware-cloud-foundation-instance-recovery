@@ -1,5 +1,12 @@
 # Release History
 
+## v1.0.6
+
+> Released: 2023-11-xx
+
+- Modified `New-ExtractDataFromSDDCBackup` to capture data on all clusters in a workload domain rather than just the primaryCluster
+- Modified `New-ReconstructedPartialBringupJsonSpec` to handle changes in `New-ExtractDataFromSDDCBackup`
+
 ## v1.0.5
 
 > Released: 2023-11-15
