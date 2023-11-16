@@ -755,7 +755,7 @@ Function New-ExtractDataFromSDDCBackup
                 'networkDetails' = $networkSpecs
                 'nsxClusterDetails' = $nsxClusterDetailsObject
                 'nsxNodeDetails' = ($nsxtManagerClusters | Where-Object {$_.domainIDs -contains $domainId}).nsxNodes
-                'primaryClusterDetails' = ($clusters | Where-Object {($_.vCenterID -eq $vcenterDetails.id) -and($_.isDefault -eq 't')})
+                'vsphereClusterDetails' = ($clusters | Where-Object {$_.vCenterID -eq $vcenterDetails.id})
             }
         }
         $domainLineIndex++
@@ -1355,17 +1355,21 @@ Function New-ReconstructedPartialBringupJsonSpec
     $nsxtSpecObject | Add-Member -notepropertyname 'transportVlanId' -notepropertyvalue $transportVlanId
     $mgmtDomainObject | Add-Member -notepropertyname 'nsxtSpec' -notepropertyvalue $nsxtSpecObject
 
+    #Derive Primary Cluster
+    $primaryCluster = ($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).vsphereClusterDetails | Where-Object {$_.isDefault -eq 't'}
+        
     #vsanSpec
+    
     $vsanSpecObject = New-Object -type psobject
     $vsanSpecObject | Add-Member -notepropertyname 'vsanName' -notepropertyvalue "vsan-1"
     $vsanSpecObject | Add-Member -notepropertyname 'licenseFile' -notepropertyvalue ($extractedSddcData.licenseKeys | Where-Object {$_.productType -eq "VSAN"}).key
     $vsanSpecObject | Add-Member -notepropertyname 'vsanDedup' -notepropertyvalue $dedupEnabled
-    $vsanSpecObject | Add-Member -notepropertyname 'datastoreName' -notepropertyvalue ($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).primaryClusterDetails.primaryDatastoreName
+    $vsanSpecObject | Add-Member -notepropertyname 'datastoreName' -notepropertyvalue $primaryCluster.primaryDatastoreName
     $mgmtDomainObject | Add-Member -notepropertyname 'vsanSpec' -notepropertyvalue $vsanSpecObject
 
     #dvsSpecs
     $clusterVDSs = @()
-    Foreach ($vds in (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).primaryClusterDetails.vdsDetails))
+    Foreach ($vds in ($primaryCluster.vdsDetails))
     {
         $vds.vmnics = $vds0nics
         $clusterVDSs += $vds
@@ -1379,7 +1383,7 @@ Function New-ReconstructedPartialBringupJsonSpec
     $vmFoldersObject | Add-Member -notepropertyname 'EDGENODES' -notepropertyvalue (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).domainName + "-fd-edge")
     $clusterSpecObject = New-Object -type psobject
     $clusterSpecObject | Add-Member -notepropertyname 'vmFolders' -notepropertyvalue $vmFoldersObject
-    $clusterSpecObject | Add-Member -notepropertyname 'clusterName' -notepropertyvalue ($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).primaryClusterDetails.name
+    $clusterSpecObject | Add-Member -notepropertyname 'clusterName' -notepropertyvalue $primaryCluster.name
     $clusterSpecObject | Add-Member -notepropertyname 'clusterEvcMode' -notepropertyvalue ""
     $mgmtDomainObject | Add-Member -notepropertyname 'clusterSpec' -notepropertyvalue $clusterSpecObject
 
@@ -2975,10 +2979,10 @@ Function Invoke-NSXEdgeClusterRecovery
 
             #Create Dummy VM
             Write-Host "[$($edge.display_name)] Preparing to Update Placement References"
-            $clusterVdsName = ($extractedSddcData.workloadDomains | Where-Object {$_.primaryClusterDetails.name -eq $clusterName}).primaryClusterDetails.vdsdetails.dvsName
-            $portgroup = (($extractedSddcData.workloadDomains | Where-Object {$_.primaryClusterDetails.name -eq $clusterName}).primaryClusterDetails.vdsdetails.portgroups | Where-Object {$_.transportType -eq 'MANAGEMENT'}).NAME 
+            $clusterVdsName = ($extractedSddcData.workloadDomains | Where-Object {$_.vsphereClusterDetails.name -eq $clusterName}).vsphereClusterDetails.vdsdetails.dvsName
+            $portgroup = (($extractedSddcData.workloadDomains | Where-Object {$_.vsphereClusterDetails.name -eq $clusterName}).vsphereClusterDetails.vdsdetails.portgroups | Where-Object {$_.transportType -eq 'MANAGEMENT'}).NAME 
             $nestedNetworkPG = Get-VDPortGroup -name $portgroup -ErrorAction silentlyContinue | Where-Object {$_.VDSwitch -match $clusterVdsName}
-            $datastore = ($extractedSddcData.workloadDomains | Where-Object {$_.primaryClusterDetails.name -eq $clusterName}).primaryClusterDetails.primaryDatastoreName
+            $datastore = ($extractedSddcData.workloadDomains | Where-Object {$_.vsphereClusterDetails.name -eq $clusterName}).vsphereClusterDetails.primaryDatastoreName
             New-VM -VMhost (get-cluster -name $clusterName | Get-VMHost | Get-Random ) -Name $edge.display_name -Datastore $datastore -resourcePool $resourcePoolName -DiskGB 200 -DiskStorageFormat Thin -MemoryGB $MemoryGB -NumCpu $NumCpu -portgroup $portgroup -GuestID "ubuntu64Guest" -Confirm:$false | Out-Null
             Get-VM -Name $edge.display_name | Get-VMResourceConfiguration | Set-VMResourceConfiguration -MemReservationGB $memoryGB | Out-Null
             Get-VM -Name $edge.display_name | Get-VMResourceConfiguration | Set-VMResourceConfiguration -CpuSharesLevel $cpuShareLevel | Out-Null
