@@ -1114,7 +1114,7 @@ Function New-UploadAndModifySDDCManagerBackup
     Write-Output "Establishing Connection to SDDC Manager Appliance"
     $SecurePassword = ConvertTo-SecureString -String $vcfUserPassword -AsPlainText -Force
     $mycreds = New-Object System.Management.Automation.PSCredential ("vcf", $SecurePassword)
-    Get-SSHTrustedHost | Remove-SSHTrustedHost
+    Get-SSHTrustedHost | Remove-SSHTrustedHost | Out-Null
     $inmem = New-SSHMemoryKnownHost
     New-SSHTrustedHost -KnownHostStore $inmem -HostName $sddcManagerFQDN -FingerPrint ((Get-SSHHostKey -ComputerName $sddcManagerFQDN).fingerprint) | Out-Null
     Do
