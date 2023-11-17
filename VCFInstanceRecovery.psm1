@@ -1543,6 +1543,7 @@ Function Remove-ClusterHostsFromVds
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
     $esxiHosts = get-cluster -name $clusterName | get-vmhost
     Foreach ($esxiHost in $esxiHosts) {
+        Write-Host "Moving $($esxiHost.name) to TempPG"
         Get-VDSwitch -Name $vdsName | Get-VMHostNetworkAdapter -VMHost $esxiHost -Physical | Remove-VDSwitchPhysicalNetworkAdapter -Confirm:$false | Out-Null
         Get-VDSwitch -Name $vdsName | Remove-VDSwitchVMHost -VMHost $esxiHost -Confirm:$false | Out-Null
     }
@@ -1584,6 +1585,7 @@ Function Move-MgmtVmsToTempPg
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
     $vmsTomove = get-cluster -name $clusterName | get-vm | ? { $_.Name -notlike "*vCLS*" }
     foreach ($vmToMove in $vmsTomove) {
+        Write-Host "Moving $($vmToMove.name) to TempPG"
         Get-VM -Name $vmToMove | Get-NetworkAdapter | Set-NetworkAdapter -NetworkName "mgmt_temp" -confirm:$false | Out-Null
     }
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
