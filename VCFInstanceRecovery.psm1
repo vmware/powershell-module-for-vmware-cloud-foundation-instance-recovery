@@ -1939,7 +1939,7 @@ Function Resolve-PhysicalHostServiceAccounts
     Disconnect-VIServer * -confirm:$false
     $tokenRequest = Request-VCFToken -fqdn $sddcManagerFQDN -username $sddcManagerAdmin -password $sddcManagerAdminPassword
     #verify SDDC Manager credential API state
-    $credentialAPILastTask = ((Get-VCFCredentialTask | Sort-Object -Property creationTimeStamp)[-1]).status
+    $credentialAPILastTask = ((Get-VCFCredentialTask -errorAction silentlyContinue| Sort-Object -Property creationTimeStamp)[-1]).status
     if ($credentialAPILastTask -eq "FAILED")
     {
         Write-Host "Failed credential operation detected. Please resolve in SDDC Manager and try again" ; break
@@ -2756,14 +2756,17 @@ Function Restore-ClusterDRSGroupsAndRules
                 }
             }
             Foreach ($vmAffinityRule in $drsRulesAndGroups.vmAffinityRules) {
-                $vmRule = Get-DrsRule -name $vmAffinityRule.name -cluster $clusterName -errorAction SilentlyContinue
-                If ($vmRule) {
-                    Write-Output "Setting VM Rule $($vmAffinityRule.name) with Members $($vmAffinityRule.members)"
-                    Set-DrsRule -rule $vmRule -VM $vmAffinityRule.members -Enabled $true -confirm:$false | Out-Null
-                }
-                else {
-                    Write-Output "Creating VM Rule $($vmAffinityRule.name) with Members $($vmAffinityRule.members)"
-                    New-DrsRule -cluster $clusterName -name $vmAffinityRule.name -VM $vmAffinityRule.members -keepTogether $vmAffinityRule.keepTogether -Enabled $true | Out-Null
+                If ($vmAffinityRule.members.count -gt 1)
+                {
+                    $vmRule = Get-DrsRule -name $vmAffinityRule.name -cluster $clusterName -errorAction SilentlyContinue
+                    If ($vmRule) {
+                        Write-Output "Setting VM Rule $($vmAffinityRule.name) with Members $($vmAffinityRule.members)"
+                        Set-DrsRule -rule $vmRule -VM $vmAffinityRule.members -Enabled $true -confirm:$false | Out-Null
+                    }
+                    else {
+                        Write-Output "Creating VM Rule $($vmAffinityRule.name) with Members $($vmAffinityRule.members)"
+                        New-DrsRule -cluster $clusterName -name $vmAffinityRule.name -VM $vmAffinityRule.members -keepTogether $vmAffinityRule.keepTogether -Enabled $true | Out-Null
+                    }    
                 }
             }
             Foreach ($vmHostAffinityRule in $drsRulesAndGroups.vmHostAffinityRules) {
