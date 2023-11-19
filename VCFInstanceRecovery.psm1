@@ -862,7 +862,7 @@ Function New-NSXManagerOvaDeployment
     $nsxManagersDisplayObject | format-table -Property @{Expression=" "},id,Manager -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
     Do
     {
-        Write-Host ""; Write-Host " Enter the ID of the Manager you wish to redeploy, or C to Cancel: " -ForegroundColor Yellow -nonewline
+        Write-Output ""; Write-Output " Enter the ID of the Manager you wish to redeploy, or C to Cancel: " -ForegroundColor Yellow -nonewline
         $nsxManagerSelection = Read-Host
     } Until (($nsxManagerSelection -in $nsxManagersDisplayObject.ID) -OR ($nsxManagerSelection -eq "c"))
     If ($nsxManagerSelection -eq "c") {Break}
@@ -1498,7 +1498,7 @@ Function Move-ClusterHostsToRestoredVcenter
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
     $restoredvCenterConnection = connect-viserver $restoredvCenterFQDN -user $restoredvCenterAdmin -password $restoredvCenterAdminPassword
     Foreach ($esxiHost in $esxiHosts) {
-        Write-Host "Moving $($esxiHost.name) to $restoredvCenterFQDN"
+        Write-Output "Moving $($esxiHost.name) to $restoredvCenterFQDN"
         $esxiRootPassword = ($extractedSddcData.passwords | Where-Object {($_.entityType -eq "ESXI") -and ($_.entityName -eq $esxiHost.Name) -and ($_.username -eq "root")}).password
         Add-VMHost -Name $esxiHost.Name -Location $clusterName -User root -Password $esxiRootPassword -Force -Confirm:$false | Out-Null
     }
@@ -1544,7 +1544,7 @@ Function Remove-ClusterHostsFromVds
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
     $esxiHosts = get-cluster -name $clusterName | get-vmhost
     Foreach ($esxiHost in $esxiHosts) {
-        Write-Host "Removing $($esxiHost.name) from $vdsName"
+        Write-Output "Removing $($esxiHost.name) from $vdsName"
         Get-VDSwitch -Name $vdsName | Get-VMHostNetworkAdapter -VMHost $esxiHost -Physical | Remove-VDSwitchPhysicalNetworkAdapter -Confirm:$false | Out-Null
         Get-VDSwitch -Name $vdsName | Remove-VDSwitchVMHost -VMHost $esxiHost -Confirm:$false | Out-Null
     }
@@ -1586,7 +1586,7 @@ Function Move-MgmtVmsToTempPg
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
     $vmsTomove = get-cluster -name $clusterName | get-vm | ? { $_.Name -notlike "*vCLS*" }
     foreach ($vmToMove in $vmsTomove) {
-        Write-Host "Moving $($vmToMove.name) to mgmt_temp"
+        Write-Output "Moving $($vmToMove.name) to mgmt_temp"
         Get-VM -Name $vmToMove | Get-NetworkAdapter | Set-NetworkAdapter -NetworkName "mgmt_temp" -confirm:$false | Out-Null
     }
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
@@ -1666,7 +1666,7 @@ Function Move-ClusterHostNetworkingTovSS
     $storage_name = "vSAN"
 
     foreach ($vmhost in $vmhost_array) {
-        <# Write-Host "[$vmhost] Entering Maintenance Mode" 
+        <# Write-Output "[$vmhost] Entering Maintenance Mode" 
         Get-VMHost -Name $vmhost | set-vmhost -State Maintenance -VsanDataMigrationMode NoDataMigration | Out-Null
  #>
         Get-VMHostNetworkAdapter -VMHost $vmhost -Physical -Name $vmnic | Remove-VDSwitchPhysicalNetworkAdapter -Confirm:$false | Out-Null
@@ -1674,7 +1674,7 @@ Function Move-ClusterHostNetworkingTovSS
         New-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $vmhost -Name "vSwitch0") -Name "mgmt_temp" -VLanId $mgmtVlanId | Out-Null
 
         # pNICs to migrate to VSS
-        Write-Host "[$vmhost] Retrieving pNIC info for vmnic1"
+        Write-Output "[$vmhost] Retrieving pNIC info for vmnic1"
         $vmnicToMove = Get-VMHostNetworkAdapter -VMHost $vmhost -Name $vmnic
 
         # Array of pNICs to migrate to VSS
@@ -1684,13 +1684,13 @@ Function Move-ClusterHostNetworkingTovSS
         $vss = Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name $vss_name
 
         # Create destination portgroups
-        Write-Host "[$vmhost] Creating $mgmt_name portrgroup on $vss_name"
+        Write-Output "[$vmhost] Creating $mgmt_name portrgroup on $vss_name"
         $mgmt_pg = New-VirtualPortGroup -VirtualSwitch $vss -Name $mgmt_name -VLanId $mgmtVlanId
 
-        Write-Host "[$vmhost] Creating $vmotion_name portrgroup on $vss_name"
+        Write-Output "[$vmhost] Creating $vmotion_name portrgroup on $vss_name"
         $vmotion_pg = New-VirtualPortGroup -VirtualSwitch $vss -Name $vmotion_name -VLanId $vMotionVlanId
 
-        Write-Host "[$vmhost] Creating $storage_name Network portrgroup on $vss_name"
+        Write-Output "[$vmhost] Creating $storage_name Network portrgroup on $vss_name"
         $storage_pg = New-VirtualPortGroup -VirtualSwitch $vss -Name $storage_name -VLanId $vSanVlanId
 
         # Array of portgroups to map VMkernel interfaces (order matters!)
@@ -1705,9 +1705,9 @@ Function Move-ClusterHostNetworkingTovSS
         $vmk_array = @($mgmt_vmk, $vmotion_vmk, $storage_vmk)
 
         # Perform the migration
-        Write-Host "[$vmhost] Migrating from $vdsName to $vss_name"
+        Write-Output "[$vmhost] Migrating from $vdsName to $vss_name"
         Add-VirtualSwitchPhysicalNetworkAdapter -VirtualSwitch $vss -VMHostPhysicalNic $pnic_array -VMHostVirtualNic $vmk_array -VirtualNicPortgroup $pg_array  -Confirm:$false
-       <#  Write-Host "[$vmhost] Exiting Maintenance Mode" 
+       <#  Write-Output "[$vmhost] Exiting Maintenance Mode" 
         Get-VMHost -Name $vmhost | set-vmhost -State Connected | Out-Null #>
         Start-Sleep 5
     }
@@ -1762,7 +1762,7 @@ Function Move-ClusterVmnicTovSwitch
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
     $esxiHosts = get-cluster -name $clusterName | get-vmhost
     Foreach ($esxiHost in $esxiHosts) {
-        Write-Host "[$esxiHost] Migrating `'$vmnic`' from vDS to vSwitch0"
+        Write-Output "[$esxiHost] Migrating `'$vmnic`' from vDS to vSwitch0"
         Get-VMHostNetworkAdapter -VMHost $esxiHost -Physical -Name $vmnic | Remove-VDSwitchPhysicalNetworkAdapter -Confirm:$false | Out-Null
         New-VirtualSwitch -VMHost $esxiHost -Name vSwitch0 -nic $vmnic -mtu $mtu | Out-Null
         New-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $esxiHost -Name "vSwitch0") -Name "mgmt_temp" -VLanId $VLanId | Out-Null
@@ -1830,7 +1830,7 @@ Function Set-ClusterHostsvSanIgnoreClusterMemberList
         $password = ConvertTo-SecureString $esxiRootPassword -AsPlainText -Force
         $mycreds = New-Object System.Management.Automation.PSCredential ("root", $password)    
         Get-SSHTrustedHost -HostName $esxiHost | Remove-SSHTrustedHost | Out-Null
-        Write-Host "Setting vSAN Ignore Cluster Member to `'$setting`' for $esxiHost"
+        Write-Output "Setting vSAN Ignore Cluster Member to `'$setting`' for $esxiHost"
         $sshSession = New-SSHSession -computername $esxiHost -credential $mycreds -AcceptKey
         Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $esxCommand | Out-Null
     }
@@ -1876,7 +1876,7 @@ Function Move-ClusterVMsToFirstHost
     Foreach ($vm in $vms) {
         if ($vm.vmHost.Name -ne $firstHost) {
             Get-VM -Name $vm.name | Move-VM -Location $firstHost -Runasync | Out-Null
-            Write-Host "Moving $($vm.name) to $firstHost"
+            Write-Output "Moving $($vm.name) to $firstHost"
         }
     }
     Do {
@@ -1942,7 +1942,7 @@ Function Resolve-PhysicalHostServiceAccounts
     $credentialAPILastTask = ((Get-VCFCredentialTask -errorAction silentlyContinue| Sort-Object -Property creationTimeStamp)[-1]).status
     if ($credentialAPILastTask -eq "FAILED")
     {
-        Write-Host "Failed credential operation detected. Please resolve in SDDC Manager and try again" ; break
+        Write-Output "Failed credential operation detected. Please resolve in SDDC Manager and try again" ; break
     }
 
     Foreach ($hostInstance in $clusterHosts) {
@@ -1952,14 +1952,14 @@ Function Resolve-PhysicalHostServiceAccounts
         $svcAccountName = "svc-vcf-$esxiHostName"
         $accountExists = Get-VMHostAccount -Server $esxiConnection -User $svcAccountName -erroraction SilentlyContinue
         If (!$accountExists) {
-            Write-Host "[$($hostInstance.name)] VCF Service Account Not Found: Creating"
+            Write-Output "[$($hostInstance.name)] VCF Service Account Not Found: Creating"
             New-VMHostAccount -Id $svcAccountName -Password $svcAccountPassword -Description "ESXi User" | Out-Null
             New-VIPermission -Entity (Get-Folder root) -Principal $svcAccountName -Role Admin | Out-Null
             Disconnect-VIServer $hostInstance.name -confirm:$false | Out-Null
         }
         else
         {
-            Write-Host "[$($hostInstance.name)] VCF Service Account Found: Setting Password"
+            Write-Output "[$($hostInstance.name)] VCF Service Account Found: Setting Password"
             Set-VMHostAccount -UserAccount $svcAccountName -Password $svcAccountPassword | Out-Null
         }
     }
@@ -1989,7 +1989,7 @@ Function Resolve-PhysicalHostServiceAccounts
         }
 
         $esxiHostJson = $esxHostObject | Convertto-Json -depth 10
-        Write-Host "[$($hostInstance.name)] Remediating VCF Service Account Password: " -nonewline
+        Write-Output "[$($hostInstance.name)] Remediating VCF Service Account Password: " -nonewline
         $taskID = (Set-VCFCredential -json $esxiHostJson).id
         Do {
             Sleep 5
@@ -2282,7 +2282,7 @@ Function Add-VMKernelsToHost
         $dvportgroup = Get-VDPortgroup -name $vsanPG -VDSwitch $vsanVDSName
         $vmk = New-VMHostNetworkAdapter -VMHost $vmhost -VirtualSwitch $vsanVDSName -mtu $vsanMTU -PortGroup $dvportgroup -ip $vsanIP -SubnetMask $vsanMask -VsanTrafficEnabled:$true
 
-        Write-Host "Setting vSAN Gateway on $vmHost"
+        Write-Output "Setting vSAN Gateway on $vmHost"
         $vmkName = 'vmk2'
         $esx = Get-VMHost -Name $vmHost
         $esxcli = Get-EsxCli -VMHost $esx -V2
@@ -2946,7 +2946,7 @@ Function Invoke-NSXEdgeClusterRecovery
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
         [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
         [Parameter (Mandatory = $true)][String] $clusterName,
-        [Parameter (Mandatory = $false)][String] $resourcePoolName,
+        #[Parameter (Mandatory = $false)][String] $resourcePoolName,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile
     )
 
@@ -2954,7 +2954,7 @@ Function Invoke-NSXEdgeClusterRecovery
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
 
     $vcenterConnection = Connect-VIServer -server $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
-    If ($resourcePoolName)
+    <# If ($resourcePoolName)
     {
         $resourcePool = Get-ResourcePool -name $resourcePoolName
         $MoRef = $resourcePool.ExtensionData.MoRef.Value    
@@ -2964,77 +2964,109 @@ Function Invoke-NSXEdgeClusterRecovery
         $cluster = Get-Cluster -name $clusterName
         $MoRef = $cluster.ExtensionData.MoRef.Value    
     }
-    #Get TransportNodes
-    $headers = VCFIRCreateHeader -username $nsxManagerAdmin -password $nsxManagerAdminPassword
-    $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/"
-    $transportNodeContents = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
-    $allEdgeTransportNodes = ($transportNodeContents.results | Where-Object { ($_.node_deployment_info.resource_type -eq "EdgeNode") -and ($_.node_deployment_info.deployment_config.vm_deployment_config.compute_id -eq $MoRef)}) | Sort-Object -Property display_name
-    #Redeploy Failed Edges
+    #>
+    #Get all Resource Pool moRefs and add cluster moReg
+    $resourcePools = @(Get-Cluster -name $clusterName | Get-ResourcePool | Where-Object {$_.name -ne "Resources"})
+    $cluster = (Get-Cluster -name $clusterName)    
     
-    Foreach ($edge in $allEdgeTransportNodes)
+    $edgeLocations = @()
+    Foreach ($resourcePool in $resourcePools)
     {
-        $edgeVmPresent = get-vm -name $edge.display_name -ErrorAction SilentlyContinue
-        If (!$edgeVmPresent)
+        $edgeLocations += [PSCustomObject]@{
+            'Type' = 'ResourcePool'
+            'Name' = $resourcePool.Name
+            'moRef' = $resourcePool.extensionData.moref.value
+        }
+    }
+    $edgeLocations += [PSCustomObject]@{
+        'Type' = 'Cluster'
+        'Name' = $cluster.Name
+        'moRef' = $cluster.extensionData.moref.value
+    }
+
+    Foreach ($edgeLocation in $edgeLocations)
+    {
+        #Get TransportNodes
+        Write-Output "Looking for Edges to recover in $($edgeLocation.name)"
+        $headers = VCFIRCreateHeader -username $nsxManagerAdmin -password $nsxManagerAdminPassword
+        $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/"
+        $transportNodeContents = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
+        $allEdgeTransportNodes = ($transportNodeContents.results | Where-Object { ($_.node_deployment_info.resource_type -eq "EdgeNode") -and ($_.node_deployment_info.deployment_config.vm_deployment_config.compute_id -eq $edgeLocation.MoRef)}) | Sort-Object -Property display_name
+        #Redeploy Failed Edges
+        
+        Foreach ($edge in $allEdgeTransportNodes)
         {
-            #Getting Existing Placement Details
-            Write-Host "[$($edge.display_name)] Getting Placement References"
-            $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($edge.node_id)"
-            $edgeConfig = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
-            $vmDeploymentConfig = $edgeConfig.node_deployment_info.deployment_config.vm_deployment_config
-            $NumCpu = $vmDeploymentConfig.resource_allocation.cpu_count
-            $memoryGB = $vmDeploymentConfig.resource_allocation.memory_allocation_in_mb / 1024
-            $cpuShareLevel = (($vmDeploymentConfig.reservation_info.cpu_reservation.reservation_in_shares -split("_"))[0]).tolower()
-            $attachedNetworks = $vmDeploymentConfig.data_network_ids
-
-            #Create Dummy VM
-            Write-Host "[$($edge.display_name)] Preparing to Update Placement References"
-            $clusterVdsName = ($extractedSddcData.workloadDomains | Where-Object {$_.vsphereClusterDetails.name -eq $clusterName}).vsphereClusterDetails.vdsdetails.dvsName
-            $portgroup = (($extractedSddcData.workloadDomains | Where-Object {$_.vsphereClusterDetails.name -eq $clusterName}).vsphereClusterDetails.vdsdetails.portgroups | Where-Object {$_.transportType -eq 'MANAGEMENT'}).NAME 
-            $nestedNetworkPG = Get-VDPortGroup -name $portgroup -ErrorAction silentlyContinue | Where-Object {$_.VDSwitch -match $clusterVdsName}
-            $datastore = ($extractedSddcData.workloadDomains | Where-Object {$_.vsphereClusterDetails.name -eq $clusterName}).vsphereClusterDetails.primaryDatastoreName
-            New-VM -VMhost (get-cluster -name $clusterName | Get-VMHost | Get-Random ) -Name $edge.display_name -Datastore $datastore -resourcePool $resourcePoolName -DiskGB 200 -DiskStorageFormat Thin -MemoryGB $MemoryGB -NumCpu $NumCpu -portgroup $portgroup -GuestID "ubuntu64Guest" -Confirm:$false | Out-Null
-            Get-VM -Name $edge.display_name | Get-VMResourceConfiguration | Set-VMResourceConfiguration -MemReservationGB $memoryGB | Out-Null
-            Get-VM -Name $edge.display_name | Get-VMResourceConfiguration | Set-VMResourceConfiguration -CpuSharesLevel $cpuShareLevel | Out-Null
-            Foreach ($attachedNetwork in $attachedNetworks)
+            $edgeVmPresent = get-vm -name $edge.display_name -ErrorAction SilentlyContinue
+            If (!$edgeVmPresent)
             {
-                $attachedNetworkPg = Get-VDPortGroup -id ("DistributedVirtualPortgroup-" + $attachedNetwork)
-                Get-VM -Name $edge.display_name | New-NetworkAdapter -portGroup $attachedNetworkPg -StartConnected -Type Vmxnet3 -Confirm:$false | Out-Null
-            }
-            $vmID = (get-vm -name $edge.display_name).extensionData.moref.value
-            
-            #Build Edge DeploymentSpec
-            Write-Host "[$($edge.display_name)] Updating Placement References"
-            $datastoreMoRef = (Get-Datastore -name $datastore).ExtensionData.moref.value
-            $vmDeploymentConfig.storage_id = $datastoreMoRef
-            $nodeUserSettingsObject = New-Object -type psobject
-            $nodeUserSettingsObject | Add-Member -NotePropertyName 'cli_username' -NotePropertyValue 'admin'
-            $nodeUserSettingsObject | Add-Member -NotePropertyName 'audit_username' -NotePropertyValue 'audit'
-            $edgeRefreshObject = New-Object -type psobject
-            $edgeRefreshObject | Add-Member -NotePropertyName 'vm_id' -NotePropertyValue $vmID
-            $edgeRefreshObject | Add-Member -NotePropertyName 'vm_deployment_config' -NotePropertyValue $vmDeploymentConfig
-            $edgeRefreshObject | Add-Member -NotePropertyName 'node_user_settings' -NotePropertyValue $nodeUserSettingsObject
-            $vmDeploymentConfigJson = $edgeRefreshObject | Convertto-Json -depth 10
-            $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($edge.node_id)?action=addOrUpdatePlacementReferences"
-            $edgeReConfig = (Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -body $vmDeploymentConfigJson -headers $headers).content | ConvertFrom-Json
+                #Getting Existing Placement Details
+                Write-Output "[$($edge.display_name)] Getting Placement References"
+                $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($edge.node_id)"
+                $edgeConfig = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
+                $vmDeploymentConfig = $edgeConfig.node_deployment_info.deployment_config.vm_deployment_config
+                $NumCpu = $vmDeploymentConfig.resource_allocation.cpu_count
+                $memoryGB = $vmDeploymentConfig.resource_allocation.memory_allocation_in_mb / 1024
+                $cpuShareLevel = (($vmDeploymentConfig.reservation_info.cpu_reservation.reservation_in_shares -split("_"))[0]).tolower()
+                $attachedNetworks = $vmDeploymentConfig.data_network_ids
 
-            #Redeploy Edge
-            Write-Host "[$($edge.display_name)] Getting Edge State"
-            $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($edge.node_id)/state"
-            $edgeState = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
-            If ($edgeState.node_deployment_state.state -ne "success")
-            {
-                Write-Host "[$($edge.display_name)] State is $($edgeState.node_deployment_state.state)"
-                If ($edgeState.node_deployment_state.state -in "MPA_DISCONNECTED","VM_PLACEMENT_REFRESH_FAILED","NODE_READY")
+                #Create Dummy VM
+                Write-Output "[$($edge.display_name)] Preparing to Update Placement References"
+                $clusterVdsName = ($extractedSddcData.workloadDomains | Where-Object {$_.vsphereClusterDetails.name -eq $clusterName}).vsphereClusterDetails.vdsdetails.dvsName
+                $portgroup = (($extractedSddcData.workloadDomains | Where-Object {$_.vsphereClusterDetails.name -eq $clusterName}).vsphereClusterDetails.vdsdetails.portgroups | Where-Object {$_.transportType -eq 'MANAGEMENT'}).NAME 
+                $nestedNetworkPG = Get-VDPortGroup -name $portgroup -ErrorAction silentlyContinue | Where-Object {$_.VDSwitch -match $clusterVdsName}
+                $datastore = ($extractedSddcData.workloadDomains | Where-Object {$_.vsphereClusterDetails.name -eq $clusterName}).vsphereClusterDetails.primaryDatastoreName
+                If ($edgeLocation.type -eq "ResourcePool")
                 {
-                    Write-Host "[$($edge.display_name)] Redeploying Edge"
-                    $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($edge.node_id)"
-                    $edgeResponse = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content
-                    $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($edge.node_id)?action=redeploy"
-                    $edgeRedeploy = Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -body $edgeResponse -headers $headers
+                    New-VM -VMhost (get-cluster -name $clusterName | Get-VMHost | Get-Random ) -Name $edge.display_name -Datastore $datastore -resourcePool $resourcePoolName -DiskGB 200 -DiskStorageFormat Thin -MemoryGB $MemoryGB -NumCpu $NumCpu -portgroup $portgroup -GuestID "ubuntu64Guest" -Confirm:$false | Out-Null
                 }
                 else 
-                {   
-                    Write-Host "[$($edge.display_name)] Not in a suitable state for redeployment. Please review and retry"
+                {
+                    New-VM -VMhost (get-cluster -name $clusterName | Get-VMHost | Get-Random ) -Name $edge.display_name -Datastore $datastore -DiskGB 200 -DiskStorageFormat Thin -MemoryGB $MemoryGB -NumCpu $NumCpu -portgroup $portgroup -GuestID "ubuntu64Guest" -Confirm:$false | Out-Null
+                }
+                
+                Get-VM -Name $edge.display_name | Get-VMResourceConfiguration | Set-VMResourceConfiguration -MemReservationGB $memoryGB | Out-Null
+                Get-VM -Name $edge.display_name | Get-VMResourceConfiguration | Set-VMResourceConfiguration -CpuSharesLevel $cpuShareLevel | Out-Null
+                Foreach ($attachedNetwork in $attachedNetworks)
+                {
+                    $attachedNetworkPg = Get-VDPortGroup -id ("DistributedVirtualPortgroup-" + $attachedNetwork)
+                    Get-VM -Name $edge.display_name | New-NetworkAdapter -portGroup $attachedNetworkPg -StartConnected -Type Vmxnet3 -Confirm:$false | Out-Null
+                }
+                $vmID = (get-vm -name $edge.display_name).extensionData.moref.value
+                
+                #Build Edge DeploymentSpec
+                Write-Output "[$($edge.display_name)] Updating Placement References"
+                $datastoreMoRef = (Get-Datastore -name $datastore).ExtensionData.moref.value
+                $vmDeploymentConfig.storage_id = $datastoreMoRef
+                $nodeUserSettingsObject = New-Object -type psobject
+                $nodeUserSettingsObject | Add-Member -NotePropertyName 'cli_username' -NotePropertyValue 'admin'
+                $nodeUserSettingsObject | Add-Member -NotePropertyName 'audit_username' -NotePropertyValue 'audit'
+                $edgeRefreshObject = New-Object -type psobject
+                $edgeRefreshObject | Add-Member -NotePropertyName 'vm_id' -NotePropertyValue $vmID
+                $edgeRefreshObject | Add-Member -NotePropertyName 'vm_deployment_config' -NotePropertyValue $vmDeploymentConfig
+                $edgeRefreshObject | Add-Member -NotePropertyName 'node_user_settings' -NotePropertyValue $nodeUserSettingsObject
+                $vmDeploymentConfigJson = $edgeRefreshObject | Convertto-Json -depth 10
+                $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($edge.node_id)?action=addOrUpdatePlacementReferences"
+                $edgeReConfig = (Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -body $vmDeploymentConfigJson -headers $headers).content | ConvertFrom-Json
+
+                #Redeploy Edge
+                Write-Output "[$($edge.display_name)] Getting Edge State"
+                $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($edge.node_id)/state"
+                $edgeState = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
+                If ($edgeState.node_deployment_state.state -ne "success")
+                {
+                    Write-Output "[$($edge.display_name)] State is $($edgeState.node_deployment_state.state)"
+                    If ($edgeState.node_deployment_state.state -in "MPA_DISCONNECTED","VM_PLACEMENT_REFRESH_FAILED","NODE_READY")
+                    {
+                        Write-Output "[$($edge.display_name)] Redeploying Edge"
+                        $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($edge.node_id)"
+                        $edgeResponse = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content
+                        $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($edge.node_id)?action=redeploy"
+                        $edgeRedeploy = Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -body $edgeResponse -headers $headers
+                    }
+                    else 
+                    {   
+                        Write-Output "[$($edge.display_name)] Not in a suitable state for redeployment. Please review and retry"
+                    }
                 }
             }
         }
