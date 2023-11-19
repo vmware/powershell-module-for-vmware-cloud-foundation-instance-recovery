@@ -2987,7 +2987,7 @@ Function Invoke-NSXEdgeClusterRecovery
     Foreach ($edgeLocation in $edgeLocations)
     {
         #Get TransportNodes
-        Write-Host "Looking for Edges to recover in $($edgeLocation.name)"
+        Write-Host "Looking for Edges to recover in $($edgeLocation.type): $($edgeLocation.name)"
         $headers = VCFIRCreateHeader -username $nsxManagerAdmin -password $nsxManagerAdminPassword
         $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/"
         $transportNodeContents = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
