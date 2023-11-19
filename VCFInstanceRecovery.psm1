@@ -2993,9 +2993,9 @@ Function Invoke-NSXEdgeClusterRecovery
         $transportNodeContents = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
         $allEdgeTransportNodes = ($transportNodeContents.results | Where-Object { ($_.node_deployment_info.resource_type -eq "EdgeNode") -and ($_.node_deployment_info.deployment_config.vm_deployment_config.compute_id -eq $edgeLocation.MoRef)}) | Sort-Object -Property display_name
         
-        If ($(allEdgeTransportNodes))
+        If ($allEdgeTransportNodes)
         {
-            Write-Host "Found Edges $($allEdgeTransportNodes.display_name -join(","))"
+            Write-Host "Found Edges to recover: $($allEdgeTransportNodes.display_name -join(","))"
         }
         else 
         {
