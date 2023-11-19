@@ -2967,7 +2967,7 @@ Function Invoke-NSXEdgeClusterRecovery
     #>
     #Get all Resource Pool moRefs and add cluster moReg
     $resourcePools = @(Get-Cluster -name $clusterName | Get-ResourcePool | Where-Object {$_.name -ne "Resources"})
-    $cluster = (Get-Cluster -name $clusterName)    
+    $cluster = (Get-Cluster -name $clusterName)
     
     $edgeLocations = @()
     Foreach ($resourcePool in $resourcePools)
@@ -3011,10 +3011,11 @@ Function Invoke-NSXEdgeClusterRecovery
 
                 #Create Dummy VM
                 Write-Output "[$($edge.display_name)] Preparing to Update Placement References"
-                $clusterVdsName = ($extractedSddcData.workloadDomains | Where-Object {$_.vsphereClusterDetails.name -eq $clusterName}).vsphereClusterDetails.vdsdetails.dvsName
-                $portgroup = (($extractedSddcData.workloadDomains | Where-Object {$_.vsphereClusterDetails.name -eq $clusterName}).vsphereClusterDetails.vdsdetails.portgroups | Where-Object {$_.transportType -eq 'MANAGEMENT'}).NAME 
+                $clusterVdsName = ($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object {$_.name -eq $clusterName}).vdsdetails.dvsName
+                $portgroup = (($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object {$_.name -eq $clusterName}).vdsdetails.portgroups | Where-Object {$_.transportType -eq 'MANAGEMENT'}).NAME 
                 $nestedNetworkPG = Get-VDPortGroup -name $portgroup -ErrorAction silentlyContinue | Where-Object {$_.VDSwitch -match $clusterVdsName}
-                $datastore = ($extractedSddcData.workloadDomains | Where-Object {$_.vsphereClusterDetails.name -eq $clusterName}).vsphereClusterDetails.primaryDatastoreName
+                $datastore = ($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object {$_.name -eq $clusterName}).primaryDatastoreName
+                
                 If ($edgeLocation.type -eq "ResourcePool")
                 {
                     New-VM -VMhost (get-cluster -name $clusterName | Get-VMHost | Get-Random ) -Name $edge.display_name -Datastore $datastore -resourcePool $resourcePoolName -DiskGB 200 -DiskStorageFormat Thin -MemoryGB $MemoryGB -NumCpu $NumCpu -portgroup $portgroup -GuestID "ubuntu64Guest" -Confirm:$false | Out-Null
