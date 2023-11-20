@@ -96,41 +96,41 @@ Function Confirm-VCFInstanceRecoveryPreReqs
     $is7Zip4PowerShellInstalled = Get-InstalledModule -name "7Zip4PowerShell" -MinimumVersion "2.4.0" -ErrorAction SilentlyContinue
     If (!$is7Zip4PowerShellInstalled)
     {
-        Write-Output "7Zip4PowerShell Module Missing. Please install"
+        Write-Host "7Zip4PowerShell Module Missing. Please install"
     }
     else 
     {
-        Write-Output "7Zip4PowerShell Module found"
+        Write-Host "7Zip4PowerShell Module found"
     }
 
     $isPoshSSHInstalled = Get-InstalledModule -name "Posh-SSH" -MinimumVersion "3.0.8" -ErrorAction SilentlyContinue
     If (!$isPoshSSHInstalled)
     {
-        Write-Output "Posh-SSH Module Missing. Please install"
+        Write-Host "Posh-SSH Module Missing. Please install"
     } 
     else 
     {
-        Write-Output "Posh-SSH Module found"
+        Write-Host "Posh-SSH Module found"
     }
     
     $isPowerCLIInstalled = Get-InstalledModule -name "VMware.PowerCLI" -ErrorAction SilentlyContinue
     If (!$isPowerCLIInstalled)
     {
-        Write-Output "PowerCLI Module Missing. Please install"
+        Write-Host "PowerCLI Module Missing. Please install"
     }
     else
     {
-        Write-Output "PowerCLI Module found"
+        Write-Host "PowerCLI Module found"
     }
 
     $isPowerVCFInstalled = Get-InstalledModule -name "PowerVCF" -MinimumVersion "2.4.0" -ErrorAction SilentlyContinue
     If (!$isPowerVCFInstalled)
     {
-        Write-Output "PowerVCF Module Missing. Please install"
+        Write-Host "PowerVCF Module Missing. Please install"
     } 
     else
     {
-        Write-Output "PowerVCF Module found"
+        Write-Host "PowerVCF Module found"
     }
 
     $installedSoftware = Get-InstalledSoftware
@@ -142,16 +142,16 @@ Function Confirm-VCFInstanceRecoveryPreReqs
         $Global:openSSLUrl = "https://slproweb.com"+$openSslLink
         If ($openSSLUrl)
         {
-            Write-Output "OpenSSL missing. Please install. Latest version detected is here: $openSSLUrl"
+            Write-Host "OpenSSL missing. Please install. Latest version detected is here: $openSSLUrl"
         }
         else 
         {
-            Write-Output "OpenSSL missing. Please install. Unable to detect latest version on web"
+            Write-Host "OpenSSL missing. Please install. Unable to detect latest version on web"
         }
     }
     else
     {
-        Write-Output "OpenSSL Utility found"
+        Write-Host "OpenSSL Utility found"
     }
     $pathEntries = $env:path -split (";")
     $OpenSSLPath = $pathEntries | Where-Object {$_ -like "*OpenSSL*"}
@@ -160,17 +160,17 @@ Function Confirm-VCFInstanceRecoveryPreReqs
         $testOpenSSExe = Test-Path "$OpenSSLPath\openssl.exe"
         IF ($testOpenSSExe)
         {
-            Write-Output "openssl.exe found in $OpenSSLPath"
+            Write-Host "openssl.exe found in $OpenSSLPath"
         }
         else 
         {
-            Write-Output "$OpenSSLPath was found in environment path, but no openssl.exe was found in that path"
+            Write-Host "$OpenSSLPath was found in environment path, but no openssl.exe was found in that path"
         }
 
     }
     else 
     {
-        Write-Output "No folder path that looks like OpenSSL was discovered in the environment path variable. Please double check that the location of OpenSSL is included in the path variable"
+        Write-Host "No folder path that looks like OpenSSL was discovered in the environment path variable. Please double check that the location of OpenSSL is included in the path variable"
     }
 }
 Export-ModuleMember -Function Confirm-VCFInstanceRecoveryPreReqs
@@ -207,17 +207,17 @@ Function New-ExtractDataFromSDDCBackup
     $extractedBackupFolder = ($backupFileName -Split(".tar.gz"))[0]
     
     #Decrypt Backup
-    Write-Output "Decrypting Backup"
+    Write-Host "Decrypting Backup"
     $command = "openssl enc -d -aes-256-cbc -md sha256 -in $backupFilePath -pass pass:`"$encryptionPassword`" -out `"$parentFolder\decrypted-sddc-manager-backup.tar.gz`""
     Invoke-Expression "& $command" *>$null
 
     #Extract Backup
-    Write-Output "Extracting Backup"
+    Write-Host "Extracting Backup"
     Expand-7Zip -ArchiveFileName "$parentFolder\decrypted-sddc-manager-backup.tar.gz" -TargetPath $parentFolder
     Expand-7Zip -ArchiveFileName "$parentFolder\decrypted-sddc-manager-backup.tar" -TargetPath $parentFolder
 
     #Get Content of Password Vault
-    Write-Output "Reading Password Vault"
+    Write-Host "Reading Password Vault"
     $passwordVaultJson = Get-Content "$parentFolder\$extractedBackupFolder\security_password_vault.json" | ConvertFrom-JSON
     $passwordVaultObject = @()
     Foreach ($object in $passwordVaultJson)
@@ -254,7 +254,7 @@ Function New-ExtractDataFromSDDCBackup
     }
     
     $psqlContent = Get-Content "$extractedBackupFolder\database\sddc-postgres.bkp"
-    Write-Output "Retrieving NSX Manager Details"
+    Write-Host "Retrieving NSX Manager Details"
     
     #Get All NSX Manager Clusters
     $nsxManagerstartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.nsxt (id" | Select Line,LineNumber).LineNumber
@@ -289,7 +289,7 @@ Function New-ExtractDataFromSDDCBackup
     Until ($lineContent -eq '\.')
     
     #Get Host and Domain Details
-    Write-Output "Retrieving Host and Domain Mappings"
+    Write-Host "Retrieving Host and Domain Mappings"
     $hostsAndDomainsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.host_and_domain " | Select Line,LineNumber).LineNumber
     $hostsAndDomainsLineIndex = $hostsAndDomainsLineNumber
     $hostsAndDomains = @()
@@ -310,7 +310,7 @@ Function New-ExtractDataFromSDDCBackup
     Until ($lineContent -eq '\.')
 
     #Get Host and vCenter Details
-    Write-Output "Retrieving Host and vCenter Mappings"
+    Write-Host "Retrieving Host and vCenter Mappings"
     $hostsandVcentersLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.host_and_vcenter " | Select Line,LineNumber).LineNumber
     $hostsandVcentersLineIndex = $hostsandVcentersLineNumber
     $hostsandVcenters = @()
@@ -331,7 +331,7 @@ Function New-ExtractDataFromSDDCBackup
     Until ($lineContent -eq '\.')
 
     #Get Host and vCenter Details
-    Write-Output "Retrieving vCenter Details"
+    Write-Host "Retrieving vCenter Details"
     $vCentersStartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.vcenter " | Select Line,LineNumber).LineNumber
     $vCenterLineIndex = $vCentersStartingLineNumber
     $vCenters = @()
@@ -341,7 +341,6 @@ Function New-ExtractDataFromSDDCBackup
         If ($lineContent -ne '\.')
         {
             $vCenterID = $lineContent.split("`t")[0]
-            $vCenterDatastore= $lineContent.split("`t")[4]
             $vCenterVersion= $lineContent.split("`t")[9]
             $vCenterFqdn= $lineContent.split("`t")[10]
             $vCenterIp= $lineContent.split("`t")[11]
@@ -349,7 +348,6 @@ Function New-ExtractDataFromSDDCBackup
             $vCenterDomainID = ($hostsAndDomains | Where-Object {$_.hostId -eq (($hostsandVcenters | Where-Object {$_.vCenterID -eq $vCenterID})[0].hostID)}).domainID
             $vCenters += [pscustomobject]@{
                 'vCenterID' = $vCenterID
-                'vCenterDatastore' = $vCenterDatastore
                 'vCenterVersion' = $vCenterVersion
                 'vCenterFqdn' = $vCenterFqdn
                 'vCenterIp' = $vCenterIp
@@ -362,7 +360,7 @@ Function New-ExtractDataFromSDDCBackup
     Until ($lineContent -eq '\.')
 
     #Get Hosts and Pools
-    Write-Output "Retrieving Host and Network Pool Mappings"
+    Write-Host "Retrieving Host and Network Pool Mappings"
     $hostsAndPoolsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.host_and_network_pool" | Select Line,LineNumber).LineNumber
     $hostsAndPoolsLineIndex = $hostsAndPoolsLineNumber
     $hostsandPools = @()
@@ -383,7 +381,7 @@ Function New-ExtractDataFromSDDCBackup
     Until ($lineContent -eq '\.')
 
     #Get Network Pools
-    Write-Output "Retrieving Network Pool Details"
+    Write-Host "Retrieving Network Pool Details"
     $networkPoolsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.network_pool " | Select Line,LineNumber).LineNumber
     $networkPoolsLineIndex = $networkPoolsLineNumber
     $networkPools = @()
@@ -404,7 +402,7 @@ Function New-ExtractDataFromSDDCBackup
     Until ($lineContent -eq '\.')
 
     #Get VDSs
-    Write-Output "Retrieving vDS Details"
+    Write-Host "Retrieving vDS Details"
     $vdsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.vds" | Select Line,LineNumber).LineNumber
     $vdsLineIndex = $vdsLineNumber
     $virtualDistributedSwitches = @()
@@ -433,7 +431,7 @@ Function New-ExtractDataFromSDDCBackup
     Until ($lineContent -eq '\.')
 
     #Get Cluster and VDS
-    Write-Output "Retrieving Cluster and vDS Mappings"
+    Write-Host "Retrieving Cluster and vDS Mappings"
     $clusterAndVdsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.cluster_and_vds" | Select Line,LineNumber).LineNumber
     $clusterAndVdsLineIndex = $clusterAndVdsLineNumber
     $clusterAndVds = @()
@@ -454,7 +452,7 @@ Function New-ExtractDataFromSDDCBackup
     Until ($lineContent -eq '\.')
 
     #Get Clusters
-    Write-Output "Retrieving Cluster Details"
+    Write-Host "Retrieving Cluster Details"
     $clustersLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.cluster " | Select Line,LineNumber).LineNumber
     $clustersLineIndex = $clustersLineNumber
     $clusters = @()
@@ -514,7 +512,7 @@ Function New-ExtractDataFromSDDCBackup
     Until ($lineContent -eq '\.')
 
     #Get Cluster and vCenter
-    Write-Output "Retrieving Cluster and vCenter Mappings"
+    Write-Host "Retrieving Cluster and vCenter Mappings"
     $clusterAndVcenterLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.cluster_and_vcenter" | Select Line,LineNumber).LineNumber
     $clusterAndVcenterLineIndex = $clusterAndVcenterLineNumber
     $clusterAndVcenter = @()
@@ -535,7 +533,7 @@ Function New-ExtractDataFromSDDCBackup
     Until ($lineContent -eq '\.')
 
     #Get Cluster and Domain
-    Write-Output "Retrieving Cluster and Domain Mappings"
+    Write-Host "Retrieving Cluster and Domain Mappings"
     $clusterAndDomainLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.cluster_and_domain" | Select Line,LineNumber).LineNumber
     $clusterAndDomainLineIndex = $clusterAndDomainLineNumber
     $clusterAndDomain = @()
@@ -557,7 +555,7 @@ Function New-ExtractDataFromSDDCBackup
 
 
     #Get Pools and Networks
-    Write-Output "Retrieving Network Pools and Network Mappings"
+    Write-Host "Retrieving Network Pools and Network Mappings"
     $poolsAndNetworksLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.vcf_network_and_network_pool" | Select Line,LineNumber).LineNumber
     $poolsAndNetworksLineIndex = $poolsAndNetworksLineNumber
     $poolsAndNetworks = @()
@@ -578,7 +576,7 @@ Function New-ExtractDataFromSDDCBackup
     Until ($lineContent -eq '\.')
 
     #Get Networks
-    Write-Output "Retrieving Network Details"
+    Write-Host "Retrieving Network Details"
     $networksLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.vcf_network " | Select Line,LineNumber).LineNumber
     $networksLineIndex = $networksLineNumber
     $networks = @()
@@ -614,7 +612,7 @@ Function New-ExtractDataFromSDDCBackup
     Until ($lineContent -eq '\.')
 
     #Get License Models
-    Write-Output "Retrieving Licensing Models"
+    Write-Host "Retrieving Licensing Models"
     $licenseModelLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY licensemanager.licensing_info" | Select Line,LineNumber).LineNumber
     $licenseModelLineIndex = $licenseModelLineNumber
     $licenseModels = @()
@@ -638,7 +636,7 @@ Function New-ExtractDataFromSDDCBackup
 
     
     #Get License Keys
-    Write-Output "Retrieving License Keys"
+    Write-Host "Retrieving License Keys"
     $licenseLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY licensemanager.licensekey" | Select Line,LineNumber).LineNumber
     $licenseLineIndex = $licenseLineNumber
     $licenseKeys = @()
@@ -662,7 +660,7 @@ Function New-ExtractDataFromSDDCBackup
     }
     Until ($lineContent -eq '\.')
 
-    Write-Output "Assembling Workload Domain Data"
+    Write-Host "Assembling Workload Domain Data"
     #GetDomainDetails
     $domainsStartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.domain (id" | Select Line,LineNumber).LineNumber
     $domainLineIndex = $domainsStartingLineNumber
@@ -679,7 +677,6 @@ Function New-ExtractDataFromSDDCBackup
             $vCenter = $vCenters | Where-Object {$_.vCenterDomainID -eq $domainId}
             $vCenterDetails = [pscustomobject]@{
                 'id' = $vCenter.vCenterID
-                'datastore' = $vCenter.vCenterDatastore
                 'version' = $vCenter.vCenterVersion
                 'fqdn' = $vCenter.vCenterFqdn
                 'ip' = $vCenter.vCenterIp
@@ -755,20 +752,20 @@ Function New-ExtractDataFromSDDCBackup
                 'networkDetails' = $networkSpecs
                 'nsxClusterDetails' = $nsxClusterDetailsObject
                 'nsxNodeDetails' = ($nsxtManagerClusters | Where-Object {$_.domainIDs -contains $domainId}).nsxNodes
-                'primaryClusterDetails' = ($clusters | Where-Object {($_.vCenterID -eq $vcenterDetails.id) -and($_.isDefault -eq 't')})
+                'vsphereClusterDetails' = ($clusters | Where-Object {$_.vCenterID -eq $vcenterDetails.id})
             }
         }
         $domainLineIndex++
     } Until ($lineContent -eq '\.')
 
-    Write-Output "Getting CEIP Status"
+    Write-Host "Getting CEIP Status"
     #GetDomainDetails
     $ceipStartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.sddc_manager_controller" | Select Line,LineNumber).LineNumber
     $lineContent = $psqlContent | Select-Object -Index $ceipStartingLineNumber
     If ($lineContent.split("`t")[9] -eq 'ENABLED') { $ceipStatus = $true} else {$ceipStatus = $false}
     
 
-    Write-Output "Retrieving SDDC Manager Detail"
+    Write-Host "Retrieving SDDC Manager Detail"
     $sddcManagerObject = @()
     $sddcManagerObject += [pscustomobject]@{
         'fqdn' = ($passwordVaultObject | Where-Object {$_.entityType -eq "BACKUP"}).entityName
@@ -778,7 +775,7 @@ Function New-ExtractDataFromSDDCBackup
         'ceip_enabled' = $ceipStatus
     }
     
-    Write-Output "Creating extracted-sddc-data.json"
+    Write-Host "Creating extracted-sddc-data.json"
     $sddcDataObject = New-Object -TypeName psobject
     $sddcDataObject | Add-Member -notepropertyname 'sddcManager' -notepropertyvalue $sddcManagerObject
     $sddcDataObject | Add-Member -notepropertyname 'mgmtDomainInfrastructure' -notepropertyvalue $mgmtDomainInfrastructure
@@ -788,7 +785,7 @@ Function New-ExtractDataFromSDDCBackup
     $sddcDataObject | ConvertTo-Json -Depth 10 | Out-File "$parentFolder\extracted-sddc-data.json"
 
     #Cleanup
-    Write-Output "Cleaning up extracted files"
+    Write-Host "Cleaning up extracted files"
     Remove-Item -Path "$parentFolder\decrypted-sddc-manager-backup.tar.gz" -force -confirm:$false
     Remove-Item -Path "$parentFolder\decrypted-sddc-manager-backup.tar" -force -confirm:$false
     Remove-Item -path "$parentFolder\$extractedBackupFolder" -Recurse 
@@ -1101,7 +1098,7 @@ Function New-UploadAndModifySDDCManagerBackup
         [Parameter (Mandatory = $true)][String] $tempvCenterAdmin,
         [Parameter (Mandatory = $true)][String] $tempvCenterAdminPassword
     )
-    Write-Output "Reading Extracted Data"
+    Write-Host "Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
 
@@ -1114,10 +1111,10 @@ Function New-UploadAndModifySDDCManagerBackup
     $extractedBackupFolder = ($backupFileName -Split(".tar.gz"))[0]
     
     #Establish SSH Connection to SDDC Manager
-    Write-Output "Establishing Connection to SDDC Manager Appliance"
+    Write-Host "Establishing Connection to SDDC Manager Appliance"
     $SecurePassword = ConvertTo-SecureString -String $vcfUserPassword -AsPlainText -Force
     $mycreds = New-Object System.Management.Automation.PSCredential ("vcf", $SecurePassword)
-    Get-SSHTrustedHost | Remove-SSHTrustedHost
+    Get-SSHTrustedHost | Remove-SSHTrustedHost | Out-Null
     $inmem = New-SSHMemoryKnownHost
     New-SSHTrustedHost -KnownHostStore $inmem -HostName $sddcManagerFQDN -FingerPrint ((Get-SSHHostKey -ComputerName $sddcManagerFQDN).fingerprint) | Out-Null
     Do
@@ -1126,39 +1123,39 @@ Function New-UploadAndModifySDDCManagerBackup
     } Until ($sshSession)
 
     #Perform KeyScan
-    Write-Output "Performing Keyscan on SDDC Manager Appliance"
+    Write-Host "Performing Keyscan on SDDC Manager Appliance"
     $result = (Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command "ssh-keyscan $mgmtVcenterFqdn").output
     
     #Determine new SSH Keys
     $newNistKey = '"' + (($result | Where-Object {$_ -like "*ecdsa-sha2-nistp256*"}).split("ecdsa-sha2-nistp256 "))[1] + '"'
-    If ($newNistKey) { Write-Output "New ecdsa-sha2-nistp256 key for $mgmtVcenterFqdn retrieved" }
+    If ($newNistKey) { Write-Host "New ecdsa-sha2-nistp256 key for $mgmtVcenterFqdn retrieved" }
     $newRSAKey = '"' + (($result | Where-Object {$_ -like "*ssh-rsa*"}).split("ssh-rsa "))[1] + '"'
-    If ($newRSAKey) { Write-Output "New ssh-rsa key for $mgmtVcenterFqdn retrieved" }
+    If ($newRSAKey) { Write-Host "New ssh-rsa key for $mgmtVcenterFqdn retrieved" }
 
     #Upload Backup
     $vCenterConnection = Connect-VIServer -server $tempvCenterFqdn -user $tempvCenterAdmin -password $tempvCenterAdminPassword
-    Write-Output "Uploading Backup File to SDDC Manager Appliance"
+    Write-Host "Uploading Backup File to SDDC Manager Appliance"
     $copyFile = Copy-VMGuestFile -Source $backupFilePath -Destination "/tmp/$backupFileName" -LocalToGuest -VM $sddcManagerVmName -GuestUser "root" -GuestPassword $rootUserPassword -Force -WarningAction SilentlyContinue -WarningVariable WarnMsg
 
     #Decrypt/Extract Backup
-    Write-Output "Decrypting Backup on SDDC Manager Appliance"
+    Write-Host "Decrypting Backup on SDDC Manager Appliance"
     #$command = "cd /tmp; OPENSSL_FIPS=1 openssl enc -d -aes-256-cbc -md sha256 -in /tmp/$backupFileName -pass pass:`'$encryptionPassword`' | tar -xz"
     $command = "cd /tmp; echo `'$encryptionPassword`' | OPENSSL_FIPS=1 openssl enc -d -aes-256-cbc -md sha256 -in /tmp/$backupFileName -pass stdin | tar -xz"
     $result = ((Invoke-VMScript -ScriptText $command -VM $sddcManagerVmName -GuestUser 'root' -GuestPassword $rootUserPassword).ScriptOutput) -replace "(`n|`r)"
 
     #Modfiy JSON file  
     #Existing Nist Key
-    Write-Output "Parsing Backup on SDDC Manager Appliance for original ecdsa-sha2-nistp256 key for $mgmtVcenterFqdn"
+    Write-Host "Parsing Backup on SDDC Manager Appliance for original ecdsa-sha2-nistp256 key for $mgmtVcenterFqdn"
     $command = "cat /tmp/$extractedBackupFolder/appliancemanager_ssh_knownHosts.json  | jq `'.knownHosts[] | select(.host==`"$mgmtVcenterFqdn`") | select(.keyType==`"ecdsa-sha2-nistp256`")| .key`'"
     $oldNistKey = ((Invoke-VMScript -ScriptText $command -VM $sddcManagerVmName -GuestUser 'root' -GuestPassword $rootUserPassword).ScriptOutput) -replace "(`n|`r)"
 
     #Existing rsa Key
-    Write-Output "Parsing Backup on SDDC Manager Appliance for original ssh-rsa key for $mgmtVcenterFqdn"
+    Write-Host "Parsing Backup on SDDC Manager Appliance for original ssh-rsa key for $mgmtVcenterFqdn"
     $command = "cat /tmp/$extractedBackupFolder/appliancemanager_ssh_knownHosts.json  | jq `'.knownHosts[] | select(.host==`"$mgmtVcenterFqdn`") | select(.keyType==`"ssh-rsa`")| .key`'"
     $oldRSAKey = ((Invoke-VMScript -ScriptText $command -VM $sddcManagerVmName -GuestUser 'root' -GuestPassword $rootUserPassword).ScriptOutput) -replace "(`n|`r)"
 
     #Sed File
-    Write-Output "Replacing ecdsa-sha2-nistp256 and ssh-rsa keys and re-encrypting the SDDC Manager Backup"
+    Write-Host "Replacing ecdsa-sha2-nistp256 and ssh-rsa keys and re-encrypting the SDDC Manager Backup"
     $command = "sed -i `'s@$oldNistKey@$newNistKey@`' /tmp/$extractedBackupFolder/appliancemanager_ssh_knownHosts.json; sed -i `'s@$oldRSAKey@$newRSAKey@`' /tmp/$extractedBackupFolder/appliancemanager_ssh_knownHosts.json; mv /tmp/$backupFileName /tmp/$backupFileName.original; export encryptionPassword='$encryptionPassword'; cd /tmp; tar -cz $extractedBackupFolder | OPENSSL_FIPS=1 openssl enc -aes-256-cbc -md sha256 -out /tmp/$backupFileName -pass env:encryptionPassword"
     $result = ((Invoke-VMScript -ScriptText $command -VM $sddcManagerVmName -GuestUser 'root' -GuestPassword $rootUserPassword).ScriptOutput) -replace "(`n|`r)"
 
@@ -1177,7 +1174,7 @@ Function New-ReconstructedPartialBringupJsonSpec
     The New-ReconstructedPartialBringupJsonSpec cmdlet Reconstructs a managment domain bringup JSON spec based on information scraped from the backup being restored from
 
     .EXAMPLE
-    New-ReconstructedPartialBringupJsonSpec -extractedSDDCDataFile ".\extracted-sddc-data.json" -tempVcenterIp "172.16.11.170" -tempVcenterHostname "sfo-m01-vc02" -vcfLocalUserPassword "VMw@re1!" -vcfRootUserPassword "VMw@re1!" -vcfRestApiPassword "VMw@re1!" -vcfSecondUserPassword "VMw@re1!" -transportVlanId 1614 -dedupEnabled $false -vds0nics "vmnic0","vmnic1" -vcenterServerSize "small"
+    New-ReconstructedPartialBringupJsonSpec -extractedSDDCDataFile ".\extracted-sddc-data.json" -tempVcenterIp "172.16.11.170" -tempVcenterHostname "sfo-m01-vc02" -vcfLocalUserPassword "VMw@re1!VMw@re1!" -vcfRootUserPassword "VMw@re1!" -vcfRestApiPassword "VMw@re1!" -vcfSecondUserPassword "VMw@re1!" -transportVlanId 1614 -dedupEnabled $false -vds0nics "vmnic0","vmnic1" -vcenterServerSize "small"
 
     .PARAMETER tempVcenterIp
     As a temporary vCenter will be used, a temporary IP Address must be provdied for use
@@ -1355,20 +1352,29 @@ Function New-ReconstructedPartialBringupJsonSpec
     $nsxtSpecObject | Add-Member -notepropertyname 'transportVlanId' -notepropertyvalue $transportVlanId
     $mgmtDomainObject | Add-Member -notepropertyname 'nsxtSpec' -notepropertyvalue $nsxtSpecObject
 
+    #Derive Primary Cluster
+    $primaryCluster = ($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).vsphereClusterDetails | Where-Object {$_.isDefault -eq 't'}
+        
     #vsanSpec
+    
     $vsanSpecObject = New-Object -type psobject
     $vsanSpecObject | Add-Member -notepropertyname 'vsanName' -notepropertyvalue "vsan-1"
     $vsanSpecObject | Add-Member -notepropertyname 'licenseFile' -notepropertyvalue ($extractedSddcData.licenseKeys | Where-Object {$_.productType -eq "VSAN"}).key
     $vsanSpecObject | Add-Member -notepropertyname 'vsanDedup' -notepropertyvalue $dedupEnabled
-    $vsanSpecObject | Add-Member -notepropertyname 'datastoreName' -notepropertyvalue ($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).primaryClusterDetails.primaryDatastoreName
+    $vsanSpecObject | Add-Member -notepropertyname 'datastoreName' -notepropertyvalue $primaryCluster.primaryDatastoreName
     $mgmtDomainObject | Add-Member -notepropertyname 'vsanSpec' -notepropertyvalue $vsanSpecObject
 
     #dvsSpecs
     $clusterVDSs = @()
-    Foreach ($vds in (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).primaryClusterDetails.vdsDetails))
+    Foreach ($vds in ($primaryCluster.vdsDetails))
     {
-        $vds.vmnics = $vds0nics
-        $clusterVDSs += $vds
+        $clustervdsObject = New-Object -type psobject
+        $clustervdsObject | Add-Member -notepropertyname 'mtu' -notepropertyvalue $vds.mtu
+        $clustervdsObject | Add-Member -notepropertyname 'niocSpecs' -notepropertyvalue $vds.niocSpecs
+        $clustervdsObject | Add-Member -notepropertyname 'dvsName' -notepropertyvalue $vds.dvsName
+        $clustervdsObject | Add-Member -notepropertyname 'vmnics' -notepropertyvalue $vds0nics
+        $clustervdsObject | Add-Member -notepropertyname 'networks' -notepropertyvalue $vds.networks
+        $clusterVDSs += $clustervdsObject
     }
     $mgmtDomainObject | Add-Member -notepropertyname 'dvsSpecs' -notepropertyvalue $clusterVDSs
 
@@ -1379,7 +1385,7 @@ Function New-ReconstructedPartialBringupJsonSpec
     $vmFoldersObject | Add-Member -notepropertyname 'EDGENODES' -notepropertyvalue (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).domainName + "-fd-edge")
     $clusterSpecObject = New-Object -type psobject
     $clusterSpecObject | Add-Member -notepropertyname 'vmFolders' -notepropertyvalue $vmFoldersObject
-    $clusterSpecObject | Add-Member -notepropertyname 'clusterName' -notepropertyvalue ($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).primaryClusterDetails.name
+    $clusterSpecObject | Add-Member -notepropertyname 'clusterName' -notepropertyvalue $primaryCluster.name
     $clusterSpecObject | Add-Member -notepropertyname 'clusterEvcMode' -notepropertyvalue ""
     $mgmtDomainObject | Add-Member -notepropertyname 'clusterSpec' -notepropertyvalue $clusterSpecObject
 
@@ -1492,6 +1498,7 @@ Function Move-ClusterHostsToRestoredVcenter
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
     $restoredvCenterConnection = connect-viserver $restoredvCenterFQDN -user $restoredvCenterAdmin -password $restoredvCenterAdminPassword
     Foreach ($esxiHost in $esxiHosts) {
+        Write-Host "Moving $($esxiHost.name) to $restoredvCenterFQDN"
         $esxiRootPassword = ($extractedSddcData.passwords | Where-Object {($_.entityType -eq "ESXI") -and ($_.entityName -eq $esxiHost.Name) -and ($_.username -eq "root")}).password
         Add-VMHost -Name $esxiHost.Name -Location $clusterName -User root -Password $esxiRootPassword -Force -Confirm:$false | Out-Null
     }
@@ -1537,6 +1544,7 @@ Function Remove-ClusterHostsFromVds
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
     $esxiHosts = get-cluster -name $clusterName | get-vmhost
     Foreach ($esxiHost in $esxiHosts) {
+        Write-Host "Removing $($esxiHost.name) from $vdsName"
         Get-VDSwitch -Name $vdsName | Get-VMHostNetworkAdapter -VMHost $esxiHost -Physical | Remove-VDSwitchPhysicalNetworkAdapter -Confirm:$false | Out-Null
         Get-VDSwitch -Name $vdsName | Remove-VDSwitchVMHost -VMHost $esxiHost -Confirm:$false | Out-Null
     }
@@ -1578,6 +1586,7 @@ Function Move-MgmtVmsToTempPg
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
     $vmsTomove = get-cluster -name $clusterName | get-vm | ? { $_.Name -notlike "*vCLS*" }
     foreach ($vmToMove in $vmsTomove) {
+        Write-Host "Moving $($vmToMove.name) to mgmt_temp"
         Get-VM -Name $vmToMove | Get-NetworkAdapter | Set-NetworkAdapter -NetworkName "mgmt_temp" -confirm:$false | Out-Null
     }
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
@@ -1930,7 +1939,7 @@ Function Resolve-PhysicalHostServiceAccounts
     Disconnect-VIServer * -confirm:$false
     $tokenRequest = Request-VCFToken -fqdn $sddcManagerFQDN -username $sddcManagerAdmin -password $sddcManagerAdminPassword
     #verify SDDC Manager credential API state
-    $credentialAPILastTask = ((Get-VCFCredentialTask | Sort-Object -Property creationTimeStamp)[-1]).status
+    $credentialAPILastTask = ((Get-VCFCredentialTask -errorAction silentlyContinue| Sort-Object -Property creationTimeStamp)[-1]).status
     if ($credentialAPILastTask -eq "FAILED")
     {
         Write-Host "Failed credential operation detected. Please resolve in SDDC Manager and try again" ; break
@@ -1986,7 +1995,7 @@ Function Resolve-PhysicalHostServiceAccounts
             Sleep 5
             $taskStatus = (Get-VCFCredentialTask -id $taskID).status
         } Until ($taskStatus -ne "IN_PROGRESS")
-        Write-Output "$taskStatus"
+        Write-Host "$taskStatus"
     }
 }
 Export-ModuleMember -Function Resolve-PhysicalHostServiceAccounts
@@ -2068,6 +2077,7 @@ Function Remove-NonResponsiveHosts
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
     $nonResponsiveHosts = get-cluster -name $clusterName | get-vmhost | Where-Object { $_.ConnectionState -in "NotResponding","Disconnected" }
     foreach ($nonResponsiveHost in $nonResponsiveHosts) {
+        Write-Host "Removing $($nonResponsiveHost.name) from $clusterName"
         Get-VMHost | Where-Object { $_.Name -eq $nonResponsiveHost.Name } | Remove-VMHost -Confirm:$false
     }
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
@@ -2134,7 +2144,7 @@ Function Add-HostsToCluster
             $esxiRootPassword = ($extractedSddcData.passwords | Where-Object {($_.entityType -eq "ESXI") -and ($_.entityName -eq $newHost) -and ($_.username -eq "root")}).password
             $esxiConnection = connect-viserver $newHost -user root -password $esxiRootPassword
             if ($esxiConnection) {
-                Write-Output "Adding $newHost to cluster $clusterName"
+                Write-Host "Adding $newHost to cluster $clusterName"
                 Add-VMHost $newHost -username root -password $esxiRootPassword -Location $clusterName -Force -Confirm:$false | Out-Null
             }
             else {
@@ -2142,7 +2152,7 @@ Function Add-HostsToCluster
             }
         }
         else {
-            Write-Output "$newHost is already part of $clusterName. Skipping"
+            Write-Host "$newHost is already part of $clusterName. Skipping"
         }
     }
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
@@ -2183,7 +2193,7 @@ Function Remove-StandardSwitch
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
     $vmHosts = (Get-cluster -name $clusterName | Get-VMHost).Name
     foreach ($vmhost in $vmHosts) {
-        Write-Output "Removing standard vSwitch from $vmhost" 
+        Write-Host "Removing standard vSwitch from $vmhost" 
         Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name "vSwitch0" | Remove-VirtualSwitch -Confirm:$false | Out-Null
     }
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
@@ -2251,10 +2261,10 @@ Function Add-VMKernelsToHost
         $vsanMTU = (Get-VCFNetworkIPPool -id ((Get-VCFHost | Where-Object { $_.fqdn -eq $vmhost }).networkPool.id) | ? { $_.type -eq "VSAN" }).mtu
         $vsanGW = (Get-VCFNetworkIPPool -id ((Get-VCFHost | Where-Object { $_.fqdn -eq $vmhost }).networkPool.id) | ? { $_.type -eq "VSAN" }).gateway
 
-        Write-Output "Creating vMotion vMK on $vmHost"
+        Write-Host "Creating vMotion vMK on $vmHost"
         $dvportgroup = Get-VDPortgroup -name $vmotionPG -VDSwitch $vmotionVDSName
         $vmk = New-VMHostNetworkAdapter -VMHost $vmhost -VirtualSwitch $vmotionVDSName -mtu $vmotionMTU -PortGroup $dvportgroup -ip $vmotionIP -SubnetMask $vmotionMask -NetworkStack (Get-VMHostNetworkStack -vmhost $vmhost | Where-Object { $_.id -eq "vmotion" })
-        Write-Output "Setting vMotion Gateway on $vmHost"
+        Write-Host "Setting vMotion Gateway on $vmHost"
         $vmkName = 'vmk1'
         $esx = Get-VMHost -Name $vmHost
         $esxcli = Get-EsxCli -VMHost $esx -V2
@@ -2268,7 +2278,7 @@ Function Add-VMKernelsToHost
         }
         $esxcli.network.ip.interface.ipv4.set.Invoke($interfaceArg) *>$null
 
-        Write-Output "Creating vSAN vMK on $vmHost"
+        Write-Host "Creating vSAN vMK on $vmHost"
         $dvportgroup = Get-VDPortgroup -name $vsanPG -VDSwitch $vsanVDSName
         $vmk = New-VMHostNetworkAdapter -VMHost $vmhost -VirtualSwitch $vsanVDSName -mtu $vsanMTU -PortGroup $dvportgroup -ip $vsanIP -SubnetMask $vsanMask -VsanTrafficEnabled:$true
 
@@ -2514,7 +2524,7 @@ Function Restore-ClusterVMOverrides
             {
                 If ($vmOverRideInstance.name -notlike "vCLS*")
                 {
-                    Write-Output "[$($vmOverRideInstance.name)] Restoring VM Overide Settings"
+                    Write-Host "[$($vmOverRideInstance.name)] Restoring VM Overide Settings"
                     $dasVmConfigSpecRequired = $false
                     $drsVmConfigSpecRequired = $false
                     $vmOverRideInstanceOrchestrationSpecRequired = $false
@@ -2668,11 +2678,11 @@ Function Restore-ClusterVMLocations
                     $vm = Get-VM -name $vmLocation.name -errorAction SilentlyContinue
                     If ($vm) {
                         If ($vm.folder -ne $vmLocation.folder) {
-                            Write-Output "Setting VM Folder Location for $($vmLocation.name) to $($vmLocation.folder)"
+                            Write-Host "Setting VM Folder Location for $($vmLocation.name) to $($vmLocation.folder)"
                             Move-VM -VM $vm -InventoryLocation $vmLocation.folder -confirm:$false
                         }
                         If ($vm.resourcePool -ne $vmLocation.resourcePool) {
-                            Write-Output "Setting ResourcePool for $($vmLocation.name) to $($vmLocation.resourcePool)"
+                            Write-Host "Setting ResourcePool for $($vmLocation.name) to $($vmLocation.resourcePool)"
                             Move-VM -VM $vm -Destination $vmLocation.resourcePool -confirm:$false
                         }
                     } 
@@ -2723,54 +2733,57 @@ Function Restore-ClusterDRSGroupsAndRules
                 If ($group) {
                     If ($vmDrsGroup.type -eq "VMHostGroup") {
                         Foreach ($member in $vmDrsGroup.members) {
-                            Write-Output "Adding $member to VMHostGroup $($vmDrsGroup.name)"
+                            Write-Host "Adding $member to VMHostGroup $($vmDrsGroup.name)"
                             Set-DrsClusterGroup -DrsClusterGroup $vmDrsGroup.name -Add -VMHost $member -confirm:$false | Out-Null    
                         }
                     }
                     elseif ($vmDrsGroup.type -eq "VMGroup") {
                         Foreach ($member in $vmDrsGroup.members) {
-                            Write-Output "Adding $member to VMGroup $($vmDrsGroup.name)"
+                            Write-Host "Adding $member to VMGroup $($vmDrsGroup.name)"
                             Set-DrsClusterGroup -DrsClusterGroup $vmDrsGroup.name -Add -VM $member -confirm:$false | Out-Null    
                         }
                     }
                 }
                 else {
                     If ($vmDrsGroup.type -eq "VMHostGroup") {
-                        Write-Output "Creating VMHostGroup $($vmDrsGroup.name) with Members $($vmDrsGroup.members)"
+                        Write-Host "Creating VMHostGroup $($vmDrsGroup.name) with Members $($vmDrsGroup.members)"
                         New-DrsClusterGroup -Name $vmDrsGroup.name -VMHost $vmDrsGroup.members -Cluster $clusterName | Out-Null
                     }
                     elseif ($vmDrsGroup.type -eq "VMGroup") {
-                        Write-Output "Creating VMGroup $($vmDrsGroup.name) with Members $($vmDrsGroup.members)"
+                        Write-Host "Creating VMGroup $($vmDrsGroup.name) with Members $($vmDrsGroup.members)"
                         New-DrsClusterGroup -Name $vmDrsGroup.name -VM $vmDrsGroup.members -Cluster $clusterName | Out-Null
                     }
                 }
             }
             Foreach ($vmAffinityRule in $drsRulesAndGroups.vmAffinityRules) {
-                $vmRule = Get-DrsRule -name $vmAffinityRule.name -cluster $clusterName -errorAction SilentlyContinue
-                If ($vmRule) {
-                    Write-Output "Setting VM Rule $($vmAffinityRule.name) with Members $($vmAffinityRule.members)"
-                    Set-DrsRule -rule $vmRule -VM $vmAffinityRule.members -Enabled $true -confirm:$false | Out-Null
-                }
-                else {
-                    Write-Output "Creating VM Rule $($vmAffinityRule.name) with Members $($vmAffinityRule.members)"
-                    New-DrsRule -cluster $clusterName -name $vmAffinityRule.name -VM $vmAffinityRule.members -keepTogether $vmAffinityRule.keepTogether -Enabled $true | Out-Null
+                If ($vmAffinityRule.members.count -gt 1)
+                {
+                    $vmRule = Get-DrsRule -name $vmAffinityRule.name -cluster $clusterName -errorAction SilentlyContinue
+                    If ($vmRule) {
+                        Write-Host "Setting VM Rule $($vmAffinityRule.name) with Members $($vmAffinityRule.members)"
+                        Set-DrsRule -rule $vmRule -VM $vmAffinityRule.members -Enabled $true -confirm:$false | Out-Null
+                    }
+                    else {
+                        Write-Host "Creating VM Rule $($vmAffinityRule.name) with Members $($vmAffinityRule.members)"
+                        New-DrsRule -cluster $clusterName -name $vmAffinityRule.name -VM $vmAffinityRule.members -keepTogether $vmAffinityRule.keepTogether -Enabled $true | Out-Null
+                    }    
                 }
             }
             Foreach ($vmHostAffinityRule in $drsRulesAndGroups.vmHostAffinityRules) {
                 $hostRule = Get-DrsVMHostRule -Cluster $clusterName -name $vmHostAffinityRule.name -errorAction SilentlyContinue
                 If ($hostRule) {
-                    Write-Output "Setting VMHost Rule $($vmHostAffinityRule.name) with VM Group $($vmHostAffinityRule.vmGroupName) and Host Group $($vmHostAffinityRule.hostGroupName)"
+                    Write-Host "Setting VMHost Rule $($vmHostAffinityRule.name) with VM Group $($vmHostAffinityRule.vmGroupName) and Host Group $($vmHostAffinityRule.hostGroupName)"
                     Set-DrsVMHostRule -rule $hostRule -VMGroup $vmHostAffinityRule.vmGroupName -VMHostGroup $vmHostAffinityRule.hostGroupName -Type $vmHostAffinityRule.variant -confirm:$false | Out-Null
                 }
                 else {
-                    Write-Output "Creating VMHost Rule $($vmHostAffinityRule.name) with VM Group $($vmHostAffinityRule.vmGroupName) and Host Group $($vmHostAffinityRule.hostGroupName)"
+                    Write-Host "Creating VMHost Rule $($vmHostAffinityRule.name) with VM Group $($vmHostAffinityRule.vmGroupName) and Host Group $($vmHostAffinityRule.hostGroupName)"
                     New-DrsVMHostRule -Name $vmHostAffinityRule.name -Cluster $clusterName -VMGroup $vmHostAffinityRule.vmGroupName -VMHostGroup $vmHostAffinityRule.hostGroupName -Type $vmHostAffinityRule.variant | Out-Null
                 }
             }
             Foreach ($vmToVmDependencyRule in $drsRulesAndGroups.vmToVmDependencyRules) {
                 $dependencyRule = (Get-Cluster -Name $clusterName).ExtensionData.Configuration.Rule | Where-Object { $_.DependsOnVmGroup -and $_.name -eq $vmToVmDependencyRule.name -and $_.vmGroup -eq $vmToVmDependencyRule.vmGroup -and $_.DependsOnVmGroup -eq $vmToVmDependencyRule.DependsOnVmGroup }
                 If (!$dependencyRule) {
-                    Write-Output "Creating VM to VM Dependency Rule where $($vmToVmDependencyRule.vmGroup) depends on $($vmToVmDependencyRule.DependsOnVmGroup) "
+                    Write-Host "Creating VM to VM Dependency Rule where $($vmToVmDependencyRule.vmGroup) depends on $($vmToVmDependencyRule.DependsOnVmGroup) "
                     $cluster = Get-Cluster -Name $clusterName
                     $spec = New-Object VMware.Vim.ClusterConfigSpecEx
                     $newRule = New-Object VMware.Vim.ClusterDependencyRuleInfo
@@ -2859,24 +2872,24 @@ Function Resolve-PhysicalHostTransportNodes
         [Parameter (Mandatory = $true)][String] $nsxManagerAdminPassword
     )
     $vCenterConnection = Connect-VIServer -server $vCenterFQDN -username $vCenterAdmin -password $vCenterAdminPassword
-    Write-Output "Getting Hosts for Cluster $clusterName"
+    Write-Host "Getting Hosts for Cluster $clusterName"
     $clusterHosts = (Get-Cluster -name $clusterName | Get-VMHost).name
     
     $headers = VCFIRCreateHeader -username $nsxManagerAdmin -password $nsxManagerAdminPassword
     
     #Get TransportNodes
     $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/"
-    Write-Output "Getting Transport Nodes from $nsxManagerFqdn"
+    Write-Host "Getting Transport Nodes from $nsxManagerFqdn"
     $transportNodeContents = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
     $allHostTransportNodes = ($transportNodeContents.results | Where-Object { ($_.resource_type -eq "TransportNode") -and ($_.node_deployment_info.os_type -eq "ESXI") })
-    Write-Output "Filtering Transport Nodes to members of cluster $clusterName"
+    Write-Host "Filtering Transport Nodes to members of cluster $clusterName"
     $hostIDs = ($allHostTransportNodes | Where-Object { $_.display_name -in $clusterHosts }).id
 
     #Resolve Hosts
     Foreach ($hostID in $hostIDs) {
         $body = "{`"id`":5726703,`"method`":`"resolveError`",`"params`":[{`"errors`":[{`"user_metadata`":{`"user_input_list`":[]},`"error_id`":26080,`"entity_id`":`"$hostID`"}]}]}"
         $uri = "https://$nsxManagerFqdn/nsxapi/rpc/call/ErrorResolverFacade"
-        Write-Output "Resolving NSX Installation on $(($allHostTransportNodes | Where-Object {$_.id -eq $hostID}).display_name) "
+        Write-Host "Resolving NSX Installation on $(($allHostTransportNodes | Where-Object {$_.id -eq $hostID}).display_name) "
         $response = Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -headers $headers -body $body
     }    
 }
@@ -2933,7 +2946,7 @@ Function Invoke-NSXEdgeClusterRecovery
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
         [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
         [Parameter (Mandatory = $true)][String] $clusterName,
-        [Parameter (Mandatory = $false)][String] $resourcePoolName,
+        #[Parameter (Mandatory = $false)][String] $resourcePoolName,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile
     )
 
@@ -2941,7 +2954,7 @@ Function Invoke-NSXEdgeClusterRecovery
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
 
     $vcenterConnection = Connect-VIServer -server $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
-    If ($resourcePoolName)
+    <# If ($resourcePoolName)
     {
         $resourcePool = Get-ResourcePool -name $resourcePoolName
         $MoRef = $resourcePool.ExtensionData.MoRef.Value    
@@ -2951,77 +2964,118 @@ Function Invoke-NSXEdgeClusterRecovery
         $cluster = Get-Cluster -name $clusterName
         $MoRef = $cluster.ExtensionData.MoRef.Value    
     }
-    #Get TransportNodes
-    $headers = VCFIRCreateHeader -username $nsxManagerAdmin -password $nsxManagerAdminPassword
-    $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/"
-    $transportNodeContents = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
-    $allEdgeTransportNodes = ($transportNodeContents.results | Where-Object { ($_.node_deployment_info.resource_type -eq "EdgeNode") -and ($_.node_deployment_info.deployment_config.vm_deployment_config.compute_id -eq $MoRef)}) | Sort-Object -Property display_name
-    #Redeploy Failed Edges
+    #>
+    #Get all Resource Pool moRefs and add cluster moReg
+    $resourcePools = @(Get-Cluster -name $clusterName | Get-ResourcePool | Where-Object {$_.name -ne "Resources"})
+    $cluster = (Get-Cluster -name $clusterName)
     
-    Foreach ($edge in $allEdgeTransportNodes)
+    $edgeLocations = @()
+    Foreach ($resourcePool in $resourcePools)
     {
-        $edgeVmPresent = get-vm -name $edge.display_name -ErrorAction SilentlyContinue
-        If (!$edgeVmPresent)
+        $edgeLocations += [PSCustomObject]@{
+            'Type' = 'ResourcePool'
+            'Name' = $resourcePool.Name
+            'moRef' = $resourcePool.extensionData.moref.value
+        }
+    }
+    $edgeLocations += [PSCustomObject]@{
+        'Type' = 'Cluster'
+        'Name' = $cluster.Name
+        'moRef' = $cluster.extensionData.moref.value
+    }
+
+    Foreach ($edgeLocation in $edgeLocations)
+    {
+        #Get TransportNodes
+        Write-Host "Looking for Edges to recover in $($edgeLocation.type): $($edgeLocation.name)"
+        $headers = VCFIRCreateHeader -username $nsxManagerAdmin -password $nsxManagerAdminPassword
+        $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/"
+        $transportNodeContents = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
+        $allEdgeTransportNodes = ($transportNodeContents.results | Where-Object { ($_.node_deployment_info.resource_type -eq "EdgeNode") -and ($_.node_deployment_info.deployment_config.vm_deployment_config.compute_id -eq $edgeLocation.MoRef)}) | Sort-Object -Property display_name
+        
+        If ($allEdgeTransportNodes)
         {
-            #Getting Existing Placement Details
-            Write-Host "[$($edge.display_name)] Getting Placement References"
-            $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($edge.node_id)"
-            $edgeConfig = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
-            $vmDeploymentConfig = $edgeConfig.node_deployment_info.deployment_config.vm_deployment_config
-            $NumCpu = $vmDeploymentConfig.resource_allocation.cpu_count
-            $memoryGB = $vmDeploymentConfig.resource_allocation.memory_allocation_in_mb / 1024
-            $cpuShareLevel = (($vmDeploymentConfig.reservation_info.cpu_reservation.reservation_in_shares -split("_"))[0]).tolower()
-            $attachedNetworks = $vmDeploymentConfig.data_network_ids
-
-            #Create Dummy VM
-            Write-Host "[$($edge.display_name)] Preparing to Update Placement References"
-            $clusterVdsName = ($extractedSddcData.workloadDomains | Where-Object {$_.primaryClusterDetails.name -eq $clusterName}).primaryClusterDetails.vdsdetails.dvsName
-            $portgroup = (($extractedSddcData.workloadDomains | Where-Object {$_.primaryClusterDetails.name -eq $clusterName}).primaryClusterDetails.vdsdetails.portgroups | Where-Object {$_.transportType -eq 'MANAGEMENT'}).NAME 
-            $nestedNetworkPG = Get-VDPortGroup -name $portgroup -ErrorAction silentlyContinue | Where-Object {$_.VDSwitch -match $clusterVdsName}
-            $datastore = ($extractedSddcData.workloadDomains | Where-Object {$_.primaryClusterDetails.name -eq $clusterName}).primaryClusterDetails.primaryDatastoreName
-            New-VM -VMhost (get-cluster -name $clusterName | Get-VMHost | Get-Random ) -Name $edge.display_name -Datastore $datastore -resourcePool $resourcePoolName -DiskGB 200 -DiskStorageFormat Thin -MemoryGB $MemoryGB -NumCpu $NumCpu -portgroup $portgroup -GuestID "ubuntu64Guest" -Confirm:$false | Out-Null
-            Get-VM -Name $edge.display_name | Get-VMResourceConfiguration | Set-VMResourceConfiguration -MemReservationGB $memoryGB | Out-Null
-            Get-VM -Name $edge.display_name | Get-VMResourceConfiguration | Set-VMResourceConfiguration -CpuSharesLevel $cpuShareLevel | Out-Null
-            Foreach ($attachedNetwork in $attachedNetworks)
+            Write-Host "Found Edges to recover: $($allEdgeTransportNodes.display_name -join(","))"
+        }
+        else 
+        {
+            Write-Host "No Edges found needing recovery"
+        }
+        #Redeploy Failed Edges
+        Foreach ($edge in $allEdgeTransportNodes)
+        {
+            $edgeVmPresent = get-vm -name $edge.display_name -ErrorAction SilentlyContinue
+            If (!$edgeVmPresent)
             {
-                $attachedNetworkPg = Get-VDPortGroup -id ("DistributedVirtualPortgroup-" + $attachedNetwork)
-                Get-VM -Name $edge.display_name | New-NetworkAdapter -portGroup $attachedNetworkPg -StartConnected -Type Vmxnet3 -Confirm:$false | Out-Null
-            }
-            $vmID = (get-vm -name $edge.display_name).extensionData.moref.value
-            
-            #Build Edge DeploymentSpec
-            Write-Host "[$($edge.display_name)] Updating Placement References"
-            $datastoreMoRef = (Get-Datastore -name $datastore).ExtensionData.moref.value
-            $vmDeploymentConfig.storage_id = $datastoreMoRef
-            $nodeUserSettingsObject = New-Object -type psobject
-            $nodeUserSettingsObject | Add-Member -NotePropertyName 'cli_username' -NotePropertyValue 'admin'
-            $nodeUserSettingsObject | Add-Member -NotePropertyName 'audit_username' -NotePropertyValue 'audit'
-            $edgeRefreshObject = New-Object -type psobject
-            $edgeRefreshObject | Add-Member -NotePropertyName 'vm_id' -NotePropertyValue $vmID
-            $edgeRefreshObject | Add-Member -NotePropertyName 'vm_deployment_config' -NotePropertyValue $vmDeploymentConfig
-            $edgeRefreshObject | Add-Member -NotePropertyName 'node_user_settings' -NotePropertyValue $nodeUserSettingsObject
-            $vmDeploymentConfigJson = $edgeRefreshObject | Convertto-Json -depth 10
-            $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($edge.node_id)?action=addOrUpdatePlacementReferences"
-            $edgeReConfig = (Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -body $vmDeploymentConfigJson -headers $headers).content | ConvertFrom-Json
+                #Getting Existing Placement Details
+                Write-Host "[$($edge.display_name)] Getting Placement References"
+                $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($edge.node_id)"
+                $edgeConfig = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
+                $vmDeploymentConfig = $edgeConfig.node_deployment_info.deployment_config.vm_deployment_config
+                $NumCpu = $vmDeploymentConfig.resource_allocation.cpu_count
+                $memoryGB = $vmDeploymentConfig.resource_allocation.memory_allocation_in_mb / 1024
+                $cpuShareLevel = (($vmDeploymentConfig.reservation_info.cpu_reservation.reservation_in_shares -split("_"))[0]).tolower()
+                $attachedNetworks = $vmDeploymentConfig.data_network_ids
 
-            #Redeploy Edge
-            Write-Host "[$($edge.display_name)] Getting Edge State"
-            $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($edge.node_id)/state"
-            $edgeState = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
-            If ($edgeState.node_deployment_state.state -ne "success")
-            {
-                Write-Host "[$($edge.display_name)] State is $($edgeState.node_deployment_state.state)"
-                If ($edgeState.node_deployment_state.state -in "MPA_DISCONNECTED","VM_PLACEMENT_REFRESH_FAILED","NODE_READY")
+                #Create Dummy VM
+                Write-Host "[$($edge.display_name)] Preparing to Update Placement References"
+                $clusterVdsName = ($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object {$_.name -eq $clusterName}).vdsdetails.dvsName
+                $portgroup = (($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object {$_.name -eq $clusterName}).vdsdetails.portgroups | Where-Object {$_.transportType -eq 'MANAGEMENT'}).NAME 
+                $nestedNetworkPG = Get-VDPortGroup -name $portgroup -ErrorAction silentlyContinue | Where-Object {$_.VDSwitch -match $clusterVdsName}
+                $datastore = ($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object {$_.name -eq $clusterName}).primaryDatastoreName
+                
+                If ($edgeLocation.type -eq "ResourcePool")
                 {
-                    Write-Host "[$($edge.display_name)] Redeploying Edge"
-                    $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($edge.node_id)"
-                    $edgeResponse = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content
-                    $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($edge.node_id)?action=redeploy"
-                    $edgeRedeploy = Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -body $edgeResponse -headers $headers
+                    New-VM -VMhost (get-cluster -name $clusterName | Get-VMHost | Get-Random ) -Name $edge.display_name -Datastore $datastore -resourcePool $edgeLocation.name -DiskGB 200 -DiskStorageFormat Thin -MemoryGB $MemoryGB -NumCpu $NumCpu -portgroup $portgroup -GuestID "ubuntu64Guest" -Confirm:$false | Out-Null
                 }
                 else 
-                {   
-                    Write-Host "[$($edge.display_name)] Not in a suitable state for redeployment. Please review and retry"
+                {
+                    New-VM -VMhost (get-cluster -name $clusterName | Get-VMHost | Get-Random ) -Name $edge.display_name -Datastore $datastore -DiskGB 200 -DiskStorageFormat Thin -MemoryGB $MemoryGB -NumCpu $NumCpu -portgroup $portgroup -GuestID "ubuntu64Guest" -Confirm:$false | Out-Null
+                }
+                
+                Get-VM -Name $edge.display_name | Get-VMResourceConfiguration | Set-VMResourceConfiguration -MemReservationGB $memoryGB | Out-Null
+                Get-VM -Name $edge.display_name | Get-VMResourceConfiguration | Set-VMResourceConfiguration -CpuSharesLevel $cpuShareLevel | Out-Null
+                Foreach ($attachedNetwork in $attachedNetworks)
+                {
+                    $attachedNetworkPg = Get-VDPortGroup -id ("DistributedVirtualPortgroup-" + $attachedNetwork)
+                    Get-VM -Name $edge.display_name | New-NetworkAdapter -portGroup $attachedNetworkPg -StartConnected -Type Vmxnet3 -Confirm:$false | Out-Null
+                }
+                $vmID = (get-vm -name $edge.display_name).extensionData.moref.value
+                
+                #Build Edge DeploymentSpec
+                Write-Host "[$($edge.display_name)] Updating Placement References"
+                $datastoreMoRef = (Get-Datastore -name $datastore).ExtensionData.moref.value
+                $vmDeploymentConfig.storage_id = $datastoreMoRef
+                $nodeUserSettingsObject = New-Object -type psobject
+                $nodeUserSettingsObject | Add-Member -NotePropertyName 'cli_username' -NotePropertyValue 'admin'
+                $nodeUserSettingsObject | Add-Member -NotePropertyName 'audit_username' -NotePropertyValue 'audit'
+                $edgeRefreshObject = New-Object -type psobject
+                $edgeRefreshObject | Add-Member -NotePropertyName 'vm_id' -NotePropertyValue $vmID
+                $edgeRefreshObject | Add-Member -NotePropertyName 'vm_deployment_config' -NotePropertyValue $vmDeploymentConfig
+                $edgeRefreshObject | Add-Member -NotePropertyName 'node_user_settings' -NotePropertyValue $nodeUserSettingsObject
+                $vmDeploymentConfigJson = $edgeRefreshObject | Convertto-Json -depth 10
+                $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($edge.node_id)?action=addOrUpdatePlacementReferences"
+                $edgeReConfig = (Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -body $vmDeploymentConfigJson -headers $headers).content | ConvertFrom-Json
+
+                #Redeploy Edge
+                Write-Host "[$($edge.display_name)] Getting Edge State"
+                $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($edge.node_id)/state"
+                $edgeState = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
+                If ($edgeState.node_deployment_state.state -ne "success")
+                {
+                    Write-Host "[$($edge.display_name)] State is $($edgeState.node_deployment_state.state)"
+                    If ($edgeState.node_deployment_state.state -in "MPA_DISCONNECTED","VM_PLACEMENT_REFRESH_FAILED","NODE_READY")
+                    {
+                        Write-Host "[$($edge.display_name)] Redeploying Edge"
+                        $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($edge.node_id)"
+                        $edgeResponse = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content
+                        $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($edge.node_id)?action=redeploy"
+                        $edgeRedeploy = Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -body $edgeResponse -headers $headers
+                    }
+                    else 
+                    {   
+                        Write-Host "[$($edge.display_name)] Not in a suitable state for redeployment. Please review and retry"
+                    }
                 }
             }
         }
