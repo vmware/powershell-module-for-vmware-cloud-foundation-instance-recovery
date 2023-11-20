@@ -1441,6 +1441,48 @@ Export-ModuleMember -Function New-ReconstructedPartialBringupJsonSpec
 
 #EndRegion Data Gathering
 
+#Region SDDC Manager Functions
+Function Invoke-SDDCManagerRestore
+{
+    Param(
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
+        [Parameter (Mandatory = $true)][String] $backupFilePath,
+        #[Parameter (Mandatory = $true)][String] $encryptionPassword,
+        [Parameter (Mandatory = $true)][String] $vcfAdminUserPassword,
+        [Parameter (Mandatory = $true)][String] $vcfAPIUserPassword
+    )
+    $backupFilePath = (Resolve-Path -Path $backupFilePath).path
+    $backupFileName = (Get-ChildItem -path $backupFilePath).name
+    $parentFolder = Split-Path -Path $backupFilePath
+    $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
+    $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
+
+    #Establish Session to SDDC Manager
+    $sddcManagerFqdn = $extractedSddcData.sddcManager.fqdn
+    $SecurePassword = ConvertTo-SecureString -String $vcfAdminUserPassword -AsPlainText -Force
+    $mycreds = New-Object System.Management.Automation.PSCredential ('vcf', $SecurePassword)
+    $inmem = New-SSHMemoryKnownHost
+    New-SSHTrustedHost -KnownHostStore $inmem -HostName $sddcManagerFqdn -FingerPrint ((Get-SSHHostKey -ComputerName $sddcManagerFqdn).fingerprint) | Out-Null
+    Do
+    {
+        $sshSession = New-SSHSession -computername $sddcManagerFqdn -Credential $mycreds -KnownHost $inmem
+    } Until ($sshSession)
+
+    #Execute Restore
+    $scriptText = "curl https://$sddcManagerFqdn/v1/tokens -k -X POST -H `"Content-Type: application/json`" -d `'{`"username`": `"admin@local`",`"password`": `"$vcfAPIUserPassword`"}`' | awk -F `"\`"`" `'{ print `$4}`'"
+    $token = (Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $scriptText).output
+    $scriptText = "curl https://$sddcManagerFqdn/v1/restores/tasks -k -X POST -H `"Content-Type: application/json`" -H `"Authorization: Bearer $token`" -d `'{`"elements`" : [ {`"resourceType`" : `"SDDC_MANAGER`"} ],`"backupFile`" : `"/tmp/$backupFileName`",`"encryption`" : {`"passphrase`" : `"$vcfAPIUserPassword`"}}`' | json_pp | jq `'.id`' | cut -d `'`"`' -f 2"
+    $restoreID = (Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $scriptText).output
+    $scriptText = "curl https://$sddcManagerFqdn/v1/restores/tasks/$restoreID -k -X GET -H `"Content-Type: application/json`" -H `"Authorization: Bearer $token`" | json_pp"
+    $restoreProgress = (Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $scriptText).output
+    Return $restoreProgress
+
+    #Alternative
+    #$tokenRequest = Request-VCFToken -fqdn $sddcManagerFQDN -username $sddcManagerAdmin -password $sddcManagerAdminPassword
+}
+
+#EndRegion SDDC Manager Functions
+
 #Region vCenter Functions
 
 Function Move-ClusterHostsToRestoredVcenter
