@@ -1478,7 +1478,22 @@ Function Invoke-SDDCManagerRestore
     Return $restoreProgress
 
     #Alternative
-    #$tokenRequest = Request-VCFToken -fqdn $sddcManagerFQDN -username $sddcManagerAdmin -password $sddcManagerAdminPassword
+    <# $accessToken = Request-VCFToken -fqdn $sddcManagerFQDN -username $sddcManagerAdmin -password $sddcManagerAdminPassword
+    $headers = @{"Accept" = "application/json" }
+    $headers.Add("Authorization", "Bearer $accessToken")
+    $jsonBody = '{
+        "elements" : [ {
+            "resourceType" : "SDDC_MANAGER"
+        } ],
+        "backupFile" : "/tmp/$backupFileName",
+        "encryption" : {
+        "passphrase" : "$vcfAPIUserPassword"
+        }
+    }'
+    $uri = "https://$sddcManager/v1/restores/tasks"
+    $restoreId = Invoke-RestMethod -Method POST -Uri $uri -Headers $headers -ContentType 'application/json' -Body $jsonBody
+    $uri = "https://$sddcManager/v1/restores/tasks/$restoreId"
+    $restoreTask = Invoke-RestMethod -Method GET -Uri $uri -Headers $headers -ContentType 'application/json' #>
 }
 
 #EndRegion SDDC Manager Functions
