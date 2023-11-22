@@ -1519,12 +1519,19 @@ Function Invoke-SDDCManagerRestore
         $scriptText = "curl https://$extractedSddcManagerFqdn/v1/vcf-services  -k -X GET -H `"Content-Type: application/json`" -H `"Authorization: Bearer $token`" | json_pp"
         Write-Host "[$extractedSddcManagerFqdn] Waiting for Operations Manager Service to be Up"
         $Counter = 0
-        Do
+        $SddcManagerServiceStatus = (Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $scriptText).output
+        $operationsManagerServiceStatus = (($SddcManagerServiceStatus | ConvertFrom-Json).elements | Where-Object {$_.name -eq "OPERATIONS_MANAGER"}).status
+        If ($operationsManagerServiceStatus -ne "UP") 
         {
-            $Global:SddcManagerServiceStatus = (Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $scriptText).output
-            $operationsManagerServiceStatus = (($SddcManagerServiceStatus | ConvertFrom-Json).elements | Where-Object {$_.name -eq "OPERATIONS_MANAGER"}).status
-            If ($operationsManagerServiceStatus -ne "UP") {$counter ++; Write-Host "operationsManagerServiceStatus status is $operationsManagerServiceStatus. Wait $counter"; Sleep 10}
-        } While ($operationsManagerServiceStatus -ne "UP")
+            Do
+            {
+                $counter ++; 
+                Sleep 10
+                $SddcManagerServiceStatus = (Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $scriptText).output
+                $operationsManagerServiceStatus = (($SddcManagerServiceStatus | ConvertFrom-Json).elements | Where-Object {$_.name -eq "OPERATIONS_MANAGER"}).status
+                Write-Host "operationsManagerServiceStatus status is $([STRING]$operationsManagerServiceStatus). Wait $counter"
+            } While ($operationsManagerServiceStatus -ne "UP")
+        }
         $scriptText = "curl https://$extractedSddcManagerFqdn/v1/restores/tasks -k -X POST -H `"Content-Type: application/json`" -H `"Authorization: Bearer $token`" -d `'{`"elements`" : [ {`"resourceType`" : `"SDDC_MANAGER`"} ],`"backupFile`" : `"/tmp/$backupFileName`",`"encryption`" : {`"passphrase`" : `"$localUserPassword`"}}`' | json_pp | jq `'.id`' | cut -d `'`"`' -f 2"
         Do
         {
