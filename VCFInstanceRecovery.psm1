@@ -1476,7 +1476,6 @@ Function Invoke-SDDCManagerRestore
     {
         $sshSession = New-SSHSession -computername $extractedSddcManagerFqdn -Credential $mycreds -KnownHost $inmem
     } Until ($sshSession)
-    $stream = New-SSHShellStream -SSHSession $sshSession
 
     #Upload Modified Restore Status Json
     Write-Host "[$extractedSddcManagerFqdn] Configuring Restore Process"
@@ -1489,12 +1488,19 @@ Function Invoke-SDDCManagerRestore
     {
         $sourceFile = "$modulePath\reference-files\old_restore_status.json"
     }
+
+    $stream = New-SSHShellStream -SSHSession $sshSession
     $stream.writeline("su -")
+    Start-Sleep -Milliseconds 500
     $stream.writeline("$rootUserPassword")
+    Start-Sleep -Milliseconds 500
     $stream.writeline("cp /opt/vmware/sddc-support/backup/restore_status.json /opt/vmware/sddc-support/backup/restore_status.json.bak")
+    Start-Sleep -Milliseconds 500
     $uploadFile = Set-SCPItem -ComputerName $extractedSddcManagerFqdn -Credential $mycreds -path $sourceFile -destination "/tmp" -KnownHost $inmem
     $stream.writeline("cp /tmp/new_restore_status.json /opt/vmware/sddc-support/backup/restore_status.json")
+    Start-Sleep -Milliseconds 500
     $stream.writeline("chmod 640 /opt/vmware/sddc-support/backup/restore_status.json")
+    Start-Sleep -Milliseconds 500
    
     #Execute Restore
     Write-Host "[$extractedSddcManagerFqdn] Performing Restore"
