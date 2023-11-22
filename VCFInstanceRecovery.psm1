@@ -1508,10 +1508,12 @@ Function Invoke-SDDCManagerRestore
     $token = (Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $scriptText).output
     If ($token)
     {
-        #$scriptText = "curl https://$extractedSddcManagerFqdn/v1/restores/tasks -k -X POST -H `"Content-Type: application/json`" -H `"Authorization: Bearer $token`" -d `'{`"elements`" : [ {`"resourceType`" : `"SDDC_MANAGER`"} ],`"backupFile`" : `"/tmp/$backupFileName`",`"encryption`" : {`"passphrase`" : `"$localUserPassword`"}}`' | json_pp | jq `'.id`' | cut -d `'`"`' -f 2"
-        $scriptText = "curl https://$extractedSddcManagerFqdn/v1/restores/tasks -k -X POST -H `"Content-Type: application/json`" -H `"Authorization: Bearer $token`" -d `'{`"elements`" : [ {`"resourceType`" : `"SDDC_MANAGER`"} ],`"backupFile`" : `"/tmp/$backupFileName`",`"encryption`" : {`"passphrase`" : `"$localUserPassword`"}}`'"
-        $restoreResponse = (Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $scriptText).output
-        $restoreID = ($restoreResponse | ConvertFrom-Json).id
+        $scriptText = "curl https://$extractedSddcManagerFqdn/v1/restores/tasks -k -X POST -H `"Content-Type: application/json`" -H `"Authorization: Bearer $token`" -d `'{`"elements`" : [ {`"resourceType`" : `"SDDC_MANAGER`"} ],`"backupFile`" : `"/tmp/$backupFileName`",`"encryption`" : {`"passphrase`" : `"$localUserPassword`"}}`' | json_pp | jq `'.id`' | cut -d `'`"`' -f 2"
+        Do
+        {
+            Sleep 10
+            $restoreID = (Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $scriptText).output
+        } Until ($restoreId)
         If ($restoreID)
         {
             $scriptText = "curl https://$extractedSddcManagerFqdn/v1/restores/tasks/$restoreID -k -X GET -H `"Content-Type: application/json`" -H `"Authorization: Bearer $token`" | json_pp"
@@ -1526,7 +1528,6 @@ Function Invoke-SDDCManagerRestore
         else 
         {
             Write-Host "Restore Task ID not returned"
-            $Global:debugOutput = $restoreResponse
         }
     }
     else 
