@@ -1,8 +1,14 @@
 # Release History
 
-## v1.0.6
+## v1.0.7
 
 > Released: 2023-11-xx
+
+- Added `Invoke-SDDCManagerRestore` to automated recovery
+
+## v1.0.6
+
+> Released: 2023-11-20
 
 - Modified `New-ExtractDataFromSDDCBackup` to capture data on all clusters in a workload domain rather than just the primaryCluster
 - Modified `New-ReconstructedPartialBringupJsonSpec` to handle changes in `New-ExtractDataFromSDDCBackup`
