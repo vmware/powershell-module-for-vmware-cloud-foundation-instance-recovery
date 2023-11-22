@@ -1522,7 +1522,7 @@ Function Invoke-SDDCManagerRestore
         Do
         {
             $operationsManagerService = ((((Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $scriptText).output) | ConvertFrom-Json).elements | Where-Object {$_.name -eq "OPERATIONS_MANAGER"}).status
-            If ($operationsManagerService -ne "UP") {$counter ++; Write-Host "Wait $counter"; Sleep 10;}
+            If ($operationsManagerService -ne "UP") {$counter ++; Write-Host "operationsManagerService status is $operationsManagerService. Wait $counter"; Sleep 10;}
         } Until ($operationsManagerService -eq "UP")
         $scriptText = "curl https://$extractedSddcManagerFqdn/v1/restores/tasks -k -X POST -H `"Content-Type: application/json`" -H `"Authorization: Bearer $token`" -d `'{`"elements`" : [ {`"resourceType`" : `"SDDC_MANAGER`"} ],`"backupFile`" : `"/tmp/$backupFileName`",`"encryption`" : {`"passphrase`" : `"$localUserPassword`"}}`' | json_pp | jq `'.id`' | cut -d `'`"`' -f 2"
         Do
