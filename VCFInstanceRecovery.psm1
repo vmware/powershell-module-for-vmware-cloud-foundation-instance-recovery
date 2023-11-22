@@ -201,14 +201,14 @@ Function New-ExtractDataFromSDDCBackup
         [Parameter (Mandatory = $true)][String] $backupFilePath,
         [Parameter (Mandatory = $true)][String] $encryptionPassword
     )
-    $backupFilePath = (Resolve-Path -Path $backupFilePath).path
-    $backupFileName = (Get-ChildItem -path $backupFilePath).name
-    $parentFolder = Split-Path -Path $backupFilePath
+    $backupFileFullPath = (Resolve-Path -Path $backupFilePath).path
+    $backupFileName = (Get-ChildItem -path $backupFileFullPath).name
+    $parentFolder = Split-Path -Path $backupFileFullPath
     $extractedBackupFolder = ($backupFileName -Split(".tar.gz"))[0]
     
     #Decrypt Backup
     Write-Host "Decrypting Backup"
-    $command = "openssl enc -d -aes-256-cbc -md sha256 -in $backupFilePath -pass pass:`"$encryptionPassword`" -out `"$parentFolder\decrypted-sddc-manager-backup.tar.gz`""
+    $command = "openssl enc -d -aes-256-cbc -md sha256 -in $backupFileFullPath -pass pass:`"$encryptionPassword`" -out `"$parentFolder\decrypted-sddc-manager-backup.tar.gz`""
     Invoke-Expression "& $command" *>$null
 
     #Extract Backup
@@ -1109,8 +1109,8 @@ Function New-UploadAndModifySDDCManagerBackup
     $mgmtVcenterFqdn =  $mgmtWorkloadDomain.vCenterDetails.fqdn
     $sddcManagerFQDN = $extractedSddcData.sddcManager.fqdn
     $sddcManagerVmName = $extractedSddcData.sddcManager.vmName
-    $backupFilePath = (Resolve-Path -Path $backupFilePath).path
-    $backupFileName = (Get-ChildItem -path $backupFilePath).name
+    $backupFileFullPath = (Resolve-Path -Path $backupFilePath).path
+    $backupFileName = (Get-ChildItem -path $backupFileFullPath).name
     $extractedBackupFolder = ($backupFileName -Split(".tar.gz"))[0]
     
     #Establish SSH Connection to SDDC Manager
@@ -1138,7 +1138,7 @@ Function New-UploadAndModifySDDCManagerBackup
     #Upload Backup
     $vCenterConnection = Connect-VIServer -server $tempvCenterFqdn -user $tempvCenterAdmin -password $tempvCenterAdminPassword
     Write-Host "Uploading Backup File to SDDC Manager Appliance"
-    $copyFile = Copy-VMGuestFile -Source $backupFilePath -Destination "/tmp/$backupFileName" -LocalToGuest -VM $sddcManagerVmName -GuestUser "root" -GuestPassword $rootUserPassword -Force -WarningAction SilentlyContinue -WarningVariable WarnMsg
+    $copyFile = Copy-VMGuestFile -Source $backupFileFullPath -Destination "/tmp/$backupFileName" -LocalToGuest -VM $sddcManagerVmName -GuestUser "root" -GuestPassword $rootUserPassword -Force -WarningAction SilentlyContinue -WarningVariable WarnMsg
 
     #Decrypt/Extract Backup
     Write-Host "Decrypting Backup on SDDC Manager Appliance"
@@ -1454,9 +1454,9 @@ Function Invoke-SDDCManagerRestore
         [Parameter (Mandatory = $true)][String] $vcfAPIUserPassword,
         [Parameter (Mandatory = $true)][String] $vcfRootUserPassword
     )
-    $backupFilePath = (Resolve-Path -Path $backupFilePath).path
-    $backupFileName = (Get-ChildItem -path $backupFilePath).name
-    $parentFolder = Split-Path -Path $backupFilePath
+    $backupFileFullPath = (Resolve-Path -Path $backupFilePath).path
+    $backupFileName = (Get-ChildItem -path $backupFileFullPath).name
+    $parentFolder = Split-Path -Path $backupFileFullPath
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
 
