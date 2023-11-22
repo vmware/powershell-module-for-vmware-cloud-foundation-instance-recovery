@@ -1138,9 +1138,9 @@ Function New-UploadAndModifySDDCManagerBackup
     
     #Determine new SSH Keys
     $newNistKey = '"' + (($result | Where-Object {$_ -like "*ecdsa-sha2-nistp256*"}).split("ecdsa-sha2-nistp256 "))[1] + '"'
-    If ($newNistKey) { Write-Host "New ecdsa-sha2-nistp256 key for $mgmtVcenterFqdn retrieved" }
+    If ($newNistKey) { Write-Host "[$sddcManagerFQDN] New ecdsa-sha2-nistp256 key for $mgmtVcenterFqdn retrieved" }
     $newRSAKey = '"' + (($result | Where-Object {$_ -like "*ssh-rsa*"}).split("ssh-rsa "))[1] + '"'
-    If ($newRSAKey) { Write-Host "New ssh-rsa key for $mgmtVcenterFqdn retrieved" }
+    If ($newRSAKey) { Write-Host "[$sddcManagerFQDN] New ssh-rsa key for $mgmtVcenterFqdn retrieved" }
 
     #Upload Backup
     $vCenterConnection = Connect-VIServer -server $tempvCenterFqdn -user $tempvCenterAdmin -password $tempvCenterAdminPassword
@@ -1521,9 +1521,10 @@ Function Invoke-SDDCManagerRestore
         $Counter = 0
         Do
         {
-            $operationsManagerService = ((((Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $scriptText).output) | ConvertFrom-Json).elements | Where-Object {$_.name -eq "OPERATIONS_MANAGER"}).status
-            If ($operationsManagerService -ne "UP") {$counter ++; Write-Host "operationsManagerService status is $operationsManagerService. Wait $counter"; Sleep 10;}
-        } Until ($operationsManagerService -eq "UP")
+            $SddcManagerServiceStatus = (Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $scriptText).output
+            $operationsManagerServiceStatus = (($SddcManagerServiceStatus | ConvertFrom-Json).elements | Where-Object {$_.name -eq "OPERATIONS_MANAGER"}).status
+            If ($operationsManagerServiceStatus -ne "UP") {$counter ++; Write-Host "operationsManagerServiceStatus status is $operationsManagerServiceStatus. Wait $counter"; Sleep 10;}
+        } Until ($operationsManagerServiceStatus -eq "UP")
         $scriptText = "curl https://$extractedSddcManagerFqdn/v1/restores/tasks -k -X POST -H `"Content-Type: application/json`" -H `"Authorization: Bearer $token`" -d `'{`"elements`" : [ {`"resourceType`" : `"SDDC_MANAGER`"} ],`"backupFile`" : `"/tmp/$backupFileName`",`"encryption`" : {`"passphrase`" : `"$localUserPassword`"}}`' | json_pp | jq `'.id`' | cut -d `'`"`' -f 2"
         Do
         {
