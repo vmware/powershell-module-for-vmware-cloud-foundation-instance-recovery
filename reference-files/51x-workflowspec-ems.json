@@ -1,0 +1,69 @@
+{
+  "state": "Processing",
+  "name": "Bringup-Ems",
+  "description": "Bringup",
+  "inputs": {},
+  "outputs": {},
+  "statetransitions": [
+    {
+    "Action": "RegisterBringupDeploymentForCEIP"
+  },
+    {
+      "Action": "ValidateThumbprints"
+    },
+    {
+      "Action": "TrustCertificates"
+    },
+    {
+      "Action": "ImportSSHKeys"
+    },
+    {
+      "Action": "InitialEnvironmentSetup"
+    },
+    {
+      "Action": "VCDeployment"
+    },
+    {
+      "Action": "ManagementClusterContractConfiguration",
+      "OutputMap": {
+        "clusterMoid": "clusterMoid",
+        "clusterName": "clusterName",
+        "vdsNameToVdsSourceId": "vdsNameToVdsSourceId"
+      }
+    },
+    {
+      "Action": "ManagementClusterConfiguration"
+    },
+    {
+      "Action": "VsanClaimDisksAction"
+    },
+    {
+      "Action": "PostManagementClusterClaimDiskConfiguration"
+    },
+    {
+      "Action": "PostManagementClusterConfiguration"
+    },
+    {
+      "Action": "EnableVsphereClusterServices",
+      "InputMap": {
+        "clusterMoid": "clusterMoid"
+      }
+    },
+    {
+      "Action": "ApplyEsxLicense"
+    },
+    {
+      "Action": "EnableVsanMonitoring",
+      "InputMap": {
+        "clusterMoid": "clusterMoid"
+      }
+    },
+    {
+      "Action": "VCenterServiceAccountsConfiguration",
+      "OutputMap": {
+        "vcenterServiceAccount": "vcenterServiceAccount",
+        "nsxtVcenterServiceAccount": "nsxtVcenterServiceAccount"
+      }
+    }
+  ]
+}

@@ -257,7 +257,7 @@ Function New-ExtractDataFromSDDCBackup
     Write-Host "Retrieving NSX Manager Details"
     
     #Get All NSX Manager Clusters
-    $nsxManagerstartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.nsxt (id" | Select Line,LineNumber).LineNumber
+    $nsxManagerstartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.nsxt (id" | Select-Object Line,LineNumber).LineNumber
     $nsxManagerlineIndex = $nsxManagerstartingLineNumber
     $nsxtManagerClusters = @()
     Do 
@@ -290,7 +290,7 @@ Function New-ExtractDataFromSDDCBackup
     
     #Get Host and Domain Details
     Write-Host "Retrieving Host and Domain Mappings"
-    $hostsAndDomainsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.host_and_domain " | Select Line,LineNumber).LineNumber
+    $hostsAndDomainsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.host_and_domain " | Select-Object Line,LineNumber).LineNumber
     $hostsAndDomainsLineIndex = $hostsAndDomainsLineNumber
     $hostsAndDomains = @()
     Do 
@@ -311,7 +311,7 @@ Function New-ExtractDataFromSDDCBackup
 
     #Get Host and vCenter Details
     Write-Host "Retrieving Host and vCenter Mappings"
-    $hostsandVcentersLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.host_and_vcenter " | Select Line,LineNumber).LineNumber
+    $hostsandVcentersLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.host_and_vcenter " | Select-Object Line,LineNumber).LineNumber
     $hostsandVcentersLineIndex = $hostsandVcentersLineNumber
     $hostsandVcenters = @()
     Do 
@@ -332,7 +332,7 @@ Function New-ExtractDataFromSDDCBackup
 
     #Get Host and vCenter Details
     Write-Host "Retrieving vCenter Details"
-    $vCentersStartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.vcenter " | Select Line,LineNumber).LineNumber
+    $vCentersStartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.vcenter " | Select-Object Line,LineNumber).LineNumber
     $vCenterLineIndex = $vCentersStartingLineNumber
     $vCenters = @()
     Do 
@@ -361,7 +361,7 @@ Function New-ExtractDataFromSDDCBackup
 
     #Get Hosts and Pools
     Write-Host "Retrieving Host and Network Pool Mappings"
-    $hostsAndPoolsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.host_and_network_pool" | Select Line,LineNumber).LineNumber
+    $hostsAndPoolsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.host_and_network_pool" | Select-Object Line,LineNumber).LineNumber
     $hostsAndPoolsLineIndex = $hostsAndPoolsLineNumber
     $hostsandPools = @()
     Do 
@@ -382,7 +382,7 @@ Function New-ExtractDataFromSDDCBackup
 
     #Get Network Pools
     Write-Host "Retrieving Network Pool Details"
-    $networkPoolsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.network_pool " | Select Line,LineNumber).LineNumber
+    $networkPoolsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.network_pool " | Select-Object Line,LineNumber).LineNumber
     $networkPoolsLineIndex = $networkPoolsLineNumber
     $networkPools = @()
     Do 
@@ -403,7 +403,7 @@ Function New-ExtractDataFromSDDCBackup
 
     #Get VDSs
     Write-Host "Retrieving vDS Details"
-    $vdsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.vds" | Select Line,LineNumber).LineNumber
+    $vdsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.vds" | Select-Object Line,LineNumber).LineNumber
     $vdsLineIndex = $vdsLineNumber
     $virtualDistributedSwitches = @()
     Do 
@@ -432,7 +432,7 @@ Function New-ExtractDataFromSDDCBackup
 
     #Get Cluster and VDS
     Write-Host "Retrieving Cluster and vDS Mappings"
-    $clusterAndVdsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.cluster_and_vds" | Select Line,LineNumber).LineNumber
+    $clusterAndVdsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.cluster_and_vds" | Select-Object Line,LineNumber).LineNumber
     $clusterAndVdsLineIndex = $clusterAndVdsLineNumber
     $clusterAndVds = @()
     Do 
@@ -453,7 +453,7 @@ Function New-ExtractDataFromSDDCBackup
 
     #Get Clusters
     Write-Host "Retrieving Cluster Details"
-    $clustersLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.cluster " | Select Line,LineNumber).LineNumber
+    $clustersLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.cluster " | Select-Object Line,LineNumber).LineNumber
     $clustersLineIndex = $clustersLineNumber
     $clusters = @()
     Do 
@@ -513,7 +513,7 @@ Function New-ExtractDataFromSDDCBackup
 
     #Get Cluster and vCenter
     Write-Host "Retrieving Cluster and vCenter Mappings"
-    $clusterAndVcenterLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.cluster_and_vcenter" | Select Line,LineNumber).LineNumber
+    $clusterAndVcenterLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.cluster_and_vcenter" | Select-Object Line,LineNumber).LineNumber
     $clusterAndVcenterLineIndex = $clusterAndVcenterLineNumber
     $clusterAndVcenter = @()
     Do 
@@ -534,7 +534,7 @@ Function New-ExtractDataFromSDDCBackup
 
     #Get Cluster and Domain
     Write-Host "Retrieving Cluster and Domain Mappings"
-    $clusterAndDomainLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.cluster_and_domain" | Select Line,LineNumber).LineNumber
+    $clusterAndDomainLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.cluster_and_domain" | Select-Object Line,LineNumber).LineNumber
     $clusterAndDomainLineIndex = $clusterAndDomainLineNumber
     $clusterAndDomain = @()
     Do 
@@ -556,7 +556,7 @@ Function New-ExtractDataFromSDDCBackup
 
     #Get Pools and Networks
     Write-Host "Retrieving Network Pools and Network Mappings"
-    $poolsAndNetworksLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.vcf_network_and_network_pool" | Select Line,LineNumber).LineNumber
+    $poolsAndNetworksLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.vcf_network_and_network_pool" | Select-Object Line,LineNumber).LineNumber
     $poolsAndNetworksLineIndex = $poolsAndNetworksLineNumber
     $poolsAndNetworks = @()
     Do 
@@ -577,7 +577,7 @@ Function New-ExtractDataFromSDDCBackup
 
     #Get Networks
     Write-Host "Retrieving Network Details"
-    $networksLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.vcf_network " | Select Line,LineNumber).LineNumber
+    $networksLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.vcf_network " | Select-Object Line,LineNumber).LineNumber
     $networksLineIndex = $networksLineNumber
     $networks = @()
     Do 
@@ -613,7 +613,7 @@ Function New-ExtractDataFromSDDCBackup
 
     #Get License Models
     Write-Host "Retrieving Licensing Models"
-    $licenseModelLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY licensemanager.licensing_info" | Select Line,LineNumber).LineNumber
+    $licenseModelLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY licensemanager.licensing_info" | Select-Object Line,LineNumber).LineNumber
     $licenseModelLineIndex = $licenseModelLineNumber
     $licenseModels = @()
     Do 
@@ -637,7 +637,7 @@ Function New-ExtractDataFromSDDCBackup
     
     #Get License Keys
     Write-Host "Retrieving License Keys"
-    $licenseLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY licensemanager.licensekey" | Select Line,LineNumber).LineNumber
+    $licenseLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY licensemanager.licensekey" | Select-Object Line,LineNumber).LineNumber
     $licenseLineIndex = $licenseLineNumber
     $licenseKeys = @()
     Do 
@@ -662,7 +662,7 @@ Function New-ExtractDataFromSDDCBackup
 
     Write-Host "Assembling Workload Domain Data"
     #GetDomainDetails
-    $domainsStartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.domain (id" | Select Line,LineNumber).LineNumber
+    $domainsStartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.domain (id" | Select-Object Line,LineNumber).LineNumber
     $domainLineIndex = $domainsStartingLineNumber
     $workloadDomains = @()
     Do 
@@ -758,21 +758,24 @@ Function New-ExtractDataFromSDDCBackup
         $domainLineIndex++
     } Until ($lineContent -eq '\.')
 
-    Write-Host "Getting CEIP Status"
-    #GetDomainDetails
-    $ceipStartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.sddc_manager_controller" | Select Line,LineNumber).LineNumber
-    $lineContent = $psqlContent | Select-Object -Index $ceipStartingLineNumber
-    If ($lineContent.split("`t")[9] -eq 'ENABLED') { $ceipStatus = $true} else {$ceipStatus = $false}
-    
-
     Write-Host "Retrieving SDDC Manager Detail"
+    #GetDomainDetails
+    $ceipStartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.sddc_manager_controller" | Select-Object Line,LineNumber).LineNumber
+    $lineContent = $psqlContent | Select-Object -Index $ceipStartingLineNumber
+    $sddcManagerIp = $lineContent.split("`t")[3]
+    $sddcManagerVersion = $lineContent.split("`t")[5]
+    $sddcManagerFqdn = $lineContent.split("`t")[6]
+    $sddcManagerVmName = $lineContent.split("`t")[8]
+    If ($lineContent.split("`t")[9] -eq 'ENABLED') { $ceipStatus = $true} else {$ceipStatus = $false}
+
     $sddcManagerObject = @()
     $sddcManagerObject += [pscustomobject]@{
-        'fqdn' = ($passwordVaultObject | Where-Object {$_.entityType -eq "BACKUP"}).entityName
-        'vmname' = ((($passwordVaultObject | Where-Object {$_.entityType -eq "BACKUP"}).entityName).split("."))[0]
-        'ip' = $metadataJSON.ip
+        'fqdn' = $sddcManagerFqdn
+        'vmname' = $sddcManagerVmName
+        'ip' = $sddcManagerIp
         'fips_enabled' = $metadataJSON.fips_enabled 
         'ceip_enabled' = $ceipStatus
+        'version' = $sddcManagerVersion
     }
     
     Write-Host "Creating extracted-sddc-data.json"
@@ -1449,7 +1452,8 @@ Function Invoke-SDDCManagerRestore
         [Parameter (Mandatory = $true)][String] $backupFilePath,
         #[Parameter (Mandatory = $true)][String] $encryptionPassword,
         [Parameter (Mandatory = $true)][String] $vcfAdminUserPassword,
-        [Parameter (Mandatory = $true)][String] $vcfAPIUserPassword
+        [Parameter (Mandatory = $true)][String] $vcfAPIUserPassword,
+        [Parameter (Mandatory = $true)][String] $vcfRootUserPassword
     )
     $backupFilePath = (Resolve-Path -Path $backupFilePath).path
     $backupFileName = (Get-ChildItem -path $backupFilePath).name
@@ -1457,8 +1461,9 @@ Function Invoke-SDDCManagerRestore
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
 
-    #Establish Session to SDDC Manager
+    #Establish Session to SDDC Manager and Start SSH Stream
     $sddcManagerFqdn = $extractedSddcData.sddcManager.fqdn
+    Write-Host "[$sddcManager] Establishing Connection"
     $SecurePassword = ConvertTo-SecureString -String $vcfAdminUserPassword -AsPlainText -Force
     $mycreds = New-Object System.Management.Automation.PSCredential ('vcf', $SecurePassword)
     $inmem = New-SSHMemoryKnownHost
@@ -1467,33 +1472,40 @@ Function Invoke-SDDCManagerRestore
     {
         $sshSession = New-SSHSession -computername $sddcManagerFqdn -Credential $mycreds -KnownHost $inmem
     } Until ($sshSession)
+    $stream = New-SSHShellStream -SSHSession $sshSession
 
+    #Upload Modified Restore Status Json
+    Write-Host "[$sddcManager] Configuring Restore Process"
+    $modulePath = (Get-InstalledModule -Name VCFInstanceRecovery).InstalledLocation
+    If ($extractedSddcData.sddcManager.version.replace(".","").substring(0,3) -gt "451")
+    {
+        $sourceFile = "$modulePath\reference-files\new_restore_status.json"
+    }
+    else 
+    {
+        $sourceFile = "$modulePath\reference-files\old_restore_status.json"
+    }
+    $stream.writeline("su -")
+    $stream.writeline("$vcfRootUserPassword")
+    $stream.writeline("cp /opt/vmware/sddc-support/backup/restore_status.json /opt/vmware/sddc-support/backup/restore_status.json.bak")
+    $uploadFile = Set-SCPItem -ComputerName $sddcManagerFDQN -Credential $mycreds -path $sourceFile -destination "/tmp" -KnownHost $inmem
+    $stream.writeline("cp /tmp/new_restore_status.json /opt/vmware/sddc-support/backup/restore_status.json")
+    $stream.writeline("chmod 640 /opt/vmware/sddc-support/backup/restore_status.json")
+   
     #Execute Restore
+    Write-Host "[$sddcManager] Performing Restore"
     $scriptText = "curl https://$sddcManagerFqdn/v1/tokens -k -X POST -H `"Content-Type: application/json`" -d `'{`"username`": `"admin@local`",`"password`": `"$vcfAPIUserPassword`"}`' | awk -F `"\`"`" `'{ print `$4}`'"
     $token = (Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $scriptText).output
     $scriptText = "curl https://$sddcManagerFqdn/v1/restores/tasks -k -X POST -H `"Content-Type: application/json`" -H `"Authorization: Bearer $token`" -d `'{`"elements`" : [ {`"resourceType`" : `"SDDC_MANAGER`"} ],`"backupFile`" : `"/tmp/$backupFileName`",`"encryption`" : {`"passphrase`" : `"$vcfAPIUserPassword`"}}`' | json_pp | jq `'.id`' | cut -d `'`"`' -f 2"
     $restoreID = (Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $scriptText).output
     $scriptText = "curl https://$sddcManagerFqdn/v1/restores/tasks/$restoreID -k -X GET -H `"Content-Type: application/json`" -H `"Authorization: Bearer $token`" | json_pp"
-    $restoreProgress = (Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $scriptText).output
-    Return $restoreProgress
-
-    #Alternative
-    <# $accessToken = Request-VCFToken -fqdn $sddcManagerFQDN -username $sddcManagerAdmin -password $sddcManagerAdminPassword
-    $headers = @{"Accept" = "application/json" }
-    $headers.Add("Authorization", "Bearer $accessToken")
-    $jsonBody = '{
-        "elements" : [ {
-            "resourceType" : "SDDC_MANAGER"
-        } ],
-        "backupFile" : "/tmp/$backupFileName",
-        "encryption" : {
-        "passphrase" : "$vcfAPIUserPassword"
-        }
-    }'
-    $uri = "https://$sddcManager/v1/restores/tasks"
-    $restoreId = Invoke-RestMethod -Method POST -Uri $uri -Headers $headers -ContentType 'application/json' -Body $jsonBody
-    $uri = "https://$sddcManager/v1/restores/tasks/$restoreId"
-    $restoreTask = Invoke-RestMethod -Method GET -Uri $uri -Headers $headers -ContentType 'application/json' #>
+    Write-Host "[$sddcManager] Monitoring Restore Progress (polling every 60 seconds)"
+    Do
+    {
+        Sleep 60
+        $restoreProgress = ((Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $scriptText).output | ConvertFrom-JSON).status
+        Write-Host "[$sddcManager] Restore Status: $restoreProgress"
+    } While ($restoreProgress -in "IN PROGRESS")
 }
 
 #EndRegion SDDC Manager Functions

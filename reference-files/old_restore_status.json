@@ -1,0 +1,96 @@
+{
+  "name": "SDDC Manager Restore Operation",
+  "startTime": 0,
+  "status": "Pending",
+  "progress": {
+    "completed": 0,
+    "total": 9
+  },
+  "tasksOrder": "StopSDDCManagerServices,ExtractSDDCManagerBackup,RestoreSDDCManagerConfiguration,RestoreSDDCManagerDatabase,StartSDDCManagerServices,RestoreSDDCSystemConfiguration,PostRestoreRemediation,PostRestoreNfsRefresh,UnquiesceSystem",
+  "tasks": [
+    {
+      "name": "ExtractSDDCManagerBackup",
+      "description": "Decrypt and Extract Backup and Validate SDDC Manager for Restore operation",
+      "status": "Pending",
+      "errors": [],
+      "createdTime": 0,
+      "updatedTime": 0,
+      "id": ""
+    },
+    {
+      "name": "StopSDDCManagerServices",
+      "description": "Stop all VCF SDDC Manager Services",
+      "status": "Pending",
+      "errors": [],
+      "createdTime": 0,
+      "updatedTime": 0,
+      "id": ""
+    },
+    {
+      "name": "RestoreSDDCManagerConfiguration",
+      "description": "Restore SDDC Manager Configuration files",
+      "status": "Pending",
+      "errors": [],
+      "createdTime": 0,
+      "updatedTime": 0,
+      "id": ""
+    },
+    {
+      "name": "RestoreSDDCManagerDatabase",
+      "description": "Restore SDDC Manager Database",
+      "status": "Pending",
+      "errors": [],
+      "createdTime": 0,
+      "updatedTime": 0,
+      "id": ""
+    },
+    {
+      "name": "StartSDDCManagerServices",
+      "description": "Start and Validate all VCF SDDC Manager Services",
+      "status": "Pending",
+      "errors": [],
+      "createdTime": 0,
+      "updatedTime": 0,
+      "id": ""
+    },
+    {
+      "name": "RestoreSDDCSystemConfiguration",
+      "description": "Restore SDDC Manager System Configuration",
+      "status": "Pending",
+      "errors": [],
+      "createdTime": 0,
+      "updatedTime": 0,
+      "id": ""
+    },
+    {
+      "name": "PostRestoreRemediation",
+      "description": "Post Restore Remediation",
+      "status": "Pending",
+      "errors": [],
+      "createdTime": 0,
+      "updatedTime": 0,
+      "id": ""
+    },
+    {
+      "name": "PostRestoreNfsRefresh",
+      "description": "Refresh NFS post restore",
+      "status": "Pending",
+      "errors": [],
+      "createdTime": 0,
+      "updatedTime": 0,
+      "id": ""
+    },
+    {
+      "name": "UnquiesceSystem",
+      "description": "Unquiesce the system after Restore operation",
+      "status": "Pending",
+      "errors": [],
+      "createdTime": 0,
+      "updatedTime": 0,
+      "id": ""
+    }
+  ],
+  "errors": [],
+  "outputs": {},
+  "id": ""
+}
