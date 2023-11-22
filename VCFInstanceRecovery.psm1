@@ -1510,7 +1510,7 @@ Function Invoke-SDDCManagerRestore
     {
         #Check Status of Services
         $scriptText = "curl https://$extractedSddcManagerFqdn/vcf-services  -k -X GET -H `"Content-Type: application/json`" -H `"Authorization: Bearer $token`" | json_pp"
-        Write-Host "Waiting of Operations Manager Service to be Up"
+        Write-Host "[$extractedSddcManagerFqdn] Waiting for Operations Manager Service to be Up"
         Do
         {
             $operationsManagerService = ((((Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $scriptText).output) | ConvertFrom-Json).elements | Where-Object {$_.name -eq "OPERATIONS_MANAGER"}).status
