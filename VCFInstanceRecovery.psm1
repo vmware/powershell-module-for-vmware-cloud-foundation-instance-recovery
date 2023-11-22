@@ -1506,16 +1506,30 @@ Function Invoke-SDDCManagerRestore
     Write-Host "[$extractedSddcManagerFqdn] Performing Restore"
     $scriptText = "curl https://$extractedSddcManagerFqdn/v1/tokens -k -X POST -H `"Content-Type: application/json`" -d `'{`"username`": `"admin@local`",`"password`": `"$localUserPassword`"}`' | awk -F `"\`"`" `'{ print `$4}`'"
     $token = (Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $scriptText).output
-    $scriptText = "curl https://$extractedSddcManagerFqdn/v1/restores/tasks -k -X POST -H `"Content-Type: application/json`" -H `"Authorization: Bearer $token`" -d `'{`"elements`" : [ {`"resourceType`" : `"SDDC_MANAGER`"} ],`"backupFile`" : `"/tmp/$backupFileName`",`"encryption`" : {`"passphrase`" : `"$localUserPassword`"}}`' | json_pp | jq `'.id`' | cut -d `'`"`' -f 2"
-    $restoreID = (Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $scriptText).output
-    $scriptText = "curl https://$extractedSddcManagerFqdn/v1/restores/tasks/$restoreID -k -X GET -H `"Content-Type: application/json`" -H `"Authorization: Bearer $token`" | json_pp"
-    Write-Host "[$extractedSddcManagerFqdn] Monitoring Restore Task $restoreID progress (polling every 60 seconds)"
-    Do
+    If ($token)
     {
-        Sleep 60
-        $restoreProgress = ((Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $scriptText).output | ConvertFrom-JSON).status
-        Write-Host "[$extractedSddcManagerFqdn] Restore Status: $restoreProgress"
-    } While ($restoreProgress -in "IN PROGRESS")
+        $scriptText = "curl https://$extractedSddcManagerFqdn/v1/restores/tasks -k -X POST -H `"Content-Type: application/json`" -H `"Authorization: Bearer $token`" -d `'{`"elements`" : [ {`"resourceType`" : `"SDDC_MANAGER`"} ],`"backupFile`" : `"/tmp/$backupFileName`",`"encryption`" : {`"passphrase`" : `"$localUserPassword`"}}`' | json_pp | jq `'.id`' | cut -d `'`"`' -f 2"
+        $restoreID = (Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $scriptText).output
+        If ($restoreID)
+        {
+            $scriptText = "curl https://$extractedSddcManagerFqdn/v1/restores/tasks/$restoreID -k -X GET -H `"Content-Type: application/json`" -H `"Authorization: Bearer $token`" | json_pp"
+            Write-Host "[$extractedSddcManagerFqdn] Monitoring Restore Task $restoreID progress (polling every 60 seconds)"
+            Do
+            {
+                Sleep 60
+                $restoreProgress = ((Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $scriptText).output | ConvertFrom-JSON).status
+                Write-Host "[$extractedSddcManagerFqdn] Restore Status: $restoreProgress"
+            } While ($restoreProgress -in "IN PROGRESS")    
+        }
+        else 
+        {
+            Write-Host "Restore Task ID not returned"
+        }
+    }
+    else 
+    {
+        Write-Host "Failed to get SDDC Manager Token"
+    }
 
     #Close SSH Session
     Remove-SSHSession -SSHSession $sshSession | Out-Null
