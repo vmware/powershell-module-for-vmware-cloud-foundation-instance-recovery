@@ -1508,6 +1508,14 @@ Function Invoke-SDDCManagerRestore
     $token = (Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $scriptText).output
     If ($token)
     {
+        #Check Status of Services
+        $scriptText = "curl https://$extractedSddcManagerFqdn/vcf-services  -k -X GET -H `"Content-Type: application/json`" -H `"Authorization: Bearer $token`" | json_pp"
+        Write-Host "Waiting of Operations Manager Service to be Up"
+        Do
+        {
+            $operationsManagerService = ((((Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $scriptText).output) | ConvertFrom-Json).elements | Where-Object {$_.name -eq "OPERATIONS_MANAGER"}).status
+            If ($operationsManagerService -ne "UP") {Sleep 10}
+        } Until ($operationsManagerService -eq "UP")
         $scriptText = "curl https://$extractedSddcManagerFqdn/v1/restores/tasks -k -X POST -H `"Content-Type: application/json`" -H `"Authorization: Bearer $token`" -d `'{`"elements`" : [ {`"resourceType`" : `"SDDC_MANAGER`"} ],`"backupFile`" : `"/tmp/$backupFileName`",`"encryption`" : {`"passphrase`" : `"$localUserPassword`"}}`' | json_pp | jq `'.id`' | cut -d `'`"`' -f 2"
         Do
         {
