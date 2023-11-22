@@ -1450,7 +1450,6 @@ Function Invoke-SDDCManagerRestore
     Param(
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
         [Parameter (Mandatory = $true)][String] $backupFilePath,
-        #[Parameter (Mandatory = $true)][String] $encryptionPassword,
         [Parameter (Mandatory = $true)][String] $vcfAdminUserPassword,
         [Parameter (Mandatory = $true)][String] $vcfAPIUserPassword,
         [Parameter (Mandatory = $true)][String] $vcfRootUserPassword
