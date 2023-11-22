@@ -1500,7 +1500,7 @@ Function Invoke-SDDCManagerRestore
     $scriptText = "curl https://$extractedSddcManagerFqdn/v1/restores/tasks -k -X POST -H `"Content-Type: application/json`" -H `"Authorization: Bearer $token`" -d `'{`"elements`" : [ {`"resourceType`" : `"SDDC_MANAGER`"} ],`"backupFile`" : `"/tmp/$backupFileName`",`"encryption`" : {`"passphrase`" : `"$vcfAPIUserPassword`"}}`' | json_pp | jq `'.id`' | cut -d `'`"`' -f 2"
     $restoreID = (Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $scriptText).output
     $scriptText = "curl https://$extractedSddcManagerFqdn/v1/restores/tasks/$restoreID -k -X GET -H `"Content-Type: application/json`" -H `"Authorization: Bearer $token`" | json_pp"
-    Write-Host "[$extractedSddcManagerFqdn] Monitoring Restore Progress (polling every 60 seconds)"
+    Write-Host "[$extractedSddcManagerFqdn] Monitoring Restore Task $restoreID progress (polling every 60 seconds)"
     Do
     {
         Sleep 60
