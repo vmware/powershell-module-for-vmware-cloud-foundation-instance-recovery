@@ -1506,7 +1506,7 @@ Function Invoke-SDDCManagerRestore
         Write-Host "[$sddcManager] Restore Status: $restoreProgress"
     } While ($restoreProgress -in "IN PROGRESS")
 }
-
+Export-ModuleMember -Function Invoke-SDDCManagerRestore
 #EndRegion SDDC Manager Functions
 
 #Region vCenter Functions
