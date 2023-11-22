@@ -1130,7 +1130,7 @@ Function New-UploadAndModifySDDCManagerBackup
     $result = (Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command "ssh-keyscan $mgmtVcenterFqdn").output
 
     #Close SSH Session
-    Remove-SSHSession -SSHSession $sshSession
+    Remove-SSHSession -SSHSession $sshSession | Out-Null
     
     #Determine new SSH Keys
     $newNistKey = '"' + (($result | Where-Object {$_ -like "*ecdsa-sha2-nistp256*"}).split("ecdsa-sha2-nistp256 "))[1] + '"'
@@ -1518,7 +1518,7 @@ Function Invoke-SDDCManagerRestore
     } While ($restoreProgress -in "IN PROGRESS")
 
     #Close SSH Session
-    Remove-SSHSession -SSHSession $sshSession
+    Remove-SSHSession -SSHSession $sshSession | Out-Null
 }
 Export-ModuleMember -Function Invoke-SDDCManagerRestore
 #EndRegion SDDC Manager Functions
