@@ -1453,9 +1453,9 @@ Function Invoke-SDDCManagerRestore
     Param(
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
         [Parameter (Mandatory = $true)][String] $backupFilePath,
-        [Parameter (Mandatory = $true)][String] $vcfAdminUserPassword,
-        [Parameter (Mandatory = $true)][String] $vcfAPIUserPassword,
-        [Parameter (Mandatory = $true)][String] $vcfRootUserPassword
+        [Parameter (Mandatory = $true)][String] $vcfUserPassword,
+        [Parameter (Mandatory = $true)][String] $localUserPassword,
+        [Parameter (Mandatory = $true)][String] $rootUserPassword
     )
 
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
@@ -1468,7 +1468,7 @@ Function Invoke-SDDCManagerRestore
     $extractedSddcManagerFqdn = $extractedSddcData.sddcManager.fqdn
     
     Write-Host "[$extractedSddcManagerFqdn] Establishing Connection"
-    $SecurePassword = ConvertTo-SecureString -String $vcfAdminUserPassword -AsPlainText -Force
+    $SecurePassword = ConvertTo-SecureString -String $vcfUserPassword -AsPlainText -Force
     $mycreds = New-Object System.Management.Automation.PSCredential ('vcf', $SecurePassword)
     $inmem = New-SSHMemoryKnownHost
     New-SSHTrustedHost -KnownHostStore $inmem -HostName $extractedSddcManagerFqdn -FingerPrint ((Get-SSHHostKey -ComputerName $extractedSddcManagerFqdn).fingerprint) | Out-Null
@@ -1490,7 +1490,7 @@ Function Invoke-SDDCManagerRestore
         $sourceFile = "$modulePath\reference-files\old_restore_status.json"
     }
     $stream.writeline("su -")
-    $stream.writeline("$vcfRootUserPassword")
+    $stream.writeline("$rootUserPassword")
     $stream.writeline("cp /opt/vmware/sddc-support/backup/restore_status.json /opt/vmware/sddc-support/backup/restore_status.json.bak")
     $uploadFile = Set-SCPItem -ComputerName $extractedSddcManagerFqdn -Credential $mycreds -path $sourceFile -destination "/tmp" -KnownHost $inmem
     $stream.writeline("cp /tmp/new_restore_status.json /opt/vmware/sddc-support/backup/restore_status.json")
@@ -1498,9 +1498,9 @@ Function Invoke-SDDCManagerRestore
    
     #Execute Restore
     Write-Host "[$extractedSddcManagerFqdn] Performing Restore"
-    $scriptText = "curl https://$extractedSddcManagerFqdn/v1/tokens -k -X POST -H `"Content-Type: application/json`" -d `'{`"username`": `"admin@local`",`"password`": `"$vcfAPIUserPassword`"}`' | awk -F `"\`"`" `'{ print `$4}`'"
+    $scriptText = "curl https://$extractedSddcManagerFqdn/v1/tokens -k -X POST -H `"Content-Type: application/json`" -d `'{`"username`": `"admin@local`",`"password`": `"$localUserPassword`"}`' | awk -F `"\`"`" `'{ print `$4}`'"
     $token = (Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $scriptText).output
-    $scriptText = "curl https://$extractedSddcManagerFqdn/v1/restores/tasks -k -X POST -H `"Content-Type: application/json`" -H `"Authorization: Bearer $token`" -d `'{`"elements`" : [ {`"resourceType`" : `"SDDC_MANAGER`"} ],`"backupFile`" : `"/tmp/$backupFileName`",`"encryption`" : {`"passphrase`" : `"$vcfAPIUserPassword`"}}`' | json_pp | jq `'.id`' | cut -d `'`"`' -f 2"
+    $scriptText = "curl https://$extractedSddcManagerFqdn/v1/restores/tasks -k -X POST -H `"Content-Type: application/json`" -H `"Authorization: Bearer $token`" -d `'{`"elements`" : [ {`"resourceType`" : `"SDDC_MANAGER`"} ],`"backupFile`" : `"/tmp/$backupFileName`",`"encryption`" : {`"passphrase`" : `"$localUserPassword`"}}`' | json_pp | jq `'.id`' | cut -d `'`"`' -f 2"
     $restoreID = (Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $scriptText).output
     $scriptText = "curl https://$extractedSddcManagerFqdn/v1/restores/tasks/$restoreID -k -X GET -H `"Content-Type: application/json`" -H `"Authorization: Bearer $token`" | json_pp"
     Write-Host "[$extractedSddcManagerFqdn] Monitoring Restore Task $restoreID progress (polling every 60 seconds)"
