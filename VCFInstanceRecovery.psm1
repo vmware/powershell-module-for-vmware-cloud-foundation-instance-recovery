@@ -1509,7 +1509,7 @@ Function Invoke-SDDCManagerRestore
     If ($token)
     {
         #Check Status of Services
-        $scriptText = "curl https://$extractedSddcManagerFqdn/vcf-services  -k -X GET -H `"Content-Type: application/json`" -H `"Authorization: Bearer $token`" | json_pp"
+        $scriptText = "curl https://$extractedSddcManagerFqdn/v1/vcf-services  -k -X GET -H `"Content-Type: application/json`" -H `"Authorization: Bearer $token`" | json_pp"
         Write-Host "[$extractedSddcManagerFqdn] Waiting for Operations Manager Service to be Up"
         Do
         {
