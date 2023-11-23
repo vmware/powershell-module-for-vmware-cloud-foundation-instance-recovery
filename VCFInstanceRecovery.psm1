@@ -253,7 +253,8 @@ Function New-ExtractDataFromSDDCBackup
         [Parameter (Mandatory = $true)][String] $backupFilePath,
         [Parameter (Mandatory = $true)][String] $encryptionPassword
     )
-    LogMessage -type NOTE -message "Starting Task"
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $backupFileFullPath = (Resolve-Path -Path $backupFilePath).path
     $backupFileName = (Get-ChildItem -path $backupFileFullPath).name
     $parentFolder = Split-Path -Path $backupFileFullPath
@@ -847,7 +848,7 @@ Function New-ExtractDataFromSDDCBackup
     Remove-Item -Path "$parentFolder\decrypted-sddc-manager-backup.tar" -force -confirm:$false
     Remove-Item -path "$parentFolder\$extractedBackupFolder" -Recurse 
 
-    LogMessage -type NOTE -message "Task Complete"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function New-ExtractDataFromSDDCBackup
 
@@ -894,8 +895,8 @@ Function New-NSXManagerOvaDeployment
         [Parameter (Mandatory = $true)][String] $restoredNsxManagerDeploymentSize,
         [Parameter (Mandatory = $true)][String] $nsxManagerOvaFile
     )
-    LogMessage -type NOTE -message "Starting Task"
     $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
@@ -960,7 +961,7 @@ Function New-NSXManagerOvaDeployment
     }
     LogMessage -type INFO -message "[$nsxManagerVMName] Deploying NSX Manager OVA"
     Invoke-Expression "& $command"
-    LogMessage -type NOTE -message "Task Complete"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function New-NSXManagerOvaDeployment
 
@@ -1007,8 +1008,8 @@ Function New-vCenterOvaDeployment
         [Parameter (Mandatory = $true)][String] $restoredvCenterDeploymentSize,
         [Parameter (Mandatory = $true)][String] $vCenterOvaFile
     )
-    LogMessage -type NOTE -message "Starting Task"
     $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
@@ -1031,7 +1032,7 @@ Function New-vCenterOvaDeployment
     LogMessage -type INFO -message "[$restoredvCenterVMName] Deploying vCenter OVA"
     $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowExtraConfig --X:enableHiddenProperties --diskMode=thin --X:injectOvfEnv --X:waitForIp --X:logFile=ovftool.log --name="' + $restoredvCenterVMName + '" --net:"Network 1"="' +$vmNetwork + '" --datastore="' + $vmDatastore + '" --deploymentOption="' + $restoredvCenterDeploymentSize + '" --prop:guestinfo.cis.appliance.net.addr.family="ipv4" --prop:guestinfo.cis.appliance.net.addr="' + $restoredvCenterIpAddress + '" --prop:guestinfo.cis.appliance.net.pnid="' + $restoredvCenterFqdn + '" --prop:guestinfo.cis.appliance.net.prefix="' + $restoredvCenterNetworkPrefix + '" --prop:guestinfo.cis.appliance.net.mode="static" --prop:guestinfo.cis.appliance.net.dns.servers="' + $restoredvCenterDnsServers + '" --prop:guestinfo.cis.appliance.net.gateway="' + $restoredvCenterGateway + '" --prop:guestinfo.cis.appliance.root.passwd="' + $restoredvCenterRootPassword + '" --prop:guestinfo.cis.appliance.ssh.enabled="True" "' + $vCenterOvaFile + '" ' + '"vi://' + $tempvCenterAdmin + ':' + $tempvCenterAdminPassword + '@' + $tempvCenterFqdn + '/' + $datacenterName + '/host/' + $clusterName + '/"'
     Invoke-Expression "& $command"
-    LogMessage -type NOTE -message "Task Complete"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function New-vCenterOvaDeployment
 
@@ -1086,8 +1087,8 @@ Function New-SDDCManagerOvaDeployment
         [Parameter (Mandatory = $true)][String] $localUserPassword,
         [Parameter (Mandatory = $true)][String] $basicAuthUserPassword
     )
-    LogMessage -type NOTE -message "Starting Task"
     $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
@@ -1111,8 +1112,20 @@ Function New-SDDCManagerOvaDeployment
     
     LogMessage -type INFO -message "[$sddcManagerVMName] Deploying SDDC Manager OVA"
     $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowAllExtraConfig --X:logLevel=quiet --diskMode=thin --X:enableHiddenProperties --X:waitForIp --powerOn --name="' + $sddcManagerVMName + '" --network="' + $vmNetwork + '" --datastore="' + $vmDatastore + '" --prop:vami.hostname="' + $sddcManagerHostName + '" --prop:vami.ip0.SDDC-Manager="' + $sddcManagerIp + '" --prop:vami.netmask0.SDDC-Manager="' + $sddcManagerNetworkMask + '" --prop:vami.DNS.SDDC-Manager="' + $sddcManagerDns + '" --prop:vami.gateway.SDDC-Manager="' + $sddcManagerGateway + '" --prop:BACKUP_PASSWORD="' + $sddcManagerBackupPassword + '" --prop:ROOT_PASSWORD="' + $rootUserPassword + '" --prop:VCF_PASSWORD="' + $vcfUserPassword + '" --prop:BASIC_AUTH_PASSWORD="' + $basicAuthUserPassword + '" --prop:LOCAL_USER_PASSWORD="' + $localUserPassword + '" --prop:vami.searchpath.SDDC-Manager="' + $sddcManagerDomainSearch + '" --prop:vami.domain.SDDC-Manager="' + $sddcManagerDnsDomain + '" --prop:FIPS_ENABLE="' + $sddcManagerFipsSetting + '" --prop:guestinfo.ntp="' + $ntpServers + '" "' + $sddcManagerOvaFile + '" "vi://' + $tempvCenterAdmin + ':' + $tempvCenterAdminPassword + '@' + $tempvCenterFqdn + '/' + $datacenterName + '/host/' + $clusterName + '/"'
-    Invoke-Expression "& $command"
-    LogMessage -type NOTE -message "Task Complete"
+    $scriptBlock = {Invoke-Expression "& $using:command"}
+    $deploymentJob = Start-Job -scriptblock $scriptBlock -ArgumentList $command
+    Do {sleep 1; $jobStatus = (Get-Job -id $deploymentJob.id).state } Until ($jobStatus -eq "Running" )
+    $progress = Get-Job | Receive-Job
+    If ($progress) {LogMessage -type INFO -message $progress}
+    Sleep 30
+    Do
+    {
+        $jobStatus = (Get-Job -id $deploymentJob.id).state
+        $progress = Get-Job | Receive-Job
+        If ($progress) {LogMessage -type INFO -message $progress}
+        If ($jobStatus -eq "Running") {Sleep 30}
+    } While ($jobStatus -eq "Running")
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function New-SDDCManagerOvaDeployment
 
@@ -1168,8 +1181,8 @@ Function New-UploadAndModifySDDCManagerBackup
         [Parameter (Mandatory = $true)][String] $tempvCenterAdmin,
         [Parameter (Mandatory = $true)][String] $tempvCenterAdminPassword
     )
-    LogMessage -type NOTE -message "Starting Task"
     $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
@@ -1236,7 +1249,7 @@ Function New-UploadAndModifySDDCManagerBackup
 
     #Disconnect from vCenter
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
-    LogMessage -type NOTE -message "Task Complete"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function New-UploadAndModifySDDCManagerBackup
 
@@ -1300,8 +1313,8 @@ Function New-ReconstructedPartialBringupJsonSpec
         [Parameter (Mandatory = $true)][Array] $vds0nics,
         [Parameter (Mandatory = $true)][String] $vcenterServerSize
     )
-    LogMessage -type NOTE -message "Starting Task"
     $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
@@ -1515,7 +1528,7 @@ Function New-ReconstructedPartialBringupJsonSpec
     
     LogMessage -type INFO -message "[$jumpboxName] Saving partial bringup JSON spec: $(($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).domainName + "-partial-bringup-spec.json")"
     $mgmtDomainObject | ConvertTo-Json -depth 10 | Out-File (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).domainName + "-partial-bringup-spec.json")
-    LogMessage -type NOTE -message "Task Complete"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function New-ReconstructedPartialBringupJsonSpec
 
@@ -1531,8 +1544,8 @@ Function Invoke-SDDCManagerRestore
         [Parameter (Mandatory = $true)][String] $localUserPassword,
         [Parameter (Mandatory = $true)][String] $rootUserPassword
     )
-    LogMessage -type NOTE -message "Starting Task"
     $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
@@ -1633,7 +1646,7 @@ Function Invoke-SDDCManagerRestore
     #Close SSH Session
     Remove-SSHSession -SSHSession $sshSession | Out-Null
     
-    LogMessage -type NOTE -message "Task Complete"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Invoke-SDDCManagerRestore
 #EndRegion SDDC Manager Functions
@@ -1687,8 +1700,8 @@ Function Move-ClusterHostsToRestoredVcenter
         [Parameter (Mandatory = $true)][String] $restoredvCenterAdminPassword,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile
     )
-    LogMessage -type NOTE -message "Starting Task"
     $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
@@ -1702,7 +1715,7 @@ Function Move-ClusterHostsToRestoredVcenter
         $esxiRootPassword = ($extractedSddcData.passwords | Where-Object {($_.entityType -eq "ESXI") -and ($_.entityName -eq $esxiHost.Name) -and ($_.username -eq "root")}).password
         Add-VMHost -Name $esxiHost.Name -Location $clusterName -User root -Password $esxiRootPassword -Force -Confirm:$false | Out-Null
     }
-    LogMessage -type NOTE -message "Task Complete"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Move-ClusterHostsToRestoredVcenter
 
@@ -1742,7 +1755,8 @@ Function Remove-ClusterHostsFromVds
         [Parameter (Mandatory = $true)][String] $clusterName,
         [Parameter (Mandatory = $true)][String] $vdsName
     )
-    LogMessage -type NOTE -message "Starting Task"
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
     $esxiHosts = get-cluster -name $clusterName | get-vmhost
     Foreach ($esxiHost in $esxiHosts) {
@@ -1751,7 +1765,7 @@ Function Remove-ClusterHostsFromVds
         Get-VDSwitch -Name $vdsName | Remove-VDSwitchVMHost -VMHost $esxiHost -Confirm:$false | Out-Null
     }
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
-    LogMessage -type NOTE -message "Task Complete"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Remove-ClusterHostsFromVds
 
@@ -1786,7 +1800,8 @@ Function Move-MgmtVmsToTempPg
         [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
         [Parameter (Mandatory = $true)][String] $clusterName
     )
-    LogMessage -type NOTE -message "Starting Task"
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
     $vmsTomove = get-cluster -name $clusterName | get-vm | ? { $_.Name -notlike "*vCLS*" }
     foreach ($vmToMove in $vmsTomove) {
@@ -1794,7 +1809,7 @@ Function Move-MgmtVmsToTempPg
         Get-VM -Name $vmToMove | Get-NetworkAdapter | Set-NetworkAdapter -NetworkName "mgmt_temp" -confirm:$false | Out-Null
     }
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
-    LogMessage -type NOTE -message "Task Complete"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Move-MgmtVmsToTempPg
 
@@ -1854,7 +1869,8 @@ Function Move-ClusterHostNetworkingTovSS
         [Parameter (Mandatory = $true)][String] $vSanVlanId
 
     )
-    LogMessage -type NOTE -message "Starting Task"
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
 
     $vmhost_array = get-cluster -name $clusterName | get-vmhost
@@ -1916,7 +1932,7 @@ Function Move-ClusterHostNetworkingTovSS
         Get-VMHost -Name $vmhost | set-vmhost -State Connected | Out-Null #>
         Start-Sleep 5
     }
-    LogMessage -type NOTE -message "Task Complete"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Move-ClusterHostNetworkingTovSS
 
@@ -1964,7 +1980,8 @@ Function Move-ClusterVmnicTovSwitch
         [Parameter (Mandatory = $true)][String] $VLanId,
         [Parameter (Mandatory = $true)][String] $vmnic
     )
-    LogMessage -type NOTE -message "Starting Task"
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
     $esxiHosts = get-cluster -name $clusterName | get-vmhost
     Foreach ($esxiHost in $esxiHosts) {
@@ -1974,7 +1991,7 @@ Function Move-ClusterVmnicTovSwitch
         New-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $esxiHost -Name "vSwitch0") -Name "mgmt_temp" -VLanId $VLanId | Out-Null
     }
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
-    LogMessage -type NOTE -message "Task Complete"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Move-ClusterVmnicTovSwitch
 
@@ -2017,8 +2034,8 @@ Function Set-ClusterHostsvSanIgnoreClusterMemberList
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
         [Parameter (Mandatory = $true)][ValidateSet("enable", "disable")][String] $setting
     )
-    LogMessage -type NOTE -message "Starting Task"
     $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
@@ -2044,7 +2061,7 @@ Function Set-ClusterHostsvSanIgnoreClusterMemberList
         Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $esxCommand | Out-Null
     }
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
-    LogMessage -type NOTE -message "Task Complete"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Set-ClusterHostsvSanIgnoreClusterMemberList
 
@@ -2080,7 +2097,8 @@ Function Move-ClusterVMsToFirstHost
         [Parameter (Mandatory = $true)][String] $clusterName
         
     )
-    LogMessage -type NOTE -message "Starting Task"
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
     $vms = Get-Cluster -Name $clusterName | Get-VM | Where-Object { $_.Name -notlike "vCLS*" } | Select-Object Name, VMhost
     $firstHost = ((Get-cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)[0]).Name
@@ -2095,7 +2113,7 @@ Function Move-ClusterVMsToFirstHost
         Sleep 5
     } Until (!$runningTasks)
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
-    LogMessage -type NOTE -message "Task Complete"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Move-ClusterVMsToFirstHost
 
@@ -2146,7 +2164,8 @@ Function Resolve-PhysicalHostServiceAccounts
         [Parameter (Mandatory = $true)][String] $sddcManagerAdmin,
         [Parameter (Mandatory = $true)][String] $sddcManagerAdminPassword
     )
-    LogMessage -type NOTE -message "Starting Task"
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $vCenterConnection = Connect-VIServer -server $vCenterFQDN -username $vCenterAdmin -password $vCenterAdminPassword
     $clusterHosts = Get-Cluster -name $clusterName | Get-VMHost
     Disconnect-VIServer * -confirm:$false
@@ -2210,7 +2229,7 @@ Function Resolve-PhysicalHostServiceAccounts
         } Until ($taskStatus -ne "IN_PROGRESS")
         LogMessage -type INFO -message "$taskStatus"
     }
-    LogMessage -type NOTE -message "Task Complete"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Resolve-PhysicalHostServiceAccounts
 
@@ -2250,11 +2269,12 @@ Function Set-ClusterDRSLevel
         [Parameter (Mandatory = $true)][ValidateSet("FullyAutomated", "Manual")][String] $DrsAutomationLevel
         
     )
-    LogMessage -type NOTE -message "Starting Task"
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
     set-cluster -cluster $clusterName -DrsAutomationLevel $DrsAutomationLevel -confirm:$false
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
-    LogMessage -type NOTE -message "Task Complete"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Set-ClusterDRSLevel
 
@@ -2290,7 +2310,8 @@ Function Remove-NonResponsiveHosts
         [Parameter (Mandatory = $true)][String] $clusterName
         
     )
-    LogMessage -type NOTE -message "Starting Task"
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
     $nonResponsiveHosts = get-cluster -name $clusterName | get-vmhost | Where-Object { $_.ConnectionState -in "NotResponding","Disconnected" }
     foreach ($nonResponsiveHost in $nonResponsiveHosts) {
@@ -2298,7 +2319,7 @@ Function Remove-NonResponsiveHosts
         Get-VMHost | Where-Object { $_.Name -eq $nonResponsiveHost.Name } | Remove-VMHost -Confirm:$false
     }
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
-    LogMessage -type NOTE -message "Task Complete"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Remove-NonResponsiveHosts
 
@@ -2349,8 +2370,8 @@ Function Add-HostsToCluster
         [Parameter (Mandatory = $true)][String] $sddcManagerAdmin,
         [Parameter (Mandatory = $true)][String] $sddcManagerAdminPassword
     )
-    LogMessage -type NOTE -message "Starting Task"
     $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
@@ -2376,7 +2397,7 @@ Function Add-HostsToCluster
         }
     }
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
-    LogMessage -type NOTE -message "Task Complete"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Add-HostsToCluster
 
@@ -2411,7 +2432,8 @@ Function Remove-StandardSwitch
         [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
         [Parameter (Mandatory = $true)][String] $clusterName
     )
-    LogMessage -type NOTE -message "Starting Task"
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
     $vmHosts = (Get-cluster -name $clusterName | Get-VMHost).Name
     foreach ($vmhost in $vmHosts) {
@@ -2419,7 +2441,7 @@ Function Remove-StandardSwitch
         Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name "vSwitch0" | Remove-VirtualSwitch -Confirm:$false | Out-Null
     }
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
-    LogMessage -type NOTE -message "Task Complete"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Remove-StandardSwitch
 
@@ -2466,7 +2488,8 @@ Function Add-VMKernelsToHost
         [Parameter (Mandatory = $true)][String] $sddcManagerAdmin,
         [Parameter (Mandatory = $true)][String] $sddcManagerAdminPassword
     )
-    LogMessage -type NOTE -message "Starting Task"
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $tokenRequest = Request-VCFToken -fqdn $sddcManagerFQDN -username $sddcManagerAdmin -password $sddcManagerAdminPassword
     
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
@@ -2520,7 +2543,7 @@ Function Add-VMKernelsToHost
         }
         $esxcli.network.ip.interface.ipv4.set.Invoke($interfaceArg) *>$null
     }
-    LogMessage -type NOTE -message "Task Complete"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Add-VMKernelsToHost
 
@@ -2544,7 +2567,8 @@ Function Backup-ClusterVMOverrides
         [Parameter(Mandatory = $true)]
         [String]$clusterName
     )
-    LogMessage -type NOTE -message "Starting Task"
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $cluster = Get-Cluster -Name $clusterName
     #$overRiddenVMs = $cluster.ExtensionData.ConfigurationEx.DrsVmConfig
     $clusterVMs = Get-Cluster -name $clusterName | Get-VM | Select-Object Name, id, DrsAutomationLevel
@@ -2580,7 +2604,7 @@ Function Backup-ClusterVMOverrides
         }
     }
     $overRiddenData | ConvertTo-Json -depth 10 | Out-File "$clusterName-vmOverrides.json"
-    LogMessage -type NOTE -message "Task Complete"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Backup-ClusterVMOverrides
 
@@ -2604,7 +2628,8 @@ Function Backup-ClusterVMLocations
         [Parameter(Mandatory = $true)]
         [String]$clusterName
     )
-    LogMessage -type NOTE -message "Starting Task"
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     Try {
 
         $clusterVMs = Get-Cluster -Name $clusterName | Get-VM | Select-Object Name, id, folder, resourcePool    
@@ -2624,7 +2649,7 @@ Function Backup-ClusterVMLocations
     Catch {
         catchWriter -object $_
     }
-    LogMessage -type NOTE -message "Task Complete"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Backup-ClusterVMLocations
 
@@ -2648,7 +2673,8 @@ Function Backup-ClusterDRSGroupsAndRules
         [Parameter(Mandatory = $true)]
         [String]$clusterName
     )
-    LogMessage -type NOTE -message "Starting Task"
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     Try {
         $retrievedVmDrsGroups = Get-DrsClusterGroup -cluster $clusterName
         $drsGroupsObject = @()
@@ -2721,7 +2747,7 @@ Function Backup-ClusterDRSGroupsAndRules
     Catch {
         catchWriter -object $_
     }
-    LogMessage -type NOTE -message "Task Complete"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Backup-ClusterDRSGroupsAndRules
 
@@ -2748,7 +2774,8 @@ Function Restore-ClusterVMOverrides
         [Parameter(Mandatory = $true)][String]$clusterName,
         [Parameter(Mandatory = $true)][String]$jsonFile
     )
-    LogMessage -type NOTE -message "Starting Task"
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     try {
         If (Test-Path -path $jsonFile) {
             $vmOverRideInstances = Get-Content -path $jsonFile | ConvertFrom-Json
@@ -2876,7 +2903,7 @@ Function Restore-ClusterVMOverrides
     catch {
         catchWriter -object $_
     }
-    LogMessage -type NOTE -message "Task Complete"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Restore-ClusterVMOverrides
 
@@ -2903,7 +2930,8 @@ Function Restore-ClusterVMLocations
         [Parameter(Mandatory = $true)][String]$clusterName,
         [Parameter(Mandatory = $true)][String]$jsonFile
     )
-    LogMessage -type NOTE -message "Starting Task"
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     try {
         If (Test-Path -path $jsonFile) {
             $vmLocations = Get-Content -path $jsonFile | ConvertFrom-Json
@@ -2934,7 +2962,7 @@ Function Restore-ClusterVMLocations
     catch {
         catchWriter -object $_
     }
-    LogMessage -type NOTE -message "Task Complete"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Restore-ClusterVMLocations
 
@@ -2961,7 +2989,8 @@ Function Restore-ClusterDRSGroupsAndRules
         [Parameter(Mandatory = $true)][String]$clusterName,
         [Parameter(Mandatory = $true)][String]$jsonFile
     )
-    LogMessage -type NOTE -message "Starting Task"
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     try {
         If (Test-Path -path $jsonFile) {
             $drsRulesAndGroups = Get-Content -path $jsonFile | ConvertFrom-Json
@@ -3045,7 +3074,7 @@ Function Restore-ClusterDRSGroupsAndRules
     catch {
         catchWriter -object $_
     }
-    LogMessage -type NOTE -message "Task Complete"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Restore-ClusterDRSGroupsAndRules
 
@@ -3110,7 +3139,8 @@ Function Resolve-PhysicalHostTransportNodes
         [Parameter (Mandatory = $true)][String] $nsxManagerAdmin,
         [Parameter (Mandatory = $true)][String] $nsxManagerAdminPassword
     )
-    LogMessage -type NOTE -message "Starting Task"
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $vCenterConnection = Connect-VIServer -server $vCenterFQDN -username $vCenterAdmin -password $vCenterAdminPassword
     LogMessage -type INFO -message "[$clusterName] Getting Hosts"
     $clusterHosts = (Get-Cluster -name $clusterName | Get-VMHost).name
@@ -3132,7 +3162,7 @@ Function Resolve-PhysicalHostTransportNodes
         LogMessage -type INFO -message "[$nsxManagerFqdn] Resolving NSX Installation on $(($allHostTransportNodes | Where-Object {$_.id -eq $hostID}).display_name) "
         $response = Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -headers $headers -body $body
     }
-    LogMessage -type NOTE -message "Task Complete"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Resolve-PhysicalHostTransportNodes
 
@@ -3189,8 +3219,8 @@ Function Invoke-NSXEdgeClusterRecovery
         [Parameter (Mandatory = $true)][String] $clusterName,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile
     )
-    LogMessage -type NOTE -message "Starting Task"
     $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
@@ -3312,7 +3342,7 @@ Function Invoke-NSXEdgeClusterRecovery
             }
         }
     }
-    LogMessage -type NOTE -message "Task Complete"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Invoke-NSXEdgeClusterRecovery
 #EndRegion NSXT Functions
