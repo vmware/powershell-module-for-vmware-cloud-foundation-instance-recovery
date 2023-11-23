@@ -105,8 +105,6 @@ Function LogMessage
         $messageColour = "97m" # White
     }
 
-    If (!$threadTag) {$threadTag = "..."; $threadColour = "97m"}
-
     <#
     Reference Colours
     31m Red
