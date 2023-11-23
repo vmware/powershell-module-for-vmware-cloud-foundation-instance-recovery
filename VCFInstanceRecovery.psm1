@@ -895,6 +895,7 @@ Function New-NSXManagerOvaDeployment
         [Parameter (Mandatory = $true)][String] $nsxManagerOvaFile
     )
     LogMessage -type NOTE -message "Starting Task"
+    $jumpboxName = hostname
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
@@ -1007,6 +1008,7 @@ Function New-vCenterOvaDeployment
         [Parameter (Mandatory = $true)][String] $vCenterOvaFile
     )
     LogMessage -type NOTE -message "Starting Task"
+    $jumpboxName = hostname
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
@@ -1085,6 +1087,7 @@ Function New-SDDCManagerOvaDeployment
         [Parameter (Mandatory = $true)][String] $basicAuthUserPassword
     )
     LogMessage -type NOTE -message "Starting Task"
+    $jumpboxName = hostname
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
@@ -3187,6 +3190,7 @@ Function Invoke-NSXEdgeClusterRecovery
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile
     )
     LogMessage -type NOTE -message "Starting Task"
+    $jumpboxName = hostname
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
