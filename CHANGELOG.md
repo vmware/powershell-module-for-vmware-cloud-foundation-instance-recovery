@@ -5,6 +5,8 @@
 > Released: 2023-11-xx
 
 - Added `Invoke-SDDCManagerRestore` to automated recovery
+- Enhanced OSD output for all functions to include message time and timestamps, better handlong of ovftool output
+- Added `--X:waitForIp` to NSX Manager deployment to ensure appliance is near ready for use before continuing
 
 ## v1.0.6
 
