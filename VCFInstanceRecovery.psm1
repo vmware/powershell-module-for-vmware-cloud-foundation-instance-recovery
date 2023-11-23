@@ -959,8 +959,40 @@ Function New-NSXManagerOvaDeployment
     {
         $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowExtraConfig --diskMode=thin --X:injectOvfEnv --X:logFile=ovftool.log --powerOn --name="' + $nsxManagerVMName + '" --datastore="' + $vmDatastore + '" --deploymentOption="' + $restoredNsxManagerDeploymentSize + '" --network="' + $vmNetwork + '" --prop:nsx_role="NSX Manager" --prop:nsx_ip_0="' + $nsxManagerIp + '" --prop:nsx_netmask_0="' + $nsxManagerNetworkMask + '" --prop:nsx_gateway_0="' + $nsxManagerGateway + '" --prop:nsx_dns1_0="' + $nsxManagerDns + '" --prop:nsx_domain_0="' + $nsxManagerDnsDomain + '" --prop:nsx_ntp_0="' + $nsxManagerNtpServer + '" --prop:nsx_isSSHEnabled=True --prop:nsx_allowSSHRootLogin=True --prop:nsx_passwd_0="' + $nsxManagerAdminPassword + '" --prop:nsx_cli_username="' + $nsxManagerAdminUsername+ '" --prop:nsx_cli_passwd_0="' + $nsxManagerCliPassword + '" --prop:nsx_hostname="' + $nsxManagerHostName + '" "' + $nsxManagerOvaFile + '" ' + '"vi://' + $tempVcenterAdmin + ':' + $tempVcenterAdminPassword + '@' + $tempVcenterFqdn + '/' + $datacenterName + '/host/' + $clusterName + '/"'    <# Action when all if and elseif conditions are false #>
     }
-    LogMessage -type INFO -message "[$nsxManagerVMName] Deploying NSX Manager OVA"
-    Invoke-Expression "& $command"
+    LogMessage -type INFO -message "[$jumpboxName] Deploying NSX Manager OVA"
+    $scriptBlock = {Invoke-Expression "& $using:command"}
+    $deploymentJob = Start-Job -scriptblock $scriptBlock -ArgumentList $command
+    Do {Sleep 1; $jobStatus = (Get-Job -id $deploymentJob.id).state } Until ($jobStatus -eq "Running" )
+    Sleep 10
+    $progress = @(Get-Job -id $deploymentJob.id | Receive-Job)
+    Foreach ($line in $progress)
+    {
+        LogMessage -type INFO -message "[$jumpboxName] $line"
+    }
+    LogMessage -type INFO -message "[$jumpboxName] Polling at 60 second intervals"    
+    Do
+    {
+        $progress = @(Get-Job -id $deploymentJob.id | Receive-Job)
+        If ($progress) 
+        {
+            If ($progress[-1] -notlike "Disk progress*")
+            {
+                Foreach ($line in $progress)
+                {
+                    If (($line -ne $null) -and ($line -notlike "Task progress*"))
+                    {
+                        LogMessage -type INFO -message "[$jumpboxName] $line"
+                    }
+                }    
+            }
+            else 
+            {
+                LogMessage -type INFO -message "[$jumpboxName] $($progress[-1])"
+            }
+        }
+        $jobStatus = (Get-Job -id $deploymentJob.id).state
+        If ($jobStatus -eq "Running") {Sleep 60}
+    } While ($jobStatus -eq "Running")
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function New-NSXManagerOvaDeployment
@@ -1029,9 +1061,41 @@ Function New-vCenterOvaDeployment
     $restoredvCenterDnsServers = "$($extractedSddcData.mgmtDomainInfrastructure.primaryDnsServer),$($extractedSddcData.mgmtDomainInfrastructure.secondaryDnsServer)" 
     $restoredvCenterGateway = $extractedSddcData.mgmtDomainInfrastructure.gateway
     $restoredvCenterRootPassword = ($extractedSddcData.passwords | Where-Object {($_.entityType -eq "VCENTER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "SSH")}).password
-    LogMessage -type INFO -message "[$restoredvCenterVMName] Deploying vCenter OVA"
+    LogMessage -type INFO -message "[$jumpboxName] Deploying vCenter OVA"
     $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowExtraConfig --X:enableHiddenProperties --diskMode=thin --X:injectOvfEnv --X:waitForIp --X:logFile=ovftool.log --name="' + $restoredvCenterVMName + '" --net:"Network 1"="' +$vmNetwork + '" --datastore="' + $vmDatastore + '" --deploymentOption="' + $restoredvCenterDeploymentSize + '" --prop:guestinfo.cis.appliance.net.addr.family="ipv4" --prop:guestinfo.cis.appliance.net.addr="' + $restoredvCenterIpAddress + '" --prop:guestinfo.cis.appliance.net.pnid="' + $restoredvCenterFqdn + '" --prop:guestinfo.cis.appliance.net.prefix="' + $restoredvCenterNetworkPrefix + '" --prop:guestinfo.cis.appliance.net.mode="static" --prop:guestinfo.cis.appliance.net.dns.servers="' + $restoredvCenterDnsServers + '" --prop:guestinfo.cis.appliance.net.gateway="' + $restoredvCenterGateway + '" --prop:guestinfo.cis.appliance.root.passwd="' + $restoredvCenterRootPassword + '" --prop:guestinfo.cis.appliance.ssh.enabled="True" "' + $vCenterOvaFile + '" ' + '"vi://' + $tempvCenterAdmin + ':' + $tempvCenterAdminPassword + '@' + $tempvCenterFqdn + '/' + $datacenterName + '/host/' + $clusterName + '/"'
-    Invoke-Expression "& $command"
+    $scriptBlock = {Invoke-Expression "& $using:command"}
+    $deploymentJob = Start-Job -scriptblock $scriptBlock -ArgumentList $command
+    Do {Sleep 1; $jobStatus = (Get-Job -id $deploymentJob.id).state } Until ($jobStatus -eq "Running" )
+    Sleep 10
+    $progress = @(Get-Job -id $deploymentJob.id | Receive-Job)
+    Foreach ($line in $progress)
+    {
+        LogMessage -type INFO -message "[$jumpboxName] $line"
+    }
+    LogMessage -type INFO -message "[$jumpboxName] Polling at 60 second intervals"
+    Do
+    {
+        $progress = @(Get-Job -id $deploymentJob.id | Receive-Job)
+        If ($progress) 
+        {
+            If ($progress[-1] -notlike "Disk progress*")
+            {
+                Foreach ($line in $progress)
+                {
+                    If (($line -ne $null) -and ($line -notlike "Task progress*"))
+                    {
+                        LogMessage -type INFO -message "[$jumpboxName] $line"
+                    }
+                }    
+            }
+            else 
+            {
+                LogMessage -type INFO -message "[$jumpboxName] $($progress[-1])"
+            }
+        }
+        $jobStatus = (Get-Job -id $deploymentJob.id).state
+        If ($jobStatus -eq "Running") {Sleep 60}
+    } While ($jobStatus -eq "Running")
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function New-vCenterOvaDeployment
@@ -1110,7 +1174,7 @@ Function New-SDDCManagerOvaDeployment
     $sddcManagerFipsSetting = $extractedSDDCData.sddcManager.fips_enabled
     $ntpServers = $extractedSddcData.mgmtDomainInfrastructure.ntpServers -join(",")
     
-    LogMessage -type INFO -message "[$jumpboxName] Deploying SDDC Manager OVA (60 sec polling)"
+    LogMessage -type INFO -message "[$jumpboxName] Deploying SDDC Manager OVA"
     $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowAllExtraConfig --X:logLevel=quiet --diskMode=thin --X:enableHiddenProperties --X:waitForIp --powerOn --name="' + $sddcManagerVMName + '" --network="' + $vmNetwork + '" --datastore="' + $vmDatastore + '" --prop:vami.hostname="' + $sddcManagerHostName + '" --prop:vami.ip0.SDDC-Manager="' + $sddcManagerIp + '" --prop:vami.netmask0.SDDC-Manager="' + $sddcManagerNetworkMask + '" --prop:vami.DNS.SDDC-Manager="' + $sddcManagerDns + '" --prop:vami.gateway.SDDC-Manager="' + $sddcManagerGateway + '" --prop:BACKUP_PASSWORD="' + $sddcManagerBackupPassword + '" --prop:ROOT_PASSWORD="' + $rootUserPassword + '" --prop:VCF_PASSWORD="' + $vcfUserPassword + '" --prop:BASIC_AUTH_PASSWORD="' + $basicAuthUserPassword + '" --prop:LOCAL_USER_PASSWORD="' + $localUserPassword + '" --prop:vami.searchpath.SDDC-Manager="' + $sddcManagerDomainSearch + '" --prop:vami.domain.SDDC-Manager="' + $sddcManagerDnsDomain + '" --prop:FIPS_ENABLE="' + $sddcManagerFipsSetting + '" --prop:guestinfo.ntp="' + $ntpServers + '" "' + $sddcManagerOvaFile + '" "vi://' + $tempvCenterAdmin + ':' + $tempvCenterAdminPassword + '@' + $tempvCenterFqdn + '/' + $datacenterName + '/host/' + $clusterName + '/"'
     $scriptBlock = {Invoke-Expression "& $using:command"}
     $deploymentJob = Start-Job -scriptblock $scriptBlock -ArgumentList $command
@@ -1120,7 +1184,8 @@ Function New-SDDCManagerOvaDeployment
     Foreach ($line in $progress)
     {
         LogMessage -type INFO -message "[$jumpboxName] $line"
-    }    
+    }
+    LogMessage -type INFO -message "[$jumpboxName] Polling at 60 second intervals"
     Do
     {
         $progress = @(Get-Job -id $deploymentJob.id | Receive-Job)
