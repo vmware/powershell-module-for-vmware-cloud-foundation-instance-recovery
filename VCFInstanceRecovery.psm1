@@ -85,8 +85,8 @@ Function LogMessage
     )
 
     $splitMessage = $message.split("] ")
-    $object = $message[0]+"] "
-    $information = $message[1]
+    $object = $splitMessage[0]+"] "
+    $information = $splitMessage[1]
 
     If (!$colour) {
         $colour = "92m" #Green
@@ -129,8 +129,7 @@ Function LogMessage
     $ESC = [char]0x1b
     $objectColour = "97m"
 
-    Write-Host "$ESC[${objectColour} [$object]$ESC[${messageColour} [$information]$ESC[0m"
-    Write-Host "$ESC[${timestampcolour} [$timestamp]$ESC[${threadColour} [$threadTag]$ESC[${messageColour} [$type] $message$ESC[0m"
+    Write-Host "$ESC[${objectColour}$object$ESC[${messageColour}$information$ESC[0m"
     #$logContent = '[' + $timeStamp + '] [' +$threadTag + '] ' + $type + ' ' + $message
     #Add-Content -path $logFile $logContent
 }
