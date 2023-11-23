@@ -126,7 +126,7 @@ Function LogMessage
     $information = $splitMessage[1]
 
     $ESC = [char]0x1b
-    $objectColour = "97m"
+    $objectColour = "93m"
     $timestampColour = "97m"
 
     Write-Host "$ESC[${timestampcolour}[$timestamp]$ESC[${objectColour} $object$ESC[${messageColour}$information$ESC[0m"
