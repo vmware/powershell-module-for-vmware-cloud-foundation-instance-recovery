@@ -1295,7 +1295,7 @@ Function New-UploadAndModifySDDCManagerBackup
     $extractedBackupFolder = ($backupFileName -Split(".tar.gz"))[0]
     
     #Establish SSH Connection to SDDC Manager
-    LogMessage -type INFO -message "[$jumpboxName] Establishing Connection to SDDC Manager Appliance"
+    LogMessage -type INFO -message "[$jumpboxName] Establishing Connection to $sddcManagerFQDN"
     $SecurePassword = ConvertTo-SecureString -String $vcfUserPassword -AsPlainText -Force
     $mycreds = New-Object System.Management.Automation.PSCredential ("vcf", $SecurePassword)
     Get-SSHTrustedHost | Remove-SSHTrustedHost | Out-Null
