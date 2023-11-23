@@ -84,10 +84,6 @@ Function LogMessage
         [Parameter (Mandatory = $false)] [ValidateSet("INFO", "ERROR", "WARNING", "EXCEPTION","ADVISORY","NOTE","QUESTION","WAIT")] [String]$type = "INFO"
     )
 
-    $splitMessage = $message.split("] ")
-    $object = $splitMessage[0]+"] "
-    $information = $splitMessage[1]
-
     If (!$colour) {
         $colour = "92m" #Green
     }
@@ -126,10 +122,16 @@ Function LogMessage
     97m Bright White
     #>
 
+    $timeStamp = Get-Date -Format "MM-dd-yyyy_HH:mm:ss"
+    $splitMessage = $message.split("] ")
+    $object = $splitMessage[0]+"] "
+    $information = $splitMessage[1]
+
     $ESC = [char]0x1b
     $objectColour = "97m"
+    $timestampColour = "97m"
 
-    Write-Host "$ESC[${objectColour}$object$ESC[${messageColour}$information$ESC[0m"
+    Write-Host "$ESC[${timestampcolour}[$timestamp]$ESC[${objectColour} $object$ESC[${messageColour}$information$ESC[0m"
     #$logContent = '[' + $timeStamp + '] [' +$threadTag + '] ' + $type + ' ' + $message
     #Add-Content -path $logFile $logContent
 }
