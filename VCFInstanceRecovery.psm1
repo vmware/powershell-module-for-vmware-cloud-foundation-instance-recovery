@@ -129,7 +129,7 @@ Function LogMessage
     $objectColour = "93m"
     $timestampColour = "97m"
 
-    Write-Host "$ESC[${timestampcolour}[$timestamp]$ESC[${objectColour} $object$ESC[${messageColour}$information$ESC[0m"
+    Write-Host "$ESC[${timestampcolour}[$timestamp]$ESC[${messageColour} [$type] $ESC[${objectColour} $object$ESC[${messageColour}$information$ESC[0m"
     #$logContent = '[' + $timeStamp + '] [' +$threadTag + '] ' + $type + ' ' + $message
     #Add-Content -path $logFile $logContent
 }
