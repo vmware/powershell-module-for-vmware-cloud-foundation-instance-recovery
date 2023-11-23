@@ -127,6 +127,21 @@ Function LogMessage
     #$logContent = '[' + $timeStamp + '] [' +$threadTag + '] ' + $type + ' ' + $message
     #Add-Content -path $logFile $logContent
 }
+
+Function VCFIRCreateHeader
+{
+    Param(
+        [Parameter (Mandatory = $true)]
+        [String] $username,
+        [Parameter (Mandatory = $true)]
+        [String] $password
+    )
+    $base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(("{0}:{1}" -f $username, $password))) # Create Basic Authentication Encoded Credentials
+    $headers = @{"Accept" = "application/json" }
+    $headers.Add("Authorization", "Basic $base64AuthInfo")
+    
+    Return $headers
+}
 #EndRegion Supporting Functions
 
 #Region Pre-Requisites
@@ -979,7 +994,7 @@ Function New-NSXManagerOvaDeployment
             {
                 Foreach ($line in $progress)
                 {
-                    If (($line -ne $null) -and ($line -notlike "Task progress*"))
+                    If (($line -ne "") -and ($line -notlike "Task progress*"))
                     {
                         LogMessage -type INFO -message "[$jumpboxName] $line"
                     }
@@ -1082,7 +1097,7 @@ Function New-vCenterOvaDeployment
             {
                 Foreach ($line in $progress)
                 {
-                    If (($line -ne $null) -and ($line -notlike "Task progress*"))
+                    If (($line -ne "") -and ($line -notlike "Task progress*"))
                     {
                         LogMessage -type INFO -message "[$jumpboxName] $line"
                     }
@@ -1195,7 +1210,7 @@ Function New-SDDCManagerOvaDeployment
             {
                 Foreach ($line in $progress)
                 {
-                    If (($line -ne $null) -and ($line -notlike "Task progress*"))
+                    If (($line -ne "") -and ($line -notlike "Task progress*"))
                     {
                         LogMessage -type INFO -message "[$jumpboxName] $line"
                     }
@@ -3165,21 +3180,6 @@ Export-ModuleMember -Function Restore-ClusterDRSGroupsAndRules
 #EndRegion vCenter Functions
 
 #Region NSXT Functions
-Function VCFIRCreateHeader
-{
-    Param(
-        [Parameter (Mandatory = $true)]
-        [String] $username,
-        [Parameter (Mandatory = $true)]
-        [String] $password
-    )
-    $base64AuthInfo = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes(("{0}:{1}" -f $username, $password))) # Create Basic Authentication Encoded Credentials
-    $headers = @{"Accept" = "application/json" }
-    $headers.Add("Authorization", "Basic $base64AuthInfo")
-    
-    Return $headers
-}
-
 Function Resolve-PhysicalHostTransportNodes
 {
     <#
