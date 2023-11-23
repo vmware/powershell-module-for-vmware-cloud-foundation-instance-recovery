@@ -1525,9 +1525,7 @@ Function Invoke-SDDCManagerRestore
         {
             Do
             {
-                $counter ++; 
-                Write-Host "operationsManagerServiceStatus status is $([STRING]$operationsManagerServiceStatus). Wait $counter"
-                Sleep 10
+                Sleep 30
                 $scriptText = "curl https://$extractedSddcManagerFqdn/v1/tokens -k -X POST -H `"Content-Type: application/json`" -d `'{`"username`": `"admin@local`",`"password`": `"$localUserPassword`"}`' | awk -F `"\`"`" `'{ print `$4}`'"
                 $token = (Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $scriptText).output
                 $scriptText = "curl https://$extractedSddcManagerFqdn/v1/vcf-services  -k -X GET -H `"Content-Type: application/json`" -H `"Authorization: Bearer $token`" | json_pp"
