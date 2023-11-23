@@ -80,7 +80,8 @@ Function Get-InstalledSoftware
 Function LogMessage
 {
     Param (
-        [Parameter (Mandatory = $true)] [AllowEmptyString()] [String]$message
+        [Parameter (Mandatory = $true)] [AllowEmptyString()] [String]$message,
+        [Parameter (Mandatory = $false)] [ValidateSet("INFO", "ERROR", "WARNING", "EXCEPTION","ADVISORY","NOTE","QUESTION","WAIT")] [String]$type = "INFO",
     )
 
     $splitMessage = $message.split("] ")
@@ -127,9 +128,9 @@ Function LogMessage
 
     $ESC = [char]0x1b
     $objectColour = "97m"
-    $informationColour = "32m"
 
-    Write-Host  "$ESC[${objectColour} [$object]$ESC[${informationColour} [$information]$ESC[0m"
+    Write-Host "$ESC[${objectColour} [$object]$ESC[${messageColour} [$information]$ESC[0m"
+    Write-Host "$ESC[${timestampcolour} [$timestamp]$ESC[${threadColour} [$threadTag]$ESC[${messageColour} [$type] $message$ESC[0m"
     #$logContent = '[' + $timeStamp + '] [' +$threadTag + '] ' + $type + ' ' + $message
     #Add-Content -path $logFile $logContent
 }
