@@ -1110,20 +1110,39 @@ Function New-SDDCManagerOvaDeployment
     $sddcManagerFipsSetting = $extractedSDDCData.sddcManager.fips_enabled
     $ntpServers = $extractedSddcData.mgmtDomainInfrastructure.ntpServers -join(",")
     
-    LogMessage -type INFO -message "[$sddcManagerVMName] Deploying SDDC Manager OVA"
+    LogMessage -type INFO -message "[$jumpboxName] Deploying SDDC Manager OVA (60 sec polling)"
     $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowAllExtraConfig --X:logLevel=quiet --diskMode=thin --X:enableHiddenProperties --X:waitForIp --powerOn --name="' + $sddcManagerVMName + '" --network="' + $vmNetwork + '" --datastore="' + $vmDatastore + '" --prop:vami.hostname="' + $sddcManagerHostName + '" --prop:vami.ip0.SDDC-Manager="' + $sddcManagerIp + '" --prop:vami.netmask0.SDDC-Manager="' + $sddcManagerNetworkMask + '" --prop:vami.DNS.SDDC-Manager="' + $sddcManagerDns + '" --prop:vami.gateway.SDDC-Manager="' + $sddcManagerGateway + '" --prop:BACKUP_PASSWORD="' + $sddcManagerBackupPassword + '" --prop:ROOT_PASSWORD="' + $rootUserPassword + '" --prop:VCF_PASSWORD="' + $vcfUserPassword + '" --prop:BASIC_AUTH_PASSWORD="' + $basicAuthUserPassword + '" --prop:LOCAL_USER_PASSWORD="' + $localUserPassword + '" --prop:vami.searchpath.SDDC-Manager="' + $sddcManagerDomainSearch + '" --prop:vami.domain.SDDC-Manager="' + $sddcManagerDnsDomain + '" --prop:FIPS_ENABLE="' + $sddcManagerFipsSetting + '" --prop:guestinfo.ntp="' + $ntpServers + '" "' + $sddcManagerOvaFile + '" "vi://' + $tempvCenterAdmin + ':' + $tempvCenterAdminPassword + '@' + $tempvCenterFqdn + '/' + $datacenterName + '/host/' + $clusterName + '/"'
     $scriptBlock = {Invoke-Expression "& $using:command"}
     $deploymentJob = Start-Job -scriptblock $scriptBlock -ArgumentList $command
-    Do {sleep 1; $jobStatus = (Get-Job -id $deploymentJob.id).state } Until ($jobStatus -eq "Running" )
-    $progress = Get-Job | Receive-Job
-    If ($progress) {LogMessage -type INFO -message $progress}
-    Sleep 30
+    Do {Sleep 1; $jobStatus = (Get-Job -id $deploymentJob.id).state } Until ($jobStatus -eq "Running" )
+    Sleep 10
+    $progress = @(Get-Job -id $deploymentJob.id | Receive-Job)
+    Foreach ($line in $progress)
+    {
+        LogMessage -type INFO -message "[$jumpboxName] $line"
+    }    
     Do
     {
+        $progress = @(Get-Job -id $deploymentJob.id | Receive-Job)
+        If ($progress) 
+        {
+            If ($progress[-1] -notlike "Disk progress*")
+            {
+                Foreach ($line in $progress)
+                {
+                    If (($line -ne $null) -and ($line -notlike "Task progress*"))
+                    {
+                        LogMessage -type INFO -message "[$jumpboxName] $line"
+                    }
+                }    
+            }
+            else 
+            {
+                LogMessage -type INFO -message "[$jumpboxName] $($progress[-1])"
+            }
+        }
         $jobStatus = (Get-Job -id $deploymentJob.id).state
-        $progress = Get-Job | Receive-Job
-        If ($progress) {LogMessage -type INFO -message $progress}
-        If ($jobStatus -eq "Running") {Sleep 30}
+        If ($jobStatus -eq "Running") {Sleep 60}
     } While ($jobStatus -eq "Running")
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
