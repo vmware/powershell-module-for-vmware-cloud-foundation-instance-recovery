@@ -81,7 +81,7 @@ Function LogMessage
 {
     Param (
         [Parameter (Mandatory = $true)] [AllowEmptyString()] [String]$message,
-        [Parameter (Mandatory = $false)] [ValidateSet("INFO", "ERROR", "WARNING", "EXCEPTION","ADVISORY","NOTE","QUESTION","WAIT")] [String]$type = "INFO",
+        [Parameter (Mandatory = $false)] [ValidateSet("INFO", "ERROR", "WARNING", "EXCEPTION","ADVISORY","NOTE","QUESTION","WAIT")] [String]$type = "INFO"
     )
 
     $splitMessage = $message.split("] ")
