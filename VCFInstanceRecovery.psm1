@@ -119,17 +119,11 @@ Function LogMessage
     96m Bright Cyan
     97m Bright White
     #>
-
-    $timeStamp = Get-Date -Format "MM-dd-yyyy_HH:mm:ss"
-    $splitMessage = $message.split("] ")
-    $object = $splitMessage[0]+"] "
-    $information = $splitMessage[1]
-
     $ESC = [char]0x1b
-    $objectColour = "93m"
+    $timeStamp = Get-Date -Format "MM-dd-yyyy_HH:mm:ss"
     $timestampColour = "97m"
 
-    Write-Host "$ESC[${timestampcolour}[$timestamp]$ESC[${objectColour} $object$ESC[${messageColour}[$type] $information$ESC[0m"
+    Write-Host "$ESC[${timestampcolour} [$timestamp]$ESC[${messageColour} [$type] $message$ESC[0m"
     #$logContent = '[' + $timeStamp + '] [' +$threadTag + '] ' + $type + ' ' + $message
     #Add-Content -path $logFile $logContent
 }
@@ -852,7 +846,7 @@ Function New-ExtractDataFromSDDCBackup
     Remove-Item -Path "$parentFolder\decrypted-sddc-manager-backup.tar" -force -confirm:$false
     Remove-Item -path "$parentFolder\$extractedBackupFolder" -Recurse 
 
-    LogMessage -type INFO -message "[.....] Task Complete"
+    LogMessage -type INFO -message "[....] Task Complete"
 }
 Export-ModuleMember -Function New-ExtractDataFromSDDCBackup
 
@@ -962,7 +956,7 @@ Function New-NSXManagerOvaDeployment
     }
     LogMessage -type INFO -message "[$nsxManagerVMName] Deploying NSX Manager OVA"
     Invoke-Expression "& $command"
-    LogMessage -type INFO -message "[.....] Task Complete"
+    LogMessage -type INFO -message "[....] Task Complete"
 }
 Export-ModuleMember -Function New-NSXManagerOvaDeployment
 
@@ -1030,7 +1024,7 @@ Function New-vCenterOvaDeployment
     LogMessage -type INFO -message "[$restoredvCenterVMName] Deploying vCenter OVA"
     $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowExtraConfig --X:enableHiddenProperties --diskMode=thin --X:injectOvfEnv --X:waitForIp --X:logFile=ovftool.log --name="' + $restoredvCenterVMName + '" --net:"Network 1"="' +$vmNetwork + '" --datastore="' + $vmDatastore + '" --deploymentOption="' + $restoredvCenterDeploymentSize + '" --prop:guestinfo.cis.appliance.net.addr.family="ipv4" --prop:guestinfo.cis.appliance.net.addr="' + $restoredvCenterIpAddress + '" --prop:guestinfo.cis.appliance.net.pnid="' + $restoredvCenterFqdn + '" --prop:guestinfo.cis.appliance.net.prefix="' + $restoredvCenterNetworkPrefix + '" --prop:guestinfo.cis.appliance.net.mode="static" --prop:guestinfo.cis.appliance.net.dns.servers="' + $restoredvCenterDnsServers + '" --prop:guestinfo.cis.appliance.net.gateway="' + $restoredvCenterGateway + '" --prop:guestinfo.cis.appliance.root.passwd="' + $restoredvCenterRootPassword + '" --prop:guestinfo.cis.appliance.ssh.enabled="True" "' + $vCenterOvaFile + '" ' + '"vi://' + $tempvCenterAdmin + ':' + $tempvCenterAdminPassword + '@' + $tempvCenterFqdn + '/' + $datacenterName + '/host/' + $clusterName + '/"'
     Invoke-Expression "& $command"
-    LogMessage -type INFO -message "[.....] Task Complete"
+    LogMessage -type INFO -message "[....] Task Complete"
 }
 Export-ModuleMember -Function New-vCenterOvaDeployment
 
@@ -1108,7 +1102,7 @@ Function New-SDDCManagerOvaDeployment
     LogMessage -type INFO -message "[$sddcManagerVMName] Deploying SDDC Manager OVA"
     $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowAllExtraConfig --diskMode=thin --X:enableHiddenProperties --X:waitForIp --powerOn --name="' + $sddcManagerVMName + '" --network="' + $vmNetwork + '" --datastore="' + $vmDatastore + '" --prop:vami.hostname="' + $sddcManagerHostName + '" --prop:vami.ip0.SDDC-Manager="' + $sddcManagerIp + '" --prop:vami.netmask0.SDDC-Manager="' + $sddcManagerNetworkMask + '" --prop:vami.DNS.SDDC-Manager="' + $sddcManagerDns + '" --prop:vami.gateway.SDDC-Manager="' + $sddcManagerGateway + '" --prop:BACKUP_PASSWORD="' + $sddcManagerBackupPassword + '" --prop:ROOT_PASSWORD="' + $rootUserPassword + '" --prop:VCF_PASSWORD="' + $vcfUserPassword + '" --prop:BASIC_AUTH_PASSWORD="' + $basicAuthUserPassword + '" --prop:LOCAL_USER_PASSWORD="' + $localUserPassword + '" --prop:vami.searchpath.SDDC-Manager="' + $sddcManagerDomainSearch + '" --prop:vami.domain.SDDC-Manager="' + $sddcManagerDnsDomain + '" --prop:FIPS_ENABLE="' + $sddcManagerFipsSetting + '" --prop:guestinfo.ntp="' + $ntpServers + '" "' + $sddcManagerOvaFile + '" "vi://' + $tempvCenterAdmin + ':' + $tempvCenterAdminPassword + '@' + $tempvCenterFqdn + '/' + $datacenterName + '/host/' + $clusterName + '/"'
     Invoke-Expression "& $command"
-    LogMessage -type INFO -message "[.....] Task Complete"
+    LogMessage -type INFO -message "[....] Task Complete"
 }
 Export-ModuleMember -Function New-SDDCManagerOvaDeployment
 
@@ -1231,7 +1225,7 @@ Function New-UploadAndModifySDDCManagerBackup
 
     #Disconnect from vCenter
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
-    LogMessage -type INFO -message "[.....] Task Complete"
+    LogMessage -type INFO -message "[....] Task Complete"
 }
 Export-ModuleMember -Function New-UploadAndModifySDDCManagerBackup
 
@@ -1509,7 +1503,7 @@ Function New-ReconstructedPartialBringupJsonSpec
     
     LogMessage -type INFO -message "[$jumpboxName] Saving partial bringup JSON spec: $(($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).domainName + "-partial-bringup-spec.json")"
     $mgmtDomainObject | ConvertTo-Json -depth 10 | Out-File (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).domainName + "-partial-bringup-spec.json")
-    LogMessage -type INFO -message "[.....] Task Complete"
+    LogMessage -type INFO -message "[....] Task Complete"
 }
 Export-ModuleMember -Function New-ReconstructedPartialBringupJsonSpec
 
@@ -1626,7 +1620,7 @@ Function Invoke-SDDCManagerRestore
     #Close SSH Session
     Remove-SSHSession -SSHSession $sshSession | Out-Null
     
-    LogMessage -type INFO -message "[.....] Task Complete"
+    LogMessage -type INFO -message "[....] Task Complete"
 }
 Export-ModuleMember -Function Invoke-SDDCManagerRestore
 #EndRegion SDDC Manager Functions
@@ -1694,7 +1688,7 @@ Function Move-ClusterHostsToRestoredVcenter
         $esxiRootPassword = ($extractedSddcData.passwords | Where-Object {($_.entityType -eq "ESXI") -and ($_.entityName -eq $esxiHost.Name) -and ($_.username -eq "root")}).password
         Add-VMHost -Name $esxiHost.Name -Location $clusterName -User root -Password $esxiRootPassword -Force -Confirm:$false | Out-Null
     }
-    LogMessage -type INFO -message "[.....] Task Complete"
+    LogMessage -type INFO -message "[....] Task Complete"
 }
 Export-ModuleMember -Function Move-ClusterHostsToRestoredVcenter
 
@@ -1742,7 +1736,7 @@ Function Remove-ClusterHostsFromVds
         Get-VDSwitch -Name $vdsName | Remove-VDSwitchVMHost -VMHost $esxiHost -Confirm:$false | Out-Null
     }
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
-    LogMessage -type INFO -message "[.....] Task Complete"
+    LogMessage -type INFO -message "[....] Task Complete"
 }
 Export-ModuleMember -Function Remove-ClusterHostsFromVds
 
@@ -1784,7 +1778,7 @@ Function Move-MgmtVmsToTempPg
         Get-VM -Name $vmToMove | Get-NetworkAdapter | Set-NetworkAdapter -NetworkName "mgmt_temp" -confirm:$false | Out-Null
     }
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
-    LogMessage -type INFO -message "[.....] Task Complete"
+    LogMessage -type INFO -message "[....] Task Complete"
 }
 Export-ModuleMember -Function Move-MgmtVmsToTempPg
 
@@ -1906,7 +1900,7 @@ Function Move-ClusterHostNetworkingTovSS
         Get-VMHost -Name $vmhost | set-vmhost -State Connected | Out-Null #>
         Start-Sleep 5
     }
-    LogMessage -type INFO -message "[.....] Task Complete"
+    LogMessage -type INFO -message "[....] Task Complete"
 }
 Export-ModuleMember -Function Move-ClusterHostNetworkingTovSS
 
@@ -1964,7 +1958,7 @@ Function Move-ClusterVmnicTovSwitch
         New-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $esxiHost -Name "vSwitch0") -Name "mgmt_temp" -VLanId $VLanId | Out-Null
     }
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
-    LogMessage -type INFO -message "[.....] Task Complete"
+    LogMessage -type INFO -message "[....] Task Complete"
 }
 Export-ModuleMember -Function Move-ClusterVmnicTovSwitch
 
@@ -2033,7 +2027,7 @@ Function Set-ClusterHostsvSanIgnoreClusterMemberList
         Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $esxCommand | Out-Null
     }
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
-    LogMessage -type INFO -message "[.....] Task Complete"
+    LogMessage -type INFO -message "[....] Task Complete"
 }
 Export-ModuleMember -Function Set-ClusterHostsvSanIgnoreClusterMemberList
 
@@ -2083,7 +2077,7 @@ Function Move-ClusterVMsToFirstHost
         Sleep 5
     } Until (!$runningTasks)
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
-    LogMessage -type INFO -message "[.....] Task Complete"
+    LogMessage -type INFO -message "[....] Task Complete"
 }
 Export-ModuleMember -Function Move-ClusterVMsToFirstHost
 
@@ -2197,7 +2191,7 @@ Function Resolve-PhysicalHostServiceAccounts
         } Until ($taskStatus -ne "IN_PROGRESS")
         LogMessage -type INFO -message "$taskStatus"
     }
-    LogMessage -type INFO -message "[.....] Task Complete"
+    LogMessage -type INFO -message "[....] Task Complete"
 }
 Export-ModuleMember -Function Resolve-PhysicalHostServiceAccounts
 
@@ -2240,7 +2234,7 @@ Function Set-ClusterDRSLevel
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
     set-cluster -cluster $clusterName -DrsAutomationLevel $DrsAutomationLevel -confirm:$false
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
-    LogMessage -type INFO -message "[.....] Task Complete"
+    LogMessage -type INFO -message "[....] Task Complete"
 }
 Export-ModuleMember -Function Set-ClusterDRSLevel
 
@@ -2283,7 +2277,7 @@ Function Remove-NonResponsiveHosts
         Get-VMHost | Where-Object { $_.Name -eq $nonResponsiveHost.Name } | Remove-VMHost -Confirm:$false
     }
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
-    LogMessage -type INFO -message "[.....] Task Complete"
+    LogMessage -type INFO -message "[....] Task Complete"
 }
 Export-ModuleMember -Function Remove-NonResponsiveHosts
 
@@ -2360,7 +2354,7 @@ Function Add-HostsToCluster
         }
     }
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
-    LogMessage -type INFO -message "[.....] Task Complete"
+    LogMessage -type INFO -message "[....] Task Complete"
 }
 Export-ModuleMember -Function Add-HostsToCluster
 
@@ -2402,7 +2396,7 @@ Function Remove-StandardSwitch
         Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name "vSwitch0" | Remove-VirtualSwitch -Confirm:$false | Out-Null
     }
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
-    LogMessage -type INFO -message "[.....] Task Complete"
+    LogMessage -type INFO -message "[....] Task Complete"
 }
 Export-ModuleMember -Function Remove-StandardSwitch
 
@@ -2502,7 +2496,7 @@ Function Add-VMKernelsToHost
         }
         $esxcli.network.ip.interface.ipv4.set.Invoke($interfaceArg) *>$null
     }
-    LogMessage -type INFO -message "[.....] Task Complete"
+    LogMessage -type INFO -message "[....] Task Complete"
 }
 Export-ModuleMember -Function Add-VMKernelsToHost
 
@@ -2561,7 +2555,7 @@ Function Backup-ClusterVMOverrides
         }
     }
     $overRiddenData | ConvertTo-Json -depth 10 | Out-File "$clusterName-vmOverrides.json"
-    LogMessage -type INFO -message "[.....] Task Complete"
+    LogMessage -type INFO -message "[....] Task Complete"
 }
 Export-ModuleMember -Function Backup-ClusterVMOverrides
 
@@ -2604,7 +2598,7 @@ Function Backup-ClusterVMLocations
     Catch {
         catchWriter -object $_
     }
-    LogMessage -type INFO -message "[.....] Task Complete"
+    LogMessage -type INFO -message "[....] Task Complete"
 }
 Export-ModuleMember -Function Backup-ClusterVMLocations
 
@@ -2700,7 +2694,7 @@ Function Backup-ClusterDRSGroupsAndRules
     Catch {
         catchWriter -object $_
     }
-    LogMessage -type INFO -message "[.....] Task Complete"
+    LogMessage -type INFO -message "[....] Task Complete"
 }
 Export-ModuleMember -Function Backup-ClusterDRSGroupsAndRules
 
@@ -2854,7 +2848,7 @@ Function Restore-ClusterVMOverrides
     catch {
         catchWriter -object $_
     }
-    LogMessage -type INFO -message "[.....] Task Complete"
+    LogMessage -type INFO -message "[....] Task Complete"
 }
 Export-ModuleMember -Function Restore-ClusterVMOverrides
 
@@ -2911,7 +2905,7 @@ Function Restore-ClusterVMLocations
     catch {
         catchWriter -object $_
     }
-    LogMessage -type INFO -message "[.....] Task Complete"
+    LogMessage -type INFO -message "[....] Task Complete"
 }
 Export-ModuleMember -Function Restore-ClusterVMLocations
 
@@ -3021,7 +3015,7 @@ Function Restore-ClusterDRSGroupsAndRules
     catch {
         catchWriter -object $_
     }
-    LogMessage -type INFO -message "[.....] Task Complete"
+    LogMessage -type INFO -message "[....] Task Complete"
 }
 Export-ModuleMember -Function Restore-ClusterDRSGroupsAndRules
 
@@ -3107,7 +3101,7 @@ Function Resolve-PhysicalHostTransportNodes
         LogMessage -type INFO -message "[$nsxManagerFqdn] Resolving NSX Installation on $(($allHostTransportNodes | Where-Object {$_.id -eq $hostID}).display_name) "
         $response = Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -headers $headers -body $body
     }
-    LogMessage -type INFO -message "[.....] Task Complete"
+    LogMessage -type INFO -message "[....] Task Complete"
 }
 Export-ModuleMember -Function Resolve-PhysicalHostTransportNodes
 
@@ -3285,7 +3279,7 @@ Function Invoke-NSXEdgeClusterRecovery
             }
         }
     }
-    LogMessage -type INFO -message "[.....] Task Complete"
+    LogMessage -type INFO -message "[....] Task Complete"
 }
 Export-ModuleMember -Function Invoke-NSXEdgeClusterRecovery
 #EndRegion NSXT Functions
