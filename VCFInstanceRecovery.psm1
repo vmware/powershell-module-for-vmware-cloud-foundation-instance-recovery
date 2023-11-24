@@ -2054,7 +2054,7 @@ Function Move-ClusterHostNetworkingTovSS
         LogMessage -type INFO -message "[$($vmHost.name)] Now migrating VM networks from $vdsName to $vssName"
         foreach ($VM in $VMlist){
         $VMnic = Get-NetworkAdapter $vm
-        $VMnic | Set-NetworkAdapter -PortGroup (Get-VirtualPortGroup -VMhost $VMHost.name -Standard -Name $vmnic.NetworkName) -confirm:$false -errorAction SilentlyContinue | Out-Null
+        $VMnic | Set-NetworkAdapter -PortGroup (Get-VirtualPortGroup -VMhost $VMHost.name -Standard -Name $mgmt_name) -confirm:$false -errorAction SilentlyContinue | Out-Null
         LogMessage -type INFO -message "[$($vmHost.name)] Migrated $VM network to $vssName"
         }
 
