@@ -2027,7 +2027,7 @@ Function Move-ClusterHostNetworkingTovSS
         $storage_pg = New-VirtualPortGroup -VirtualSwitch $vSSObj -Name $storage_name -VLanId $vSanVlanId
         
         LogMessage -type INFO -message "[$($vmhost.name)] Creating mgmt_temp Network portgroup on $vssName"
-        $mgmt_temp_pg = New-VirtualPortGroup -VirtualSwitch $vSSObj -Name "mgmt_temp" -VLanId $mgmtVlanId | Out-Null
+        $mgmt_temp_pg = New-VirtualPortGroup -VirtualSwitch $vSSObj -Name "mgmt_temp" -VLanId $mgmtVlanId
 <#         foreach($pg in $portGroupsObject){
             #Get port group VLAN ID
             $pgVLAN = $pg.Extensiondata.Config.DefaultPortConfig.Vlan.VlanID
