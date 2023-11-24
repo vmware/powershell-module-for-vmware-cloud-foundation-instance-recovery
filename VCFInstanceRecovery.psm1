@@ -1948,134 +1948,124 @@ Function Move-ClusterHostNetworkingTovSS
     The Move-ClusterHostNetworkingTovSS cmdlet moves all hosts in a cluster from a vsphere Distributed switch to a vSphere Standard switch
 
     .EXAMPLE
-    Move-ClusterHostNetworkingTovSS -vCenterFQDN "sfo-m01-vc02.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01" -vdsName "sfo-m01-cl01-vds01" -mtu 9000 -vmnic "vmnic1" -mgmtVlanId 1611 -vMotionVlanId 1612 -vSanVlanId 1613
+    Move-ClusterHostNetworkingTovSS -vCenterFQDN "sfo-m01-vc02.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01" -vdsName "sfo-m01-cl01-vds01" -mtu 9000 -vmnic "vmnic0" -mgmtVlanId 1611 -vMotionVlanId 1612 -vSanVlanId 1613
 
-    .PARAMETER vCenterFQDN
+    .PARAMETER tempvCenterFqdn
     FQDN of the vCenter instance hosting the cluster which should be moved
 
-    .PARAMETER vCenterAdmin
+    .PARAMETER tempvCenterAdmin
     Admin user of the vCenter instance hosting the cluster which should be moved
     
-    .PARAMETER vCenterAdminPassword
+    .PARAMETER tempvCenterAdminPassword
     Admin password for the vCenter instance hosting the cluster which should be moved
 
     .PARAMETER clusterName
     Name of the vSphere cluster instance hosting the VMS to be moved
 
-    .PARAMETER vdsName
-    Name of the vDS from which the hosts should be moved
+    .PARAMETER vmnic0
+    vmnic0 to be moved from the vDS to the vSS
 
-    .PARAMETER mtu
-    MTU to be assigned to the temporary standard switch
-    
-    .PARAMETER vmnic
-    vmnic to be moved from the vDS to the vSS
-
-    .PARAMETER mgmtVlanId
-    Management network vLan ID
-
-    .PARAMETER vMotionVlanId
-    vMotion network vLan ID
-
-    .PARAMETER vSanVlanId
-    vSAN network vLan ID
+    .PARAMETER vmnic1
+    vmnic1 to be moved from the vDS to the vSS
     #>
     
     Param(
-        [Parameter (Mandatory = $true)][String] $vCenterFQDN,
-        [Parameter (Mandatory = $true)][String] $vCenterAdmin,
-        [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
+        [Parameter (Mandatory = $true)][String] $tempvCenterFqdn,
+        [Parameter (Mandatory = $true)][String] $tempvCenterAdmin,
+        [Parameter (Mandatory = $true)][String] $tempvCenterAdminPassword,
         [Parameter (Mandatory = $true)][String] $clusterName,
-        [Parameter (Mandatory = $true)][String] $vdsName,
-        [Parameter (Mandatory = $true)][String] $mtu,
-        [Parameter (Mandatory = $true)][String] $vmnic,
-        [Parameter (Mandatory = $true)][String] $mgmtVlanId,
-        [Parameter (Mandatory = $true)][String] $vMotionVlanId,
-        [Parameter (Mandatory = $true)][String] $vSanVlanId
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
+        [Parameter (Mandatory = $true)][String] $vmnic0,
+        [Parameter (Mandatory = $true)][String] $vmnic1
 
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
+    $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
+    
+    $vssName = "vSwitch0"
+    $vmk0Pg = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq "MANAGEMENT"}).portgroupKey
+    $vmk1Pg = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq "VMOTION"}).portgroupKey
+    $vmk2Pg = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq "VSAN"}).portgroupKey
+    $mgmtVlanId = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq "MANAGEMENT"}).vlanID
+    $vMotionVlanId = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq "VMOTION"}).vlanID
+    $vSanVlanId = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq "VSAN"}).vlanID
+    $vdsName = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).vsphereclusterdetails | Where-Object {$_.isDefault -eq "t"}).vdsdetails.dvsName
+    
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
     
-    #Existing Elements
-    $vCenterVM = $vCenterFQDN.split(".")[0]
-    $allHosts = (get-cluster -name $clusterName | get-vmhost).name  
-    $vCenterHost = (Get-VM -Name $vCenterVM).vmhost.name
-    #$vds = Get-VDSwitch -Name $vdsName
-    
-    #Elements to be created per host
-    $vss_name = "vSwitch0"
-    $mgmt_name = "Management"
-    $vmotion_name = "vMotion"
-    $storage_name = "vSAN"
+    $vmHosts = (get-cluster -name $clusterName | get-vmhost)
 
-    $scriptBlock = {
-        $vmhost = Get-VMHost -Name $hostInstance
-
-        <# LogMessage -type INFO -message "[$vmhost] Entering Maintenance Mode" 
-        Get-VMHost -Name $vmhost | set-vmhost -State Maintenance -VsanDataMigrationMode NoDataMigration | Out-Null         #>
-
-        Get-VMHostNetworkAdapter -VMHost $vmhost -Physical -Name $vmnic | Remove-VDSwitchPhysicalNetworkAdapter -Confirm:$false | Out-Null
-        New-VirtualSwitch -VMHost $vmhost -Name $vss_name -mtu $mtu | Out-Null
-        New-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $vmhost -Name $vss_name) -Name "mgmt_temp" -VLanId $mgmtVlanId | Out-Null
-
-        # pNICs to migrate to VSS
-        LogMessage -type INFO -message "[$vmhost] Retrieving pNIC info for vmnic1"
-        $vmnicToMove = Get-VMHostNetworkAdapter -VMHost $vmhost -Name $vmnic
-
-        # Array of pNICs to migrate to VSS
-        $pnic_array = @($vmnicToMove)
-
-        # vSwitch to migrate to
-        $vss = Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name $vss_name
-
-        # Create destination portgroups
-        LogMessage -type INFO -message "[$vmhost] Creating $mgmt_name portrgroup on $vss_name"
-        $mgmt_pg = New-VirtualPortGroup -VirtualSwitch $vss -Name $mgmt_name -VLanId $mgmtVlanId
-
-        LogMessage -type INFO -message "[$vmhost] Creating $vmotion_name portrgroup on $vss_name"
-        $vmotion_pg = New-VirtualPortGroup -VirtualSwitch $vss -Name $vmotion_name -VLanId $vMotionVlanId
-
-        LogMessage -type INFO -message "[$vmhost] Creating $storage_name Network portrgroup on $vss_name"
-        $storage_pg = New-VirtualPortGroup -VirtualSwitch $vss -Name $storage_name -VLanId $vSanVlanId
-
-        # Array of portgroups to map VMkernel interfaces (order matters!)
-        $pg_array = @($mgmt_pg, $vmotion_pg, $storage_pg)
-
-        # VMkernel interfaces to migrate to VSS
-        $mgmt_vmk = Get-VMHostNetworkAdapter -VMHost $vmhost -Name "vmk0"
-        $vmotion_vmk = Get-VMHostNetworkAdapter -VMHost $vmhost -Name "vmk1"
-        $storage_vmk = Get-VMHostNetworkAdapter -VMHost $vmhost -Name "vmk2"
-
-        # Array of VMkernel interfaces to migrate to VSS (order matters!)
-        $vmk_array = @($mgmt_vmk, $vmotion_vmk, $storage_vmk)
-
-        # Perform the migration
-        LogMessage -type INFO -message "[$vmhost] Migrating from $vdsName to $vss_name"
-        Add-VirtualSwitchPhysicalNetworkAdapter -VirtualSwitch $vss -VMHostPhysicalNic $pnic_array -VMHostVirtualNic $vmk_array -VirtualNicPortgroup $pg_array  -Confirm:$false
-       <#  LogMessage -type INFO -message "[$vmhost] Exiting Maintenance Mode" 
-        Get-VMHost -Name $vmhost | set-vmhost -State Connected | Out-Null #>
-        Start-Sleep 5
-    }
-
-    #All Hosts Except that hosting vCenter
-    $otherHosts = @()
-    Foreach ($hostInstance in $allHosts)
+    Foreach ($vmHost in $vmHosts)
     {
-        If ($hostInstance -ne $vCenterHost)
-        {
-            $otherHosts += $hostInstance
-            Invoke-command $scriptBlock
-        }
-    }
+        $vdsObject = Get-VDSwitch -Name $vdsName
+        $portGroupsObject = $vdsObject | Get-VDPortgroup
+        $mtu = $vdsObject.mtu
     
-    #Move vCenter to migrated Host
-    LogMessage -type INFO -message "[$vCenterVM] Moving to another host to avoid disruption"
-    $targetHost = Get-VMHost -name ($otherHosts | Get-Random)
-    Get-VM -Name $vCenterVM | Move-VM -Location $targetHost
-    $hostInstance = $vCenterHost
-    Invoke-command $scriptBlock    
+        LogMessage -type INFO -message "[$($vmHost.name)] Creating standard switch $vssName based off $vdsName"
+        $vSSObj = New-VirtualSwitch -VMHost $vmHost.name -Name $vssName -mtu $vdsObject.mtu
+
+        #Create Port Groups
+        foreach($pg in $portGroupsObject){
+            #Get port group VLAN ID
+            $pgVLAN = $pg.Extensiondata.Config.DefaultPortConfig.Vlan.VlanID
+            #Check if it is the uplink pg
+            If ($pg.IsUplink -eq "True"){Write-Host "Skipping Uplink PortGroup" -ForegroundColor yellow}
+            #If it is not the uplink pg, create it on the vSS
+            else{
+                New-VirtualPortGroup -Name $pg.name -VirtualSwitch $vSSObj -VLanId $pgVLAN | Out-null
+                Write-Host "Created PortGroup $pg with Vlan ID $pgVLAN" -ForegroundColor Cyan
+            }
+        }
+
+        LogMessage -type INFO -message "[$($vmHost.name)] Stepping $($Vmhost.name) into $vssName"
+        #Get physical adapter
+        $pNIC0Obj = Get-VMHostNetworkAdapter -VMhost $Vmhost.name -Physical -name $vmnic0
+        #Remove specified adapter from vDS
+        LogMessage -type INFO -message "[$($vmHost.name)] Removing $vmnic0 from $vdsName"
+        $pNIC0Obj | Remove-VDSwitchPhysicalNetworkAdapter -Confirm:$false
+        # Add specified adapter to newly created vSS
+        LogMessage -type INFO -message "[$($vmHost.name)] Migrating $vmnic0 from $vdsName to $vssName"
+        Add-VirtualSwitchPhysicalNetworkAdapter -VirtualSwitch $vSSObj -VMHostPhysicalNic $pNIC0Obj -Confirm:$false
+
+        #Set Cluster DRS Setting to Manual
+        $VMhostObj = Get-VMHost $Vmhost.name
+        $ClusterObj = Get-Cluster -Name $VMhostObj.Parent
+        LogMessage -type INFO -message "[$($clusterObj.name)] Setting DRS for Cluster to Manual" -ForegroundColor Cyan
+        Set-Cluster -Cluster $clusterObj -DrsAutomationLevel Manual -Confirm:$false |Out-Null
+
+        #Get List of virtual machines that are running on the host
+        $VMlist = $VMhostObj | get-VM
+        #Migrate VM Networks
+        LogMessage -type INFO -message "[$($vmHost.name)] Now migrating VM networks from $vdsName to $vssName"
+        foreach ($VM in $VMlist){
+        $VMnic = Get-NetworkAdapter $vm
+        $VMnic | Set-NetworkAdapter -PortGroup (Get-VirtualPortGroup -VMhost $VMHost.name -Standard -Name $vmnic.NetworkName) -confirm:$false
+        LogMessage -type INFO -message "[$($vmHost.name)] Migrated $VM network to $vssName"
+        }
+
+        $pNIC1Obj = Get-VMHostNetworkAdapter -VMhost $Vmhost.name  -Physical -name $vmnic1
+        $vSSObj = Get-VirtualSwitch -VMhost $VMhost -Name $vssName
+
+        #Get VMK ports to migrate
+        $vmk0 = Get-VMHostNetworkAdapter -VMhost $Vmhost.name -VMKernel -name vmk0
+        $vmk1 = Get-VMHostNetworkAdapter -VMhost $Vmhost.name -VMKernel -name vmk1
+        $vmk2 = Get-VMHostNetworkAdapter -VMhost $Vmhost.name -VMKernel -name vmk2
+
+        #get VMK port groups to migrate to
+        $vmk0pgObj = Get-virtualportgroup -virtualswitch $vssObj -name $vmk0pg
+        $vmk1pgObj = Get-virtualportgroup -virtualswitch $vssObj -name $vmk1pg
+        $vmk2pgObj = Get-virtualportgroup -virtualswitch $vssObj -name $vmk2pg
+
+        #create array of VMKports and VMKPortGroups
+        $vmkArray =@($vmk0,$vmk1,$vmk2)
+        $vmkpgArray =@($vmk0pgObj,$vmk1pgObj,$vmk2pgObj)
+
+        #Move physical nic and VMK ports from vDS to vSS
+        LogMessage -type INFO -message "[$($vmHost.name)] Migrating vmkernels from $vdsName to $vssName" -ForegroundColor Cyan
+        Add-VirtualSwitchPhysicalNetworkAdapter -VirtualSwitch $vssObj -VMHostPhysicalNic $pNIC1Obj -VMHostVirtualNic $vmkarray -VirtualNicPortgroup $vmkpgarray  -Confirm:$false
+    }
     
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
