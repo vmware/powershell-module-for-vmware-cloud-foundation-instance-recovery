@@ -2030,13 +2030,12 @@ Function Move-ClusterHostNetworkingTovSS
         Add-VirtualSwitchPhysicalNetworkAdapter -VirtualSwitch $vSSObj -VMHostPhysicalNic $pNIC0Obj -Confirm:$false
 
         #Set Cluster DRS Setting to Manual
-        $VMhostObj = Get-VMHost $Vmhost.name
-        $ClusterObj = Get-Cluster -Name $VMhostObj.Parent
+        $ClusterObj = Get-Cluster -Name $vmHost.Parent
         LogMessage -type INFO -message "[$($clusterObj.name)] Setting DRS for Cluster to Manual" -ForegroundColor Cyan
         Set-Cluster -Cluster $clusterObj -DrsAutomationLevel Manual -Confirm:$false |Out-Null
 
         #Get List of virtual machines that are running on the host
-        $VMlist = $VMhostObj | get-VM
+        $VMlist = $vmHost | get-VM
         #Migrate VM Networks
         LogMessage -type INFO -message "[$($vmHost.name)] Now migrating VM networks from $vdsName to $vssName"
         foreach ($VM in $VMlist){
