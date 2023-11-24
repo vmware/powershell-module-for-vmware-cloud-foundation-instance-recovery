@@ -1993,9 +1993,14 @@ Function Move-ClusterHostNetworkingTovSS
     $vSanVlanId = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq "VSAN"}).vlanID
     $vdsName = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).vsphereclusterdetails | Where-Object {$_.isDefault -eq "t"}).vdsdetails.dvsName
     
-    $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
+    $vCenterConnection = Connect-VIServer -server $tempvCenterFqdn -user $tempvCenterAdmin -password $tempvCenterAdminPassword
     
     $vmHosts = (get-cluster -name $clusterName | get-vmhost)
+
+    #Set Cluster DRS Setting to Manual
+    $ClusterObj = Get-Cluster -Name $vmHosts[0].Parent
+    LogMessage -type INFO -message "[$($clusterObj.name)] Setting DRS for Cluster to Manual"
+    Set-Cluster -Cluster $clusterObj -DrsAutomationLevel Manual -Confirm:$false |Out-Null
 
     Foreach ($vmHost in $vmHosts)
     {
@@ -2011,11 +2016,11 @@ Function Move-ClusterHostNetworkingTovSS
             #Get port group VLAN ID
             $pgVLAN = $pg.Extensiondata.Config.DefaultPortConfig.Vlan.VlanID
             #Check if it is the uplink pg
-            If ($pg.IsUplink -eq "True"){Write-Host "Skipping Uplink PortGroup" -ForegroundColor yellow}
+            If ($pg.IsUplink -eq "True"){LogMessage -type INFO -message "[$($vmHost.name)] Skipping Uplink PortGroup"}
             #If it is not the uplink pg, create it on the vSS
             else{
                 New-VirtualPortGroup -Name $pg.name -VirtualSwitch $vSSObj -VLanId $pgVLAN | Out-null
-                Write-Host "Created PortGroup $pg with Vlan ID $pgVLAN" -ForegroundColor Cyan
+                LogMessage -type INFO -message "[$($vmHost.name)] Created PortGroup $pg with Vlan ID $pgVLAN"
             }
         }
 
@@ -2029,18 +2034,14 @@ Function Move-ClusterHostNetworkingTovSS
         LogMessage -type INFO -message "[$($vmHost.name)] Migrating $vmnic0 from $vdsName to $vssName"
         Add-VirtualSwitchPhysicalNetworkAdapter -VirtualSwitch $vSSObj -VMHostPhysicalNic $pNIC0Obj -Confirm:$false
 
-        #Set Cluster DRS Setting to Manual
-        $ClusterObj = Get-Cluster -Name $vmHost.Parent
-        LogMessage -type INFO -message "[$($clusterObj.name)] Setting DRS for Cluster to Manual" -ForegroundColor Cyan
-        Set-Cluster -Cluster $clusterObj -DrsAutomationLevel Manual -Confirm:$false |Out-Null
-
         #Get List of virtual machines that are running on the host
-        $VMlist = $vmHost | get-VM
+        $VMlist = $vmHost | get-VM | Where-Object {$_.name -notlike "vCLS*"}
+
         #Migrate VM Networks
         LogMessage -type INFO -message "[$($vmHost.name)] Now migrating VM networks from $vdsName to $vssName"
         foreach ($VM in $VMlist){
         $VMnic = Get-NetworkAdapter $vm
-        $VMnic | Set-NetworkAdapter -PortGroup (Get-VirtualPortGroup -VMhost $VMHost.name -Standard -Name $vmnic.NetworkName) -confirm:$false
+        $VMnic | Set-NetworkAdapter -PortGroup (Get-VirtualPortGroup -VMhost $VMHost.name -Standard -Name $vmnic.NetworkName) -confirm:$false -errorAction SilentlyContinue | Out-Null
         LogMessage -type INFO -message "[$($vmHost.name)] Migrated $VM network to $vssName"
         }
 
@@ -2053,16 +2054,16 @@ Function Move-ClusterHostNetworkingTovSS
         $vmk2 = Get-VMHostNetworkAdapter -VMhost $Vmhost.name -VMKernel -name vmk2
 
         #get VMK port groups to migrate to
-        $vmk0pgObj = Get-virtualportgroup -virtualswitch $vssObj -name $vmk0pg
-        $vmk1pgObj = Get-virtualportgroup -virtualswitch $vssObj -name $vmk1pg
-        $vmk2pgObj = Get-virtualportgroup -virtualswitch $vssObj -name $vmk2pg
+        $vmk0pgObj = Get-VirtualPortGroup -virtualswitch $vssObj -name $vmk0pg
+        $vmk1pgObj = Get-VirtualPortGroup -virtualswitch $vssObj -name $vmk1pg
+        $vmk2pgObj = Get-VirtualPortGroup -virtualswitch $vssObj -name $vmk2pg
 
         #create array of VMKports and VMKPortGroups
         $vmkArray =@($vmk0,$vmk1,$vmk2)
         $vmkpgArray =@($vmk0pgObj,$vmk1pgObj,$vmk2pgObj)
 
         #Move physical nic and VMK ports from vDS to vSS
-        LogMessage -type INFO -message "[$($vmHost.name)] Migrating vmkernels from $vdsName to $vssName" -ForegroundColor Cyan
+        LogMessage -type INFO -message "[$($vmHost.name)] Migrating vmkernels from $vdsName to $vssName"
         Add-VirtualSwitchPhysicalNetworkAdapter -VirtualSwitch $vssObj -VMHostPhysicalNic $pNIC1Obj -VMHostVirtualNic $vmkarray -VirtualNicPortgroup $vmkpgarray  -Confirm:$false
     }
     
