@@ -2080,9 +2080,9 @@ Function Move-ClusterHostNetworkingTovSS
         Add-VirtualSwitchPhysicalNetworkAdapter -VirtualSwitch $vssObj -VMHostPhysicalNic $pNIC1Obj -VMHostVirtualNic $vmkarray -VirtualNicPortgroup $vmkpgarray  -Confirm:$false
 
         #Free up vmnic1 again
-        LogMessage -type INFO -message "[$($vmHost.name)] Freeing up $vmnic1 for later use"
-        $pNIC1Obj = Get-VMHostNetworkAdapter -VMhost $Vmhost.name -Physical -name $vmnic1
-        $pNIC1Obj | Remove-VirtualSwitchPhysicalNetworkAdapter -Confirm:$false
+        LogMessage -type INFO -message "[$($vmHost.name)] Freeing up $vmnic0 for later use"
+        $pNIC0Obj = Get-VMHostNetworkAdapter -VMhost $Vmhost.name -Physical -name $vmnic0
+        $pNIC0Obj | Remove-VirtualSwitchPhysicalNetworkAdapter -Confirm:$false
     }
     
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
