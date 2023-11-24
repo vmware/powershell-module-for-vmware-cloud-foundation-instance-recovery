@@ -1125,7 +1125,7 @@ Function New-SDDCManagerOvaDeployment
     The New-SDDCManagerOvaDeployment deploys an SDDC Manager appliance from OVA using data previously extracted from the VCF SDDC Manager Backup
 
     .EXAMPLE
-    New-SDDCManagerOvaDeployment -tempvCenterFqdn "sfo-m01-vc02.sfo.rainpole.io" -tempvCenterAdmin "administrator@vsphere.local" -tempvCenterAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -sddcManagerOvaFile "F:\OVA\VCF-SDDC-Manager-Appliance-4.5.1.0-21682411.ova" -rootUserPassword "VMw@re1!" -vcfUserPassword "VMw@re1!" -localUserPassword "VMw@re1!" -basicAuthUserPassword "VMw@re1!"
+    New-SDDCManagerOvaDeployment -tempvCenterFqdn "sfo-m01-vc02.sfo.rainpole.io" -tempvCenterAdmin "administrator@vsphere.local" -tempvCenterAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -sddcManagerOvaFile "F:\OVA\VCF-SDDC-Manager-Appliance-4.5.1.0-21682411.ova" -rootUserPassword "VMw@re1!" -vcfUserPassword "VMw@re1!" -localUserPassword "VMw@re1!VMw@re1!" -basicAuthUserPassword "VMw@re1!"
 
     .PARAMETER tempvCenterFqdn
     FQDN of the target vCenter to deploy the SDDC Manager OVA to
@@ -1636,6 +1636,32 @@ Export-ModuleMember -Function New-ReconstructedPartialBringupJsonSpec
 #Region SDDC Manager Functions
 Function Invoke-SDDCManagerRestore
 {
+    <#
+    .SYNOPSIS
+    Restores SDDC Manager from backup
+
+    .DESCRIPTION
+    The Invoke-SDDCManagerRestore cmdlet restores SDDC Manager from backup
+
+    .EXAMPLE
+    Invoke-SDDCManagerRestore -extractedSDDCDataFile ".\extracted-sddc-data.json" -backupFilePath "F:\backup\vcf-backup-sfo-vcf01-sfo-rainpole-io-2023-09-19-10-53-02.tar.gz" -rootUserPassword "VMw@re1!" -vcfUserPassword "VMw@re1!" -localUserPassword "VMw@re1!VMw@re1!" -basicAuthUserPassword "VMw@re1!"
+
+    .PARAMETER extractedSDDCDataFile
+    Relative or absolute to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup) somewhere on the local filesystem
+
+    .PARAMETER backupFilePath
+    Relative or absolute to the VMware Cloud Foundation SDDC manager backup file somewhere on the local filesystem
+       
+    .PARAMETER vcfUserPassword
+    Password for the vcf user on the newly deployed appliance
+
+    .PARAMETER localUserPassword
+    Password for the local admin user on the newly deployed appliance
+
+    .PARAMETER rootUserPassword
+    Password for the root user on the newly deployed appliance
+
+    #>
     Param(
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
         [Parameter (Mandatory = $true)][String] $backupFilePath,
@@ -1971,27 +1997,28 @@ Function Move-ClusterHostNetworkingTovSS
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
-
-    $vmhost_array = get-cluster -name $clusterName | get-vmhost
-
-    # VDS to migrate from
-    $vds = Get-VDSwitch -Name $vdsName
-
-    # VSS to migrate to
+    
+    #Existing Elements
+    $vCenterVM = $vCenterFQDN.split(".")[0]
+    $allHosts = (get-cluster -name $clusterName | get-vmhost).name  
+    $vCenterHost = (Get-VM -Name $vCenterVM).vmhost.name
+    #$vds = Get-VDSwitch -Name $vdsName
+    
+    #Elements to be created per host
     $vss_name = "vSwitch0"
-
-    # Name of portgroups to create on VSS
     $mgmt_name = "Management"
     $vmotion_name = "vMotion"
     $storage_name = "vSAN"
 
-    foreach ($vmhost in $vmhost_array) {
+    $scriptBlock = {
+        $vmhost = Get-VMHost -Name $hostInstance
+
         <# LogMessage -type INFO -message "[$vmhost] Entering Maintenance Mode" 
-        Get-VMHost -Name $vmhost | set-vmhost -State Maintenance -VsanDataMigrationMode NoDataMigration | Out-Null
- #>
+        Get-VMHost -Name $vmhost | set-vmhost -State Maintenance -VsanDataMigrationMode NoDataMigration | Out-Null         #>
+
         Get-VMHostNetworkAdapter -VMHost $vmhost -Physical -Name $vmnic | Remove-VDSwitchPhysicalNetworkAdapter -Confirm:$false | Out-Null
-        New-VirtualSwitch -VMHost $vmhost -Name vSwitch0 -mtu $mtu | Out-Null
-        New-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $vmhost -Name "vSwitch0") -Name "mgmt_temp" -VLanId $mgmtVlanId | Out-Null
+        New-VirtualSwitch -VMHost $vmhost -Name $vss_name -mtu $mtu | Out-Null
+        New-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $vmhost -Name $vss_name) -Name "mgmt_temp" -VLanId $mgmtVlanId | Out-Null
 
         # pNICs to migrate to VSS
         LogMessage -type INFO -message "[$vmhost] Retrieving pNIC info for vmnic1"
@@ -2031,6 +2058,25 @@ Function Move-ClusterHostNetworkingTovSS
         Get-VMHost -Name $vmhost | set-vmhost -State Connected | Out-Null #>
         Start-Sleep 5
     }
+
+    #All Hosts Except that hosting vCenter
+    $otherHosts = @()
+    Foreach ($hostInstance in $allHosts)
+    {
+        If ($hostInstance -ne $vCenterHost)
+        {
+            $otherHosts += $hostInstance
+            Invoke-command $scriptBlock
+        }
+    }
+    
+    #Move vCenter to migrated Host
+    LogMessage -type INFO -message "[$vCenterVM] Moving to another host to avoid disruption"
+    $targetHost = Get-VMHost -name ($otherHosts | Get-Random)
+    Get-VM -Name $vCenterVM | Move-VM -Location $targetHost
+    $hostInstance = $vCenterHost
+    Invoke-command $scriptBlock    
+    
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Move-ClusterHostNetworkingTovSS
