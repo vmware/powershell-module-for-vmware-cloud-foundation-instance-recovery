@@ -1985,16 +1985,16 @@ Function Move-ClusterHostNetworkingTovSS
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
     
     $vssName = "vSwitch0"
-    #$vmk0Pg = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq "MANAGEMENT"}).portgroupKey
-    #$vmk1Pg = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq "VMOTION"}).portgroupKey
-    #$vmk2Pg = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq "VSAN"}).portgroupKey
+    $vmk0Pg = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq "MANAGEMENT"}).portgroupKey
+    $vmk1Pg = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq "VMOTION"}).portgroupKey
+    $vmk2Pg = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq "VSAN"}).portgroupKey
     $mgmtVlanId = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq "MANAGEMENT"}).vlanID
     $vMotionVlanId = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq "VMOTION"}).vlanID
     $vSanVlanId = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq "VSAN"}).vlanID
     $vdsName = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).vsphereclusterdetails | Where-Object {$_.isDefault -eq "t"}).vdsdetails.dvsName
-    $mgmt_name = "Management"
-    $vmotion_name = "vMotion"
-    $storage_name = "vSAN"
+    #$mgmt_name = "Management"
+    #$vmotion_name = "vMotion"
+    #$storage_name = "vSAN"
     
     $vCenterConnection = Connect-VIServer -server $tempvCenterFqdn -user $tempvCenterAdmin -password $tempvCenterAdminPassword
     
@@ -2015,9 +2015,8 @@ Function Move-ClusterHostNetworkingTovSS
         $vSSObj = New-VirtualSwitch -VMHost $vmHost.name -Name $vssName -mtu $vdsObject.mtu
 
         #Create Port Groups
-
         # Create destination portgroups
-        LogMessage -type INFO -message "[$($vmhost.name)] Creating $mgmt_name portgroup on $vssName"
+<#         LogMessage -type INFO -message "[$($vmhost.name)] Creating $mgmt_name portgroup on $vssName"
         $mgmt_pg = New-VirtualPortGroup -VirtualSwitch $vSSObj -Name $mgmt_name -VLanId $mgmtVlanId
 
         LogMessage -type INFO -message "[$($vmhost.name)] Creating $vmotion_name portgroup on $vssName"
@@ -2025,10 +2024,8 @@ Function Move-ClusterHostNetworkingTovSS
 
         LogMessage -type INFO -message "[$($vmhost.name)] Creating $storage_name Network portgroup on $vssName"
         $storage_pg = New-VirtualPortGroup -VirtualSwitch $vSSObj -Name $storage_name -VLanId $vSanVlanId
-        
-        LogMessage -type INFO -message "[$($vmhost.name)] Creating mgmt_temp Network portgroup on $vssName"
-        $mgmt_temp_pg = New-VirtualPortGroup -VirtualSwitch $vSSObj -Name "mgmt_temp" -VLanId $mgmtVlanId
-<#         foreach($pg in $portGroupsObject){
+ #>        
+        foreach($pg in $portGroupsObject){
             #Get port group VLAN ID
             $pgVLAN = $pg.Extensiondata.Config.DefaultPortConfig.Vlan.VlanID
             #Check if it is the uplink pg
@@ -2038,7 +2035,9 @@ Function Move-ClusterHostNetworkingTovSS
                 New-VirtualPortGroup -Name $pg.name -VirtualSwitch $vSSObj -VLanId $pgVLAN | Out-null
                 LogMessage -type INFO -message "[$($vmHost.name)] Created PortGroup $pg with Vlan ID $pgVLAN"
             }
-        } #>
+        }
+        LogMessage -type INFO -message "[$($vmhost.name)] Creating mgmt_temp Network portgroup on $vssName"
+        $mgmt_temp_pg = New-VirtualPortGroup -VirtualSwitch $vSSObj -Name "mgmt_temp" -VLanId $mgmtVlanId
 
         LogMessage -type INFO -message "[$($vmHost.name)] Stepping $($Vmhost.name) into $vssName"
         #Get physical adapter
@@ -2070,9 +2069,12 @@ Function Move-ClusterHostNetworkingTovSS
         $vmk2 = Get-VMHostNetworkAdapter -VMhost $Vmhost.name -VMKernel -name vmk2
 
         #get VMK port groups to migrate to
-        $vmk0pgObj = Get-VirtualPortGroup -virtualswitch $vssObj -name $mgmt_name
-        $vmk1pgObj = Get-VirtualPortGroup -virtualswitch $vssObj -name $vmotion_pg
-        $vmk2pgObj = Get-VirtualPortGroup -virtualswitch $vssObj -name $storage_pg
+        $vmk0pgObj = Get-VirtualPortGroup -virtualswitch $vssObj -name $vmk0Pg
+        $vmk1pgObj = Get-VirtualPortGroup -virtualswitch $vssObj -name $vmk1Pg
+        $vmk2pgObj = Get-VirtualPortGroup -virtualswitch $vssObj -name $vmk2Pg
+        #$vmk0pgObj = Get-VirtualPortGroup -virtualswitch $vssObj -name $mgmt_name
+        #$vmk1pgObj = Get-VirtualPortGroup -virtualswitch $vssObj -name $vmotion_pg
+        #$vmk2pgObj = Get-VirtualPortGroup -virtualswitch $vssObj -name $storage_pg
 
         #create array of VMKports and VMKPortGroups
         $vmkArray =@($vmk0,$vmk1,$vmk2)
