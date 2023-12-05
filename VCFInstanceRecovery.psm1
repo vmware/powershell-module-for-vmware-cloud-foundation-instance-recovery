@@ -2691,11 +2691,13 @@ Function New-RebuiltVsanDatastore
                 'ID'    = "ID"
                 'canonicalName' = "Canonical Name"
                 'capacity' = "Capacity (GB)"
+                'ssd' = "SSD"
             }
         $disksDisplayObject += [pscustomobject]@{
                 'ID'    = "--"
                 'canonicalName' = "--------------------"
                 'capacity' = "-------------"
+                'ssd' = "------"
             }
         Foreach ($disk in $disks)
         {
@@ -2705,6 +2707,7 @@ Function New-RebuiltVsanDatastore
                     'ID'    = $disksIndex
                     'canonicalName' = $disk.ScsiLun.CanonicalName
                     'capacity' = $disk.ScsiLun.CapacityGB
+                    'ssd' = $disk.ScsiLun.IsSsd
                 }
                 $disksIndex++
             }
