@@ -2665,9 +2665,6 @@ Export-ModuleMember -Function Add-VMKernelsToHost
 Function New-RebuiltVsanDatastore
 {
     Param(
-        [Parameter (Mandatory = $true)][String] $tempvCenterFqdn,
-        [Parameter (Mandatory = $true)][String] $tempvCenterAdmin,
-        [Parameter (Mandatory = $true)][String] $tempvCenterAdminPassword,
         [Parameter (Mandatory = $true)][String] $clusterName,
         [Parameter (Mandatory = $true)][String] $restoredvCenterFQDN,
         [Parameter (Mandatory = $true)][String] $restoredvCenterAdmin,
