@@ -2764,10 +2764,10 @@ Function New-RebuiltVsanDatastore
     Foreach ($vmHost in $vmHosts)
     {
         LogMessage -type INFO -message "[$($vmhost.name)] Creating VSAN Disk Group"
-        New-VsanDiskGroup -VMHost $vmhost -SsdCanonicalName $cacheDiskCanonicalNames -DataDiskCanonicalName $capacityDiskCanonicalNames
+        New-VsanDiskGroup -VMHost $vmhost -SsdCanonicalName $cacheDiskCanonicalNames -DataDiskCanonicalName $capacityDiskCanonicalNames | Out-Null
     }    
     LogMessage -type INFO -message "[$clusterName] Renaming new datastore to original name: $datastoreName"
-    Get-Cluster -name $clusterName | Get-Datastore | Set-Datastore -Name $datastoreName
+    Get-Cluster -name $clusterName | Get-Datastore | Set-Datastore -Name $datastoreName | Out-Null
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function New-RebuiltVsanDatastore
