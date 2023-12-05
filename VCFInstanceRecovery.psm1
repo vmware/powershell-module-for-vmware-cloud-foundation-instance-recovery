@@ -2681,6 +2681,7 @@ Function New-RebuiltVsanDatastore
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
     $datastoreName = ($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object {$_.name -eq $clusterName}).primaryDatastoreName
     
+    LogMessage -type INFO -message "[$jumpboxName] Using first host in Cluster for Physical Disks references"
     $restoredvCenterConnection = Connect-ViServer $restoredvCenterFQDN -user $restoredvCenterAdmin -password $restoredvCenterAdminPassword
     $vmhosts = (Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)
     $disks = ((Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)[0] | Get-VMHostDisk) | Sort-Object -Property ScsiLun
