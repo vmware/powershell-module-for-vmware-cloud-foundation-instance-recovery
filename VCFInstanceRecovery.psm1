@@ -2678,36 +2678,38 @@ Function New-RebuiltVsanDatastore
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
     $datastoreName = ($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object {$_.name -eq $clusterName}).primaryDatastoreName
     
-    LogMessage -type INFO -message "[$jumpboxName] Using first host in Cluster as reference for Physical Disks"
+    LogMessage -type INFO -message "[$jumpboxName] Connecting to Restored vCenter: $restoredvCenterFQDN"
     $restoredvCenterConnection = Connect-ViServer $restoredvCenterFQDN -user $restoredvCenterAdmin -password $restoredvCenterAdminPassword
     $vmhosts = (Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)
+    LogMessage -type INFO -message "[$($vmhosts[0].name)] Using host as reference for Physical Disks"
+
     $disks = ((Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)[0] | Get-VMHostDisk) | Sort-Object -Property ScsiLun
 
     $disksDisplayObject=@()
         $disksIndex = 1
         $disksDisplayObject += [pscustomobject]@{
                 'ID'    = "ID"
-                'cannonicalName' = "Cannonical Name"
-                'sectors' = "Sectors"
+                'canonicalName' = "Canonical Name"
                 'capacity' = "Capacity (GB)"
             }
         $disksDisplayObject += [pscustomobject]@{
                 'ID'    = "--"
-                'cannonicalName' = "--------------------"
-                'sectors' = "----------"
+                'canonicalName' = "--------------------"
                 'capacity' = "-------------"
             }
         Foreach ($disk in $disks)
         {
-            $disksDisplayObject += [pscustomobject]@{
-                'ID'    = $disksIndex
-                'cannonicalName' = $disk.ScsiLun
-                'sectors' = $disk.TotalSectors
-                'capacity' = ((512 * $disk.TotalSectors) / (1024*1024*1024))
+            If ($disk.ScsiLun.CapacityGB -ne $null)
+            {
+                $disksDisplayObject += [pscustomobject]@{
+                    'ID'    = $disksIndex
+                    'canonicalName' = $disk.ScsiLun.CanonicalName
+                    'capacity' = $disk.ScsiLun.CapacityGB
+                }
+                $disksIndex++
             }
-            $disksIndex++
         }
-    $disksDisplayObject | format-table -Property @{Expression=" "},id,cannonicalName,sectors,capacity -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
+    $disksDisplayObject | format-table -Property @{Expression=" "},id,canonicalName,sectors,capacity -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
     Do
     {
         Write-Host ""; Write-Host " Please enter a comma seperated list of IDs to be used for Cache Disks, or C to Cancel: " -ForegroundColor Yellow -nonewline
@@ -2736,7 +2738,7 @@ Function New-RebuiltVsanDatastore
             $remainingDisksDisplayObject += $displayDisk
         }
     }
-    $remainingDisksDisplayObject | format-table -Property @{Expression=" "},id,cannonicalName,sectors,capacity -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
+    $remainingDisksDisplayObject | format-table -Property @{Expression=" "},id,canonicalName,sectors,capacity -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
     Do
     {
         Write-Host ""; Write-Host " Please enter a comma seperated list of IDs to be used for Capacity Disks, or C to Cancel: " -ForegroundColor Yellow -nonewline
@@ -2756,13 +2758,13 @@ Function New-RebuiltVsanDatastore
         
     } Until (($capacityDiskSelectionInvalid -eq $false) -OR ($capacityDiskSelection -eq "c"))
 
-    $cacheDiskCannonicalNames = (($disksDisplayObject | Where-Object {$_.id -in $cacheDiskArray}).cannonicalName) -join (",")
-    $capacityDiskCannonicalNames = (($disksDisplayObject | Where-Object {$_.id -in $capacityDiskArray}).cannonicalName) -join (",")
+    $cacheDiskCanonicalNames = (($disksDisplayObject | Where-Object {$_.id -in $cacheDiskArray}).canonicalName) -join (",")
+    $capacityDiskCanonicalNames = (($disksDisplayObject | Where-Object {$_.id -in $capacityDiskArray}).canonicalName) -join (",")
 
     Foreach ($vmHost in $vmHosts)
     {
         LogMessage -type INFO -message "[$($vmhost.name)] Creating VSAN Disk Group"
-        New-VsanDiskGroup -VMHost $vmhost -SsdCanonicalName $cacheDiskCannonicalNames -DataDiskCanonicalName $capacityDiskCannonicalNames
+        New-VsanDiskGroup -VMHost $vmhost -SsdCanonicalName $cacheDiskCanonicalNames -DataDiskCanonicalName $capacityDiskCanonicalNames
     }    
     LogMessage -type INFO -message "[$clusterName] Renaming new datastore to original name: $datastoreName"
     Get-Cluster -name $clusterName | Get-Datastore | Set-Datastore -Name $datastoreName
