@@ -3332,6 +3332,7 @@ Function Invoke-NSXEdgeClusterRecovery
     $cluster = (Get-Cluster -name $clusterName)
     
     $edgeLocations = @()
+    $resourcePoolLocations = @()
     Foreach ($resourcePool in $resourcePools)
     {
         $edgeLocations += [PSCustomObject]@{
@@ -3339,6 +3340,7 @@ Function Invoke-NSXEdgeClusterRecovery
             'Name' = $resourcePool.Name
             'moRef' = $resourcePool.extensionData.moref.value
         }
+        $resourcePoolLocations += $resourcePool.extensionData.moref.value
     }
     $edgeLocations += [PSCustomObject]@{
         'Type' = 'Cluster'
@@ -3353,7 +3355,14 @@ Function Invoke-NSXEdgeClusterRecovery
         $headers = VCFIRCreateHeader -username $nsxManagerAdmin -password $nsxManagerAdminPassword
         $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/"
         $transportNodeContents = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
-        $allEdgeTransportNodes = ($transportNodeContents.results | Where-Object { ($_.node_deployment_info.resource_type -eq "EdgeNode") -and ($_.node_deployment_info.deployment_config.vm_deployment_config.compute_id -eq $edgeLocation.MoRef)}) | Sort-Object -Property display_name
+        If ($edgeLocation.type -eq 'ResourcePool')
+        {
+            $allEdgeTransportNodes = ($transportNodeContents.results | Where-Object { ($_.node_deployment_info.resource_type -eq "EdgeNode") -and ($_.node_deployment_info.deployment_config.vm_deployment_config.compute_id -eq $edgeLocation.MoRef)}) | Sort-Object -Property display_name
+        }
+        else 
+        {
+            $allEdgeTransportNodes = ($transportNodeContents.results | Where-Object { ($_.node_deployment_info.resource_type -eq "EdgeNode") -and ($_.node_deployment_info.deployment_config.vm_deployment_config.compute_id -notin $resourcePoolLocations)}) | Sort-Object -Property display_name
+        }
         
         If ($allEdgeTransportNodes)
         {
