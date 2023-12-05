@@ -2758,8 +2758,8 @@ Function New-RebuiltVsanDatastore
         
     } Until (($capacityDiskSelectionInvalid -eq $false) -OR ($capacityDiskSelection -eq "c"))
 
-    $cacheDiskCanonicalNames = (($disksDisplayObject | Where-Object {$_.id -in $cacheDiskArray}).canonicalName) -join (",")
-    $capacityDiskCanonicalNames = (($disksDisplayObject | Where-Object {$_.id -in $capacityDiskArray}).canonicalName) -join (",")
+    $cacheDiskCanonicalNames = (($disksDisplayObject | Where-Object {$_.id -in $cacheDiskArray}).canonicalName)# -join (",")
+    $capacityDiskCanonicalNames = (($disksDisplayObject | Where-Object {$_.id -in $capacityDiskArray}).canonicalName)# -join (",")
 
     Foreach ($vmHost in $vmHosts)
     {
