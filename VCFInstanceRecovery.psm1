@@ -2662,6 +2662,114 @@ Function Add-VMKernelsToHost
 }
 Export-ModuleMember -Function Add-VMKernelsToHost
 
+Function New-RebuiltVsanDatastore
+{
+    Param(
+        [Parameter (Mandatory = $true)][String] $tempvCenterFqdn,
+        [Parameter (Mandatory = $true)][String] $tempvCenterAdmin,
+        [Parameter (Mandatory = $true)][String] $tempvCenterAdminPassword,
+        [Parameter (Mandatory = $true)][String] $clusterName,
+        [Parameter (Mandatory = $true)][String] $restoredvCenterFQDN,
+        [Parameter (Mandatory = $true)][String] $restoredvCenterAdmin,
+        [Parameter (Mandatory = $true)][String] $restoredvCenterAdminPassword,
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile
+    )
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
+    $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
+    $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
+    $datastoreName = ($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object {$_.name -eq $clusterName}).primaryDatastoreName
+    
+    $restoredvCenterConnection = Connect-ViServer $restoredvCenterFQDN -user $restoredvCenterAdmin -password $restoredvCenterAdminPassword
+    $vmhosts = (Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)
+    $disks = ((Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)[0] | Get-VMHostDisk) | Sort-Object -Property ScsiLun
+
+    $disksDisplayObject=@()
+        $disksIndex = 1
+        $disksDisplayObject += [pscustomobject]@{
+                'ID'    = "ID"
+                'cannonicalName' = "Cannonical Name"
+                'sectors' = "Sectors"
+                'capacity' = "Capacity (GB)"
+            }
+        $disksDisplayObject += [pscustomobject]@{
+                'ID'    = "--"
+                'cannonicalName' = "--------------------"
+                'sectors' = "----------"
+                'capacity' = "-------------"
+            }
+        Foreach ($disk in $disks)
+        {
+            $disksDisplayObject += [pscustomobject]@{
+                'ID'    = $disksIndex
+                'cannonicalName' = $disk.ScsiLun
+                'sectors' = $disk.TotalSectors
+                'capacity' = ((512 * $disk.TotalSectors) / (1024*1024*1024))
+            }
+            $disksIndex++
+        }
+    $disksDisplayObject | format-table -Property @{Expression=" "},id,cannonicalName,sectors,capacity -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
+    Do
+    {
+        Write-Host ""; Write-Host " Please enter a comma seperated list of IDs to be used for Cache Disks, or C to Cancel: " -ForegroundColor Yellow -nonewline
+        $cacheDiskSelection = Read-Host
+        If ($cacheDiskSelection -ne "C")
+        {
+            $cacheDiskSelectionInvalid = $false
+            $cacheDiskArray = $cacheDiskSelection -split(",")
+            Foreach ($cacheDisk in $cacheDiskArray)
+            {
+                If ($cacheDisk -notin $disksDisplayObject.id)
+                {
+                    $cacheDiskSelectionInvalid = $true
+                }
+            }
+        }
+        
+    } Until (($cacheDiskSelectionInvalid -eq $false) -OR ($cacheDiskSelection -eq "c"))
+    If ($cacheDiskSelection -eq "c") {Break}
+
+    $remainingDisksDisplayObject= @()
+    Foreach( $displayDisk in $disksDisplayObject)
+    {
+        If ($displayDisk.id -notin $cacheDiskArray)
+        {
+            $remainingDisksDisplayObject += $displayDisk
+        }
+    }
+    $remainingDisksDisplayObject | format-table -Property @{Expression=" "},id,cannonicalName,sectors,capacity -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
+    Do
+    {
+        Write-Host ""; Write-Host " Please enter a comma seperated list of IDs to be used for Capacity Disks, or C to Cancel: " -ForegroundColor Yellow -nonewline
+        $capacityDiskSelection = Read-Host
+        If ($capacityDiskSelection -ne "C")
+        {
+            $capacityDiskSelectionInvalid = $false
+            $capacityDiskArray = $capacityDiskSelection -split(",")
+            Foreach ($capacityDisk in $capacityDiskArray)
+            {
+                If ($capacityDisk -notin $disksDisplayObject.id)
+                {
+                    $capacityDiskSelectionInvalid = $true
+                }
+            }
+        }
+        
+    } Until (($capacityDiskSelectionInvalid -eq $false) -OR ($capacityDiskSelection -eq "c"))
+
+    $cacheDiskCannonicalNames = (($disksDisplayObject | Where-Object {$_.id -in $cacheDiskArray}).cannonicalName) -join (",")
+    $capacityDiskCannonicalNames = (($disksDisplayObject | Where-Object {$_.id -in $capacityDiskArray}).cannonicalName) -join (",")
+
+    Foreach ($vmHost in $vmHosts)
+    {
+        New-VsanDiskGroup -VMHost $vmhost -SsdCanonicalName $cacheDiskCannonicalNames -DataDiskCanonicalName $capacityDiskCannonicalNames
+    }    
+    Get-Cluster -name $clusterName | Get-Datastore | Set-Datastore -Name $datastoreName
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+}
+Export-ModuleMember -Function New-RebuiltVsanDatastore
+
 Function Backup-ClusterVMOverrides
 {
     <#
