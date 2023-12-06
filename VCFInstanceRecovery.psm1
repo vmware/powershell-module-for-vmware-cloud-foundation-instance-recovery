@@ -2793,8 +2793,8 @@ Function New-RebuiltVsanDatastore
                 $capacityDiskCanonicalNames = (($using:disksDisplayObject | Where-Object {$_.id -in $diskGroupConfiguration[$diskGroupConfigurationIndex].cacacityDiskIDs}).canonicalName)
                 & $moduleFunctions {LogMessage -type INFO -message "[$($vmhost.name)] Creating VSAN Disk Group $i"}
                 New-VsanDiskGroup -VMHost $vmhost -SsdCanonicalName $cacheDiskCanonicalName -DataDiskCanonicalName $capacityDiskCanonicalNames | Out-Null
-                Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
-            }    
+            }
+            Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
         }
         Start-Job -scriptblock $scriptBlock -ArgumentList ($diskGroupNumber,$disksDisplayObject,$diskGroupConfiguration,$vmhost,$restoredvCenterFQDN,$restoredvCenterAdmin,$restoredvCenterAdminPassword) | Out-Null
     }
