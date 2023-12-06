@@ -2778,8 +2778,6 @@ Function New-RebuiltVsanDatastore
             $diskGroupConfigurationIndex = ($i -1)
             $cacheDiskCanonicalName = (($disksDisplayObject | Where-Object {$_.id -eq $diskGroupConfiguration[$diskGroupConfigurationIndex].cacheDiskID}).canonicalName)# -join (",")
             $capacityDiskCanonicalNames = (($disksDisplayObject | Where-Object {$_.id -in $diskGroupConfiguration[$diskGroupConfigurationIndex].cacacityDiskIDs}).canonicalName)# -join (",")
-            Write-Host "DiskGroup $i Cache: $cacheDiskCanonicalName"
-            Write-Host "DiskGroup $i Capacity: $capacityDiskCanonicalNames"
             LogMessage -type INFO -message "[$($vmhost.name)] Creating VSAN Disk Group $i"
             New-VsanDiskGroup -VMHost $vmhost -SsdCanonicalName $cacheDiskCanonicalName -DataDiskCanonicalName $capacityDiskCanonicalNames | Out-Null   
         }    
