@@ -2778,6 +2778,7 @@ Function New-RebuiltVsanDatastore
         $remainingDisksDisplayObject = $tempRemainingDisksDisplayObject
     }
     If (($cacheDiskSelection -eq "c") -or ($capacityDiskSelection -eq "c")){Break}
+    LogMessage -type INFO -message "[$clusterName] Starting Parallel Disk Group Creation across all hosts"
     Foreach ($vmHost in $vmHosts)
     {
         $scriptBlock = {
@@ -2791,9 +2792,9 @@ Function New-RebuiltVsanDatastore
                 New-VsanDiskGroup -VMHost $vmhost -SsdCanonicalName $cacheDiskCanonicalName -DataDiskCanonicalName $capacityDiskCanonicalNames | Out-Null   
             }    
         }
-        Start-Job -scriptblock $scriptBlock -ArgumentList ($diskGroupNumber,$disksDisplayObject,$diskGroupConfiguration,$vmhost)
+        Start-Job -scriptblock $scriptBlock -ArgumentList ($diskGroupNumber,$disksDisplayObject,$diskGroupConfiguration,$vmhost) | Out-Null
     }
-    Get-Job | Receive-Job -Wait -AutoRemoveJob | Out-File $logFile -encoding ASCII -append
+    Get-Job | Receive-Job -Wait -AutoRemoveJob
     LogMessage -type INFO -message "[$clusterName] Renaming new datastore to original name: $datastoreName"
     Get-Cluster -name $clusterName | Get-Datastore | Set-Datastore -Name $datastoreName | Out-Null
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
