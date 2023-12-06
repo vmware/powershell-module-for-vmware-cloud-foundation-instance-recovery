@@ -2782,14 +2782,15 @@ Function New-RebuiltVsanDatastore
     Foreach ($vmHost in $vmHosts)
     {
         $scriptBlock = {
+            $moduleFunctions = Import-Module VCFInstanceRecovery -passthru
             For ($i = 1; $i -le $using:diskGroupNumber; $i++) 
             {
                 $diskGroupConfigurationIndex = ($i -1)
                 $diskGroupConfiguration = $using:diskGroupConfiguration
                 $cacheDiskCanonicalName = (($using:disksDisplayObject | Where-Object {$_.id -eq $diskGroupConfiguration[$diskGroupConfigurationIndex].cacheDiskID}).canonicalName)# -join (",")
                 $capacityDiskCanonicalNames = (($using:disksDisplayObject | Where-Object {$_.id -in $diskGroupConfiguration[$diskGroupConfigurationIndex].cacacityDiskIDs}).canonicalName)# -join (",")
-                LogMessage -type INFO -message "[$($vmhost.name)] Creating VSAN Disk Group $i"
-                New-VsanDiskGroup -VMHost $vmhost -SsdCanonicalName $cacheDiskCanonicalName -DataDiskCanonicalName $capacityDiskCanonicalNames | Out-Null   
+                & $moduleFunctions {LogMessage -type INFO -message "[$($using:vmhost.name)] Creating VSAN Disk Group $i"}
+                New-VsanDiskGroup -VMHost $using:vmhost -SsdCanonicalName $cacheDiskCanonicalName -DataDiskCanonicalName $capacityDiskCanonicalNames | Out-Null   
             }    
         }
         Start-Job -scriptblock $scriptBlock -ArgumentList ($diskGroupNumber,$disksDisplayObject,$diskGroupConfiguration,$vmhost) | Out-Null
