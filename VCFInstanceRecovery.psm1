@@ -2673,6 +2673,11 @@ Function New-RebuiltVsanDatastore
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    Do
+    {
+        Write-Host ""; Write-Host " Enter the desired number of disk groups to create (between 1 and 5), or C to Cancel: " -ForegroundColor Yellow -nonewline
+        $diskGroupNumber = Read-Host
+    } Until (($diskGroupNumber -in "1","2","3","4","5") -or ($diskGroupNumber -eq "C"))
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
@@ -2684,7 +2689,6 @@ Function New-RebuiltVsanDatastore
     LogMessage -type INFO -message "[$($vmhosts[0].name)] Using host as reference for Physical Disks"
 
     $disks = ((Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)[0] | Get-VMHostDisk) | Sort-Object -Property ScsiLun
-
     $disksDisplayObject=@()
         $disksIndex = 1
         $disksDisplayObject += [pscustomobject]@{
@@ -2712,66 +2716,78 @@ Function New-RebuiltVsanDatastore
                 $disksIndex++
             }
         }
-    $disksDisplayObject | format-table -Property @{Expression=" "},id,canonicalName,sectors,capacity -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
-    Do
+    #$disksDisplayObject | format-table -Property @{Expression=" "},id,canonicalName,sectors,capacity -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
+    $remainingDisksDisplayObject = $disksDisplayObject
+    $diskGroupConfiguration =@()
+    
+    #Loop Through Disk Group Creation
+    For ($i = 1; $i -le $diskGroupNumber; $i++) 
     {
-        Write-Host ""; Write-Host " Please enter a comma seperated list of IDs to be used for Cache Disks, or C to Cancel: " -ForegroundColor Yellow -nonewline
-        $cacheDiskSelection = Read-Host
-        If ($cacheDiskSelection -ne "C")
+        $remainingDisksDisplayObject | format-table -Property @{Expression=" "},id,canonicalName,sectors,capacity -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
+        Do
         {
-            $cacheDiskSelectionInvalid = $false
-            $cacheDiskArray = $cacheDiskSelection -split(",")
-            Foreach ($cacheDisk in $cacheDiskArray)
+            Write-Host ""; Write-Host " Enter the ID of disk to use as Cache Disk for Disk Group $i, or C to Cancel: " -ForegroundColor Yellow -nonewline
+            $cacheDiskSelection = Read-Host
+        } Until (($cacheDiskSelection -in $remainingDisksDisplayObject.id) -OR ($cacheDiskSelection -eq "c"))
+        If ($cacheDiskSelection -eq "c") {Break}
+        $tempRemainingDisksDisplayObject = @()
+        Foreach( $displayDisk in $remainingDisksDisplayObject)
+        {
+            If ($displayDisk.id -ne $cacheDiskSelection)
             {
-                If ($cacheDisk -notin $disksDisplayObject.id)
-                {
-                    $cacheDiskSelectionInvalid = $true
-                }
+                $tempRemainingDisksDisplayObject += $displayDisk
             }
         }
-        
-    } Until (($cacheDiskSelectionInvalid -eq $false) -OR ($cacheDiskSelection -eq "c"))
-    If ($cacheDiskSelection -eq "c") {Break}
-
-    $remainingDisksDisplayObject= @()
-    Foreach( $displayDisk in $disksDisplayObject)
-    {
-        If ($displayDisk.id -notin $cacheDiskArray)
+        $remainingDisksDisplayObject = $tempRemainingDisksDisplayObject
+        $remainingDisksDisplayObject | format-table -Property @{Expression=" "},id,canonicalName,sectors,capacity -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
+        Do
         {
-            $remainingDisksDisplayObject += $displayDisk
+            Write-Host ""; Write-Host " Enter a comma seperated list of IDs to be used as Capacity Disks for Disk Group $i, or C to Cancel: " -ForegroundColor Yellow -nonewline
+            $capacityDiskSelection = Read-Host
+            If ($capacityDiskSelection -ne "C")
+            {
+                $capacityDiskSelectionInvalid = $false
+                $capacityDiskArray = $capacityDiskSelection -split(",")
+                Foreach ($capacityDisk in $capacityDiskArray)
+                {
+                    If ($capacityDisk -notin $disksDisplayObject.id)
+                    {
+                        $capacityDiskSelectionInvalid = $true
+                    }
+                }
+            }
+        } Until (($capacityDiskSelectionInvalid -eq $false) -OR ($capacityDiskSelection -eq "c"))
+        $diskGroupConfiguration += [PSCustomObject]@{
+            'cacheDiskID' = $cacheDiskSelection
+            'cacacityDiskIDs' = $capacityDiskArray
         }
+        $tempRemainingDisksDisplayObject = @()
+        Foreach( $displayDisk in $remainingDisksDisplayObject)
+        {
+            If ($displayDisk.id -notin $capacityDiskArray)
+            {
+                $tempRemainingDisksDisplayObject += $displayDisk
+            }
+        }
+        $remainingDisksDisplayObject = $tempRemainingDisksDisplayObject
     }
-    $remainingDisksDisplayObject | format-table -Property @{Expression=" "},id,canonicalName,sectors,capacity -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
-    Do
-    {
-        Write-Host ""; Write-Host " Please enter a comma seperated list of IDs to be used for Capacity Disks, or C to Cancel: " -ForegroundColor Yellow -nonewline
-        $capacityDiskSelection = Read-Host
-        If ($capacityDiskSelection -ne "C")
-        {
-            $capacityDiskSelectionInvalid = $false
-            $capacityDiskArray = $capacityDiskSelection -split(",")
-            Foreach ($capacityDisk in $capacityDiskArray)
-            {
-                If ($capacityDisk -notin $disksDisplayObject.id)
-                {
-                    $capacityDiskSelectionInvalid = $true
-                }
-            }
-        }
-        
-    } Until (($capacityDiskSelectionInvalid -eq $false) -OR ($capacityDiskSelection -eq "c"))
-
-    $cacheDiskCanonicalNames = (($disksDisplayObject | Where-Object {$_.id -in $cacheDiskArray}).canonicalName)# -join (",")
-    $capacityDiskCanonicalNames = (($disksDisplayObject | Where-Object {$_.id -in $capacityDiskArray}).canonicalName)# -join (",")
-
     Foreach ($vmHost in $vmHosts)
     {
-        LogMessage -type INFO -message "[$($vmhost.name)] Creating VSAN Disk Group"
-        New-VsanDiskGroup -VMHost $vmhost -SsdCanonicalName $cacheDiskCanonicalNames -DataDiskCanonicalName $capacityDiskCanonicalNames | Out-Null
-    }    
+        For ($i = 1; $i -le $diskGroupNumber; $i++) 
+        {
+            $diskGroupConfigurationIndex = ($i -1)
+            $cacheDiskCanonicalName = (($disksDisplayObject | Where-Object {$_.id -eq $diskGroupConfiguration[$diskGroupConfigurationIndex].cacheDiskID}).canonicalName)# -join (",")
+            $capacityDiskCanonicalNames = (($disksDisplayObject | Where-Object {$_.id -in $diskGroupConfiguration[$diskGroupConfigurationIndex].cacacityDiskIDs}).canonicalName)# -join (",")
+            Write-Host "DiskGroup $i Cache: $cacheDiskCanonicalName"
+            Write-Host "DiskGroup $i Capacity: $capacityDiskCanonicalNames"
+            LogMessage -type INFO -message "[$($vmhost.name)] Creating VSAN Disk Group $i"
+            New-VsanDiskGroup -VMHost $vmhost -SsdCanonicalName $cacheDiskCanonicalName -DataDiskCanonicalName $capacityDiskCanonicalNames | Out-Null   
+        }    
+    }
     LogMessage -type INFO -message "[$clusterName] Renaming new datastore to original name: $datastoreName"
     Get-Cluster -name $clusterName | Get-Datastore | Set-Datastore -Name $datastoreName | Out-Null
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+
 }
 Export-ModuleMember -Function New-RebuiltVsanDatastore
 
