@@ -2788,7 +2788,7 @@ Function New-RebuiltVsanDatastore
         'cacheDiskCapacity' = "Cache Disk (GB)"
         'capacityDiskIDs' = "Capacity Disk IDs"
         'capacityCNs' = "Capacity Disk Canonical Names"
-        'capacityCapacity' = "Capacity Disk (GB)"
+        'capacityCapacity' = "Capacity Disks (GB)"
         }
     $proposedConfigDisplayObject += [pscustomobject]@{
         'diskGroup'    = "----------"
