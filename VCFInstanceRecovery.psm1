@@ -2814,7 +2814,7 @@ Function New-RebuiltVsanDatastore
     }
     Write-Host ""; Write-Host " Proposed Disk Group Configuration " -ForegroundColor Yellow
     Write-Host ""; $proposedConfigDisplayObject | format-table -Property @{Expression=" "},diskGroup,cacheDiskID,cacheDiskCN,cacheDiskCapacity,capacityDiskIDs,capacityCNs,capacityCapacity -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
-    Write-Host ""; Write-Host " Do you wish to proceed with proposed configuration? (Y/N): " -ForegroundColor Yellow -nonewline
+    Write-Host ""; Write-Host " Do you wish to proceed with the proposed configuration? (Y/N): " -ForegroundColor Yellow -nonewline
     $proposedConfigAccepted = Read-Host
     $proposedConfigAccepted = $proposedConfigAccepted -replace "`t|`n|`r", ""
     If ($proposedConfigAccepted -eq "Y")
