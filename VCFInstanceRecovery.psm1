@@ -2765,7 +2765,7 @@ Function New-RebuiltVsanDatastore
         If ($capacityDiskSelection -eq "c") {Break}
         $diskGroupConfiguration += [PSCustomObject]@{
             'cacheDiskID' = $cacheDiskSelection
-            'cacacityDiskIDs' = $capacityDiskArray
+            'capacityDiskIDs' = $capacityDiskArray
         }
         $tempRemainingDisksDisplayObject = @()
         Foreach( $displayDisk in $remainingDisksDisplayObject)
@@ -2788,7 +2788,7 @@ Function New-RebuiltVsanDatastore
         'cacheDiskCapacity' = "Cache Disk (GB)"
         'capacityDiskIDs' = "Capacity Disk IDs"
         'capacityCNs' = "Capacity Disk Canonical Names"
-        'capacityCapacity' = "Capacity Disks (GB)"
+        'capacityDiskSize' = "Capacity Disks (GB)"
         }
     $proposedConfigDisplayObject += [pscustomobject]@{
         'diskGroup'    = "----------"
@@ -2797,7 +2797,7 @@ Function New-RebuiltVsanDatastore
         'cacheDiskCapacity' = "---------------"
         'capacityDiskIDs' = "-----------------"
         'capacityCNs' = "----------------------------------------"
-        'capacityCapacity' = "-------------------"
+        'capacityDiskSize' = "-------------------"
         }
     Foreach ($config in $diskGroupConfiguration)
     {
@@ -2805,15 +2805,15 @@ Function New-RebuiltVsanDatastore
                 'diskGroup'    = $configIndex
                 'cacheDiskID' = $config.cacheDiskID
                 'cacheDiskCN' = ($disksDisplayObject | Where-Object {$_.id -eq $config.cacheDiskID}).canonicalName
-                'cacheDiskCapacity' = ($disksDisplayObject | Where-Object {$_.id -eq $config.cacheDiskID}).capacity
-                'capacityDiskIDs' = $config.cacacityDiskIDs -join (", ")
-                'capacityCNs' = (($disksDisplayObject | Where-Object {$_.id -in $config.cacacityDiskIDs}).canonicalName) -join (", ")
-                'capacityCapacity' = (($disksDisplayObject | Where-Object {$_.id -in $config.cacacityDiskIDs}).capacity) -join (", ")
+                'cacheDiskCapacity' = ($disksDisplayObject | Where-Object {$_.id -eq $config.cacheDiskID}).size
+                'capacityDiskIDs' = $config.capacityDiskIDs -join (", ")
+                'capacityCNs' = (($disksDisplayObject | Where-Object {$_.id -in $config.capacityDiskIDs}).canonicalName) -join (", ")
+                'capacityDiskSize' = (($disksDisplayObject | Where-Object {$_.id -in $config.capacityDiskIDs}).size) -join (", ")
             }
             $configIndex++
     }
     Write-Host ""; Write-Host " Proposed Disk Group Configuration " -ForegroundColor Yellow
-    Write-Host ""; $proposedConfigDisplayObject | format-table -Property @{Expression=" "},diskGroup,cacheDiskID,cacheDiskCN,cacheDiskCapacity,capacityDiskIDs,capacityCNs,capacityCapacity -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
+    Write-Host ""; $proposedConfigDisplayObject | format-table -Property @{Expression=" "},diskGroup,cacheDiskID,cacheDiskCN,cacheDiskCapacity,capacityDiskIDs,capacityCNs,capacityDiskSize -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
     Write-Host ""; Write-Host " Do you wish to proceed with the proposed configuration? (Y/N): " -ForegroundColor Yellow -nonewline
     $proposedConfigAccepted = Read-Host
     $proposedConfigAccepted = $proposedConfigAccepted -replace "`t|`n|`r", ""
@@ -2831,7 +2831,7 @@ Function New-RebuiltVsanDatastore
                     $diskGroupConfigurationIndex = ($i -1)
                     $diskGroupConfiguration = $using:diskGroupConfiguration
                     $cacheDiskCanonicalName = (($using:disksDisplayObject | Where-Object {$_.id -eq $diskGroupConfiguration[$diskGroupConfigurationIndex].cacheDiskID}).canonicalName)
-                    $capacityDiskCanonicalNames = (($using:disksDisplayObject | Where-Object {$_.id -in $diskGroupConfiguration[$diskGroupConfigurationIndex].cacacityDiskIDs}).canonicalName)
+                    $capacityDiskCanonicalNames = (($using:disksDisplayObject | Where-Object {$_.id -in $diskGroupConfiguration[$diskGroupConfigurationIndex].capacityDiskIDs}).canonicalName)
                     & $moduleFunctions {LogMessage -type INFO -message "[$($vmhost.name)] Creating VSAN Disk Group $i"}
                     New-VsanDiskGroup -VMHost $vmhost -SsdCanonicalName $cacheDiskCanonicalName -DataDiskCanonicalName $capacityDiskCanonicalNames | Out-Null
                 }
