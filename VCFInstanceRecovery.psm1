@@ -2783,17 +2783,20 @@ Function New-RebuiltVsanDatastore
     {
         $scriptBlock = {
             $moduleFunctions = Import-Module VCFInstanceRecovery -passthru
+            $restoredvCenterConnection = Connect-ViServer $restoredvCenterFQDN -user $restoredvCenterAdmin -password $restoredvCenterAdminPassword
+            $vmhost = Get-VMHost -name $using:vmhost.name
             For ($i = 1; $i -le $using:diskGroupNumber; $i++) 
             {
                 $diskGroupConfigurationIndex = ($i -1)
                 $diskGroupConfiguration = $using:diskGroupConfiguration
                 $cacheDiskCanonicalName = (($using:disksDisplayObject | Where-Object {$_.id -eq $diskGroupConfiguration[$diskGroupConfigurationIndex].cacheDiskID}).canonicalName)# -join (",")
                 $capacityDiskCanonicalNames = (($using:disksDisplayObject | Where-Object {$_.id -in $diskGroupConfiguration[$diskGroupConfigurationIndex].cacacityDiskIDs}).canonicalName)# -join (",")
-                & $moduleFunctions {LogMessage -type INFO -message "[$($using:vmhost.name)] Creating VSAN Disk Group $i"}
-                New-VsanDiskGroup -VMHost $using:vmhost -SsdCanonicalName $cacheDiskCanonicalName -DataDiskCanonicalName $capacityDiskCanonicalNames | Out-Null   
+                & $moduleFunctions {LogMessage -type INFO -message "[$($vmhost.name)] Creating VSAN Disk Group $i"}
+                New-VsanDiskGroup -VMHost $vmhost -SsdCanonicalName $cacheDiskCanonicalName -DataDiskCanonicalName $capacityDiskCanonicalNames | Out-Null
+                Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
             }    
         }
-        Start-Job -scriptblock $scriptBlock -ArgumentList ($diskGroupNumber,$disksDisplayObject,$diskGroupConfiguration,$vmhost) | Out-Null
+        Start-Job -scriptblock $scriptBlock -ArgumentList ($diskGroupNumber,$disksDisplayObject,$diskGroupConfiguration,$vmhost,$restoredvCenterFQDN,$restoredvCenterAdmin,$restoredvCenterAdminPassword) | Out-Null
     }
     Get-Job | Receive-Job -Wait -AutoRemoveJob
     LogMessage -type INFO -message "[$clusterName] Renaming new datastore to original name: $datastoreName"
