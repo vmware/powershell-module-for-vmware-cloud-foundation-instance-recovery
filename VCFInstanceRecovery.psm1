@@ -2783,7 +2783,7 @@ Function New-RebuiltVsanDatastore
     {
         $scriptBlock = {
             $moduleFunctions = Import-Module VCFInstanceRecovery -passthru
-            $restoredvCenterConnection = Connect-ViServer $restoredvCenterFQDN -user $restoredvCenterAdmin -password $restoredvCenterAdminPassword
+            $restoredvCenterConnection = Connect-ViServer $using:restoredvCenterFQDN -user $using:restoredvCenterAdmin -password $using:restoredvCenterAdminPassword
             $vmhost = Get-VMHost -name $using:vmhost.name
             For ($i = 1; $i -le $using:diskGroupNumber; $i++) 
             {
