@@ -2797,7 +2797,7 @@ Function New-RebuiltVsanDatastore
         'cacheDiskCapacity' = "---------------"
         'capacityDiskIDs' = "-----------------"
         'capacityCNs' = "----------------------------------------"
-        'capacityCapacity' = "------------------"
+        'capacityCapacity' = "-------------------"
         }
     Foreach ($config in $diskGroupConfiguration)
     {
