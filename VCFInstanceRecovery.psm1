@@ -2714,7 +2714,7 @@ Function New-RebuiltVsanDatastore
     #$disksDisplayObject | format-table -Property @{Expression=" "},id,canonicalName,sectors,capacity -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
     $diskGroupConfiguration =@()
     $remainingDisksDisplayObject = $disksDisplayObject
-    $remainingDisksDisplayObject | format-table -Property @{Expression=" "},id,canonicalName,sectors,capacity -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
+    Write-Host ""; $remainingDisksDisplayObject | format-table -Property @{Expression=" "},id,canonicalName,sectors,capacity -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
     Do
     {
         Write-Host ""; Write-Host " Enter the desired number of disk groups to create (between 1 and 5), or C to Cancel: " -ForegroundColor Yellow -nonewline
@@ -2727,11 +2727,11 @@ Function New-RebuiltVsanDatastore
     {
         If ($i -gt 1) 
         {
-            $remainingDisksDisplayObject | format-table -Property @{Expression=" "},id,canonicalName,sectors,capacity -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
+            Write-Host ""; $remainingDisksDisplayObject | format-table -Property @{Expression=" "},id,canonicalName,sectors,capacity -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
         }
         Do
         {
-            Write-Host ""; Write-Host " Enter the ID of disk to use as Cache Disk for Disk Group $i, or C to Cancel: " -ForegroundColor Yellow -nonewline
+            If ($i -gt 1) {Write-Host ""}; Write-Host " Enter the ID of disk to use as Cache Disk for Disk Group $i, or C to Cancel: " -ForegroundColor Yellow -nonewline
             $cacheDiskSelection = Read-Host
         } Until (($cacheDiskSelection -in $remainingDisksDisplayObject.id) -OR ($cacheDiskSelection -eq "c"))
         If ($cacheDiskSelection -eq "c") {Break}
@@ -2744,7 +2744,7 @@ Function New-RebuiltVsanDatastore
             }
         }
         $remainingDisksDisplayObject = $tempRemainingDisksDisplayObject
-        $remainingDisksDisplayObject | format-table -Property @{Expression=" "},id,canonicalName,sectors,capacity -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
+        Write-Host ""; $remainingDisksDisplayObject | format-table -Property @{Expression=" "},id,canonicalName,sectors,capacity -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
         Do
         {
             Write-Host ""; Write-Host " Enter a comma seperated list of IDs to be used as Capacity Disks for Disk Group $i, or C to Cancel: " -ForegroundColor Yellow -nonewline
