@@ -7,7 +7,7 @@
 - Added `Invoke-SDDCManagerRestore` to automated recovery
 - Enhanced OSD output for all functions to include message time and timestamps, better handlong of ovftool output
 - Added `--X:waitForIp` to NSX Manager deployment to ensure appliance is near ready for use before continuing
-- Added `New-RebuiltVsanDatastore` to claim disks and rename datastore to original datastore name
+- Added `New-RebuiltVsanDatastore` to claim disks, create disk groups interactively and rename datastore to original datastore name
 
 ## v1.0.6
 
