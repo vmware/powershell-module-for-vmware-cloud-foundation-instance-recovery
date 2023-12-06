@@ -937,7 +937,7 @@ Function New-NSXManagerOvaDeployment
             }
             $nsxManagersIndex++
         }
-    $nsxManagersDisplayObject | format-table -Property @{Expression=" "},id,Manager -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
+    Write-Host ""; $nsxManagersDisplayObject | format-table -Property @{Expression=" "},id,Manager -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
     Do
     {
         Write-Host ""; Write-Host " Enter the ID of the Manager you wish to redeploy, or C to Cancel: " -ForegroundColor Yellow -nonewline
@@ -2711,7 +2711,7 @@ Function New-RebuiltVsanDatastore
                 $disksIndex++
             }
         }
-    #$disksDisplayObject | format-table -Property @{Expression=" "},id,canonicalName,sectors,capacity -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
+
     $diskGroupConfiguration =@()
     $remainingDisksDisplayObject = $disksDisplayObject
     Write-Host ""; $remainingDisksDisplayObject | format-table -Property @{Expression=" "},id,canonicalName,sectors,capacity -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
@@ -2780,15 +2780,20 @@ Function New-RebuiltVsanDatastore
     If (($cacheDiskSelection -eq "c") -or ($capacityDiskSelection -eq "c")){Break}
     Foreach ($vmHost in $vmHosts)
     {
-        For ($i = 1; $i -le $diskGroupNumber; $i++) 
-        {
-            $diskGroupConfigurationIndex = ($i -1)
-            $cacheDiskCanonicalName = (($disksDisplayObject | Where-Object {$_.id -eq $diskGroupConfiguration[$diskGroupConfigurationIndex].cacheDiskID}).canonicalName)# -join (",")
-            $capacityDiskCanonicalNames = (($disksDisplayObject | Where-Object {$_.id -in $diskGroupConfiguration[$diskGroupConfigurationIndex].cacacityDiskIDs}).canonicalName)# -join (",")
-            LogMessage -type INFO -message "[$($vmhost.name)] Creating VSAN Disk Group $i"
-            New-VsanDiskGroup -VMHost $vmhost -SsdCanonicalName $cacheDiskCanonicalName -DataDiskCanonicalName $capacityDiskCanonicalNames | Out-Null   
-        }    
+        $scriptBlock = {
+            For ($i = 1; $i -le $using:diskGroupNumber; $i++) 
+            {
+                $diskGroupConfigurationIndex = ($i -1)
+                $diskGroupConfiguration = $using:diskGroupConfiguration
+                $cacheDiskCanonicalName = (($using:disksDisplayObject | Where-Object {$_.id -eq $diskGroupConfiguration[$diskGroupConfigurationIndex].cacheDiskID}).canonicalName)# -join (",")
+                $capacityDiskCanonicalNames = (($using:disksDisplayObject | Where-Object {$_.id -in $diskGroupConfiguration[$diskGroupConfigurationIndex].cacacityDiskIDs}).canonicalName)# -join (",")
+                LogMessage -type INFO -message "[$($vmhost.name)] Creating VSAN Disk Group $i"
+                New-VsanDiskGroup -VMHost $vmhost -SsdCanonicalName $cacheDiskCanonicalName -DataDiskCanonicalName $capacityDiskCanonicalNames | Out-Null   
+            }    
+        }
+        Start-Job -scriptblock $scriptBlock -ArgumentList ($diskGroupNumber,$disksDisplayObject,$diskGroupConfiguration,$vmhost)
     }
+    Get-Job | Receive-Job -Wait -AutoRemoveJob | Out-File $logFile -encoding ASCII -append
     LogMessage -type INFO -message "[$clusterName] Renaming new datastore to original name: $datastoreName"
     Get-Cluster -name $clusterName | Get-Datastore | Set-Datastore -Name $datastoreName | Out-Null
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
