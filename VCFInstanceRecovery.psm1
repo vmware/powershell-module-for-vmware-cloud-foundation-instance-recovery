@@ -2898,7 +2898,7 @@ Function New-RebuiltVdsConfiguration
         }
         $nicsIndex++
     }
-    Write-Host ""; " Recreating Virtual Distributed Switches as per previous deployment" -ForegroundColor Yellow
+    Write-Host ""; Write-Host " Recreating Virtual Distributed Switches as per previous deployment" -ForegroundColor Yellow
     $vdsConfiguration =@()
     $remainingNicsDisplayObject = $nicsDisplayObject
 
