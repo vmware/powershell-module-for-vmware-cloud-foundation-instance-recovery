@@ -3012,7 +3012,7 @@ Function New-RebuiltVdsConfiguration
                 Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $vmnicMinusOne -VMHostVirtualNic $vmNicArray -VirtualNicPortgroup $portgroupArray -confirm:$false
 
                 #Remove Virtual Switch
-                LogMessage -type INFO -message "[$($vmhost.name)] Removing vSwitch0)"
+                LogMessage -type INFO -message "[$($vmhost.name)] Removing vSwitch0"
                 Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name "vSwitch0" | Remove-VirtualSwitch -Confirm:$false | Out-Null
 
                 $remainingVmnics = @()
