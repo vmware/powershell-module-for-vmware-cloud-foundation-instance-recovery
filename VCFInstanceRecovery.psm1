@@ -2049,7 +2049,7 @@ Function Move-ClusterHostNetworkingTovSS
     $vmotion_name = "vMotion"
     $storage_name = "vSAN"
 
-    $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
+    $vCenterConnection = connect-viserver $tempvCenterFqdn -user $tempvCenterAdmin -password $tempvCenterAdminPassword
 
     $vmhost_array = get-cluster -name $clusterName | get-vmhost
 
