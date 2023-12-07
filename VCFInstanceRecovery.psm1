@@ -3069,8 +3069,11 @@ Function New-RebuiltVdsConfiguration
                 {
                     $vmsTomove = get-cluster -name $clusterName | get-vm | Where-Object { $_.Name -notlike "*vCLS*" }
                     foreach ($vmToMove in $vmsTomove) {
-                        LogMessage -type INFO -message "[$($vmToMove.name)] Moving to $managementPortGroupName"
-                        Get-VM -Name $vmToMove | Get-NetworkAdapter | Set-NetworkAdapter -NetworkName $managementPortGroupName -confirm:$false | Out-Null
+                        If ((Get-VM -Name $vmToMove | Get-NetworkAdapter).NetworkName -ne $managementPortGroupName)
+                        {
+                            LogMessage -type INFO -message "[$($vmToMove.name)] Moving to $managementPortGroupName"
+                            Get-VM -Name $vmToMove | Get-NetworkAdapter | Set-NetworkAdapter -NetworkName $managementPortGroupName -confirm:$false | Out-Null    
+                        }
                     }
                 }
 
