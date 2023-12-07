@@ -3025,7 +3025,7 @@ Function New-RebuiltVdsConfiguration
                 }
                 Foreach ($nic in $remainingVmnics)
                 {
-                    LogMessage -type INFO -message "[$($vmhost.name)] Adding Additional Nic $nic to $($vds.vdsName))"
+                    LogMessage -type INFO -message "[$($vmhost.name)] Adding Additional Nic $nic to $($vds.vdsName)"
                     $additionalNic = $vmhost | Get-VMHostNetworkAdapter -Physical -Name $nic
                     Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $additionalNic -confirm:$false
                 }
