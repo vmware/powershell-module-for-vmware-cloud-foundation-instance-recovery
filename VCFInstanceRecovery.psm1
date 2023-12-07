@@ -2057,7 +2057,7 @@ Function Move-ClusterHostNetworkingTovSS
     $vds = Get-VDSwitch -Name $vdsName
 
     foreach ($vmhost in $vmhost_array) {
-        LogMessage -type INFO -message "[$vmhost] Removing $vnmic from VDS"
+        LogMessage -type INFO -message "[$vmhost] Removing $vmnic from VDS"
         Get-VMHostNetworkAdapter -VMHost $vmhost -Physical -Name $vmnic | Remove-VDSwitchPhysicalNetworkAdapter -Confirm:$false | Out-Null
         LogMessage -type INFO -message "[$vmhost] Creating new VSS"
         New-VirtualSwitch -VMHost $vmhost -Name vSwitch0 -mtu $mtu | Out-Null
