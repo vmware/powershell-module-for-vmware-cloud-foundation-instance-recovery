@@ -3005,7 +3005,7 @@ Function New-RebuiltVdsConfiguration
                 $remainingVmnics = @()
                 Foreach($nic in $vds.nicNames)
                 {
-                    If ($nic -ne $vds.nicNames[-1])
+                    If ($nic -ne $vds.nicNames[0])
                     {
                         $remainingVmnics += $nic
                     }
