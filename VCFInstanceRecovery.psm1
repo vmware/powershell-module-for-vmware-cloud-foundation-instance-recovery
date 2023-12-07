@@ -3088,6 +3088,7 @@ Function New-RebuiltVdsConfiguration
     }
 }
 Export-ModuleMember -Function New-RebuiltVdsConfiguration
+
 Function Backup-ClusterVMOverrides
 {
     <#
@@ -3291,6 +3292,50 @@ Function Backup-ClusterDRSGroupsAndRules
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Backup-ClusterDRSGroupsAndRules
+
+Function Backup-ClusterVMTags
+{
+    <#
+    .SYNOPSIS
+    Backs up the VM tags for the specified cluster
+
+    .DESCRIPTION
+    The Backup-ClusterVMTags cmdlet backs up the VM tags for the specified cluster
+
+    .EXAMPLE
+    Backup-ClusterVMTags -clusterName "sfo-m01-cl01"
+
+    .PARAMETER clusterName
+    Cluster whose VM tags you wish to backup
+    #>
+ 
+    Param(
+        [Parameter(Mandatory = $true)]
+        [String]$clusterName
+    )
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    Try {
+
+        $clusterVMTags = Get-Cluster -Name $clusterName | Get-VM | Get-TagAssignment
+        $allVMs = @()
+        Foreach ($vm in $clusterVMTags) {
+            $vmSettings = @()
+            $vmSettings += [pscustomobject]@{
+                'Tag'         = $vm.Tag.Name
+                'Category'         = $vm.Tag.Category
+                'Entity'           = $vm.Entity.Name
+            }
+            $allVMs += $vmSettings
+        }
+        $allVMs | ConvertTo-Json -depth 10 | Out-File "$clusterName-vmTags.json"
+    }
+    Catch {
+        catchWriter -object $_
+    }
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+}
+Export-ModuleMember -Function Backup-ClusterVMTags
 
 Function Restore-ClusterVMOverrides
 {
@@ -3618,6 +3663,59 @@ Function Restore-ClusterDRSGroupsAndRules
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Restore-ClusterDRSGroupsAndRules
+
+Function Restore-ClusterVMTags
+{
+    <#
+    .SYNOPSIS
+    Restores the VM tags for the specified cluster
+
+    .DESCRIPTION
+    The Restore-ClusterVMTags cmdlet restores the VM tags for the specified cluster
+
+    .EXAMPLE
+    Restore-ClusterVMTags -clusterName "sfo-m01-cl01" -jsonFile ".\sfo-m01-cl01-vmTags.json"
+
+    .PARAMETER clusterName
+    Cluster whose VM tags you wish to restore
+
+    .PARAMETER jsonFile
+    Path to the JSON File that contains the backup for the VM tags for the Cluster
+    #>
+ 
+    Param(
+        [Parameter(Mandatory = $true)][String]$clusterName,
+        [Parameter(Mandatory = $true)][String]$jsonFile
+    )
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    try {
+        If (Test-Path -path $jsonFile) {
+            $vmTags = Get-Content -path $jsonFile | ConvertFrom-Json
+            Foreach ($vmTag in $vmTags) {
+                If ($vmTag.Entity -notlike "vCLS*") {
+                    $vm = Get-VM -name $vmTag.Entity -errorAction SilentlyContinue
+                    If ($vm) {
+                            LogMessage -type INFO -message "[$($vmTag.Entity)] Setting VM Tag to $($vmTag.Tag)"
+                            New-TagAssignment -Entity $vm -Tag $vmTag.Tag -confirm:$false | Out-Null
+                        } 
+                    else {
+                        Write-Error "[$(Get-VM -name $vmTag.Entity)] Not found. Check that it has been restored"
+                    }
+                }
+            }
+        }
+        else {
+            $jumpboxName = hostname
+            Write-Error "[$jumpboxName] $jsonfile not found"
+        }
+    }
+    catch {
+        catchWriter -object $_
+    }
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+}
+Export-ModuleMember -Function Restore-ClusterVMTags
 
 #EndRegion vCenter Functions
 

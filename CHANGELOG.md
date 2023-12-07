@@ -10,6 +10,8 @@
 - Added `New-RebuiltVsanDatastore` to claim disks, create disk groups interactively and rename datastore to original datastore name
 - Added `New-PrepareforPartialBringup`
 - Added `New-RebuiltVdsConfiguration`
+- Added `Backup-ClusterVMTags`
+- Added `Restore-ClusterVMTags`
 
 ## v1.0.6
 
