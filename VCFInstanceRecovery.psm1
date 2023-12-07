@@ -2495,7 +2495,7 @@ Function Add-HostsToCluster
     $newHosts = (get-vcfhost | where-object { $_.id -in ((get-vcfcluster -name $clusterName).hosts.id) }).fqdn
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
     foreach ($newHost in $newHosts) {
-        $vmHosts = (Get-cluster -name $clusterName | Get-VMHost).Name
+        $vmHosts = (Get-cluster -name $clusterName | Get-VMHost).Name | Sort-Object
         if ($newHost -notin $vmHosts) {
             $esxiRootPassword = ($extractedSddcData.passwords | Where-Object {($_.entityType -eq "ESXI") -and ($_.entityName -eq $newHost) -and ($_.username -eq "root")}).password
             $esxiConnection = connect-viserver $newHost -user root -password $esxiRootPassword
@@ -2550,7 +2550,7 @@ Function Remove-StandardSwitch
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
-    $vmHosts = (Get-cluster -name $clusterName | Get-VMHost).Name
+    $vmHosts = (Get-cluster -name $clusterName | Get-VMHost).Name | Sort-Object
     foreach ($vmhost in $vmHosts) {
         LogMessage -type INFO -message "[$vmhost] Removing standard vSwitch" 
         Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name "vSwitch0" | Remove-VirtualSwitch -Confirm:$false | Out-Null
@@ -2608,7 +2608,7 @@ Function Add-VMKernelsToHost
     $tokenRequest = Request-VCFToken -fqdn $sddcManagerFQDN -username $sddcManagerAdmin -password $sddcManagerAdminPassword
     
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
-    $vmHosts = (Get-cluster -name $clusterName | Get-VMHost).Name
+    $vmHosts = (Get-cluster -name $clusterName | Get-VMHost).Name | Sort-Object
     foreach ($vmhost in $vmHosts) { 
         $vmotionPG = ((get-vcfCluster -name $clusterName -vdses).portGroups | ? { $_.transportType -eq "VMOTION" }).name
         $vmotionVDSName = ((get-vcfCluster -name $clusterName -vdses) | ? { $_.portGroups.transportType -contains "VMOTION" }).name
