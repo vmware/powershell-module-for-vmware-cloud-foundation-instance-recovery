@@ -3007,10 +3007,13 @@ Function New-RebuiltVdsConfiguration
                     $vmNicArray += $vmk1
                     $vmNicArray += $vmk2
                 }
+                LogMessage -type INFO -message "[$($vmhost.name)] Adding to $($vds.vdsName)"
                 Get-VDSwitch -name $vds.vdsName | Add-VDSwitchVMHost -vmhost $vmHost -confirm:$false
+                LogMessage -type INFO -message "[$($vmhost.name)] Adding Physical Adapter $($vds.nicNames[0]) to $($vds.vdsName) and migrating $($vmNicArray.name -join(", "))"
                 Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $vmnicMinusOne -VMHostVirtualNic $vmNicArray -VirtualNicPortgroup $portgroupArray -confirm:$false
 
                 #Remove Virtual Switch
+                LogMessage -type INFO -message "[$($vmhost.name)] Removing vSwitch0)"
                 Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name "vSwitch0" | Remove-VirtualSwitch -Confirm:$false | Out-Null
 
                 $remainingVmnics = @()
@@ -3023,6 +3026,7 @@ Function New-RebuiltVdsConfiguration
                 }
                 Foreach ($nic in $remainingVmnics)
                 {
+                    LogMessage -type INFO -message "[$($vmhost.name)] Adding Additional Nic $nic to $($vds.vdsName))"
                     $additionalNic = $vmhost | Get-VMHostNetworkAdapter -Physical -Name $nic
                     Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $additionalNic -confirm:$false
                 }
