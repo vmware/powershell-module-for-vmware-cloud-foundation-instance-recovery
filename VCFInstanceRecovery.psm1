@@ -2879,7 +2879,6 @@ Function New-RebuiltVdsConfiguration
     LogMessage -type INFO -message "[$($vmhosts[0].name)] Using host as reference for Physical NICs"
 
     #$nics = ((Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)[0] | Get-VMHostNetworkAdapter | Where-Object {$_.name -like "vmnic*"}) | Sort-Object -Property Name
-
     $nics = (Get-EsxCli -VMHost ((Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)[0])).network.nic.list() | Select-Object Name, Driver, LinkStatus, Description
 
     $nicsDisplayObject=@()
