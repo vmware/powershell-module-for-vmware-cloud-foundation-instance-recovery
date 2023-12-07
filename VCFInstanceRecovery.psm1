@@ -2878,23 +2878,34 @@ Function New-RebuiltVdsConfiguration
     $vmhosts = (Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)
     LogMessage -type INFO -message "[$($vmhosts[0].name)] Using host as reference for Physical NICs"
 
-    $nics = ((Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)[0] | Get-VMHostNetworkAdapter | Where-Object {$_.name -like "vmnic*"}) | Sort-Object -Property Name
+    #$nics = ((Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)[0] | Get-VMHostNetworkAdapter | Where-Object {$_.name -like "vmnic*"}) | Sort-Object -Property Name
+
+    $nics = (Get-EsxCli -VMHost ((Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)[0])).network.nic.list() | Select-Object Name, Driver, LinkStatus, Description
+
     $nicsDisplayObject=@()
     $nicsIndex = 1
     $nicsDisplayObject += [pscustomobject]@{
             'ID'    = "ID"
             'deviceName' = "Device Name"
+            'driver' = "Driver"
+            'linkStatus' = "Link Status"
+            'description' = "Description"
         }
     $nicsDisplayObject += [pscustomobject]@{
             'ID'    = "--"
-            'deviceName' = "-------"
+            'deviceName' = "-----------"
+            'driver' = "----------"
+            'linkStatus' = "-----------"
+            'description' = "-----------------------------------------------"
         }
     Foreach ($nic in $nics)
     {
         $nicsDisplayObject += [pscustomobject]@{
             'ID'    = $nicsIndex
-            'name' = $nic.name
-            'deviceName' = $nic.deviceName
+            'deviceName' = $nic.name
+            'driver' = $nic.driver
+            'linkStatus' = $nic.linkStatus
+            'description' = $nic.description
         }
         $nicsIndex++
     }
@@ -2909,7 +2920,7 @@ Function New-RebuiltVdsConfiguration
         Do
         {
             $nicNamesArray =@()
-            Write-Host ""; $remainingNicsDisplayObject | format-table -Property @{Expression=" "},id,deviceName -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
+            Write-Host ""; $remainingNicsDisplayObject | format-table -Property @{Expression=" "},id,deviceName,driver,linkStatus,description -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
             Write-Host ""; Write-Host " Recreating $($clusterVdsDetails[$vdsConfigurationIndex].dvsName) which contained the networks: $(($clusterVdsDetails[$vdsConfigurationIndex].networks) -join (","))"  -ForegroundColor Yellow
             Write-Host " Enter a comma seperated list of IDs to use as vmnics for this VDS, or C to Cancel: " -ForegroundColor Yellow -nonewline
             $nicSelection = Read-Host
