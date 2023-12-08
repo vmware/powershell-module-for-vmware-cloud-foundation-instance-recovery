@@ -919,6 +919,7 @@ Function New-PrepareforPartialBringup
 
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
+Export-ModuleMember -Function New-PrepareforPartialBringup
 
 Function New-ReconstructedPartialBringupJsonSpec
 {
