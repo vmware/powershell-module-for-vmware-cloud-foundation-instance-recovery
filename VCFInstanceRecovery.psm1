@@ -895,7 +895,7 @@ Function New-PrepareforPartialBringup
     {
         $sshSession = New-SSHSession -computername $cloudBuilderFQDN -Credential $mycreds -KnownHost $inmem
     } Until ($sshSession)
-
+    LogMessage -type INFO -message "[$jumpboxName] Backing up Standard BringUp Workflow"
     $stream = New-SSHShellStream -SSHSession $sshSession
     $stream.writeline("su -")
     Start-Sleep 2
@@ -906,7 +906,8 @@ Function New-PrepareforPartialBringup
     $stream.writeline("cp workflowspec-ems.json workflowspec-ems.json.backup")
     Start-Sleep 2
     $stream.writeline("rm workflowspec-ems.json")
-    Start-Sleep 2
+    Start-Sleep 
+    LogMessage -type INFO -message "[$jumpboxName] Modifying BringUp Workflow"2
     $uploadFile = Set-SCPItem -ComputerName $cloudBuilderFQDN -Credential $mycreds -path $sourceFile -destination "/tmp" -KnownHost $inmem
     $stream.writeline("cp /tmp/$($truncatedSddcManagerVersion)x-workflowspec-ems.json /opt/vmware/bringup/webapps/bringup-app/conf/workflowconfig/workflowspec-ems.json")
     Start-Sleep 2
