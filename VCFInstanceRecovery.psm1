@@ -883,6 +883,7 @@ Function New-PrepareforPartialBringup
     LogMessage -type INFO -message "[$jumpboxName] Detected desired SDDC Manager version of: $($extractedSddcData.sddcManager.version)"
     
     $truncatedSddcManagerVersion = $extractedSddcData.sddcManager.version.replace(".","").substring(0,2)
+    $modulePath = (Get-InstalledModule -Name VCFInstanceRecovery).InstalledLocation
     $sourceFile = "$modulePath\reference-files\$($truncatedSddcManagerVersion)x-workflowspec-ems.json"
 
     LogMessage -type INFO -message "[$jumpboxName] Establishing Connection to $cloudBuilderFQDN"
