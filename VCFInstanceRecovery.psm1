@@ -1880,7 +1880,10 @@ Function Invoke-vCenterRestore
     Do
     {
         $sshHostKey = Get-SSHHostKey -ComputerName $vcenterFqdn -ErrorAction SilentlyContinue
-        $sshTrustedHost = New-SSHTrustedHost -KnownHostStore $inmem -HostName $vcenterFqdn -FingerPrint $sshHostKey.fingerprint
+        If ($sshHostKey)
+        {
+            $sshTrustedHost = New-SSHTrustedHost -KnownHostStore $inmem -HostName $vcenterFqdn -FingerPrint $sshHostKey.fingerprint    
+        }
     } Until ($sshTrustedHost)
     Do
     {
@@ -1907,7 +1910,10 @@ Function Invoke-vCenterRestore
     Do
     {
         $sshHostKey = Get-SSHHostKey -ComputerName $vcenterFqdn -ErrorAction SilentlyContinue
-        $sshTrustedHost = New-SSHTrustedHost -KnownHostStore $inmem -HostName $vcenterFqdn -FingerPrint $sshHostKey.fingerprint
+        If ($sshHostKey)
+        {
+            $sshTrustedHost = New-SSHTrustedHost -KnownHostStore $inmem -HostName $vcenterFqdn -FingerPrint $sshHostKey.fingerprint    
+        }
     } Until ($sshTrustedHost)
     Do
     {
