@@ -1563,7 +1563,6 @@ Function New-SDDCManagerOvaDeployment
 }
 Export-ModuleMember -Function New-SDDCManagerOvaDeployment
 
-
 Function New-UploadAndModifySDDCManagerBackup
 {
     <#
@@ -1833,6 +1832,91 @@ Export-ModuleMember -Function Invoke-SDDCManagerRestore
 #EndRegion SDDC Manager Functions
 
 #Region vCenter Functions
+
+Function Invoke-vCenterRestore
+{
+    Param(
+        [Parameter (Mandatory = $true)][String] $tempvCenterFqdn,
+        [Parameter (Mandatory = $true)][String] $tempvCenterAdmin,
+        [Parameter (Mandatory = $true)][String] $tempvCenterAdminPassword,
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
+        [Parameter (Mandatory = $true)][String] $workloadDomain,
+        [Parameter (Mandatory = $true)][String] $vCenterBackupPath,
+        [Parameter (Mandatory = $true)][String] $locationtype,
+        [Parameter (Mandatory = $true)][String] $locationUser,
+        [Parameter (Mandatory = $true)][String] $locationPassword
+
+    )
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
+    $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
+    $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
+    $vcenterFqdn = ($extractedSddcData.workloadDomains | Where-Object {$_.domainName -eq $workloadDomain}).vCenterDetails.fqdn
+    $vCenterVmName = ($extractedSddcData.workloadDomains | Where-Object {$_.domainName -eq $workloadDomain}).vCenterDetails.vmname
+    $ssoAdminUserName = ($extractedSddcData.passwords | Where-Object {$_.entityType -eq "PSC" -and $_.domainName -eq $workloadDomain}).username
+    $ssoAdminUserPassword = ($extractedSddcData.passwords | Where-Object {$_.entityType -eq "PSC" -and $_.domainName -eq $workloadDomain}).password
+    $restoredvCenterRootPassword = ($extractedSddcData.passwords | Where-Object {($_.entityType -eq "VCENTER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "SSH")}).password
+    
+    #Power Up vCenter Appliance
+    $vCenterConnection = Connect-VIServer -server $tempvCenterFqdn -user $tempvCenterAdmin -password $tempvCenterAdminPassword
+    LogMessage -type INFO -message "[$vCenterVmName] Powering On VM"
+    Get-VM -Name $vCenterVmName | Start-VM -confirm:$false | Out-Null
+    Disconnect-VIServer * -Force -Confirm:$false -ErrorAction SilentlyContinue
+
+    #Wait for successful ping test
+    LogMessage -type WAIT -message "[$vCenterVmName] Waiting for successful ping test"
+    Do 
+    {
+        Sleep 10
+        $pingTest = Test-Connection -ComputerName $vcenterFqdn -count 1 -ErrorAction SilentlyContinue
+    } Until ($pingTest)
+      
+    #Restore vCenter Appliance
+    LogMessage -type INFO -message "[$jumpboxName] Establishing SSH Connection to $vcenterFqdn"
+    $SecurePassword = ConvertTo-SecureString -String $restoredvCenterRootPassword -AsPlainText -Force
+    $mycreds = New-Object System.Management.Automation.PSCredential ('root', $SecurePassword)
+    $inmem = New-SSHMemoryKnownHost
+    New-SSHTrustedHost -KnownHostStore $inmem -HostName $vcenterFqdn -FingerPrint ((Get-SSHHostKey -ComputerName $vcenterFqdn).fingerprint) | Out-Null
+    Do
+    {
+        $sshSession = New-SSHSession -computername $vcenterFqdn -Credential $mycreds -KnownHost $inmem
+    } Until ($sshSession)
+    $stream = New-SSHShellStream -SSHSession $sshSession
+    
+    #Wait for VAMI Service to be ready
+    LogMessage -type WAIT -message "[$vCenterVmName] Waiting for vami-lighttp service to be up"
+    Do
+    {
+        $stream.writeline("api com.vmware.appliance.version1.services.status.get --name vami-lighttp")
+        Sleep 2
+        $result = $stream.read()
+        $resultArray = $result -split("\r\n")
+        $status = $resultArray[1].trim()
+    } Until ($status -eq "Status: up")
+
+    #Restore vCenter
+    LogMessage -type INFO -message "[$vcenterFqdn] Restoring from $vCenterBackupPath"
+    $restoreString = "api com.vmware.appliance.recovery.restore.job.create --locationType $locationtype --location $vCenterBackupPath --locationUser $locationUser --locationPassword --ssoAdminUserName $ssoAdminUserName --ssoAdminUserPassword --ignoreWarnings TRUE"
+    $stream.writeline($restoreString)
+    Start-Sleep 5
+    $stream.writeline($locationPassword)
+    Start-Sleep 5
+    $stream.writeline($ssoAdminUserPassword)
+    Do
+    {
+        Start-Sleep 5
+        $stream.writeline("api com.vmware.appliance.recovery.restore.job.get")
+        $result = $stream.read()
+        $resultArray = $result -split("\r\n")
+        $progress = $resultArray[4].trim()
+        $state = $resultArray[2].trim()
+        LogMessage -type INFO -message "[$vcenterFqdn] Restore $($progress)%"
+    } Until ($state -ne "State: INPROGRESS")
+    LogMessage -type INFO -message "[$vcenterFqdn] Restore finished with $state"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+}
+Export-ModuleMember -Function Invoke-vCenterRestore
 
 Function Move-ClusterHostsToRestoredVcenter
 {
