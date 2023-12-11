@@ -1901,7 +1901,7 @@ Function Invoke-vCenterRestore
     } Until ($rpmStatus -eq "Status: starting")
     LogMessage -type INFO -message "[$vcenterFqdn] RPM initialization Started"
     #>
-    
+
     #Wait for RPM initialization to Finish
     LogMessage -type WAIT -message "[$vcenterFqdn] Waiting for Appliance to finish RPM initialization"
     Do
@@ -1911,7 +1911,6 @@ Function Invoke-vCenterRestore
         $sshSession = New-SSHSession -computername $vcenterFqdn -Credential $mycreds -KnownHost $inmem
         $rpmStatus = (Invoke-SSHCommand -SessionId $sshSession.sessionid -Command "api com.vmware.appliance.version1.services.status.get --name vmbase_init" -erroraction silentlyContinue).output
     } Until ($rpmStatus -eq "Status: down")
-    LogMessage -type INFO -message "Remove Me First status: $rpmStatus"
     LogMessage -type INFO -message "[$vCenterVmName] RPM initialization Complete"
 
     #Restore vCenter
@@ -1945,11 +1944,14 @@ Function Invoke-vCenterRestore
         If ($restoreStatus)
         {
             $restoreStatusArray = $restoreStatus -split("\r\n")
-            $progress = $restoreStatusArray[5].trim()
-            $state = $restoreStatusArray[1].trim()
-            LogMessage -type INFO -message "[$vcenterFqdn] Restore $($progress)%"
+            If ($restoreStatusArray)
+            {
+                $progress = $restoreStatusArray[5].trim()
+                $state = $restoreStatusArray[1].trim()
+                LogMessage -type INFO -message "[$vcenterFqdn] Restore $($progress)%"    
+            }
         }
-    } While ($state -in "State: INPROGRESS","Failed to connect to service.")
+    } Until (($state -ne "State: INPROGRESS") -and ($state -ne "Failed to connect to service."))
     If ($state -eq "SUCCEEDED")
     {
         LogMessage -type INFO -message "[$vcenterFqdn] Restore finished with $state"
