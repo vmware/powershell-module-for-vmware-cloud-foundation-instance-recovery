@@ -1893,6 +1893,7 @@ Function Invoke-vCenterRestore
     LogMessage -type WAIT -message "[$vcenterFqdn] Waiting for Appliance to finish RPM initialization"
     Do
     {
+        #Note: Looped SSH connections is quite deliberate here are the connections appear to be continually dropped as the process progresses
         Sleep 10
         Remove-SSHSession -SSHSession $sshSession | Out-Null
         $sshSession = New-SSHSession -computername $vcenterFqdn -Credential $mycreds -KnownHost $inmem
@@ -1913,6 +1914,7 @@ Function Invoke-vCenterRestore
     LogMessage -type WAIT -message "[$vcenterFqdn] Waiting for Restore to Start"
     Do
     {
+        #Note: Looped SSH connections is quite deliberate here are the connections appear to be continually dropped as the process progresses
         Start-Sleep 5
         Remove-SSHSession -SSHSession $sshSession | Out-Null
         $sshSession = New-SSHSession -computername $vcenterFqdn -Credential $mycreds -KnownHost $inmem
@@ -1924,6 +1926,7 @@ Function Invoke-vCenterRestore
 
     Do
     {
+        #Note: Looped SSH connections is quite deliberate here are the connections appear to be continually dropped as the process progresses
         Start-Sleep 20
         Remove-SSHSession -SSHSession $sshSession | Out-Null
         $sshSession = New-SSHSession -computername $vcenterFqdn -Credential $mycreds -KnownHost $inmem
