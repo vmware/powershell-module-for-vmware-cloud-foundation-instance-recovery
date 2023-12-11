@@ -1890,8 +1890,22 @@ Function Invoke-vCenterRestore
         $sshSession = New-SSHSession -computername $vcenterFqdn -Credential $mycreds -KnownHost $inmem
     } Until ($sshSession)
     $stream = New-SSHShellStream -SSHSession $sshSession
-    
+
     #Wait for VAMI Service to be ready
+    LogMessage -type WAIT -message "[$vCenterVmName] Waiting for Appliance to finish RPM initialization"
+    Do
+    {
+        $stream.writeline("api com.vmware.appliance.version1.services.status.get --name vmbase_init")
+        Sleep 2
+        $result = $stream.read()
+        $resultArray = $result -split("\r\n")
+        $status = $resultArray[1].trim()
+    } Until ($status -ne "Status: starting")
+
+    #Close SSH Session
+    Remove-SSHSession -SSHSession $sshSession | Out-Null
+    
+    <# #Wait for VAMI Service to be ready
     LogMessage -type WAIT -message "[$vCenterVmName] Waiting for vami-lighttp service to be up"
     Do
     {
@@ -1900,10 +1914,7 @@ Function Invoke-vCenterRestore
         $result = $stream.read()
         $resultArray = $result -split("\r\n")
         $status = $resultArray[1].trim()
-    } Until ($status -eq "Status: up")
-
-    #Close SSH Session
-    Remove-SSHSession -SSHSession $sshSession | Out-Null
+    } Until ($status -eq "Status: up") #>
 
     #New SSHSession
     $inmem = New-SSHMemoryKnownHost
