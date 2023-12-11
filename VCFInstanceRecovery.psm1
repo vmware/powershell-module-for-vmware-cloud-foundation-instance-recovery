@@ -1956,6 +1956,7 @@ Function Invoke-vCenterRestore
         }
     #} Until (($state -ne "State: INPROGRESS") -and ($state -ne "Failed to connect to service."))
     } Until (($state -eq "State: SUCCEEDED") -or ($state -eq "State: FAILED"))
+    LogMessage -type INFO -message "Remove me: `'$state`'"
     If ($state -eq "State: SUCCEEDED")
     {
         LogMessage -type INFO -message "[$vcenterFqdn] Restore finished with $state"
