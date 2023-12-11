@@ -1911,7 +1911,7 @@ Function Invoke-vCenterRestore
         $sshSession = New-SSHSession -computername $vcenterFqdn -Credential $mycreds -KnownHost $inmem
         $rpmStatus = (Invoke-SSHCommand -SessionId $sshSession.sessionid -Command "api com.vmware.appliance.version1.services.status.get --name vmbase_init" -erroraction silentlyContinue).output
     } Until ($rpmStatus -eq "Status: down")
-    LogMessage -type INFO -message "[$vCenterVmName] RPM initialization Complete"
+    LogMessage -type INFO -message "[$vcenterFqdn] RPM initialization Complete"
 
     #Restore vCenter
     $stream = New-SSHShellStream -SSHSession $sshSession
@@ -1956,7 +1956,7 @@ Function Invoke-vCenterRestore
         }
     #} Until (($state -ne "State: INPROGRESS") -and ($state -ne "Failed to connect to service."))
     } Until (($state -eq "State: SUCCEEDED") -or ($state -eq "State: FAILED"))
-    If ($state -eq "SUCCEEDED")
+    If ($state -eq "State: SUCCEEDED")
     {
         LogMessage -type INFO -message "[$vcenterFqdn] Restore finished with $state"
     }
