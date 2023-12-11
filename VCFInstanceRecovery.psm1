@@ -1895,7 +1895,7 @@ Function Invoke-vCenterRestore
     LogMessage -type INFO -message "Remove Me First status: $rpmStatus"
 
     #Wait for RPM initialization to Start
-    LogMessage -type WAIT -message "[$vCenterVmName] Waiting for Appliance to Start RPM initialization"
+    LogMessage -type WAIT -message "[$vCenterVmName] Waiting for Appliance to start RPM initialization"
     Do
     {
         Sleep 10
@@ -1906,7 +1906,7 @@ Function Invoke-vCenterRestore
     LogMessage -type INFO -message "[$vCenterVmName] RPM initialization Started"
 
     #Second SSH Session
-    LogMessage -type WAIT -message "[$vCenterVmName] Waiting for Appliance to Finish RPM initialization"
+    LogMessage -type WAIT -message "[$vCenterVmName] Waiting for Appliance to finish RPM initialization"
     Do
     {
         Sleep 10
@@ -1919,7 +1919,7 @@ Function Invoke-vCenterRestore
 
     #Restore vCenter
     $stream = New-SSHShellStream -SSHSession $sshSession
-    LogMessage -type INFO -message "[$vcenterFqdn] Issuing Restore request using $vCenterBackupPath"
+    LogMessage -type INFO -message "[$vcenterFqdn] Submitting Restore Request"
     $restoreString = "api com.vmware.appliance.recovery.restore.job.create --locationType $locationtype --location $vCenterBackupPath --locationUser $locationUser --locationPassword --ssoAdminUserName $ssoAdminUserName --ssoAdminUserPassword --ignoreWarnings TRUE"
     $stream.writeline($restoreString)
     Start-Sleep 5
@@ -1945,12 +1945,22 @@ Function Invoke-vCenterRestore
         Remove-SSHSession -SSHSession $sshSession | Out-Null
         $sshSession = New-SSHSession -computername $vcenterFqdn -Credential $mycreds -KnownHost $inmem
         $restoreStatus = (Invoke-SSHCommand -SessionId $sshSession.sessionid -Command "api com.vmware.appliance.recovery.restore.job.get" -erroraction silentlyContinue).output
-        $restoreStatusArray = $restoreStatus -split("\r\n")
-        $progress = $restoreStatusArray[5].trim()
-        $state = $restoreStatusArray[1].trim()
-        LogMessage -type INFO -message "[$vcenterFqdn] Restore $($progress)%"
-    } Until ($state -ne "State: INPROGRESS")
-    LogMessage -type INFO -message "[$vcenterFqdn] Restore finished with $state"
+        If ($restoreStatus)
+        {
+            $restoreStatusArray = $restoreStatus -split("\r\n")
+            $progress = $restoreStatusArray[5].trim()
+            $state = $restoreStatusArray[1].trim()
+            LogMessage -type INFO -message "[$vcenterFqdn] Restore $($progress)%"
+        }
+    } While ($state -in "State: INPROGRESS","Failed to connect to service.")
+    If ($state -eq "SUCCEEDED")
+    {
+        LogMessage -type INFO -message "[$vcenterFqdn] Restore finished with $state"
+    }
+    else
+    {
+        LogMessage -type ERROR -message "[$vcenterFqdn] Restore finished with $state"
+    }
 
     #Close SSH Session
     Remove-SSHSession -SSHSession $sshSession | Out-Null
