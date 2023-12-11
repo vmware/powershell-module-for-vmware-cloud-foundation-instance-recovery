@@ -1888,14 +1888,10 @@ Function Invoke-vCenterRestore
             $sshTrustedHost = New-SSHTrustedHost -KnownHostStore $inmem -HostName $vcenterFqdn -FingerPrint $sshHostKey.fingerprint    
         }
     } Until ($sshTrustedHost)
-    
-    #Remove Me
-    $sshSession = New-SSHSession -computername $vcenterFqdn -Credential $mycreds -KnownHost $inmem
-    $rpmStatus = (Invoke-SSHCommand -SessionId $sshSession.sessionid -Command "api com.vmware.appliance.version1.services.status.get --name vmbase_init").output
-    LogMessage -type INFO -message "Remove Me First status: $rpmStatus"
 
+    <#    
     #Wait for RPM initialization to Start
-    LogMessage -type WAIT -message "[$vCenterVmName] Waiting for Appliance to start RPM initialization"
+    LogMessage -type WAIT -message "[$vcenterFqdn] Waiting for Appliance to start RPM initialization"
     Do
     {
         Sleep 10
@@ -1903,10 +1899,11 @@ Function Invoke-vCenterRestore
         $sshSession = New-SSHSession -computername $vcenterFqdn -Credential $mycreds -KnownHost $inmem
         $rpmStatus = (Invoke-SSHCommand -SessionId $sshSession.sessionid -Command "api com.vmware.appliance.version1.services.status.get --name vmbase_init").output
     } Until ($rpmStatus -eq "Status: starting")
-    LogMessage -type INFO -message "[$vCenterVmName] RPM initialization Started"
-
-    #Second SSH Session
-    LogMessage -type WAIT -message "[$vCenterVmName] Waiting for Appliance to finish RPM initialization"
+    LogMessage -type INFO -message "[$vcenterFqdn] RPM initialization Started"
+    #>
+    
+    #Wait for RPM initialization to Finish
+    LogMessage -type WAIT -message "[$vcenterFqdn] Waiting for Appliance to finish RPM initialization"
     Do
     {
         Sleep 10
