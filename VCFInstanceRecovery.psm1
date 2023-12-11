@@ -1877,7 +1877,11 @@ Function Invoke-vCenterRestore
     $SecurePassword = ConvertTo-SecureString -String $restoredvCenterRootPassword -AsPlainText -Force
     $mycreds = New-Object System.Management.Automation.PSCredential ('root', $SecurePassword)
     $inmem = New-SSHMemoryKnownHost
-    New-SSHTrustedHost -KnownHostStore $inmem -HostName $vcenterFqdn -FingerPrint ((Get-SSHHostKey -ComputerName $vcenterFqdn).fingerprint) | Out-Null
+    Do
+    {
+        $sshHostKey = Get-SSHHostKey -ComputerName $vcenterFqdn -ErrorAction SilentlyContinue
+        $sshTrustedHost = New-SSHTrustedHost -KnownHostStore $inmem -HostName $vcenterFqdn -FingerPrint $sshHostKey.fingerprint
+    } Until ($sshTrustedHost)
     Do
     {
         $sshSession = New-SSHSession -computername $vcenterFqdn -Credential $mycreds -KnownHost $inmem
@@ -1894,6 +1898,22 @@ Function Invoke-vCenterRestore
         $resultArray = $result -split("\r\n")
         $status = $resultArray[1].trim()
     } Until ($status -eq "Status: up")
+
+    #Close SSH Session
+    Remove-SSHSession -SSHSession $sshSession | Out-Null
+
+    #New SSHSession
+    $inmem = New-SSHMemoryKnownHost
+    Do
+    {
+        $sshHostKey = Get-SSHHostKey -ComputerName $vcenterFqdn -ErrorAction SilentlyContinue
+        $sshTrustedHost = New-SSHTrustedHost -KnownHostStore $inmem -HostName $vcenterFqdn -FingerPrint $sshHostKey.fingerprint
+    } Until ($sshTrustedHost)
+    Do
+    {
+        $sshSession = New-SSHSession -computername $vcenterFqdn -Credential $mycreds -KnownHost $inmem
+    } Until ($sshSession)
+    $stream = New-SSHShellStream -SSHSession $sshSession
 
     #Restore vCenter
     LogMessage -type INFO -message "[$vcenterFqdn] Restoring from $vCenterBackupPath"
@@ -1914,6 +1934,9 @@ Function Invoke-vCenterRestore
         LogMessage -type INFO -message "[$vcenterFqdn] Restore $($progress)%"
     } Until ($state -ne "State: INPROGRESS")
     LogMessage -type INFO -message "[$vcenterFqdn] Restore finished with $state"
+
+    #Close SSH Session
+    Remove-SSHSession -SSHSession $sshSession | Out-Null
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Invoke-vCenterRestore
