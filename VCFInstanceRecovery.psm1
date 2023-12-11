@@ -1847,6 +1847,7 @@ Function Invoke-vCenterRestore
         [Parameter (Mandatory = $true)][String] $locationPassword
 
     )
+    
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
@@ -1872,51 +1873,12 @@ Function Invoke-vCenterRestore
         $pingTest = Test-Connection -ComputerName $vcenterFqdn -count 1 -ErrorAction SilentlyContinue
     } Until ($pingTest)
       
-    #Restore vCenter Appliance
-    LogMessage -type INFO -message "[$jumpboxName] Establishing SSH Connection to $vcenterFqdn"
+    #Credentials for connecting to vCenter
     $SecurePassword = ConvertTo-SecureString -String $restoredvCenterRootPassword -AsPlainText -Force
     $mycreds = New-Object System.Management.Automation.PSCredential ('root', $SecurePassword)
-    $inmem = New-SSHMemoryKnownHost
-    Do
-    {
-        $sshHostKey = Get-SSHHostKey -ComputerName $vcenterFqdn -ErrorAction SilentlyContinue
-        If ($sshHostKey)
-        {
-            $sshTrustedHost = New-SSHTrustedHost -KnownHostStore $inmem -HostName $vcenterFqdn -FingerPrint $sshHostKey.fingerprint    
-        }
-    } Until ($sshTrustedHost)
-    Do
-    {
-        $sshSession = New-SSHSession -computername $vcenterFqdn -Credential $mycreds -KnownHost $inmem
-    } Until ($sshSession)
-    $stream = New-SSHShellStream -SSHSession $sshSession
-
-    #Wait for VAMI Service to be ready
-    LogMessage -type WAIT -message "[$vCenterVmName] Waiting for Appliance to finish RPM initialization"
-    Do
-    {
-        $stream.writeline("api com.vmware.appliance.version1.services.status.get --name vmbase_init")
-        Sleep 2
-        $result = $stream.read()
-        $resultArray = $result -split("\r\n")
-        $status = $resultArray[1].trim()
-    } Until ($status -ne "Status: starting")
-
-    #Close SSH Session
-    Remove-SSHSession -SSHSession $sshSession | Out-Null
     
-    <# #Wait for VAMI Service to be ready
-    LogMessage -type WAIT -message "[$vCenterVmName] Waiting for vami-lighttp service to be up"
-    Do
-    {
-        $stream.writeline("api com.vmware.appliance.version1.services.status.get --name vami-lighttp")
-        Sleep 2
-        $result = $stream.read()
-        $resultArray = $result -split("\r\n")
-        $status = $resultArray[1].trim()
-    } Until ($status -eq "Status: up") #>
-
-    #New SSHSession
+    #First SSH Session
+    LogMessage -type WAIT -message "[$jumpboxName] Waiting for SSH Connection to $vcenterFqdn to be possible"
     $inmem = New-SSHMemoryKnownHost
     Do
     {
@@ -1926,28 +1888,65 @@ Function Invoke-vCenterRestore
             $sshTrustedHost = New-SSHTrustedHost -KnownHostStore $inmem -HostName $vcenterFqdn -FingerPrint $sshHostKey.fingerprint    
         }
     } Until ($sshTrustedHost)
+    
+    #Remove Me
+    $sshSession = New-SSHSession -computername $vcenterFqdn -Credential $mycreds -KnownHost $inmem
+    $rpmStatus = (Invoke-SSHCommand -SessionId $sshSession.sessionid -Command "api com.vmware.appliance.version1.services.status.get --name vmbase_init").output
+    LogMessage -type INFO -message "Remove Me First status: $rpmStatus"
+
+    #Wait for RPM initialization to Start
+    LogMessage -type WAIT -message "[$vCenterVmName] Waiting for Appliance to Start RPM initialization"
     Do
     {
+        Sleep 10
+        Remove-SSHSession -SSHSession $sshSession | Out-Null
         $sshSession = New-SSHSession -computername $vcenterFqdn -Credential $mycreds -KnownHost $inmem
-    } Until ($sshSession)
-    $stream = New-SSHShellStream -SSHSession $sshSession
+        $rpmStatus = (Invoke-SSHCommand -SessionId $sshSession.sessionid -Command "api com.vmware.appliance.version1.services.status.get --name vmbase_init").output
+    } Until ($rpmStatus -eq "Status: starting")
+    LogMessage -type INFO -message "[$vCenterVmName] RPM initialization Started"
+
+    #Second SSH Session
+    LogMessage -type WAIT -message "[$vCenterVmName] Waiting for Appliance to Finish RPM initialization"
+    Do
+    {
+        Sleep 10
+        Remove-SSHSession -SSHSession $sshSession | Out-Null
+        $sshSession = New-SSHSession -computername $vcenterFqdn -Credential $mycreds -KnownHost $inmem
+        $rpmStatus = (Invoke-SSHCommand -SessionId $sshSession.sessionid -Command "api com.vmware.appliance.version1.services.status.get --name vmbase_init" -erroraction silentlyContinue).output
+    } Until ($rpmStatus -ne "Status: starting")
+    LogMessage -type INFO -message "[$vCenterVmName] RPM initialization Complete"
 
     #Restore vCenter
-    LogMessage -type INFO -message "[$vcenterFqdn] Restoring from $vCenterBackupPath"
+    $stream = New-SSHShellStream -SSHSession $sshSession
+    LogMessage -type INFO -message "[$vcenterFqdn] Issuing Restore request using $vCenterBackupPath"
     $restoreString = "api com.vmware.appliance.recovery.restore.job.create --locationType $locationtype --location $vCenterBackupPath --locationUser $locationUser --locationPassword --ssoAdminUserName $ssoAdminUserName --ssoAdminUserPassword --ignoreWarnings TRUE"
     $stream.writeline($restoreString)
     Start-Sleep 5
     $stream.writeline($locationPassword)
     Start-Sleep 5
     $stream.writeline($ssoAdminUserPassword)
+
+    LogMessage -type WAIT -message "[$vcenterFqdn] Waiting for Restore to Start"
     Do
     {
         Start-Sleep 5
-        $stream.writeline("api com.vmware.appliance.recovery.restore.job.get")
-        $result = $stream.read()
-        $resultArray = $result -split("\r\n")
-        $progress = $resultArray[4].trim()
-        $state = $resultArray[2].trim()
+        Remove-SSHSession -SSHSession $sshSession | Out-Null
+        $sshSession = New-SSHSession -computername $vcenterFqdn -Credential $mycreds -KnownHost $inmem
+        $restoreStatus = (Invoke-SSHCommand -SessionId $sshSession.sessionid -Command "api com.vmware.appliance.recovery.restore.job.get" -erroraction silentlyContinue).output
+        $restoreStatusArray = $restoreStatus -split("\r\n")
+        $state = $restoreStatusArray[1].trim()
+    } Until ($state -eq "State: INPROGRESS")
+    LogMessage -type INFO -message "[$vcenterFqdn] Restore $state"
+
+    Do
+    {
+        Start-Sleep 5
+        Remove-SSHSession -SSHSession $sshSession | Out-Null
+        $sshSession = New-SSHSession -computername $vcenterFqdn -Credential $mycreds -KnownHost $inmem
+        $restoreStatus = (Invoke-SSHCommand -SessionId $sshSession.sessionid -Command "api com.vmware.appliance.recovery.restore.job.get" -erroraction silentlyContinue).output
+        $restoreStatusArray = $restoreStatus -split("\r\n")
+        $progress = $restoreStatusArray[5].trim()
+        $state = $restoreStatusArray[1].trim()
         LogMessage -type INFO -message "[$vcenterFqdn] Restore $($progress)%"
     } Until ($state -ne "State: INPROGRESS")
     LogMessage -type INFO -message "[$vcenterFqdn] Restore finished with $state"
