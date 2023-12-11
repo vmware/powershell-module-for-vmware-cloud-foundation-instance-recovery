@@ -1913,7 +1913,7 @@ Function Invoke-vCenterRestore
         Remove-SSHSession -SSHSession $sshSession | Out-Null
         $sshSession = New-SSHSession -computername $vcenterFqdn -Credential $mycreds -KnownHost $inmem
         $rpmStatus = (Invoke-SSHCommand -SessionId $sshSession.sessionid -Command "api com.vmware.appliance.version1.services.status.get --name vmbase_init" -erroraction silentlyContinue).output
-    } Until ($rpmStatus -ne "Status: starting")
+    } Until ($rpmStatus -eq "Status: down")
     LogMessage -type INFO -message "Remove Me First status: $rpmStatus"
     LogMessage -type INFO -message "[$vCenterVmName] RPM initialization Complete"
 
