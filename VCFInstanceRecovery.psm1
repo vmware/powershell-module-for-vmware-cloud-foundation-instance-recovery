@@ -1866,18 +1866,18 @@ Function Invoke-vCenterRestore
     Disconnect-VIServer * -Force -Confirm:$false -ErrorAction SilentlyContinue
 
     #Wait for successful ping test
-    LogMessage -type WAIT -message "[$vCenterVmName] Waiting for successful ping test"
+    LogMessage -type WAIT -message "[$vcenterFqdn] Waiting for successful ping test"
     Do 
     {
         Sleep 10
         $pingTest = Test-Connection -ComputerName $vcenterFqdn -count 1 -ErrorAction SilentlyContinue
     } Until ($pingTest)
       
-    #Credentials for connecting to vCenter
+    #Form credentials for connecting to vCenter
     $SecurePassword = ConvertTo-SecureString -String $restoredvCenterRootPassword -AsPlainText -Force
     $mycreds = New-Object System.Management.Automation.PSCredential ('root', $SecurePassword)
     
-    #First SSH Session
+    #Create SSH Trusted Host
     LogMessage -type WAIT -message "[$jumpboxName] Waiting for SSH Connection to $vcenterFqdn to be possible"
     $inmem = New-SSHMemoryKnownHost
     Do
@@ -1888,19 +1888,6 @@ Function Invoke-vCenterRestore
             $sshTrustedHost = New-SSHTrustedHost -KnownHostStore $inmem -HostName $vcenterFqdn -FingerPrint $sshHostKey.fingerprint    
         }
     } Until ($sshTrustedHost)
-
-    <#    
-    #Wait for RPM initialization to Start
-    LogMessage -type WAIT -message "[$vcenterFqdn] Waiting for Appliance to start RPM initialization"
-    Do
-    {
-        Sleep 10
-        Remove-SSHSession -SSHSession $sshSession | Out-Null
-        $sshSession = New-SSHSession -computername $vcenterFqdn -Credential $mycreds -KnownHost $inmem
-        $rpmStatus = (Invoke-SSHCommand -SessionId $sshSession.sessionid -Command "api com.vmware.appliance.version1.services.status.get --name vmbase_init").output
-    } Until ($rpmStatus -eq "Status: starting")
-    LogMessage -type INFO -message "[$vcenterFqdn] RPM initialization Started"
-    #>
 
     #Wait for RPM initialization to Finish
     LogMessage -type WAIT -message "[$vcenterFqdn] Waiting for Appliance to finish RPM initialization"
@@ -1946,7 +1933,10 @@ Function Invoke-vCenterRestore
             $restoreStatusArray = $restoreStatus -split("\r\n")
             If ($restoreStatusArray)
             {
-                If ($restoreStatusArray[1]) {$state = $restoreStatusArray[1].trim()}
+                If ($restoreStatusArray[1])
+                {
+                    $state = $restoreStatusArray[1].trim()
+                }
                 If ($restoreStatusArray[5]) 
                 {
                     $progress = $restoreStatusArray[5].trim()
@@ -1954,9 +1944,7 @@ Function Invoke-vCenterRestore
                 }
             }
         }
-    #} Until (($state -ne "State: INPROGRESS") -and ($state -ne "Failed to connect to service."))
     } Until (($state -eq "State: SUCCEEDED") -or ($state -eq "State: FAILED"))
-    LogMessage -type INFO -message "Remove me: `'$state`'"
     If ($state -eq "State: SUCCEEDED")
     {
         LogMessage -type INFO -message "[$vcenterFqdn] Restore finished with $state"
