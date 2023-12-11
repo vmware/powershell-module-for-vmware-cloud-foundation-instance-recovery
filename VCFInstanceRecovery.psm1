@@ -1937,7 +1937,7 @@ Function Invoke-vCenterRestore
 
     Do
     {
-        Start-Sleep 5
+        Start-Sleep 20
         Remove-SSHSession -SSHSession $sshSession | Out-Null
         $sshSession = New-SSHSession -computername $vcenterFqdn -Credential $mycreds -KnownHost $inmem
         $restoreStatus = (Invoke-SSHCommand -SessionId $sshSession.sessionid -Command "api com.vmware.appliance.recovery.restore.job.get" -erroraction silentlyContinue).output
@@ -1946,12 +1946,16 @@ Function Invoke-vCenterRestore
             $restoreStatusArray = $restoreStatus -split("\r\n")
             If ($restoreStatusArray)
             {
-                $progress = $restoreStatusArray[5].trim()
-                $state = $restoreStatusArray[1].trim()
-                LogMessage -type INFO -message "[$vcenterFqdn] Restore $($progress)%"    
+                If ($restoreStatusArray[1]) {$state = $restoreStatusArray[1].trim()}
+                If ($restoreStatusArray[5]) 
+                {
+                    $progress = $restoreStatusArray[5].trim()
+                    LogMessage -type INFO -message "[$vcenterFqdn] Restore $($progress)%"
+                }
             }
         }
-    } Until (($state -ne "State: INPROGRESS") -and ($state -ne "Failed to connect to service."))
+    #} Until (($state -ne "State: INPROGRESS") -and ($state -ne "Failed to connect to service."))
+    } Until (($state -eq "State: SUCCEEDED") -or ($state -eq "State: FAILED"))
     If ($state -eq "SUCCEEDED")
     {
         LogMessage -type INFO -message "[$vcenterFqdn] Restore finished with $state"
