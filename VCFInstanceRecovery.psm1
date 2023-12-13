@@ -3957,7 +3957,7 @@ Function Invoke-NSXManagerRestore
     $uri = "https://$nsxManagerFQDN/api/v1/cluster/restore/backuptimestamps"
     $backupDetails = ((Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json).results
 
-    LogMessage -type INFO -message "[$jumpbox] Filtering Backups on to those relevant to $nsxManagerFQDN"
+    LogMessage -type INFO -message "[$jumpboxName] Filtering Backups on to those relevant to $nsxManagerFQDN"
     $relevantBackups = $backupDetails | where-object {$_.ip_address -eq $nsxManagerIP}
     $relevantbackupsDisplayObject=@()
     $relevantbackupIndex = 1
