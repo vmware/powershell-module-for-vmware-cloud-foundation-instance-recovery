@@ -4025,27 +4025,30 @@ Function Invoke-NSXManagerRestore
     Do
     {
         Sleep 60
-        $restoreStatus = (Invoke-WebRequest -Method GET -URI $queryUri -ContentType application/json -headers $headers).content | ConvertFrom-Json
-        If ($restoreStatus.status.value -eq "SUSPENDED_FOR_USER_ACTION")
-        {
-            LogMessage -type INFO -message "[$nsxManagerFQDN] Resuming restore at step $($restoreStatus.step.step_number): $($restoreStatus.step.value)"
-            $instructionIds = $restoreStatus.instructions.id
-            $body= "{
-            `"data`": [
-                {
-                `"id`": `"$instructionIds`",
-                `"resources`": [       
-                ]
-                }
-                ]
-            }"
-            $resumeUri = "https://$nsxManagerFQDN/api/v1/cluster/restore?action=advance"
-            $resumeRestore = (Invoke-WebRequest -Method POST -URI $resumeUri -ContentType application/json -body $body -headers $headers).content | ConvertFrom-Json
+        Try {
+            $restoreStatus = (Invoke-WebRequest -Method GET -URI $queryUri -ContentType application/json -headers $headers).content | ConvertFrom-Json    
+            If ($restoreStatus.status.value -eq "SUSPENDED_FOR_USER_ACTION")
+            {
+                LogMessage -type INFO -message "[$nsxManagerFQDN] Resuming restore at step $($restoreStatus.step.step_number): $($restoreStatus.step.value)"
+                $instructionIds = $restoreStatus.instructions.id
+                $body= "{
+                `"data`": [
+                    {
+                    `"id`": `"$instructionIds`",
+                    `"resources`": [       
+                    ]
+                    }
+                    ]
+                }"
+                $resumeUri = "https://$nsxManagerFQDN/api/v1/cluster/restore?action=advance"
+                $resumeRestore = (Invoke-WebRequest -Method POST -URI $resumeUri -ContentType application/json -body $body -headers $headers).content | ConvertFrom-Json
+            }
+            else 
+            {
+                LogMessage -type INFO -message "[$nsxManagerFQDN] Restore is currently $($restoreStatus.status.value)"
+            }
         }
-        else 
-        {
-            LogMessage -type INFO -message "[$nsxManagerFQDN] Restore is currently $($restoreStatus.status.value)"
-        }
+        Catch {}
     } Until ($restoreStatus.status.value -eq "SUCCESS")
     LogMessage -type INFO -message "[$nsxManagerFQDN] Restore finished with status: $($restoreStatus.status.value)"
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
