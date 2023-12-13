@@ -4024,6 +4024,8 @@ Function Invoke-NSXManagerRestore
     LogMessage -type INFO -message "[$nsxManagerFQDN] Restore finished with status: $($restoreStatus.status.value)"
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
+Export-ModuleMember -Function Invoke-NSXManagerRestore
+
 Function Resolve-PhysicalHostTransportNodes
 {
     <#
