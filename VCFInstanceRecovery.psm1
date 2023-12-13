@@ -3923,6 +3923,22 @@ Function Invoke-NSXManagerRestore
     $sshFingerPrint = ((ssh-keygen -lf .\keyscanOutput.txt) -split(" "))[1]
     Remove-Item keyscanOutput.txt -confirm:$false
 
+    #Get Backup Config (to ensure services are running)
+    LogMessage -type WAIT -message "[$nsxManagerFQDN] Waiting for services to be started"
+    $headers = VCFIRCreateHeader -username $nsxManagerAdminUsername -password $nsxManagerAdminPassword
+    $uri = "https://$nsxManagerFQDN/api/v1/cluster/backups/config"
+    Do
+    {
+        Try 
+        {
+            $existingBackup = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json    
+        }
+        catch 
+        {
+            Sleep 30
+        }
+    } Until ($existingBackup)
+
     #Configure the Backup
     LogMessage -type INFO -message "[$nsxManagerFQDN] Configuring $sftpServer as backup target"
     $body = "{
@@ -3948,7 +3964,7 @@ Function Invoke-NSXManagerRestore
     `"passphrase`":`"$backupPassphrase`",
     `"inventory_summary_interval`":300
     }"
-    $headers = VCFIRCreateHeader -username $nsxManagerAdminUsername -password $nsxManagerAdminPassword
+    
     $uri = "https://$nsxManagerFQDN/api/v1/cluster/backups/config"
     $configureBackup = (Invoke-WebRequest -Method PUT -URI $uri -ContentType application/json -body $body -headers $headers).content | ConvertFrom-Json
 
