@@ -3992,7 +3992,7 @@ Function Invoke-NSXManagerRestore
     Write-Host ""; Write-Host " Enter the ID of the Backup you wish to restore, or C to Cancel: " -ForegroundColor Yellow -nonewline
     $backupSelection = Read-Host
     } Until (($backupSelection -in $relevantbackupsDisplayObject.ID) -OR ($backupSelection -eq "c"))
-
+    If ($backupSelection -eq "c") {Break}
 
     #Start Restore
     LogMessage -type INFO -message "[$nsxManagerFQDN] Starting Restore"
