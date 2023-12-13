@@ -3873,7 +3873,8 @@ Function Invoke-NSXManagerRestore
         [Parameter (Mandatory = $true)][String] $sftpServer,
         [Parameter (Mandatory = $true)][String] $sftpUser,
         [Parameter (Mandatory = $true)][String] $sftpPassword,
-        [Parameter (Mandatory = $true)][String] $backupPassphrase
+        [Parameter (Mandatory = $true)][String] $sftpServerBackupPath,
+        [Parameter (Mandatory = $true)][String] $backupPassphrase,
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
@@ -3904,7 +3905,7 @@ Function Invoke-NSXManagerRestore
     Write-Host ""; $nsxManagersDisplayObject | format-table -Property @{Expression=" "},id,Manager -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
     Do
     {
-    Write-Host ""; Write-Host " Enter the ID of the Manager you wish to redeploy, or C to Cancel: " -ForegroundColor Yellow -nonewline
+    Write-Host ""; Write-Host " Enter the ID of the Manager you wish to restore, or C to Cancel: " -ForegroundColor Yellow -nonewline
     $nsxManagerSelection = Read-Host
     } Until (($nsxManagerSelection -in $nsxManagersDisplayObject.ID) -OR ($nsxManagerSelection -eq "c"))
     If ($nsxManagerSelection -eq "c") {Break}
@@ -3916,12 +3917,14 @@ Function Invoke-NSXManagerRestore
     $nsxManagerAdminPassword = ($extractedSddcData.passwords | Where-Object {($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "API")}).password
 
     #Retrieve Key of SFTP Server
+    LogMessage -type INFO -message "[$jumpboxName] Retrieving SSH Fingerprint of $sftpServer"
     Remove-Item keyscanOutput.txt -confirm:$false -erroraction silentlycontinue
     ssh-keyscan.exe -t ecdsa $sftpServer 2>$null | Out-File keyscanOutput.txt
     $sshFingerPrint = ((ssh-keygen -lf .\keyscanOutput.txt) -split(" "))[1]
     Remove-Item keyscanOutput.txt -confirm:$false
 
     #Configure the Backup
+    LogMessage -type INFO -message "[$nsxManagerFQDN] Configuring $sftpServer as backup target"
     $body = "{
     `"backup_enabled`" : true,
     `"backup_schedule`":{
@@ -3940,7 +3943,7 @@ Function Invoke-NSXManagerRestore
                 `"password`":`"$sftpPassword`"
             }
         },
-        `"directory_path`":`"/media/backups`"
+        `"directory_path`":`"$sftpServerBackupPath`"
     },
     `"passphrase`":`"$backupPassphrase`",
     `"inventory_summary_interval`":300
@@ -3950,9 +3953,11 @@ Function Invoke-NSXManagerRestore
     $configureBackup = (Invoke-WebRequest -Method PUT -URI $uri -ContentType application/json -body $body -headers $headers).content | ConvertFrom-Json
 
     #Retrieve and Display Backup TimeStamps
+    LogMessage -type INFO -message "[$nsxManagerFQDN] Retrieving Backups on $sftpServer"
     $uri = "https://$nsxManagerFQDN/api/v1/cluster/restore/backuptimestamps"
     $backupDetails = ((Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json).results
 
+    LogMessage -type INFO -message "[$jumpbox] Filtering Backups on to those relevant to $nsxManagerFQDN"
     $relevantBackups = $backupDetails | where-object {$_.ip_address -eq $nsxManagerIP}
     $relevantbackupsDisplayObject=@()
     $relevantbackupIndex = 1
@@ -3990,6 +3995,7 @@ Function Invoke-NSXManagerRestore
 
 
     #Start Restore
+    LogMessage -type INFO -message "[$nsxManagerFQDN] Starting Restore"
     $body = "{
     `"node_id`": `"$(($relevantbackupsDisplayObject | where-object {$_.id -eq $backupSelection}).nodeID)`",
     `"timestamp`" : $(($relevantbackupsDisplayObject | where-object {$_.id -eq $backupSelection}).timeStamp)
