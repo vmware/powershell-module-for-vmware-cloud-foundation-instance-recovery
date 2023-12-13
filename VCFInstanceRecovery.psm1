@@ -3926,7 +3926,7 @@ Function Invoke-NSXManagerRestore
     #Configure the Backup
     LogMessage -type INFO -message "[$nsxManagerFQDN] Configuring $sftpServer as backup target"
     $body = "{
-    `"backup_enabled`" : true,
+    `"backup_enabled`" : false,
     `"backup_schedule`":{
         `"resource_type`": `"IntervalBackupSchedule`",
         `"seconds_between_backups`":3600
