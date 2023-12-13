@@ -1845,9 +1845,7 @@ Function Invoke-vCenterRestore
         [Parameter (Mandatory = $true)][String] $locationtype,
         [Parameter (Mandatory = $true)][String] $locationUser,
         [Parameter (Mandatory = $true)][String] $locationPassword
-
     )
-    
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
@@ -3866,6 +3864,166 @@ Export-ModuleMember -Function Restore-ClusterVMTags
 #EndRegion vCenter Functions
 
 #Region NSXT Functions
+
+Function Invoke-NSXManagerRestore
+{
+    Param(
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
+        [Parameter (Mandatory = $true)][String] $workloadDomain,
+        [Parameter (Mandatory = $true)][String] $sftpServer,
+        [Parameter (Mandatory = $true)][String] $sftpUser,
+        [Parameter (Mandatory = $true)][String] $sftpPassword,
+        [Parameter (Mandatory = $true)][String] $backupPassphrase
+    )
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
+    $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
+    $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
+    $workloadDomainDetails = ($extractedSDDCData.workloadDomains | Where-Object {$_.domainName -eq $workloadDomain})
+    $nsxNodes = $workloadDomainDetails.nsxNodeDetails
+
+    $nsxManagersDisplayObject=@()
+    $nsxManagersIndex = 1
+    $nsxManagersDisplayObject += [pscustomobject]@{
+            'ID'    = "ID"
+            'Manager' = "NSX Manager"
+        }
+    $nsxManagersDisplayObject += [pscustomobject]@{
+            'ID'    = "--"
+            'Manager' = "------------------"
+        }
+    Foreach ($nsxNode in $nsxNodes)
+    {
+        $nsxManagersDisplayObject += [pscustomobject]@{
+            'ID'    = $nsxManagersIndex
+            'Manager' = $nsxNode.vmName
+        }
+        $nsxManagersIndex++
+    }
+    Write-Host ""; $nsxManagersDisplayObject | format-table -Property @{Expression=" "},id,Manager -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
+    Do
+    {
+    Write-Host ""; Write-Host " Enter the ID of the Manager you wish to redeploy, or C to Cancel: " -ForegroundColor Yellow -nonewline
+    $nsxManagerSelection = Read-Host
+    } Until (($nsxManagerSelection -in $nsxManagersDisplayObject.ID) -OR ($nsxManagerSelection -eq "c"))
+    If ($nsxManagerSelection -eq "c") {Break}
+    $selectedNsxManager = $nsxNodes | Where-Object {$_.vmName -eq ($nsxManagersDisplayObject | Where-Object {$_.id -eq $nsxManagerSelection}).manager }
+
+    $nsxManagerFQDN = $selectedNsxManager.hostname
+    $nsxManagerIP = $selectedNsxManager.ip
+    $nsxManagerAdminUsername = ($extractedSddcData.passwords | Where-Object {($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "API")}).username
+    $nsxManagerAdminPassword = ($extractedSddcData.passwords | Where-Object {($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "API")}).password
+
+    #Retrieve Key of SFTP Server
+    Remove-Item keyscanOutput.txt -confirm:$false -erroraction silentlycontinue
+    ssh-keyscan.exe -t ecdsa $sftpServer 2>$null | Out-File keyscanOutput.txt
+    $sshFingerPrint = ((ssh-keygen -lf .\keyscanOutput.txt) -split(" "))[1]
+    Remove-Item keyscanOutput.txt -confirm:$false
+
+    #Configure the Backup
+    $body = "{
+    `"backup_enabled`" : true,
+    `"backup_schedule`":{
+        `"resource_type`": `"IntervalBackupSchedule`",
+        `"seconds_between_backups`":3600
+    },
+    `"remote_file_server`":{
+        `"server`": `"$sftpServer`",
+        `"port`":22,
+        `"protocol`":{
+            `"protocol_name`":`"sftp`",
+            `"ssh_fingerprint`": `"$sshFingerPrint`",
+            `"authentication_scheme`":{
+                `"scheme_name`":`"PASSWORD`",
+                `"username`":`"$sftpUser`",
+                `"password`":`"$sftpPassword`"
+            }
+        },
+        `"directory_path`":`"/media/backups`"
+    },
+    `"passphrase`":`"$backupPassphrase`",
+    `"inventory_summary_interval`":300
+    }"
+    $headers = VCFIRCreateHeader -username $nsxManagerAdminUsername -password $nsxManagerAdminPassword
+    $uri = "https://$nsxManagerFQDN/api/v1/cluster/backups/config"
+    $configureBackup = (Invoke-WebRequest -Method PUT -URI $uri -ContentType application/json -body $body -headers $headers).content | ConvertFrom-Json
+
+    #Retrieve and Display Backup TimeStamps
+    $uri = "https://$nsxManagerFQDN/api/v1/cluster/restore/backuptimestamps"
+    $backupDetails = ((Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json).results
+
+    $relevantBackups = $backupDetails | where-object {$_.ip_address -eq $nsxManagerIP}
+    $relevantbackupsDisplayObject=@()
+    $relevantbackupIndex = 1
+    $relevantbackupsDisplayObject += [pscustomobject]@{
+        'ID'    = "ID"
+        'ipAddress' = "IP Address"
+        'timeStamp' = "TimeStamp"
+        'humanTime' = "Backup TimeStamp"
+        'nodeID' = "Node ID"
+    }
+    $relevantbackupsDisplayObject += [pscustomobject]@{
+        'ID'    = "--"
+        'ipAddress' = "---------------"
+        'timeStamp' = "------------------"
+        'humanTime' = "------------------"
+        'nodeID' = "------------------------------------"
+    }
+    Foreach ($relevantBackup in $relevantBackups)
+    {
+    $relevantbackupsDisplayObject += [pscustomobject]@{
+        'ID'    = $relevantbackupIndex
+        'ipAddress' = $relevantBackup.ip_address
+        'timeStamp' = $relevantBackup.timestamp
+        'humanTime' = (Get-Date -Date "01-01-1970") + ([System.TimeSpan]::FromSeconds(($relevantBackup.timestamp -replace ".{3}$")))
+        'nodeID' = $relevantBackup.node_id
+    }
+    $relevantbackupIndex++
+    }
+    Write-Host ""; $relevantbackupsDisplayObject | format-table -Property @{Expression=" "},id,ipAddress,nodeId,humanTime -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
+    Do
+    {
+    Write-Host ""; Write-Host " Enter the ID of the Backup you wish to restore, or C to Cancel: " -ForegroundColor Yellow -nonewline
+    $backupSelection = Read-Host
+    } Until (($backupSelection -in $relevantbackupsDisplayObject.ID) -OR ($backupSelection -eq "c"))
+
+
+    #Start Restore
+    $body = "{
+    `"node_id`": `"$(($relevantbackupsDisplayObject | where-object {$_.id -eq $backupSelection}).nodeID)`",
+    `"timestamp`" : $(($relevantbackupsDisplayObject | where-object {$_.id -eq $backupSelection}).timeStamp)
+    }"
+    $uri = "https://$nsxManagerFQDN/api/v1/cluster/restore?action=start"
+    $startRestore = (Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -body $body -headers $headers).content | ConvertFrom-Json
+
+    #QueryRestore
+    LogMessage -type INFO -message "[$nsxManagerFQDN] Polling restore status every 60 seconds"
+    $queryUri = "https://$nsxManagerFQDN/api/v1/cluster/restore/status"
+    Do
+    {
+        Sleep 60
+        $restoreStatus = (Invoke-WebRequest -Method GET -URI $queryUri -ContentType application/json -headers $headers).content | ConvertFrom-Json
+        If ($restoreStatus.status.value -eq "SUSPENDED_FOR_USER_ACTION")
+        {
+            LogMessage -type INFO -message "[$nsxManagerFQDN] Resuming restore at step $($restoreStatus.step.step_number): $($restoreStatus.step.value)"
+            $instructionIds = $restoreStatus.instructions.id
+            $body= "{
+            `"data`": [
+                {
+                `"id`": `"$instructionIds`",
+                `"resources`": [       
+                ]
+                }
+                ]
+            }"
+            $resumeUri = "https://$nsxManagerFQDN/api/v1/cluster/restore?action=advance"
+            $resumeRestore = (Invoke-WebRequest -Method POST -URI $resumeUri -ContentType application/json -body $body -headers $headers).content | ConvertFrom-Json
+        }
+    } Until ($restoreStatus.status.value -eq "SUCCESS")
+    LogMessage -type INFO -message "[$nsxManagerFQDN] Restore finished with status: $($restoreStatus.status.value)"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+}
 Function Resolve-PhysicalHostTransportNodes
 {
     <#
