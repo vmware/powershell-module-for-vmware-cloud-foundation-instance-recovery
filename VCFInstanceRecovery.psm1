@@ -3953,11 +3953,11 @@ Function Invoke-NSXManagerRestore
     $configureBackup = (Invoke-WebRequest -Method PUT -URI $uri -ContentType application/json -body $body -headers $headers).content | ConvertFrom-Json
 
     #Retrieve and Display Backup TimeStamps
-    LogMessage -type INFO -message "[$nsxManagerFQDN] Retrieving Backups on $sftpServer"
+    LogMessage -type INFO -message "[$nsxManagerFQDN] Retrieving Backups from $sftpServer"
     $uri = "https://$nsxManagerFQDN/api/v1/cluster/restore/backuptimestamps"
     $backupDetails = ((Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json).results
 
-    LogMessage -type INFO -message "[$jumpboxName] Filtering Backups on to those relevant to $nsxManagerFQDN"
+    LogMessage -type INFO -message "[$jumpboxName] Filtering Backups to those relevant to $nsxManagerFQDN"
     $relevantBackups = $backupDetails | where-object {$_.ip_address -eq $nsxManagerIP}
     $relevantbackupsDisplayObject=@()
     $relevantbackupIndex = 1
@@ -3972,7 +3972,7 @@ Function Invoke-NSXManagerRestore
         'ID'    = "--"
         'ipAddress' = "---------------"
         'timeStamp' = "------------------"
-        'humanTime' = "------------------"
+        'humanTime' = "-------------------"
         'nodeID' = "------------------------------------"
     }
     Foreach ($relevantBackup in $relevantBackups)
@@ -4025,6 +4025,10 @@ Function Invoke-NSXManagerRestore
             }"
             $resumeUri = "https://$nsxManagerFQDN/api/v1/cluster/restore?action=advance"
             $resumeRestore = (Invoke-WebRequest -Method POST -URI $resumeUri -ContentType application/json -body $body -headers $headers).content | ConvertFrom-Json
+        }
+        else 
+        {
+            LogMessage -type INFO -message "[$nsxManagerFQDN] Restore is currently $($restoreStatus.status.value)"
         }
     } Until ($restoreStatus.status.value -eq "SUCCESS")
     LogMessage -type INFO -message "[$nsxManagerFQDN] Restore finished with status: $($restoreStatus.status.value)"
