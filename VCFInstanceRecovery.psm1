@@ -3874,7 +3874,7 @@ Function Invoke-NSXManagerRestore
         [Parameter (Mandatory = $true)][String] $sftpUser,
         [Parameter (Mandatory = $true)][String] $sftpPassword,
         [Parameter (Mandatory = $true)][String] $sftpServerBackupPath,
-        [Parameter (Mandatory = $true)][String] $backupPassphrase,
+        [Parameter (Mandatory = $true)][String] $backupPassphrase
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
