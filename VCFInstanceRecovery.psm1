@@ -1127,8 +1127,9 @@ Function New-ReconstructedPartialBringupJsonSpec
 
     #dvsSpecs
     $clusterVDSs = @()
-    Foreach ($vds in ($primaryCluster.vdsDetails))
-    {
+    $vds = ($primaryCluster.vdsDetails)[0]
+    #Foreach ($vds in ($primaryCluster.vdsDetails))
+    #{
         $clustervdsObject = New-Object -type psobject
         $clustervdsObject | Add-Member -notepropertyname 'mtu' -notepropertyvalue $vds.mtu
         $clustervdsObject | Add-Member -notepropertyname 'niocSpecs' -notepropertyvalue $vds.niocSpecs
@@ -1136,7 +1137,7 @@ Function New-ReconstructedPartialBringupJsonSpec
         $clustervdsObject | Add-Member -notepropertyname 'vmnics' -notepropertyvalue $vds0nics
         $clustervdsObject | Add-Member -notepropertyname 'networks' -notepropertyvalue $vds.networks
         $clusterVDSs += $clustervdsObject
-    }
+    #}
     $mgmtDomainObject | Add-Member -notepropertyname 'dvsSpecs' -notepropertyvalue $clusterVDSs
 
     #clusterSpec
