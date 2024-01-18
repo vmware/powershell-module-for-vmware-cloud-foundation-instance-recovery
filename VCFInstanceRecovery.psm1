@@ -906,8 +906,8 @@ Function New-PrepareforPartialBringup
     $stream.writeline("cp workflowspec-ems.json workflowspec-ems.json.backup")
     Start-Sleep 2
     $stream.writeline("rm workflowspec-ems.json")
-    Start-Sleep 
-    LogMessage -type INFO -message "[$jumpboxName] Modifying BringUp Workflow"2
+    Start-Sleep 2
+    LogMessage -type INFO -message "[$jumpboxName] Modifying BringUp Workflow"
     $uploadFile = Set-SCPItem -ComputerName $cloudBuilderFQDN -Credential $mycreds -path $sourceFile -destination "/tmp" -KnownHost $inmem
     $stream.writeline("cp /tmp/$($truncatedSddcManagerVersion)x-workflowspec-ems.json /opt/vmware/bringup/webapps/bringup-app/conf/workflowconfig/workflowspec-ems.json")
     Start-Sleep 2
