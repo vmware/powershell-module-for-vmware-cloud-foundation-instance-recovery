@@ -4102,24 +4102,35 @@ Function Resolve-PhysicalHostTransportNodes
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $vCenterConnection = Connect-VIServer -server $vCenterFQDN -username $vCenterAdmin -password $vCenterAdminPassword
-    LogMessage -type INFO -message "[$clusterName] Getting Hosts"
-    $clusterHosts = (Get-Cluster -name $clusterName | Get-VMHost).name
-    
+    #LogMessage -type INFO -message "[$clusterName] Getting Hosts"
+    #$clusterHosts = (Get-Cluster -name $clusterName | Get-VMHost).name
+    LogMessage -type INFO -message "[$clusterName] Getting MoRef"
+    $clusterMoRef = (Get-Cluster -name $clusterName).ExtensionData.MoRef.Value
+
     $headers = VCFIRCreateHeader -username $nsxManagerAdmin -password $nsxManagerAdminPassword
     
     #Get TransportNodes
-    $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/"
+    <# $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/"
     LogMessage -type INFO -message "[$nsxManagerFqdn] Getting Transport Nodes"
     $transportNodeContents = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
     $allHostTransportNodes = ($transportNodeContents.results | Where-Object { ($_.resource_type -eq "TransportNode") -and ($_.node_deployment_info.os_type -eq "ESXI") })
     LogMessage -type INFO -message "[$nsxManagerFqdn] Filtering Transport Nodes to members of cluster $clusterName"
-    $hostIDs = ($allHostTransportNodes | Where-Object { $_.display_name -in $clusterHosts }).id
+    $hostIDs = ($allHostTransportNodes | Where-Object { $_.display_name -in $clusterHosts }).id #>
+
+    #Get TransportNodes
+    $uri = "https://$nsxManagerFqdn/api/v1/fabric/compute-collections"
+    LogMessage -type INFO -message "[$nsxManagerFqdn] Getting Transport Nodes IDs"
+    $computeCollections = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
+    $clusterExternalId = ($computeCollections.results | Where-Object {$_.cm_local_id -eq $clusterMoRef}).external_id
+    $uri = "https://$nsxManagerFqdn/api/v1/fabric/compute-collections/$clusterExternalId/member-status"
+    $hostIDs = ((Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json).results.node_id
 
     #Resolve Hosts
     Foreach ($hostID in $hostIDs) {
         $body = "{`"id`":5726703,`"method`":`"resolveError`",`"params`":[{`"errors`":[{`"user_metadata`":{`"user_input_list`":[]},`"error_id`":26080,`"entity_id`":`"$hostID`"}]}]}"
         $uri = "https://$nsxManagerFqdn/nsxapi/rpc/call/ErrorResolverFacade"
-        LogMessage -type INFO -message "[$nsxManagerFqdn] Resolving NSX Installation on $(($allHostTransportNodes | Where-Object {$_.id -eq $hostID}).display_name) "
+        #LogMessage -type INFO -message "[$nsxManagerFqdn] Resolving NSX Installation on $(($allHostTransportNodes | Where-Object {$_.id -eq $hostID}).display_name)"
+        LogMessage -type INFO -message "[$nsxManagerFqdn] Resolving NSX Installation on $hostID"
         $response = Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -headers $headers -body $body
     }
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
