@@ -2677,7 +2677,7 @@ Function Add-HostsToCluster
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
 
     $tokenRequest = Request-VCFToken -fqdn $sddcManagerFQDN -username $sddcManagerAdmin -password $sddcManagerAdminPassword
-    $newHosts = (get-vcfhost | where-object { $_.id -in ((get-vcfcluster -name $clusterName).hosts.id) }).fqdn
+    $newHosts = (get-vcfhost | where-object { $_.id -in ((get-vcfcluster -name $clusterName).hosts.id) }).fqdn | Sort-Object
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
     foreach ($newHost in $newHosts) {
         $vmHosts = (Get-cluster -name $clusterName | Get-VMHost).Name | Sort-Object
