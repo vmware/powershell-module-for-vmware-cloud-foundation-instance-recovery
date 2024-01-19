@@ -1917,7 +1917,7 @@ Function Invoke-vCenterRestore
         #Note: Looped SSH connections is quite deliberate here as the connections appear to be continually dropped as the process progresses
         Start-Sleep 5
         Remove-SSHSession -SSHSession $sshSession | Out-Null
-        $sshSession = New-SSHSession -computername $vcenterFqdn -Credential $mycreds -KnownHost $inmem
+        $sshSession = New-SSHSession -computername $vcenterFqdn -Credential $mycreds -KnownHost $inmem -erroraction silentlycontinue
         $restoreStatus = (Invoke-SSHCommand -SessionId $sshSession.sessionid -Command "api com.vmware.appliance.recovery.restore.job.get" -erroraction silentlyContinue).output
         $restoreStatusArray = $restoreStatus -split("\r\n")
         $state = $restoreStatusArray[1].trim()
@@ -1929,7 +1929,7 @@ Function Invoke-vCenterRestore
         #Note: Looped SSH connections is quite deliberate here as the connections appear to be continually dropped as the process progresses
         Start-Sleep 20
         Remove-SSHSession -SSHSession $sshSession | Out-Null
-        $sshSession = New-SSHSession -computername $vcenterFqdn -Credential $mycreds -KnownHost $inmem
+        $sshSession = New-SSHSession -computername $vcenterFqdn -Credential $mycreds -KnownHost $inmem -erroraction silentlycontinue
         $restoreStatus = (Invoke-SSHCommand -SessionId $sshSession.sessionid -Command "api com.vmware.appliance.recovery.restore.job.get" -erroraction silentlyContinue).output
         If ($restoreStatus)
         {
