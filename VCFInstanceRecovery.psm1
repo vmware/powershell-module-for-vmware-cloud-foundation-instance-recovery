@@ -3195,20 +3195,23 @@ Function New-RebuiltVdsConfiguration
                 Get-VDSwitch -name $vds.vdsName | Add-VDSwitchVMHost -vmhost $vmHost -confirm:$false
                 LogMessage -type INFO -message "[$($vmhost.name)] Adding Physical Adapter $($vds.nicNames[0]) to $($vds.vdsName) and migrating $($vmNicArray.name -join(", "))"
                 Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $vmnicMinusOne -VMHostVirtualNic $vmNicArray -VirtualNicPortgroup $portgroupArray -confirm:$false
+            }
 
-                #Move Mgmt VMs to Management Portgroup
-                If ($isPrimaryManagementCluster)
-                {
-                    $vmsTomove = get-cluster -name $clusterName | get-vm | Where-Object { $_.Name -notlike "*vCLS*" }
-                    foreach ($vmToMove in $vmsTomove) {
-                        If ((Get-VM -Name $vmToMove | Get-NetworkAdapter).NetworkName -ne $managementPortGroupName)
-                        {
-                            LogMessage -type INFO -message "[$($vmToMove.name)] Moving to $managementPortGroupName"
-                            Get-VM -Name $vmToMove | Get-NetworkAdapter | Set-NetworkAdapter -NetworkName $managementPortGroupName -confirm:$false | Out-Null    
-                        }
+            #Move Mgmt VMs to Management Portgroup
+            If ($isPrimaryManagementCluster)
+            {
+                $vmsTomove = get-cluster -name $clusterName | get-vm | Where-Object { $_.Name -notlike "*vCLS*" }
+                foreach ($vmToMove in $vmsTomove) {
+                    If ((Get-VM -Name $vmToMove | Get-NetworkAdapter).NetworkName -ne $managementPortGroupName)
+                    {
+                        LogMessage -type INFO -message "[$($vmToMove.name)] Moving to $managementPortGroupName"
+                        Get-VM -Name $vmToMove | Get-NetworkAdapter | Set-NetworkAdapter -NetworkName $managementPortGroupName -confirm:$false | Out-Null    
                     }
                 }
+            }
 
+            Foreach ($vmHost in $vmHosts)
+            {
                 #Remove Virtual Switch
                 LogMessage -type INFO -message "[$($vmhost.name)] Removing vSwitch0"
                 Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name "vSwitch0" | Remove-VirtualSwitch -Confirm:$false | Out-Null
