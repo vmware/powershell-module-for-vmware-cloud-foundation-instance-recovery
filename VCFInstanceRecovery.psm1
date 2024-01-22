@@ -1918,9 +1918,12 @@ Function Invoke-vCenterRestore
         Start-Sleep 5
         Remove-SSHSession -SSHSession $sshSession | Out-Null
         $sshSession = New-SSHSession -computername $vcenterFqdn -Credential $mycreds -KnownHost $inmem -erroraction silentlycontinue
-        $restoreStatus = (Invoke-SSHCommand -SessionId $sshSession.sessionid -Command "api com.vmware.appliance.recovery.restore.job.get" -erroraction silentlyContinue).output
-        $restoreStatusArray = $restoreStatus -split("\r\n")
-        $state = $restoreStatusArray[1].trim()
+        If ($sshSession)
+        {
+            $restoreStatus = (Invoke-SSHCommand -SessionId $sshSession.sessionid -Command "api com.vmware.appliance.recovery.restore.job.get" -erroraction silentlyContinue).output
+            $restoreStatusArray = $restoreStatus -split("\r\n")
+            $state = $restoreStatusArray[1].trim()    
+        }
     } Until ($state -eq "State: INPROGRESS")
     LogMessage -type INFO -message "[$vcenterFqdn] Restore $state"
 
@@ -1930,20 +1933,23 @@ Function Invoke-vCenterRestore
         Start-Sleep 20
         Remove-SSHSession -SSHSession $sshSession | Out-Null
         $sshSession = New-SSHSession -computername $vcenterFqdn -Credential $mycreds -KnownHost $inmem -erroraction silentlycontinue
-        $restoreStatus = (Invoke-SSHCommand -SessionId $sshSession.sessionid -Command "api com.vmware.appliance.recovery.restore.job.get" -erroraction silentlyContinue).output
-        If ($restoreStatus)
+        If ($sshSession)
         {
-            $restoreStatusArray = $restoreStatus -split("\r\n")
-            If ($restoreStatusArray)
+            $restoreStatus = (Invoke-SSHCommand -SessionId $sshSession.sessionid -Command "api com.vmware.appliance.recovery.restore.job.get" -erroraction silentlyContinue).output
+            If ($restoreStatus)
             {
-                If ($restoreStatusArray[1])
+                $restoreStatusArray = $restoreStatus -split("\r\n")
+                If ($restoreStatusArray)
                 {
-                    $state = $restoreStatusArray[1].trim()
-                }
-                If ($restoreStatusArray[5]) 
-                {
-                    $progress = $restoreStatusArray[5].trim()
-                    LogMessage -type INFO -message "[$vcenterFqdn] Restore $($progress)%"
+                    If ($restoreStatusArray[1])
+                    {
+                        $state = $restoreStatusArray[1].trim()
+                    }
+                    If ($restoreStatusArray[5]) 
+                    {
+                        $progress = $restoreStatusArray[5].trim()
+                        LogMessage -type INFO -message "[$vcenterFqdn] Restore $($progress)%"
+                    }
                 }
             }
         }
