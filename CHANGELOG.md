@@ -2,16 +2,18 @@
 
 ## v1.0.7
 
-> Released: 2023-11-xx
+> Released: 2024-xx-xx
 
 - Added `Invoke-SDDCManagerRestore` to automate SDDC Manager recovery
-- Enhanced OSD output for all functions to include message time and timestamps, better handlong of ovftool output
+- Added `Invoke-NSXManagerRestore` to automate NSX Manager recovery
+- Added `Invoke-vCenterRestore` to automate vCenter recovery
 - Added `--X:waitForIp` to NSX Manager deployment to ensure appliance is near ready for use before continuing
-- Added `New-RebuiltVsanDatastore` to claim disks, create disk groups interactively and rename datastore to original datastore name
 - Added `New-PrepareforPartialBringup`
+- Added `New-RebuiltVsanDatastore` to claim disks, create disk groups interactively and rename datastore to original datastore name
 - Added `New-RebuiltVdsConfiguration`
 - Added `Backup-ClusterVMTags`
 - Added `Restore-ClusterVMTags`
+- Enhanced OSD output for all functions to include message time and timestamps, better handlong of ovftool output
 
 ## v1.0.6
 
