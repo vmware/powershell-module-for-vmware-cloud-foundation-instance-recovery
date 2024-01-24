@@ -2242,7 +2242,12 @@ Function Move-ClusterHostNetworkingTovSS
     
             # Perform the migration
             LogMessage -type INFO -message "[$vmhost] Migrating from $vdsName to $vss_name"
-            Add-VirtualSwitchPhysicalNetworkAdapter -VirtualSwitch $vss -VMHostPhysicalNic $pnic_array -VMHostVirtualNic $vmk_array -VirtualNicPortgroup $pg_array  -Confirm:$false
+            #Add-VirtualSwitchPhysicalNetworkAdapter -VirtualSwitch $vss -VMHostPhysicalNic $pnic_array -VMHostVirtualNic $vmk_array -VirtualNicPortgroup $pg_array  -Confirm:$false
+            Add-VirtualSwitchPhysicalNetworkAdapter -VirtualSwitch $vss -VMHostPhysicalNic $pnic_array
+            Set-VMHostNetworkAdapter -PortGroup $mgmt_pg -VirtualNic $mgmt_vmk -confirm:$false | Out-Null
+            Set-VMHostNetworkAdapter -PortGroup $vmotion_pg -VirtualNic $vmotion_vmk -confirm:$false | Out-Null
+            Set-VMHostNetworkAdapter -PortGroup $storage_pg -VirtualNic $storage_vmk -confirm:$false | Out-Null
+            
             Start-Sleep 5
         }
         else 
