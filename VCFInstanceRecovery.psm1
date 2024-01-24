@@ -2195,7 +2195,7 @@ Function Move-ClusterHostNetworkingTovSS
     $vds = Get-VDSwitch -Name $vdsName
 
     foreach ($vmhost in $vmhost_array) {
-        $vssExists = Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name $vss_name
+        $vssExists = Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name $vss_name -errorAction silentlyContinue
         IF (!($vssExists))
         {
             LogMessage -type INFO -message "[$vmhost] Removing $vmnic from VDS"
