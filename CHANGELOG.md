@@ -14,6 +14,7 @@
 - Added `Backup-ClusterVMTags`
 - Added `Restore-ClusterVMTags`
 - Enhanced OSD output for all functions to include message time and timestamps, better handlong of ovftool output
+- Tweaked `Move-ClusterHostNetworkingTovSS` to allow retry. Skips if VSS exists
 
 ## v1.0.6
 

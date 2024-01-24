@@ -2195,48 +2195,56 @@ Function Move-ClusterHostNetworkingTovSS
     $vds = Get-VDSwitch -Name $vdsName
 
     foreach ($vmhost in $vmhost_array) {
-        LogMessage -type INFO -message "[$vmhost] Removing $vmnic from VDS"
-        Get-VMHostNetworkAdapter -VMHost $vmhost -Physical -Name $vmnic | Remove-VDSwitchPhysicalNetworkAdapter -Confirm:$false | Out-Null
-        LogMessage -type INFO -message "[$vmhost] Creating new VSS"
-        New-VirtualSwitch -VMHost $vmhost -Name vSwitch0 -mtu $mtu | Out-Null
-        LogMessage -type INFO -message "[$vmhost] Creating temporary management portgroup `'mgmt_temp`'"
-        New-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $vmhost -Name "vSwitch0") -Name "mgmt_temp" -VLanId $mgmtVlanId | Out-Null
-
-        # pNICs to migrate to VSS
-        LogMessage -type INFO -message "[$vmhost] Retrieving pNIC info for $vmnic"
-        $vmnicToMove = Get-VMHostNetworkAdapter -VMHost $vmhost -Name $vmnic
-
-        # Array of pNICs to migrate to VSS
-        $pnic_array = @($vmnicToMove)
-
-        # vSwitch to migrate to
-        $vss = Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name $vss_name
-
-        # Create destination portgroups
-        LogMessage -type INFO -message "[$vmhost] Creating $mgmt_name portrgroup on $vss_name"
-        $mgmt_pg = New-VirtualPortGroup -VirtualSwitch $vss -Name $mgmt_name -VLanId $mgmtVlanId
-
-        LogMessage -type INFO -message "[$vmhost] Creating $vmotion_name portrgroup on $vss_name"
-        $vmotion_pg = New-VirtualPortGroup -VirtualSwitch $vss -Name $vmotion_name -VLanId $vMotionVlanId
-
-        LogMessage -type INFO -message "[$vmhost] Creating $storage_name Network portrgroup on $vss_name"
-        $storage_pg = New-VirtualPortGroup -VirtualSwitch $vss -Name $storage_name -VLanId $vSanVlanId
-
-        # Array of portgroups to map VMkernel interfaces (order matters!)
-        $pg_array = @($mgmt_pg, $vmotion_pg, $storage_pg)
-
-        # VMkernel interfaces to migrate to VSS
-        $mgmt_vmk = Get-VMHostNetworkAdapter -VMHost $vmhost -Name "vmk0"
-        $vmotion_vmk = Get-VMHostNetworkAdapter -VMHost $vmhost -Name "vmk1"
-        $storage_vmk = Get-VMHostNetworkAdapter -VMHost $vmhost -Name "vmk2"
-
-        # Array of VMkernel interfaces to migrate to VSS (order matters!)
-        $vmk_array = @($mgmt_vmk, $vmotion_vmk, $storage_vmk)
-
-        # Perform the migration
-        LogMessage -type INFO -message "[$vmhost] Migrating from $vdsName to $vss_name"
-        Add-VirtualSwitchPhysicalNetworkAdapter -VirtualSwitch $vss -VMHostPhysicalNic $pnic_array -VMHostVirtualNic $vmk_array -VirtualNicPortgroup $pg_array  -Confirm:$false
-        Start-Sleep 5
+        $vssExists = Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name $vss_name
+        IF (!($vssExists))
+        {
+            LogMessage -type INFO -message "[$vmhost] Removing $vmnic from VDS"
+            Get-VMHostNetworkAdapter -VMHost $vmhost -Physical -Name $vmnic | Remove-VDSwitchPhysicalNetworkAdapter -Confirm:$false | Out-Null
+            LogMessage -type INFO -message "[$vmhost] Creating new VSS"
+            New-VirtualSwitch -VMHost $vmhost -Name vSwitch0 -mtu $mtu | Out-Null
+            LogMessage -type INFO -message "[$vmhost] Creating temporary management portgroup `'mgmt_temp`'"
+            New-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $vmhost -Name "vSwitch0") -Name "mgmt_temp" -VLanId $mgmtVlanId | Out-Null
+    
+            # pNICs to migrate to VSS
+            LogMessage -type INFO -message "[$vmhost] Retrieving pNIC info for $vmnic"
+            $vmnicToMove = Get-VMHostNetworkAdapter -VMHost $vmhost -Name $vmnic
+    
+            # Array of pNICs to migrate to VSS
+            $pnic_array = @($vmnicToMove)
+    
+            # vSwitch to migrate to
+            $vss = Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name $vss_name
+    
+            # Create destination portgroups
+            LogMessage -type INFO -message "[$vmhost] Creating $mgmt_name portrgroup on $vss_name"
+            $mgmt_pg = New-VirtualPortGroup -VirtualSwitch $vss -Name $mgmt_name -VLanId $mgmtVlanId
+    
+            LogMessage -type INFO -message "[$vmhost] Creating $vmotion_name portrgroup on $vss_name"
+            $vmotion_pg = New-VirtualPortGroup -VirtualSwitch $vss -Name $vmotion_name -VLanId $vMotionVlanId
+    
+            LogMessage -type INFO -message "[$vmhost] Creating $storage_name Network portrgroup on $vss_name"
+            $storage_pg = New-VirtualPortGroup -VirtualSwitch $vss -Name $storage_name -VLanId $vSanVlanId
+    
+            # Array of portgroups to map VMkernel interfaces (order matters!)
+            $pg_array = @($mgmt_pg, $vmotion_pg, $storage_pg)
+    
+            # VMkernel interfaces to migrate to VSS
+            $mgmt_vmk = Get-VMHostNetworkAdapter -VMHost $vmhost -Name "vmk0"
+            $vmotion_vmk = Get-VMHostNetworkAdapter -VMHost $vmhost -Name "vmk1"
+            $storage_vmk = Get-VMHostNetworkAdapter -VMHost $vmhost -Name "vmk2"
+    
+            # Array of VMkernel interfaces to migrate to VSS (order matters!)
+            $vmk_array = @($mgmt_vmk, $vmotion_vmk, $storage_vmk)
+    
+            # Perform the migration
+            LogMessage -type INFO -message "[$vmhost] Migrating from $vdsName to $vss_name"
+            Add-VirtualSwitchPhysicalNetworkAdapter -VirtualSwitch $vss -VMHostPhysicalNic $pnic_array -VMHostVirtualNic $vmk_array -VirtualNicPortgroup $pg_array  -Confirm:$false
+            Start-Sleep 5
+        }
+        else 
+        {
+            LogMessage -type INFO -message "[$vmhost] Skipping as $vss_name already exists"
+        }
     }
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
