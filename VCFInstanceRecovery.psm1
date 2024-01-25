@@ -2658,7 +2658,7 @@ Function Remove-NonResponsiveHosts
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
-    $nonResponsiveHosts = get-cluster -name $clusterName | get-vmhost | Where-Object { $_.ConnectionState -in "NotResponding","Disconnected" }
+    $nonResponsiveHosts = get-cluster -name $clusterName | get-vmhost | Where-Object { $_.ConnectionState -in "NotResponding","Disconnected" } | Sort-Object
     foreach ($nonResponsiveHost in $nonResponsiveHosts) {
         LogMessage -type INFO -message "[$($nonResponsiveHost.name)] Removing from $clusterName"
         Get-VMHost | Where-Object { $_.Name -eq $nonResponsiveHost.Name } | Remove-VMHost -Confirm:$false
