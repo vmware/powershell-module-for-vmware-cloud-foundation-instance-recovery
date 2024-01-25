@@ -142,6 +142,26 @@ Function VCFIRCreateHeader
     
     Return $headers
 }
+Function Move-VMKernel
+{
+    Param (
+        [object]$VMHost,
+        [string]$Interface,
+        [string]$NetworkName,
+        [int]$Vlan,
+        [string]$VirtualSwitch
+        )
+        
+    #Get Network ID
+    $networkid = $VMHost.ExtenSionData.Configmanager.NetworkSystem
+
+    # ------- UpdateVirtualNic ------- Migrate adapter to Vswitch
+    $nic = New-Object VMware.Vim.HostVirtualNicSpec
+    $nic.portgroup = $NetworkName
+
+    $_this = Get-View -Id $networkid
+    $_this.UpdateVirtualNic($Interface, $nic)
+} 
 #EndRegion Supporting Functions
 
 #Region Pre-Requisites
@@ -2214,7 +2234,7 @@ Function Move-ClusterHostNetworkingTovSS
             $vmnicToMove = Get-VMHostNetworkAdapter -VMHost $vmhost -Name $vmnic
     
             # Array of pNICs to migrate to VSS
-            $pnic_array = @($vmnicToMove)
+            #$pnic_array = @($vmnicToMove)
     
             # vSwitch to migrate to
             $vss = Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name $vss_name
@@ -2230,24 +2250,26 @@ Function Move-ClusterHostNetworkingTovSS
             $storage_pg = New-VirtualPortGroup -VirtualSwitch $vss -Name $storage_name -VLanId $vSanVlanId
     
             # Array of portgroups to map VMkernel interfaces (order matters!)
-            $pg_array = @($mgmt_pg, $vmotion_pg, $storage_pg)
+            #$pg_array = @($mgmt_pg, $vmotion_pg, $storage_pg)
     
             # VMkernel interfaces to migrate to VSS
-            $mgmt_vmk = Get-VMHostNetworkAdapter -VMHost $vmhost -Name "vmk0"
-            $vmotion_vmk = Get-VMHostNetworkAdapter -VMHost $vmhost -Name "vmk1"
-            $storage_vmk = Get-VMHostNetworkAdapter -VMHost $vmhost -Name "vmk2"
+            #$mgmt_vmk = Get-VMHostNetworkAdapter -VMHost $vmhost -Name "vmk0"
+            #$vmotion_vmk = Get-VMHostNetworkAdapter -VMHost $vmhost -Name "vmk1"
+            #$storage_vmk = Get-VMHostNetworkAdapter -VMHost $vmhost -Name "vmk2"
     
             # Array of VMkernel interfaces to migrate to VSS (order matters!)
-            $vmk_array = @($mgmt_vmk, $vmotion_vmk, $storage_vmk)
+            #$vmk_array = @($mgmt_vmk, $vmotion_vmk, $storage_vmk)
     
             # Perform the migration
-            LogMessage -type INFO -message "[$vmhost] Migrating from $vdsName to $vss_name"
+            LogMessage -type INFO -message "[$vmhost] Migrating $vmnic from $vdsName to $vss_name"
             #Add-VirtualSwitchPhysicalNetworkAdapter -VirtualSwitch $vss -VMHostPhysicalNic $pnic_array -VMHostVirtualNic $vmk_array -VirtualNicPortgroup $pg_array  -Confirm:$false
-            Add-VirtualSwitchPhysicalNetworkAdapter -VirtualSwitch $vss -VMHostPhysicalNic $pnic_array
-            Set-VMHostNetworkAdapter -PortGroup $mgmt_pg -VirtualNic $mgmt_vmk -confirm:$false | Out-Null
-            Set-VMHostNetworkAdapter -PortGroup $vmotion_pg -VirtualNic $vmotion_vmk -confirm:$false | Out-Null
-            Set-VMHostNetworkAdapter -PortGroup $storage_pg -VirtualNic $storage_vmk -confirm:$false | Out-Null
-            
+            Add-VirtualSwitchPhysicalNetworkAdapter -VirtualSwitch $vss -VMHostPhysicalNic $vmnicToMove -confirm:$false
+            LogMessage -type INFO -message "[$vmhost] Migrating Managment vmKernel from $vdsName to $vss_name"
+            Move-VMKernel -VMHost $vmhost -Interface "vmk0" -NetworkName $mgmt_name -VirtualSwtich $vss_name -Vlan $mgmtVlanId
+            LogMessage -type INFO -message "[$vmhost] Migrating vMotion vmKernel from $vdsName to $vss_name"
+            Move-VMKernel -VMHost $vmhost -Interface "vmk1" -NetworkName $vmotion_name -VirtualSwtich $vss_name -Vlan $vMotionVlanId
+            LogMessage -type INFO -message "[$vmhost] Migrating VSAN vmKernel from $vdsName to $vss_name"
+            Move-VMKernel -VMHost $vmhost -Interface "vmk2" -NetworkName $storage_name -VirtualSwtich $vss_name -Vlan $vSanVlanId
             Start-Sleep 5
         }
         else 
