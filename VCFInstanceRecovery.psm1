@@ -4195,7 +4195,7 @@ Function Resolve-PhysicalHostTransportNodes
         }
         else
         {
-            LogMessage -type ERROR -message "[$jumpboxName] This cmdlet is not required with NSX Manager version 4.1.2 and later"
+            LogMessage -type NOTE -message "[$jumpboxName] This cmdlet is not required with NSX Manager version 4.1.2 and later"
         }
 
     }
