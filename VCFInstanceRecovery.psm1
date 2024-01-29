@@ -2253,7 +2253,6 @@ Function Move-ClusterHostNetworkingTovSS
         }
 
         # pNICs to migrate to VSS
-        LogMessage -type INFO -message "[$vmhost] Retrieving pNIC info for $vmnic"
         $vmnicToMove = Get-VMHostNetworkAdapter -VMHost $vmhost -Name $vmnic
 
         # Array of pNICs to migrate to VSS
@@ -2301,22 +2300,24 @@ Function Move-ClusterHostNetworkingTovSS
             LogMessage -type INFO -message "[$vmhost] Migrating $vmnic from $vdsName to $vss_name"
             Add-VirtualSwitchPhysicalNetworkAdapter -VirtualSwitch $vss -VMHostPhysicalNic $vmnicToMove -confirm:$false    
         }
-        $networkid = $VMHost.ExtensionData.Configmanager.NetworkSystem
-        $_this = Get-View -Id $networkid
-        If ("vmk0" -notin $_this.NetworkInfo.Vnic.Device)
+        $vmks = $vmHost | Get-VMHostNetwork | Select-Object -ExpandProperty VirtualNic | Sort-Object Name
+        $currentMgmtVmkPortgroup = ($vmks | Where-Object {$_.name -eq "vmk0"}).PortGroupName
+        If ($currentMgmtVmkPortgroup -ne $mgmt_name)
         {
             LogMessage -type INFO -message "[$vmhost] Migrating Managment vmKernel from $vdsName to $vss_name"
-            Move-VMKernel -VMHost $vmhost -Interface "vmk0" -NetworkName $mgmt_name    
+            Move-VMKernel -VMHost $vmhost -Interface "vmk0" -NetworkName $mgmt_name
         }
-        If ("vmk1" -notin $_this.NetworkInfo.Vnic.Device)
+        $currentVmotionVmkPortgroup = ($vmks | Where-Object {$_.name -eq "vmk1"}).PortGroupName
+        If ($currentVmotionVmkPortgroup -ne $vmotion_name)
         {
             LogMessage -type INFO -message "[$vmhost] Migrating vMotion vmKernel from $vdsName to $vss_name"
             Move-VMKernel -VMHost $vmhost -Interface "vmk1" -NetworkName $vmotion_name
         }
-        If ("vmk2" -notin $_this.NetworkInfo.Vnic.Device)
+        $currentStorageVmkPortgroup = ($vmks | Where-Object {$_.name -eq "vmk2"}).PortGroupName
+        If ($currentStorageVmkPortgroup -ne $storage_name)
         {
             LogMessage -type INFO -message "[$vmhost] Migrating VSAN vmKernel from $vdsName to $vss_name"
-            Move-VMKernel -VMHost $vmhost -Interface "vmk2" -NetworkName $storage_name    
+            Move-VMKernel -VMHost $vmhost -Interface "vmk2" -NetworkName $storage_name
         }
         Start-Sleep 5
     }
