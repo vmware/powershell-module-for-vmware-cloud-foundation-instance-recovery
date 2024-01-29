@@ -7,15 +7,15 @@
 - Added `Invoke-SDDCManagerRestore` to automate SDDC Manager recovery
 - Added `Invoke-NSXManagerRestore` to automate NSX Manager recovery
 - Added `Invoke-vCenterRestore` to automate vCenter recovery
-- Added `--X:waitForIp` to NSX Manager deployment to ensure appliance is near ready for use before continuing
 - Added `New-PrepareforPartialBringup`
 - Added `New-RebuiltVsanDatastore` to claim disks, create disk groups interactively and rename datastore to original datastore name
 - Added `New-RebuiltVdsConfiguration`
 - Added `Backup-ClusterVMTags`
 - Added `Restore-ClusterVMTags`
-- Enhanced OSD output for all functions to include message time and timestamps, better handlong of ovftool output
-- Enhanced `Move-ClusterHostNetworkingTovSS` to allow retry. Skips if VSS exists
+- Enhanced `New-NSXManagerOvaDeployment` adding `--X:waitForIp` to ensure appliances are near ready for use before continuing
+- Enhanced `Move-ClusterHostNetworkingTovSS` with full idempotency
 - Enhanced `Resolve-PhysicalHostTransportNodes` to prevent use in NSX version 4.1.2 and higher
+- Enhanced OSD output for all functions to include message time and timestamps, better handlong of ovftool output
 
 ## v1.0.6
 
