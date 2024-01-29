@@ -14,7 +14,8 @@
 - Added `Backup-ClusterVMTags`
 - Added `Restore-ClusterVMTags`
 - Enhanced OSD output for all functions to include message time and timestamps, better handlong of ovftool output
-- Tweaked `Move-ClusterHostNetworkingTovSS` to allow retry. Skips if VSS exists
+- Enhanced `Move-ClusterHostNetworkingTovSS` to allow retry. Skips if VSS exists
+- Enhanced `Resolve-PhysicalHostTransportNodes` to prevent use in NSX version 4.1.2 and higher
 
 ## v1.0.6
 
