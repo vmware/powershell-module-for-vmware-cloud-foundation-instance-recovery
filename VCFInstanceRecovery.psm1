@@ -945,10 +945,10 @@ Function New-ReconstructedPartialBringupJsonSpec
 {
     <#
     .SYNOPSIS
-    Reconstructs a managment domain bringup JSON spec based on information scraped from the backup being restored from
+    Reconstructs a management domain bringup JSON spec based on information scraped from the backup being restored from
 
     .DESCRIPTION
-    The New-ReconstructedPartialBringupJsonSpec cmdlet Reconstructs a managment domain bringup JSON spec based on information scraped from the backup being restored from
+    The New-ReconstructedPartialBringupJsonSpec cmdlet Reconstructs a management domain bringup JSON spec based on information scraped from the backup being restored from
 
     .EXAMPLE
     New-ReconstructedPartialBringupJsonSpec -extractedSDDCDataFile ".\extracted-sddc-data.json" -tempVcenterIp "172.16.11.170" -tempVcenterHostname "sfo-m01-vc02" -vcfLocalUserPassword "VMw@re1!VMw@re1!" -vcfRootUserPassword "VMw@re1!" -vcfRestApiPassword "VMw@re1!" -vcfSecondUserPassword "VMw@re1!" -transportVlanId 1614 -dedupEnabled $false -vds0nics "vmnic0","vmnic1" -vcenterServerSize "small"
@@ -1063,10 +1063,10 @@ Function New-ReconstructedPartialBringupJsonSpec
     [IPAddress] $ip = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'MANAGEMENT'}).subnet_mask
     $octets = $ip.IPAddressToString.Split('.')
     Foreach($octet in $octets) { while(0 -ne $octet) { $octet = ($octet -shl 1) -band [byte]::MaxValue; $managementNetworkCidr++; }}
-    $managmentNetworkSubnet = ((($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'MANAGEMENT'}).subnet + "/" + $managementNetworkCidr)
+    $managementNetworkSubnet = ((($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'MANAGEMENT'}).subnet + "/" + $managementNetworkCidr)
     $networkSpecsObject += [pscustomobject]@{
         'networkType'  = "MANAGEMENT"
-        'subnet'       = $managmentNetworkSubnet
+        'subnet'       = $managementNetworkSubnet
         'vlanId'       = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'MANAGEMENT'}).vlanId -as [string]
         'mtu'          = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'MANAGEMENT'}).mtu -as [string]
         'gateway'      = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'MANAGEMENT'}).gateway
@@ -2239,17 +2239,31 @@ Function Move-ClusterHostNetworkingTovSS
             LogMessage -type INFO -message "[$vmhost] Removing $vmnic from VDS"
             Get-VMHostNetworkAdapter -VMHost $vmhost -Physical -Name $vmnic | Remove-VDSwitchPhysicalNetworkAdapter -Confirm:$false | Out-Null    
         }
+        else 
+        {
+            LogMessage -type INFO -message "[$vmhost] $vmnic already removed from VDS. Skipping"
+        }
         $vssExists = Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name $vss_name -errorAction silentlyContinue
+
         If (!($vssExists))
         {
             LogMessage -type INFO -message "[$vmhost] Creating new VSS"
             New-VirtualSwitch -VMHost $vmhost -Name $vss_name -mtu $mtu | Out-Null    
         }
+        else 
+        {
+            LogMessage -type INFO -message "[$vmhost] VSS already exists. Skipping"
+        }
+
         $tempMgmtPgExists = Get-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $vmhost -Name $vss_name) -Name "mgmt_temp" -errorAction SilentlyContinue
         If (!($tempMgmtPgExists))
         {
             LogMessage -type INFO -message "[$vmhost] Creating temporary management portgroup `'mgmt_temp`'"
             New-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $vmhost -Name $vss_name) -Name "mgmt_temp" -VLanId $mgmtVlanId | Out-Null    
+        }
+        else 
+        {
+            LogMessage -type INFO -message "[$vmhost] Temporary management portgroup `'mgmt_temp`' already exists. Skipping"
         }
 
         # pNICs to migrate to VSS
@@ -2268,11 +2282,20 @@ Function Move-ClusterHostNetworkingTovSS
             LogMessage -type INFO -message "[$vmhost] Creating $mgmt_name portrgroup on $vss_name"
             $mgmt_pg = New-VirtualPortGroup -VirtualSwitch $vss -Name $mgmt_name -VLanId $mgmtVlanId    
         }
+        else 
+        {
+            LogMessage -type INFO -message "[$vmhost] Management portgroup $mgmt_name already exists. Skipping"
+        }
+
         $vmotionPgExists = Get-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $vmhost -Name $vss_name) -Name $vmotion_name -errorAction SilentlyContinue
         If (!($vmotionPgExists))
         {
             LogMessage -type INFO -message "[$vmhost] Creating $vmotion_name portrgroup on $vss_name"
             $vmotion_pg = New-VirtualPortGroup -VirtualSwitch $vss -Name $vmotion_name -VLanId $vMotionVlanId
+        }
+        else 
+        {
+            LogMessage -type INFO -message "[$vmhost] Management portgroup $vmotion_name already exists. Skipping"
         }
 
         $storagePgExists = Get-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $vmhost -Name $vss_name) -Name $storage_name -errorAction SilentlyContinue
@@ -2280,6 +2303,10 @@ Function Move-ClusterHostNetworkingTovSS
         {
             LogMessage -type INFO -message "[$vmhost] Creating $storage_name Network portrgroup on $vss_name"
             $storage_pg = New-VirtualPortGroup -VirtualSwitch $vss -Name $storage_name -VLanId $vSanVlanId
+        }
+        else 
+        {
+            LogMessage -type INFO -message "[$vmhost] Management portgroup $storage_name already exists. Skipping"
         }
 
         # Array of portgroups to map VMkernel interfaces (order matters!)
@@ -2300,25 +2327,45 @@ Function Move-ClusterHostNetworkingTovSS
             LogMessage -type INFO -message "[$vmhost] Migrating $vmnic from $vdsName to $vss_name"
             Add-VirtualSwitchPhysicalNetworkAdapter -VirtualSwitch $vss -VMHostPhysicalNic $vmnicToMove -confirm:$false    
         }
+        else 
+        {
+            LogMessage -type INFO -message "[$vmhost] $vmnic already part of VSS. Skipping"
+        }
+
         $vmks = $vmHost | Get-VMHostNetwork | Select-Object -ExpandProperty VirtualNic | Sort-Object Name
         $currentMgmtVmkPortgroup = ($vmks | Where-Object {$_.name -eq "vmk0"}).PortGroupName
         If ($currentMgmtVmkPortgroup -ne $mgmt_name)
         {
-            LogMessage -type INFO -message "[$vmhost] Migrating Managment vmKernel from $vdsName to $vss_name"
+            LogMessage -type INFO -message "[$vmhost] Migrating Management vmKernel from $vdsName to $vss_name"
             Move-VMKernel -VMHost $vmhost -Interface "vmk0" -NetworkName $mgmt_name
         }
+        else 
+        {
+            LogMessage -type INFO -message "[$vmhost] Management vmKernel already on $vss_name. Skipping"
+        }
+
         $currentVmotionVmkPortgroup = ($vmks | Where-Object {$_.name -eq "vmk1"}).PortGroupName
         If ($currentVmotionVmkPortgroup -ne $vmotion_name)
         {
             LogMessage -type INFO -message "[$vmhost] Migrating vMotion vmKernel from $vdsName to $vss_name"
             Move-VMKernel -VMHost $vmhost -Interface "vmk1" -NetworkName $vmotion_name
         }
+        else 
+        {
+            LogMessage -type INFO -message "[$vmhost] vMotion vmKernel already on $vss_name. Skipping"
+        }
+
         $currentStorageVmkPortgroup = ($vmks | Where-Object {$_.name -eq "vmk2"}).PortGroupName
         If ($currentStorageVmkPortgroup -ne $storage_name)
         {
             LogMessage -type INFO -message "[$vmhost] Migrating VSAN vmKernel from $vdsName to $vss_name"
             Move-VMKernel -VMHost $vmhost -Interface "vmk2" -NetworkName $storage_name
         }
+        else 
+        {
+            LogMessage -type INFO -message "[$vmhost] VSAN vmKernel already on $vss_name. Skipping"
+        }
+
         Start-Sleep 5
     }
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
