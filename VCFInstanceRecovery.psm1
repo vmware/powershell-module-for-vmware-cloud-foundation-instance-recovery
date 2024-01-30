@@ -2325,7 +2325,8 @@ Function Move-ClusterHostNetworkingTovSS
         If ($vss.ExtensionData.Pnic -notlike "*$vmnic")
         {
             LogMessage -type INFO -message "[$vmhost] Migrating $vmnic from $vdsName to $vss_name"
-            Add-VirtualSwitchPhysicalNetworkAdapter -VirtualSwitch $vss -VMHostPhysicalNic $vmnicToMove -confirm:$false    
+            Add-VirtualSwitchPhysicalNetworkAdapter -VirtualSwitch $vss -VMHostPhysicalNic $vmnicToMove -confirm:$false
+            Sleep 30
         }
         else 
         {
@@ -4606,8 +4607,7 @@ Function Add-AdditionalNSXManagers
     
     #Close SSH Session
     Remove-SSHSession -SSHSession $sshSession | Out-Null
-
-    #Join Other Managers to Cluster
+    
     Foreach ($otherNsxManager in $otherNsxManagers)
     {
         $nsxManagerFQDN = $otherNsxManager.hostname
@@ -4629,6 +4629,7 @@ Function Add-AdditionalNSXManagers
             $sshSession = New-SSHSession -computername $nsxManagerFQDN -Credential $mycreds -KnownHost $inmem
         } Until ($sshSession)
 
+        #Join Manager to Cluster
         LogMessage -type INFO -message "[$nsxManagerFQDN] Joining Cluster"
         $stream = New-SSHShellStream -SSHSession $sshSession
         $stream.writeline("join $($selectedNsxManager.ip) cluster-id $clusterId thumbprint $certApiThumbprint username admin")
@@ -4636,33 +4637,22 @@ Function Add-AdditionalNSXManagers
 
         #Close SSH Session
         Remove-SSHSession -SSHSession $sshSession | Out-Null
-    }
 
-    #Restore Certificate on other Managers
-    Foreach ($otherNsxManager in $otherNsxManagers)
-    {
-        $nsxManagerFQDN = $otherNsxManager.hostname
-
+        #Restore Certificate on Manager
         $clusterNodeID = ($clusterNodes | Where-Object {$_.fqdn -eq $nsxManagerFQDN}).node_uuid
         $clusterNodeCertificateID = ($signedCertificates | Where-Object {$_.used_by.node_id -eq $clusterNodeID}).id
         
-        #Create Headers
-        $headers = VCFIRCreateHeader -username $nsxManagerAdminUsername -password $nsxManagerAdminPassword
-
         LogMessage -type INFO -message "[$nsxManagerFQDN] Setting Node Certificate"
         $uri = "https://$nsxManagerFQDN/api/v1/node/services/http?action=apply_certificate&certificate_id=$clusterNodeCertificateID"
         $setCertificate = Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -headers $headers
+
+        #Restart Manager
+        $vCenterConnection = Connect-VIServer $vCenterFqdn -user $vCenterAdmin -password $vCenterAdminPassword
+        LogMessage -type INFO -message "[$nsxManagerFQDN] Restarting Appliance"
+        Get-VM -Name $nsxManagerFQDN | Restart-VM -confirm:$false | Out-Null
+        Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false    
     }
 
-    #Restart other Managers
-    $vCenterConnection = Connect-VIServer $vCenterFqdn -user $vCenterAdmin -password $vCenterAdminPassword
-    Foreach ($otherNsxManager in $otherNsxManagers)
-    {
-        $nsxManagerFQDN = $otherNsxManager.hostname
-        LogMessage -type INFO -message "[$nsxManagerFQDN] Restarting"
-        Get-VM -Name $nsxManagerFQDN | Restart-VM -confirm:$false | Out-Null
-    }
-    Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Add-AdditionalNSXManagers
