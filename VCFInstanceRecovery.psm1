@@ -4494,13 +4494,6 @@ Export-ModuleMember -Function Invoke-NSXEdgeClusterRecovery
 Function Add-AdditionalNSXManagers
 {
     Param(
-        [Parameter (Mandatory = $true)][String] $nsxManagerFqdn,
-        [Parameter (Mandatory = $true)][String] $nsxManagerAdmin,
-        [Parameter (Mandatory = $true)][String] $nsxManagerAdminPassword,
-        [Parameter (Mandatory = $true)][String] $vCenterFQDN,
-        [Parameter (Mandatory = $true)][String] $vCenterAdmin,
-        [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
-        [Parameter (Mandatory = $true)][String] $clusterName,
         [Parameter (Mandatory = $true)][String] $workloadDomain,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile
     )
@@ -4511,7 +4504,7 @@ Function Add-AdditionalNSXManagers
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
     $workloadDomainDetails = ($extractedSDDCData.workloadDomains | Where-Object {$_.domainName -eq $workloadDomain})
     $nsxNodes = $workloadDomainDetails.nsxNodeDetails
-
+    
     $nsxManagersDisplayObject=@()
     $nsxManagersIndex = 1
     $nsxManagersDisplayObject += [pscustomobject]@{
@@ -4548,79 +4541,27 @@ Function Add-AdditionalNSXManagers
     #Create Headers
     $headers = VCFIRCreateHeader -username $nsxManagerAdminUsername -password $nsxManagerAdminPassword
 
-    #Get NSX Nodes
-    LogMessage -type INFO -message "[$nsxManagerFQDN] Getting Cluster Node Details"
-    $uri = "https://$nsxManagerFQDN/api/v1/cluster/"
-    $clusterNodes = ((Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json).nodes
-    $otherclusterNodeIDs = ($clusterNodes | Where-Object {$_.fqdn -in $otherNsxManagers.hostname}).node_uuid
+    #Check for Compatible NSX Manager version
+    $uri = "https://$nsxManagerFqdn/api/v1/node"
+    $nsxManagerVersion = [INT](((((Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json).product_version).replace(".","")).substring(0,3))
 
-    #Get Certificates
-    LogMessage -type INFO -message "[$nsxManagerFQDN] Getting Cluster Node Certificate Details"
-    $uri = "https://$nsxManagerFQDN/api/v1/trust-management/certificates"
-    $allcertificates = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
-    $signedCertificates = $allcertificates.results | Where-Object {$_.resource_type -eq "certificate_signed"}
-
-    LogMessage -type INFO -message "[$nsxManagerFQDN] Starting SSH"
-    $uri = "https://$nsxManagerFqdn/api/v1/node/services/ssh?action=start"
-    $startSSH = (Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
-
-    LogMessage -type INFO -message "[$jumpboxName] Establishing SSH Connection to $nsxManagerFQDN"
-    $SecurePassword = ConvertTo-SecureString -String $nsxManagerAdminPassword -AsPlainText -Force
-    $mycreds = New-Object System.Management.Automation.PSCredential ($nsxManagerAdminUsername, $SecurePassword)
-    $inmem = New-SSHMemoryKnownHost
-    New-SSHTrustedHost -KnownHostStore $inmem -HostName $nsxManagerFQDN -FingerPrint ((Get-SSHHostKey -ComputerName $nsxManagerFQDN).fingerprint) | Out-Null
-    Do
+    If ($nsxManagerVersion)
     {
-        $sshSession = New-SSHSession -computername $nsxManagerFQDN -Credential $mycreds -KnownHost $inmem
-    } Until ($sshSession)
+        #Get NSX Nodes
+        LogMessage -type INFO -message "[$nsxManagerFQDN] Getting Cluster Node Details"
+        $uri = "https://$nsxManagerFQDN/api/v1/cluster/"
+        $clusterNodes = ((Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json).nodes
+        $otherclusterNodeIDs = ($clusterNodes | Where-Object {$_.fqdn -in $otherNsxManagers.hostname}).node_uuid #Potentially only required in NSX 3
 
-    LogMessage -type INFO -message "[$nsxManagerFQDN] Deactivating Cluster"
-    $stream = New-SSHShellStream -SSHSession $sshSession
-    $stream.writeline("deactivate cluster")
-    Start-Sleep 5
-    $stream.writeline("yes")
-    Start-Sleep 2
-
-    LogMessage -type INFO -message "[$nsxManagerFQDN] Getting Cluster ID"
-    $unwantedOutput = $stream.Read()
-    Start-Sleep 2
-    $stream.writeline("get cluster config | find Id:")
-    Start-Sleep 2
-    $unwantedOutput = $stream.Readline()
-    $unwantedOutput = $stream.Readline()
-    $clusterIdOutput = $stream.Readline()
-    $clusterId = ($clusterIdOutput.split("Cluster Id: "))[1]
-
-    LogMessage -type INFO -message "[$nsxManagerFQDN] Getting Certificate API Thumbprint"
-    $unwantedOutput = $stream.Read()
-    Start-Sleep 2
-    $stream.writeline("get certificate api thumbprint")
-    Start-Sleep 2
-    $unwantedOutput = $stream.Readline()
-    $unwantedOutput = $stream.Readline()
-    $certApiThumbprint = $stream.Readline()
-
-    Foreach ($otherclusterNodeID in $otherclusterNodeIDs)
-    {
-        $unwantedOutput = $stream.Read()
-        Start-Sleep 2
-        $stream.writeline("detach node $otherclusterNodeID")
-        #Need to undersand how to monitor here
-    }
-    
-    #Close SSH Session
-    Remove-SSHSession -SSHSession $sshSession | Out-Null
-    
-    Foreach ($otherNsxManager in $otherNsxManagers)
-    {
-        $nsxManagerFQDN = $otherNsxManager.hostname
-        
-        #Create Headers
-        $headers = VCFIRCreateHeader -username $nsxManagerAdminUsername -password $nsxManagerAdminPassword
+        #Get Certificates
+        LogMessage -type INFO -message "[$nsxManagerFQDN] Getting Cluster Node Certificate Details"
+        $uri = "https://$nsxManagerFQDN/api/v1/trust-management/certificates"
+        $allcertificates = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
+        $signedCertificates = $allcertificates.results | Where-Object {$_.resource_type -eq "certificate_signed"}
 
         LogMessage -type INFO -message "[$nsxManagerFQDN] Starting SSH"
         $uri = "https://$nsxManagerFqdn/api/v1/node/services/ssh?action=start"
-        $startSSH = Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -headers $headers
+        $startSSH = (Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
 
         LogMessage -type INFO -message "[$jumpboxName] Establishing SSH Connection to $nsxManagerFQDN"
         $SecurePassword = ConvertTo-SecureString -String $nsxManagerAdminPassword -AsPlainText -Force
@@ -4632,30 +4573,124 @@ Function Add-AdditionalNSXManagers
             $sshSession = New-SSHSession -computername $nsxManagerFQDN -Credential $mycreds -KnownHost $inmem
         } Until ($sshSession)
 
-        #Join Manager to Cluster
-        LogMessage -type INFO -message "[$nsxManagerFQDN] Joining Cluster"
-        $stream = New-SSHShellStream -SSHSession $sshSession
-        $stream.writeline("join $($selectedNsxManager.ip) cluster-id $clusterId thumbprint $certApiThumbprint username admin")
+        If ($nsxManagerVersion -lt "400")
+        {
+            LogMessage -type INFO -message "[$nsxManagerFQDN] Deactivating Cluster"
+            $stream = New-SSHShellStream -SSHSession $sshSession
+            $stream.writeline("deactivate cluster")
+            Start-Sleep 5
+            $stream.writeline("yes")
+            Start-Sleep 2
+        }
+
+        LogMessage -type INFO -message "[$nsxManagerFQDN] Getting Cluster ID"
+        $unwantedOutput = $stream.Read()
+        Start-Sleep 2
+        $stream.writeline("get cluster config | find Id:")
         Start-Sleep 5
+        $unwantedOutput = $stream.Readline()
+        $unwantedOutput = $stream.Readline()
+        $clusterIdOutput = $stream.Readline()
+        $clusterId = ($clusterIdOutput.split("Cluster Id: "))[1]
+
+        LogMessage -type INFO -message "[$nsxManagerFQDN] Getting Certificate API Thumbprint"
+        $unwantedOutput = $stream.Read()
+        Start-Sleep 2
+        $stream.writeline("get certificate api thumbprint")
+        Start-Sleep 5
+        $unwantedOutput = $stream.Readline()
+        $unwantedOutput = $stream.Readline()
+        $certApiThumbprint = $stream.Readline()
+
+        If ($nsxManagerVersion -lt "400")
+        {
+            Foreach ($otherclusterNodeID in $otherclusterNodeIDs)
+            {
+                $unwantedOutput = $stream.Read()
+                Start-Sleep 2
+                $stream.writeline("detach node $otherclusterNodeID")
+                #Need to undersand how to monitor here
+            }
+        }
 
         #Close SSH Session
         Remove-SSHSession -SSHSession $sshSession | Out-Null
 
-        #Restore Certificate on Manager
-        $clusterNodeID = ($clusterNodes | Where-Object {$_.fqdn -eq $nsxManagerFQDN}).node_uuid
-        $clusterNodeCertificateID = ($signedCertificates | Where-Object {$_.used_by.node_id -eq $clusterNodeID}).id
-        
-        LogMessage -type INFO -message "[$nsxManagerFQDN] Setting Node Certificate"
-        $uri = "https://$nsxManagerFQDN/api/v1/node/services/http?action=apply_certificate&certificate_id=$clusterNodeCertificateID"
-        $setCertificate = Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -headers $headers
+        Foreach ($otherNsxManager in $otherNsxManagers)
+        {
+            $nsxManagerFQDN = $otherNsxManager.hostname
+            
+            #Create Headers
+            $headers = VCFIRCreateHeader -username $nsxManagerAdminUsername -password $nsxManagerAdminPassword
 
-        #Restart Manager
-        $vCenterConnection = Connect-VIServer $vCenterFqdn -user $vCenterAdmin -password $vCenterAdminPassword
-        LogMessage -type INFO -message "[$nsxManagerFQDN] Restarting Appliance"
-        Get-VM -Name $nsxManagerFQDN | Restart-VM -confirm:$false | Out-Null
-        Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false    
+            LogMessage -type INFO -message "[$nsxManagerFQDN] Starting SSH"
+            $uri = "https://$nsxManagerFqdn/api/v1/node/services/ssh?action=start"
+            $startSSH = Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -headers $headers
+
+            LogMessage -type INFO -message "[$jumpboxName] Establishing SSH Connection to $nsxManagerFQDN"
+            $SecurePassword = ConvertTo-SecureString -String $nsxManagerAdminPassword -AsPlainText -Force
+            $mycreds = New-Object System.Management.Automation.PSCredential ($nsxManagerAdminUsername, $SecurePassword)
+            $inmem = New-SSHMemoryKnownHost
+            New-SSHTrustedHost -KnownHostStore $inmem -HostName $nsxManagerFQDN -FingerPrint ((Get-SSHHostKey -ComputerName $nsxManagerFQDN).fingerprint) | Out-Null
+            Do
+            {
+                $sshSession = New-SSHSession -computername $nsxManagerFQDN -Credential $mycreds -KnownHost $inmem
+            } Until ($sshSession)
+
+            #Join Manager to Cluster
+            LogMessage -type INFO -message "[$nsxManagerFQDN] Joining Cluster"
+            $stream = New-SSHShellStream -SSHSession $sshSession
+            $stream.writeline("join $($selectedNsxManager.ip) cluster-id $clusterId thumbprint $certApiThumbprint username admin")
+            Start-Sleep 5
+            $stream.writeline("yes")
+            Start-Sleep 2
+            $stream.writeline("$($nsxManagerAdminPassword)")
+            Do
+            {
+                Start-Sleep 10
+                $response = $stream.Read()
+
+            } Until ($response -like "*Join operation successful*")
+            Do
+            {
+                Start-Sleep 10
+                $stream.writeline("get cluster status")
+                Start-Sleep 5
+                $response = $stream.Read()
+
+            } Until ($response -notlike "*DOWN*")
+
+            #Close SSH Session
+            Remove-SSHSession -SSHSession $sshSession | Out-Null
+
+            If ($nsxManagerVersion -lt "400")
+            {
+                #Restore Certificate on Manager
+                $clusterNodeID = ($clusterNodes | Where-Object {$_.fqdn -eq $nsxManagerFQDN}).node_uuid
+                $clusterNodeCertificateID = ($signedCertificates | Where-Object {$_.tags.scope -eq $otherNsxManager.ip}).id
+                
+                LogMessage -type INFO -message "[$nsxManagerFQDN] Setting Node Certificate"
+                $uri = "https://$nsxManagerFQDN/api/v1/node/services/http?action=apply_certificate&certificate_id=$clusterNodeCertificateID"
+                $setCertificate = Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -headers $headers
+
+                $managementDomain = ($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"})
+                $managementDomainName = ($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).domainName            
+                $vCenterFqdn = $managementDomain.vCenterDetails.fqdn
+                $vCenterAdmin = ($extractedSddcData.passwords | Where-Object {($_.entityType -eq "PSC") -and ($_.domainName -eq $managementDomainName)}).username
+                $vCenterAdminPassword = ($extractedSddcData.passwords | Where-Object {($_.entityType -eq "PSC") -and ($_.domainName -eq $managementDomainName)}).password           
+                
+                #Restart Manager
+                $vCenterConnection = Connect-VIServer $vCenterFqdn -user $vCenterAdmin -password $vCenterAdminPassword
+                LogMessage -type INFO -message "[$nsxManagerFQDN] Restarting Appliance"
+                Get-VM -Name $nsxManagerFQDN | Restart-VM -confirm:$false | Out-Null
+                Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false    
+            }
+        }
     }
-
+    else 
+    {
+        LogMessage -type ERROR -message "[$jumpboxName] Unable to determine NSX Manager Version. Check that it was successfully restored."
+    }
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Add-AdditionalNSXManagers
