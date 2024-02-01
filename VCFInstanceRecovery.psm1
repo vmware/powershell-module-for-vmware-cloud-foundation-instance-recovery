@@ -1914,7 +1914,10 @@ Function Invoke-vCenterRestore
         #Note: Looped SSH connections is quite deliberate here as the connections appear to be continually dropped as the process progresses
         Sleep 10
         Remove-SSHSession -SSHSession $sshSession | Out-Null
-        $sshSession = New-SSHSession -computername $vcenterFqdn -Credential $mycreds -KnownHost $inmem
+        Do
+        {
+            $sshSession = New-SSHSession -computername $vcenterFqdn -Credential $mycreds -KnownHost $inmem -erroraction silentlyContinue
+        } Until ($sshSession)
         $rpmStatus = (Invoke-SSHCommand -SessionId $sshSession.sessionid -Command "api com.vmware.appliance.version1.services.status.get --name vmbase_init" -erroraction silentlyContinue).output
     } Until ($rpmStatus -eq "Status: down")
     LogMessage -type INFO -message "[$vcenterFqdn] RPM initialization Complete"
