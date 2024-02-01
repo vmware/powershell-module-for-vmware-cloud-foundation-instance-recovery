@@ -4572,11 +4572,12 @@ Function Add-AdditionalNSXManagers
         {
             $sshSession = New-SSHSession -computername $nsxManagerFQDN -Credential $mycreds -KnownHost $inmem
         } Until ($sshSession)
-
+        $stream = New-SSHShellStream -SSHSession $sshSession
+        
         If ($nsxManagerVersion -lt "400")
         {
-            LogMessage -type INFO -message "[$nsxManagerFQDN] Deactivating Cluster"
-            $stream = New-SSHShellStream -SSHSession $sshSession
+            LogMessage -type INFO -message "[$nsxManagerFQDN] Deactivating Cluster"    
+            $unwantedOutput = $stream.Read()
             $stream.writeline("deactivate cluster")
             Start-Sleep 5
             $stream.writeline("yes")
