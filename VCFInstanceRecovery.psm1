@@ -4644,7 +4644,6 @@ Function Add-AdditionalNSXManagers
             LogMessage -type INFO -message "[$nsxManagerFQDN] Joining Cluster"
             $stream = New-SSHShellStream -SSHSession $sshSession
             $joinCommand = "join $($selectedNsxManager.ip) cluster-id $clusterId thumbprint $certApiThumbprint username admin"
-            LogMessage -type INFO -message "[$nsxManagerFQDN] Issuing Joing Command: $joinCommand"
             $stream.writeline("$($joinCommand)")
             Start-Sleep 5
             $stream.writeline("yes")
