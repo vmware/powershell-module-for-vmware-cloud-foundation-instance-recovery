@@ -4593,6 +4593,7 @@ Function Add-AdditionalNSXManagers
         $unwantedOutput = $stream.Readline()
         $clusterIdOutput = $stream.Readline()
         $clusterId = ($clusterIdOutput.split("Cluster Id: "))[1]
+        LogMessage -type INFO -message "[$nsxManagerFQDN] Cluster ID: $clusterId retrieved"
 
         LogMessage -type INFO -message "[$nsxManagerFQDN] Getting Certificate API Thumbprint"
         $unwantedOutput = $stream.Read()
@@ -4602,6 +4603,7 @@ Function Add-AdditionalNSXManagers
         $unwantedOutput = $stream.Readline()
         $unwantedOutput = $stream.Readline()
         $certApiThumbprint = $stream.Readline()
+        LogMessage -type INFO -message "[$nsxManagerFQDN] Cert Thumbprint: $certApiThumbprint retrieved"
 
         If ($nsxManagerVersion -lt "400")
         {
@@ -4641,7 +4643,9 @@ Function Add-AdditionalNSXManagers
             #Join Manager to Cluster
             LogMessage -type INFO -message "[$nsxManagerFQDN] Joining Cluster"
             $stream = New-SSHShellStream -SSHSession $sshSession
-            $stream.writeline("join $($selectedNsxManager.ip) cluster-id $clusterId thumbprint $certApiThumbprint username admin")
+            $joinCommand = "join $($selectedNsxManager.ip) cluster-id $clusterId thumbprint $certApiThumbprint username admin"
+            LogMessage -type INFO -message "[$nsxManagerFQDN] Issuing Joing Command: $joinCommand"
+            $stream.writeline("$($joinCommand)")
             Start-Sleep 5
             $stream.writeline("yes")
             Start-Sleep 2
