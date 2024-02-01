@@ -4589,10 +4589,10 @@ Function Add-AdditionalNSXManagers
         Start-Sleep 2
         $stream.writeline("get cluster config | find Id:")
         Start-Sleep 5
-        $unwantedOutput = $stream.Readline()
-        $unwantedOutput = $stream.Readline()
-        $clusterIdOutput = $stream.Readline()
-        $clusterId = ($clusterIdOutput.split("Cluster Id: "))[1]
+        #$unwantedOutput = $stream.Readline()
+        #$unwantedOutput = $stream.Readline()
+        $clusterIdOutput = $stream.Read()
+        $clusterId = (($clusterIdOutput.split("Cluster Id: "))[1]).Substring(0,36)
         LogMessage -type INFO -message "[$nsxManagerFQDN] Cluster ID: $clusterId retrieved"
 
         LogMessage -type INFO -message "[$nsxManagerFQDN] Getting Certificate API Thumbprint"
