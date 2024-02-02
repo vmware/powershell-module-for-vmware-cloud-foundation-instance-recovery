@@ -2329,7 +2329,6 @@ Function Move-ClusterHostNetworkingTovSS
         {
             LogMessage -type INFO -message "[$vmhost] Migrating $vmnic from $vdsName to $vss_name"
             Add-VirtualSwitchPhysicalNetworkAdapter -VirtualSwitch $vss -VMHostPhysicalNic $vmnicToMove -confirm:$false
-            Sleep 30
         }
         else 
         {
@@ -2340,17 +2339,16 @@ Function Move-ClusterHostNetworkingTovSS
         If ($vss.ExtensionData.Pnic -like "*$vmnic")
         {
             $vmks = $vmHost | Get-VMHostNetwork | Select-Object -ExpandProperty VirtualNic | Sort-Object Name
-            $currentMgmtVmkPortgroup = ($vmks | Where-Object {$_.name -eq "vmk0"}).PortGroupName
-            If ($currentMgmtVmkPortgroup -ne $mgmt_name)
+            $currentStorageVmkPortgroup = ($vmks | Where-Object {$_.name -eq "vmk2"}).PortGroupName
+            If ($currentStorageVmkPortgroup -ne $storage_name)
             {
-                LogMessage -type INFO -message "[$vmhost] Migrating Management vmKernel from $vdsName to $vss_name"
-                Move-VMKernel -VMHost $vmhost -Interface "vmk0" -NetworkName $mgmt_name
+                LogMessage -type INFO -message "[$vmhost] Migrating VSAN vmKernel from $vdsName to $vss_name"
+                Move-VMKernel -VMHost $vmhost -Interface "vmk2" -NetworkName $storage_name
             }
             else 
             {
-                LogMessage -type INFO -message "[$vmhost] Management vmKernel already on $vss_name. Skipping"
+                LogMessage -type INFO -message "[$vmhost] VSAN vmKernel already on $vss_name. Skipping"
             }
-    
             $currentVmotionVmkPortgroup = ($vmks | Where-Object {$_.name -eq "vmk1"}).PortGroupName
             If ($currentVmotionVmkPortgroup -ne $vmotion_name)
             {
@@ -2361,16 +2359,15 @@ Function Move-ClusterHostNetworkingTovSS
             {
                 LogMessage -type INFO -message "[$vmhost] vMotion vmKernel already on $vss_name. Skipping"
             }
-    
-            $currentStorageVmkPortgroup = ($vmks | Where-Object {$_.name -eq "vmk2"}).PortGroupName
-            If ($currentStorageVmkPortgroup -ne $storage_name)
+            $currentMgmtVmkPortgroup = ($vmks | Where-Object {$_.name -eq "vmk0"}).PortGroupName
+            If ($currentMgmtVmkPortgroup -ne $mgmt_name)
             {
-                LogMessage -type INFO -message "[$vmhost] Migrating VSAN vmKernel from $vdsName to $vss_name"
-                Move-VMKernel -VMHost $vmhost -Interface "vmk2" -NetworkName $storage_name
+                LogMessage -type INFO -message "[$vmhost] Migrating Management vmKernel from $vdsName to $vss_name"
+                Move-VMKernel -VMHost $vmhost -Interface "vmk0" -NetworkName $mgmt_name
             }
             else 
             {
-                LogMessage -type INFO -message "[$vmhost] VSAN vmKernel already on $vss_name. Skipping"
+                LogMessage -type INFO -message "[$vmhost] Management vmKernel already on $vss_name. Skipping"
             }
         }
         Start-Sleep 5
