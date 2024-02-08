@@ -3042,7 +3042,7 @@ Function New-RebuiltVsanDatastore
 
     $diskGroupConfiguration =@()
     $remainingDisksDisplayObject = $disksDisplayObject
-    Write-Host ""; $remainingDisksDisplayObject | format-table -Property @{Expression=" "},id,canonicalName,size,ssd -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
+    Write-Host ""; $remainingDisksDisplayObject | format-table -Property @{Expression=" "},id,canonicalName,size,ssd,scsiLun -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
     Do
     {
         Write-Host ""; Write-Host " Enter the desired number of disk groups to create (between 1 and 5), or C to Cancel: " -ForegroundColor Yellow -nonewline
