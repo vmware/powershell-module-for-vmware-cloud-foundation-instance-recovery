@@ -3151,18 +3151,46 @@ Function New-RebuiltVsanDatastore
                 $moduleFunctions = Import-Module VCFInstanceRecovery -passthru
                 $restoredvCenterConnection = Connect-ViServer $using:restoredvCenterFQDN -user $using:restoredvCenterAdmin -password $using:restoredvCenterAdminPassword
                 $vmhost = Get-VMHost -name $using:vmhost.name
+                $disks = Get-VMHost -name $using:vmhost.name | Get-VMHostDisk | Sort-Object -Property ScsiLun
+                $disksDisplayObject=@()
+                $disksIndex = 1
+                $disksDisplayObject += [pscustomobject]@{
+                        'ID'    = "ID"
+                        'canonicalName' = "Canonical Name"
+                        'size' = "Size (GB)"
+                        'ssd' = "SSD"
+                    }
+                $disksDisplayObject += [pscustomobject]@{
+                        'ID'    = "--"
+                        'canonicalName' = "--------------------"
+                        'size' = "-------------"
+                        'ssd' = "------"
+                    }
+                Foreach ($disk in $disks)
+                {
+                    If ($disk.ScsiLun.CapacityGB -ne $null)
+                    {
+                        $disksDisplayObject += [pscustomobject]@{
+                            'ID'    = $disksIndex
+                            'canonicalName' = $disk.ScsiLun.CanonicalName
+                            'size' = $disk.ScsiLun.CapacityGB
+                            'ssd' = $disk.ScsiLun.IsSsd
+                        }
+                        $disksIndex++
+                    }
+                }
                 For ($i = 1; $i -le $using:diskGroupNumber; $i++) 
                 {
                     $diskGroupConfigurationIndex = ($i -1)
                     $diskGroupConfiguration = $using:diskGroupConfiguration
-                    $cacheDiskCanonicalName = (($using:disksDisplayObject | Where-Object {$_.id -eq $diskGroupConfiguration[$diskGroupConfigurationIndex].cacheDiskID}).canonicalName)
-                    $capacityDiskCanonicalNames = (($using:disksDisplayObject | Where-Object {$_.id -in $diskGroupConfiguration[$diskGroupConfigurationIndex].capacityDiskIDs}).canonicalName)
+                    $cacheDiskCanonicalName = (($disksDisplayObject | Where-Object {$_.id -eq $diskGroupConfiguration[$diskGroupConfigurationIndex].cacheDiskID}).canonicalName)
+                    $capacityDiskCanonicalNames = (($disksDisplayObject | Where-Object {$_.id -in $diskGroupConfiguration[$diskGroupConfigurationIndex].capacityDiskIDs}).canonicalName)
                     & $moduleFunctions {LogMessage -type INFO -message "[$($vmhost.name)] Creating VSAN Disk Group $i"}
                     New-VsanDiskGroup -VMHost $vmhost -SsdCanonicalName $cacheDiskCanonicalName -DataDiskCanonicalName $capacityDiskCanonicalNames | Out-Null
                 }
                 Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
             }
-            Start-Job -scriptblock $scriptBlock -ArgumentList ($diskGroupNumber,$disksDisplayObject,$diskGroupConfiguration,$vmhost,$restoredvCenterFQDN,$restoredvCenterAdmin,$restoredvCenterAdminPassword) | Out-Null
+            Start-Job -scriptblock $scriptBlock -ArgumentList ($diskGroupNumber,$diskGroupConfiguration,$vmhost,$restoredvCenterFQDN,$restoredvCenterAdmin,$restoredvCenterAdminPassword) | Out-Null
         }
         Get-Job | Receive-Job -Wait -AutoRemoveJob
         LogMessage -type INFO -message "[$clusterName] Renaming new datastore to original name: $datastoreName"
