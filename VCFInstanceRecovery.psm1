@@ -3008,7 +3008,7 @@ Function New-RebuiltVsanDatastore
     $vmhosts = (Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)
     LogMessage -type INFO -message "[$($vmhosts[0].name)] Using host as reference for Physical Disks"
 
-    $disks = ((Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)[0] | Get-VMHostDisk) | Sort-Object -Property ScsiLun
+    $disks = ((Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)[0] | Get-VMHostDisk) | Sort-Object -Property @{e={$_.scsilun.runtimename}}
     $disksDisplayObject=@()
     $disksIndex = 1
     $disksDisplayObject += [pscustomobject]@{
@@ -3016,12 +3016,14 @@ Function New-RebuiltVsanDatastore
             'canonicalName' = "Canonical Name"
             'size' = "Size (GB)"
             'ssd' = "SSD"
+            'scsiLun' = "SCSI LUN ID"
         }
     $disksDisplayObject += [pscustomobject]@{
             'ID'    = "--"
             'canonicalName' = "--------------------"
             'size' = "-------------"
             'ssd' = "------"
+            'scsiLun' = "-------------"
         }
     Foreach ($disk in $disks)
     {
@@ -3032,6 +3034,7 @@ Function New-RebuiltVsanDatastore
                 'canonicalName' = $disk.ScsiLun.CanonicalName
                 'size' = $disk.ScsiLun.CapacityGB
                 'ssd' = $disk.ScsiLun.IsSsd
+                'scsiLun' = $disk.ScsiLun.RuntimeName
             }
             $disksIndex++
         }
@@ -3151,7 +3154,7 @@ Function New-RebuiltVsanDatastore
                 $moduleFunctions = Import-Module VCFInstanceRecovery -passthru
                 $restoredvCenterConnection = Connect-ViServer $using:restoredvCenterFQDN -user $using:restoredvCenterAdmin -password $using:restoredvCenterAdminPassword
                 $vmhost = Get-VMHost -name $using:vmhost.name
-                $disks = Get-VMHost -name $using:vmhost.name | Get-VMHostDisk | Sort-Object -Property ScsiLun
+                $disks = Get-VMHost -name $using:vmhost.name | Get-VMHostDisk | Sort-Object -Property @{e={$_.scsilun.runtimename}}
                 $disksDisplayObject=@()
                 $disksIndex = 1
                 $disksDisplayObject += [pscustomobject]@{
