@@ -3006,9 +3006,9 @@ Function New-RebuiltVsanDatastore
     LogMessage -type INFO -message "[$jumpboxName] Connecting to Restored vCenter: $restoredvCenterFQDN"
     $restoredvCenterConnection = Connect-ViServer $restoredvCenterFQDN -user $restoredvCenterAdmin -password $restoredvCenterAdminPassword
     $vmhosts = (Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)
-    LogMessage -type INFO -message "[$($vmhosts[0].name)] Using host as reference for Physical Disks"
+    LogMessage -type INFO -message "[$($vmhosts[0].name)] Using host as reference for Eligible Physical Disks"
 
-    $disks = ((Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)[0] | Get-VMHostDisk) | Sort-Object -Property @{e={$_.scsilun.runtimename}}
+    $disks = ((Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)[0] | Get-VMHostDisk) | Where-Object {$_.ScsiLun.VsanStatus -eq 'Eligible'} | Sort-Object -Property @{e={$_.scsilun.runtimename}}
     $disksDisplayObject=@()
     $disksIndex = 1
     $disksDisplayObject += [pscustomobject]@{
@@ -3154,7 +3154,7 @@ Function New-RebuiltVsanDatastore
                 $moduleFunctions = Import-Module VCFInstanceRecovery -passthru
                 $restoredvCenterConnection = Connect-ViServer $using:restoredvCenterFQDN -user $using:restoredvCenterAdmin -password $using:restoredvCenterAdminPassword
                 $vmhost = Get-VMHost -name $using:vmhost.name
-                $disks = Get-VMHost -name $using:vmhost.name | Get-VMHostDisk | Sort-Object -Property @{e={$_.scsilun.runtimename}}
+                $disks = Get-VMHost -name $using:vmhost.name | Get-VMHostDisk | Where-Object {$_.ScsiLun.VsanStatus -eq 'Eligible'} | Sort-Object -Property @{e={$_.scsilun.runtimename}}
                 $disksDisplayObject=@()
                 $disksIndex = 1
                 $disksDisplayObject += [pscustomobject]@{
