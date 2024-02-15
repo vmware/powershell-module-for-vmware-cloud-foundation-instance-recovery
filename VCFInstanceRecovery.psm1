@@ -2741,20 +2741,59 @@ Function Remove-NonResponsiveHosts
 
     .PARAMETER clusterName
     Name of the vSphere cluster instance from which to remove non-responsive hosts
+
+    .PARAMETER nsxManagerFqdn
+    FQDN of the NSX Manager where non responsive hosts exist
+
+    .PARAMETER nsxManagerAdmin
+    Admin user of the NSX Manager where non responsive hosts exist
+    
+    .PARAMETER nsxManagerAdminPassword
+    Admin Password of the NSX Manager where non responsive hosts exist
     #>
     
     Param(
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
         [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
-        [Parameter (Mandatory = $true)][String] $clusterName
-        
+        [Parameter (Mandatory = $true)][String] $clusterName,
+        [Parameter (Mandatory = $true)][String] $nsxManagerFqdn,
+        [Parameter (Mandatory = $true)][String] $nsxManagerAdmin,
+        [Parameter (Mandatory = $true)][String] $nsxManagerAdminPassword
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
-    $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
-    $nonResponsiveHosts = get-cluster -name $clusterName | get-vmhost | Where-Object { $_.ConnectionState -in "NotResponding","Disconnected" } | Sort-Object
-    foreach ($nonResponsiveHost in $nonResponsiveHosts) {
+    
+    #Get Non-Repsonsive Hosts from vCenter
+    $vCenterConnection = Connect-Viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
+    $nonResponsiveHosts = Get-Cluster -name $clusterName | Get-VMhost | Where-Object { $_.ConnectionState -in "NotResponding","Disconnected" } | Sort-Object
+
+    #Remove TNs from NSX
+    $headers = VCFIRCreateHeader -username $nsxManagerAdmin -password $nsxManagerAdminPassword
+    $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/"
+    LogMessage -type INFO -message "[$nsxManagerFqdn] Getting Transport Nodes"
+    $transportNodeContents = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
+    $allHostTransportNodes = ($transportNodeContents.results | Where-Object { ($_.resource_type -eq "TransportNode") -and ($_.node_deployment_info.os_type -eq "ESXI") })
+    LogMessage -type INFO -message "[$nsxManagerFqdn] Filtering Transport Nodes to members of cluster $clusterName"
+    $clusterHosts = $nonResponsiveHosts.name
+    $hostIDs = ($allHostTransportNodes | Where-Object { $_.display_name -in $clusterHosts }).id
+    Foreach ($hostID in $hostIDs) 
+    {
+        $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($hostID)?force=true&unprepare_host=false"
+        LogMessage -type INFO -message "[$nsxManagerFqdn] Removing Transport Node associated with $(($allHostTransportNodes | Where-Object {$_.id -eq $hostID}).display_name)"
+        $deleteTN = Invoke-WebRequest -Method DELETE -URI $uri -ContentType application/json -headers $headers
+    }
+    #Wait for TNs to be gone
+    LogMessage -type WAIT -message "[$nsxManagerFqdn] Waiting for Transport Nodes to flush"
+    Do
+    {
+        $transportNodeContents = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
+        $allHostTransportNodes = ($transportNodeContents.results | Where-Object { ($_.resource_type -eq "TransportNode") -and ($_.node_deployment_info.os_type -eq "ESXI") })
+        $deletedhostIDs = ($allHostTransportNodes | Where-Object { $_.display_name -in $clusterHosts }).id
+    } Until(!$deletedhostIDs)
+
+    #Remove non-repsonsive hosts
+    Foreach ($nonResponsiveHost in $nonResponsiveHosts) {
         LogMessage -type INFO -message "[$($nonResponsiveHost.name)] Removing from $clusterName"
         Get-VMHost | Where-Object { $_.Name -eq $nonResponsiveHost.Name } | Remove-VMHost -Confirm:$false
     }
