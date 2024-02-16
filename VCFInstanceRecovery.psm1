@@ -3082,9 +3082,9 @@ Function New-RebuiltVsanDatastore
 {
     Param(
         [Parameter (Mandatory = $true)][String] $clusterName,
-        [Parameter (Mandatory = $true)][String] $restoredvCenterFQDN,
-        [Parameter (Mandatory = $true)][String] $restoredvCenterAdmin,
-        [Parameter (Mandatory = $true)][String] $restoredvCenterAdminPassword,
+        [Parameter (Mandatory = $true)][String] $vCenterFQDN,
+        [Parameter (Mandatory = $true)][String] $vCenterAdmin,
+        [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile
     )
     $jumpboxName = hostname
@@ -3094,8 +3094,8 @@ Function New-RebuiltVsanDatastore
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
     $datastoreName = ($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object {$_.name -eq $clusterName}).primaryDatastoreName
     
-    LogMessage -type INFO -message "[$jumpboxName] Connecting to Restored vCenter: $restoredvCenterFQDN"
-    $restoredvCenterConnection = Connect-ViServer $restoredvCenterFQDN -user $restoredvCenterAdmin -password $restoredvCenterAdminPassword
+    LogMessage -type INFO -message "[$jumpboxName] Connecting to Restored vCenter: $vCenterFQDN"
+    $restoredvCenterConnection = Connect-ViServer $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
     $vmhosts = (Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)
     LogMessage -type INFO -message "[$($vmhosts[0].name)] Using host as reference for Eligible Physical Disks"
 
@@ -3243,7 +3243,7 @@ Function New-RebuiltVsanDatastore
         {
             $scriptBlock = {
                 $moduleFunctions = Import-Module VCFInstanceRecovery -passthru
-                $restoredvCenterConnection = Connect-ViServer $using:restoredvCenterFQDN -user $using:restoredvCenterAdmin -password $using:restoredvCenterAdminPassword
+                $restoredvCenterConnection = Connect-ViServer $using:vCenterFQDN -user $using:vCenterAdmin -password $using:vCenterAdminPassword
                 $vmhost = Get-VMHost -name $using:vmhost.name
                 $disks = Get-VMHost -name $using:vmhost.name | Get-VMHostDisk | Where-Object {$_.ScsiLun.VsanStatus -eq 'Eligible'} | Sort-Object -Property @{e={$_.scsilun.runtimename}}
                 $disksDisplayObject=@()
@@ -3287,7 +3287,7 @@ Function New-RebuiltVsanDatastore
                 }
                 Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
             }
-            Start-Job -scriptblock $scriptBlock -ArgumentList ($diskGroupNumber,$diskGroupConfiguration,$vmhost,$restoredvCenterFQDN,$restoredvCenterAdmin,$restoredvCenterAdminPassword) | Out-Null
+            Start-Job -scriptblock $scriptBlock -ArgumentList ($diskGroupNumber,$diskGroupConfiguration,$vmhost,$vCenterFQDN,$vCenterAdmin,$vCenterAdminPassword) | Out-Null
         }
         Get-Job | Receive-Job -Wait -AutoRemoveJob
         LogMessage -type INFO -message "[$clusterName] Renaming new datastore to original name: $datastoreName"
@@ -3301,9 +3301,9 @@ Function New-RebuiltVdsConfiguration
 {
     Param(
         [Parameter (Mandatory = $true)][String] $clusterName,
-        [Parameter (Mandatory = $true)][String] $restoredvCenterFQDN,
-        [Parameter (Mandatory = $true)][String] $restoredvCenterAdmin,
-        [Parameter (Mandatory = $true)][String] $restoredvCenterAdminPassword,
+        [Parameter (Mandatory = $true)][String] $vCenterFQDN,
+        [Parameter (Mandatory = $true)][String] $vCenterAdmin,
+        [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile
     )
     $jumpboxName = hostname
@@ -3323,8 +3323,8 @@ Function New-RebuiltVdsConfiguration
         $isPrimaryManagementCluster = $false
     }
     
-    LogMessage -type INFO -message "[$jumpboxName] Connecting to Restored vCenter: $restoredvCenterFQDN"
-    $restoredvCenterConnection = Connect-ViServer $restoredvCenterFQDN -user $restoredvCenterAdmin -password $restoredvCenterAdminPassword
+    LogMessage -type INFO -message "[$jumpboxName] Connecting to Restored vCenter: $vCenterFQDN"
+    $vCenterConnection = Connect-ViServer $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
     $vmhosts = (Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)
     LogMessage -type INFO -message "[$($vmhosts[0].name)] Using host as reference for Physical NICs"
 
