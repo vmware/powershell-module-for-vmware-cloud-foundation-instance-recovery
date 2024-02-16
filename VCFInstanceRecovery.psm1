@@ -2768,6 +2768,7 @@ Function Remove-NonResponsiveHosts
     $vCenterConnection = Connect-Viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
     $nonResponsiveHosts = Get-Cluster -name $clusterName | Get-VMhost | Where-Object { $_.ConnectionState -in "NotResponding","Disconnected" } | Sort-Object
 
+    <#
     #Remove TNs from NSX
     $headers = VCFIRCreateHeader -username $nsxManagerAdmin -password $nsxManagerAdminPassword
     $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/"
@@ -2791,6 +2792,7 @@ Function Remove-NonResponsiveHosts
         $allHostTransportNodes = ($transportNodeContents.results | Where-Object { ($_.resource_type -eq "TransportNode") -and ($_.node_deployment_info.os_type -eq "ESXI") })
         $deletedhostIDs = ($allHostTransportNodes | Where-Object { $_.display_name -in $clusterHosts }).id
     } Until(!$deletedhostIDs)
+    #>
 
     #Remove non-repsonsive hosts
     Foreach ($nonResponsiveHost in $nonResponsiveHosts) {
