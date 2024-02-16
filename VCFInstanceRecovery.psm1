@@ -2864,7 +2864,7 @@ Function Add-HostsToCluster
     The Add-HostsToCluster cmdlet Adds hosts to a vSphere cluster using data from the SDDC Manager backup
 
     .EXAMPLE
-    Add-HostsToCluster -vCenterFQDN "sfo-m01-vc02.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01"  -extractedSDDCDataFile ".\extracted-sddc-data.json" -sddcManagerFQDN "sfo-vcf01.sfo.rainpole.io" -sddcManagerAdmin "administrator@vsphere.local" -sddcManagerAdminPassword "VMw@re1!"
+    Add-HostsToCluster -vCenterFQDN "sfo-m01-vc02.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01" -extractedSDDCDataFile ".\extracted-sddc-data.json" -sddcManagerFQDN "sfo-vcf01.sfo.rainpole.io" -sddcManagerAdmin "administrator@vsphere.local" -sddcManagerAdminPassword "VMw@re1!"
 
     .PARAMETER vCenterFQDN
     FQDN of the vCenter instance hosting the cluster to which the hosts will be added
@@ -4437,10 +4437,7 @@ Function Invoke-NSXEdgeClusterRecovery
     The Invoke-NSXEdgeClusterRecovery cmdlet redeploys the NSX Egdes from the provided vSphere Cluster
 
     .EXAMPLE
-    Invoke-NSXEdgeClusterRecovery -nsxManagerFqdn "sfo-m01-nsx01.sfo.rainpole.io" -nsxManagerAdmin "admin" -nsxManagerAdminPassword "VMw@re1!VMw@re1!" -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01"
-
-    .EXAMPLE
-    Invoke-NSXEdgeClusterRecovery -nsxManagerFqdn "sfo-m01-nsx01.sfo.rainpole.io" -nsxManagerAdmin "admin" -nsxManagerAdminPassword "VMw@re1!VMw@re1!" -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -resourcePoolName "VCF-edge_sfo-m01-ec01_ResourcePool_7d6d6cb0abdfae659f6d36046ac7ddbc"
+    Invoke-NSXEdgeClusterRecovery -nsxManagerFqdn "sfo-m01-nsx01.sfo.rainpole.io" -nsxManagerAdmin "admin" -nsxManagerAdminPassword "VMw@re1!VMw@re1!" -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01" -extractedSDDCDataFile ".\extracted-sddc-data.json"
 
     .PARAMETER nsxManagerFqdn
     FQDN of the NSX Manager whose Edges need to be redeployed
@@ -4618,6 +4615,23 @@ Export-ModuleMember -Function Invoke-NSXEdgeClusterRecovery
 
 Function Add-AdditionalNSXManagers
 {
+    <#
+    .SYNOPSIS
+    Adds second and third NSX managers to a cluster after the restore of the first NSX Manager
+
+    .DESCRIPTION
+    The Add-AdditionalNSXManagers cmdlet adds second and third NSX managers to a cluster after the restore of the first NSX Manager
+
+    .EXAMPLE
+    Add-AdditionalNSXManagers -workloadDomain "sfo-m01"  -extractedSDDCDataFile ".\extracted-sddc-data.json"
+
+    .PARAMETER workloadDomain
+    Name of the VCF workload domain that the NSX Managers to be added are associated with
+    
+    .PARAMETER extractedSDDCDataFile
+    Relative or absolute to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup) somewhere on the local filesystem
+    #>
+    
     Param(
         [Parameter (Mandatory = $true)][String] $workloadDomain,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile
