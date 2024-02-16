@@ -985,7 +985,6 @@ Function New-ReconstructedPartialBringupJsonSpec
     
     .PARAMETER vcenterServerSize
     Size of the vCenter appliance to be deployed for the temporary vCenter
-
     #>
     
     Param(
