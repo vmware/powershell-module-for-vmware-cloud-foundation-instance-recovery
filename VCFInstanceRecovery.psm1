@@ -2505,58 +2505,6 @@ Function Set-ClusterHostsvSanIgnoreClusterMemberList
 }
 Export-ModuleMember -Function Set-ClusterHostsvSanIgnoreClusterMemberList
 
-Function Move-ClusterVMsToFirstHost
-{
-    <#
-    .SYNOPSIS
-    Moves all VMs in a cluster to a single ESXi host
-
-    .DESCRIPTION
-    The Move-ClusterVMsToFirstHost cmdlet moves all VMs in a cluster to a single ESXi host
-
-    .EXAMPLE
-    Move-ClusterVMsToFirstHost -vCenterFQDN "sfo-m01-vc02.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01"
-
-    .PARAMETER vCenterFQDN
-    FQDN of the vCenter instance hosting the VMs to be moved
-
-    .PARAMETER vCenterAdmin
-    Admin user of the vCenter instance hosting the VMs to be moved
-    
-    .PARAMETER vCenterAdminPassword
-    Admin password for the vCenter instance hosting the VMs to be moved
-
-    .PARAMETER clusterName
-    Name of the vSphere cluster instance hosting the VMs to be moved
-    #>
-    
-    Param(
-        [Parameter (Mandatory = $true)][String] $vCenterFQDN,
-        [Parameter (Mandatory = $true)][String] $vCenterAdmin,
-        [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
-        [Parameter (Mandatory = $true)][String] $clusterName
-        
-    )
-    $jumpboxName = hostname
-    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
-    $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
-    $vms = Get-Cluster -Name $clusterName | Get-VM | Where-Object { $_.Name -notlike "vCLS*" } | Select-Object Name, VMhost
-    $firstHost = ((Get-cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)[0]).Name
-    Foreach ($vm in $vms) {
-        if ($vm.vmHost.Name -ne $firstHost) {
-            Get-VM -Name $vm.name | Move-VM -Location $firstHost -Runasync | Out-Null
-            LogMessage -type INFO -message "[$($vm.name)] Moving to $firstHost"
-        }
-    }
-    Do {
-        $runningTasks = Get-Task | Where-Object { ($_.Name -eq "RelocateVM_Task") -and ($_.State -eq "running") } 
-        Sleep 5
-    } Until (!$runningTasks)
-    Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
-}
-Export-ModuleMember -Function Move-ClusterVMsToFirstHost
-
 Function Resolve-PhysicalHostServiceAccounts 
 {
     <#
@@ -4136,6 +4084,34 @@ Export-ModuleMember -Function Restore-ClusterVMTags
 
 Function Invoke-NSXManagerRestore
 {
+    <#
+    .SYNOPSIS
+    Performs the restore of an NSX Manager from a user chosen backup presented from a list available on supplied SFTP server
+
+    .DESCRIPTION
+    The Invoke-NSXManagerRestore performs the restore of an NSX Manager from a user chosen backup presented from a list available on supplied SFTP server
+
+    .EXAMPLE
+    Invoke-NSXManagerRestore -extractedSDDCDataFile ".\extracted-sddc-data.json" -workloadDomain "sfo-m01" -sftpServer "10.50.5.66" -sftpUser svc-bkup-user -sftpPassword "VMw@re1!" -sftpServerBackupPath "/media/backups" -backupPassphrase "VMw@re1!VMw@re1!"
+
+    .PARAMETER workloadDomain
+    Name of the VCF workload domain that the NSX Manager to be restored is associated with
+
+    .PARAMETER sftpServer
+    Address of the SFTP server that hosts the NSX Manager backups
+
+    .PARAMETER sftpUser
+    Username for connection to the SFTP server that hosts the NSX Manager backups
+    
+    .PARAMETER sftpPassword
+    Password for the user (passed as the stpUser parameter) for connection to the SFTP server that hosts the NSX Manager backups
+
+    .PARAMETER sftpServerBackupPath
+    Path to the folder on the server (passed as the sftpServer parameter) where the NSX Manager backups exist
+
+    .PARAMETER extractedSDDCDataFile
+    Relative or absolute to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup) somewhere on the local filesystem
+    #>
     Param(
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
         [Parameter (Mandatory = $true)][String] $workloadDomain,
@@ -4324,109 +4300,6 @@ Function Invoke-NSXManagerRestore
 }
 Export-ModuleMember -Function Invoke-NSXManagerRestore
 
-Function Resolve-PhysicalHostTransportNodes
-{
-    <#
-    .SYNOPSIS
-    Resolves the state of ESXi Transport Nodes in a restored NSX Manager when the ESXi hosts have been rebuilt
-
-    .DESCRIPTION
-    The Resolve-PhysicalHostTransportNodes cmdlet resolves the state of ESXi Transport Nodes in a restored NSX Manager when the ESXi hosts have been rebuilt
-
-    .EXAMPLE
-    Resolve-PhysicalHostTransportNodes -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01" -NsxManagerFQDN "sfo-m01-nsx01a.sfo.rainpole.io" -NsxManagerAdmin "admin" -NsxManagerAdminPassword "VMw@re1!VMw@re1!"
-
-    .PARAMETER vCenterFQDN
-    FQDN of the vCenter instance that hosts the cluster whose hosts need to be resolved
-
-    .PARAMETER vCenterAdmin
-    Admin user of the vCenter instance that hosts the cluster whose hosts need to be resolved
-    
-    .PARAMETER vCenterAdminPassword
-    Admin password for the vCenter instance that hosts the cluster  whose hosts need to be resolved
-
-    .PARAMETER clusterName
-    Name of the vSphere cluster instance whose hosts need to be resolved
-
-    .PARAMETER nsxManagerFqdn
-    FQDN of the NSX Manager where hosts need to be resolved
-
-    .PARAMETER nsxManagerAdmin
-    Admin user of the NSX Manager where hosts need to be resolved
-    
-    .PARAMETER nsxManagerAdminPassword
-    Admin Password of the NSX Manager where hosts need to be resolved
-    #>
- 
-    Param(
-        [Parameter (Mandatory = $true)][String] $vCenterFQDN,
-        [Parameter (Mandatory = $true)][String] $vCenterAdmin,
-        [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
-        [Parameter (Mandatory = $true)][String] $clusterName,
-        [Parameter (Mandatory = $true)][String] $nsxManagerFqdn,
-        [Parameter (Mandatory = $true)][String] $nsxManagerAdmin,
-        [Parameter (Mandatory = $true)][String] $nsxManagerAdminPassword
-    )
-    $jumpboxName = hostname
-    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
-    LogMessage -type INFO -message "[$jumpboxName] Checking NSX Manager Version"
-
-    $headers = VCFIRCreateHeader -username $nsxManagerAdmin -password $nsxManagerAdminPassword
-    
-    #Check for Compatible NSX Manager version
-    $uri = "https://$nsxManagerFqdn/api/v1/node"
-    $nsxManagerVersion = [INT](((((Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json).product_version).replace(".","")).substring(0,3))
-    
-    If ($nsxManagerVersion)
-    {
-        If ($nsxManagerVersion -lt "412")
-        {
-            $vCenterConnection = Connect-VIServer -server $vCenterFQDN -username $vCenterAdmin -password $vCenterAdminPassword
-            LogMessage -type INFO -message "[$clusterName] Getting Hosts"
-            $clusterHosts = (Get-Cluster -name $clusterName | Get-VMHost).name
-            #LogMessage -type INFO -message "[$clusterName] Getting MoRef"
-            #$clusterMoRef = (Get-Cluster -name $clusterName).ExtensionData.MoRef.Value
-        
-            #Get TransportNodes
-            $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/"
-            LogMessage -type INFO -message "[$nsxManagerFqdn] Getting Transport Nodes"
-            $transportNodeContents = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
-            $allHostTransportNodes = ($transportNodeContents.results | Where-Object { ($_.resource_type -eq "TransportNode") -and ($_.node_deployment_info.os_type -eq "ESXI") })
-            LogMessage -type INFO -message "[$nsxManagerFqdn] Filtering Transport Nodes to members of cluster $clusterName"
-            $hostIDs = ($allHostTransportNodes | Where-Object { $_.display_name -in $clusterHosts }).id
-        
-            #Get TransportNodes
-            <# $uri = "https://$nsxManagerFqdn/api/v1/fabric/compute-collections"
-            LogMessage -type INFO -message "[$nsxManagerFqdn] Getting Transport Nodes IDs"
-            $computeCollections = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
-            $clusterExternalId = ($computeCollections.results | Where-Object {$_.cm_local_id -eq $clusterMoRef}).external_id
-            $uri = "https://$nsxManagerFqdn/api/v1/fabric/compute-collections/$clusterExternalId/member-status"
-            $hostIDs = ((Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json).results.node_id
-         #>
-            #Resolve Hosts
-            Foreach ($hostID in $hostIDs) 
-            {
-                $body = "{`"id`":5726703,`"method`":`"resolveError`",`"params`":[{`"errors`":[{`"user_metadata`":{`"user_input_list`":[]},`"error_id`":26080,`"entity_id`":`"$hostID`"}]}]}"
-                $uri = "https://$nsxManagerFqdn/nsxapi/rpc/call/ErrorResolverFacade"
-                LogMessage -type INFO -message "[$nsxManagerFqdn] Resolving NSX Installation on $(($allHostTransportNodes | Where-Object {$_.id -eq $hostID}).display_name)"
-                #LogMessage -type INFO -message "[$nsxManagerFqdn] Resolving NSX Installation on $hostID"
-                $response = Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -headers $headers -body $body
-            }
-        }
-        else
-        {
-            LogMessage -type NOTE -message "[$jumpboxName] This cmdlet is not required with NSX Manager version 4.1.2 and later"
-        }
-
-    }
-    else 
-    {
-        LogMessage -type ERROR -message "[$jumpboxName] Unable to determine NSX Manager Version. Check that it was successfully restored."
-    }
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
-}
-Export-ModuleMember -Function Resolve-PhysicalHostTransportNodes
-
 Function Invoke-NSXEdgeClusterRecovery
 {
     <#
@@ -4459,9 +4332,6 @@ Function Invoke-NSXEdgeClusterRecovery
 
     .PARAMETER clusterName
     Name of the vSphere cluster instance whose Egdes need to be redeployed
-
-    .PARAMETER resourcePoolName
-    Name of the Resource Pool whose Egdes need to be redeployed
 
     .PARAMETER extractedSDDCDataFile
     Relative or absolute to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup) somewhere on the local filesystem
@@ -4623,7 +4493,7 @@ Function Add-AdditionalNSXManagers
     The Add-AdditionalNSXManagers cmdlet adds second and third NSX managers to a cluster after the restore of the first NSX Manager
 
     .EXAMPLE
-    Add-AdditionalNSXManagers -workloadDomain "sfo-m01"  -extractedSDDCDataFile ".\extracted-sddc-data.json"
+    Add-AdditionalNSXManagers -workloadDomain "sfo-m01" -extractedSDDCDataFile ".\extracted-sddc-data.json"
 
     .PARAMETER workloadDomain
     Name of the VCF workload domain that the NSX Managers to be added are associated with
@@ -4838,3 +4708,160 @@ Function Add-AdditionalNSXManagers
 }
 Export-ModuleMember -Function Add-AdditionalNSXManagers
 #EndRegion NSXT Functions
+
+#Region Marked for Deprecation
+Function Resolve-PhysicalHostTransportNodes
+{
+    <#
+    .SYNOPSIS
+    Resolves the state of ESXi Transport Nodes in a restored NSX Manager when the ESXi hosts have been rebuilt
+
+    .DESCRIPTION
+    The Resolve-PhysicalHostTransportNodes cmdlet resolves the state of ESXi Transport Nodes in a restored NSX Manager when the ESXi hosts have been rebuilt
+
+    .EXAMPLE
+    Resolve-PhysicalHostTransportNodes -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01" -NsxManagerFQDN "sfo-m01-nsx01a.sfo.rainpole.io" -NsxManagerAdmin "admin" -NsxManagerAdminPassword "VMw@re1!VMw@re1!"
+
+    .PARAMETER vCenterFQDN
+    FQDN of the vCenter instance that hosts the cluster whose hosts need to be resolved
+
+    .PARAMETER vCenterAdmin
+    Admin user of the vCenter instance that hosts the cluster whose hosts need to be resolved
+    
+    .PARAMETER vCenterAdminPassword
+    Admin password for the vCenter instance that hosts the cluster  whose hosts need to be resolved
+
+    .PARAMETER clusterName
+    Name of the vSphere cluster instance whose hosts need to be resolved
+
+    .PARAMETER nsxManagerFqdn
+    FQDN of the NSX Manager where hosts need to be resolved
+
+    .PARAMETER nsxManagerAdmin
+    Admin user of the NSX Manager where hosts need to be resolved
+    
+    .PARAMETER nsxManagerAdminPassword
+    Admin Password of the NSX Manager where hosts need to be resolved
+    #>
+ 
+    Param(
+        [Parameter (Mandatory = $true)][String] $vCenterFQDN,
+        [Parameter (Mandatory = $true)][String] $vCenterAdmin,
+        [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
+        [Parameter (Mandatory = $true)][String] $clusterName,
+        [Parameter (Mandatory = $true)][String] $nsxManagerFqdn,
+        [Parameter (Mandatory = $true)][String] $nsxManagerAdmin,
+        [Parameter (Mandatory = $true)][String] $nsxManagerAdminPassword
+    )
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    LogMessage -type INFO -message "[$jumpboxName] Checking NSX Manager Version"
+
+    $headers = VCFIRCreateHeader -username $nsxManagerAdmin -password $nsxManagerAdminPassword
+    
+    #Check for Compatible NSX Manager version
+    $uri = "https://$nsxManagerFqdn/api/v1/node"
+    $nsxManagerVersion = [INT](((((Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json).product_version).replace(".","")).substring(0,3))
+    
+    If ($nsxManagerVersion)
+    {
+        If ($nsxManagerVersion -lt "412")
+        {
+            $vCenterConnection = Connect-VIServer -server $vCenterFQDN -username $vCenterAdmin -password $vCenterAdminPassword
+            LogMessage -type INFO -message "[$clusterName] Getting Hosts"
+            $clusterHosts = (Get-Cluster -name $clusterName | Get-VMHost).name
+            #LogMessage -type INFO -message "[$clusterName] Getting MoRef"
+            #$clusterMoRef = (Get-Cluster -name $clusterName).ExtensionData.MoRef.Value
+        
+            #Get TransportNodes
+            $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/"
+            LogMessage -type INFO -message "[$nsxManagerFqdn] Getting Transport Nodes"
+            $transportNodeContents = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
+            $allHostTransportNodes = ($transportNodeContents.results | Where-Object { ($_.resource_type -eq "TransportNode") -and ($_.node_deployment_info.os_type -eq "ESXI") })
+            LogMessage -type INFO -message "[$nsxManagerFqdn] Filtering Transport Nodes to members of cluster $clusterName"
+            $hostIDs = ($allHostTransportNodes | Where-Object { $_.display_name -in $clusterHosts }).id
+        
+            #Get TransportNodes
+            <# $uri = "https://$nsxManagerFqdn/api/v1/fabric/compute-collections"
+            LogMessage -type INFO -message "[$nsxManagerFqdn] Getting Transport Nodes IDs"
+            $computeCollections = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
+            $clusterExternalId = ($computeCollections.results | Where-Object {$_.cm_local_id -eq $clusterMoRef}).external_id
+            $uri = "https://$nsxManagerFqdn/api/v1/fabric/compute-collections/$clusterExternalId/member-status"
+            $hostIDs = ((Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json).results.node_id
+         #>
+            #Resolve Hosts
+            Foreach ($hostID in $hostIDs) 
+            {
+                $body = "{`"id`":5726703,`"method`":`"resolveError`",`"params`":[{`"errors`":[{`"user_metadata`":{`"user_input_list`":[]},`"error_id`":26080,`"entity_id`":`"$hostID`"}]}]}"
+                $uri = "https://$nsxManagerFqdn/nsxapi/rpc/call/ErrorResolverFacade"
+                LogMessage -type INFO -message "[$nsxManagerFqdn] Resolving NSX Installation on $(($allHostTransportNodes | Where-Object {$_.id -eq $hostID}).display_name)"
+                #LogMessage -type INFO -message "[$nsxManagerFqdn] Resolving NSX Installation on $hostID"
+                $response = Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -headers $headers -body $body
+            }
+        }
+        else
+        {
+            LogMessage -type NOTE -message "[$jumpboxName] This cmdlet is not required with NSX Manager version 4.1.2 and later"
+        }
+
+    }
+    else 
+    {
+        LogMessage -type ERROR -message "[$jumpboxName] Unable to determine NSX Manager Version. Check that it was successfully restored."
+    }
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+}
+#Export-ModuleMember -Function Resolve-PhysicalHostTransportNodes
+
+Function Move-ClusterVMsToFirstHost
+{
+    <#
+    .SYNOPSIS
+    Moves all VMs in a cluster to a single ESXi host
+
+    .DESCRIPTION
+    The Move-ClusterVMsToFirstHost cmdlet moves all VMs in a cluster to a single ESXi host
+
+    .EXAMPLE
+    Move-ClusterVMsToFirstHost -vCenterFQDN "sfo-m01-vc02.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01"
+
+    .PARAMETER vCenterFQDN
+    FQDN of the vCenter instance hosting the VMs to be moved
+
+    .PARAMETER vCenterAdmin
+    Admin user of the vCenter instance hosting the VMs to be moved
+    
+    .PARAMETER vCenterAdminPassword
+    Admin password for the vCenter instance hosting the VMs to be moved
+
+    .PARAMETER clusterName
+    Name of the vSphere cluster instance hosting the VMs to be moved
+    #>
+    
+    Param(
+        [Parameter (Mandatory = $true)][String] $vCenterFQDN,
+        [Parameter (Mandatory = $true)][String] $vCenterAdmin,
+        [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
+        [Parameter (Mandatory = $true)][String] $clusterName
+        
+    )
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
+    $vms = Get-Cluster -Name $clusterName | Get-VM | Where-Object { $_.Name -notlike "vCLS*" } | Select-Object Name, VMhost
+    $firstHost = ((Get-cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)[0]).Name
+    Foreach ($vm in $vms) {
+        if ($vm.vmHost.Name -ne $firstHost) {
+            Get-VM -Name $vm.name | Move-VM -Location $firstHost -Runasync | Out-Null
+            LogMessage -type INFO -message "[$($vm.name)] Moving to $firstHost"
+        }
+    }
+    Do {
+        $runningTasks = Get-Task | Where-Object { ($_.Name -eq "RelocateVM_Task") -and ($_.State -eq "running") } 
+        Sleep 5
+    } Until (!$runningTasks)
+    Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+}
+#Export-ModuleMember -Function Move-ClusterVMsToFirstHost
+#EndRegion Marked for Deprecation
