@@ -2827,6 +2827,29 @@ Function Remove-NonResponsiveHosts
         Get-VMHost | Where-Object { $_.Name -eq $nonResponsiveHost.Name } | Remove-VMHost -Confirm:$false
     }
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+
+    #Reattach TNP
+    #Compute Collections
+    #$uri = "https://$nsxManagerFqdn/api/v1/fabric/compute-collections"
+    #$computeCollections = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
+    #$clusterComputeCollection = ($computeCollections.results | Where-Object {$_.cm_local_id -eq $clusterMoRef})
+    
+    #Get Transport Node Profiles
+    $uri = "https://$nsxManagerFqdn/policy/api/v1/infra/host-transport-node-profiles"
+    $transportNodeProfiles = ((Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json).results
+    $clusterTransportNodeProfile = $transportNodeProfiles | where-object {$_.display_name -like "*$clusterName*"}
+
+    #Create Transport Node Collection
+    $body = '{
+    "resource_type": "TransportNodeCollection",
+    "display_name": "' + $clusterName + '",
+    "description": "' + $clusterName + '",
+    "compute_collection_id": "'+$clusterComputeCollectionId+'",
+    "transport_node_profile_id": "'+$clusterTransportNodeProfile.id+'"
+    }'
+    $uri = "https://$nsxManagerFqdn/api/v1/transport-node-collections"
+    $response = Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -headers $headers -body $body
+
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Remove-NonResponsiveHosts
