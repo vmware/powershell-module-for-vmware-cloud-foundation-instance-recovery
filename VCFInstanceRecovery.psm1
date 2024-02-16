@@ -2002,13 +2002,13 @@ Function Move-ClusterHostsToRestoredVcenter
     .EXAMPLE
     Move-ClusterHostsToRestoredVcenter -tempvCenterFqdn "sfo-m01-vc02.sfo.rainpole.io" -tempvCenterAdmin "administrator@vsphere.local" -tempvCenterAdminPassword "VMw@re1!" -restoredvCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -restoredvCenterAdmin "administrator@vsphere.local" -restoredvCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01" -extractedSDDCDataFile ".\extracted-sddc-data.json"
 
-    .PARAMETER vCenterFqdn
+    .PARAMETER tempvCenterFqdn
     FQDN of the temporary vCenter instance
 
-    .PARAMETER vCenterAdmin
+    .PARAMETER tempvCenterAdmin
     Admin user of the temporary vCenter instance
     
-    .PARAMETER vCenterAdminPassword
+    .PARAMETER tempvCenterAdminPassword
     Admin password for the temporary vCenter instance
 
     .PARAMETER restoredvCenterFQDN
@@ -2028,9 +2028,9 @@ Function Move-ClusterHostsToRestoredVcenter
     #>
     
     Param(
-        [Parameter (Mandatory = $true)][String] $vCenterFqdn,
-        [Parameter (Mandatory = $true)][String] $vCenterAdmin,
-        [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
+        [Parameter (Mandatory = $true)][String] $tempvCenterFqdn,
+        [Parameter (Mandatory = $true)][String] $tempvCenterAdmin,
+        [Parameter (Mandatory = $true)][String] $tempvCenterAdminPassword,
         [Parameter (Mandatory = $true)][String] $clusterName,
         [Parameter (Mandatory = $true)][String] $restoredvCenterFQDN,
         [Parameter (Mandatory = $true)][String] $restoredvCenterAdmin,
@@ -2043,7 +2043,7 @@ Function Move-ClusterHostsToRestoredVcenter
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
     
-    $tempvCenterConnection = connect-viserver $vCenterFqdn -user $vCenterAdmin -password $vCenterAdminPassword
+    $tempvCenterConnection = connect-viserver $tempvCenterFqdn -user $tempvCenterAdmin -password $tempvCenterAdminPassword
     $esxiHosts = get-cluster -name $clusterName | get-vmhost
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
     $restoredvCenterConnection = connect-viserver $restoredvCenterFQDN -user $restoredvCenterAdmin -password $restoredvCenterAdminPassword
@@ -2767,10 +2767,15 @@ Function Remove-NonResponsiveHosts
     #Get Non-Repsonsive Hosts from vCenter
     $vCenterConnection = Connect-Viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
     $nonResponsiveHosts = Get-Cluster -name $clusterName | Get-VMhost | Where-Object { $_.ConnectionState -in "NotResponding","Disconnected" } | Sort-Object
+    
+    #Get Cluster MoRef
+    $clusterMoRef = (Get-Cluster -name $clusterName).ExtensionData.MoRef.Value
 
-    <#
-    #Remove TNs from NSX
+    #Create NSX Header for API Calls
     $headers = VCFIRCreateHeader -username $nsxManagerAdmin -password $nsxManagerAdminPassword
+    
+
+    #Get Transport Nodes for Cluster
     $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/"
     LogMessage -type INFO -message "[$nsxManagerFqdn] Getting Transport Nodes"
     $transportNodeContents = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
@@ -2778,13 +2783,24 @@ Function Remove-NonResponsiveHosts
     LogMessage -type INFO -message "[$nsxManagerFqdn] Filtering Transport Nodes to members of cluster $clusterName"
     $clusterHosts = $nonResponsiveHosts.name
     $hostIDs = ($allHostTransportNodes | Where-Object { $_.display_name -in $clusterHosts }).id
+
+    #Attempt Remove NSX From Cluster to detach Transport Node Profile
+    $uri = "https://$nsxManagerFqdn/api/v1/fabric/compute-collections"
+    $computeCollections = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
+    $clusterComputeCollection = ($computeCollections.results | Where-Object {$_.cm_local_id -eq $clusterMoRef})
+    $uri = "https://$nsxManagerFqdn/api/v1/fabric/compute-collections/$($clusterComputeCollection)?action=remove_nsx"
+    $detachTNP = Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -headers $headers
+    Sleep 60
+        
+    #Attempt to Force Delete the Transport Nodes
     Foreach ($hostID in $hostIDs) 
     {
         $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($hostID)?force=true&unprepare_host=false"
         LogMessage -type INFO -message "[$nsxManagerFqdn] Removing Transport Node associated with $(($allHostTransportNodes | Where-Object {$_.id -eq $hostID}).display_name)"
         $deleteTN = Invoke-WebRequest -Method DELETE -URI $uri -ContentType application/json -headers $headers
     }
-    #Wait for TNs to be gone
+
+    #Wait for Transport Nodes to flush
     LogMessage -type WAIT -message "[$nsxManagerFqdn] Waiting for Transport Nodes to flush"
     Do
     {
@@ -2792,7 +2808,6 @@ Function Remove-NonResponsiveHosts
         $allHostTransportNodes = ($transportNodeContents.results | Where-Object { ($_.resource_type -eq "TransportNode") -and ($_.node_deployment_info.os_type -eq "ESXI") })
         $deletedhostIDs = ($allHostTransportNodes | Where-Object { $_.display_name -in $clusterHosts }).id
     } Until(!$deletedhostIDs)
-    #>
 
     #Remove non-repsonsive hosts
     Foreach ($nonResponsiveHost in $nonResponsiveHosts) {
