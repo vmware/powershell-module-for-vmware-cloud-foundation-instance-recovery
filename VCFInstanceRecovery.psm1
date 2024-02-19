@@ -887,6 +887,29 @@ Export-ModuleMember -Function New-ExtractDataFromSDDCBackup
 
 Function New-PrepareforPartialBringup
 {
+    <#
+    .SYNOPSIS
+    Prepares a running Cloud Builder system to perform a partial VCF bringup suitable for VCF Instance Recovery
+
+    .DESCRIPTION
+    The New-PrepareforPartialBringup cmdlet prepares a running Cloud Builder system to perform a partial VCF bringup suitable for VCF Instance Recovery.
+
+    .EXAMPLE
+    New-PrepareforPartialBringup "-extractedSDDCDataFile .\extracted-sddc-data.json" -cloudBuilderFQDN "sfo-cb01.sfo.rainpole.io" -cloudBuilderAdminUserPassword "VMw@re1!" -cloudBuilderRootUserPassword "VMw@re1!"
+
+    .PARAMETER extractedSDDCDataFile
+    Relative or absolute to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup) somewhere on the local filesystem
+
+    .PARAMETER cloudBuilderFQDN
+    FQDN of the Cloud Builder system that should be prepared
+
+    .PARAMETER cloudBuilderAdminUserPassword
+    Password for the 'admin' user on the Cloud Builder system
+
+    .PARAMETER cloudBuilderRootUserPassword
+    Password for the 'root' user on the Cloud Builder system
+    #>
+
     Param(
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
         [Parameter (Mandatory = $true)][String] $cloudBuilderFQDN,
@@ -1853,6 +1876,41 @@ Export-ModuleMember -Function Invoke-SDDCManagerRestore
 
 Function Invoke-vCenterRestore
 {
+    <#
+    .SYNOPSIS
+    Restores a vCenter appliance using the specified backup
+
+    .DESCRIPTION
+    The Invoke-vCenterRestore restores a vCenter appliance using the specified backup
+
+    .EXAMPLE
+    Invoke-vCenterRestore -vCenterFqdn "sfo-m01-vc02.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" "-extractedSDDCDataFile .\extracted-sddc-data.json" -workloadDomain "sfo-m01" -vCenterBackupPath "10.50.5.63/F$/Backups/vcenter-backup/sn_sfo-m01-vc01.sfo.rainpole.io/M_8.0.2.00100_20231209-074557_" -locationtype "SMB" -locationUser "Administrator" -locationPassword "VMw@re1!"
+    
+    .PARAMETER vCenterFqdn
+    FQDN of the temporary vCenter hosting the deployed vCenter OVA to which the backup should be restored
+
+    .PARAMETER vCenterAdmin
+    Admin user of the temporary vCenter hosting the deployed vCenter OVA to which the backup should be restored
+    
+    .PARAMETER vCenterAdminPassword
+    Admin password of the temporary vCenter hosting the deployed vCenter OVA to which the backup should be restored
+    
+    .PARAMETER extractedSDDCDataFile
+    Relative or absolute to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup) somewhere on the local filesystem
+    
+    .PARAMETER workloadDomain
+    Name of the VCF workload domain that the vCenter to restored is associated with
+    
+    .PARAMETER vCenterBackupPath
+    Path to the vCenter Backup on the backup location
+    
+    .PARAMETER locationtype
+    Type of backup location. Valid types are FTP, FTPS, HTTP, HTTPS, SFTP, NFS, or SMB
+
+    .PARAMETER locationUser
+    User account for connecting to the backup location passed with vCenterBackupPath
+    #>
+
     Param(
         [Parameter (Mandatory = $true)][String] $vCenterFqdn,
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
@@ -2504,122 +2562,6 @@ Function Set-ClusterHostsvSanIgnoreClusterMemberList
 }
 Export-ModuleMember -Function Set-ClusterHostsvSanIgnoreClusterMemberList
 
-Function Resolve-PhysicalHostServiceAccounts 
-{
-    <#
-    .SYNOPSIS
-    Creates a new VCF Service Account on each ESXi host and remediates the SDDC Manager inventory
-
-    .DESCRIPTION
-    The Resolve-PhysicalHostServiceAccounts cmdlet creates a new VCF Service Account on each ESXi host and remediates the SDDC Manager inventory
-
-    .EXAMPLE
-    Resolve-PhysicalHostServiceAccounts -vCenterFQDN "sfo-w01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-w01-cl01" -svcAccountPassword "VMw@re123!" -sddcManagerFQDN "sfo-vcf01.sfo.rainpole.io" -sddcManagerAdmin "administrator@vsphere.local" -sddcManagerAdminPassword "VMw@re1!"
-
-    .PARAMETER vCenterFQDN
-    FQDN of the vCenter instance hosting the ESXi hosts to be updated
-
-    .PARAMETER vCenterAdmin
-    Admin user of the vCenter instance hosting the ESXi hosts to be updated
-    
-    .PARAMETER vCenterAdminPassword
-    Admin password for the vCenter instance hosting the ESXi hosts to be updated
-
-    .PARAMETER clusterName
-    Name of the vSphere cluster instance hosting the ESXi hosts to be updated
-
-    .PARAMETER svcAccountPassword
-    Service account password to be used
-
-    .PARAMETER sddcManagerFQDN
-    FQDN of SDDC Manager
-
-    .PARAMETER sddcManagerAdmin
-    SDDC Manager API username with ADMIN role
-
-    .PARAMETER sddcManagerAdminPassword
-    SDDC Manager API username password
-    #>
-    
-    Param(
-        [Parameter (Mandatory = $true)][String] $vCenterFQDN,
-        [Parameter (Mandatory = $true)][String] $vCenterAdmin,
-        [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
-        [Parameter (Mandatory = $true)][String] $clusterName,
-        [Parameter (Mandatory = $true)][String] $svcAccountPassword,
-        [Parameter (Mandatory = $true)][String] $sddcManagerFQDN,
-        [Parameter (Mandatory = $true)][String] $sddcManagerAdmin,
-        [Parameter (Mandatory = $true)][String] $sddcManagerAdminPassword
-    )
-    $jumpboxName = hostname
-    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
-    $vCenterConnection = Connect-VIServer -server $vCenterFQDN -username $vCenterAdmin -password $vCenterAdminPassword
-    $clusterHosts = Get-Cluster -name $clusterName | Get-VMHost
-    Disconnect-VIServer * -confirm:$false
-    $tokenRequest = Request-VCFToken -fqdn $sddcManagerFQDN -username $sddcManagerAdmin -password $sddcManagerAdminPassword
-    #verify SDDC Manager credential API state
-    $credentialAPILastTask = ((Get-VCFCredentialTask -errorAction silentlyContinue| Sort-Object -Property creationTimeStamp)[-1]).status
-    if ($credentialAPILastTask -eq "FAILED")
-    {
-        LogMessage -type INFO -message "[$sddcManagerFQDN] Failed credential operation detected. Please resolve in SDDC Manager and try again" ; break
-    }
-
-    Foreach ($hostInstance in $clusterHosts) {
-        $esxiRootPassword = [String](Get-VCFCredential | ? {$_.resource.resourceName -eq $hostInstance.name}).password
-        $esxiConnection = Connect-VIServer -Server $hostInstance.name -User root -Password $esxiRootPassword.Trim() | Out-Null
-        $esxiHostName = $hostInstance.name.Split(".")[0]
-        $svcAccountName = "svc-vcf-$esxiHostName"
-        $accountExists = Get-VMHostAccount -Server $esxiConnection -User $svcAccountName -erroraction SilentlyContinue
-        If (!$accountExists) {
-            LogMessage -type INFO -message "[$($hostInstance.name)] VCF Service Account Not Found: Creating"
-            New-VMHostAccount -Id $svcAccountName -Password $svcAccountPassword -Description "ESXi User" | Out-Null
-            New-VIPermission -Entity (Get-Folder root) -Principal $svcAccountName -Role Admin | Out-Null
-            Disconnect-VIServer $hostInstance.name -confirm:$false | Out-Null
-        }
-        else
-        {
-            LogMessage -type INFO -message "[$($hostInstance.name)] VCF Service Account Found: Setting Password"
-            Set-VMHostAccount -UserAccount $svcAccountName -Password $svcAccountPassword | Out-Null
-        }
-    }
-
-    Foreach ($hostInstance in $clusterHosts) {
-        Remove-Variable credentialsObject -ErrorAction SilentlyContinue
-        Remove-Variable elementsObject -ErrorAction SilentlyContinue
-        Remove-Variable esxHostObject -ErrorAction SilentlyContinue
-
-        $esxiHostName = $hostInstance.name.Split(".")[0]
-        $svcAccountName = "svc-vcf-$esxiHostName"
-        
-        $credentialsObject += [pscustomobject]@{
-            'username' = $svcAccountName
-            'password' = $svcAccountPassword
-        }
-        
-        $elementsObject += [pscustomobject]@{
-            'resourceName' = $hostInstance.name
-            'resourceType' = 'ESXI'
-            'credentials'  = @($credentialsObject)
-        }
-
-        $esxHostObject += [pscustomobject]@{
-            'operationType' = 'REMEDIATE'
-            'elements'      = @($elementsObject)
-        }
-
-        $esxiHostJson = $esxHostObject | Convertto-Json -depth 10
-        LogMessage -type INFO -message "[$($hostInstance.name)] Remediating VCF Service Account Password: " -nonewline
-        $taskID = (Set-VCFCredential -json $esxiHostJson).id
-        Do {
-            Sleep 5
-            $taskStatus = (Get-VCFCredentialTask -id $taskID).status
-        } Until ($taskStatus -ne "IN_PROGRESS")
-        LogMessage -type INFO -message "$taskStatus"
-    }
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
-}
-Export-ModuleMember -Function Resolve-PhysicalHostServiceAccounts
-
 Function Set-ClusterDRSLevel 
 {
     <#
@@ -2669,13 +2611,13 @@ Function Remove-NonResponsiveHosts
 {
     <#
     .SYNOPSIS
-    Removes non-responsive hosts from a cluster
+    Removes non-responsive hosts from a cluster and cleans up related transport nodes in NSX
 
     .DESCRIPTION
-    The Remove-NonResponsiveHosts cmdlet removes non-responsive hosts from a cluster
+    The Remove-NonResponsiveHosts cmdlet removes non-responsive hosts from a cluster and cleans up related transport nodes in NSX
 
     .EXAMPLE
-    Remove-NonResponsiveHosts -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01"
+    Remove-NonResponsiveHosts -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01" -nsxManagerFqdn "sfo-m01-nsx01.sfo.rainpole.io" -nsxManagerAdmin "admin" -nsxManagerAdminPassword "VMw@re1!VMw@re1!"
 
     .PARAMETER vCenterFQDN
     FQDN of the vCenter instance hosting the cluster from which to remove non-responsive hosts
@@ -2879,50 +2821,6 @@ Function Add-HostsToCluster
 }
 Export-ModuleMember -Function Add-HostsToCluster
 
-Function Remove-StandardSwitch 
-{
-    <#
-    .SYNOPSIS
-    Removes a temporary standard switch from all hosts in a cluster
-
-    .DESCRIPTION
-    The Remove-StandardSwitch cmdlet removes a temporary standard switch from all hosts in a cluster
-
-    .EXAMPLE
-    Remove-StandardSwitch -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01"
-
-    .PARAMETER vCenterFQDN
-    FQDN of the vCenter instance hosting the ESXi hosts from which the standard switch will be removed
-
-    .PARAMETER vCenterAdmin
-    Admin user of the vCenter instance hosting the ESXi hosts from which the standard switch will be removed
-    
-    .PARAMETER vCenterAdminPassword
-    Admin password for the vCenter instance hosting the ESXi hosts from which the standard switch will be removed
-
-    .PARAMETER clusterName
-    Name of the vSphere cluster instance hosting the ESXi hosts from which the standard switch will be removed
-    #>
-    
-    Param(
-        [Parameter (Mandatory = $true)][String] $vCenterFQDN,
-        [Parameter (Mandatory = $true)][String] $vCenterAdmin,
-        [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
-        [Parameter (Mandatory = $true)][String] $clusterName
-    )
-    $jumpboxName = hostname
-    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
-    $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
-    $vmHosts = (Get-cluster -name $clusterName | Get-VMHost).Name | Sort-Object
-    foreach ($vmhost in $vmHosts) {
-        LogMessage -type INFO -message "[$vmhost] Removing standard vSwitch" 
-        Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name "vSwitch0" | Remove-VirtualSwitch -Confirm:$false | Out-Null
-    }
-    Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
-}
-Export-ModuleMember -Function Remove-StandardSwitch
-
 Function Add-VMKernelsToHost 
 {
     <#
@@ -3027,11 +2925,38 @@ Export-ModuleMember -Function Add-VMKernelsToHost
 
 Function New-RebuiltVsanDatastore
 {
+    <#
+    .SYNOPSIS
+    Guides the rebuild of the VDS configuration on a recovered cluster based on the configuration present in the backup data
+
+    .DESCRIPTION
+    The New-RebuiltVsanDatastore cmdlet guides the rebuild of a vSAN datastore on a recovered cluster. It leverages the first host in the cluster as a reference host for disk layout to allow the user to control the vSAN Diskgroup configuration
+    Should only be used if the disk configuration is standardized across the hosts
+
+    .EXAMPLE
+    New-RebuiltVsanDatastore -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01" -extractedSDDCDataFile ".\extracted-sddc-data.json"
+
+    .PARAMETER vCenterFQDN
+    FQDN of the vCenter instance hosting the cluster where the vSAN Datastore will be rebuilt
+
+    .PARAMETER vCenterAdmin
+    Admin user of the vCenter instance hosting the cluster where the vSAN Datastore will be rebuilt
+    
+    .PARAMETER vCenterAdminPassword
+    Admin password for the vCenter instance hosting the cluster where the vSAN Datastore will be rebuilt
+
+    .PARAMETER clusterName
+    Name of the vSphere cluster instance where the vSAN Datastore will be rebuilt
+
+    .PARAMETER extractedSDDCDataFile
+    Relative or absolute to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup) somewhere on the local filesystem
+    #>
+
     Param(
-        [Parameter (Mandatory = $true)][String] $clusterName,
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
         [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
+        [Parameter (Mandatory = $true)][String] $clusterName,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile
     )
     $jumpboxName = hostname
@@ -3246,11 +3171,38 @@ Export-ModuleMember -Function New-RebuiltVsanDatastore
 
 Function New-RebuiltVdsConfiguration
 {
+    <#
+    .SYNOPSIS
+    Guides the rebuild of the VDS configuration on a recovered cluster based on the configuration present in the backup data
+
+    .DESCRIPTION
+    The New-RebuiltVdsConfiguration cmdlet guides the rebuild of the VDS configuration on a recovered cluster based on the configuration present in the backup data. It leverage the first host in the cluster as a reference host for NIC layout to allow the user to choose the NIC to VDS/Function mapping.
+    Should only be used if the NIC configuration is standardized across the hosts
+
+    .EXAMPLE
+    New-RebuiltVdsConfiguration -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01" -extractedSDDCDataFile ".\extracted-sddc-data.json"
+
+    .PARAMETER vCenterFQDN
+    FQDN of the vCenter instance hosting the cluster where the VDS will be rebuilt
+
+    .PARAMETER vCenterAdmin
+    Admin user of the vCenter instance hosting the cluster where the VDS will be rebuilt
+    
+    .PARAMETER vCenterAdminPassword
+    Admin password for the vCenter instance hosting the cluster where the VDS will be rebuilt
+
+    .PARAMETER clusterName
+    Name of the vSphere cluster instance where the VDS will be rebuilt
+
+    .PARAMETER extractedSDDCDataFile
+    Relative or absolute to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup) somewhere on the local filesystem
+    #>
+
     Param(
-        [Parameter (Mandatory = $true)][String] $clusterName,
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
         [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
+        [Parameter (Mandatory = $true)][String] $clusterName,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile
     )
     $jumpboxName = hostname
@@ -4863,4 +4815,164 @@ Function Move-ClusterVMsToFirstHost
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 #Export-ModuleMember -Function Move-ClusterVMsToFirstHost
+
+Function Remove-StandardSwitch 
+{
+    <#
+    .SYNOPSIS
+    Removes a temporary standard switch from all hosts in a cluster
+
+    .DESCRIPTION
+    The Remove-StandardSwitch cmdlet removes a temporary standard switch from all hosts in a cluster
+
+    .EXAMPLE
+    Remove-StandardSwitch -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01"
+
+    .PARAMETER vCenterFQDN
+    FQDN of the vCenter instance hosting the ESXi hosts from which the standard switch will be removed
+
+    .PARAMETER vCenterAdmin
+    Admin user of the vCenter instance hosting the ESXi hosts from which the standard switch will be removed
+    
+    .PARAMETER vCenterAdminPassword
+    Admin password for the vCenter instance hosting the ESXi hosts from which the standard switch will be removed
+
+    .PARAMETER clusterName
+    Name of the vSphere cluster instance hosting the ESXi hosts from which the standard switch will be removed
+    #>
+    
+    Param(
+        [Parameter (Mandatory = $true)][String] $vCenterFQDN,
+        [Parameter (Mandatory = $true)][String] $vCenterAdmin,
+        [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
+        [Parameter (Mandatory = $true)][String] $clusterName
+    )
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
+    $vmHosts = (Get-cluster -name $clusterName | Get-VMHost).Name | Sort-Object
+    foreach ($vmhost in $vmHosts) {
+        LogMessage -type INFO -message "[$vmhost] Removing standard vSwitch" 
+        Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name "vSwitch0" | Remove-VirtualSwitch -Confirm:$false | Out-Null
+    }
+    Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+}
+#Export-ModuleMember -Function Remove-StandardSwitch
+
+Function Resolve-PhysicalHostServiceAccounts 
+{
+    <#
+    .SYNOPSIS
+    Creates a new VCF Service Account on each ESXi host and remediates the SDDC Manager inventory
+
+    .DESCRIPTION
+    The Resolve-PhysicalHostServiceAccounts cmdlet creates a new VCF Service Account on each ESXi host and remediates the SDDC Manager inventory
+
+    .EXAMPLE
+    Resolve-PhysicalHostServiceAccounts -vCenterFQDN "sfo-w01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-w01-cl01" -svcAccountPassword "VMw@re123!" -sddcManagerFQDN "sfo-vcf01.sfo.rainpole.io" -sddcManagerAdmin "administrator@vsphere.local" -sddcManagerAdminPassword "VMw@re1!"
+
+    .PARAMETER vCenterFQDN
+    FQDN of the vCenter instance hosting the ESXi hosts to be updated
+
+    .PARAMETER vCenterAdmin
+    Admin user of the vCenter instance hosting the ESXi hosts to be updated
+    
+    .PARAMETER vCenterAdminPassword
+    Admin password for the vCenter instance hosting the ESXi hosts to be updated
+
+    .PARAMETER clusterName
+    Name of the vSphere cluster instance hosting the ESXi hosts to be updated
+
+    .PARAMETER svcAccountPassword
+    Service account password to be used
+
+    .PARAMETER sddcManagerFQDN
+    FQDN of SDDC Manager
+
+    .PARAMETER sddcManagerAdmin
+    SDDC Manager API username with ADMIN role
+
+    .PARAMETER sddcManagerAdminPassword
+    SDDC Manager API username password
+    #>
+    
+    Param(
+        [Parameter (Mandatory = $true)][String] $vCenterFQDN,
+        [Parameter (Mandatory = $true)][String] $vCenterAdmin,
+        [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
+        [Parameter (Mandatory = $true)][String] $clusterName,
+        [Parameter (Mandatory = $true)][String] $svcAccountPassword,
+        [Parameter (Mandatory = $true)][String] $sddcManagerFQDN,
+        [Parameter (Mandatory = $true)][String] $sddcManagerAdmin,
+        [Parameter (Mandatory = $true)][String] $sddcManagerAdminPassword
+    )
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    $vCenterConnection = Connect-VIServer -server $vCenterFQDN -username $vCenterAdmin -password $vCenterAdminPassword
+    $clusterHosts = Get-Cluster -name $clusterName | Get-VMHost
+    Disconnect-VIServer * -confirm:$false
+    $tokenRequest = Request-VCFToken -fqdn $sddcManagerFQDN -username $sddcManagerAdmin -password $sddcManagerAdminPassword
+    #verify SDDC Manager credential API state
+    $credentialAPILastTask = ((Get-VCFCredentialTask -errorAction silentlyContinue| Sort-Object -Property creationTimeStamp)[-1]).status
+    if ($credentialAPILastTask -eq "FAILED")
+    {
+        LogMessage -type INFO -message "[$sddcManagerFQDN] Failed credential operation detected. Please resolve in SDDC Manager and try again" ; break
+    }
+
+    Foreach ($hostInstance in $clusterHosts) {
+        $esxiRootPassword = [String](Get-VCFCredential | ? {$_.resource.resourceName -eq $hostInstance.name}).password
+        $esxiConnection = Connect-VIServer -Server $hostInstance.name -User root -Password $esxiRootPassword.Trim() | Out-Null
+        $esxiHostName = $hostInstance.name.Split(".")[0]
+        $svcAccountName = "svc-vcf-$esxiHostName"
+        $accountExists = Get-VMHostAccount -Server $esxiConnection -User $svcAccountName -erroraction SilentlyContinue
+        If (!$accountExists) {
+            LogMessage -type INFO -message "[$($hostInstance.name)] VCF Service Account Not Found: Creating"
+            New-VMHostAccount -Id $svcAccountName -Password $svcAccountPassword -Description "ESXi User" | Out-Null
+            New-VIPermission -Entity (Get-Folder root) -Principal $svcAccountName -Role Admin | Out-Null
+            Disconnect-VIServer $hostInstance.name -confirm:$false | Out-Null
+        }
+        else
+        {
+            LogMessage -type INFO -message "[$($hostInstance.name)] VCF Service Account Found: Setting Password"
+            Set-VMHostAccount -UserAccount $svcAccountName -Password $svcAccountPassword | Out-Null
+        }
+    }
+
+    Foreach ($hostInstance in $clusterHosts) {
+        Remove-Variable credentialsObject -ErrorAction SilentlyContinue
+        Remove-Variable elementsObject -ErrorAction SilentlyContinue
+        Remove-Variable esxHostObject -ErrorAction SilentlyContinue
+
+        $esxiHostName = $hostInstance.name.Split(".")[0]
+        $svcAccountName = "svc-vcf-$esxiHostName"
+        
+        $credentialsObject += [pscustomobject]@{
+            'username' = $svcAccountName
+            'password' = $svcAccountPassword
+        }
+        
+        $elementsObject += [pscustomobject]@{
+            'resourceName' = $hostInstance.name
+            'resourceType' = 'ESXI'
+            'credentials'  = @($credentialsObject)
+        }
+
+        $esxHostObject += [pscustomobject]@{
+            'operationType' = 'REMEDIATE'
+            'elements'      = @($elementsObject)
+        }
+
+        $esxiHostJson = $esxHostObject | Convertto-Json -depth 10
+        LogMessage -type INFO -message "[$($hostInstance.name)] Remediating VCF Service Account Password: " -nonewline
+        $taskID = (Set-VCFCredential -json $esxiHostJson).id
+        Do {
+            Sleep 5
+            $taskStatus = (Get-VCFCredentialTask -id $taskID).status
+        } Until ($taskStatus -ne "IN_PROGRESS")
+        LogMessage -type INFO -message "$taskStatus"
+    }
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+}
+Export-ModuleMember -Function Resolve-PhysicalHostServiceAccounts
 #EndRegion Marked for Deprecation
