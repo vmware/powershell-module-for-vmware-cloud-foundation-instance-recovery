@@ -2682,7 +2682,7 @@ Function Remove-NonResponsiveHosts
     #Wait for Hosts to be Orphaned
     Foreach ($hostID in $hostIDs) 
     {
-        LogMessage -type WAIT -message "[$nsxManagerFqdn] Waiting for Host ID $hostID to be `'Orphaned`'"
+        LogMessage -type WAIT -message "[$nsxManagerFqdn] Waiting for Host $(($allHostTransportNodes | Where-Object {$_.id -eq $hostID}).display_name) to be `'Orphaned`'"
         Do
         {
             $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($hostID)/state"
@@ -2718,10 +2718,6 @@ Function Remove-NonResponsiveHosts
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
 
     #Reattach TNP
-    #Compute Collections
-    #$uri = "https://$nsxManagerFqdn/api/v1/fabric/compute-collections"
-    #$computeCollections = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
-    #$clusterComputeCollection = ($computeCollections.results | Where-Object {$_.cm_local_id -eq $clusterMoRef})
     
     #Get Transport Node Profiles
     $uri = "https://$nsxManagerFqdn/policy/api/v1/infra/host-transport-node-profiles"
@@ -2737,6 +2733,7 @@ Function Remove-NonResponsiveHosts
     "transport_node_profile_id": "'+$clusterTransportNodeProfile.id+'"
     }'
     $uri = "https://$nsxManagerFqdn/api/v1/transport-node-collections"
+    LogMessage -type INFO -message "[$nsxManagerFqdn] Reattaching Transport Node Profile to Cluster $clusterName"
     $response = Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -headers $headers -body $body
 
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
