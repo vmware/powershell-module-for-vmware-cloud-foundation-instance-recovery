@@ -1927,25 +1927,25 @@ Function Invoke-vCenterRestore
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
-    $vcenterFqdn = ($extractedSddcData.workloadDomains | Where-Object {$_.domainName -eq $workloadDomain}).vCenterDetails.fqdn
-    $vCenterVmName = ($extractedSddcData.workloadDomains | Where-Object {$_.domainName -eq $workloadDomain}).vCenterDetails.vmname
+    $restoredVcenterFqdn = ($extractedSddcData.workloadDomains | Where-Object {$_.domainName -eq $workloadDomain}).vCenterDetails.fqdn
+    $restoredVcenterVmName = ($extractedSddcData.workloadDomains | Where-Object {$_.domainName -eq $workloadDomain}).vCenterDetails.vmname
+    $restoredvCenterRootPassword = ($extractedSddcData.passwords | Where-Object {($_.entityType -eq "VCENTER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "SSH")}).password
     $ssoDomain  = ($extractedSddcData.workloadDomains | Where-Object {$_.domainName -eq $workloadDomain}).ssoDomain
     $ssoAdminUserName = ($extractedSddcData.passwords | Where-Object {$_.entityType -eq "PSC" -and $_.username -like "*$($ssoDomain)"}).username
     $ssoAdminUserPassword = ($extractedSddcData.passwords | Where-Object {$_.entityType -eq "PSC" -and $_.username -like "*$($ssoDomain)"}).password
-    $restoredvCenterRootPassword = ($extractedSddcData.passwords | Where-Object {($_.entityType -eq "VCENTER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "SSH")}).password
     
     #Power Up vCenter Appliance
     $vCenterConnection = Connect-VIServer -server $vCenterFqdn -user $vCenterAdmin -password $vCenterAdminPassword
-    LogMessage -type INFO -message "[$vCenterVmName] Powering On VM"
-    Get-VM -Name $vCenterVmName | Start-VM -confirm:$false | Out-Null
+    LogMessage -type INFO -message "[$restoredVcenterVmName] Powering On VM"
+    Get-VM -Name $restoredVcenterVmName | Start-VM -confirm:$false | Out-Null
     Disconnect-VIServer * -Force -Confirm:$false -ErrorAction SilentlyContinue
 
     #Wait for successful ping test
-    LogMessage -type WAIT -message "[$vcenterFqdn] Waiting for successful ping test"
+    LogMessage -type WAIT -message "[$restoredVcenterFqdn] Waiting for successful ping test"
     Do 
     {
         Sleep 10
-        $pingTest = Test-Connection -ComputerName $vcenterFqdn -count 1 -ErrorAction SilentlyContinue
+        $pingTest = Test-Connection -ComputerName $restoredVcenterFqdn -count 1 -ErrorAction SilentlyContinue
     } Until ($pingTest)
       
     #Form credentials for connecting to vCenter
@@ -1953,19 +1953,19 @@ Function Invoke-vCenterRestore
     $mycreds = New-Object System.Management.Automation.PSCredential ('root', $SecurePassword)
     
     #Create SSH Trusted Host
-    LogMessage -type WAIT -message "[$jumpboxName] Waiting for SSH Connection to $vcenterFqdn to be possible"
+    LogMessage -type WAIT -message "[$jumpboxName] Waiting for SSH Connection to $restoredVcenterFqdn to be possible"
     $inmem = New-SSHMemoryKnownHost
     Do
     {
-        $sshHostKey = Get-SSHHostKey -ComputerName $vcenterFqdn -ErrorAction SilentlyContinue
+        $sshHostKey = Get-SSHHostKey -ComputerName $restoredVcenterFqdn -ErrorAction SilentlyContinue
         If ($sshHostKey)
         {
-            $sshTrustedHost = New-SSHTrustedHost -KnownHostStore $inmem -HostName $vcenterFqdn -FingerPrint $sshHostKey.fingerprint    
+            $sshTrustedHost = New-SSHTrustedHost -KnownHostStore $inmem -HostName $restoredVcenterFqdn -FingerPrint $sshHostKey.fingerprint    
         }
     } Until ($sshTrustedHost)
 
     #Wait for RPM initialization to Finish
-    LogMessage -type WAIT -message "[$vcenterFqdn] Waiting for Appliance to finish RPM initialization"
+    LogMessage -type WAIT -message "[$restoredVcenterFqdn] Waiting for Appliance to finish RPM initialization"
     Do
     {
         #Note: Looped SSH connections is quite deliberate here as the connections appear to be continually dropped as the process progresses
@@ -1973,15 +1973,15 @@ Function Invoke-vCenterRestore
         Remove-SSHSession -SSHSession $sshSession | Out-Null
         Do
         {
-            $sshSession = New-SSHSession -computername $vcenterFqdn -Credential $mycreds -KnownHost $inmem -erroraction silentlyContinue
+            $sshSession = New-SSHSession -computername $restoredVcenterFqdn -Credential $mycreds -KnownHost $inmem -erroraction silentlyContinue
         } Until ($sshSession)
         $rpmStatus = (Invoke-SSHCommand -SessionId $sshSession.sessionid -Command "api com.vmware.appliance.version1.services.status.get --name vmbase_init" -erroraction silentlyContinue).output
     } Until ($rpmStatus -eq "Status: down")
-    LogMessage -type INFO -message "[$vcenterFqdn] RPM initialization Complete"
+    LogMessage -type INFO -message "[$restoredVcenterFqdn] RPM initialization Complete"
 
     #Restore vCenter
     $stream = New-SSHShellStream -SSHSession $sshSession
-    LogMessage -type INFO -message "[$vcenterFqdn] Submitting Restore Request"
+    LogMessage -type INFO -message "[$restoredVcenterFqdn] Submitting Restore Request"
     $restoreString = "api com.vmware.appliance.recovery.restore.job.create --locationType $locationtype --location $vCenterBackupPath --locationUser $locationUser --locationPassword --ssoAdminUserName $ssoAdminUserName --ssoAdminUserPassword --ignoreWarnings TRUE"
     $stream.writeline($restoreString)
     Start-Sleep 5
@@ -1989,13 +1989,13 @@ Function Invoke-vCenterRestore
     Start-Sleep 5
     $stream.writeline($ssoAdminUserPassword)
 
-    LogMessage -type WAIT -message "[$vcenterFqdn] Waiting for Restore to Start"
+    LogMessage -type WAIT -message "[$restoredVcenterFqdn] Waiting for Restore to Start"
     Do
     {
         #Note: Looped SSH connections is quite deliberate here as the connections appear to be continually dropped as the process progresses
         Start-Sleep 5
         Remove-SSHSession -SSHSession $sshSession | Out-Null
-        $sshSession = New-SSHSession -computername $vcenterFqdn -Credential $mycreds -KnownHost $inmem -erroraction silentlycontinue
+        $sshSession = New-SSHSession -computername $restoredVcenterFqdn -Credential $mycreds -KnownHost $inmem -erroraction silentlycontinue
         If ($sshSession)
         {
             $restoreStatus = (Invoke-SSHCommand -SessionId $sshSession.sessionid -Command "api com.vmware.appliance.recovery.restore.job.get" -erroraction silentlyContinue).output
@@ -2003,14 +2003,14 @@ Function Invoke-vCenterRestore
             $state = $restoreStatusArray[1].trim()    
         }
     } Until ($state -eq "State: INPROGRESS")
-    LogMessage -type INFO -message "[$vcenterFqdn] Restore $state"
+    LogMessage -type INFO -message "[$restoredVcenterFqdn] Restore $state"
 
     Do
     {
         #Note: Looped SSH connections is quite deliberate here as the connections appear to be continually dropped as the process progresses
         Start-Sleep 20
         Remove-SSHSession -SSHSession $sshSession | Out-Null
-        $sshSession = New-SSHSession -computername $vcenterFqdn -Credential $mycreds -KnownHost $inmem -erroraction silentlycontinue
+        $sshSession = New-SSHSession -computername $restoredVcenterFqdn -Credential $mycreds -KnownHost $inmem -erroraction silentlycontinue
         If ($sshSession)
         {
             $restoreStatus = (Invoke-SSHCommand -SessionId $sshSession.sessionid -Command "api com.vmware.appliance.recovery.restore.job.get" -erroraction silentlyContinue).output
@@ -2026,7 +2026,7 @@ Function Invoke-vCenterRestore
                     If ($restoreStatusArray[5]) 
                     {
                         $progress = $restoreStatusArray[5].trim()
-                        LogMessage -type INFO -message "[$vcenterFqdn] Restore $($progress)%"
+                        LogMessage -type INFO -message "[$restoredVcenterFqdn] Restore $($progress)%"
                     }
                 }
             }
@@ -2034,11 +2034,11 @@ Function Invoke-vCenterRestore
     } Until (($state -eq "State: SUCCEEDED") -or ($state -eq "State: FAILED"))
     If ($state -eq "State: SUCCEEDED")
     {
-        LogMessage -type INFO -message "[$vcenterFqdn] Restore finished with $state"
+        LogMessage -type INFO -message "[$restoredVcenterFqdn] Restore finished with $state"
     }
     else
     {
-        LogMessage -type ERROR -message "[$vcenterFqdn] Restore finished with $state"
+        LogMessage -type ERROR -message "[$restoredVcenterFqdn] Restore finished with $state"
     }
 
     #Close SSH Session
