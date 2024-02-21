@@ -2670,7 +2670,7 @@ Function Remove-NonResponsiveHosts
     $allHostTransportNodes = ($transportNodeContents.results | Where-Object { ($_.resource_type -eq "TransportNode") -and ($_.node_deployment_info.os_type -eq "ESXI") })
     LogMessage -type INFO -message "[$nsxManagerFqdn] Filtering Transport Nodes to members of cluster $clusterName"
     $clusterHosts = $nonResponsiveHosts.name
-    $hostIDs = ($allHostTransportNodes | Where-Object { $_.display_name -in $clusterHosts }).id
+    $hostIDs = ($allHostTransportNodes | Where-Object { $_.display_name -in $clusterHosts } | Sort-Object -property display_name).id
 
     #Attempt Remove NSX From Cluster to detach Transport Node Profile
     $uri = "https://$nsxManagerFqdn/api/v1/fabric/compute-collections"
