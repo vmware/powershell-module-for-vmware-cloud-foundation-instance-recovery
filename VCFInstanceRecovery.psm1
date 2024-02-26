@@ -81,6 +81,7 @@ Function LogMessage
 {
     Param (
         [Parameter (Mandatory = $true)] [AllowEmptyString()] [String]$message,
+        [Parameter (Mandatory = $false)] [AllowEmptyString()] [String]$nonewline,
         [Parameter (Mandatory = $false)] [ValidateSet("INFO", "ERROR", "WARNING", "EXCEPTION","ADVISORY","NOTE","QUESTION","WAIT")] [String]$type = "INFO"
     )
 
@@ -123,7 +124,14 @@ Function LogMessage
     $timeStamp = Get-Date -Format "MM-dd-yyyy_HH:mm:ss"
     $timestampColour = "97m"
 
-    Write-Host "$ESC[${timestampcolour} [$timestamp]$ESC[${messageColour} [$type] $message$ESC[0m"
+    If ($nonewline)
+    {
+        Write-Host "$ESC[${timestampcolour} [$timestamp]$ESC[${messageColour} [$type] $message$ESC[0m" -NoNewline
+    }
+    else 
+    {
+        Write-Host "$ESC[${timestampcolour} [$timestamp]$ESC[${messageColour} [$type] $message$ESC[0m"
+    }
     #$logContent = '[' + $timeStamp + '] [' +$threadTag + '] ' + $type + ' ' + $message
     #Add-Content -path $logFile $logContent
 }
