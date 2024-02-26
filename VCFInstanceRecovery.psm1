@@ -2714,6 +2714,14 @@ Function Remove-NonResponsiveHosts
         $deletedhostIDs = ($allHostTransportNodes | Where-Object { $_.display_name -in $clusterHosts }).id
     } Until(!$deletedhostIDs)
 
+    #Remove non-responsive hosts
+    Foreach ($nonResponsiveHost in $nonResponsiveHosts)
+    {
+        LogMessage -type INFO -message "[$($nonResponsiveHost.name)] Removing from $clusterName"
+        Get-VMHost | Where-Object { $_.Name -eq $nonResponsiveHost.Name } | Remove-VMHost -Confirm:$false
+    }
+    Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+
     #If VLCM cluster, wait until cleanup of cluster post TN delete is done
     If ($clusterVlcmManaged -eq "true")
     {
@@ -2734,16 +2742,7 @@ Function Remove-NonResponsiveHosts
         Remove-SSHSession -SSHSession $sshSession | Out-Null
     }
 
-    #Remove non-repsonsive hosts
-    Foreach ($nonResponsiveHost in $nonResponsiveHosts)
-    {
-        LogMessage -type INFO -message "[$($nonResponsiveHost.name)] Removing from $clusterName"
-        Get-VMHost | Where-Object { $_.Name -eq $nonResponsiveHost.Name } | Remove-VMHost -Confirm:$false
-    }
-    Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
-
     #Reattach TNP
-    
     #Get Transport Node Profiles
     $uri = "https://$nsxManagerFqdn/policy/api/v1/infra/host-transport-node-profiles"
     $transportNodeProfiles = ((Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json).results
