@@ -2617,7 +2617,7 @@ Function Remove-NonResponsiveHosts
     The Remove-NonResponsiveHosts cmdlet removes non-responsive hosts from a cluster and cleans up related transport nodes in NSX
 
     .EXAMPLE
-    Remove-NonResponsiveHosts -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01" -nsxManagerFqdn "sfo-m01-nsx01.sfo.rainpole.io" -nsxManagerAdmin "admin" -nsxManagerAdminPassword "VMw@re1!VMw@re1!"
+    Remove-NonResponsiveHosts -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01" -nsxManagerFqdn "sfo-m01-nsx01.sfo.rainpole.io" -nsxManagerAdmin "admin" -nsxManagerAdminPassword "VMw@re1!VMw@re1!" -nsxManagerRootPassword "VMw@re1!VMw@re1!"
 
     .PARAMETER vCenterFQDN
     FQDN of the vCenter instance hosting the cluster from which to remove non-responsive hosts
@@ -2639,6 +2639,9 @@ Function Remove-NonResponsiveHosts
     
     .PARAMETER nsxManagerAdminPassword
     Admin Password of the NSX Manager where non responsive hosts exist
+    
+    .PARAMETER nsxManagerRootPassword
+    root Password of the NSX Manager where non responsive hosts exist
     #>
     
     Param(
@@ -2648,7 +2651,8 @@ Function Remove-NonResponsiveHosts
         [Parameter (Mandatory = $true)][String] $clusterName,
         [Parameter (Mandatory = $true)][String] $nsxManagerFqdn,
         [Parameter (Mandatory = $true)][String] $nsxManagerAdmin,
-        [Parameter (Mandatory = $true)][String] $nsxManagerAdminPassword
+        [Parameter (Mandatory = $true)][String] $nsxManagerAdminPassword,
+        [Parameter (Mandatory = $true)][String] $nsxManagerRootPassword
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
@@ -2676,6 +2680,7 @@ Function Remove-NonResponsiveHosts
     $uri = "https://$nsxManagerFqdn/api/v1/fabric/compute-collections"
     $computeCollections = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
     $clusterComputeCollectionId = ($computeCollections.results | Where-Object {$_.cm_local_id -eq $clusterMoRef}).external_id
+    $clusterVlcmManaged = (($computeCollections.results | Where-Object {$_.cm_local_id -eq $clusterMoRef}).origin_properties | Where-Object {$_.key -eq "lifecycleManaged"}).value
     $uri = "https://$nsxManagerFqdn/api/v1/fabric/compute-collections/$($clusterComputeCollectionId)?action=remove_nsx"
     $detachTNP = Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -headers $headers
     
@@ -2708,6 +2713,25 @@ Function Remove-NonResponsiveHosts
         $allHostTransportNodes = ($transportNodeContents.results | Where-Object { ($_.resource_type -eq "TransportNode") -and ($_.node_deployment_info.os_type -eq "ESXI") })
         $deletedhostIDs = ($allHostTransportNodes | Where-Object { $_.display_name -in $clusterHosts }).id
     } Until(!$deletedhostIDs)
+
+    #If VLCM cluster, wait until cleanup of cluster post TN delete is done
+    If ($clusterVlcmManaged -eq "true")
+    {
+        $SecurePassword = ConvertTo-SecureString -String $nsxManagerRootPassword -AsPlainText -Force
+        $mycreds = New-Object System.Management.Automation.PSCredential ("root", $SecurePassword)
+        $inmem = New-SSHMemoryKnownHost
+        New-SSHTrustedHost -KnownHostStore $inmem -HostName $nsxManagerFQDN -FingerPrint ((Get-SSHHostKey -ComputerName $nsxManagerFQDN).fingerprint) | Out-Null
+        Do
+        {
+            $sshSession = New-SSHSession -computername $nsxManagerFQDN -Credential $mycreds -KnownHost $inmem
+        } Until ($sshSession)
+        $nsxCommand = "cat /var/log/proton/nsxapi.log | grep `".*RemoveNsxVlcmActivity.*entity= 'ComputeCollectionMsg/$clusterComputeCollectionId.*phase= `'Begin`'`""
+        Do
+        {
+            $relevantUpdates = (Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $nsxCommand).output	
+        } Until ($relevantUpdates[-1] -like "*RemoveNsxVlcmActivity*phase= `'Begin`'*next phase= `'Success!`'")
+        Remove-SSHSession -SSHSession $sshSession | Out-Null
+    }
 
     #Remove non-repsonsive hosts
     Foreach ($nonResponsiveHost in $nonResponsiveHosts)
