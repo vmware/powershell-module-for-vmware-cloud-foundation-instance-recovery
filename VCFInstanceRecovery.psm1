@@ -2737,6 +2737,7 @@ Function Remove-NonResponsiveHosts
         LogMessage -type WAIT -message "[$nsxManagerFqdn] Waiting for Cluster Image Cleanup to Complete"
         Do
         {
+            Sleep 5
             $relevantUpdates = (Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $nsxCommand).output	
         } Until ($relevantUpdates[-1] -like "*RemoveNsxVlcmActivity*phase= `'Begin`'*next phase= `'Success!`'")
         Remove-SSHSession -SSHSession $sshSession | Out-Null
