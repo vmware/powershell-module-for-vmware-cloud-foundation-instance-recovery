@@ -1878,6 +1878,122 @@ Function Invoke-SDDCManagerRestore
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Invoke-SDDCManagerRestore
+
+Function Resolve-PhysicalHostServiceAccounts 
+{
+    <#
+    .SYNOPSIS
+    Creates a new VCF Service Account on each ESXi host and remediates the SDDC Manager inventory
+
+    .DESCRIPTION
+    The Resolve-PhysicalHostServiceAccounts cmdlet creates a new VCF Service Account on each ESXi host and remediates the SDDC Manager inventory
+
+    .EXAMPLE
+    Resolve-PhysicalHostServiceAccounts -vCenterFQDN "sfo-w01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-w01-cl01" -svcAccountPassword "VMw@re123!" -sddcManagerFQDN "sfo-vcf01.sfo.rainpole.io" -sddcManagerAdmin "administrator@vsphere.local" -sddcManagerAdminPassword "VMw@re1!"
+
+    .PARAMETER vCenterFQDN
+    FQDN of the vCenter instance hosting the ESXi hosts to be updated
+
+    .PARAMETER vCenterAdmin
+    Admin user of the vCenter instance hosting the ESXi hosts to be updated
+    
+    .PARAMETER vCenterAdminPassword
+    Admin password for the vCenter instance hosting the ESXi hosts to be updated
+
+    .PARAMETER clusterName
+    Name of the vSphere cluster instance hosting the ESXi hosts to be updated
+
+    .PARAMETER svcAccountPassword
+    Service account password to be used
+
+    .PARAMETER sddcManagerFQDN
+    FQDN of SDDC Manager
+
+    .PARAMETER sddcManagerAdmin
+    SDDC Manager API username with ADMIN role
+
+    .PARAMETER sddcManagerAdminPassword
+    SDDC Manager API username password
+    #>
+    
+    Param(
+        [Parameter (Mandatory = $true)][String] $vCenterFQDN,
+        [Parameter (Mandatory = $true)][String] $vCenterAdmin,
+        [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
+        [Parameter (Mandatory = $true)][String] $clusterName,
+        [Parameter (Mandatory = $true)][String] $svcAccountPassword,
+        [Parameter (Mandatory = $true)][String] $sddcManagerFQDN,
+        [Parameter (Mandatory = $true)][String] $sddcManagerAdmin,
+        [Parameter (Mandatory = $true)][String] $sddcManagerAdminPassword
+    )
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    $vCenterConnection = Connect-VIServer -server $vCenterFQDN -username $vCenterAdmin -password $vCenterAdminPassword
+    $clusterHosts = Get-Cluster -name $clusterName | Get-VMHost
+    Disconnect-VIServer * -confirm:$false
+    $tokenRequest = Request-VCFToken -fqdn $sddcManagerFQDN -username $sddcManagerAdmin -password $sddcManagerAdminPassword
+    #verify SDDC Manager credential API state
+    $credentialAPILastTask = ((Get-VCFCredentialTask -errorAction silentlyContinue| Sort-Object -Property creationTimeStamp)[-1]).status
+    if ($credentialAPILastTask -eq "FAILED")
+    {
+        LogMessage -type INFO -message "[$sddcManagerFQDN] Failed credential operation detected. Please resolve in SDDC Manager and try again" ; break
+    }
+
+    Foreach ($hostInstance in $clusterHosts) {
+        $esxiRootPassword = [String](Get-VCFCredential | ? {$_.resource.resourceName -eq $hostInstance.name}).password
+        $esxiConnection = Connect-VIServer -Server $hostInstance.name -User root -Password $esxiRootPassword.Trim() | Out-Null
+        $esxiHostName = $hostInstance.name.Split(".")[0]
+        $svcAccountName = "svc-vcf-$esxiHostName"
+        $accountExists = Get-VMHostAccount -Server $esxiConnection -User $svcAccountName -erroraction SilentlyContinue
+        If (!$accountExists) {
+            LogMessage -type INFO -message "[$($hostInstance.name)] VCF Service Account Not Found: Creating"
+            New-VMHostAccount -Id $svcAccountName -Password $svcAccountPassword -Description "ESXi User" | Out-Null
+            New-VIPermission -Entity (Get-Folder root) -Principal $svcAccountName -Role Admin | Out-Null
+            Disconnect-VIServer $hostInstance.name -confirm:$false | Out-Null
+        }
+        else
+        {
+            LogMessage -type INFO -message "[$($hostInstance.name)] VCF Service Account Found: Setting Password"
+            Set-VMHostAccount -UserAccount $svcAccountName -Password $svcAccountPassword | Out-Null
+        }
+    }
+
+    Foreach ($hostInstance in $clusterHosts) {
+        Remove-Variable credentialsObject -ErrorAction SilentlyContinue
+        Remove-Variable elementsObject -ErrorAction SilentlyContinue
+        Remove-Variable esxHostObject -ErrorAction SilentlyContinue
+
+        $esxiHostName = $hostInstance.name.Split(".")[0]
+        $svcAccountName = "svc-vcf-$esxiHostName"
+        
+        $credentialsObject += [pscustomobject]@{
+            'username' = $svcAccountName
+            'password' = $svcAccountPassword
+        }
+        
+        $elementsObject += [pscustomobject]@{
+            'resourceName' = $hostInstance.name
+            'resourceType' = 'ESXI'
+            'credentials'  = @($credentialsObject)
+        }
+
+        $esxHostObject += [pscustomobject]@{
+            'operationType' = 'REMEDIATE'
+            'elements'      = @($elementsObject)
+        }
+
+        $esxiHostJson = $esxHostObject | Convertto-Json -depth 10
+        LogMessage -type INFO -message "[$($hostInstance.name)] Remediating VCF Service Account Password: " -nonewline
+        $taskID = (Set-VCFCredential -json $esxiHostJson).id
+        Do {
+            Sleep 5
+            $taskStatus = (Get-VCFCredentialTask -id $taskID).status
+        } Until ($taskStatus -ne "IN_PROGRESS")
+        LogMessage -type INFO -message "$taskStatus"
+    }
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+}
+Export-ModuleMember -Function Resolve-PhysicalHostServiceAccounts
 #EndRegion SDDC Manager Functions
 
 #Region vCenter Functions
@@ -4889,120 +5005,4 @@ Function Remove-StandardSwitch
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 #Export-ModuleMember -Function Remove-StandardSwitch
-
-Function Resolve-PhysicalHostServiceAccounts 
-{
-    <#
-    .SYNOPSIS
-    Creates a new VCF Service Account on each ESXi host and remediates the SDDC Manager inventory
-
-    .DESCRIPTION
-    The Resolve-PhysicalHostServiceAccounts cmdlet creates a new VCF Service Account on each ESXi host and remediates the SDDC Manager inventory
-
-    .EXAMPLE
-    Resolve-PhysicalHostServiceAccounts -vCenterFQDN "sfo-w01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-w01-cl01" -svcAccountPassword "VMw@re123!" -sddcManagerFQDN "sfo-vcf01.sfo.rainpole.io" -sddcManagerAdmin "administrator@vsphere.local" -sddcManagerAdminPassword "VMw@re1!"
-
-    .PARAMETER vCenterFQDN
-    FQDN of the vCenter instance hosting the ESXi hosts to be updated
-
-    .PARAMETER vCenterAdmin
-    Admin user of the vCenter instance hosting the ESXi hosts to be updated
-    
-    .PARAMETER vCenterAdminPassword
-    Admin password for the vCenter instance hosting the ESXi hosts to be updated
-
-    .PARAMETER clusterName
-    Name of the vSphere cluster instance hosting the ESXi hosts to be updated
-
-    .PARAMETER svcAccountPassword
-    Service account password to be used
-
-    .PARAMETER sddcManagerFQDN
-    FQDN of SDDC Manager
-
-    .PARAMETER sddcManagerAdmin
-    SDDC Manager API username with ADMIN role
-
-    .PARAMETER sddcManagerAdminPassword
-    SDDC Manager API username password
-    #>
-    
-    Param(
-        [Parameter (Mandatory = $true)][String] $vCenterFQDN,
-        [Parameter (Mandatory = $true)][String] $vCenterAdmin,
-        [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
-        [Parameter (Mandatory = $true)][String] $clusterName,
-        [Parameter (Mandatory = $true)][String] $svcAccountPassword,
-        [Parameter (Mandatory = $true)][String] $sddcManagerFQDN,
-        [Parameter (Mandatory = $true)][String] $sddcManagerAdmin,
-        [Parameter (Mandatory = $true)][String] $sddcManagerAdminPassword
-    )
-    $jumpboxName = hostname
-    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
-    $vCenterConnection = Connect-VIServer -server $vCenterFQDN -username $vCenterAdmin -password $vCenterAdminPassword
-    $clusterHosts = Get-Cluster -name $clusterName | Get-VMHost
-    Disconnect-VIServer * -confirm:$false
-    $tokenRequest = Request-VCFToken -fqdn $sddcManagerFQDN -username $sddcManagerAdmin -password $sddcManagerAdminPassword
-    #verify SDDC Manager credential API state
-    $credentialAPILastTask = ((Get-VCFCredentialTask -errorAction silentlyContinue| Sort-Object -Property creationTimeStamp)[-1]).status
-    if ($credentialAPILastTask -eq "FAILED")
-    {
-        LogMessage -type INFO -message "[$sddcManagerFQDN] Failed credential operation detected. Please resolve in SDDC Manager and try again" ; break
-    }
-
-    Foreach ($hostInstance in $clusterHosts) {
-        $esxiRootPassword = [String](Get-VCFCredential | ? {$_.resource.resourceName -eq $hostInstance.name}).password
-        $esxiConnection = Connect-VIServer -Server $hostInstance.name -User root -Password $esxiRootPassword.Trim() | Out-Null
-        $esxiHostName = $hostInstance.name.Split(".")[0]
-        $svcAccountName = "svc-vcf-$esxiHostName"
-        $accountExists = Get-VMHostAccount -Server $esxiConnection -User $svcAccountName -erroraction SilentlyContinue
-        If (!$accountExists) {
-            LogMessage -type INFO -message "[$($hostInstance.name)] VCF Service Account Not Found: Creating"
-            New-VMHostAccount -Id $svcAccountName -Password $svcAccountPassword -Description "ESXi User" | Out-Null
-            New-VIPermission -Entity (Get-Folder root) -Principal $svcAccountName -Role Admin | Out-Null
-            Disconnect-VIServer $hostInstance.name -confirm:$false | Out-Null
-        }
-        else
-        {
-            LogMessage -type INFO -message "[$($hostInstance.name)] VCF Service Account Found: Setting Password"
-            Set-VMHostAccount -UserAccount $svcAccountName -Password $svcAccountPassword | Out-Null
-        }
-    }
-
-    Foreach ($hostInstance in $clusterHosts) {
-        Remove-Variable credentialsObject -ErrorAction SilentlyContinue
-        Remove-Variable elementsObject -ErrorAction SilentlyContinue
-        Remove-Variable esxHostObject -ErrorAction SilentlyContinue
-
-        $esxiHostName = $hostInstance.name.Split(".")[0]
-        $svcAccountName = "svc-vcf-$esxiHostName"
-        
-        $credentialsObject += [pscustomobject]@{
-            'username' = $svcAccountName
-            'password' = $svcAccountPassword
-        }
-        
-        $elementsObject += [pscustomobject]@{
-            'resourceName' = $hostInstance.name
-            'resourceType' = 'ESXI'
-            'credentials'  = @($credentialsObject)
-        }
-
-        $esxHostObject += [pscustomobject]@{
-            'operationType' = 'REMEDIATE'
-            'elements'      = @($elementsObject)
-        }
-
-        $esxiHostJson = $esxHostObject | Convertto-Json -depth 10
-        LogMessage -type INFO -message "[$($hostInstance.name)] Remediating VCF Service Account Password: " -nonewline
-        $taskID = (Set-VCFCredential -json $esxiHostJson).id
-        Do {
-            Sleep 5
-            $taskStatus = (Get-VCFCredentialTask -id $taskID).status
-        } Until ($taskStatus -ne "IN_PROGRESS")
-        LogMessage -type INFO -message "$taskStatus"
-    }
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
-}
-Export-ModuleMember -Function Resolve-PhysicalHostServiceAccounts
 #EndRegion Marked for Deprecation

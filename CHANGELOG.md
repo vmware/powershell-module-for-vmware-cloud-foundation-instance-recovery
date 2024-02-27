@@ -12,10 +12,15 @@
 - Added `New-RebuiltVdsConfiguration`
 - Added `Backup-ClusterVMTags`
 - Added `Restore-ClusterVMTags`
+- Added support for vLCM clusters
 - Enhanced `New-NSXManagerOvaDeployment` adding `--X:waitForIp` to ensure appliances are near ready for use before continuing
 - Enhanced `Move-ClusterHostNetworkingTovSS` with full idempotency
 - Enhanced `Resolve-PhysicalHostTransportNodes` to prevent use in NSX version 4.1.2 and higher
 - Enhanced OSD output for all functions to include message time and timestamps, better handlong of ovftool output
+- Adjusted parameter names for several functions
+- Deprecated `Resolve-PhysicalHostTransportNodes`
+- Deprecated `Move-ClusterVMsToFirstHost`
+- Deprecated `Remove-StandardSwitch`
 
 ## v1.0.6
 
