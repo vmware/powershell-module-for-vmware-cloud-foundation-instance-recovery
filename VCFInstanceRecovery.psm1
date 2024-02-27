@@ -2034,6 +2034,9 @@ Function Invoke-vCenterRestore
 
     .PARAMETER locationUser
     User account for connecting to the backup location passed with vCenterBackupPath
+
+    .PARAMETER backupPassword
+    Password to decrypt an encrypted vCenter Server backup file
     #>
 
     Param(
@@ -2045,7 +2048,8 @@ Function Invoke-vCenterRestore
         [Parameter (Mandatory = $true)][String] $vCenterBackupPath,
         [Parameter (Mandatory = $true)][String] $locationtype,
         [Parameter (Mandatory = $true)][String] $locationUser,
-        [Parameter (Mandatory = $true)][String] $locationPassword
+        [Parameter (Mandatory = $true)][String] $locationPassword,
+        [Parameter (Mandatory = $false)][String] $backupPassword
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
@@ -2113,6 +2117,11 @@ Function Invoke-vCenterRestore
     $stream.writeline($locationPassword)
     Start-Sleep 5
     $stream.writeline($ssoAdminUserPassword)
+    If ($backupPassword)
+    {
+        Start-Sleep 5
+        $stream.writeline($backupPassword)    
+    }
 
     LogMessage -type WAIT -message "[$restoredVcenterFqdn] Waiting for Restore to Start"
     Do
