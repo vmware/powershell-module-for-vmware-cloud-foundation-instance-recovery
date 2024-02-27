@@ -2115,16 +2115,20 @@ Function Invoke-vCenterRestore
     $stream = New-SSHShellStream -SSHSession $sshSession
     LogMessage -type INFO -message "[$restoredVcenterFqdn] Submitting Restore Request"
     $restoreString = "api com.vmware.appliance.recovery.restore.job.create --locationType $locationtype --location $vCenterBackupPath --locationUser $locationUser --locationPassword --ssoAdminUserName $ssoAdminUserName --ssoAdminUserPassword --ignoreWarnings TRUE"
+    If ($backupPassword)
+    {
+        $restoreString = $restoreString += " --backupPassword"
+    }
     $stream.writeline($restoreString)
     Start-Sleep 5
+    If ($backupPassword)
+    {
+        $stream.writeline($backupPassword)
+        Start-Sleep 5
+    }
     $stream.writeline($locationPassword)
     Start-Sleep 5
     $stream.writeline($ssoAdminUserPassword)
-    If ($backupPassword)
-    {
-        Start-Sleep 5
-        $stream.writeline($backupPassword)    
-    }
 
     LogMessage -type WAIT -message "[$restoredVcenterFqdn] Waiting for Restore to Start"
     Do
