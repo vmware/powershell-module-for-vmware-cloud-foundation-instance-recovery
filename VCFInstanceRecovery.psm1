@@ -1765,6 +1765,9 @@ Function Invoke-SDDCManagerRestore
     .PARAMETER rootUserPassword
     Password for the root user on the newly deployed appliance
 
+    .PARAMETER encryptionPassword
+    Password to decrypt an encrypted SDDC Manager backup
+    
     #>
     Param(
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
