@@ -909,11 +909,19 @@ Function New-ExtractDataFromSDDCBackup
             $nsxClusterDetailsObject | Add-Member -NotePropertyName 'nsxtAdminPassword' -NotePropertyValue ($passwordVaultObject | Where-Object {($_.entityName -eq ($nsxtManagerClusters | Where-Object {$_.domainIDs -contains $domainId}).clusterFqdn) -and ($_.credentialType -eq 'API')}).password
             $nsxClusterDetailsObject | Add-Member -NotePropertyName 'nsxtAuditPassword' -NotePropertyValue ($passwordVaultObject  | Where-Object {($_.entityName -eq ($nsxtManagerClusters | Where-Object {$_.domainIDs -contains $domainId}).clusterFqdn) -and ($_.credentialType -eq 'AUDIT')}).password
 
+            If (($licenseModels | Where-Object {$_.resourceId -eq $domainID}).licensingMode)
+            {
+                $licenseModel = ($licenseModels | Where-Object {$_.resourceId -eq $domainID}).licensingMode
+            }
+            else
+            {
+                $licenseModel = 'PERPETUAL'
+            }
             $workloadDomains += [pscustomobject]@{
                 'domainName' = $domainName
                 'domainID' = $domainID
                 'domainType' = $domainType
-                'licenseModel' = ($licenseModels | Where-Object {$_.resourceId -eq $domainID}).licensingMode
+                'licenseModel' = $licenseModel
                 'ssoDomain' = $ssoDomain
                 'networkPool' = $poolName
                 'vCenterDetails' = $vCenterDetails
