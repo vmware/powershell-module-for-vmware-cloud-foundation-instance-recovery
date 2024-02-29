@@ -793,7 +793,7 @@ Function New-ExtractDataFromSDDCBackup
                 $ssoDomain = $lineContent.split("`t")[9]
                 $pscs += [pscustomobject]@{
                     'id' = $pscId
-                    'vCenterId' = $vCenterId
+                    'vCenterDomainId' = $vCenterId
                     'ssoDomain' = $ssoDomain
                 }
             }
@@ -818,7 +818,7 @@ Function New-ExtractDataFromSDDCBackup
             $vCenter = $vCenters | Where-Object {$_.vCenterDomainID -eq $domainId}
             If ($sddcManagerObject.version -like "4.4.*")
             {
-                $ssoDomain = ($pscs | Where-Object {$_.vCenterId -eq $vCenter.vCenterID}).ssoDomain
+                $ssoDomain = ($pscs | Where-Object {$_.vCenterDomainId -eq $vCenter.vCenterDomainId}).ssoDomain
             }
             else 
             {
