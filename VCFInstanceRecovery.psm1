@@ -818,7 +818,7 @@ Function New-ExtractDataFromSDDCBackup
             $vCenter = $vCenters | Where-Object {$_.vCenterDomainID -eq $domainId}
             If ($sddcManagerObject.version -like "4.4.*")
             {
-                $ssoDomain = ($pscs | Where-Object {$vcenterID -eq $vCenter.vCenterID}).ssoDomain
+                $ssoDomain = ($pscs | Where-Object {$_.vCenterId -eq $vCenter.vCenterID}).ssoDomain
             }
             else 
             {
