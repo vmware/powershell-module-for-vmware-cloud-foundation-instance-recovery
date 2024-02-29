@@ -791,11 +791,11 @@ Function New-ExtractDataFromSDDCBackup
                 $pscId = $lineContent.split("`t")[1]
                 $vCenterId = $lineContent.split("`t")[0]
                 $ssoDomain = $lineContent.split("`t")[9]
-            }
-            $pscs += [pscustomobject]@{
-                'id' = $pscId
-                'vCenterId' = $vCenterId
-                'ssoDomain' = $ssoDomain
+                $pscs += [pscustomobject]@{
+                    'id' = $pscId
+                    'vCenterId' = $vCenterId
+                    'ssoDomain' = $ssoDomain
+                }
             }
             $pscsLineIndex ++
         }
