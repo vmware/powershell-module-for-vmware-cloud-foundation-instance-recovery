@@ -350,6 +350,27 @@ Function New-ExtractDataFromSDDCBackup
     }
     
     $psqlContent = Get-Content "$extractedBackupFolder\database\sddc-postgres.bkp"
+
+    LogMessage -type INFO -message "[$jumpboxName] Retrieving SDDC Manager Detail"
+    #GetDomainDetails
+    $ceipStartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.sddc_manager_controller" | Select-Object Line,LineNumber).LineNumber
+    $lineContent = $psqlContent | Select-Object -Index $ceipStartingLineNumber
+    $sddcManagerIp = $lineContent.split("`t")[3]
+    $sddcManagerVersion = $lineContent.split("`t")[5]
+    $sddcManagerFqdn = $lineContent.split("`t")[6]
+    $sddcManagerVmName = $lineContent.split("`t")[8]
+    If ($lineContent.split("`t")[9] -eq 'ENABLED') { $ceipStatus = $true} else {$ceipStatus = $false}
+
+    $sddcManagerObject = @()
+    $sddcManagerObject += [pscustomobject]@{
+        'fqdn' = $sddcManagerFqdn
+        'vmname' = $sddcManagerVmName
+        'ip' = $sddcManagerIp
+        'fips_enabled' = $metadataJSON.fips_enabled 
+        'ceip_enabled' = $ceipStatus
+        'version' = $sddcManagerVersion
+    }
+
     LogMessage -type INFO -message "[$jumpboxName] Retrieving NSX Manager Details"
     
     #Get All NSX Manager Clusters
@@ -756,6 +777,31 @@ Function New-ExtractDataFromSDDCBackup
     }
     Until ($lineContent -eq '\.')
 
+    If ($sddcManagerObject.version -like "4.4.*")
+    {
+        LogMessage -type INFO -message "[$jumpboxName] Getting PSC Data"
+        $pscsStartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.psc (id" | Select-Object Line,LineNumber).LineNumber
+        $pscsLineIndex = $pscsStartingLineNumber
+        $pscs = @()
+        Do
+        {
+            $lineContent = $psqlContent | Select-Object -Index $pscsLineIndex
+            If ($lineContent -ne '\.')
+            {
+                $pscId = $lineContent.split("`t")[1]
+                $vCenterId = $lineContent.split("`t")[0]
+                $ssoDomain = $lineContent.split("`t")[9]
+            }
+            $pscs += [pscustomobject]@{
+                'id' = $pscId
+                'vCenterId' = $vCenterId
+                'ssoDomain' = $ssoDomain
+            }
+            $pscsLineIndex ++
+        }
+        Until ($lineContent -eq '\.')
+    }
+
     LogMessage -type INFO -message "[$jumpboxName] Assembling Workload Domain Data"
     #GetDomainDetails
     $domainsStartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.domain (id" | Select-Object Line,LineNumber).LineNumber
@@ -769,8 +815,15 @@ Function New-ExtractDataFromSDDCBackup
             $domainId = $lineContent.split("`t")[0]
             $domainName = $lineContent.split("`t")[3]
             $domainType = $lineContent.split("`t")[6]
-            $ssoDomain = $lineContent.split("`t")[11]
             $vCenter = $vCenters | Where-Object {$_.vCenterDomainID -eq $domainId}
+            If ($sddcManagerObject.version -like "4.4.*")
+            {
+                $ssoDomain = ($pscs | Where-Object {$vcenterID -eq $vCenter.vCenterID}).ssoDomain
+            }
+            else 
+            {
+                $ssoDomain = $lineContent.split("`t")[11]
+            }
             $vCenterDetails = [pscustomobject]@{
                 'id' = $vCenter.vCenterID
                 'version' = $vCenter.vCenterVersion
@@ -853,26 +906,6 @@ Function New-ExtractDataFromSDDCBackup
         }
         $domainLineIndex++
     } Until ($lineContent -eq '\.')
-
-    LogMessage -type INFO -message "[$jumpboxName] Retrieving SDDC Manager Detail"
-    #GetDomainDetails
-    $ceipStartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.sddc_manager_controller" | Select-Object Line,LineNumber).LineNumber
-    $lineContent = $psqlContent | Select-Object -Index $ceipStartingLineNumber
-    $sddcManagerIp = $lineContent.split("`t")[3]
-    $sddcManagerVersion = $lineContent.split("`t")[5]
-    $sddcManagerFqdn = $lineContent.split("`t")[6]
-    $sddcManagerVmName = $lineContent.split("`t")[8]
-    If ($lineContent.split("`t")[9] -eq 'ENABLED') { $ceipStatus = $true} else {$ceipStatus = $false}
-
-    $sddcManagerObject = @()
-    $sddcManagerObject += [pscustomobject]@{
-        'fqdn' = $sddcManagerFqdn
-        'vmname' = $sddcManagerVmName
-        'ip' = $sddcManagerIp
-        'fips_enabled' = $metadataJSON.fips_enabled 
-        'ceip_enabled' = $ceipStatus
-        'version' = $sddcManagerVersion
-    }
     
     LogMessage -type INFO -message "[$jumpboxName] Creating extracted-sddc-data.json"
     $sddcDataObject = New-Object -TypeName psobject
