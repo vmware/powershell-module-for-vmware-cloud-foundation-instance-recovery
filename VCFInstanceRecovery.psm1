@@ -731,26 +731,28 @@ Function New-ExtractDataFromSDDCBackup
     #Get License Models
     LogMessage -type INFO -message "[$jumpboxName] Retrieving Licensing Models"
     $licenseModelLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY licensemanager.licensing_info" | Select-Object Line,LineNumber).LineNumber
-    $licenseModelLineIndex = $licenseModelLineNumber
-    $licenseModels = @()
-    Do 
+    If ($licenseModelLineNumber)
     {
-        $lineContent = $psqlContent | Select-Object -Index $licenseModelLineIndex
-        If ($lineContent -ne '\.')
+        $licenseModelLineIndex = $licenseModelLineNumber
+        $licenseModels = @()
+        Do 
         {
-            $resourceType = $lineContent.split("`t")[1]
-            $resourceId = $lineContent.split("`t")[2]
-            $licensingMode = $lineContent.split("`t")[3]
-            $licenseModels += [pscustomobject]@{
-                'resourceType' = $resourceType
-                'resourceId' = $resourceId
-                'licensingMode' = $licensingMode
+            $lineContent = $psqlContent | Select-Object -Index $licenseModelLineIndex
+            If ($lineContent -ne '\.')
+            {
+                $resourceType = $lineContent.split("`t")[1]
+                $resourceId = $lineContent.split("`t")[2]
+                $licensingMode = $lineContent.split("`t")[3]
+                $licenseModels += [pscustomobject]@{
+                    'resourceType' = $resourceType
+                    'resourceId' = $resourceId
+                    'licensingMode' = $licensingMode
+                }
             }
+            $licenseModelLineIndex++
         }
-        $licenseModelLineIndex++
+        Until ($lineContent -eq '\.')    
     }
-    Until ($lineContent -eq '\.')
-
     
     #Get License Keys
     LogMessage -type INFO -message "[$jumpboxName] Retrieving License Keys"
@@ -779,7 +781,7 @@ Function New-ExtractDataFromSDDCBackup
 
     If ($sddcManagerObject.version -like "4.4.*")
     {
-        LogMessage -type INFO -message "[$jumpboxName] Getting PSC Data"
+        LogMessage -type INFO -message "[$jumpboxName] Retrieving PSC Data"
         $pscsStartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.psc (id" | Select-Object Line,LineNumber).LineNumber
         $pscsLineIndex = $pscsStartingLineNumber
         $pscs = @()
@@ -788,16 +790,33 @@ Function New-ExtractDataFromSDDCBackup
             $lineContent = $psqlContent | Select-Object -Index $pscsLineIndex
             If ($lineContent -ne '\.')
             {
-                $pscId = $lineContent.split("`t")[1]
-                $vCenterId = $lineContent.split("`t")[0]
+                $pscId = $lineContent.split("`t")[0]
                 $ssoDomain = $lineContent.split("`t")[9]
                 $pscs += [pscustomobject]@{
                     'id' = $pscId
-                    'vCenterDomainId' = $vCenterId
                     'ssoDomain' = $ssoDomain
                 }
             }
             $pscsLineIndex ++
+        }
+        Until ($lineContent -eq '\.')
+
+        $vCentersAndPscsStartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.vcenter_and_psc" | Select-Object Line,LineNumber).LineNumber
+        $vCentersAndPscsLineIndex = $vCentersAndPscsStartingLineNumber
+        $vCentersAndPscs = @()
+        Do
+        {
+            $lineContent = $psqlContent | Select-Object -Index $vCentersAndPscsLineIndex
+            If ($lineContent -ne '\.')
+            {
+                $vCenterId = $lineContent.split("`t")[0]
+                $pscId = $lineContent.split("`t")[1]
+                $vCentersAndPscs += [pscustomobject]@{
+                    'vcenterId' = $vCenterId
+                    'pscId' = $pscId
+                }
+            }
+            $vCentersAndPscsLineIndex ++
         }
         Until ($lineContent -eq '\.')
     }
@@ -818,7 +837,7 @@ Function New-ExtractDataFromSDDCBackup
             $vCenter = $vCenters | Where-Object {$_.vCenterDomainID -eq $domainId}
             If ($sddcManagerObject.version -like "4.4.*")
             {
-                $ssoDomain = ($pscs | Where-Object {$_.vCenterDomainId -eq $vCenter.vCenterDomainId}).ssoDomain
+                $ssoDomain = ($pscs | Where-Object {$_.id -eq (($vCentersAndPscs | Where-Object {$_.vcenterId -eq $vcenter.vCenterID}).pscId)}).ssoDomain
             }
             else 
             {
