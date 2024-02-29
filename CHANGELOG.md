@@ -1,8 +1,14 @@
 # Release History
 
+## v1.0.8
+
+> Released: 2024-02-28
+
+- Modified `New-ExtractDataFromSDDCBackup` to accommodate VCF 4.4.1
+
 ## v1.0.7
 
-> Released: 2024-xx-xx
+> Released: Internal Build
 
 - Added `Invoke-SDDCManagerRestore` to automate SDDC Manager recovery
 - Added `Invoke-NSXManagerRestore` to automate NSX Manager recovery
