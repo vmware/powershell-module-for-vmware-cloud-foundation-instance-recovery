@@ -4767,6 +4767,7 @@ Function Add-AdditionalNSXManagers
         } Until ($sshSession)
         $stream = New-SSHShellStream -SSHSession $sshSession
         
+        <#
         If ($nsxManagerVersion -lt "400")
         {
             LogMessage -type INFO -message "[$nsxManagerFQDN] Deactivating Cluster"    
@@ -4776,7 +4777,8 @@ Function Add-AdditionalNSXManagers
             $stream.writeline("yes")
             Start-Sleep 2
         }
-
+        #>
+        
         LogMessage -type INFO -message "[$nsxManagerFQDN] Getting Cluster ID"
         $unwantedOutput = $stream.Read()
         Start-Sleep 2
