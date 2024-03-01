@@ -4778,7 +4778,7 @@ Function Add-AdditionalNSXManagers
             Start-Sleep 2
         }
         #>
-        
+
         LogMessage -type INFO -message "[$nsxManagerFQDN] Getting Cluster ID"
         $unwantedOutput = $stream.Read()
         Start-Sleep 2
@@ -4800,6 +4800,7 @@ Function Add-AdditionalNSXManagers
         $certApiThumbprint = $stream.Readline()
         LogMessage -type INFO -message "[$nsxManagerFQDN] Cert Thumbprint: $certApiThumbprint retrieved"
 
+        <#
         If ($nsxManagerVersion -lt "400")
         {
             Foreach ($otherclusterNodeID in $otherclusterNodeIDs)
@@ -4810,6 +4811,7 @@ Function Add-AdditionalNSXManagers
                 #Need to undersand how to monitor here
             }
         }
+        #>
 
         #Close SSH Session
         Remove-SSHSession -SSHSession $sshSession | Out-Null
@@ -4862,6 +4864,7 @@ Function Add-AdditionalNSXManagers
             #Close SSH Session
             Remove-SSHSession -SSHSession $sshSession | Out-Null
 
+            <#
             If ($nsxManagerVersion -lt "400")
             {
                 #Restore Certificate on Manager
@@ -4884,6 +4887,7 @@ Function Add-AdditionalNSXManagers
                 Get-VM -Name $nsxManagerFQDN | Restart-VM -confirm:$false | Out-Null
                 Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false    
             }
+            #>
         }
     }
     else 
