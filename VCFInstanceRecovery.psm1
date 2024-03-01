@@ -458,11 +458,21 @@ Function New-ExtractDataFromSDDCBackup
         If ($lineContent -ne '\.')
         {
             $vCenterID = $lineContent.split("`t")[0]
-            $vCenterVersion= $lineContent.split("`t")[9]
-            $vCenterFqdn= $lineContent.split("`t")[10]
-            $vCenterIp= $lineContent.split("`t")[11]
-            $vCenterVMname= $lineContent.split("`t")[12]
-            $vCenterDomainID = ($hostsAndDomains | Where-Object {$_.hostId -eq (($hostsandVcenters | Where-Object {$_.vCenterID -eq $vCenterID})[0].hostID)}).domainID
+            If ($sddcManagerObject.version -like "4.4.*")
+            {
+                $vCenterVersion= $lineContent.split("`t")[10]
+                $vCenterFqdn= $lineContent.split("`t")[11]
+                $vCenterIp= $lineContent.split("`t")[12]
+                $vCenterVMname= $lineContent.split("`t")[13]
+            }
+            else 
+            {
+                $vCenterVersion= $lineContent.split("`t")[9]
+                $vCenterFqdn= $lineContent.split("`t")[10]
+                $vCenterIp= $lineContent.split("`t")[11]
+                $vCenterVMname= $lineContent.split("`t")[12]
+            }
+            $vCenterDomainID = ($hostsAndDomains | Where-Object {$_.hostId -eq (($hostsandVcenters | Where-Object {$_.vCenterID -eq $vCenterID})[0].hostID)}).domainID    
             $vCenters += [pscustomobject]@{
                 'vCenterID' = $vCenterID
                 'vCenterVersion' = $vCenterVersion
