@@ -2877,91 +2877,97 @@ Function Remove-NonResponsiveHosts
 
     #Create NSX Header for API Calls
     $headers = VCFIRCreateHeader -username $nsxManagerAdmin -password $nsxManagerAdminPassword
-    
-    #Get Transport Nodes for Cluster
-    $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/"
-    LogMessage -type INFO -message "[$nsxManagerFqdn] Getting Transport Nodes"
-    $transportNodeContents = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
-    $allHostTransportNodes = ($transportNodeContents.results | Where-Object { ($_.resource_type -eq "TransportNode") -and ($_.node_deployment_info.os_type -eq "ESXI") })
-    LogMessage -type INFO -message "[$nsxManagerFqdn] Filtering Transport Nodes to members of cluster $clusterName"
-    $clusterHosts = $nonResponsiveHosts.name
-    $hostIDs = ($allHostTransportNodes | Where-Object { $_.display_name -in $clusterHosts } | Sort-Object -property display_name).id
 
-    #Attempt Remove NSX From Cluster to detach Transport Node Profile
-    $uri = "https://$nsxManagerFqdn/api/v1/fabric/compute-collections"
-    $computeCollections = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
-    $clusterComputeCollectionId = ($computeCollections.results | Where-Object {$_.cm_local_id -eq $clusterMoRef}).external_id
-    $clusterVlcmManaged = (($computeCollections.results | Where-Object {$_.cm_local_id -eq $clusterMoRef}).origin_properties | Where-Object {$_.key -eq "lifecycleManaged"}).value
-    $uri = "https://$nsxManagerFqdn/api/v1/fabric/compute-collections/$($clusterComputeCollectionId)?action=remove_nsx"
-    $detachTNP = Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -headers $headers
-    
-    #Wait for Hosts to be Orphaned
-    Foreach ($hostID in $hostIDs) 
-    {
-        LogMessage -type WAIT -message "[$nsxManagerFqdn] Waiting for Host $(($allHostTransportNodes | Where-Object {$_.id -eq $hostID}).display_name) to be `'Orphaned`'"
-        Do
-        {
-            $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($hostID)/state"
-            $tnState = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
-        } Until ($tnState.state -eq "orphaned")    
-    }
-
-    #Attempt to Force Delete the Transport Nodes
-    Foreach ($hostID in $hostIDs) 
-    {
-        $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($hostID)?force=true&unprepare_host=false"
-        LogMessage -type INFO -message "[$nsxManagerFqdn] Removing Transport Node associated with $(($allHostTransportNodes | Where-Object {$_.id -eq $hostID}).display_name)"
-        $deleteTN = Invoke-WebRequest -Method DELETE -URI $uri -ContentType application/json -headers $headers
-        
-    }
-
-    #Wait for Transport Nodes to flush
-    LogMessage -type WAIT -message "[$nsxManagerFqdn] Waiting for Transport Nodes to flush"
-    $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/"
-    Do
-    {
-        $transportNodeContents = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
-        $allHostTransportNodes = ($transportNodeContents.results | Where-Object { ($_.resource_type -eq "TransportNode") -and ($_.node_deployment_info.os_type -eq "ESXI") })
-        $deletedhostIDs = ($allHostTransportNodes | Where-Object { $_.display_name -in $clusterHosts }).id
-    } Until(!$deletedhostIDs)
-
-    #Remove non-responsive hosts
-    Foreach ($nonResponsiveHost in $nonResponsiveHosts)
-    {
-        LogMessage -type INFO -message "[$($nonResponsiveHost.name)] Removing from $clusterName"
-        Get-VMHost | Where-Object { $_.Name -eq $nonResponsiveHost.Name } | Remove-VMHost -Confirm:$false
-    }
-    Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
-
-    #If VLCM cluster, wait until cleanup of cluster post TN delete is done
-    If ($clusterVlcmManaged -eq "true")
-    {
-        $SecurePassword = ConvertTo-SecureString -String $nsxManagerRootPassword -AsPlainText -Force
-        $mycreds = New-Object System.Management.Automation.PSCredential ("root", $SecurePassword)
-        $inmem = New-SSHMemoryKnownHost
-        New-SSHTrustedHost -KnownHostStore $inmem -HostName $nsxManagerFQDN -FingerPrint ((Get-SSHHostKey -ComputerName $nsxManagerFQDN).fingerprint) | Out-Null
-        Do
-        {
-            $sshSession = New-SSHSession -computername $nsxManagerFQDN -Credential $mycreds -KnownHost $inmem
-        } Until ($sshSession)
-        $nsxCommand = "cat /var/log/proton/nsxapi.log | grep `".*RemoveNsxVlcmActivity.*entity= 'ComputeCollectionMsg/$clusterComputeCollectionId.*phase= `'Begin`'`""
-        LogMessage -type WAIT -message "[$nsxManagerFqdn] Waiting for Cluster Image Cleanup to Complete"
-        Do
-        {
-            Sleep 5
-            $relevantUpdates = (Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $nsxCommand).output	
-        } Until ($relevantUpdates[-1] -like "*RemoveNsxVlcmActivity*phase= `'Begin`'*next phase= `'Success!`'")
-        Remove-SSHSession -SSHSession $sshSession | Out-Null
-    }
-
-    #Reattach TNP
-    #Get Transport Node Profiles
-    #Check for Compatible NSX Manager version
+    #Check NSX Manager version
     $uri = "https://$nsxManagerFqdn/api/v1/node"
     $nsxManagerVersion = [INT](((((Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json).product_version).replace(".","")).substring(0,3))
     
     If ($nsxManagerVersion)
     {
+        #Get Transport Nodes for Cluster
+        $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/"
+        LogMessage -type INFO -message "[$nsxManagerFqdn] Getting Transport Nodes"
+        $transportNodeContents = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
+        $allHostTransportNodes = ($transportNodeContents.results | Where-Object { ($_.resource_type -eq "TransportNode") -and ($_.node_deployment_info.os_type -eq "ESXI") })
+        LogMessage -type INFO -message "[$nsxManagerFqdn] Filtering Transport Nodes to members of cluster $clusterName"
+        $clusterHosts = $nonResponsiveHosts.name
+        $hostIDs = ($allHostTransportNodes | Where-Object { $_.display_name -in $clusterHosts } | Sort-Object -property display_name).id
+
+        #Attempt Remove NSX From Cluster to detach Transport Node Profile
+        $uri = "https://$nsxManagerFqdn/api/v1/fabric/compute-collections"
+        $computeCollections = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
+        $clusterComputeCollectionId = ($computeCollections.results | Where-Object {$_.cm_local_id -eq $clusterMoRef}).external_id
+        $clusterVlcmManaged = (($computeCollections.results | Where-Object {$_.cm_local_id -eq $clusterMoRef}).origin_properties | Where-Object {$_.key -eq "lifecycleManaged"}).value
+        $uri = "https://$nsxManagerFqdn/api/v1/fabric/compute-collections/$($clusterComputeCollectionId)?action=remove_nsx"
+        $detachTNP = Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -headers $headers
+        
+        #Wait for Hosts to be Orphaned
+        Foreach ($hostID in $hostIDs) 
+        {
+            LogMessage -type WAIT -message "[$nsxManagerFqdn] Waiting for Host $(($allHostTransportNodes | Where-Object {$_.id -eq $hostID}).display_name) to be `'Orphaned`'"
+            Do
+            {
+                $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($hostID)/state"
+                $tnState = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
+            } Until ($tnState.state -eq "orphaned")    
+        }
+
+        #Attempt to Force Delete the Transport Nodes
+        Foreach ($hostID in $hostIDs) 
+        {
+            If ($nsxManagerVersion -le "313")
+            {
+                $uri = "https://$nsxManagerFqdn/api/v1/fabric/nodes/$($hostID)?unprepare_host=false"
+            }
+            else
+            {
+                $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($hostID)?force=true&unprepare_host=false"
+            }
+            LogMessage -type INFO -message "[$nsxManagerFqdn] Removing Transport Node associated with $(($allHostTransportNodes | Where-Object {$_.id -eq $hostID}).display_name)"
+            $deleteTN = Invoke-WebRequest -Method DELETE -URI $uri -ContentType application/json -headers $headers            
+        }
+
+        #Wait for Transport Nodes to flush
+        LogMessage -type WAIT -message "[$nsxManagerFqdn] Waiting for Transport Nodes to flush"
+        $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/"
+        Do
+        {
+            $transportNodeContents = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
+            $allHostTransportNodes = ($transportNodeContents.results | Where-Object { ($_.resource_type -eq "TransportNode") -and ($_.node_deployment_info.os_type -eq "ESXI") })
+            $deletedhostIDs = ($allHostTransportNodes | Where-Object { $_.display_name -in $clusterHosts }).id
+        } Until(!$deletedhostIDs)
+
+        #Remove non-responsive hosts
+        Foreach ($nonResponsiveHost in $nonResponsiveHosts)
+        {
+            LogMessage -type INFO -message "[$($nonResponsiveHost.name)] Removing from $clusterName"
+            Get-VMHost | Where-Object { $_.Name -eq $nonResponsiveHost.Name } | Remove-VMHost -Confirm:$false
+        }
+        Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+
+        #If VLCM cluster, wait until cleanup of cluster post TN delete is done
+        If ($clusterVlcmManaged -eq "true")
+        {
+            $SecurePassword = ConvertTo-SecureString -String $nsxManagerRootPassword -AsPlainText -Force
+            $mycreds = New-Object System.Management.Automation.PSCredential ("root", $SecurePassword)
+            $inmem = New-SSHMemoryKnownHost
+            New-SSHTrustedHost -KnownHostStore $inmem -HostName $nsxManagerFQDN -FingerPrint ((Get-SSHHostKey -ComputerName $nsxManagerFQDN).fingerprint) | Out-Null
+            Do
+            {
+                $sshSession = New-SSHSession -computername $nsxManagerFQDN -Credential $mycreds -KnownHost $inmem
+            } Until ($sshSession)
+            $nsxCommand = "cat /var/log/proton/nsxapi.log | grep `".*RemoveNsxVlcmActivity.*entity= 'ComputeCollectionMsg/$clusterComputeCollectionId.*phase= `'Begin`'`""
+            LogMessage -type WAIT -message "[$nsxManagerFqdn] Waiting for Cluster Image Cleanup to Complete"
+            Do
+            {
+                Sleep 5
+                $relevantUpdates = (Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $nsxCommand).output	
+            } Until ($relevantUpdates[-1] -like "*RemoveNsxVlcmActivity*phase= `'Begin`'*next phase= `'Success!`'")
+            Remove-SSHSession -SSHSession $sshSession | Out-Null
+        }
+
+        #Reattach TNP
+        #Get Transport Node Profiles
         If ($nsxManagerVersion -le "313")
         {
             $uri = "https://$nsxManagerFqdn/api/v1/transport-node-profiles"
@@ -2970,27 +2976,27 @@ Function Remove-NonResponsiveHosts
         {
             $uri = "https://$nsxManagerFqdn/policy/api/v1/infra/host-transport-node-profiles"
         }
+
+        $transportNodeProfiles = ((Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json).results
+        $clusterTransportNodeProfile = $transportNodeProfiles | where-object {$_.display_name -like "*$clusterName*"}
+
+        #Create Transport Node Collection
+        $body = '{
+        "resource_type": "TransportNodeCollection",
+        "display_name": "' + $clusterName + '",
+        "description": "' + $clusterName + '",
+        "compute_collection_id": "'+$clusterComputeCollectionId+'",
+        "transport_node_profile_id": "'+$clusterTransportNodeProfile.id+'"
+        }'
+        $uri = "https://$nsxManagerFqdn/api/v1/transport-node-collections"
+        LogMessage -type INFO -message "[$nsxManagerFqdn] Reattaching Transport Node Profile to Cluster $clusterName"
+        $response = Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -headers $headers -body $body
     }
     else 
     {
         LogMessage -type ERROR -message "[$jumpboxName] Unable to determine NSX Manager Version. Check that it was successfully restored."
         Break
     }
-    $transportNodeProfiles = ((Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json).results
-    $clusterTransportNodeProfile = $transportNodeProfiles | where-object {$_.display_name -like "*$clusterName*"}
-
-    #Create Transport Node Collection
-    $body = '{
-    "resource_type": "TransportNodeCollection",
-    "display_name": "' + $clusterName + '",
-    "description": "' + $clusterName + '",
-    "compute_collection_id": "'+$clusterComputeCollectionId+'",
-    "transport_node_profile_id": "'+$clusterTransportNodeProfile.id+'"
-    }'
-    $uri = "https://$nsxManagerFqdn/api/v1/transport-node-collections"
-    LogMessage -type INFO -message "[$nsxManagerFqdn] Reattaching Transport Node Profile to Cluster $clusterName"
-    $response = Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -headers $headers -body $body
-
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Remove-NonResponsiveHosts
