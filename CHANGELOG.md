@@ -1,8 +1,14 @@
 # Release History
 
+## v1.0.9
+
+> Released: 2024-03-12
+
+- Modified `Remove-NonResponsiveHosts` to accommodate VCF 4.4.1
+
 ## v1.0.8
 
-> Released: 2024-02-28
+> Released: Internal Build
 
 - Modified `New-ExtractDataFromSDDCBackup` to accommodate VCF 4.4.1
 
@@ -21,7 +27,6 @@
 - Added support for vLCM clusters
 - Enhanced `New-NSXManagerOvaDeployment` adding `--X:waitForIp` to ensure appliances are near ready for use before continuing
 - Enhanced `Move-ClusterHostNetworkingTovSS` with full idempotency
-- Enhanced `Resolve-PhysicalHostTransportNodes` to prevent use in NSX version 4.1.2 and higher
 - Enhanced OSD output for all functions to include message time and timestamps, better handlong of ovftool output
 - Adjusted parameter names for several functions
 - Deprecated `Resolve-PhysicalHostTransportNodes`
