@@ -2,6 +2,6 @@
 
 ## v1.0.9
 
-> Released: Unreleased
+> Released: 2024-03-27
 
 - Initial release of `VMware.CloudFoundation.InstanceRecovery`.

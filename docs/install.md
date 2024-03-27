@@ -10,14 +10,6 @@ Verify that your system has a [supported edition and version](index.md#powershel
     --8<-- "./docs/snippets/install-module.ps1"
     ```
 
-    Import the modules before proceeding:
-
-    For example:
-
-    ```powershell
-    --8<-- "./docs/snippets/import-module.ps1"
-    ```
-
 === ":material-pipe-disconnected: &nbsp; Disconnected Environment"
 
     For environments disconnected from the Internet _(e.g., dark-site, air-gapped)_, you can save the [module dependencies](index.md#module-dependencies) from the PowerShell Gallery by running the following commands in the PowerShell console:
@@ -36,18 +28,12 @@ Verify that your system has a [supported edition and version](index.md#powershel
         --8<-- "./docs/snippets/copy-module-local-windows.ps1"
         ```
 
-        On the target system, import the module dependencies by running the following commands in the PowerShell console:
-
-        ```powershell
-        --8<-- "./docs/snippets/import-module.ps1"
-        ```
-
-Once installed, any cmdlets associated with `VMware.CloudFoundation.CertificateManagement` and the its dependencies will be available for use.
+Once installed, any cmdlets associated with `VMware.CloudFoundation.InstanceRecovery` and the its dependencies will be available for use.
 
 To view the cmdlets for available in the module, run the following command in the PowerShell console.
 
 ```powershell
-Get-Command -Module VMware.CloudFoundation.CertificateManagement
+Get-Command -Module VMware.CloudFoundation.InstanceRecovery
 ```
 
 To view the help for any cmdlet, run the `Get-Help` command in the PowerShell console.

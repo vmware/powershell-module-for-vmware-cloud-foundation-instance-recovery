@@ -28,8 +28,8 @@ Platform                                                     | Support
 The following table lists the supported operating systems for this module.
 
 Operating System                                                     | Version
----------------------------------------------------------------------|-----------
-:fontawesome-brands-windows: &nbsp; Microsoft Windows Server         | 2019, 2022
+---------------------------------------------------------------------|---------
+:fontawesome-brands-windows: &nbsp; Microsoft Windows Server         | 2019
 
 ### PowerShell
 
@@ -45,11 +45,11 @@ The following table lists the required dependencies for this module.
 
 Dependency                                           | Version   | Publisher                 | Reference
 -----------------------------------------------------|-----------|---------------------------|---------------------------------------------------------------------------
-[VMware.PowerCLI][psgallery-module-powercli]         | >= 13.1.0 | Broadcom                  | :fontawesome-solid-book: &nbsp; [Documentation][developer-module-powercli]
-[PowerVCF][psgallery-module-powervcf]                | >= 2.4.0  | Broadcom                  | :fontawesome-solid-book: &nbsp; [Documentation][docs-module-powervcf]
-[Posh-SSH][psgallery-module-poshssh]                 | >= 3.0.8  | Carlos Perez              | :fontawesome-brands-github: &nbsp; [GitHUb][github-module-poshssh]
-[7Zip4Powershell][psgallery-module-7zip4powershell]  | >= 2.4.0  | Thomas Freudenberg        | :fontawesome-brands-github: &nbsp; [GitHub][github-module-7zip4powershell]
-[OpenSSL for Windows][download-win64openssl]         | >= 3.2.1  | Shining Light Productions | :octicons-package-dependencies-24: &nbsp; [Download][download-win64openssl]
+[VMware.PowerCLI][psgallery-module-powercli]         | 13.1.0    | Broadcom                  | :fontawesome-solid-book: &nbsp; [Documentation][developer-module-powercli]
+[PowerVCF][psgallery-module-powervcf]                | 2.4.0     | Broadcom                  | :fontawesome-solid-book: &nbsp; [Documentation][docs-module-powervcf]
+[Posh-SSH][psgallery-module-poshssh]                 | 3.0.8     | Carlos Perez              | :fontawesome-brands-github: &nbsp; [GitHUb][github-module-poshssh]
+[7Zip4Powershell][psgallery-module-7zip4powershell]  | 2.4.0     | Thomas Freudenberg        | :fontawesome-brands-github: &nbsp; [GitHub][github-module-7zip4powershell]
+[OpenSSL for Windows][download-win64openssl]         | 3.2.1     | Shining Light Productions | :octicons-package-dependencies-24: &nbsp; [Download][download-win64openssl]
 
 [docs-vmware-cloud-foundation]: https://docs.vmware.com/en/VMware-Cloud-Foundation/index.html
 [microsoft-powershell]: https://docs.microsoft.com/en-us/powershell

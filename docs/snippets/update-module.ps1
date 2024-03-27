@@ -1,1 +1,1 @@
-Update-Module -Name VMware.CloudFoundation.InstanceRecovery
+Update-Module -Name VMware.CloudFoundation.InstanceRecovery -Scope AllUsers

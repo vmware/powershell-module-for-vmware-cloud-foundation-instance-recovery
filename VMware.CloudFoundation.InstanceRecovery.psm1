@@ -193,7 +193,7 @@ Function Confirm-VCFInstanceRecoveryPreReqs
 
     #Check Dependencies
     $jumpboxName = hostname
-    $is7Zip4PowerShellInstalled = Get-InstalledModule -name "7Zip4PowerShell" -MinimumVersion "2.4.0" -ErrorAction SilentlyContinue
+    $is7Zip4PowerShellInstalled = Get-InstalledModule -name "7Zip4PowerShell" -RequiredVersion "2.4.0" -ErrorAction SilentlyContinue
     If (!$is7Zip4PowerShellInstalled)
     {
         LogMessage -type INFO -message "[$jumpboxName] 7Zip4PowerShell Module Missing. Please install"
@@ -203,7 +203,7 @@ Function Confirm-VCFInstanceRecoveryPreReqs
         LogMessage -type INFO -message "[$jumpboxName] 7Zip4PowerShell Module found"
     }
 
-    $isPoshSSHInstalled = Get-InstalledModule -name "Posh-SSH" -MinimumVersion "3.0.8" -ErrorAction SilentlyContinue
+    $isPoshSSHInstalled = Get-InstalledModule -name "Posh-SSH" -RequiredVersion "3.0.8" -ErrorAction SilentlyContinue
     If (!$isPoshSSHInstalled)
     {
         LogMessage -type INFO -message "[$jumpboxName] Posh-SSH Module Missing. Please install"
@@ -223,7 +223,7 @@ Function Confirm-VCFInstanceRecoveryPreReqs
         LogMessage -type INFO -message "[$jumpboxName] PowerCLI Module found"
     }
 
-    $isPowerVCFInstalled = Get-InstalledModule -name "PowerVCF" -MinimumVersion "2.4.0" -ErrorAction SilentlyContinue
+    $isPowerVCFInstalled = Get-InstalledModule -name "PowerVCF" -RequiredVersion "2.4.0" -ErrorAction SilentlyContinue
     If (!$isPowerVCFInstalled)
     {
         LogMessage -type INFO -message "[$jumpboxName] PowerVCF Module Missing. Please install"
