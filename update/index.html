@@ -18,11 +18,11 @@
         <link rel="prev" href="../install/">
       
       
-        <link rel="next" href="../user-access/">
+        <link rel="next" href="../release-notes/">
       
       
       <link rel="icon" href="../favicon.ico">
-      <meta name="generator" content="mkdocs-1.5.3, mkdocs-material-9.5.14">
+      <meta name="generator" content="mkdocs-1.5.3, mkdocs-material-9.5.15">
     
     
       
@@ -30,7 +30,7 @@
       
     
     
-      <link rel="stylesheet" href="../assets/stylesheets/main.10ba22f1.min.css">
+      <link rel="stylesheet" href="../assets/stylesheets/main.7e359304.min.css">
       
         
         <link rel="stylesheet" href="../assets/stylesheets/palette.06af60db.min.css">
@@ -370,8 +370,6 @@
       
         
       
-        
-      
     
     
       
@@ -463,27 +461,6 @@
 
       </a>
       
-    </li>
-  
-
-              
-            
-              
-                
-  
-  
-  
-  
-    <li class="md-nav__item">
-      <a href="../user-access/" class="md-nav__link">
-        
-  
-  <span class="md-ellipsis">
-    User Access
-  </span>
-  
-
-      </a>
     </li>
   
 
@@ -1556,16 +1533,16 @@
 
 <h1 id="updating-the-module">Updating the Module<a class="headerlink" href="#updating-the-module" title="Permanent link">&para;</a></h1>
 <p>Update the PowerShell module from the PowerShell Gallery by running the following commands:</p>
-<div class="highlight"><pre><span></span><code><span class="nb">Update-Module</span> <span class="n">-Name</span> <span class="n">VMware</span><span class="p">.</span><span class="n">CloudFoundation</span><span class="p">.</span><span class="n">InstanceRecovery</span>
+<div class="highlight"><pre><span></span><code><span class="nb">Update-Module</span> <span class="n">-Name</span> <span class="n">VMware</span><span class="p">.</span><span class="n">CloudFoundation</span><span class="p">.</span><span class="n">InstanceRecovery</span> <span class="n">-Scope</span> <span class="n">AllUsers</span>
 </code></pre></div>
 <p>To verify that the PowerShell module is updated, run the following command in the PowerShell console.</p>
 <div class="highlight"><pre><span></span><code><span class="nb">Get-InstalledModule</span> <span class="n">-Name</span> <span class="n">VMware</span><span class="p">.</span><span class="n">CloudFoundation</span><span class="p">.</span><span class="n">InstanceRecovery</span>
 </code></pre></div>
 <p>If a dependency does not meet the minimum requirements, run the appropriate <code>Update-Module</code> command for the dependency in the PowerShell console.</p>
-<div class="highlight"><pre><span></span><code><span class="nb">Update-Module</span> <span class="n">-Name</span> <span class="n">VMware</span><span class="p">.</span><span class="n">PowerCLI</span>
-<span class="nb">Update-Module</span> <span class="n">-Name</span> <span class="n">PowerVCF</span>
-<span class="nb">Update-Module</span> <span class="n">-Name</span> <span class="n">7Zip4PowerShell</span>
-<span class="nb">Update-Module</span> <span class="n">-Name</span> <span class="n">Posh-SSH</span>
+<div class="highlight"><pre><span></span><code><span class="nb">Update-Module</span> <span class="n">-Name</span> <span class="n">VMware</span><span class="p">.</span><span class="n">PowerCLI</span> <span class="n">-RequiredVersion</span> <span class="n">13</span><span class="p">.</span><span class="n">1</span><span class="p">.</span><span class="n">0</span> <span class="n">-Scope</span> <span class="n">AllUsers</span>
+<span class="nb">Update-Module</span> <span class="n">-Name</span> <span class="n">PowerVCF</span> <span class="n">-RequiredVersion</span> <span class="n">2</span><span class="p">.</span><span class="n">4</span><span class="p">.</span><span class="n">0</span> <span class="n">-Scope</span> <span class="n">AllUsers</span>
+<span class="nb">Update-Module</span> <span class="n">-Name</span> <span class="n">7Zip4PowerShell</span> <span class="n">RequiredVersion</span> <span class="n">2</span><span class="p">.</span><span class="n">4</span><span class="p">.</span><span class="n">0</span> <span class="n">-Scope</span> <span class="n">AllUsers</span>
+<span class="nb">Update-Module</span> <span class="n">-Name</span> <span class="n">Posh-SSH</span> <span class="n">-RequiredVersion</span> <span class="n">3</span><span class="p">.</span><span class="n">0</span><span class="p">.</span><span class="n">8</span> <span class="n">-Scope</span> <span class="n">AllUsers</span>
 </code></pre></div>
 
 
@@ -1642,13 +1619,13 @@
         
         
           
-          <a href="../user-access/" class="md-footer__link md-footer__link--next" aria-label="Next: User Access">
+          <a href="../release-notes/" class="md-footer__link md-footer__link--next" aria-label="Next: Release Notes">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                User Access
+                Release Notes
               </div>
             </div>
             <div class="md-footer__button md-icon">
