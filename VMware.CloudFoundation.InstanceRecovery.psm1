@@ -222,15 +222,23 @@ Function Confirm-VCFInstanceRecoveryPreReqs
     {
         LogMessage -type INFO -message "[$jumpboxName] PowerCLI Module found"
     }
-
-    $isPowerVCFInstalled = Get-InstalledModule -name "PowerVCF" -RequiredVersion "2.4.0" -ErrorAction SilentlyContinue
-    If (!$isPowerVCFInstalled)
+    $isPowerCLISddcmModuleInstalled = Get-InstalledModule -name "VMware.Sdk.Vcf.SddcManager" -RequiredVersion "5.1.0" -ErrorAction SilentlyContinue
+    If (!$isPowerCLISddcmModuleInstalled)
     {
-        LogMessage -type INFO -message "[$jumpboxName] PowerVCF Module Missing. Please install"
+        LogMessage -type INFO -message "[$jumpboxName] VMware.Sdk.Vcf.SddcManager Module Missing. Please install"
     }
     else
     {
-        LogMessage -type INFO -message "[$jumpboxName] PowerVCF Module found"
+        LogMessage -type INFO -message "[$jumpboxName] VMware.Sdk.Vcf.SddcManager Module found"
+    }
+    $isPowerCLICloudBuilderModuleInstalled = Get-InstalledModule -name "VMware.Sdk.Vcf.CloudBuilder" -RequiredVersion "5.1.0" -ErrorAction SilentlyContinue
+    If (!$isPowerCLICloudBuilderModuleInstalled)
+    {
+        LogMessage -type INFO -message "[$jumpboxName] VMware.Sdk.Vcf.CloudBuilder Module Missing. Please install"
+    }
+    else
+    {
+        LogMessage -type INFO -message "[$jumpboxName] VMware.Sdk.Vcf.CloudBuilder Module found"
     }
 
     $installedSoftware = Get-InstalledSoftware
@@ -2012,16 +2020,16 @@ Function Resolve-PhysicalHostServiceAccounts
     $vCenterConnection = Connect-VIServer -server $vCenterFQDN -username $vCenterAdmin -password $vCenterAdminPassword
     $clusterHosts = Get-Cluster -name $clusterName | Get-VMHost
     Disconnect-VIServer * -confirm:$false
-    $tokenRequest = Request-VCFToken -fqdn $sddcManagerFQDN -username $sddcManagerAdmin -password $sddcManagerAdminPassword
+    $sddcManagerConnection = Connect-VcfSddcManagerServer -server $sddcManagerFQDN -User $sddcManagerAdmin -Password $sddcManagerAdminPassword
     #verify SDDC Manager credential API state
-    $credentialAPILastTask = ((Get-VCFCredentialTask -errorAction silentlyContinue| Sort-Object -Property creationTimeStamp)[-1]).status
+    $credentialAPILastTask = ((Invoke-VcfGetCredentialsTasks -errorAction silentlyContinue | Sort-Object -Property creationTimeStamp)[-1]).status
     if ($credentialAPILastTask -eq "FAILED")
     {
         LogMessage -type INFO -message "[$sddcManagerFQDN] Failed credential operation detected. Please resolve in SDDC Manager and try again" ; break
     }
 
     Foreach ($hostInstance in $clusterHosts) {
-        $esxiRootPassword = [String](Get-VCFCredential | ? {$_.resource.resourceName -eq $hostInstance.name}).password
+        $esxiRootPassword = [String]((Invoke-VcfGetCredentials).Elements | where-object {$_.Resource.ResourceName -eq $hostInstance.name}).password
         $esxiConnection = Connect-VIServer -Server $hostInstance.name -User root -Password $esxiRootPassword.Trim() | Out-Null
         $esxiHostName = $hostInstance.name.Split(".")[0]
         $svcAccountName = "svc-vcf-$esxiHostName"
@@ -2046,33 +2054,18 @@ Function Resolve-PhysicalHostServiceAccounts
 
         $esxiHostName = $hostInstance.name.Split(".")[0]
         $svcAccountName = "svc-vcf-$esxiHostName"
-
-        $credentialsObject += [pscustomobject]@{
-            'username' = $svcAccountName
-            'password' = $svcAccountPassword
-        }
-
-        $elementsObject += [pscustomobject]@{
-            'resourceName' = $hostInstance.name
-            'resourceType' = 'ESXI'
-            'credentials'  = @($credentialsObject)
-        }
-
-        $esxHostObject += [pscustomobject]@{
-            'operationType' = 'REMEDIATE'
-            'elements'      = @($elementsObject)
-        }
-
-        $esxiHostJson = $esxHostObject | Convertto-Json -depth 10
         LogMessage -type INFO -message "[$($hostInstance.name)] Remediating VCF Service Account Password: " -nonewline
-        $taskID = (Set-VCFCredential -json $esxiHostJson).id
+        $BaseCredential = Initialize-VcfBaseCredential -AccountType "SERVICE" -CredentialType "SSH" -Password $svcAccountPassword -Username $svcAccountName
+        $ResourceCredentials = Initialize-VcfResourceCredentials -Credentials $BaseCredential -ResourceName $hostInstance.name -ResourceType "ESXI"
+        $CredentialsUpdateSpec = Initialize-VcfCredentialsUpdateSpec -Elements $ResourceCredentials -OperationType "REMEDIATE"
+        $taskID = (Invoke-VcfUpdateOrRotatePasswords -credentialsUpdateSpec $credentialsUpdateSpec).Id
         Do {
             Sleep 5
-            $taskStatus = (Get-VCFCredentialTask -id $taskID).status
+            $taskStatus = (Invoke-VcfGetCredentialsTask -id $taskID).Elements.Status
         } Until ($taskStatus -ne "IN_PROGRESS")
-        LogMessage -type INFO -message "$taskStatus"
     }
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+
 }
 Export-ModuleMember -Function Resolve-PhysicalHostServiceAccounts
 #EndRegion SDDC Manager Functions
@@ -3061,8 +3054,8 @@ Function Add-HostsToCluster
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
 
-    $tokenRequest = Request-VCFToken -fqdn $sddcManagerFQDN -username $sddcManagerAdmin -password $sddcManagerAdminPassword
-    $newHosts = (get-vcfhost | where-object { $_.id -in ((get-vcfcluster -name $clusterName).hosts.id) }).fqdn | Sort-Object
+    $sddcManagerConnection = Connect-VcfSddcManagerServer -server $sddcManagerFQDN -User $sddcManagerAdmin -Password $sddcManagerAdminPassword
+    $newHosts = ((Invoke-VcfGetHosts).Elements | where-object { $_.id -in (((Invoke-VcfGetClusters).Elements | ? {$_.Name -eq $clusterName}).Hosts.Id) }).fqdn | Sort-Object
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
     foreach ($newHost in $newHosts) {
         $vmHosts = (Get-cluster -name $clusterName | Get-VMHost).Name | Sort-Object
@@ -3131,24 +3124,24 @@ Function Add-VMKernelsToHost
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
-    $tokenRequest = Request-VCFToken -fqdn $sddcManagerFQDN -username $sddcManagerAdmin -password $sddcManagerAdminPassword
+    $sddcManagerConnection = Connect-VcfSddcManagerServer -server $sddcManagerFQDN -User $sddcManagerAdmin -Password $sddcManagerAdminPassword
 
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
     $vmHosts = (Get-cluster -name $clusterName | Get-VMHost).Name | Sort-Object
     foreach ($vmhost in $vmHosts) {
-        $vmotionPG = ((get-vcfCluster -name $clusterName -vdses).portGroups | ? { $_.transportType -eq "VMOTION" }).name
-        $vmotionVDSName = ((get-vcfCluster -name $clusterName -vdses) | ? { $_.portGroups.transportType -contains "VMOTION" }).name
-        $vmotionIP = (((Get-VCFHost | Where-Object { $_.fqdn -eq $vmhost }).ipAddresses) | ? { $_.type -eq "VMOTION" }).ipAddress
-        $vmotionMask = (Get-VCFNetworkIPPool -id ((Get-VCFHost | Where-Object { $_.fqdn -eq $vmhost }).networkPool.id) | ? { $_.type -eq "VMOTION" }).mask
-        $vmotionMTU = (Get-VCFNetworkIPPool -id ((Get-VCFHost | Where-Object { $_.fqdn -eq $vmhost }).networkPool.id) | ? { $_.type -eq "VMOTION" }).mtu
-        $vmotionGW = (Get-VCFNetworkIPPool -id ((Get-VCFHost | Where-Object { $_.fqdn -eq $vmhost }).networkPool.id) | ? { $_.type -eq "VMOTION" }).gateway
-        $vsanPG = ((get-vcfCluster -name $clusterName -vdses).portGroups | ? { $_.transportType -eq "VSAN" }).name
-        $vsanVDSName = ((get-vcfCluster -name $clusterName -vdses) | ? { $_.portGroups.transportType -contains "VSAN" }).name
-        $vsanIP = (((Get-VCFHost | Where-Object { $_.fqdn -eq $vmhost }).ipAddresses) | ? { $_.type -eq "VSAN" }).ipAddress
-        $vsanMask = (Get-VCFNetworkIPPool -id ((Get-VCFHost | Where-Object { $_.fqdn -eq $vmhost }).networkPool.id) | ? { $_.type -eq "VSAN" }).mask
-        $vsanMTU = (Get-VCFNetworkIPPool -id ((Get-VCFHost | Where-Object { $_.fqdn -eq $vmhost }).networkPool.id) | ? { $_.type -eq "VSAN" }).mtu
-        $vsanGW = (Get-VCFNetworkIPPool -id ((Get-VCFHost | Where-Object { $_.fqdn -eq $vmhost }).networkPool.id) | ? { $_.type -eq "VSAN" }).gateway
-
+        $vmotionPG = ((Invoke-VcfGetVdses -ClusterId ((Invoke-VcfGetClusters).Elements | ? {$_.Name -eq $clusterName}).Id).PortGroups | ? { $_.TransportType -eq "VMOTION" }).Name
+        $vmotionVDSName = ((Invoke-VcfGetVdses -ClusterId ((Invoke-VcfGetClusters).Elements | ? {$_.Name -eq $clusterName}).Id) | ? { $_.Portgroups.TransportType -contains "VMOTION" }).Name
+        $vmotionIP = (((Invoke-VcfGetHosts).Elements | ? { $_.fqdn -eq $vmhost }).ipaddresses | ? { $_.type -eq "VMOTION" })._IpAddress
+        $vmotionMask = (((Invoke-VcfGetNetworksOfNetworkPool -id ((Invoke-VcfGetHosts).Elements | Where-Object { $_.fqdn -eq $vmhost }).networkPool.id)).Elements | ? { $_.type -eq "VMOTION" }).mask
+        $vmotionMTU = (((Invoke-VcfGetNetworksOfNetworkPool -id ((Invoke-VcfGetHosts).Elements | Where-Object { $_.fqdn -eq $vmhost }).networkPool.id)).Elements | ? { $_.type -eq "VMOTION" }).mtu
+        $vmotionGW = (((Invoke-VcfGetNetworksOfNetworkPool -id ((Invoke-VcfGetHosts).Elements | Where-Object { $_.fqdn -eq $vmhost }).networkPool.id)).Elements | ? { $_.type -eq "VMOTION" }).gateway
+        $vsanPG = ((Invoke-VcfGetVdses -ClusterId ((Invoke-VcfGetClusters).Elements | ? {$_.Name -eq $clusterName}).Id).PortGroups | ? { $_.transportType -eq "VSAN" }).Name
+        $vsanVDSName = ((Invoke-VcfGetVdses -ClusterId ((Invoke-VcfGetClusters).Elements | ? {$_.Name -eq $clusterName}).Id) | ? { $_.Portgroups.TransportType -contains "VSAN" }).Name
+        $vsanIP = (((Invoke-VcfGetHosts).Elements | ? { $_.fqdn -eq $vmhost }).ipaddresses | ? { $_.type -eq "VSAN" })._IpAddress
+        $vsanMask = (((Invoke-VcfGetNetworksOfNetworkPool -id ((Invoke-VcfGetHosts).Elements | Where-Object { $_.fqdn -eq $vmhost }).networkPool.id)).Elements | ? { $_.type -eq "VSAN" }).mask
+        $vsanMTU = (((Invoke-VcfGetNetworksOfNetworkPool -id ((Invoke-VcfGetHosts).Elements | Where-Object { $_.fqdn -eq $vmhost }).networkPool.id)).Elements | ? { $_.type -eq "VSAN" }).mtu
+        $vsanGW = (((Invoke-VcfGetNetworksOfNetworkPool -id ((Invoke-VcfGetHosts).Elements | Where-Object { $_.fqdn -eq $vmhost }).networkPool.id)).Elements | ? { $_.type -eq "VSAN" }).gateway
+req
         LogMessage -type INFO -message "[$vmhost] Creating vMotion vMK"
         $dvportgroup = Get-VDPortgroup -name $vmotionPG -VDSwitch $vmotionVDSName
         $vmk = New-VMHostNetworkAdapter -VMHost $vmhost -VirtualSwitch $vmotionVDSName -mtu $vmotionMTU -PortGroup $dvportgroup -ip $vmotionIP -SubnetMask $vmotionMask -NetworkStack (Get-VMHostNetworkStack -vmhost $vmhost | Where-Object { $_.id -eq "vmotion" })
