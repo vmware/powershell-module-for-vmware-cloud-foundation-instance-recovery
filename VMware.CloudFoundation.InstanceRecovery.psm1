@@ -585,6 +585,28 @@ Function New-ExtractDataFromSDDCBackup
     }
     Until ($lineContent -eq '\.')
 
+    #Experimental
+    LogMessage -type INFO -message "[$jumpboxName] Retrieving Host to Cluster Mappings"
+    $hostAndClusterLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.host_and_cluster" | Select-Object Line, LineNumber).LineNumber
+    $hostAndClusterLineIndex = $hostAndClusterLineNumber
+    $hostAndCluster = @()
+    Do
+    {
+        $lineContent = $psqlContent | Select-Object -Index $hostAndClusterLineIndex
+        If ($lineContent -ne '\.')
+        {
+            $hostID = $lineContent.split("`t")[0]
+            $clusterID = $lineContent.split("`t")[1]
+            $hostAndCluster += [pscustomobject]@{
+                'hostID' = $hostID
+                'clusterID' = $clusterID
+            }
+        }
+        $hostAndClusterLineIndex++
+    }
+    Until ($lineContent -eq '\.')
+    #End Experimental
+
     #Get Clusters
     LogMessage -type INFO -message "[$jumpboxName] Retrieving Cluster Details"
     $clustersLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.cluster " | Select-Object Line,LineNumber).LineNumber
@@ -606,6 +628,13 @@ Function New-ExtractDataFromSDDCBackup
             $primaryDatastoreType = $lineContent.split("`t")[13]
             $sourceID = $lineContent.split("`t")[14]
             $vdsDetails = @()
+
+            #Experimental
+            $clusterHosts = $hostsAndCluster | Where-Object {$_.clusterID -eq $id}
+
+
+            #End Experimental
+
             Foreach ($vds in ($clusterAndVds | Where-Object {$_.clusterID -eq $id}))
             {
                 $virtualDistributedSwitchDetails = $virtualDistributedSwitches | Where-Object {$_.id -eq $vds.vdsId}
