@@ -706,6 +706,8 @@ Function New-ExtractDataFromSDDCBackup
                 $hostNetworks = $networks | Where-Object {$_.id -in $hostNetworkIds}
                 $hostsArray += [pscustomobject]@{
                     'hostname' = $hostname
+                    'networkPoolID' = $networkPoolID
+                    'hostNetworkIds' = $hostNetworkIds
                     'networks' = $hostNetworks
                 }
             }
@@ -744,7 +746,7 @@ Function New-ExtractDataFromSDDCBackup
                 'primaryDatastoreType' = $primaryDatastoreType
                 'sourceID' = $sourceID
                 'vdsDetails' = $vdsDetails
-                'hosts'                = $hostsArray
+                'hosts' = $hostsArray
             }
         }
         $clustersLineIndex++
