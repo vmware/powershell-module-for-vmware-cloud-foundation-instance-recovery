@@ -744,6 +744,7 @@ Function New-ExtractDataFromSDDCBackup
                 'primaryDatastoreType' = $primaryDatastoreType
                 'sourceID' = $sourceID
                 'vdsDetails' = $vdsDetails
+                'hosts'                = $hostsArray
             }
         }
         $clustersLineIndex++
