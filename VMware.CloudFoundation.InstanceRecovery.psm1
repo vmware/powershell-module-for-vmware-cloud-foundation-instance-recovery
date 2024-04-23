@@ -412,6 +412,38 @@ Function New-ExtractDataFromSDDCBackup
     }
     Until ($lineContent -eq '\.')
 
+    #Get Hosts
+    LogMessage -type INFO -message "[$jumpboxName] Retrieving Host Details"
+    $hostsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.host " | Select-Object Line,LineNumber).LineNumber
+    $hostsLineIndex = $hostsLineNumber
+    $hosts = @()
+    Do
+    {
+        $lineContent = $psqlContent | Select-Object -Index $hostsLineIndex
+        If ($lineContent -ne '\.')
+        {
+            $hostId = $lineContent.split("`t")[0]
+            $hostName = $lineContent.split("`t")[9]
+            $hostMgmtIp = $lineContent.split("`t")[10]
+            $hostMask = $lineContent.split("`t")[17]
+            $hostVersion = $lineContent.split("`t")[18]
+            $hostVmotionIp = $lineContent.split("`t")[19]
+            $hostVsanIP = $lineContent.split("`t")[20]
+
+            $hosts += [pscustomobject]@{
+                'id' = $hostId
+                'hostName' = $hostName
+                'mgmtIp' = $hostMgmtIp
+                'mask' = $hostMask
+                'version' = $hostVersion
+                'vmotionIP' = $hostVmotionIp
+                'vsanIP' = $hostVsanIP
+            }
+        }
+        $hostsLineIndex++
+    }
+    Until ($lineContent -eq '\.')
+
     #Get Host and Domain Details
     LogMessage -type INFO -message "[$jumpboxName] Retrieving Host and Domain Mappings"
     $hostsAndDomainsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.host_and_domain " | Select-Object Line,LineNumber).LineNumber
@@ -564,6 +596,42 @@ Function New-ExtractDataFromSDDCBackup
     }
     Until ($lineContent -eq '\.')
 
+    #Get Networks
+    LogMessage -type INFO -message "[$jumpboxName] Retrieving Network Details"
+    $networksLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.vcf_network " | Select-Object Line,LineNumber).LineNumber
+    $networksLineIndex = $networksLineNumber
+    $networks = @()
+    Do
+    {
+        $lineContent = $psqlContent | Select-Object -Index $networksLineIndex
+        If ($lineContent -ne '\.')
+        {
+            $id = $lineContent.split("`t")[0]
+            $gateway = $lineContent.split("`t")[4]
+            $ipInclusionRanges = $lineContent.split("`t")[5] | ConvertFrom-Json
+            $startIPAddress = $ipInclusionRanges.start
+            $endIPAddress = $ipInclusionRanges.end
+            $mtu = $lineContent.split("`t")[6]
+            $subnet = $lineContent.split("`t")[7]
+            $subnetMask = $lineContent.split("`t")[8]
+            $type = $lineContent.split("`t")[9]
+            $vlanId = $lineContent.split("`t")[11]
+            $networks += [pscustomobject]@{
+                'id' = $id
+                'gateway' = $gateway
+                'startIPAddress' = $startIPAddress
+                'endIPAddress' = $endIPAddress
+                'mtu' = $mtu
+                'subnet' = $subnet
+                'subnetMask' = $subnetMask
+                'type' = $type
+                'vlanId' = $vlanId
+            }
+        }
+        $networksLineIndex++
+    }
+    Until ($lineContent -eq '\.')
+
     #Get Cluster and VDS
     LogMessage -type INFO -message "[$jumpboxName] Retrieving Cluster and vDS Mappings"
     $clusterAndVdsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.cluster_and_vds" | Select-Object Line,LineNumber).LineNumber
@@ -585,9 +653,8 @@ Function New-ExtractDataFromSDDCBackup
     }
     Until ($lineContent -eq '\.')
 
-    #Experimental
     LogMessage -type INFO -message "[$jumpboxName] Retrieving Host to Cluster Mappings"
-    $hostAndClusterLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.host_and_cluster" | Select-Object Line, LineNumber).LineNumber
+    $hostAndClusterLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.host_and_cluster " | Select-Object Line, LineNumber).LineNumber
     $hostAndClusterLineIndex = $hostAndClusterLineNumber
     $hostAndCluster = @()
     Do
@@ -605,7 +672,6 @@ Function New-ExtractDataFromSDDCBackup
         $hostAndClusterLineIndex++
     }
     Until ($lineContent -eq '\.')
-    #End Experimental
 
     #Get Clusters
     LogMessage -type INFO -message "[$jumpboxName] Retrieving Cluster Details"
@@ -630,9 +696,19 @@ Function New-ExtractDataFromSDDCBackup
             $vdsDetails = @()
 
             #Experimental
-            $clusterHosts = $hostsAndCluster | Where-Object {$_.clusterID -eq $id}
-
-
+            $clusterHosts = $hostAndCluster | Where-Object {$_.clusterID -eq $id}
+            $hostsArray = @()
+            Foreach ($clusterHost in $clusterHosts)
+            {
+                $hostname = ($hosts | Where-Object {$_.id -eq $clusterHost.hostId}).hostname
+                $networkPoolID = ($hostsAndPools | Where-Object {$_.hostId -eq $clusterHost.hostId}).poolId
+                $hostNetworkIds = ($poolsAndNetworks | Where-Object { $_.poolID -eq $networkPoolID }).networkId
+                $hostNetworks = $networks | Where-Object {$_.id -in $hostNetworkIds}
+                $hostsArray += [pscustomobject]@{
+                    'hostname' = $hostname
+                    'networks' = $hostNetworks
+                }
+            }
             #End Experimental
 
             Foreach ($vds in ($clusterAndVds | Where-Object {$_.clusterID -eq $id}))
@@ -735,42 +811,6 @@ Function New-ExtractDataFromSDDCBackup
             }
         }
         $poolsAndNetworksLineIndex++
-    }
-    Until ($lineContent -eq '\.')
-
-    #Get Networks
-    LogMessage -type INFO -message "[$jumpboxName] Retrieving Network Details"
-    $networksLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.vcf_network " | Select-Object Line,LineNumber).LineNumber
-    $networksLineIndex = $networksLineNumber
-    $networks = @()
-    Do
-    {
-        $lineContent = $psqlContent | Select-Object -Index $networksLineIndex
-        If ($lineContent -ne '\.')
-        {
-            $id = $lineContent.split("`t")[0]
-            $gateway = $lineContent.split("`t")[4]
-            $ipInclusionRanges = $lineContent.split("`t")[5] | ConvertFrom-Json
-            $startIPAddress = $ipInclusionRanges.start
-            $endIPAddress = $ipInclusionRanges.end
-            $mtu = $lineContent.split("`t")[6]
-            $subnet = $lineContent.split("`t")[7]
-            $subnetMask = $lineContent.split("`t")[8]
-            $type = $lineContent.split("`t")[9]
-            $vlanId = $lineContent.split("`t")[11]
-            $networks += [pscustomobject]@{
-                'id' = $id
-                'gateway' = $gateway
-                'startIPAddress' = $startIPAddress
-                'endIPAddress' = $endIPAddress
-                'mtu' = $mtu
-                'subnet' = $subnet
-                'subnetMask' = $subnetMask
-                'type' = $type
-                'vlanId' = $vlanId
-            }
-        }
-        $networksLineIndex++
     }
     Until ($lineContent -eq '\.')
 
