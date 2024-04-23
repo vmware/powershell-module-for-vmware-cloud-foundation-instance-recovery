@@ -632,6 +632,27 @@ Function New-ExtractDataFromSDDCBackup
     }
     Until ($lineContent -eq '\.')
 
+    #Get Pools and Networks
+    LogMessage -type INFO -message "[$jumpboxName] Retrieving Network Pools and Network Mappings"
+    $poolsAndNetworksLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.vcf_network_and_network_pool" | Select-Object Line,LineNumber).LineNumber
+    $poolsAndNetworksLineIndex = $poolsAndNetworksLineNumber
+    $poolsAndNetworks = @()
+    Do
+    {
+        $lineContent = $psqlContent | Select-Object -Index $poolsAndNetworksLineIndex
+        If ($lineContent -ne '\.')
+        {
+            $networkID = $lineContent.split("`t")[0]
+            $poolID = $lineContent.split("`t")[1]
+            $poolsAndNetworks += [pscustomobject]@{
+                'networkID' = $networkID
+                'poolID' = $poolID
+            }
+        }
+        $poolsAndNetworksLineIndex++
+    }
+    Until ($lineContent -eq '\.')
+
     #Get Cluster and VDS
     LogMessage -type INFO -message "[$jumpboxName] Retrieving Cluster and vDS Mappings"
     $clusterAndVdsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.cluster_and_vds" | Select-Object Line,LineNumber).LineNumber
@@ -792,28 +813,6 @@ Function New-ExtractDataFromSDDCBackup
             }
         }
         $clusterAndDomainLineIndex++
-    }
-    Until ($lineContent -eq '\.')
-
-
-    #Get Pools and Networks
-    LogMessage -type INFO -message "[$jumpboxName] Retrieving Network Pools and Network Mappings"
-    $poolsAndNetworksLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.vcf_network_and_network_pool" | Select-Object Line,LineNumber).LineNumber
-    $poolsAndNetworksLineIndex = $poolsAndNetworksLineNumber
-    $poolsAndNetworks = @()
-    Do
-    {
-        $lineContent = $psqlContent | Select-Object -Index $poolsAndNetworksLineIndex
-        If ($lineContent -ne '\.')
-        {
-            $networkID = $lineContent.split("`t")[0]
-            $poolID = $lineContent.split("`t")[1]
-            $poolsAndNetworks += [pscustomobject]@{
-                'networkID' = $networkID
-                'poolID' = $poolID
-            }
-        }
-        $poolsAndNetworksLineIndex++
     }
     Until ($lineContent -eq '\.')
 
