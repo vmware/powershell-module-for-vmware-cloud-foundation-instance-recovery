@@ -1016,7 +1016,7 @@ Function New-ExtractDataFromSDDCBackup
                 'networkDetails' = $networkSpecs
                 'nsxClusterDetails' = $nsxClusterDetailsObject
                 'nsxNodeDetails' = ($nsxtManagerClusters | Where-Object {$_.domainIDs -contains $domainId}).nsxNodes
-                'vsphereClusterDetails' = ($clusters | Where-Object {$_.vCenterID -eq $vcenterDetails.id})
+                'vsphereClusterDetails' = @($clusters | Where-Object {$_.vCenterID -eq $vcenterDetails.id})
             }
         }
         $domainLineIndex++
