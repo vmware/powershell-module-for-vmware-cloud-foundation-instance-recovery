@@ -958,8 +958,8 @@ Function New-ExtractDataFromSDDCBackup
             $netid = [ipaddress]($ip.address -band $subnet.address)
             $managementSubnet = $($netid.ipaddresstostring)
 
-            $networkSpecs = @()
-            $networkSpecs += [pscustomobject]@{  #Review
+            $mgmtNetworkSpec = @()
+            $mgmtNetworkSpec += [pscustomobject]@{  #Review
                 'type' = "MANAGEMENT"
                 'subnet_mask' = $metaDataJSON.netmask
                 'subnet' =  $managementSubnet
@@ -968,7 +968,7 @@ Function New-ExtractDataFromSDDCBackup
                 'gateway' = $metaDataJSON.gateway
                 'portgroupKey' = $metadataJSON.port_group
             }
-            $networkSpecs += [pscustomobject]@{
+<#             $networkSpecs += [pscustomobject]@{
                 'type' = "VMOTION"
                 'subnet_mask' = $vmotionNetwork.subnetMask
                 'subnet' =  $vmotionNetwork.subnet
@@ -989,7 +989,7 @@ Function New-ExtractDataFromSDDCBackup
                 'vlanID' = $vsanNetwork.vlanID
                 'gateway' = $vsanNetwork.gateway
                 'portgroupKey' = ($virtualDistributedSwitches.portgroups | Where-Object {$_.vlanId -eq $vsanNetwork.vlanID}).name
-            }
+            } #>
             $nsxClusterDetailsObject = New-Object -type psobject
             $nsxClusterDetailsObject | Add-Member -NotePropertyName 'clusterVip' -NotePropertyValue ($nsxtManagerClusters | Where-Object {$_.domainIDs -contains $domainId}).clusterVip
             $nsxClusterDetailsObject | Add-Member -NotePropertyName 'clusterFqdn' -NotePropertyValue ($nsxtManagerClusters | Where-Object {$_.domainIDs -contains $domainId}).clusterFqdn
@@ -1013,10 +1013,10 @@ Function New-ExtractDataFromSDDCBackup
                 'ssoDomain' = $ssoDomain
                 'networkPool' = $poolName
                 'vCenterDetails' = $vCenterDetails
-                'networkDetails' = $networkSpecs
-                'nsxClusterDetails' = $nsxClusterDetailsObject
-                'nsxNodeDetails' = ($nsxtManagerClusters | Where-Object {$_.domainIDs -contains $domainId}).nsxNodes
-                'vsphereClusterDetails' = @($clusters | Where-Object {$_.vCenterID -eq $vcenterDetails.id})
+                'mgmtNetworkDetails' = $mgmtNetworkSpec
+                'nsxClusterDetails'     = $nsxClusterDetailsObject
+                'nsxNodeDetails'        = ($nsxtManagerClusters | Where-Object { $_.domainIDs -contains $domainId }).nsxNodes
+                'vsphereClusterDetails' = @($clusters | Where-Object { $_.vCenterID -eq $vcenterDetails.id })
             }
         }
         $domainLineIndex++
@@ -1041,8 +1041,7 @@ Function New-ExtractDataFromSDDCBackup
 }
 Export-ModuleMember -Function New-ExtractDataFromSDDCBackup
 
-Function New-PrepareforPartialBringup
-{
+Function New-PrepareforPartialBringup {
     <#
     .SYNOPSIS
     Prepares a running Cloud Builder system to perform a partial VCF bringup suitable for VCF Instance Recovery
@@ -1079,7 +1078,7 @@ Function New-PrepareforPartialBringup
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
     LogMessage -type INFO -message "[$jumpboxName] Detected desired SDDC Manager version of: $($extractedSddcData.sddcManager.version)"
 
-    $truncatedSddcManagerVersion = $extractedSddcData.sddcManager.version.replace(".","").substring(0,2)
+    $truncatedSddcManagerVersion = $extractedSddcData.sddcManager.version.replace(".", "").substring(0, 2)
     $modulePath = (Get-InstalledModule -Name VCFInstanceRecovery).InstalledLocation
     $sourceFile = "$modulePath\reference-files\$($truncatedSddcManagerVersion)x-workflowspec-ems.json"
 
@@ -1088,8 +1087,7 @@ Function New-PrepareforPartialBringup
     $mycreds = New-Object System.Management.Automation.PSCredential ('admin', $SecurePassword)
     $inmem = New-SSHMemoryKnownHost
     New-SSHTrustedHost -KnownHostStore $inmem -HostName $cloudBuilderFQDN -FingerPrint ((Get-SSHHostKey -ComputerName $cloudBuilderFQDN).fingerprint) | Out-Null
-    Do
-    {
+    Do {
         $sshSession = New-SSHSession -computername $cloudBuilderFQDN -Credential $mycreds -KnownHost $inmem
     } Until ($sshSession)
     LogMessage -type INFO -message "[$jumpboxName] Backing up Standard BringUp Workflow"
@@ -1120,8 +1118,7 @@ Function New-PrepareforPartialBringup
 }
 Export-ModuleMember -Function New-PrepareforPartialBringup
 
-Function New-ReconstructedPartialBringupJsonSpec
-{
+Function New-ReconstructedPartialBringupJsonSpec {
     <#
     .SYNOPSIS
     Reconstructs a management domain bringup JSON spec based on information scraped from the backup being restored from
@@ -1185,16 +1182,16 @@ Function New-ReconstructedPartialBringupJsonSpec
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
 
-    $domainName = ($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).domainName
+    $domainName = ($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).domainName
 
     $mgmtDomainObject = New-Object -type psobject
     $mgmtDomainObject | Add-Member -notepropertyname 'taskName' -notepropertyvalue "workflowconfig/workflowspec-ems.json"
-    $mgmtDomainObject | Add-Member -notepropertyname 'sddcId' -notepropertyvalue ($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).domainName
+    $mgmtDomainObject | Add-Member -notepropertyname 'sddcId' -notepropertyvalue ($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).domainName
     $mgmtDomainObject | Add-Member -notepropertyname 'ceipEnabled' -notepropertyvalue "$($extractedSddcData.sddcManager.ceip_enabled)"
     $mgmtDomainObject | Add-Member -notepropertyname 'fipsEnabled' -notepropertyvalue "$($extractedSddcData.sddcManager.fips_enabled)"
-    $mgmtDomainObject | Add-Member -notepropertyname 'managementPoolName' -notepropertyvalue ($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkPool
+    $mgmtDomainObject | Add-Member -notepropertyname 'managementPoolName' -notepropertyvalue ($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).networkPool
     $mgmtDomainObject | Add-Member -notepropertyname 'skipEsxThumbprintValidation' -notepropertyvalue $true # Review
-    $mgmtDomainObject | Add-Member -notepropertyname 'esxLicense' -notepropertyvalue ($extractedSddcData.licenseKeys | Where-Object {$_.productType -eq "ESXI"}).key
+    $mgmtDomainObject | Add-Member -notepropertyname 'esxLicense' -notepropertyvalue ($extractedSddcData.licenseKeys | Where-Object { $_.productType -eq "ESXI" }).key
     $mgmtDomainObject | Add-Member -notepropertyname 'excludedComponents' -notepropertyvalue @("NSX-V")
     $mgmtDomainObject | Add-Member -notepropertyname 'ntpServers' -notepropertyvalue $extractedSddcData.mgmtDomainInfrastructure.ntpServers
 
@@ -1229,52 +1226,70 @@ Function New-ReconstructedPartialBringupJsonSpec
     #networkSpecs
     $vmotionIpObject = @()
     $vmotionIpObject += [pscustomobject]@{
-        'startIpAddress' = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VMOTION'}).startIPAddress
-        'endIpAddress'   = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VMOTION'}).endIPAddress
+        #'startIpAddress' = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VMOTION'}).startIPAddress
+        'startIpAddress' = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'VMOTION' }).startIPAddress
+        #'endIpAddress'   = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VMOTION'}).endIPAddress
+        'endIpAddress'   = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'VMOTION' }).endIpAddress
     }
     $vsanIpObject = @()
     $vsanIpObject += [pscustomobject]@{
-        'startIpAddress' = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VSAN'}).startIPAddress
-        'endIpAddress'   = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VSAN'}).endIPAddress
+        #'startIpAddress' = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VSAN'}).startIPAddress
+        'startIpAddress' = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'VSAN' }).startIPAddress
+        #'endIpAddress'   = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VSAN'}).endIPAddress
+        'endIpAddress'   = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'VSAN' }).endIpAddress
     }
     $networkSpecsObject = @()
-    [IPAddress] $ip = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'MANAGEMENT'}).subnet_mask
+    [IPAddress] $ip = (($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).mgmtNetworkSpec).subnet_mask
     $octets = $ip.IPAddressToString.Split('.')
     Foreach($octet in $octets) { while(0 -ne $octet) { $octet = ($octet -shl 1) -band [byte]::MaxValue; $managementNetworkCidr++; }}
-    $managementNetworkSubnet = ((($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'MANAGEMENT'}).subnet + "/" + $managementNetworkCidr)
+    $managementNetworkSubnet = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).mgmtNetworkSpec).subnet + "/" + $managementNetworkCidr)
     $networkSpecsObject += [pscustomobject]@{
         'networkType'  = "MANAGEMENT"
         'subnet'       = $managementNetworkSubnet
-        'vlanId'       = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'MANAGEMENT'}).vlanId -as [string]
-        'mtu'          = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'MANAGEMENT'}).mtu -as [string]
-        'gateway'      = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'MANAGEMENT'}).gateway
-        'portGroupKey' = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'MANAGEMENT'}).portGroupKey
+        'vlanId'       = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).mgmtNetworkSpec).vlanId -as [string]
+        'mtu'          = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).mgmtNetworkSpec).mtu -as [string]
+        'gateway'      = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).mgmtNetworkSpec).gateway
+        'portGroupKey' = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).mgmtNetworkSpec).portGroupKey
     }
-    [IPAddress] $ip = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VMOTION'}).subnet_mask
+
+    #[IPAddress] $ip = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VMOTION'}).subnet_mask
+    [IPAddress] $ip = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'VMOTION' }).subnetMask
     $octets = $ip.IPAddressToString.Split('.')
     Foreach($octet in $octets) { while(0 -ne $octet) { $octet = ($octet -shl 1) -band [byte]::MaxValue; $vmotionNetworkCidr++; }}
-    $vmotionNetworkSubnet = ((($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VMOTION'}).subnet + "/" + $vmotionNetworkCidr)
+    #$vmotionNetworkSubnet = ((($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VMOTION'}).subnet + "/" + $vmotionNetworkCidr)
+    $vmotionNetworkSubnet = (((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'VMOTION' }).subnet + "/" + $vmotionNetworkCidr)
     $networkSpecsObject += [pscustomobject]@{
         'networkType'          = "VMOTION"
         'subnet'               = $vmotionNetworkSubnet
         'includeIpAddressRanges' = $vmotionIpObject
-        'vlanId'               = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VMOTION'}).vlanId -as [string]
-        'mtu'                  = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VMOTION'}).mtu -as [string]
-        'gateway'              = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VMOTION'}).gateway
-        'portGroupKey'         = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VMOTION'}).portGroupKey
+        #'vlanId'               = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VMOTION'}).vlanId -as [string]
+        'vlanId'               = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'VMOTION' }).vlanId -as [string]
+        #'mtu'                  = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VMOTION'}).mtu -as [string]
+        'mtu'                  = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'VMOTION' }).mtu -as [string]
+        #'gateway'              = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VMOTION'}).gateway
+        'gateway'              = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'VMOTION' }).gateway
+        #'portGroupKey'         = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VMOTION'}).portGroupKey
+        'portGroupKey'         = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).vdsDetails.portgroups | Where-Object { $_.transportType -eq 'VMOTION' }).name
     }
-    [IPAddress] $ip = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VSAN'}).subnet_mask
+
+    #[IPAddress] $ip = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VSAN'}).subnet_mask
+    [IPAddress] $ip = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'VSAN' }).subnetMask
     $octets = $ip.IPAddressToString.Split('.')
     Foreach($octet in $octets) { while(0 -ne $octet) { $octet = ($octet -shl 1) -band [byte]::MaxValue; $vsanNetworkCidr++; }}
-    $vsanNetworkSubnet = ((($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VSAN'}).subnet + "/" + $vsanNetworkCidr)
+    #$vsanNetworkSubnet = ((($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VSAN'}).subnet + "/" + $vsanNetworkCidr)
+    $vsanNetworkSubnet = (((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'VSAN' }).subnet + "/" + $vmotionNetworkCidr)
     $networkSpecsObject += [pscustomobject]@{
         'networkType'          = "VSAN"
         'subnet'               = $vsanNetworkSubnet
         'includeIpAddressRanges' = $vsanIpObject
-        'vlanId'               = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VSAN'}).vlanId -as [string]
-        'mtu'                  = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VSAN'}).mtu -as [string]
-        'gateway'              = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VSAN'}).gateway
-        'portGroupKey'         = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VSAN'}).portGroupKey
+        #'vlanId'               = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VSAN'}).vlanId -as [string]
+        'vlanId'               = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'VSAN' }).vlanId -as [string]
+        #'mtu'                  = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VSAN'}).mtu -as [string]
+        'mtu'                  = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'VSAN' }).mtu -as [string]
+        #'gateway'              = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VSAN'}).gateway
+        'gateway'              = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'VSAN' }).gateway
+        #'portGroupKey'         = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VSAN'}).portGroupKey
+        'portGroupKey'         = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).vdsDetails.portgroups | Where-Object { $_.transportType -eq 'VSAN' }).name
     }
     $mgmtDomainObject | Add-Member -notepropertyname 'networkSpecs' -notepropertyvalue $networkSpecsObject
 
@@ -1376,9 +1391,14 @@ Function New-ReconstructedPartialBringupJsonSpec
         $credentialObject | Add-Member -notepropertyname 'username' -notepropertyvalue $mgmtHost.username
         $credentialObject | Add-Member -notepropertyname 'password' -notepropertyvalue $mgmtHost.password
         $ipAddressPrivateObject = New-Object -type psobject
-        $ipAddressPrivateObject | Add-Member -notepropertyname 'subnet' -notepropertyvalue (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq "MANAGEMENT"}).subnet_mask
+        #$ipAddressPrivateObject | Add-Member -notepropertyname 'subnet' -notepropertyvalue (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq "MANAGEMENT"}).subnet_mask
+        $ipAddressPrivateObject | Add-Member -notepropertyname 'subnet' -notepropertyvalue (($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).mgmtNetworkSpec).subnet_mask
+        (($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).mgmtNetworkSpec).gateway
         $ipAddressPrivateObject | Add-Member -notepropertyname 'ipAddress' -notepropertyvalue $mgmtHost.entityIpAddress
-        $ipAddressPrivateObject | Add-Member -notepropertyname 'gateway' -notepropertyvalue (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq "MANAGEMENT"}).gateway
+        #$ipAddressPrivateObject | Add-Member -notepropertyname 'gateway' -notepropertyvalue (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq "MANAGEMENT"}).gateway
+        $ipAddressPrivateObject | Add-Member -notepropertyname 'gateway' -notepropertyvalue (($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).mgmtNetworkSpec).gateway
+
+
         $hostSpecs += [PSCustomObject]@{
             'hostname' = $mgmtHost.entityName.split(".")[0]
             'vSwitch' = "vSwitch0"
