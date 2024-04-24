@@ -1393,7 +1393,6 @@ Function New-ReconstructedPartialBringupJsonSpec {
         $ipAddressPrivateObject = New-Object -type psobject
         #$ipAddressPrivateObject | Add-Member -notepropertyname 'subnet' -notepropertyvalue (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq "MANAGEMENT"}).subnet_mask
         $ipAddressPrivateObject | Add-Member -notepropertyname 'subnet' -notepropertyvalue (($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).mgmtNetworkDetails).subnet_mask
-        (($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).mgmtNetworkDetails).gateway
         $ipAddressPrivateObject | Add-Member -notepropertyname 'ipAddress' -notepropertyvalue $mgmtHost.entityIpAddress
         #$ipAddressPrivateObject | Add-Member -notepropertyname 'gateway' -notepropertyvalue (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq "MANAGEMENT"}).gateway
         $ipAddressPrivateObject | Add-Member -notepropertyname 'gateway' -notepropertyvalue (($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).mgmtNetworkDetails).gateway
