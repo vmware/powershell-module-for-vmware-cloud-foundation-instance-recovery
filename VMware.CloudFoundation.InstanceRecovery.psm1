@@ -1184,6 +1184,38 @@ Function New-ReconstructedPartialBringupJsonSpec {
 
     $domainName = ($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).domainName
 
+    $esxiLicenseKeys = @($extractedSddcData.licenseKeys | Where-Object { $_.productType -eq "ESXI" }).key
+    $esxiLicenseKeys += "xxxxx-xxxxx-xxxxx-xxxxx-xxxxx" #temp
+
+    If ($esxiLicenseKeys.count -gt 1) {
+        $esxiLicensesDisplayObject = @()
+        $esxiLicensesIndex = 1
+        $esxiLicensesDisplayObject += [pscustomobject]@{
+            'ID'      = "ID"
+            'License' = "License Key"
+        }
+        $esxiLicensesDisplayObject += [pscustomobject]@{
+            'ID'      = "--"
+            'License' = "------------------"
+        }
+        Foreach ($esxiLicense in $esxiLicenseKeys) {
+            $esxiLicensesDisplayObject += [pscustomobject]@{
+                'ID'      = $esxiLicensesIndex
+                'License' = $esxiLicense
+            }
+            $esxiLicensesIndex++
+        }
+        Write-Host ""; $esxiLicensesDisplayObject | format-table -Property @{Expression = " " }, id, License -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
+        Do {
+            Write-Host ""; Write-Host " Multiple ESXi License Keys were discovered. Enter the ID of the ESXi License you wish to use to deploy, or C to Cancel: " -ForegroundColor Yellow -nonewline
+            $esxiLicenseSelection = Read-Host
+        } Until (($esxiLicenseSelection -in $esxiLicensesDisplayObject.ID) -OR ($esxiLicenseSelection -eq "c"))
+        If ($esxiLicenseSelection -eq "c") { Break }
+        $esxiLicenseToUse = ($esxiLicensesDisplayObject | Where-Object { $_.id -eq $esxiLicenseSelection }).license
+    } else {
+        $esxiLicenseToUse = $esxiLicenseKeys[0]
+    }
+
     $mgmtDomainObject = New-Object -type psobject
     $mgmtDomainObject | Add-Member -notepropertyname 'taskName' -notepropertyvalue "workflowconfig/workflowspec-ems.json"
     $mgmtDomainObject | Add-Member -notepropertyname 'sddcId' -notepropertyvalue ($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).domainName
@@ -1191,7 +1223,7 @@ Function New-ReconstructedPartialBringupJsonSpec {
     $mgmtDomainObject | Add-Member -notepropertyname 'fipsEnabled' -notepropertyvalue "$($extractedSddcData.sddcManager.fips_enabled)"
     $mgmtDomainObject | Add-Member -notepropertyname 'managementPoolName' -notepropertyvalue ($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).networkPool
     $mgmtDomainObject | Add-Member -notepropertyname 'skipEsxThumbprintValidation' -notepropertyvalue $true # Review
-    $mgmtDomainObject | Add-Member -notepropertyname 'esxLicense' -notepropertyvalue ($extractedSddcData.licenseKeys | Where-Object { $_.productType -eq "ESXI" }).key
+    $mgmtDomainObject | Add-Member -notepropertyname 'esxLicense' -notepropertyvalue $esxiLicenseToUse
     $mgmtDomainObject | Add-Member -notepropertyname 'excludedComponents' -notepropertyvalue @("NSX-V")
     $mgmtDomainObject | Add-Member -notepropertyname 'ntpServers' -notepropertyvalue $extractedSddcData.mgmtDomainInfrastructure.ntpServers
 
