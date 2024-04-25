@@ -1184,7 +1184,7 @@ Function New-ReconstructedPartialBringupJsonSpec {
 
     $domainName = ($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).domainName
 
-    $esxiLicenseKeys = @($extractedSddcData.licenseKeys | Where-Object { $_.productType -eq "ESXI" }).key
+    $esxiLicenseKeys = @(($extractedSddcData.licenseKeys | Where-Object { $_.productType -eq "ESXI" }).key)
     $esxiLicenseKeys += "xxxxx-xxxxx-xxxxx-xxxxx-xxxxx" #temp
 
     If ($esxiLicenseKeys.count -gt 1) {
