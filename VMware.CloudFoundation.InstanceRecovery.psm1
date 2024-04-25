@@ -88,7 +88,7 @@ Function LogMessage
 {
     Param (
         [Parameter (Mandatory = $true)] [AllowEmptyString()] [String]$message,
-        [Parameter (Mandatory = $false)] [AllowEmptyString()] [String]$nonewline,
+        [Parameter (Mandatory = $false)] [Switch]$nonewline,
         [Parameter (Mandatory = $false)] [ValidateSet("INFO", "ERROR", "WARNING", "EXCEPTION","ADVISORY","NOTE","QUESTION","WAIT")] [String]$type = "INFO"
     )
 
@@ -3814,7 +3814,16 @@ Function New-RebuiltVdsConfiguration
                 $vmNicArray = @()
                 $portgroupArray = @()
                 $vmnicMinusOne = $vmhost | Get-VMHostNetworkAdapter | Where-Object {$_.deviceName -eq $vds.nicNames[0] }
-                $managementPortGroupName = ($vds.portgroups | Where-Object {$_.transportType -eq 'MANAGEMENT'}).name
+
+                If (($vds.portgroups | Where-Object {$_.transportType -eq 'VM_MANAGEMENT'}).name)
+                {
+                    $managementPortGroupName = ($vds.portgroups | Where-Object {$_.transportType -eq 'VM_MANAGEMENT'}).name
+                }
+                else
+                {
+                    $managementPortGroupName = ($vds.portgroups | Where-Object {$_.transportType -eq 'MANAGEMENT'}).name
+                }
+
                 $portgroupArray += $managementPortGroupName
                 $vmk0 = Get-VMHostNetworkAdapter -VMHost $vmHost -Name "vmk0"
                 $vmNicArray += $vmk0
