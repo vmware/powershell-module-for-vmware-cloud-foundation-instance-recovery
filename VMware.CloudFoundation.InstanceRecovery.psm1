@@ -182,10 +182,10 @@ Function Confirm-VCFInstanceRecoveryPreReqs
 {
     <#
     .SYNOPSIS
-    Checks for the presence of supporting software and modules leveraged by VCFInstanceRecovery
+    Checks for the presence of supporting software and modules leveraged by VMware.CloudFoundation.InstanceRecovery
 
     .DESCRIPTION
-    The Confirm-VCFInstanceRecoveryPreReqs cmdlet checks for the presence of supporting software and modules leveraged by VCFInstanceRecovery
+    The Confirm-VCFInstanceRecoveryPreReqs cmdlet checks for the presence of supporting software and modules leveraged by VMware.CloudFoundation.InstanceRecovery
 
     .EXAMPLE
     Confirm-VCFInstanceRecoveryPreReqs
@@ -1079,7 +1079,7 @@ Function New-PrepareforPartialBringup {
     LogMessage -type INFO -message "[$jumpboxName] Detected desired SDDC Manager version of: $($extractedSddcData.sddcManager.version)"
 
     $truncatedSddcManagerVersion = $extractedSddcData.sddcManager.version.replace(".", "").substring(0, 2)
-    $modulePath = (Get-InstalledModule -Name VCFInstanceRecovery).InstalledLocation
+    $modulePath = (Get-InstalledModule -Name VMware.CloudFoundation.InstanceRecovery).InstalledLocation
     $sourceFile = "$modulePath\reference-files\$($truncatedSddcManagerVersion)x-workflowspec-ems.json"
 
     LogMessage -type INFO -message "[$jumpboxName] Establishing Connection to $cloudBuilderFQDN"
@@ -2087,7 +2087,7 @@ Function Invoke-SDDCManagerRestore
 
     #Upload Modified Restore Status Json
     LogMessage -type INFO -message "[$extractedSddcManagerFqdn] Configuring Restore Process"
-    $modulePath = (Get-InstalledModule -Name VCFInstanceRecovery).InstalledLocation
+    $modulePath = (Get-InstalledModule -Name VMware.CloudFoundation.InstanceRecovery).InstalledLocation
     If ($extractedSddcData.sddcManager.version.replace(".","").substring(0,3) -gt "451")
     {
         $sourceFile = "$modulePath\reference-files\new_restore_status.json"
@@ -3588,7 +3588,7 @@ Function New-RebuiltVsanDatastore
         Foreach ($vmHost in $vmHosts)
         {
             $scriptBlock = {
-                $moduleFunctions = Import-Module VCFInstanceRecovery -passthru
+                $moduleFunctions = Import-Module VMware.CloudFoundation.InstanceRecovery -passthru
                 $restoredvCenterConnection = Connect-ViServer $using:vCenterFQDN -user $using:vCenterAdmin -password $using:vCenterAdminPassword
                 $vmhost = Get-VMHost -name $using:vmhost.name
                 $disks = Get-VMHost -name $using:vmhost.name | Get-VMHostDisk | Where-Object {$_.ScsiLun.VsanStatus -eq 'Eligible'} | Sort-Object -Property @{e={$_.scsilun.runtimename}}
