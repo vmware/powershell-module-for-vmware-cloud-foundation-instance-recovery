@@ -1185,8 +1185,6 @@ Function New-ReconstructedPartialBringupJsonSpec {
     $domainName = ($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).domainName
 
     $esxiLicenseKeys = @(($extractedSddcData.licenseKeys | Where-Object { $_.productType -eq "ESXI" }).key)
-    $esxiLicenseKeys += "xxxxx-xxxxx-xxxxx-xxxxx-xxxxx" #temp
-
     If ($esxiLicenseKeys.count -gt 1) {
         $esxiLicensesDisplayObject = @()
         $esxiLicensesIndex = 1
@@ -1325,6 +1323,37 @@ Function New-ReconstructedPartialBringupJsonSpec {
     }
     $mgmtDomainObject | Add-Member -notepropertyname 'networkSpecs' -notepropertyvalue $networkSpecsObject
 
+    $nsxLicenseKeys = @(($extractedSddcData.licenseKeys | Where-Object { $_.productType -eq "nsx" }).key)
+    If ($nsxLicenseKeys.count -gt 1) {
+        $nsxLicensesDisplayObject = @()
+        $nsxLicensesIndex = 1
+        $nsxLicensesDisplayObject += [pscustomobject]@{
+            'ID'      = "ID"
+            'License' = "License Key"
+        }
+        $nsxLicensesDisplayObject += [pscustomobject]@{
+            'ID'      = "--"
+            'License' = "------------------"
+        }
+        Foreach ($nsxLicense in $nsxLicenseKeys) {
+            $nsxLicensesDisplayObject += [pscustomobject]@{
+                'ID'      = $nsxLicensesIndex
+                'License' = $nsxLicense
+            }
+            $nsxLicensesIndex++
+        }
+        Write-Host ""; $nsxLicensesDisplayObject | format-table -Property @{Expression = " " }, id, License -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
+        Do {
+            Write-Host ""; Write-Host " Multiple NSX License Keys were discovered. Enter the ID of the NSX License you wish to use to deploy, or C to Cancel: " -ForegroundColor Yellow -nonewline
+            $nsxLicenseSelection = Read-Host
+        } Until (($nsxLicenseSelection -in $nsxLicensesDisplayObject.ID) -OR ($nsxLicenseSelection -eq "c"))
+        If ($nsxLicenseSelection -eq "c") { Break }
+        $nsxLicenseToUse = ($nsxLicensesDisplayObject | Where-Object { $_.id -eq $nsxLicenseSelection }).license
+    } else {
+        $nsxLicenseToUse = $nsxLicenseKeys[0]
+    }
+
+
     #nsxtSpec
     $nsxtManagersObject = @()
     Foreach ($nsxManager in (($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).nsxNodeDetails)) {
@@ -1351,17 +1380,14 @@ Function New-ReconstructedPartialBringupJsonSpec {
     $nsxtSpecObject | Add-Member -notepropertyname 'vlanTransportZone' -notepropertyvalue $vlanTransportZoneObject
     $nsxtSpecObject | Add-Member -notepropertyname 'vip' -notepropertyvalue ($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).nsxClusterDetails.clusterVip
     $nsxtSpecObject | Add-Member -notepropertyname 'vipFqdn' -notepropertyvalue ($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).nsxClusterDetails.clusterFqdn
-    $nsxtSpecObject | Add-Member -notepropertyname 'nsxtLicense' -notepropertyvalue ($extractedSddcData.licenseKeys | Where-Object { $_.productType -eq "NSXT" }).key
+    $nsxtSpecObject | Add-Member -notepropertyname 'nsxtLicense' -notepropertyvalue $nsxLicenseToUse
     $nsxtSpecObject | Add-Member -notepropertyname 'transportVlanId' -notepropertyvalue $transportVlanId
     $mgmtDomainObject | Add-Member -notepropertyname 'nsxtSpec' -notepropertyvalue $nsxtSpecObject
 
     #Derive Primary Cluster
     $primaryCluster = ($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }
 
-
     $vsanLicenseKeys = @(($extractedSddcData.licenseKeys | Where-Object { $_.productType -eq "VSAN" }).key)
-    $vsanLicenseKeys += "xxxxx-xxxxx-xxxxx-xxxxx-xxxxx" #temp
-
     If ($vsanLicenseKeys.count -gt 1) {
         $vsanLicensesDisplayObject = @()
         $vsanLicensesIndex = 1
@@ -1438,8 +1464,6 @@ Function New-ReconstructedPartialBringupJsonSpec {
     $mgmtDomainObject | Add-Member -notepropertyname 'pscSpecs' -notepropertyvalue $pscSpecs
 
     $vCenterLicenseKeys = @(($extractedSddcData.licenseKeys | Where-Object { $_.productType -eq "vCenter" }).key)
-    $vCenterLicenseKeys += "xxxxx-xxxxx-xxxxx-xxxxx-xxxxx" #temp
-
     If ($vCenterLicenseKeys.count -gt 1) {
         $vCenterLicensesDisplayObject = @()
         $vCenterLicensesIndex = 1
