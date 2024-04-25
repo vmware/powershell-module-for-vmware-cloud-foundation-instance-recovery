@@ -1323,7 +1323,7 @@ Function New-ReconstructedPartialBringupJsonSpec {
     }
     $mgmtDomainObject | Add-Member -notepropertyname 'networkSpecs' -notepropertyvalue $networkSpecsObject
 
-    $nsxLicenseKeys = @(($extractedSddcData.licenseKeys | Where-Object { $_.productType -eq "nsx" }).key)
+    $nsxLicenseKeys = @(($extractedSddcData.licenseKeys | Where-Object { $_.productType -eq "NSXT" }).key)
     If ($nsxLicenseKeys.count -gt 1) {
         $nsxLicensesDisplayObject = @()
         $nsxLicensesIndex = 1
