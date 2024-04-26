@@ -3577,7 +3577,7 @@ Function New-RebuiltVdsConfiguration
     {
         Foreach ($vds in $vdsConfiguration)
         {
-            $vdsHosts = (Get-VDSwitch -name $vds.vdsName).extensionData.summary.hostmember
+            $vdsHosts = (Get-VDSwitch -name $vds.vdsName).extensionData.summary.hostmember.value
             Foreach ($vmHost in $vmHosts)
             {
                 $vmNicArray = @()
