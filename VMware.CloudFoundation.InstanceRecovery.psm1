@@ -3614,12 +3614,21 @@ Function New-RebuiltVdsConfiguration
                     LogMessage -type INFO -message "[$($vmhost.name)] Adding to $($vds.vdsName)"
                     Get-VDSwitch -name $vds.vdsName | Add-VDSwitchVMHost -vmhost $vmHost -confirm:$false
                 }
+                else
+                {
+                    LogMessage -type INFO -message "[$($vmhost.name)] Already in $($vds.vdsName). Skipping"
+                }
 
                 $vmnicInVds = Get-VDPort -VDSwitch $vds.vdsName | Where-Object { $_.proxyHost.name -eq $vmhost.name -and $_.connectedEntity.name -eq $vmnicMinusOne }
                 If (!$vmnicInVds) {
                     LogMessage -type INFO -message "[$($vmhost.name)] Adding Physical Adapter $($vds.nicNames[0]) to $($vds.vdsName) and migrating $($vmNicArray.name -join(", "))"
                     Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $vmnicMinusOne -VMHostVirtualNic $vmNicArray -VirtualNicPortgroup $portgroupArray -confirm:$false
                 }
+                else
+                {
+                    LogMessage -type INFO -message "[$($vmhost.name)] Physical Adapter $($vds.nicNames[0]) already in $($vds.vdsName). Skipping"
+                }
+
             }
 
             #Move Mgmt VMs to Management Portgroup
@@ -3630,13 +3639,27 @@ Function New-RebuiltVdsConfiguration
                         LogMessage -type INFO -message "[$($vmToMove.name)] Moving to $managementPortGroupName"
                         Get-VM -Name $vmToMove | Get-NetworkAdapter | Set-NetworkAdapter -NetworkName $managementPortGroupName -confirm:$false | Out-Null
                     }
+                    else
+                    {
+                        LogMessage -type INFO -message "[$($vmToMove.name)] Already moved to $managementPortGroupName. Skipping"
+                    }
                 }
             }
 
             Foreach ($vmHost in $vmHosts) {
                 #Remove Virtual Switch
                 LogMessage -type INFO -message "[$($vmhost.name)] Removing vSwitch0"
-                Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name "vSwitch0" | Remove-VirtualSwitch -Confirm:$false | Out-Null
+                $hostvss = Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name "vSwitch0" -errorAction silentlyContinue
+                If ($hostvss)
+                {
+                    LogMessage -type INFO -message "[$($vmhost.name)] Removing vSwitch0"
+                    Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name "vSwitch0" | Remove-VirtualSwitch -Confirm:$false | Out-Null
+                }
+                else
+                {
+                    LogMessage -type INFO -message "[$($vmhost.name)] vSwitch0 already removed. Skipping"
+                }
+
 
                 $remainingVmnics = @()
                 Foreach ($nic in $vds.nicNames) {
@@ -3650,6 +3673,10 @@ Function New-RebuiltVdsConfiguration
                         LogMessage -type INFO -message "[$($vmhost.name)] Adding Additional Nic $nic to $($vds.vdsName)"
                         $additionalNic = $vmhost | Get-VMHostNetworkAdapter -Physical -Name $nic
                         Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $additionalNic -confirm:$false
+                    }
+                    else
+                    {
+                        LogMessage -type INFO -message "[$($vmhost.name)] Physical Adapter $nic already in $($vds.vdsName). Skipping"
                     }
                 }
             }
