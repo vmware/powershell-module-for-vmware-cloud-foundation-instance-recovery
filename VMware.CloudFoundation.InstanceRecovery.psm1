@@ -3577,6 +3577,7 @@ Function New-RebuiltVdsConfiguration
     {
         Foreach ($vds in $vdsConfiguration)
         {
+            $vdsHosts = (Get-VDSwitch -name $vds.vdsName).extensionData.summary.hostmember
             Foreach ($vmHost in $vmHosts)
             {
                 $vmNicArray = @()
@@ -3606,8 +3607,13 @@ Function New-RebuiltVdsConfiguration
                     $vmNicArray += $vmk1
                     $vmNicArray += $vmk2
                 }
-                LogMessage -type INFO -message "[$($vmhost.name)] Adding to $($vds.vdsName)"
-                Get-VDSwitch -name $vds.vdsName | Add-VDSwitchVMHost -vmhost $vmHost -confirm:$false
+
+                $hostMoRef = $vmhost.ExtensionData.moref.value
+                If ($hostMoRef -notin $vdsHosts)
+                {
+                    LogMessage -type INFO -message "[$($vmhost.name)] Adding to $($vds.vdsName)"
+                    Get-VDSwitch -name $vds.vdsName | Add-VDSwitchVMHost -vmhost $vmHost -confirm:$false
+                }
                 LogMessage -type INFO -message "[$($vmhost.name)] Adding Physical Adapter $($vds.nicNames[0]) to $($vds.vdsName) and migrating $($vmNicArray.name -join(", "))"
                 Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $vmnicMinusOne -VMHostVirtualNic $vmNicArray -VirtualNicPortgroup $portgroupArray -confirm:$false
             }
