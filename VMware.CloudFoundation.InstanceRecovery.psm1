@@ -3648,7 +3648,6 @@ Function New-RebuiltVdsConfiguration
 
             Foreach ($vmHost in $vmHosts) {
                 #Remove Virtual Switch
-                LogMessage -type INFO -message "[$($vmhost.name)] Removing vSwitch0"
                 $hostvss = Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name "vSwitch0" -errorAction silentlyContinue
                 If ($hostvss)
                 {
