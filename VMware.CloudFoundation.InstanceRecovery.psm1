@@ -3615,46 +3615,42 @@ Function New-RebuiltVdsConfiguration
                     Get-VDSwitch -name $vds.vdsName | Add-VDSwitchVMHost -vmhost $vmHost -confirm:$false
                 }
 
-                $vmnicMinusOne = Get-VDPort -VDSwitch $vds.vdsName | Where-Object { $_.proxyHost.name -eq $vmhost.name -and $_.connectedEntity.name -eq $vmnicMinusOne}
-                If (!$vmnicMinusOne)
-                {
+                $vmnicInVds = Get-VDPort -VDSwitch $vds.vdsName | Where-Object { $_.proxyHost.name -eq $vmhost.name -and $_.connectedEntity.name -eq $vmnicMinusOne }
+                If (!$vmnicInVds) {
                     LogMessage -type INFO -message "[$($vmhost.name)] Adding Physical Adapter $($vds.nicNames[0]) to $($vds.vdsName) and migrating $($vmNicArray.name -join(", "))"
                     Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $vmnicMinusOne -VMHostVirtualNic $vmNicArray -VirtualNicPortgroup $portgroupArray -confirm:$false
                 }
             }
 
             #Move Mgmt VMs to Management Portgroup
-            If ($isPrimaryManagementCluster)
-            {
+            If ($isPrimaryManagementCluster) {
                 $vmsTomove = get-cluster -name $clusterName | get-vm | Where-Object { $_.Name -notlike "*vCLS*" }
                 foreach ($vmToMove in $vmsTomove) {
-                    If ((Get-VM -Name $vmToMove | Get-NetworkAdapter).NetworkName -ne $managementPortGroupName)
-                    {
+                    If ((Get-VM -Name $vmToMove | Get-NetworkAdapter).NetworkName -ne $managementPortGroupName) {
                         LogMessage -type INFO -message "[$($vmToMove.name)] Moving to $managementPortGroupName"
                         Get-VM -Name $vmToMove | Get-NetworkAdapter | Set-NetworkAdapter -NetworkName $managementPortGroupName -confirm:$false | Out-Null
                     }
                 }
             }
 
-            Foreach ($vmHost in $vmHosts)
-            {
+            Foreach ($vmHost in $vmHosts) {
                 #Remove Virtual Switch
                 LogMessage -type INFO -message "[$($vmhost.name)] Removing vSwitch0"
                 Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name "vSwitch0" | Remove-VirtualSwitch -Confirm:$false | Out-Null
 
                 $remainingVmnics = @()
-                Foreach($nic in $vds.nicNames)
-                {
-                    If ($nic -ne $vds.nicNames[0])
-                    {
+                Foreach ($nic in $vds.nicNames) {
+                    If ($nic -ne $vds.nicNames[0]) {
                         $remainingVmnics += $nic
                     }
                 }
-                Foreach ($nic in $remainingVmnics)
-                {
-                    LogMessage -type INFO -message "[$($vmhost.name)] Adding Additional Nic $nic to $($vds.vdsName)"
-                    $additionalNic = $vmhost | Get-VMHostNetworkAdapter -Physical -Name $nic
-                    Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $additionalNic -confirm:$false
+                Foreach ($nic in $remainingVmnics) {
+                    $vmnicInVds = Get-VDPort -VDSwitch $vds.vdsName | Where-Object { $_.proxyHost.name -eq $vmhost.name -and $_.connectedEntity.name -eq $nic }
+                    If (!$vmnicInVds) {
+                        LogMessage -type INFO -message "[$($vmhost.name)] Adding Additional Nic $nic to $($vds.vdsName)"
+                        $additionalNic = $vmhost | Get-VMHostNetworkAdapter -Physical -Name $nic
+                        Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $additionalNic -confirm:$false
+                    }
                 }
             }
         }
