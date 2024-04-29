@@ -918,7 +918,7 @@ Function New-ExtractDataFromSDDCBackup {
                 'ssoDomain'             = $ssoDomain
                 'networkPool'           = $poolName
                 'vCenterDetails'        = $vCenterDetails
-                'mgmtNetworkDetails'    = $mgmtNetworkDetails
+                #'mgmtNetworkDetails'    = $mgmtNetworkDetails
                 'nsxClusterDetails'     = $nsxClusterDetailsObject
                 'nsxNodeDetails'        = ($nsxtManagerClusters | Where-Object { $_.domainIDs -contains $domainId }).nsxNodes
                 'vsphereClusterDetails' = @($clusters | Where-Object { $_.vCenterID -eq $vcenterDetails.id })
@@ -1179,8 +1179,7 @@ Function New-ReconstructedPartialBringupJsonSpec {
         $networkSpecsObject += [pscustomobject]@{
             'networkType'  = "VM_MANAGEMENT"
             'subnet'       = $managementNetworkSubnet
-            'vlanId'       = (($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "VM_MANAGEMENT" }).mgmtNetworkDetails).vlanId -as [string]
-            #'mtu'          = (($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).mgmtNetworkDetails).mtu -as [string]
+            'vlanId'       = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'VM_MANAGEMENT' }).vlanId -as [string]
             'gateway'      = $extractedSddcData.mgmtDomainInfrastructure.gateway
             'portGroupKey' = = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).vdsDetails.portgroups | Where-Object { $_.transportType -eq 'VM_MANAGEMENT' }).name
         }
