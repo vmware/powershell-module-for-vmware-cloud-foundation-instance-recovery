@@ -336,6 +336,7 @@ Function New-ExtractDataFromSDDCBackup {
         'primaryDnsServer'   = $dnsJSON.primaryDnsServer
         'secondaryDnsServer' = $dnsJSON.secondaryDnsServer
         'ntpServers'         = @($ntpJSON.ntpServers)
+    }
 
     $psqlContent = Get-Content "$extractedBackupFolder\database\sddc-postgres.bkp"
 
@@ -887,7 +888,7 @@ Function New-ExtractDataFromSDDCBackup {
             $netid = [ipaddress]($ip.address -band $subnet.address)
             $managementSubnet = $($netid.ipaddresstostring)
 
-<#             $mgmtNetworkDetails = @()
+            <#             $mgmtNetworkDetails = @()
             $mgmtNetworkDetails += [pscustomobject]@{  #Review
                 'type'         = "MANAGEMENT"
                 'subnet_mask'  = $metaDataJSON.netmask
@@ -1170,8 +1171,7 @@ Function New-ReconstructedPartialBringupJsonSpec {
     }
 
     $networkSpecsObject = @()
-    If ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).vdsDetails.portgroups | Where-Object { $_.transportType -eq 'VM_MANAGEMENT' })
-    {
+    If ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).vdsDetails.portgroups | Where-Object { $_.transportType -eq 'VM_MANAGEMENT' }) {
         [IPAddress] $ip = $extractedSddcData.mgmtDomainInfrastructure.netmask
         $octets = $ip.IPAddressToString.Split('.')
         Foreach ($octet in $octets) { while (0 -ne $octet) { $octet = ($octet -shl 1) -band [byte]::MaxValue; $managementNetworkCidr++; } }
@@ -1196,7 +1196,7 @@ Function New-ReconstructedPartialBringupJsonSpec {
         'vlanId'       = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'MANAGEMENT' }).vlanId -as [string]
         'mtu'          = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'MANAGEMENT' }).mtu -as [string]
         'gateway'      = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'MANAGEMENT' }).gateway
-            'portGroupKey' = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).vdsDetails.portgroups | Where-Object { $_.transportType -eq 'MANAGEMENT' }).name
+        'portGroupKey' = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).vdsDetails.portgroups | Where-Object { $_.transportType -eq 'MANAGEMENT' }).name
     }
 
     [IPAddress] $ip = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'VMOTION' }).subnetMask
