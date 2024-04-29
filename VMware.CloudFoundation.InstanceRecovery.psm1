@@ -678,6 +678,10 @@ Function New-ExtractDataFromSDDCBackup {
                 $networkPoolID = ($hostsAndPools | Where-Object { $_.hostId -eq $clusterHost.hostId }).poolId
                 $hostNetworkIds = ($poolsAndNetworks | Where-Object { $_.poolID -eq $networkPoolID }).networkId
                 $hostNetworks = $networks | Where-Object { $_.id -in $hostNetworkIds }
+                $hostNetworks += [pscustomobject]@{
+                    'type'    = "MANAGMENT"
+                    'gateway' = $clusterHost.gateway
+                }
                 $hostsArray += [pscustomobject]@{
                     'hostname'       = $hostname
                     'networkPoolID'  = $networkPoolID
