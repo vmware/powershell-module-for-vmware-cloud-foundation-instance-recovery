@@ -165,10 +165,10 @@ Function Move-VMKernel {
 Function Confirm-VCFInstanceRecoveryPreReqs {
     <#
     .SYNOPSIS
-    Checks for the presence of supporting software and modules leveraged by VCFInstanceRecovery
+    Checks for the presence of supporting software and modules leveraged by VMware.CloudFoundation.InstanceRecovery
 
     .DESCRIPTION
-    The Confirm-VCFInstanceRecoveryPreReqs cmdlet checks for the presence of supporting software and modules leveraged by VCFInstanceRecovery
+    The Confirm-VCFInstanceRecoveryPreReqs cmdlet checks for the presence of supporting software and modules leveraged by VMware.CloudFoundation.InstanceRecovery
 
     .EXAMPLE
     Confirm-VCFInstanceRecoveryPreReqs
@@ -212,9 +212,9 @@ Function Confirm-VCFInstanceRecoveryPreReqs {
     $installedSoftware = Get-InstalledSoftware
     If (!($installedSoftware -match "OpenSSL")) {
         $openSslUrlPath = "https://slproweb.com/products/Win32OpenSSL.html"
-        Try {$openSslLinks = Invoke-WebRequest $openSslUrlPath -UseBasicParsing -ErrorAction silentlycontinue}Catch {}
+        Try { $openSslLinks = Invoke-WebRequest $openSslUrlPath -UseBasicParsing -ErrorAction silentlycontinue }Catch {}
         $openSslLink = (($openSslLinks.Links | Where-Object { $_.href -like "/download/Win64OpenSSL_Light*.exe" }).href)[0]
-        $Global:openSSLUrl = "https://slproweb.com"+$openSslLink
+        $Global:openSSLUrl = "https://slproweb.com" + $openSslLink
         If ($openSSLUrl) {
             LogMessage -type INFO -message "[$jumpboxName] OpenSSL missing. Please install. Latest version detected is here: $openSSLUrl"
         } else {
@@ -224,7 +224,7 @@ Function Confirm-VCFInstanceRecoveryPreReqs {
         LogMessage -type INFO -message "[$jumpboxName] OpenSSL Utility found"
     }
     $pathEntries = $env:path -split (";")
-    $OpenSSLPath = $pathEntries | Where-Object {$_ -like "*OpenSSL*"}
+    $OpenSSLPath = $pathEntries | Where-Object { $_ -like "*OpenSSL*" }
     If ($OpenSSLPath) {
         $testOpenSSExe = Test-Path "$OpenSSLPath\openssl.exe"
         IF ($testOpenSSExe) {
@@ -269,7 +269,7 @@ Function New-ExtractDataFromSDDCBackup {
     $backupFileFullPath = (Resolve-Path -Path $backupFilePath).path
     $backupFileName = (Get-ChildItem -path $backupFileFullPath).name
     $parentFolder = Split-Path -Path $backupFileFullPath
-    $extractedBackupFolder = ($backupFileName -Split(".tar.gz"))[0]
+    $extractedBackupFolder = ($backupFileName -Split (".tar.gz"))[0]
     $jumpboxName = hostname
 
     #Decrypt Backup
@@ -304,12 +304,20 @@ Function New-ExtractDataFromSDDCBackup {
     $dnsJSON = Get-Content "$parentFolder\$extractedBackupFolder\appliancemanager_dns_configuration.json" | ConvertFrom-JSON
     $ntpJSON = Get-Content "$parentFolder\$extractedBackupFolder\appliancemanager_ntp_configuration.json" | ConvertFrom-JSON
 
+    $sddcManagerIP = $metadataJSON.ip
+    $managementSubnetMask = $metaDataJSON.netmask
+    $ip = [ipaddress]$sddcManagerIP
+    $subnet = [ipaddress]$managementSubnetMask
+    $netid = [ipaddress]($ip.address -band $subnet.address)
+    $managementSubnet = $($netid.ipaddresstostring)
+
     $mgmtDomainInfrastructure = [pscustomobject]@{
         'port_group'         = $metadataJSON.port_group
-        'vsan_datastore'     =  $metadataJSON.vsan_datastore
+        'vsan_datastore'     = $metadataJSON.vsan_datastore
         'cluster'            = $metaDataJSON.cluster
         'datacenter'         = $metaDataJSON.datacenter
         'netmask'            = $metaDataJSON.netmask
+        'subnet'             = $managementSubnet
         'gateway'            = $metaDataJSON.gateway
         'domain'             = $metaDataJSON.domain
         'search_path'        = $metaDataJSON.search_path
@@ -322,13 +330,13 @@ Function New-ExtractDataFromSDDCBackup {
 
     LogMessage -type INFO -message "[$jumpboxName] Retrieving SDDC Manager Detail"
     #GetDomainDetails
-    $ceipStartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.sddc_manager_controller" | Select-Object Line,LineNumber).LineNumber
+    $ceipStartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.sddc_manager_controller" | Select-Object Line, LineNumber).LineNumber
     $lineContent = $psqlContent | Select-Object -Index $ceipStartingLineNumber
     $sddcManagerIp = $lineContent.split("`t")[3]
     $sddcManagerVersion = $lineContent.split("`t")[5]
     $sddcManagerFqdn = $lineContent.split("`t")[6]
     $sddcManagerVmName = $lineContent.split("`t")[8]
-    If ($lineContent.split("`t")[9] -eq 'ENABLED') { $ceipStatus = $true} else {$ceipStatus = $false}
+    If ($lineContent.split("`t")[9] -eq 'ENABLED') { $ceipStatus = $true } else { $ceipStatus = $false }
 
     $sddcManagerObject = @()
     $sddcManagerObject += [pscustomobject]@{
@@ -343,13 +351,13 @@ Function New-ExtractDataFromSDDCBackup {
     LogMessage -type INFO -message "[$jumpboxName] Retrieving NSX Manager Details"
 
     #Get All NSX Manager Clusters
-    $nsxManagerstartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.nsxt (id" | Select-Object Line,LineNumber).LineNumber
+    $nsxManagerstartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.nsxt (id" | Select-Object Line, LineNumber).LineNumber
     $nsxManagerlineIndex = $nsxManagerstartingLineNumber
     $nsxtManagerClusters = @()
     Do {
         $lineContent = $psqlContent | Select-Object -Index $nsxManagerlineIndex
         If ($lineContent -ne '\.') {
-            $nodeContent = (($lineContent.split("`t")[9]).replace("\n","")) | ConvertFrom-Json
+            $nodeContent = (($lineContent.split("`t")[9]).replace("\n", "")) | ConvertFrom-Json
             $nodeIPs = ($nodeContent.managerIpsFqdnMap | Get-Member -type NoteProperty).name
             $nsxNodes = @()
             Foreach ($nodeIP in $nodeIPs) {
@@ -357,7 +365,7 @@ Function New-ExtractDataFromSDDCBackup {
                 $nsxNodes += [pscustomobject]@{
                     'vmName'   = $hostname.split(".")[0]
                     'hostname' = $hostname
-                    'ip'       =  $nodeIP
+                    'ip'       = $nodeIP
                 }
             }
             $nsxtManagerClusters += [pscustomobject]@{
@@ -373,7 +381,7 @@ Function New-ExtractDataFromSDDCBackup {
 
     #Get Hosts
     LogMessage -type INFO -message "[$jumpboxName] Retrieving Host Details"
-    $hostsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.host " | Select-Object Line,LineNumber).LineNumber
+    $hostsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.host " | Select-Object Line, LineNumber).LineNumber
     $hostsLineIndex = $hostsLineNumber
     $hosts = @()
     Do {
@@ -403,7 +411,7 @@ Function New-ExtractDataFromSDDCBackup {
 
     #Get Host and Domain Details
     LogMessage -type INFO -message "[$jumpboxName] Retrieving Host and Domain Mappings"
-    $hostsAndDomainsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.host_and_domain " | Select-Object Line,LineNumber).LineNumber
+    $hostsAndDomainsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.host_and_domain " | Select-Object Line, LineNumber).LineNumber
     $hostsAndDomainsLineIndex = $hostsAndDomainsLineNumber
     $hostsAndDomains = @()
     Do {
@@ -422,7 +430,7 @@ Function New-ExtractDataFromSDDCBackup {
 
     #Get Host and vCenter Details
     LogMessage -type INFO -message "[$jumpboxName] Retrieving Host and vCenter Mappings"
-    $hostsandVcentersLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.host_and_vcenter " | Select-Object Line,LineNumber).LineNumber
+    $hostsandVcentersLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.host_and_vcenter " | Select-Object Line, LineNumber).LineNumber
     $hostsandVcentersLineIndex = $hostsandVcentersLineNumber
     $hostsandVcenters = @()
     Do {
@@ -441,7 +449,7 @@ Function New-ExtractDataFromSDDCBackup {
 
     #Get Host and vCenter Details
     LogMessage -type INFO -message "[$jumpboxName] Retrieving vCenter Details"
-    $vCentersStartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.vcenter " | Select-Object Line,LineNumber).LineNumber
+    $vCentersStartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.vcenter " | Select-Object Line, LineNumber).LineNumber
     $vCenterLineIndex = $vCentersStartingLineNumber
     $vCenters = @()
     Do {
@@ -449,17 +457,17 @@ Function New-ExtractDataFromSDDCBackup {
         If ($lineContent -ne '\.') {
             $vCenterID = $lineContent.split("`t")[0]
             If ($sddcManagerObject.version -like "4.4.*") {
-                $vCenterVersion= $lineContent.split("`t")[10]
-                $vCenterFqdn= $lineContent.split("`t")[11]
-                $vCenterIp= $lineContent.split("`t")[12]
-                $vCenterVMname= $lineContent.split("`t")[13]
+                $vCenterVersion = $lineContent.split("`t")[10]
+                $vCenterFqdn = $lineContent.split("`t")[11]
+                $vCenterIp = $lineContent.split("`t")[12]
+                $vCenterVMname = $lineContent.split("`t")[13]
             } else {
-                $vCenterVersion= $lineContent.split("`t")[9]
-                $vCenterFqdn= $lineContent.split("`t")[10]
-                $vCenterIp= $lineContent.split("`t")[11]
-                $vCenterVMname= $lineContent.split("`t")[12]
+                $vCenterVersion = $lineContent.split("`t")[9]
+                $vCenterFqdn = $lineContent.split("`t")[10]
+                $vCenterIp = $lineContent.split("`t")[11]
+                $vCenterVMname = $lineContent.split("`t")[12]
             }
-            $vCenterDomainID = ($hostsAndDomains | Where-Object {$_.hostId -eq (($hostsandVcenters | Where-Object {$_.vCenterID -eq $vCenterID})[0].hostID)}).domainID
+            $vCenterDomainID = ($hostsAndDomains | Where-Object { $_.hostId -eq (($hostsandVcenters | Where-Object { $_.vCenterID -eq $vCenterID })[0].hostID) }).domainID
             $vCenters += [pscustomobject]@{
                 'vCenterID'       = $vCenterID
                 'vCenterVersion'  = $vCenterVersion
@@ -475,7 +483,7 @@ Function New-ExtractDataFromSDDCBackup {
 
     #Get Hosts and Pools
     LogMessage -type INFO -message "[$jumpboxName] Retrieving Host and Network Pool Mappings"
-    $hostsAndPoolsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.host_and_network_pool" | Select-Object Line,LineNumber).LineNumber
+    $hostsAndPoolsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.host_and_network_pool" | Select-Object Line, LineNumber).LineNumber
     $hostsAndPoolsLineIndex = $hostsAndPoolsLineNumber
     $hostsandPools = @()
     Do {
@@ -494,7 +502,7 @@ Function New-ExtractDataFromSDDCBackup {
 
     #Get Network Pools
     LogMessage -type INFO -message "[$jumpboxName] Retrieving Network Pool Details"
-    $networkPoolsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.network_pool " | Select-Object Line,LineNumber).LineNumber
+    $networkPoolsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.network_pool " | Select-Object Line, LineNumber).LineNumber
     $networkPoolsLineIndex = $networkPoolsLineNumber
     $networkPools = @()
     Do {
@@ -513,7 +521,7 @@ Function New-ExtractDataFromSDDCBackup {
 
     #Get VDSs
     LogMessage -type INFO -message "[$jumpboxName] Retrieving vDS Details"
-    $vdsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.vds" | Select-Object Line,LineNumber).LineNumber
+    $vdsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.vds" | Select-Object Line, LineNumber).LineNumber
     $vdsLineIndex = $vdsLineNumber
     $virtualDistributedSwitches = @()
     Do {
@@ -540,7 +548,7 @@ Function New-ExtractDataFromSDDCBackup {
 
     #Get Networks
     LogMessage -type INFO -message "[$jumpboxName] Retrieving Network Details"
-    $networksLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.vcf_network " | Select-Object Line,LineNumber).LineNumber
+    $networksLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.vcf_network " | Select-Object Line, LineNumber).LineNumber
     $networksLineIndex = $networksLineNumber
     $networks = @()
     Do {
@@ -574,7 +582,7 @@ Function New-ExtractDataFromSDDCBackup {
 
     #Get Pools and Networks
     LogMessage -type INFO -message "[$jumpboxName] Retrieving Network Pools and Network Mappings"
-    $poolsAndNetworksLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.vcf_network_and_network_pool" | Select-Object Line,LineNumber).LineNumber
+    $poolsAndNetworksLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.vcf_network_and_network_pool" | Select-Object Line, LineNumber).LineNumber
     $poolsAndNetworksLineIndex = $poolsAndNetworksLineNumber
     $poolsAndNetworks = @()
     Do {
@@ -593,7 +601,7 @@ Function New-ExtractDataFromSDDCBackup {
 
     #Get Cluster and VDS
     LogMessage -type INFO -message "[$jumpboxName] Retrieving Cluster and vDS Mappings"
-    $clusterAndVdsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.cluster_and_vds" | Select-Object Line,LineNumber).LineNumber
+    $clusterAndVdsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.cluster_and_vds" | Select-Object Line, LineNumber).LineNumber
     $clusterAndVdsLineIndex = $clusterAndVdsLineNumber
     $clusterAndVds = @()
     Do {
@@ -630,7 +638,7 @@ Function New-ExtractDataFromSDDCBackup {
 
     #Get Clusters
     LogMessage -type INFO -message "[$jumpboxName] Retrieving Cluster Details"
-    $clustersLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.cluster " | Select-Object Line,LineNumber).LineNumber
+    $clustersLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.cluster " | Select-Object Line, LineNumber).LineNumber
     $clustersLineIndex = $clustersLineNumber
     $clusters = @()
     Do {
@@ -649,13 +657,13 @@ Function New-ExtractDataFromSDDCBackup {
             $vdsDetails = @()
 
             #Experimental
-            $clusterHosts = $hostAndCluster | Where-Object {$_.clusterID -eq $id}
+            $clusterHosts = $hostAndCluster | Where-Object { $_.clusterID -eq $id }
             $hostsArray = @()
             Foreach ($clusterHost in $clusterHosts) {
-                $hostname = ($hosts | Where-Object {$_.id -eq $clusterHost.hostId}).hostname
-                $networkPoolID = ($hostsAndPools | Where-Object {$_.hostId -eq $clusterHost.hostId}).poolId
+                $hostname = ($hosts | Where-Object { $_.id -eq $clusterHost.hostId }).hostname
+                $networkPoolID = ($hostsAndPools | Where-Object { $_.hostId -eq $clusterHost.hostId }).poolId
                 $hostNetworkIds = ($poolsAndNetworks | Where-Object { $_.poolID -eq $networkPoolID }).networkId
-                $hostNetworks = $networks | Where-Object {$_.id -in $hostNetworkIds}
+                $hostNetworks = $networks | Where-Object { $_.id -in $hostNetworkIds }
                 $hostsArray += [pscustomobject]@{
                     'hostname'       = $hostname
                     'networkPoolID'  = $networkPoolID
@@ -665,8 +673,8 @@ Function New-ExtractDataFromSDDCBackup {
             }
             #End Experimental
 
-            Foreach ($vds in ($clusterAndVds | Where-Object {$_.clusterID -eq $id})) {
-                $virtualDistributedSwitchDetails = $virtualDistributedSwitches | Where-Object {$_.id -eq $vds.vdsId}
+            Foreach ($vds in ($clusterAndVds | Where-Object { $_.clusterID -eq $id })) {
+                $virtualDistributedSwitchDetails = $virtualDistributedSwitches | Where-Object { $_.id -eq $vds.vdsId }
                 $niocSpecsObject = @()
                 Foreach ($niocSpec in $virtualDistributedSwitchDetails.niocs) {
                     $niocSpecsObject += [PSCustomObject]@{
@@ -680,7 +688,7 @@ Function New-ExtractDataFromSDDCBackup {
                 $vdsObject | Add-Member -NotePropertyName 'portgroups' -NotePropertyValue $virtualDistributedSwitchDetails.portgroups
                 $vdsObject | Add-Member -NotePropertyName 'dvsName' -NotePropertyValue $virtualDistributedSwitchDetails.name
                 $vdsObject | Add-Member -NotePropertyName 'vmnics' -NotePropertyValue $null
-                $vdsObject | Add-Member -NotePropertyName 'networks' -NotePropertyValue ("MANAGEMENT","VSAN","VMOTION" | Where-Object {$_ -in $niocSpecsObject.trafficType})
+                $vdsObject | Add-Member -NotePropertyName 'networks' -NotePropertyValue ("MANAGEMENT", "VSAN", "VMOTION" | Where-Object { $_ -in $niocSpecsObject.trafficType })
 
                 $vdsDetails += $vdsObject
             }
@@ -705,7 +713,7 @@ Function New-ExtractDataFromSDDCBackup {
 
     #Get Cluster and vCenter
     LogMessage -type INFO -message "[$jumpboxName] Retrieving Cluster and vCenter Mappings"
-    $clusterAndVcenterLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.cluster_and_vcenter" | Select-Object Line,LineNumber).LineNumber
+    $clusterAndVcenterLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.cluster_and_vcenter" | Select-Object Line, LineNumber).LineNumber
     $clusterAndVcenterLineIndex = $clusterAndVcenterLineNumber
     $clusterAndVcenter = @()
     Do {
@@ -724,7 +732,7 @@ Function New-ExtractDataFromSDDCBackup {
 
     #Get Cluster and Domain
     LogMessage -type INFO -message "[$jumpboxName] Retrieving Cluster and Domain Mappings"
-    $clusterAndDomainLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.cluster_and_domain" | Select-Object Line,LineNumber).LineNumber
+    $clusterAndDomainLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.cluster_and_domain" | Select-Object Line, LineNumber).LineNumber
     $clusterAndDomainLineIndex = $clusterAndDomainLineNumber
     $clusterAndDomain = @()
     Do {
@@ -743,7 +751,7 @@ Function New-ExtractDataFromSDDCBackup {
 
     #Get License Models
     LogMessage -type INFO -message "[$jumpboxName] Retrieving Licensing Models"
-    $licenseModelLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY licensemanager.licensing_info" | Select-Object Line,LineNumber).LineNumber
+    $licenseModelLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY licensemanager.licensing_info" | Select-Object Line, LineNumber).LineNumber
     If ($licenseModelLineNumber) {
         $licenseModelLineIndex = $licenseModelLineNumber
         $licenseModels = @()
@@ -766,7 +774,7 @@ Function New-ExtractDataFromSDDCBackup {
 
     #Get License Keys
     LogMessage -type INFO -message "[$jumpboxName] Retrieving License Keys"
-    $licenseLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY licensemanager.licensekey" | Select-Object Line,LineNumber).LineNumber
+    $licenseLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY licensemanager.licensekey" | Select-Object Line, LineNumber).LineNumber
     $licenseLineIndex = $licenseLineNumber
     $licenseKeys = @()
     Do {
@@ -789,7 +797,7 @@ Function New-ExtractDataFromSDDCBackup {
 
     If ($sddcManagerObject.version -like "4.4.*") {
         LogMessage -type INFO -message "[$jumpboxName] Retrieving PSC Data"
-        $pscsStartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.psc (id" | Select-Object Line,LineNumber).LineNumber
+        $pscsStartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.psc (id" | Select-Object Line, LineNumber).LineNumber
         $pscsLineIndex = $pscsStartingLineNumber
         $pscs = @()
         Do {
@@ -806,7 +814,7 @@ Function New-ExtractDataFromSDDCBackup {
         }
         Until ($lineContent -eq '\.')
 
-        $vCentersAndPscsStartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.vcenter_and_psc" | Select-Object Line,LineNumber).LineNumber
+        $vCentersAndPscsStartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.vcenter_and_psc" | Select-Object Line, LineNumber).LineNumber
         $vCentersAndPscsLineIndex = $vCentersAndPscsStartingLineNumber
         $vCentersAndPscs = @()
         Do {
@@ -826,7 +834,7 @@ Function New-ExtractDataFromSDDCBackup {
 
     LogMessage -type INFO -message "[$jumpboxName] Assembling Workload Domain Data"
     #GetDomainDetails
-    $domainsStartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.domain (id" | Select-Object Line,LineNumber).LineNumber
+    $domainsStartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.domain (id" | Select-Object Line, LineNumber).LineNumber
     $domainLineIndex = $domainsStartingLineNumber
     $workloadDomains = @()
     Do {
@@ -835,9 +843,9 @@ Function New-ExtractDataFromSDDCBackup {
             $domainId = $lineContent.split("`t")[0]
             $domainName = $lineContent.split("`t")[3]
             $domainType = $lineContent.split("`t")[6]
-            $vCenter = $vCenters | Where-Object {$_.vCenterDomainID -eq $domainId}
+            $vCenter = $vCenters | Where-Object { $_.vCenterDomainID -eq $domainId }
             If ($sddcManagerObject.version -like "4.4.*") {
-                $ssoDomain = ($pscs | Where-Object {$_.id -eq (($vCentersAndPscs | Where-Object {$_.vcenterId -eq $vcenter.vCenterID}).pscId)}).ssoDomain
+                $ssoDomain = ($pscs | Where-Object { $_.id -eq (($vCentersAndPscs | Where-Object { $_.vcenterId -eq $vcenter.vCenterID }).pscId) }).ssoDomain
             } else {
                 $ssoDomain = $lineContent.split("`t")[11]
             }
@@ -849,18 +857,18 @@ Function New-ExtractDataFromSDDCBackup {
                 'vmname'  = $vCenter.vCenterVMname
             }
             #HostID from hostsAndDomains of first host in domain based on DomainID
-            $hostID = (($hostsAndDomains | Where-Object {$_.domainID -eq $domainID})[0]).hostId
+            $hostID = (($hostsAndDomains | Where-Object { $_.domainID -eq $domainID })[0]).hostId
 
             #PoolID from HostandPools based on HostID
-            $poolID = ($hostsAndPools | Where-Object {$_.hostId -eq $hostID}).PoolID
+            $poolID = ($hostsAndPools | Where-Object { $_.hostId -eq $hostID }).PoolID
 
             #poolName from Networkpools based on PoolID
-            $poolName = ($networkPools | Where-Object {$_.poolID -eq $poolID}).PoolName
+            $poolName = ($networkPools | Where-Object { $_.poolID -eq $poolID }).PoolName
 
             #networks from poolID
-            $domainNetworks = ($poolsAndNetworks | Where-Object {$_.poolID -eq $poolID}).networkID
-            $vmotionNetwork = $networks | Where-Object {($_.type -eq "VMOTION") -and ($_.id -in $domainNetworks)}
-            $vsanNetwork = $networks | Where-Object {($_.type -eq "VSAN") -and ($_.id -in $domainNetworks)}
+            $domainNetworks = ($poolsAndNetworks | Where-Object { $_.poolID -eq $poolID }).networkID
+            $vmotionNetwork = $networks | Where-Object { ($_.type -eq "VMOTION") -and ($_.id -in $domainNetworks) }
+            $vsanNetwork = $networks | Where-Object { ($_.type -eq "VSAN") -and ($_.id -in $domainNetworks) }
             $sddcManagerIP = $metadataJSON.ip
             $managementSubnetMask = $metaDataJSON.netmask
             $ip = [ipaddress]$sddcManagerIP
@@ -868,47 +876,25 @@ Function New-ExtractDataFromSDDCBackup {
             $netid = [ipaddress]($ip.address -band $subnet.address)
             $managementSubnet = $($netid.ipaddresstostring)
 
-            $mgmtNetworkDetails = @()
+            <#             $mgmtNetworkDetails = @()
             $mgmtNetworkDetails += [pscustomobject]@{  #Review
                 'type'         = "MANAGEMENT"
                 'subnet_mask'  = $metaDataJSON.netmask
-                'subnet'       =  $managementSubnet
-                'mtu'          =  "1500" # Review
-                'vlanID'       = ($virtualDistributedSwitches.portgroups | Where-Object {$_.name -eq $metadataJSON.port_group}).vlanId
+                'subnet'       = $managementSubnet
+                'mtu'          = "1500" # Review
+                'vlanID'       = ($virtualDistributedSwitches.portgroups | Where-Object { $_.name -eq $metadataJSON.port_group }).vlanId
                 'gateway'      = $metaDataJSON.gateway
                 'portgroupKey' = $metadataJSON.port_group
             }
-            <#             $networkSpecs += [pscustomobject]@{
-                'type' = "VMOTION"
-                'subnet_mask' = $vmotionNetwork.subnetMask
-                'subnet' =  $vmotionNetwork.subnet
-                'mtu' =  $vmotionNetwork.mtu
-                'startIpAddress' = $vmotionNetwork.startIpAddress
-                'endIpAddress'   = $vmotionNetwork.endIpAddress
-                'vlanID'         = $vmotionNetwork.vlanID
-                'gateway'        = $vmotionNetwork.gateway
-                'portgroupKey'   = ($virtualDistributedSwitches.portgroups | Where-Object {$_.vlanId -eq $vmotionNetwork.vlanID}).name
-            }
-            $networkSpecs += [pscustomobject]@{
-                'type'           = "VSAN"
-                'subnet_mask'    = $vsanNetwork.subnetMask
-                'subnet'         =  $vsanNetwork.subnet
-                'mtu'            =  $vsanNetwork.mtu
-                'startIpAddress' = $vsanNetwork.startIpAddress
-                'endIpAddress' = $vsanNetwork.endIpAddress
-                'vlanID' = $vsanNetwork.vlanID
-                'gateway' = $vsanNetwork.gateway
-                'portgroupKey' = ($virtualDistributedSwitches.portgroups | Where-Object {$_.vlanId -eq $vsanNetwork.vlanID}).name
-            } #>
-            $nsxClusterDetailsObject = New-Object -type psobject
-            $nsxClusterDetailsObject | Add-Member -NotePropertyName 'clusterVip' -NotePropertyValue ($nsxtManagerClusters | Where-Object {$_.domainIDs -contains $domainId}).clusterVip
-            $nsxClusterDetailsObject | Add-Member -NotePropertyName 'clusterFqdn' -NotePropertyValue ($nsxtManagerClusters | Where-Object {$_.domainIDs -contains $domainId}).clusterFqdn
-            $nsxClusterDetailsObject | Add-Member -NotePropertyName 'rootNsxtManagerPassword' -NotePropertyValue ($passwordVaultObject | Where-Object {($_.entityName -eq ($nsxtManagerClusters | Where-Object {$_.domainIDs -contains $domainId}).clusterFqdn) -and ($_.credentialType -eq 'SSH')}).password
-            $nsxClusterDetailsObject | Add-Member -NotePropertyName 'nsxtAdminPassword' -NotePropertyValue ($passwordVaultObject | Where-Object {($_.entityName -eq ($nsxtManagerClusters | Where-Object {$_.domainIDs -contains $domainId}).clusterFqdn) -and ($_.credentialType -eq 'API')}).password
-            $nsxClusterDetailsObject | Add-Member -NotePropertyName 'nsxtAuditPassword' -NotePropertyValue ($passwordVaultObject | Where-Object {($_.entityName -eq ($nsxtManagerClusters | Where-Object {$_.domainIDs -contains $domainId}).clusterFqdn) -and ($_.credentialType -eq 'AUDIT')}).password
+ #>            $nsxClusterDetailsObject = New-Object -type psobject
+            $nsxClusterDetailsObject | Add-Member -NotePropertyName 'clusterVip' -NotePropertyValue ($nsxtManagerClusters | Where-Object { $_.domainIDs -contains $domainId }).clusterVip
+            $nsxClusterDetailsObject | Add-Member -NotePropertyName 'clusterFqdn' -NotePropertyValue ($nsxtManagerClusters | Where-Object { $_.domainIDs -contains $domainId }).clusterFqdn
+            $nsxClusterDetailsObject | Add-Member -NotePropertyName 'rootNsxtManagerPassword' -NotePropertyValue ($passwordVaultObject | Where-Object { ($_.entityName -eq ($nsxtManagerClusters | Where-Object { $_.domainIDs -contains $domainId }).clusterFqdn) -and ($_.credentialType -eq 'SSH') }).password
+            $nsxClusterDetailsObject | Add-Member -NotePropertyName 'nsxtAdminPassword' -NotePropertyValue ($passwordVaultObject | Where-Object { ($_.entityName -eq ($nsxtManagerClusters | Where-Object { $_.domainIDs -contains $domainId }).clusterFqdn) -and ($_.credentialType -eq 'API') }).password
+            $nsxClusterDetailsObject | Add-Member -NotePropertyName 'nsxtAuditPassword' -NotePropertyValue ($passwordVaultObject | Where-Object { ($_.entityName -eq ($nsxtManagerClusters | Where-Object { $_.domainIDs -contains $domainId }).clusterFqdn) -and ($_.credentialType -eq 'AUDIT') }).password
 
-            If (($licenseModels | Where-Object {$_.resourceId -eq $domainID}).licensingMode) {
-                $licenseModel = ($licenseModels | Where-Object {$_.resourceId -eq $domainID}).licensingMode
+            If (($licenseModels | Where-Object { $_.resourceId -eq $domainID }).licensingMode) {
+                $licenseModel = ($licenseModels | Where-Object { $_.resourceId -eq $domainID }).licensingMode
             } else {
                 $licenseModel = 'PERPETUAL'
             }
@@ -920,7 +906,7 @@ Function New-ExtractDataFromSDDCBackup {
                 'ssoDomain'             = $ssoDomain
                 'networkPool'           = $poolName
                 'vCenterDetails'        = $vCenterDetails
-                'mgmtNetworkDetails'    = $mgmtNetworkDetails
+                #'mgmtNetworkDetails'    = $mgmtNetworkDetails
                 'nsxClusterDetails'     = $nsxClusterDetailsObject
                 'nsxNodeDetails'        = ($nsxtManagerClusters | Where-Object { $_.domainIDs -contains $domainId }).nsxNodes
                 'vsphereClusterDetails' = @($clusters | Where-Object { $_.vCenterID -eq $vcenterDetails.id })
@@ -985,7 +971,7 @@ Function New-PrepareforPartialBringup {
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
     LogMessage -type INFO -message "[$jumpboxName] Detected desired SDDC Manager version of: $($extractedSddcData.sddcManager.version)"
 
-    $truncatedSddcManagerVersion = $extractedSddcData.sddcManager.version.replace(".","").substring(0,2)
+    $truncatedSddcManagerVersion = $extractedSddcData.sddcManager.version.replace(".", "").substring(0, 2)
     $modulePath = (Get-InstalledModule -Name VMware.CloudFoundation.InstanceRecovery).InstalledLocation
     $sourceFile = "$modulePath\reference-files\$($truncatedSddcManagerVersion)x-workflowspec-ems.json"
 
@@ -1163,19 +1149,30 @@ Function New-ReconstructedPartialBringupJsonSpec {
     #networkSpecs
     $vmotionIpObject = @()
     $vmotionIpObject += [pscustomobject]@{
-        #'startIpAddress' = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VMOTION'}).startIPAddress
         'startIpAddress' = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'VMOTION' }).startIPAddress
-        #'endIpAddress'   = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VMOTION'}).endIPAddress
         'endIpAddress'   = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'VMOTION' }).endIpAddress
     }
     $vsanIpObject = @()
     $vsanIpObject += [pscustomobject]@{
-        #'startIpAddress' = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VSAN'}).startIPAddress
         'startIpAddress' = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'VSAN' }).startIPAddress
-        #'endIpAddress'   = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VSAN'}).endIPAddress
         'endIpAddress'   = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'VSAN' }).endIpAddress
     }
+
     $networkSpecsObject = @()
+    If ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).vdsDetails.portgroups | Where-Object { $_.transportType -eq 'VM_MANAGEMENT' }) {
+        [IPAddress] $ip = $extractedSddcData.mgmtDomainInfrastructure.netmask
+        $octets = $ip.IPAddressToString.Split('.')
+        Foreach ($octet in $octets) { while (0 -ne $octet) { $octet = ($octet -shl 1) -band [byte]::MaxValue; $managementNetworkCidr++; } }
+        $managementNetworkSubnet = ($extractedSddcData.mgmtDomainInfrastructure.subnet + "/" + $managementNetworkCidr)
+        $networkSpecsObject += [pscustomobject]@{
+            'networkType'  = "VM_MANAGEMENT"
+            'subnet'       = $managementNetworkSubnet
+            'vlanId'       = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'VM_MANAGEMENT' }).vlanId -as [string]
+            'gateway'      = $extractedSddcData.mgmtDomainInfrastructure.gateway
+            'portGroupKey' = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).vdsDetails.portgroups | Where-Object { $_.transportType -eq 'VM_MANAGEMENT' }).name
+        }
+    }
+
     [IPAddress] $ip = (($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).mgmtNetworkDetails).subnet_mask
     $octets = $ip.IPAddressToString.Split('.')
     Foreach ($octet in $octets) { while (0 -ne $octet) { $octet = ($octet -shl 1) -band [byte]::MaxValue; $managementNetworkCidr++; } }
@@ -1183,49 +1180,37 @@ Function New-ReconstructedPartialBringupJsonSpec {
     $networkSpecsObject += [pscustomobject]@{
         'networkType'  = "MANAGEMENT"
         'subnet'       = $managementNetworkSubnet
-        'vlanId'       = (($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).mgmtNetworkDetails).vlanId -as [string]
-        'mtu'          = (($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).mgmtNetworkDetails).mtu -as [string]
-        'gateway'      = (($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).mgmtNetworkDetails).gateway
-        'portGroupKey' = (($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).mgmtNetworkDetails).portGroupKey
+        'vlanId'       = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'MANAGEMENT' }).vlanId -as [string]
+        'mtu'          = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'MANAGEMENT' }).mtu -as [string]
+        'gateway'      = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'MANAGEMENT' }).gateway
+        'portGroupKey' = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).vdsDetails.portgroups | Where-Object { $_.transportType -eq 'MANAGEMENT' }).name
     }
 
-    #[IPAddress] $ip = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VMOTION'}).subnet_mask
     [IPAddress] $ip = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'VMOTION' }).subnetMask
     $octets = $ip.IPAddressToString.Split('.')
     Foreach ($octet in $octets) { while (0 -ne $octet) { $octet = ($octet -shl 1) -band [byte]::MaxValue; $vmotionNetworkCidr++; } }
-    #$vmotionNetworkSubnet = ((($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VMOTION'}).subnet + "/" + $vmotionNetworkCidr)
     $vmotionNetworkSubnet = (((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'VMOTION' }).subnet + "/" + $vmotionNetworkCidr)
     $networkSpecsObject += [pscustomobject]@{
         'networkType'            = "VMOTION"
         'subnet'                 = $vmotionNetworkSubnet
         'includeIpAddressRanges' = $vmotionIpObject
-        #'vlanId'               = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VMOTION'}).vlanId -as [string]
         'vlanId'                 = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'VMOTION' }).vlanId -as [string]
-        #'mtu'                  = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VMOTION'}).mtu -as [string]
         'mtu'                    = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'VMOTION' }).mtu -as [string]
-        #'gateway'              = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VMOTION'}).gateway
         'gateway'                = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'VMOTION' }).gateway
-        #'portGroupKey'         = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VMOTION'}).portGroupKey
         'portGroupKey'           = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).vdsDetails.portgroups | Where-Object { $_.transportType -eq 'VMOTION' }).name
     }
 
-    #[IPAddress] $ip = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VSAN'}).subnet_mask
     [IPAddress] $ip = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'VSAN' }).subnetMask
     $octets = $ip.IPAddressToString.Split('.')
     Foreach ($octet in $octets) { while (0 -ne $octet) { $octet = ($octet -shl 1) -band [byte]::MaxValue; $vsanNetworkCidr++; } }
-    #$vsanNetworkSubnet = ((($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VSAN'}).subnet + "/" + $vsanNetworkCidr)
     $vsanNetworkSubnet = (((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'VSAN' }).subnet + "/" + $vmotionNetworkCidr)
     $networkSpecsObject += [pscustomobject]@{
         'networkType'            = "VSAN"
         'subnet'                 = $vsanNetworkSubnet
         'includeIpAddressRanges' = $vsanIpObject
-        #'vlanId'               = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VSAN'}).vlanId -as [string]
         'vlanId'                 = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'VSAN' }).vlanId -as [string]
-        #'mtu'                  = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VSAN'}).mtu -as [string]
         'mtu'                    = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'VSAN' }).mtu -as [string]
-        #'gateway'              = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VSAN'}).gateway
         'gateway'                = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'VSAN' }).gateway
-        #'portGroupKey'         = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq 'VSAN'}).portGroupKey
         'portGroupKey'           = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).vdsDetails.portgroups | Where-Object { $_.transportType -eq 'VSAN' }).name
     }
     $mgmtDomainObject | Add-Member -notepropertyname 'networkSpecs' -notepropertyvalue $networkSpecsObject
@@ -1492,10 +1477,10 @@ Function New-NSXManagerOvaDeployment {
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
 
-    $workloadDomainDetails = ($extractedSDDCData.workloadDomains | Where-Object {$_.domainName -eq $workloadDomain})
+    $workloadDomainDetails = ($extractedSDDCData.workloadDomains | Where-Object { $_.domainName -eq $workloadDomain })
     $nsxNodes = $workloadDomainDetails.nsxNodeDetails
 
-    $nsxManagersDisplayObject=@()
+    $nsxManagersDisplayObject = @()
     $nsxManagersIndex = 1
     $nsxManagersDisplayObject += [pscustomobject]@{
         'ID'      = "ID"
@@ -1512,13 +1497,13 @@ Function New-NSXManagerOvaDeployment {
         }
         $nsxManagersIndex++
     }
-    Write-Host ""; $nsxManagersDisplayObject | format-table -Property @{Expression =" "},id,Manager -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
+    Write-Host ""; $nsxManagersDisplayObject | format-table -Property @{Expression = " " }, id, Manager -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
     Do {
         Write-Host ""; Write-Host " Enter the ID of the Manager you wish to redeploy, or C to Cancel: " -ForegroundColor Yellow -nonewline
         $nsxManagerSelection = Read-Host
     } Until (($nsxManagerSelection -in $nsxManagersDisplayObject.ID) -OR ($nsxManagerSelection -eq "c"))
-    If ($nsxManagerSelection -eq "c") {Break}
-    $selectedNsxManager = $nsxNodes | Where-Object {$_.vmName -eq ($nsxManagersDisplayObject | Where-Object {$_.id -eq $nsxManagerSelection}).manager }
+    If ($nsxManagerSelection -eq "c") { Break }
+    $selectedNsxManager = $nsxNodes | Where-Object { $_.vmName -eq ($nsxManagersDisplayObject | Where-Object { $_.id -eq $nsxManagerSelection }).manager }
 
     $vmNetwork = $extractedSDDCData.mgmtDomainInfrastructure.port_group
     $vmDatastore = $extractedSDDCData.mgmtDomainInfrastructure.vsan_datastore
@@ -1533,22 +1518,22 @@ Function New-NSXManagerOvaDeployment {
     $nsxManagerGateway = $extractedSddcData.mgmtDomainInfrastructure.gateway
     $nsxManagerDns = "$($extractedSddcData.mgmtDomainInfrastructure.primaryDnsServer),$($extractedSddcData.mgmtDomainInfrastructure.secondaryDnsServer)"
     $nsxManagerDnsDomain = $extractedSddcData.mgmtDomainInfrastructure.domain
-    $nsxManagerNtpServer = $extractedSddcData.mgmtDomainInfrastructure.ntpServers -join(",")
-    $nsxManagerAdminUsername = ($extractedSddcData.passwords | Where-Object {($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "API")}).username
-    $nsxManagerAdminPassword = ($extractedSddcData.passwords | Where-Object {($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "API")}).password
-    $nsxManagerCliPassword  = ($extractedSddcData.passwords | Where-Object {($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "API")}).password
-    $nsxManagerCliAuditUsername = ($extractedSddcData.passwords | Where-Object {($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "AUDIT")}).username
-    $nsxManagerCliAuditPassword = ($extractedSddcData.passwords | Where-Object {($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "AUDIT")}).password
+    $nsxManagerNtpServer = $extractedSddcData.mgmtDomainInfrastructure.ntpServers -join (",")
+    $nsxManagerAdminUsername = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "API") }).username
+    $nsxManagerAdminPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "API") }).password
+    $nsxManagerCliPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "API") }).password
+    $nsxManagerCliAuditUsername = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "AUDIT") }).username
+    $nsxManagerCliAuditPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "AUDIT") }).password
 
     If ($nsxManagerCliAuditUsername) {
-        $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowExtraConfig --diskMode=thin --X:injectOvfEnv --X:logFile=ovftool.log --powerOn --X:waitForIp --name="' + $nsxManagerVMName + '" --datastore="' + $vmDatastore + '" --deploymentOption="' + $restoredNsxManagerDeploymentSize + '" --network="' + $vmNetwork + '" --prop:nsx_role="NSX Manager" --prop:nsx_ip_0="' + $nsxManagerIp + '" --prop:nsx_netmask_0="' + $nsxManagerNetworkMask + '" --prop:nsx_gateway_0="' + $nsxManagerGateway + '" --prop:nsx_dns1_0="' + $nsxManagerDns + '" --prop:nsx_domain_0="' + $nsxManagerDnsDomain + '" --prop:nsx_ntp_0="' + $nsxManagerNtpServer + '" --prop:nsx_isSSHEnabled=True --prop:nsx_allowSSHRootLogin=True --prop:nsx_passwd_0="' + $nsxManagerAdminPassword + '" --prop:nsx_cli_username="' + $nsxManagerAdminUsername+ '" --prop:nsx_cli_passwd_0="' + $nsxManagerCliPassword + '" --prop:nsx_cli_audit_passwd_0="' + $nsxManagerCliAuditPassword + '" --prop:nsx_cli_audit_username="' + $nsxManagerCliAuditUsername + '" --prop:nsx_hostname="' + $nsxManagerHostName + '" "' + $nsxManagerOvaFile + '" ' + '"vi://' + $vCenterAdmin + ':' + $vCenterAdminPassword + '@' + $vCenterFqdn + '/' + $datacenterName + '/host/' + $clusterName + '/"'
+        $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowExtraConfig --diskMode=thin --X:injectOvfEnv --X:logFile=ovftool.log --powerOn --X:waitForIp --name="' + $nsxManagerVMName + '" --datastore="' + $vmDatastore + '" --deploymentOption="' + $restoredNsxManagerDeploymentSize + '" --network="' + $vmNetwork + '" --prop:nsx_role="NSX Manager" --prop:nsx_ip_0="' + $nsxManagerIp + '" --prop:nsx_netmask_0="' + $nsxManagerNetworkMask + '" --prop:nsx_gateway_0="' + $nsxManagerGateway + '" --prop:nsx_dns1_0="' + $nsxManagerDns + '" --prop:nsx_domain_0="' + $nsxManagerDnsDomain + '" --prop:nsx_ntp_0="' + $nsxManagerNtpServer + '" --prop:nsx_isSSHEnabled=True --prop:nsx_allowSSHRootLogin=True --prop:nsx_passwd_0="' + $nsxManagerAdminPassword + '" --prop:nsx_cli_username="' + $nsxManagerAdminUsername + '" --prop:nsx_cli_passwd_0="' + $nsxManagerCliPassword + '" --prop:nsx_cli_audit_passwd_0="' + $nsxManagerCliAuditPassword + '" --prop:nsx_cli_audit_username="' + $nsxManagerCliAuditUsername + '" --prop:nsx_hostname="' + $nsxManagerHostName + '" "' + $nsxManagerOvaFile + '" ' + '"vi://' + $vCenterAdmin + ':' + $vCenterAdminPassword + '@' + $vCenterFqdn + '/' + $datacenterName + '/host/' + $clusterName + '/"'
     } else {
-        $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowExtraConfig --diskMode=thin --X:injectOvfEnv --X:logFile=ovftool.log --powerOn --X:waitForIp --name="' + $nsxManagerVMName + '" --datastore="' + $vmDatastore + '" --deploymentOption="' + $restoredNsxManagerDeploymentSize + '" --network="' + $vmNetwork + '" --prop:nsx_role="NSX Manager" --prop:nsx_ip_0="' + $nsxManagerIp + '" --prop:nsx_netmask_0="' + $nsxManagerNetworkMask + '" --prop:nsx_gateway_0="' + $nsxManagerGateway + '" --prop:nsx_dns1_0="' + $nsxManagerDns + '" --prop:nsx_domain_0="' + $nsxManagerDnsDomain + '" --prop:nsx_ntp_0="' + $nsxManagerNtpServer + '" --prop:nsx_isSSHEnabled=True --prop:nsx_allowSSHRootLogin=True --prop:nsx_passwd_0="' + $nsxManagerAdminPassword + '" --prop:nsx_cli_username="' + $nsxManagerAdminUsername+ '" --prop:nsx_cli_passwd_0="' + $nsxManagerCliPassword + '" --prop:nsx_hostname="' + $nsxManagerHostName + '" "' + $nsxManagerOvaFile + '" ' + '"vi://' + $vCenterAdmin + ':' + $vCenterAdminPassword + '@' + $vCenterFqdn + '/' + $datacenterName + '/host/' + $clusterName + '/"'    <# Action when all if and elseif conditions are false #>
+        $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowExtraConfig --diskMode=thin --X:injectOvfEnv --X:logFile=ovftool.log --powerOn --X:waitForIp --name="' + $nsxManagerVMName + '" --datastore="' + $vmDatastore + '" --deploymentOption="' + $restoredNsxManagerDeploymentSize + '" --network="' + $vmNetwork + '" --prop:nsx_role="NSX Manager" --prop:nsx_ip_0="' + $nsxManagerIp + '" --prop:nsx_netmask_0="' + $nsxManagerNetworkMask + '" --prop:nsx_gateway_0="' + $nsxManagerGateway + '" --prop:nsx_dns1_0="' + $nsxManagerDns + '" --prop:nsx_domain_0="' + $nsxManagerDnsDomain + '" --prop:nsx_ntp_0="' + $nsxManagerNtpServer + '" --prop:nsx_isSSHEnabled=True --prop:nsx_allowSSHRootLogin=True --prop:nsx_passwd_0="' + $nsxManagerAdminPassword + '" --prop:nsx_cli_username="' + $nsxManagerAdminUsername + '" --prop:nsx_cli_passwd_0="' + $nsxManagerCliPassword + '" --prop:nsx_hostname="' + $nsxManagerHostName + '" "' + $nsxManagerOvaFile + '" ' + '"vi://' + $vCenterAdmin + ':' + $vCenterAdminPassword + '@' + $vCenterFqdn + '/' + $datacenterName + '/host/' + $clusterName + '/"'    <# Action when all if and elseif conditions are false #>
     }
     LogMessage -type INFO -message "[$jumpboxName] Deploying NSX Manager OVA"
-    $scriptBlock = {Invoke-Expression "& $using:command"}
+    $scriptBlock = { Invoke-Expression "& $using:command" }
     $deploymentJob = Start-Job -scriptblock $scriptBlock -ArgumentList $command
-    Do {Sleep 1; $jobStatus = (Get-Job -id $deploymentJob.id).state } Until ($jobStatus -eq "Running" )
+    Do { Sleep 1; $jobStatus = (Get-Job -id $deploymentJob.id).state } Until ($jobStatus -eq "Running" )
     Sleep 10
     $progress = @(Get-Job -id $deploymentJob.id | Receive-Job)
     Foreach ($line in $progress) {
@@ -1569,7 +1554,7 @@ Function New-NSXManagerOvaDeployment {
             }
         }
         $jobStatus = (Get-Job -id $deploymentJob.id).state
-        If ($jobStatus -eq "Running") {Sleep 60}
+        If ($jobStatus -eq "Running") { Sleep 60 }
     } While ($jobStatus -eq "Running")
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
@@ -1623,7 +1608,7 @@ Function New-vCenterOvaDeployment {
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
 
-    $workloadDomainDetails = ($extractedSDDCData.workloadDomains | Where-Object {$_.domainName -eq $workloadDomain})
+    $workloadDomainDetails = ($extractedSDDCData.workloadDomains | Where-Object { $_.domainName -eq $workloadDomain })
     $vmNetwork = $extractedSDDCData.mgmtDomainInfrastructure.port_group
     $vmDatastore = $extractedSDDCData.mgmtDomainInfrastructure.vsan_datastore
     $datacenterName = $extractedSDDCData.mgmtDomainInfrastructure.datacenter
@@ -1634,15 +1619,15 @@ Function New-vCenterOvaDeployment {
     $restoredvCenterNetworkPrefix = 0
     [IPAddress] $ip = $extractedSddcData.mgmtDomainInfrastructure.netmask
     $octets = $ip.IPAddressToString.Split('.')
-    Foreach ($octet in $octets) { while (0 -ne $octet) { $octet = ($octet -shl 1) -band [byte]::MaxValue; $restoredvCenterNetworkPrefix++; }}
+    Foreach ($octet in $octets) { while (0 -ne $octet) { $octet = ($octet -shl 1) -band [byte]::MaxValue; $restoredvCenterNetworkPrefix++; } }
     $restoredvCenterDnsServers = "$($extractedSddcData.mgmtDomainInfrastructure.primaryDnsServer),$($extractedSddcData.mgmtDomainInfrastructure.secondaryDnsServer)"
     $restoredvCenterGateway = $extractedSddcData.mgmtDomainInfrastructure.gateway
-    $restoredvCenterRootPassword = ($extractedSddcData.passwords | Where-Object {($_.entityType -eq "VCENTER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "SSH")}).password
+    $restoredvCenterRootPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "VCENTER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "SSH") }).password
     LogMessage -type INFO -message "[$jumpboxName] Deploying vCenter OVA"
-    $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowExtraConfig --X:enableHiddenProperties --diskMode=thin --X:injectOvfEnv --X:waitForIp --X:logFile=ovftool.log --name="' + $restoredvCenterVMName + '" --net:"Network 1"="' +$vmNetwork + '" --datastore="' + $vmDatastore + '" --deploymentOption="' + $restoredvCenterDeploymentSize + '" --prop:guestinfo.cis.appliance.net.addr.family="ipv4" --prop:guestinfo.cis.appliance.net.addr="' + $restoredvCenterIpAddress + '" --prop:guestinfo.cis.appliance.net.pnid="' + $restoredvCenterFqdn + '" --prop:guestinfo.cis.appliance.net.prefix="' + $restoredvCenterNetworkPrefix + '" --prop:guestinfo.cis.appliance.net.mode="static" --prop:guestinfo.cis.appliance.net.dns.servers="' + $restoredvCenterDnsServers + '" --prop:guestinfo.cis.appliance.net.gateway="' + $restoredvCenterGateway + '" --prop:guestinfo.cis.appliance.root.passwd="' + $restoredvCenterRootPassword + '" --prop:guestinfo.cis.appliance.ssh.enabled="True" "' + $vCenterOvaFile + '" ' + '"vi://' + $vCenterAdmin + ':' + $vCenterAdminPassword + '@' + $vCenterFqdn + '/' + $datacenterName + '/host/' + $clusterName + '/"'
-    $scriptBlock = {Invoke-Expression "& $using:command"}
+    $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowExtraConfig --X:enableHiddenProperties --diskMode=thin --X:injectOvfEnv --X:waitForIp --X:logFile=ovftool.log --name="' + $restoredvCenterVMName + '" --net:"Network 1"="' + $vmNetwork + '" --datastore="' + $vmDatastore + '" --deploymentOption="' + $restoredvCenterDeploymentSize + '" --prop:guestinfo.cis.appliance.net.addr.family="ipv4" --prop:guestinfo.cis.appliance.net.addr="' + $restoredvCenterIpAddress + '" --prop:guestinfo.cis.appliance.net.pnid="' + $restoredvCenterFqdn + '" --prop:guestinfo.cis.appliance.net.prefix="' + $restoredvCenterNetworkPrefix + '" --prop:guestinfo.cis.appliance.net.mode="static" --prop:guestinfo.cis.appliance.net.dns.servers="' + $restoredvCenterDnsServers + '" --prop:guestinfo.cis.appliance.net.gateway="' + $restoredvCenterGateway + '" --prop:guestinfo.cis.appliance.root.passwd="' + $restoredvCenterRootPassword + '" --prop:guestinfo.cis.appliance.ssh.enabled="True" "' + $vCenterOvaFile + '" ' + '"vi://' + $vCenterAdmin + ':' + $vCenterAdminPassword + '@' + $vCenterFqdn + '/' + $datacenterName + '/host/' + $clusterName + '/"'
+    $scriptBlock = { Invoke-Expression "& $using:command" }
     $deploymentJob = Start-Job -scriptblock $scriptBlock -ArgumentList $command
-    Do {Sleep 1; $jobStatus = (Get-Job -id $deploymentJob.id).state } Until ($jobStatus -eq "Running" )
+    Do { Sleep 1; $jobStatus = (Get-Job -id $deploymentJob.id).state } Until ($jobStatus -eq "Running" )
     Sleep 10
     $progress = @(Get-Job -id $deploymentJob.id | Receive-Job)
     Foreach ($line in $progress) {
@@ -1663,7 +1648,7 @@ Function New-vCenterOvaDeployment {
             }
         }
         $jobStatus = (Get-Job -id $deploymentJob.id).state
-        If ($jobStatus -eq "Running") {Sleep 60}
+        If ($jobStatus -eq "Running") { Sleep 60 }
     } While ($jobStatus -eq "Running")
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
@@ -1731,22 +1716,22 @@ Function New-SDDCManagerOvaDeployment {
     $datacenterName = $extractedSDDCData.mgmtDomainInfrastructure.datacenter
     $clusterName = $extractedSDDCData.mgmtDomainInfrastructure.cluster
     $sddcManagerVMName = $extractedSDDCData.sddcManager.vmname
-    $sddcManagerBackupPassword = ($extractedSddcData.passwords | Where-Object {$_.entityType -eq "BACKUP"}).password
+    $sddcManagerBackupPassword = ($extractedSddcData.passwords | Where-Object { $_.entityType -eq "BACKUP" }).password
     $sddcManagerNetworkMask = $extractedSddcData.mgmtDomainInfrastructure.netmask
     $sddcManagerHostName = $extractedSDDCData.sddcManager.fqdn
     $sddcManagerIp = $extractedSDDCData.sddcManager.ip
     $sddcManagerGateway = $extractedSddcData.mgmtDomainInfrastructure.gateway
     $sddcManagerDns = "$($extractedSddcData.mgmtDomainInfrastructure.primaryDnsServer),$($extractedSddcData.mgmtDomainInfrastructure.secondaryDnsServer)"
-    $sddcManagerDomainSearch =  $extractedSddcData.mgmtDomainInfrastructure.search_path
+    $sddcManagerDomainSearch = $extractedSddcData.mgmtDomainInfrastructure.search_path
     $sddcManagerDnsDomain = $extractedSddcData.mgmtDomainInfrastructure.domain
     $sddcManagerFipsSetting = $extractedSDDCData.sddcManager.fips_enabled
-    $ntpServers = $extractedSddcData.mgmtDomainInfrastructure.ntpServers -join(",")
+    $ntpServers = $extractedSddcData.mgmtDomainInfrastructure.ntpServers -join (",")
 
     LogMessage -type INFO -message "[$jumpboxName] Deploying SDDC Manager OVA"
     $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowAllExtraConfig --X:logLevel=quiet --diskMode=thin --X:enableHiddenProperties --X:waitForIp --powerOn --name="' + $sddcManagerVMName + '" --network="' + $vmNetwork + '" --datastore="' + $vmDatastore + '" --prop:vami.hostname="' + $sddcManagerHostName + '" --prop:vami.ip0.SDDC-Manager="' + $sddcManagerIp + '" --prop:vami.netmask0.SDDC-Manager="' + $sddcManagerNetworkMask + '" --prop:vami.DNS.SDDC-Manager="' + $sddcManagerDns + '" --prop:vami.gateway.SDDC-Manager="' + $sddcManagerGateway + '" --prop:BACKUP_PASSWORD="' + $sddcManagerBackupPassword + '" --prop:ROOT_PASSWORD="' + $rootUserPassword + '" --prop:VCF_PASSWORD="' + $vcfUserPassword + '" --prop:BASIC_AUTH_PASSWORD="' + $basicAuthUserPassword + '" --prop:LOCAL_USER_PASSWORD="' + $localUserPassword + '" --prop:vami.searchpath.SDDC-Manager="' + $sddcManagerDomainSearch + '" --prop:vami.domain.SDDC-Manager="' + $sddcManagerDnsDomain + '" --prop:FIPS_ENABLE="' + $sddcManagerFipsSetting + '" --prop:guestinfo.ntp="' + $ntpServers + '" "' + $sddcManagerOvaFile + '" "vi://' + $vCenterAdmin + ':' + $vCenterAdminPassword + '@' + $vCenterFqdn + '/' + $datacenterName + '/host/' + $clusterName + '/"'
-    $scriptBlock = {Invoke-Expression "& $using:command"}
+    $scriptBlock = { Invoke-Expression "& $using:command" }
     $deploymentJob = Start-Job -scriptblock $scriptBlock -ArgumentList $command
-    Do {Sleep 1; $jobStatus = (Get-Job -id $deploymentJob.id).state } Until ($jobStatus -eq "Running" )
+    Do { Sleep 1; $jobStatus = (Get-Job -id $deploymentJob.id).state } Until ($jobStatus -eq "Running" )
     Sleep 10
     $progress = @(Get-Job -id $deploymentJob.id | Receive-Job)
     Foreach ($line in $progress) {
@@ -1767,7 +1752,7 @@ Function New-SDDCManagerOvaDeployment {
             }
         }
         $jobStatus = (Get-Job -id $deploymentJob.id).state
-        If ($jobStatus -eq "Running") {Sleep 60}
+        If ($jobStatus -eq "Running") { Sleep 60 }
     } While ($jobStatus -eq "Running")
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
@@ -1829,13 +1814,13 @@ Function New-UploadAndModifySDDCManagerBackup {
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
 
-    $mgmtWorkloadDomain = $extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}
-    $mgmtVcenterFqdn =  $mgmtWorkloadDomain.vCenterDetails.fqdn
+    $mgmtWorkloadDomain = $extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }
+    $mgmtVcenterFqdn = $mgmtWorkloadDomain.vCenterDetails.fqdn
     $sddcManagerFQDN = $extractedSddcData.sddcManager.fqdn
     $sddcManagerVmName = $extractedSddcData.sddcManager.vmName
     $backupFileFullPath = (Resolve-Path -Path $backupFilePath).path
     $backupFileName = (Get-ChildItem -path $backupFileFullPath).name
-    $extractedBackupFolder = ($backupFileName -Split(".tar.gz"))[0]
+    $extractedBackupFolder = ($backupFileName -Split (".tar.gz"))[0]
 
     #Establish SSH Connection to SDDC Manager
     LogMessage -type INFO -message "[$jumpboxName] Establishing Connection to $sddcManagerFQDN"
@@ -1856,9 +1841,9 @@ Function New-UploadAndModifySDDCManagerBackup {
     Remove-SSHSession -SSHSession $sshSession | Out-Null
 
     #Determine new SSH Keys
-    $newNistKey = '"' + (($result | Where-Object {$_ -like "*ecdsa-sha2-nistp256*"}).split("ecdsa-sha2-nistp256 "))[1] + '"'
+    $newNistKey = '"' + (($result | Where-Object { $_ -like "*ecdsa-sha2-nistp256*" }).split("ecdsa-sha2-nistp256 "))[1] + '"'
     If ($newNistKey) { LogMessage -type INFO -message "[$sddcManagerFQDN] New ecdsa-sha2-nistp256 key for $mgmtVcenterFqdn retrieved" }
-    $newRSAKey = '"' + (($result | Where-Object {$_ -like "*ssh-rsa*"}).split("ssh-rsa "))[1] + '"'
+    $newRSAKey = '"' + (($result | Where-Object { $_ -like "*ssh-rsa*" }).split("ssh-rsa "))[1] + '"'
     If ($newRSAKey) { LogMessage -type INFO -message "[$sddcManagerFQDN] New ssh-rsa key for $mgmtVcenterFqdn retrieved" }
 
     #Upload Backup
@@ -1959,7 +1944,7 @@ Function Invoke-SDDCManagerRestore {
     #Upload Modified Restore Status Json
     LogMessage -type INFO -message "[$extractedSddcManagerFqdn] Configuring Restore Process"
     $modulePath = (Get-InstalledModule -Name VMware.CloudFoundation.InstanceRecovery).InstalledLocation
-    If ($extractedSddcData.sddcManager.version.replace(".","").substring(0,3) -gt "451") {
+    If ($extractedSddcData.sddcManager.version.replace(".", "").substring(0, 3) -gt "451") {
         $sourceFile = "$modulePath\reference-files\new_restore_status.json"
     } else {
         $sourceFile = "$modulePath\reference-files\old_restore_status.json"
@@ -1987,7 +1972,7 @@ Function Invoke-SDDCManagerRestore {
         $scriptText = "curl https://$extractedSddcManagerFqdn/v1/vcf-services  -k -X GET -H `"Content-Type: application/json`" -H `"Authorization: Bearer $token`" | json_pp"
         $Counter = 0
         $SddcManagerServiceStatus = (Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $scriptText).output
-        $operationsManagerServiceStatus = (($SddcManagerServiceStatus | ConvertFrom-Json).elements | Where-Object {$_.name -eq "OPERATIONS_MANAGER"}).status
+        $operationsManagerServiceStatus = (($SddcManagerServiceStatus | ConvertFrom-Json).elements | Where-Object { $_.name -eq "OPERATIONS_MANAGER" }).status
         If ($operationsManagerServiceStatus -ne "UP") {
             LogMessage -type WAIT -message "[$extractedSddcManagerFqdn] Waiting for Operations Manager Service to be Up"
             Do {
@@ -1996,7 +1981,7 @@ Function Invoke-SDDCManagerRestore {
                 $token = (Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $scriptText).output
                 $scriptText = "curl https://$extractedSddcManagerFqdn/v1/vcf-services  -k -X GET -H `"Content-Type: application/json`" -H `"Authorization: Bearer $token`" | json_pp"
                 $SddcManagerServiceStatus = (Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $scriptText).output
-                $operationsManagerServiceStatus = (($SddcManagerServiceStatus | ConvertFrom-Json).elements | Where-Object {$_.name -eq "OPERATIONS_MANAGER"}).status
+                $operationsManagerServiceStatus = (($SddcManagerServiceStatus | ConvertFrom-Json).elements | Where-Object { $_.name -eq "OPERATIONS_MANAGER" }).status
 
             } While ($operationsManagerServiceStatus -ne "UP")
         }
@@ -2183,12 +2168,12 @@ Function Invoke-vCenterRestore {
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
-    $restoredVcenterFqdn = ($extractedSddcData.workloadDomains | Where-Object {$_.domainName -eq $workloadDomain}).vCenterDetails.fqdn
-    $restoredVcenterVmName = ($extractedSddcData.workloadDomains | Where-Object {$_.domainName -eq $workloadDomain}).vCenterDetails.vmname
-    $restoredvCenterRootPassword = ($extractedSddcData.passwords | Where-Object {($_.entityType -eq "VCENTER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "SSH")}).password
-    $ssoDomain  = ($extractedSddcData.workloadDomains | Where-Object {$_.domainName -eq $workloadDomain}).ssoDomain
-    $ssoAdminUserName = ($extractedSddcData.passwords | Where-Object {$_.entityType -eq "PSC" -and $_.username -like "*$($ssoDomain)"}).username
-    $ssoAdminUserPassword = ($extractedSddcData.passwords | Where-Object {$_.entityType -eq "PSC" -and $_.username -like "*$($ssoDomain)"}).password
+    $restoredVcenterFqdn = ($extractedSddcData.workloadDomains | Where-Object { $_.domainName -eq $workloadDomain }).vCenterDetails.fqdn
+    $restoredVcenterVmName = ($extractedSddcData.workloadDomains | Where-Object { $_.domainName -eq $workloadDomain }).vCenterDetails.vmname
+    $restoredvCenterRootPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "VCENTER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "SSH") }).password
+    $ssoDomain = ($extractedSddcData.workloadDomains | Where-Object { $_.domainName -eq $workloadDomain }).ssoDomain
+    $ssoAdminUserName = ($extractedSddcData.passwords | Where-Object { $_.entityType -eq "PSC" -and $_.username -like "*$($ssoDomain)" }).username
+    $ssoAdminUserPassword = ($extractedSddcData.passwords | Where-Object { $_.entityType -eq "PSC" -and $_.username -like "*$($ssoDomain)" }).password
 
     #Power Up vCenter Appliance
     $vCenterConnection = Connect-VIServer -server $vCenterFqdn -user $vCenterAdmin -password $vCenterAdminPassword
@@ -2255,7 +2240,7 @@ Function Invoke-vCenterRestore {
         $sshSession = New-SSHSession -computername $restoredVcenterFqdn -Credential $mycreds -KnownHost $inmem -erroraction silentlycontinue
         If ($sshSession) {
             $restoreStatus = (Invoke-SSHCommand -SessionId $sshSession.sessionid -Command "api com.vmware.appliance.recovery.restore.job.get" -erroraction silentlyContinue).output
-            $restoreStatusArray = $restoreStatus -split("\r\n")
+            $restoreStatusArray = $restoreStatus -split ("\r\n")
             $state = $restoreStatusArray[1].trim()
         }
     } Until ($state -eq "State: INPROGRESS")
@@ -2269,7 +2254,7 @@ Function Invoke-vCenterRestore {
         If ($sshSession) {
             $restoreStatus = (Invoke-SSHCommand -SessionId $sshSession.sessionid -Command "api com.vmware.appliance.recovery.restore.job.get" -erroraction silentlyContinue).output
             If ($restoreStatus) {
-                $restoreStatusArray = $restoreStatus -split("\r\n")
+                $restoreStatusArray = $restoreStatus -split ("\r\n")
                 If ($restoreStatusArray) {
                     If ($restoreStatusArray[1]) {
                         $state = $restoreStatusArray[1].trim()
@@ -2352,7 +2337,7 @@ Function Move-ClusterHostsToRestoredVcenter {
     $restoredvCenterConnection = connect-viserver $restoredvCenterFQDN -user $restoredvCenterAdmin -password $restoredvCenterAdminPassword
     Foreach ($esxiHost in $esxiHosts) {
         LogMessage -type INFO -message "[$($esxiHost.name)] Moving to $restoredvCenterFQDN"
-        $esxiRootPassword = ($extractedSddcData.passwords | Where-Object {($_.entityType -eq "ESXI") -and ($_.entityName -eq $esxiHost.Name) -and ($_.username -eq "root")}).password
+        $esxiRootPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $esxiHost.Name) -and ($_.username -eq "root") }).password
         Add-VMHost -Name $esxiHost.Name -Location $clusterName -User root -Password $esxiRootPassword -Force -Confirm:$false | Out-Null
     }
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
@@ -2506,7 +2491,7 @@ Function Move-ClusterHostNetworkingTovSS {
     $mgmtVlanId = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).vdsDetails.portgroups | Where-Object { $_.transportType -eq "MANAGEMENT" }).vlanID
     $vMotionVlanId = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).vdsDetails.portgroups | Where-Object { $_.transportType -eq "VMOTION" }).vlanID
     $vSanVlanId = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).vdsDetails.portgroups | Where-Object { $_.transportType -eq "VSAN" }).vlanID
-    $vdsName = (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).vsphereclusterdetails | Where-Object {$_.isDefault -eq "t"}).vdsdetails.dvsName
+    $vdsName = (($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereclusterdetails | Where-Object { $_.isDefault -eq "t" }).vdsdetails.dvsName
     $vss_name = "vSwitch0"
     $mgmt_name = "Management"
     $vmotion_name = "vMotion"
@@ -2523,9 +2508,9 @@ Function Move-ClusterHostNetworkingTovSS {
     $vds.ExtensionData.Config.Host | ForEach-Object {
         $esx = Get-View $_.Config.Host
         $netSys = Get-View $esx.ConfigManager.NetworkSystem
-        $netSys.NetworkConfig.ProxySwitch | where-object {$_.Uuid -eq $vdsUUID} | ForEach-Object {
+        $netSys.NetworkConfig.ProxySwitch | where-object { $_.Uuid -eq $vdsUUID } | ForEach-Object {
             $_.Spec.Backing.PnicSpec | ForEach-Object {
-                $row = "" | Select Host,dvSwitch,PNic
+                $row = "" | Select Host, dvSwitch, PNic
                 $row.Host = $esx.Name
                 $row.dvSwitch = $vds.Name
                 $row.PNic = $_.PnicDevice
@@ -2536,7 +2521,7 @@ Function Move-ClusterHostNetworkingTovSS {
 
     foreach ($vmhost in $vmhost_array) {
 
-        $nicsInVds = ($vdsReport | Where-Object {$_.host -eq $vmhost.name}).PNic
+        $nicsInVds = ($vdsReport | Where-Object { $_.host -eq $vmhost.name }).PNic
         If ($vmnic -in $nicsInVds) {
             LogMessage -type INFO -message "[$vmhost] Removing $vmnic from VDS"
             Get-VMHostNetworkAdapter -VMHost $vmhost -Physical -Name $vmnic | Remove-VDSwitchPhysicalNetworkAdapter -Confirm:$false | Out-Null
@@ -2617,21 +2602,21 @@ Function Move-ClusterHostNetworkingTovSS {
         $vss = Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name $vss_name
         If ($vss.ExtensionData.Pnic -like "*$vmnic") {
             $vmks = $vmHost | Get-VMHostNetwork | Select-Object -ExpandProperty VirtualNic | Sort-Object Name
-            $currentStorageVmkPortgroup = ($vmks | Where-Object {$_.name -eq "vmk2"}).PortGroupName
+            $currentStorageVmkPortgroup = ($vmks | Where-Object { $_.name -eq "vmk2" }).PortGroupName
             If ($currentStorageVmkPortgroup -ne $storage_name) {
                 LogMessage -type INFO -message "[$vmhost] Migrating VSAN vmKernel from $vdsName to $vss_name"
                 Move-VMKernel -VMHost $vmhost -Interface "vmk2" -NetworkName $storage_name
             } else {
                 LogMessage -type INFO -message "[$vmhost] VSAN vmKernel already on $vss_name. Skipping"
             }
-            $currentVmotionVmkPortgroup = ($vmks | Where-Object {$_.name -eq "vmk1"}).PortGroupName
+            $currentVmotionVmkPortgroup = ($vmks | Where-Object { $_.name -eq "vmk1" }).PortGroupName
             If ($currentVmotionVmkPortgroup -ne $vmotion_name) {
                 LogMessage -type INFO -message "[$vmhost] Migrating vMotion vmKernel from $vdsName to $vss_name"
                 Move-VMKernel -VMHost $vmhost -Interface "vmk1" -NetworkName $vmotion_name
             } else {
                 LogMessage -type INFO -message "[$vmhost] vMotion vmKernel already on $vss_name. Skipping"
             }
-            $currentMgmtVmkPortgroup = ($vmks | Where-Object {$_.name -eq "vmk0"}).PortGroupName
+            $currentMgmtVmkPortgroup = ($vmks | Where-Object { $_.name -eq "vmk0" }).PortGroupName
             If ($currentMgmtVmkPortgroup -ne $mgmt_name) {
                 LogMessage -type INFO -message "[$vmhost] Migrating Management vmKernel from $vdsName to $vss_name"
                 Move-VMKernel -VMHost $vmhost -Interface "vmk0" -NetworkName $mgmt_name
@@ -2758,7 +2743,7 @@ Function Set-ClusterHostsvSanIgnoreClusterMemberList {
     }
     $esxCommand = "esxcli system settings advanced set --int-value=$value --option=/VSAN/IgnoreClusterMemberListUpdates"
     foreach ($esxiHost in $esxiHosts) {
-        $esxiRootPassword = ($extractedSddcData.passwords | Where-Object {($_.entityType -eq "ESXI") -and ($_.entityName -eq $esxiHost.Name) -and ($_.username -eq "root")}).password
+        $esxiRootPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $esxiHost.Name) -and ($_.username -eq "root") }).password
         $password = ConvertTo-SecureString $esxiRootPassword -AsPlainText -Force
         $mycreds = New-Object System.Management.Automation.PSCredential ("root", $password)
         Get-SSHTrustedHost -HostName $esxiHost | Remove-SSHTrustedHost | Out-Null
@@ -2866,7 +2851,7 @@ Function Remove-NonResponsiveHosts {
 
     #Get Non-Repsonsive Hosts from vCenter
     $vCenterConnection = Connect-Viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
-    $nonResponsiveHosts = Get-Cluster -name $clusterName | Get-VMhost | Where-Object { $_.ConnectionState -in "NotResponding","Disconnected" } | Sort-Object
+    $nonResponsiveHosts = Get-Cluster -name $clusterName | Get-VMhost | Where-Object { $_.ConnectionState -in "NotResponding", "Disconnected" } | Sort-Object
 
     #Get Cluster MoRef
     $clusterMoRef = (Get-Cluster -name $clusterName).ExtensionData.MoRef.Value
@@ -2876,7 +2861,7 @@ Function Remove-NonResponsiveHosts {
 
     #Check NSX Manager version
     $uri = "https://$nsxManagerFqdn/api/v1/node"
-    $nsxManagerVersion = [INT](((((Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json).product_version).replace(".","")).substring(0,3))
+    $nsxManagerVersion = [INT](((((Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json).product_version).replace(".", "")).substring(0, 3))
 
     If ($nsxManagerVersion) {
         #Get Transport Nodes for Cluster
@@ -2891,8 +2876,8 @@ Function Remove-NonResponsiveHosts {
         #Attempt Remove NSX From Cluster to detach Transport Node Profile
         $uri = "https://$nsxManagerFqdn/api/v1/fabric/compute-collections"
         $computeCollections = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
-        $clusterComputeCollectionId = ($computeCollections.results | Where-Object {$_.cm_local_id -eq $clusterMoRef}).external_id
-        $clusterVlcmManaged = (($computeCollections.results | Where-Object {$_.cm_local_id -eq $clusterMoRef}).origin_properties | Where-Object {$_.key -eq "lifecycleManaged"}).value
+        $clusterComputeCollectionId = ($computeCollections.results | Where-Object { $_.cm_local_id -eq $clusterMoRef }).external_id
+        $clusterVlcmManaged = (($computeCollections.results | Where-Object { $_.cm_local_id -eq $clusterMoRef }).origin_properties | Where-Object { $_.key -eq "lifecycleManaged" }).value
         $uri = "https://$nsxManagerFqdn/api/v1/fabric/compute-collections/$($clusterComputeCollectionId)?action=remove_nsx"
         $detachTNP = Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -headers $headers
 
@@ -2959,15 +2944,15 @@ Function Remove-NonResponsiveHosts {
         }
 
         $transportNodeProfiles = ((Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json).results
-        $clusterTransportNodeProfile = $transportNodeProfiles | where-object {$_.display_name -like "*$clusterName*"}
+        $clusterTransportNodeProfile = $transportNodeProfiles | where-object { $_.display_name -like "*$clusterName*" }
 
         #Create Transport Node Collection
         $body = '{
         "resource_type": "TransportNodeCollection",
         "display_name": "' + $clusterName + '",
         "description": "' + $clusterName + '",
-        "compute_collection_id": "'+$clusterComputeCollectionId+'",
-        "transport_node_profile_id": "'+$clusterTransportNodeProfile.id+'"
+        "compute_collection_id": "'+ $clusterComputeCollectionId + '",
+        "transport_node_profile_id": "'+ $clusterTransportNodeProfile.id + '"
         }'
         $uri = "https://$nsxManagerFqdn/api/v1/transport-node-collections"
         LogMessage -type INFO -message "[$nsxManagerFqdn] Reattaching Transport Node Profile to Cluster $clusterName"
@@ -3038,7 +3023,7 @@ Function Add-HostsToCluster {
     foreach ($newHost in $newHosts) {
         $vmHosts = (Get-cluster -name $clusterName | Get-VMHost).Name | Sort-Object
         if ($newHost -notin $vmHosts) {
-            $esxiRootPassword = ($extractedSddcData.passwords | Where-Object {($_.entityType -eq "ESXI") -and ($_.entityName -eq $newHost) -and ($_.username -eq "root")}).password
+            $esxiRootPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $newHost) -and ($_.username -eq "root") }).password
             $esxiConnection = connect-viserver $newHost -user root -password $esxiRootPassword
             if ($esxiConnection) {
                 LogMessage -type INFO -message "[$newHost] Adding to cluster $clusterName"
@@ -3196,15 +3181,15 @@ Function New-RebuiltVsanDatastore {
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
-    $datastoreName = ($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object {$_.name -eq $clusterName}).primaryDatastoreName
+    $datastoreName = ($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).primaryDatastoreName
 
     LogMessage -type INFO -message "[$jumpboxName] Connecting to Restored vCenter: $vCenterFQDN"
     $restoredvCenterConnection = Connect-ViServer $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
     $vmhosts = (Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)
     LogMessage -type INFO -message "[$($vmhosts[0].name)] Using host as reference for Eligible Physical Disks"
 
-    $disks = ((Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)[0] | Get-VMHostDisk) | Where-Object {$_.ScsiLun.VsanStatus -eq 'Eligible'} | Sort-Object -Property @{e = {$_.scsilun.runtimename}}
-    $disksDisplayObject=@()
+    $disks = ((Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)[0] | Get-VMHostDisk) | Where-Object { $_.ScsiLun.VsanStatus -eq 'Eligible' } | Sort-Object -Property @{e = { $_.scsilun.runtimename } }
+    $disksDisplayObject = @()
     $disksIndex = 1
     $disksDisplayObject += [pscustomobject]@{
         'ID'            = "ID"
@@ -3233,25 +3218,25 @@ Function New-RebuiltVsanDatastore {
         }
     }
 
-    $diskGroupConfiguration =@()
+    $diskGroupConfiguration = @()
     $remainingDisksDisplayObject = $disksDisplayObject
-    Write-Host ""; $remainingDisksDisplayObject | format-table -Property @{Expression =" "},id,canonicalName,size,ssd,scsiLun -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
+    Write-Host ""; $remainingDisksDisplayObject | format-table -Property @{Expression = " " }, id, canonicalName, size, ssd, scsiLun -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
     Do {
         Write-Host ""; Write-Host " Enter the desired number of disk groups to create (between 1 and 5), or C to Cancel: " -ForegroundColor Yellow -nonewline
         $diskGroupNumber = Read-Host
-    } Until (($diskGroupNumber -in "1","2","3","4","5") -or ($diskGroupNumber -eq "C"))
-    If ($diskGroupNumber -eq "C") {Break}
+    } Until (($diskGroupNumber -in "1", "2", "3", "4", "5") -or ($diskGroupNumber -eq "C"))
+    If ($diskGroupNumber -eq "C") { Break }
 
     #Loop Through Disk Group Creation
     For ($i = 1; $i -le $diskGroupNumber; $i++) {
         If ($i -gt 1) {
-            Write-Host ""; $remainingDisksDisplayObject | format-table -Property @{Expression =" "},id,canonicalName,size,ssd -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
+            Write-Host ""; $remainingDisksDisplayObject | format-table -Property @{Expression = " " }, id, canonicalName, size, ssd -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
         }
         Do {
-            If ($i -gt 1) {Write-Host ""}; Write-Host " Enter the ID of disk to use as Cache Disk for Disk Group $i, or C to Cancel: " -ForegroundColor Yellow -nonewline
+            If ($i -gt 1) { Write-Host "" }; Write-Host " Enter the ID of disk to use as Cache Disk for Disk Group $i, or C to Cancel: " -ForegroundColor Yellow -nonewline
             $cacheDiskSelection = Read-Host
         } Until (($cacheDiskSelection -in $remainingDisksDisplayObject.id) -OR ($cacheDiskSelection -eq "c"))
-        If ($cacheDiskSelection -eq "c") {Break}
+        If ($cacheDiskSelection -eq "c") { Break }
         $tempRemainingDisksDisplayObject = @()
         Foreach ( $displayDisk in $remainingDisksDisplayObject) {
             If ($displayDisk.id -ne $cacheDiskSelection) {
@@ -3259,13 +3244,13 @@ Function New-RebuiltVsanDatastore {
             }
         }
         $remainingDisksDisplayObject = $tempRemainingDisksDisplayObject
-        Write-Host ""; $remainingDisksDisplayObject | format-table -Property @{Expression =" "},id,canonicalName,size,ssd -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
+        Write-Host ""; $remainingDisksDisplayObject | format-table -Property @{Expression = " " }, id, canonicalName, size, ssd -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
         Do {
             Write-Host ""; Write-Host " Enter a comma seperated list of IDs to be used as Capacity Disks for Disk Group $i, or C to Cancel: " -ForegroundColor Yellow -nonewline
             $capacityDiskSelection = Read-Host
             If ($capacityDiskSelection -ne "C") {
                 $capacityDiskSelectionInvalid = $false
-                $capacityDiskArray = $capacityDiskSelection -split(",")
+                $capacityDiskArray = $capacityDiskSelection -split (",")
                 Foreach ($capacityDisk in $capacityDiskArray) {
                     If ($capacityDisk -notin $disksDisplayObject.id) {
                         $capacityDiskSelectionInvalid = $true
@@ -3273,7 +3258,7 @@ Function New-RebuiltVsanDatastore {
                 }
             }
         } Until (($capacityDiskSelectionInvalid -eq $false) -OR ($capacityDiskSelection -eq "c"))
-        If ($capacityDiskSelection -eq "c") {Break}
+        If ($capacityDiskSelection -eq "c") { Break }
         $diskGroupConfiguration += [PSCustomObject]@{
             'cacheDiskID'     = $cacheDiskSelection
             'capacityDiskIDs' = $capacityDiskArray
@@ -3286,7 +3271,7 @@ Function New-RebuiltVsanDatastore {
         }
         $remainingDisksDisplayObject = $tempRemainingDisksDisplayObject
     }
-    If (($cacheDiskSelection -eq "c") -or ($capacityDiskSelection -eq "c")) {Break}
+    If (($cacheDiskSelection -eq "c") -or ($capacityDiskSelection -eq "c")) { Break }
 
     $proposedConfigDisplayObject = @()
     $configIndex = 1
@@ -3312,16 +3297,16 @@ Function New-RebuiltVsanDatastore {
         $proposedConfigDisplayObject += [pscustomobject]@{
             'diskGroup'         = $configIndex
             'cacheDiskID'       = $config.cacheDiskID
-            'cacheDiskCN'       = ($disksDisplayObject | Where-Object {$_.id -eq $config.cacheDiskID}).canonicalName
-            'cacheDiskCapacity' = ($disksDisplayObject | Where-Object {$_.id -eq $config.cacheDiskID}).size
+            'cacheDiskCN'       = ($disksDisplayObject | Where-Object { $_.id -eq $config.cacheDiskID }).canonicalName
+            'cacheDiskCapacity' = ($disksDisplayObject | Where-Object { $_.id -eq $config.cacheDiskID }).size
             'capacityDiskIDs'   = $config.capacityDiskIDs -join (", ")
-            'capacityCNs'       = (($disksDisplayObject | Where-Object {$_.id -in $config.capacityDiskIDs}).canonicalName) -join (", ")
-            'capacityDiskSize'  = (($disksDisplayObject | Where-Object {$_.id -in $config.capacityDiskIDs}).size) -join (", ")
+            'capacityCNs'       = (($disksDisplayObject | Where-Object { $_.id -in $config.capacityDiskIDs }).canonicalName) -join (", ")
+            'capacityDiskSize'  = (($disksDisplayObject | Where-Object { $_.id -in $config.capacityDiskIDs }).size) -join (", ")
         }
         $configIndex++
     }
     Write-Host ""; Write-Host " Proposed Disk Group Configuration " -ForegroundColor Yellow
-    Write-Host ""; $proposedConfigDisplayObject | format-table -Property @{Expression =" "},diskGroup,cacheDiskID,cacheDiskCN,cacheDiskCapacity,capacityDiskIDs,capacityCNs,capacityDiskSize -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
+    Write-Host ""; $proposedConfigDisplayObject | format-table -Property @{Expression = " " }, diskGroup, cacheDiskID, cacheDiskCN, cacheDiskCapacity, capacityDiskIDs, capacityCNs, capacityDiskSize -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
     Write-Host ""; Write-Host " Do you wish to proceed with the proposed configuration? (Y/N): " -ForegroundColor Yellow -nonewline
     $proposedConfigAccepted = Read-Host
     $proposedConfigAccepted = $proposedConfigAccepted -replace "`t|`n|`r", ""
@@ -3532,6 +3517,7 @@ Function New-RebuiltVdsConfiguration {
     $proposedConfigAccepted = $proposedConfigAccepted -replace "`t|`n|`r", ""
     If ($proposedConfigAccepted -eq "Y") {
         Foreach ($vds in $vdsConfiguration) {
+            $vdsHosts = (Get-VDSwitch -name $vds.vdsName).extensionData.summary.hostmember.value
             Foreach ($vmHost in $vmHosts) {
                 $vmNicArray = @()
                 $portgroupArray = @()
@@ -3556,10 +3542,23 @@ Function New-RebuiltVdsConfiguration {
                     $vmNicArray += $vmk1
                     $vmNicArray += $vmk2
                 }
-                LogMessage -type INFO -message "[$($vmhost.name)] Adding to $($vds.vdsName)"
-                Get-VDSwitch -name $vds.vdsName | Add-VDSwitchVMHost -vmhost $vmHost -confirm:$false
-                LogMessage -type INFO -message "[$($vmhost.name)] Adding Physical Adapter $($vds.nicNames[0]) to $($vds.vdsName) and migrating $($vmNicArray.name -join(", "))"
-                Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $vmnicMinusOne -VMHostVirtualNic $vmNicArray -VirtualNicPortgroup $portgroupArray -confirm:$false
+
+                $hostMoRef = $vmhost.ExtensionData.moref.value
+                If ($hostMoRef -notin $vdsHosts) {
+                    LogMessage -type INFO -message "[$($vmhost.name)] Adding to $($vds.vdsName)"
+                    Get-VDSwitch -name $vds.vdsName | Add-VDSwitchVMHost -vmhost $vmHost -confirm:$false
+                } else {
+                    LogMessage -type INFO -message "[$($vmhost.name)] Already in $($vds.vdsName). Skipping"
+                }
+
+                $vmnicInVds = Get-VDPort -VDSwitch $vds.vdsName | Where-Object { $_.proxyHost.name -eq $vmhost.name -and $_.connectedEntity.name -eq $vmnicMinusOne }
+                If (!$vmnicInVds) {
+                    LogMessage -type INFO -message "[$($vmhost.name)] Adding Physical Adapter $($vds.nicNames[0]) to $($vds.vdsName) and migrating $($vmNicArray.name -join(", "))"
+                    Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $vmnicMinusOne -VMHostVirtualNic $vmNicArray -VirtualNicPortgroup $portgroupArray -confirm:$false
+                } else {
+                    LogMessage -type INFO -message "[$($vmhost.name)] Physical Adapter $($vds.nicNames[0]) already in $($vds.vdsName). Skipping"
+                }
+
             }
 
             #Move Mgmt VMs to Management Portgroup
@@ -3569,14 +3568,22 @@ Function New-RebuiltVdsConfiguration {
                     If ((Get-VM -Name $vmToMove | Get-NetworkAdapter).NetworkName -ne $managementPortGroupName) {
                         LogMessage -type INFO -message "[$($vmToMove.name)] Moving to $managementPortGroupName"
                         Get-VM -Name $vmToMove | Get-NetworkAdapter | Set-NetworkAdapter -NetworkName $managementPortGroupName -confirm:$false | Out-Null
+                    } else {
+                        LogMessage -type INFO -message "[$($vmToMove.name)] Already moved to $managementPortGroupName. Skipping"
                     }
                 }
             }
 
             Foreach ($vmHost in $vmHosts) {
                 #Remove Virtual Switch
-                LogMessage -type INFO -message "[$($vmhost.name)] Removing vSwitch0"
-                Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name "vSwitch0" | Remove-VirtualSwitch -Confirm:$false | Out-Null
+                $hostvss = Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name "vSwitch0" -errorAction silentlyContinue
+                If ($hostvss) {
+                    LogMessage -type INFO -message "[$($vmhost.name)] Removing vSwitch0"
+                    Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name "vSwitch0" | Remove-VirtualSwitch -Confirm:$false | Out-Null
+                } else {
+                    LogMessage -type INFO -message "[$($vmhost.name)] vSwitch0 already removed. Skipping"
+                }
+
 
                 $remainingVmnics = @()
                 Foreach ($nic in $vds.nicNames) {
@@ -3585,9 +3592,14 @@ Function New-RebuiltVdsConfiguration {
                     }
                 }
                 Foreach ($nic in $remainingVmnics) {
-                    LogMessage -type INFO -message "[$($vmhost.name)] Adding Additional Nic $nic to $($vds.vdsName)"
-                    $additionalNic = $vmhost | Get-VMHostNetworkAdapter -Physical -Name $nic
-                    Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $additionalNic -confirm:$false
+                    $vmnicInVds = Get-VDPort -VDSwitch $vds.vdsName | Where-Object { $_.proxyHost.name -eq $vmhost.name -and $_.connectedEntity.name -eq $nic }
+                    If (!$vmnicInVds) {
+                        LogMessage -type INFO -message "[$($vmhost.name)] Adding Additional Nic $nic to $($vds.vdsName)"
+                        $additionalNic = $vmhost | Get-VMHostNetworkAdapter -Physical -Name $nic
+                        Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $additionalNic -confirm:$false
+                    } else {
+                        LogMessage -type INFO -message "[$($vmhost.name)] Physical Adapter $nic already in $($vds.vdsName). Skipping"
+                    }
                 }
             }
         }
