@@ -682,6 +682,7 @@ Function New-ExtractDataFromSDDCBackup {
                 $hostNetworks += [pscustomobject]@{
                     'type'    = "MANAGEMENT"
                     'gateway' = $gateway
+                    'mtu'     = "1500"
                 }
                 $hostNetworks += $networks | Where-Object { $_.id -in $hostNetworkIds }
                 $hostsArray += [pscustomobject]@{
