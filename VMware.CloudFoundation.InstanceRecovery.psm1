@@ -400,6 +400,7 @@ Function New-ExtractDataFromSDDCBackup {
         $lineContent = $psqlContent | Select-Object -Index $hostsLineIndex
         If ($lineContent -ne '\.') {
             $hostId = $lineContent.split("`t")[0]
+            $gateway = $lineContent.split("`t")[7]
             $hostName = $lineContent.split("`t")[9]
             $hostMgmtIp = $lineContent.split("`t")[10]
             $hostMask = $lineContent.split("`t")[17]
@@ -409,6 +410,7 @@ Function New-ExtractDataFromSDDCBackup {
 
             $hosts += [pscustomobject]@{
                 'id'        = $hostId
+                'gateway'   = $gateway
                 'hostName'  = $hostName
                 'mgmtIp'    = $hostMgmtIp
                 'mask'      = $hostMask
@@ -1179,7 +1181,7 @@ Function New-ReconstructedPartialBringupJsonSpec {
         $networkSpecsObject += [pscustomobject]@{
             'networkType'  = "VM_MANAGEMENT"
             'subnet'       = $managementNetworkSubnet
-            'vlanId'       = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'VM_MANAGEMENT' }).vlanId -as [string]
+            'vlanId'       = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).vdsDetails.portgroups | Where-Object { $_.transportType -eq 'VM_MANAGEMENT' }).vlanId -as [string]
             'gateway'      = $extractedSddcData.mgmtDomainInfrastructure.gateway
             'portGroupKey' = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).vdsDetails.portgroups | Where-Object { $_.transportType -eq 'VM_MANAGEMENT' }).name
         }
@@ -1192,7 +1194,7 @@ Function New-ReconstructedPartialBringupJsonSpec {
     $networkSpecsObject += [pscustomobject]@{
         'networkType'  = "MANAGEMENT"
         'subnet'       = $managementNetworkSubnet
-        'vlanId'       = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'MANAGEMENT' }).vlanId -as [string]
+        'vlanId'       = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).vdsDetails.portgroups | Where-Object { $_.transportType -eq 'MANAGEMENT' }).vlanId -as [string]
         'mtu'          = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'MANAGEMENT' }).mtu -as [string]
         'gateway'      = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'MANAGEMENT' }).gateway
         'portGroupKey' = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).vdsDetails.portgroups | Where-Object { $_.transportType -eq 'MANAGEMENT' }).name
