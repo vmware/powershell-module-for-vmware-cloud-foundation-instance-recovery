@@ -675,12 +675,13 @@ Function New-ExtractDataFromSDDCBackup {
             $hostsArray = @()
             Foreach ($clusterHost in $clusterHosts) {
                 $hostname = ($hosts | Where-Object { $_.id -eq $clusterHost.hostId }).hostname
+                $gateway =  ($hosts | Where-Object { $_.id -eq $clusterHost.hostId }).gateway
                 $networkPoolID = ($hostsAndPools | Where-Object { $_.hostId -eq $clusterHost.hostId }).poolId
                 $hostNetworkIds = ($poolsAndNetworks | Where-Object { $_.poolID -eq $networkPoolID }).networkId
                 $hostNetworks = $networks | Where-Object { $_.id -in $hostNetworkIds }
                 $hostNetworks += [pscustomobject]@{
-                    'type'    = "MANAGMENT"
-                    'gateway' = $clusterHost.gateway
+                    'type'    = "MANAGEMENT"
+                    'gateway' = $gateway
                 }
                 $hostsArray += [pscustomobject]@{
                     'hostname'       = $hostname
