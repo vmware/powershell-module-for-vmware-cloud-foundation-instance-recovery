@@ -408,9 +408,8 @@ Function New-ExtractDataFromSDDCBackup {
             $hostVmotionIp = $lineContent.split("`t")[19]
             $hostVsanIP = $lineContent.split("`t")[20]
 
-            #Calculate Managment Subnet
-            If ($gateway -AND $hostMask)
-            {
+            #Calculate Managment Subnet (Management Domain Hosts Only)
+            If (($gateway -ne "\N") -AND ($hostMask -ne "\N")) {
 
                 $ip = [ipaddress]$hostMgmtIp
                 $subnet = [ipaddress]$hostMask
@@ -424,7 +423,7 @@ Function New-ExtractDataFromSDDCBackup {
                 'hostName'  = $hostName
                 'mgmtIp'    = $hostMgmtIp
                 'mask'      = $hostMask
-                'subnet'     = $hostManagementSubnet
+                'subnet'    = $hostManagementSubnet
                 'version'   = $hostVersion
                 'vmotionIP' = $hostVmotionIp
                 'vsanIP'    = $hostVsanIP
@@ -686,11 +685,9 @@ Function New-ExtractDataFromSDDCBackup {
             $hostsArray = @()
             Foreach ($clusterHost in $clusterHosts) {
                 $hostname = ($hosts | Where-Object { $_.id -eq $clusterHost.hostId }).hostname
-                $gateway =  ($hosts | Where-Object { $_.id -eq $clusterHost.hostId }).gateway
-                $mask =  ($hosts | Where-Object { $_.id -eq $clusterHost.hostId }).mask
-
-
-
+                $gateway = ($hosts | Where-Object { $_.id -eq $clusterHost.hostId }).gateway
+                $mask = ($hosts | Where-Object { $_.id -eq $clusterHost.hostId }).mask
+                $subnet = ($hosts | Where-Object { $_.id -eq $clusterHost.hostId }).subnet
 
                 $networkPoolID = ($hostsAndPools | Where-Object { $_.hostId -eq $clusterHost.hostId }).poolId
                 $hostNetworkIds = ($poolsAndNetworks | Where-Object { $_.poolID -eq $networkPoolID }).networkId
@@ -699,7 +696,8 @@ Function New-ExtractDataFromSDDCBackup {
                     'type'    = "MANAGEMENT"
                     'gateway' = $gateway
                     'mtu'     = "1500"
-                    'mask' = $mask
+                    'mask'    = $mask
+                    'subnet'  = $subnet
                 }
                 $hostNetworks += $networks | Where-Object { $_.id -in $hostNetworkIds }
                 $hostsArray += [pscustomobject]@{
@@ -1210,13 +1208,9 @@ Function New-ReconstructedPartialBringupJsonSpec {
     }
 
     #MANAGEMENT network
-    [IPAddress] $ip = (($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).mgmtNetworkDetails).subnet_mask
-    $octets = $ip.IPAddressToString.Split('.')
-    Foreach ($octet in $octets) { while (0 -ne $octet) { $octet = ($octet -shl 1) -band [byte]::MaxValue; $managementNetworkCidr++; } }
-    $managementNetworkSubnet = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).mgmtNetworkDetails).subnet + "/" + $managementNetworkCidr)
     $networkSpecsObject += [pscustomobject]@{
         'networkType'  = "MANAGEMENT"
-        'subnet'       = $managementNetworkSubnet
+        'subnet'       = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'MANAGEMENT' }).subnet
         'vlanId'       = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).vdsDetails.portgroups | Where-Object { $_.transportType -eq 'MANAGEMENT' }).vlanId -as [string]
         'mtu'          = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'MANAGEMENT' }).mtu -as [string]
         'gateway'      = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'MANAGEMENT' }).gateway
