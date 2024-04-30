@@ -1439,12 +1439,9 @@ Function New-ReconstructedPartialBringupJsonSpec {
         $credentialObject | Add-Member -notepropertyname 'username' -notepropertyvalue $mgmtHost.username
         $credentialObject | Add-Member -notepropertyname 'password' -notepropertyvalue $mgmtHost.password
         $ipAddressPrivateObject = New-Object -type psobject
-        #$ipAddressPrivateObject | Add-Member -notepropertyname 'subnet' -notepropertyvalue (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq "MANAGEMENT"}).subnet_mask
-        $ipAddressPrivateObject | Add-Member -notepropertyname 'subnet' -notepropertyvalue (($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).mgmtNetworkDetails).subnet_mask
+        $ipAddressPrivateObject | Add-Member -notepropertyname 'subnet' -notepropertyvalue ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'MANAGEMENT' }).mask
         $ipAddressPrivateObject | Add-Member -notepropertyname 'ipAddress' -notepropertyvalue $mgmtHost.entityIpAddress
-        #$ipAddressPrivateObject | Add-Member -notepropertyname 'gateway' -notepropertyvalue (($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).networkDetails | Where-Object {$_.type -eq "MANAGEMENT"}).gateway
-        $ipAddressPrivateObject | Add-Member -notepropertyname 'gateway' -notepropertyvalue (($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).mgmtNetworkDetails).gateway
-
+        $ipAddressPrivateObject | Add-Member -notepropertyname 'gateway' -notepropertyvalue ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'MANAGEMENT' }).gateway
 
         $hostSpecs += [PSCustomObject]@{
             'hostname'         = $mgmtHost.entityName.split(".")[0]
