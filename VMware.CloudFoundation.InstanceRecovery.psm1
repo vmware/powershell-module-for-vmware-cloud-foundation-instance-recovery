@@ -2280,6 +2280,8 @@ Function Invoke-vCenterRestore {
     Start-Sleep 5
     $stream.writeline($ssoAdminUserPassword)
 
+    Remove-SSHSession -SSHSession $sshSession | Out-Null
+
     LogMessage -type WAIT -message "[$restoredVcenterFqdn] Waiting for Restore to Start"
     Do {
         #Note: Looped SSH connections is quite deliberate here as the connections appear to be continually dropped as the process progresses
@@ -2287,9 +2289,18 @@ Function Invoke-vCenterRestore {
         Remove-SSHSession -SSHSession $sshSession | Out-Null
         $sshSession = New-SSHSession -computername $restoredVcenterFqdn -Credential $mycreds -KnownHost $inmem -erroraction silentlycontinue
         If ($sshSession) {
-            $restoreStatus = (Invoke-SSHCommand -SessionId $sshSession.sessionid -Command "api com.vmware.appliance.recovery.restore.job.get" -erroraction silentlyContinue).output
+            $stream = New-SSHShellStream -SSHSession $sshSession
+            $stream.writeline('appliancesh')
+            Start-Sleep 2
+            $stream.writeline($restoredvCenterRootPassword)
+            Start-Sleep 2
+            $response = $stream.Read()
+            Start-Sleep 2
+            $stream.writeline('api com.vmware.appliance.recovery.restore.job.get')
+            Start-Sleep 2
+            $restoreStatus = $stream.Read()
             $restoreStatusArray = $restoreStatus -split ("\r\n")
-            $state = $restoreStatusArray[1].trim()
+            $state = $restoreStatusArray[2].trim()
         }
     } Until ($state -eq "State: INPROGRESS")
     LogMessage -type INFO -message "[$restoredVcenterFqdn] Restore $state"
@@ -2300,16 +2311,27 @@ Function Invoke-vCenterRestore {
         Remove-SSHSession -SSHSession $sshSession | Out-Null
         $sshSession = New-SSHSession -computername $restoredVcenterFqdn -Credential $mycreds -KnownHost $inmem -erroraction silentlycontinue
         If ($sshSession) {
-            $restoreStatus = (Invoke-SSHCommand -SessionId $sshSession.sessionid -Command "api com.vmware.appliance.recovery.restore.job.get" -erroraction silentlyContinue).output
+            $stream = New-SSHShellStream -SSHSession $sshSession
+            $stream.writeline('appliancesh')
+            Start-Sleep 5
+            $stream.writeline($restoredvCenterRootPassword)
+            Start-Sleep 5
+            $response = $stream.Read()
+            Start-Sleep 2
+            $stream.writeline('api com.vmware.appliance.recovery.restore.job.get')
+            Start-Sleep 2
+            $restoreStatus = $stream.Read()
             If ($restoreStatus) {
-                $restoreStatusArray = $restoreStatus -split ("\r\n")
+                $restoreStatusArray = $restoreStatus -split("\r\n")
                 If ($restoreStatusArray) {
                     If ($restoreStatusArray[1]) {
                         $state = $restoreStatusArray[1].trim()
                     }
-                    If ($restoreStatusArray[5]) {
-                        $progress = $restoreStatusArray[5].trim()
-                        LogMessage -type INFO -message "[$restoredVcenterFqdn] Restore $($progress)%"
+                    If ($restoreStatusArray[6]) {
+                        $progress = $restoreStatusArray[6].trim()
+                        If ($progress -like "Progress*") {
+                            LogMessage -type INFO -message "[$restoredVcenterFqdn] Restore $($progress)%"
+                        }
                     }
                 }
             }
