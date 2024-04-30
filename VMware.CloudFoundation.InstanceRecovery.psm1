@@ -408,12 +408,23 @@ Function New-ExtractDataFromSDDCBackup {
             $hostVmotionIp = $lineContent.split("`t")[19]
             $hostVsanIP = $lineContent.split("`t")[20]
 
+            #Calculate Managment Subnet
+            If ($gateway -AND $hostMask)
+            {
+
+                $ip = [ipaddress]$hostMgmtIp
+                $subnet = [ipaddress]$hostMask
+                $netid = [ipaddress]($ip.address -band $subnet.address)
+                $hostManagementSubnet = $($netid.ipaddresstostring)
+            }
+
             $hosts += [pscustomobject]@{
                 'id'        = $hostId
                 'gateway'   = $gateway
                 'hostName'  = $hostName
                 'mgmtIp'    = $hostMgmtIp
                 'mask'      = $hostMask
+                'subnet'     = $hostManagementSubnet
                 'version'   = $hostVersion
                 'vmotionIP' = $hostVmotionIp
                 'vsanIP'    = $hostVsanIP
@@ -676,6 +687,11 @@ Function New-ExtractDataFromSDDCBackup {
             Foreach ($clusterHost in $clusterHosts) {
                 $hostname = ($hosts | Where-Object { $_.id -eq $clusterHost.hostId }).hostname
                 $gateway =  ($hosts | Where-Object { $_.id -eq $clusterHost.hostId }).gateway
+                $mask =  ($hosts | Where-Object { $_.id -eq $clusterHost.hostId }).mask
+
+
+
+
                 $networkPoolID = ($hostsAndPools | Where-Object { $_.hostId -eq $clusterHost.hostId }).poolId
                 $hostNetworkIds = ($poolsAndNetworks | Where-Object { $_.poolID -eq $networkPoolID }).networkId
                 $hostNetworks = @()
@@ -683,6 +699,7 @@ Function New-ExtractDataFromSDDCBackup {
                     'type'    = "MANAGEMENT"
                     'gateway' = $gateway
                     'mtu'     = "1500"
+                    'mask' = $mask
                 }
                 $hostNetworks += $networks | Where-Object { $_.id -in $hostNetworkIds }
                 $hostsArray += [pscustomobject]@{
@@ -890,14 +907,9 @@ Function New-ExtractDataFromSDDCBackup {
             $domainNetworks = ($poolsAndNetworks | Where-Object { $_.poolID -eq $poolID }).networkID
             $vmotionNetwork = $networks | Where-Object { ($_.type -eq "VMOTION") -and ($_.id -in $domainNetworks) }
             $vsanNetwork = $networks | Where-Object { ($_.type -eq "VSAN") -and ($_.id -in $domainNetworks) }
-            $sddcManagerIP = $metadataJSON.ip
-            $managementSubnetMask = $metaDataJSON.netmask
-            $ip = [ipaddress]$sddcManagerIP
-            $subnet = [ipaddress]$managementSubnetMask
-            $netid = [ipaddress]($ip.address -band $subnet.address)
-            $managementSubnet = $($netid.ipaddresstostring)
 
-            <#             $mgmtNetworkDetails = @()
+            <#
+            $mgmtNetworkDetails = @()
             $mgmtNetworkDetails += [pscustomobject]@{  #Review
                 'type'         = "MANAGEMENT"
                 'subnet_mask'  = $metaDataJSON.netmask
@@ -907,7 +919,8 @@ Function New-ExtractDataFromSDDCBackup {
                 'gateway'      = $metaDataJSON.gateway
                 'portgroupKey' = $metadataJSON.port_group
             }
- #>            $nsxClusterDetailsObject = New-Object -type psobject
+            #>
+            $nsxClusterDetailsObject = New-Object -type psobject
             $nsxClusterDetailsObject | Add-Member -NotePropertyName 'clusterVip' -NotePropertyValue ($nsxtManagerClusters | Where-Object { $_.domainIDs -contains $domainId }).clusterVip
             $nsxClusterDetailsObject | Add-Member -NotePropertyName 'clusterFqdn' -NotePropertyValue ($nsxtManagerClusters | Where-Object { $_.domainIDs -contains $domainId }).clusterFqdn
             $nsxClusterDetailsObject | Add-Member -NotePropertyName 'rootNsxtManagerPassword' -NotePropertyValue ($passwordVaultObject | Where-Object { ($_.entityName -eq ($nsxtManagerClusters | Where-Object { $_.domainIDs -contains $domainId }).clusterFqdn) -and ($_.credentialType -eq 'SSH') }).password
