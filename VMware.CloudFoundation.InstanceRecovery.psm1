@@ -2293,13 +2293,13 @@ Function Invoke-vCenterRestore {
         If ($sshSession) {
             $stream = New-SSHShellStream -SSHSession $sshSession
             $stream.writeline('appliancesh')
-            Start-Sleep 2
+            Start-Sleep 5
             $stream.writeline($restoredvCenterRootPassword)
-            Start-Sleep 2
+            Start-Sleep 5
             $response = $stream.Read()
-            Start-Sleep 2
+            Start-Sleep 5
             $stream.writeline('api com.vmware.appliance.recovery.restore.job.get')
-            Start-Sleep 2
+            Start-Sleep 5
             $restoreStatus = $stream.Read()
             $restoreStatusArray = $restoreStatus -split ("\r\n")
             $state = $restoreStatusArray[2].trim()
@@ -2319,19 +2319,19 @@ Function Invoke-vCenterRestore {
             $stream.writeline($restoredvCenterRootPassword)
             Start-Sleep 5
             $response = $stream.Read()
-            Start-Sleep 2
+            Start-Sleep 5
             $stream.writeline('api com.vmware.appliance.recovery.restore.job.get')
-            Start-Sleep 2
+            Start-Sleep 5
             $restoreStatus = $stream.Read()
             If ($restoreStatus) {
-                $restoreStatusArray = $restoreStatus -split("\r\n")
+                $restoreStatusArray = $restoreStatus -split ("\r\n")
                 If ($restoreStatusArray) {
                     If ($restoreStatusArray[1]) {
                         $state = $restoreStatusArray[1].trim()
                     }
                     If ($restoreStatusArray[6]) {
                         $progress = $restoreStatusArray[6].trim()
-                        If ($progress -like "Progress*") {
+                        If (($progress -like "Progress*") -AND ($state -eq "State: INPROGRESS")) {
                             LogMessage -type INFO -message "[$restoredVcenterFqdn] Restore $($progress)%"
                         }
                     }
