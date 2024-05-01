@@ -2326,8 +2326,8 @@ Function Invoke-vCenterRestore {
             If ($restoreStatus) {
                 $restoreStatusArray = $restoreStatus -split ("\r\n")
                 If ($restoreStatusArray) {
-                    If ($restoreStatusArray[1]) {
-                        $state = $restoreStatusArray[1].trim()
+                    If ($restoreStatusArray[2]) {
+                        $state = $restoreStatusArray[2].trim()
                     }
                     If ($restoreStatusArray[6]) {
                         $progress = $restoreStatusArray[6].trim()
