@@ -2101,9 +2101,11 @@ Function Resolve-PhysicalHostServiceAccounts {
         $taskID = (Invoke-VcfUpdateOrRotatePasswords -credentialsUpdateSpec $credentialsUpdateSpec).Id
         Do {
             Sleep 5
-            $taskStatus = (Invoke-VcfGetCredentialsTask -id $taskID).Elements.Status
+            $taskStatus = (Invoke-VcfGetCredentialsTask -id $taskID).Status
         } Until ($taskStatus -ne "IN_PROGRESS")
+        LogMessage -type INFO -message "$taskStatus"
     }
+    Disconnect-VcfSddcManagerServer *
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 
 }
@@ -3058,6 +3060,7 @@ Function Add-HostsToCluster {
         }
     }
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+    Disconnect-VcfSddcManagerServer *
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Add-HostsToCluster
@@ -3123,7 +3126,6 @@ Function Add-VMKernelsToHost {
         $vsanMask = (((Invoke-VcfGetNetworksOfNetworkPool -id ((Invoke-VcfGetHosts).Elements | Where-Object { $_.fqdn -eq $vmhost }).networkPool.id)).Elements | ? { $_.type -eq "VSAN" }).mask
         $vsanMTU = (((Invoke-VcfGetNetworksOfNetworkPool -id ((Invoke-VcfGetHosts).Elements | Where-Object { $_.fqdn -eq $vmhost }).networkPool.id)).Elements | ? { $_.type -eq "VSAN" }).mtu
         $vsanGW = (((Invoke-VcfGetNetworksOfNetworkPool -id ((Invoke-VcfGetHosts).Elements | Where-Object { $_.fqdn -eq $vmhost }).networkPool.id)).Elements | ? { $_.type -eq "VSAN" }).gateway
-        req
         LogMessage -type INFO -message "[$vmhost] Creating vMotion vMK"
         $dvportgroup = Get-VDPortgroup -name $vmotionPG -VDSwitch $vmotionVDSName
         $vmk = New-VMHostNetworkAdapter -VMHost $vmhost -VirtualSwitch $vmotionVDSName -mtu $vmotionMTU -PortGroup $dvportgroup -ip $vmotionIP -SubnetMask $vmotionMask -NetworkStack (Get-VMHostNetworkStack -vmhost $vmhost | Where-Object { $_.id -eq "vmotion" })
@@ -3159,6 +3161,7 @@ Function Add-VMKernelsToHost {
         }
         $esxcli.network.ip.interface.ipv4.set.Invoke($interfaceArg) *>$null
     }
+    Disconnect-VcfSddcManagerServer *
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Add-VMKernelsToHost
