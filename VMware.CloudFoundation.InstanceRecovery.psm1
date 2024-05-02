@@ -2103,7 +2103,7 @@ Function Resolve-PhysicalHostServiceAccounts {
             Sleep 5
             $taskStatus = (Invoke-VcfGetCredentialsTask -id $taskID).Status
         } Until ($taskStatus -ne "IN_PROGRESS")
-        LogMessage -type INFO -message "$taskStatus"
+        Write-Host "$taskStatus" -ForegroundColor Green
     }
     Disconnect-VcfSddcManagerServer *
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
