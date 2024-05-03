@@ -11,10 +11,8 @@ If ($PSEdition -eq 'Core') {
         "invoke-restmethod:SkipCertificateCheck" = $true
         "invoke-webrequest:SkipCertificateCheck" = $true
     }
-}
-else
-{
-	Add-Type @"
+} else {
+    Add-Type @"
 		using System.Net;
 		using System.Security.Cryptography.X509Certificates;
 		public class TrustAllCertsPolicy : ICertificatePolicy {
@@ -26,7 +24,7 @@ else
 		}
 "@
 
-	[System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy
+    [System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy
 }
 
 #Region Supporting Functions
@@ -57,8 +55,7 @@ Function catchWriter {
     Write-Error "Error Message: $errorMessage"
 }
 
-Function Get-InstalledSoftware
-{
+Function Get-InstalledSoftware {
     $software = @()
     $reg = [Microsoft.Win32.RegistryKey]::OpenRemoteBaseKey('LocalMachine', $env:COMPUTERNAME)
     $apps = $reg.OpenSubKey("SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall").GetSubKeyNames()
@@ -84,8 +81,7 @@ Function Get-InstalledSoftware
     Return $software
 }
 
-Function LogMessage
-{
+Function LogMessage {
     Param (
         [Parameter (Mandatory = $true)] [AllowEmptyString()] [String]$message,
         [Parameter (Mandatory = $false)] [Switch]$nonewline,
@@ -96,20 +92,13 @@ Function LogMessage
         $colour = "92m" #Green
     }
 
-    If ($type -eq "INFO")
-    {
+    If ($type -eq "INFO") {
         $messageColour = "92m" #Green
-    }
-    elseIf ($type -in "ERROR","EXCEPTION")
-    {
+    } elseIf ($type -in "ERROR","EXCEPTION") {
         $messageColour = "91m" # Red
-    }
-    elseIf ($type -in "WARNING","ADVISORY","QUESTION")
-    {
+    } elseIf ($type -in "WARNING","ADVISORY","QUESTION") {
         $messageColour = "93m" #Yellow
-    }
-    elseIf ($type -in "NOTE","WAIT")
-    {
+    } elseIf ($type -in "NOTE","WAIT") {
         $messageColour = "97m" # White
     }
 
@@ -131,20 +120,16 @@ Function LogMessage
     $timeStamp = Get-Date -Format "MM-dd-yyyy_HH:mm:ss"
     $timestampColour = "97m"
 
-    If ($nonewline)
-    {
+    If ($nonewline) {
         Write-Host "$ESC[${timestampcolour} [$timestamp]$ESC[${messageColour} [$type] $message$ESC[0m" -NoNewline
-    }
-    else
-    {
+    } else {
         Write-Host "$ESC[${timestampcolour} [$timestamp]$ESC[${messageColour} [$type] $message$ESC[0m"
     }
     #$logContent = '[' + $timeStamp + '] [' +$threadTag + '] ' + $type + ' ' + $message
     #Add-Content -path $logFile $logContent
 }
 
-Function VCFIRCreateHeader
-{
+Function VCFIRCreateHeader {
     Param(
         [Parameter (Mandatory = $true)]
         [String] $username,
@@ -157,13 +142,12 @@ Function VCFIRCreateHeader
 
     Return $headers
 }
-Function Move-VMKernel
-{
+Function Move-VMKernel {
     Param (
         [object]$VMHost,
         [string]$Interface,
         [string]$NetworkName
-        )
+    )
 
     #Get Network ID
     $networkid = $VMHost.ExtensionData.Configmanager.NetworkSystem
@@ -178,8 +162,7 @@ Function Move-VMKernel
 #EndRegion Supporting Functions
 
 #Region Pre-Requisites
-Function Confirm-VCFInstanceRecoveryPreReqs
-{
+Function Confirm-VCFInstanceRecoveryPreReqs {
     <#
     .SYNOPSIS
     Checks for the presence of supporting software and modules leveraged by VMware.CloudFoundation.InstanceRecovery
@@ -213,12 +196,17 @@ Function Confirm-VCFInstanceRecoveryPreReqs
     } else {
         LogMessage -type INFO -message "[$jumpboxName] PowerCLI Module found"
     }
-
-    $isPowerVCFInstalled = Get-InstalledModule -name "PowerVCF" -RequiredVersion "2.4.0" -ErrorAction SilentlyContinue
-    If (!$isPowerVCFInstalled) {
-        LogMessage -type INFO -message "[$jumpboxName] PowerVCF Module Missing. Please install"
+    $isPowerCLISddcmModuleInstalled = Get-InstalledModule -name "VMware.Sdk.Vcf.SddcManager" -RequiredVersion "5.1.0" -ErrorAction SilentlyContinue
+    If (!$isPowerCLISddcmModuleInstalled) {
+        LogMessage -type INFO -message "[$jumpboxName] VMware.Sdk.Vcf.SddcManager Module Missing. Please install"
     } else {
-        LogMessage -type INFO -message "[$jumpboxName] PowerVCF Module found"
+        LogMessage -type INFO -message "[$jumpboxName] VMware.Sdk.Vcf.SddcManager Module found"
+    }
+    $isPowerCLICloudBuilderModuleInstalled = Get-InstalledModule -name "VMware.Sdk.Vcf.CloudBuilder" -RequiredVersion "5.1.0" -ErrorAction SilentlyContinue
+    If (!$isPowerCLICloudBuilderModuleInstalled) {
+        LogMessage -type INFO -message "[$jumpboxName] VMware.Sdk.Vcf.CloudBuilder Module Missing. Please install"
+    } else {
+        LogMessage -type INFO -message "[$jumpboxName] VMware.Sdk.Vcf.CloudBuilder Module found"
     }
 
     $installedSoftware = Get-InstalledSoftware
@@ -2098,15 +2086,15 @@ Function Resolve-PhysicalHostServiceAccounts {
     $vCenterConnection = Connect-VIServer -server $vCenterFQDN -username $vCenterAdmin -password $vCenterAdminPassword
     $clusterHosts = Get-Cluster -name $clusterName | Get-VMHost
     Disconnect-VIServer * -confirm:$false
-    $tokenRequest = Request-VCFToken -fqdn $sddcManagerFQDN -username $sddcManagerAdmin -password $sddcManagerAdminPassword
+    $sddcManagerConnection = Connect-VcfSddcManagerServer -server $sddcManagerFQDN -User $sddcManagerAdmin -Password $sddcManagerAdminPassword
     #verify SDDC Manager credential API state
-    $credentialAPILastTask = ((Get-VCFCredentialTask -errorAction silentlyContinue | Sort-Object -Property creationTimeStamp)[-1]).status
+    $credentialAPILastTask = ((Invoke-VcfGetCredentialsTasks -errorAction silentlyContinue | Sort-Object -Property creationTimeStamp)[-1]).status
     if ($credentialAPILastTask -eq "FAILED") {
         LogMessage -type INFO -message "[$sddcManagerFQDN] Failed credential operation detected. Please resolve in SDDC Manager and try again" ; break
     }
 
     Foreach ($hostInstance in $clusterHosts) {
-        $esxiRootPassword = [String](Get-VCFCredential | ? { $_.resource.resourceName -eq $hostInstance.name }).password
+        $esxiRootPassword = [String]((Invoke-VcfGetCredentials).Elements | where-object {$_.Resource.ResourceName -eq $hostInstance.name}).password
         $esxiConnection = Connect-VIServer -Server $hostInstance.name -User root -Password $esxiRootPassword.Trim() | Out-Null
         $esxiHostName = $hostInstance.name.Split(".")[0]
         $svcAccountName = "svc-vcf-$esxiHostName"
@@ -2129,33 +2117,20 @@ Function Resolve-PhysicalHostServiceAccounts {
 
         $esxiHostName = $hostInstance.name.Split(".")[0]
         $svcAccountName = "svc-vcf-$esxiHostName"
-
-        $credentialsObject += [pscustomobject]@{
-            'username' = $svcAccountName
-            'password' = $svcAccountPassword
-        }
-
-        $elementsObject += [pscustomobject]@{
-            'resourceName' = $hostInstance.name
-            'resourceType' = 'ESXI'
-            'credentials'  = @($credentialsObject)
-        }
-
-        $esxHostObject += [pscustomobject]@{
-            'operationType' = 'REMEDIATE'
-            'elements'      = @($elementsObject)
-        }
-
-        $esxiHostJson = $esxHostObject | Convertto-Json -depth 10
         LogMessage -type INFO -message "[$($hostInstance.name)] Remediating VCF Service Account Password: " -nonewline
-        $taskID = (Set-VCFCredential -json $esxiHostJson).id
+        $BaseCredential = Initialize-VcfBaseCredential -AccountType "SERVICE" -CredentialType "SSH" -Password $svcAccountPassword -Username $svcAccountName
+        $ResourceCredentials = Initialize-VcfResourceCredentials -Credentials $BaseCredential -ResourceName $hostInstance.name -ResourceType "ESXI"
+        $CredentialsUpdateSpec = Initialize-VcfCredentialsUpdateSpec -Elements $ResourceCredentials -OperationType "REMEDIATE"
+        $taskID = (Invoke-VcfUpdateOrRotatePasswords -credentialsUpdateSpec $credentialsUpdateSpec).Id
         Do {
             Sleep 5
-            $taskStatus = (Get-VCFCredentialTask -id $taskID).status
+            $taskStatus = (Invoke-VcfGetCredentialsTask -id $taskID).Status
         } Until ($taskStatus -ne "IN_PROGRESS")
-        LogMessage -type INFO -message "$taskStatus"
+        Write-Host "$taskStatus" -ForegroundColor Green
     }
+    Disconnect-VcfSddcManagerServer *
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+
 }
 Export-ModuleMember -Function Resolve-PhysicalHostServiceAccounts
 #EndRegion SDDC Manager Functions
@@ -2324,14 +2299,14 @@ Function Invoke-vCenterRestore {
             Start-Sleep 5
             $restoreStatus = $stream.Read()
             If ($restoreStatus) {
-                $restoreStatusArray = $restoreStatus -split ("\r\n")
+                $restoreStatusArray = $restoreStatus -split("\r\n")
                 If ($restoreStatusArray) {
                     If ($restoreStatusArray[2]) {
                         $state = $restoreStatusArray[2].trim()
                     }
                     If ($restoreStatusArray[6]) {
                         $progress = $restoreStatusArray[6].trim()
-                        If (($progress -like "Progress*") -AND ($state -eq "State: INPROGRESS")) {
+                        If (($progress -like "Progress*") -and ($state -eq "State: INPROGRESS")) {
                             LogMessage -type INFO -message "[$restoredVcenterFqdn] Restore $($progress)%"
                         }
                     }
@@ -3089,8 +3064,8 @@ Function Add-HostsToCluster {
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
 
-    $tokenRequest = Request-VCFToken -fqdn $sddcManagerFQDN -username $sddcManagerAdmin -password $sddcManagerAdminPassword
-    $newHosts = (get-vcfhost | where-object { $_.id -in ((get-vcfcluster -name $clusterName).hosts.id) }).fqdn | Sort-Object
+    $sddcManagerConnection = Connect-VcfSddcManagerServer -server $sddcManagerFQDN -User $sddcManagerAdmin -Password $sddcManagerAdminPassword
+    $newHosts = ((Invoke-VcfGetHosts).Elements | where-object { $_.id -in (((Invoke-VcfGetClusters).Elements | ? {$_.Name -eq $clusterName}).Hosts.Id) }).fqdn | Sort-Object
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
     foreach ($newHost in $newHosts) {
         $vmHosts = (Get-cluster -name $clusterName | Get-VMHost).Name | Sort-Object
@@ -3108,6 +3083,7 @@ Function Add-HostsToCluster {
         }
     }
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+    Disconnect-VcfSddcManagerServer *
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Add-HostsToCluster
@@ -3156,24 +3132,23 @@ Function Add-VMKernelsToHost {
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
-    $tokenRequest = Request-VCFToken -fqdn $sddcManagerFQDN -username $sddcManagerAdmin -password $sddcManagerAdminPassword
+    $sddcManagerConnection = Connect-VcfSddcManagerServer -server $sddcManagerFQDN -User $sddcManagerAdmin -Password $sddcManagerAdminPassword
 
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
     $vmHosts = (Get-cluster -name $clusterName | Get-VMHost).Name | Sort-Object
     foreach ($vmhost in $vmHosts) {
-        $vmotionPG = ((get-vcfCluster -name $clusterName -vdses).portGroups | ? { $_.transportType -eq "VMOTION" }).name
-        $vmotionVDSName = ((get-vcfCluster -name $clusterName -vdses) | ? { $_.portGroups.transportType -contains "VMOTION" }).name
-        $vmotionIP = (((Get-VCFHost | Where-Object { $_.fqdn -eq $vmhost }).ipAddresses) | ? { $_.type -eq "VMOTION" }).ipAddress
-        $vmotionMask = (Get-VCFNetworkIPPool -id ((Get-VCFHost | Where-Object { $_.fqdn -eq $vmhost }).networkPool.id) | ? { $_.type -eq "VMOTION" }).mask
-        $vmotionMTU = (Get-VCFNetworkIPPool -id ((Get-VCFHost | Where-Object { $_.fqdn -eq $vmhost }).networkPool.id) | ? { $_.type -eq "VMOTION" }).mtu
-        $vmotionGW = (Get-VCFNetworkIPPool -id ((Get-VCFHost | Where-Object { $_.fqdn -eq $vmhost }).networkPool.id) | ? { $_.type -eq "VMOTION" }).gateway
-        $vsanPG = ((get-vcfCluster -name $clusterName -vdses).portGroups | ? { $_.transportType -eq "VSAN" }).name
-        $vsanVDSName = ((get-vcfCluster -name $clusterName -vdses) | ? { $_.portGroups.transportType -contains "VSAN" }).name
-        $vsanIP = (((Get-VCFHost | Where-Object { $_.fqdn -eq $vmhost }).ipAddresses) | ? { $_.type -eq "VSAN" }).ipAddress
-        $vsanMask = (Get-VCFNetworkIPPool -id ((Get-VCFHost | Where-Object { $_.fqdn -eq $vmhost }).networkPool.id) | ? { $_.type -eq "VSAN" }).mask
-        $vsanMTU = (Get-VCFNetworkIPPool -id ((Get-VCFHost | Where-Object { $_.fqdn -eq $vmhost }).networkPool.id) | ? { $_.type -eq "VSAN" }).mtu
-        $vsanGW = (Get-VCFNetworkIPPool -id ((Get-VCFHost | Where-Object { $_.fqdn -eq $vmhost }).networkPool.id) | ? { $_.type -eq "VSAN" }).gateway
-
+        $vmotionPG = ((Invoke-VcfGetVdses -ClusterId ((Invoke-VcfGetClusters).Elements | ? {$_.Name -eq $clusterName}).Id).PortGroups | ? { $_.TransportType -eq "VMOTION" }).Name
+        $vmotionVDSName = ((Invoke-VcfGetVdses -ClusterId ((Invoke-VcfGetClusters).Elements | ? {$_.Name -eq $clusterName}).Id) | ? { $_.Portgroups.TransportType -contains "VMOTION" }).Name
+        $vmotionIP = (((Invoke-VcfGetHosts).Elements | ? { $_.fqdn -eq $vmhost }).ipaddresses | ? { $_.type -eq "VMOTION" })._IpAddress
+        $vmotionMask = (((Invoke-VcfGetNetworksOfNetworkPool -id ((Invoke-VcfGetHosts).Elements | Where-Object { $_.fqdn -eq $vmhost }).networkPool.id)).Elements | ? { $_.type -eq "VMOTION" }).mask
+        $vmotionMTU = (((Invoke-VcfGetNetworksOfNetworkPool -id ((Invoke-VcfGetHosts).Elements | Where-Object { $_.fqdn -eq $vmhost }).networkPool.id)).Elements | ? { $_.type -eq "VMOTION" }).mtu
+        $vmotionGW = (((Invoke-VcfGetNetworksOfNetworkPool -id ((Invoke-VcfGetHosts).Elements | Where-Object { $_.fqdn -eq $vmhost }).networkPool.id)).Elements | ? { $_.type -eq "VMOTION" }).gateway
+        $vsanPG = ((Invoke-VcfGetVdses -ClusterId ((Invoke-VcfGetClusters).Elements | ? {$_.Name -eq $clusterName}).Id).PortGroups | ? { $_.transportType -eq "VSAN" }).Name
+        $vsanVDSName = ((Invoke-VcfGetVdses -ClusterId ((Invoke-VcfGetClusters).Elements | ? {$_.Name -eq $clusterName}).Id) | ? { $_.Portgroups.TransportType -contains "VSAN" }).Name
+        $vsanIP = (((Invoke-VcfGetHosts).Elements | ? { $_.fqdn -eq $vmhost }).ipaddresses | ? { $_.type -eq "VSAN" })._IpAddress
+        $vsanMask = (((Invoke-VcfGetNetworksOfNetworkPool -id ((Invoke-VcfGetHosts).Elements | Where-Object { $_.fqdn -eq $vmhost }).networkPool.id)).Elements | ? { $_.type -eq "VSAN" }).mask
+        $vsanMTU = (((Invoke-VcfGetNetworksOfNetworkPool -id ((Invoke-VcfGetHosts).Elements | Where-Object { $_.fqdn -eq $vmhost }).networkPool.id)).Elements | ? { $_.type -eq "VSAN" }).mtu
+        $vsanGW = (((Invoke-VcfGetNetworksOfNetworkPool -id ((Invoke-VcfGetHosts).Elements | Where-Object { $_.fqdn -eq $vmhost }).networkPool.id)).Elements | ? { $_.type -eq "VSAN" }).gateway
         LogMessage -type INFO -message "[$vmhost] Creating vMotion vMK"
         $dvportgroup = Get-VDPortgroup -name $vmotionPG -VDSwitch $vmotionVDSName
         $vmk = New-VMHostNetworkAdapter -VMHost $vmhost -VirtualSwitch $vmotionVDSName -mtu $vmotionMTU -PortGroup $dvportgroup -ip $vmotionIP -SubnetMask $vmotionMask -NetworkStack (Get-VMHostNetworkStack -vmhost $vmhost | Where-Object { $_.id -eq "vmotion" })
@@ -3209,6 +3184,7 @@ Function Add-VMKernelsToHost {
         }
         $esxcli.network.ip.interface.ipv4.set.Invoke($interfaceArg) *>$null
     }
+    Disconnect-VcfSddcManagerServer *
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Add-VMKernelsToHost
@@ -3389,39 +3365,36 @@ Function New-RebuiltVsanDatastore {
                 $moduleFunctions = Import-Module VMware.CloudFoundation.InstanceRecovery -passthru
                 $restoredvCenterConnection = Connect-ViServer $using:vCenterFQDN -user $using:vCenterAdmin -password $using:vCenterAdminPassword
                 $vmhost = Get-VMHost -name $using:vmhost.name
-                $disks = Get-VMHost -name $using:vmhost.name | Get-VMHostDisk | Where-Object {$_.ScsiLun.VsanStatus -eq 'Eligible'} | Sort-Object -Property @{e={$_.scsilun.runtimename}}
+                $disks = Get-VMHost -name $using:vmhost.name | Get-VMHostDisk | Where-Object {$_.ScsiLun.VsanStatus -eq 'Eligible'} | Sort-Object -Property @{e = {$_.scsilun.runtimename}}
                 $disksDisplayObject=@()
                 $disksIndex = 1
                 $disksDisplayObject += [pscustomobject]@{
-                        'ID'    = "ID"
-                        'canonicalName' = "Canonical Name"
-                        'size' = "Size (GB)"
-                        'ssd' = "SSD"
-                        'scsiLun' = "SCSI LUN ID"
-                    }
+                    'ID'            = "ID"
+                    'canonicalName' = "Canonical Name"
+                    'size'          = "Size (GB)"
+                    'ssd'           = "SSD"
+                    'scsiLun'       = "SCSI LUN ID"
+                }
                 $disksDisplayObject += [pscustomobject]@{
-                        'ID'    = "--"
-                        'canonicalName' = "--------------------"
-                        'size' = "-------------"
-                        'ssd' = "------"
-                        'scsiLun' = "-------------"
-                    }
-                Foreach ($disk in $disks)
-                {
-                    If ($disk.ScsiLun.CapacityGB -ne $null)
-                    {
+                    'ID'            = "--"
+                    'canonicalName' = "--------------------"
+                    'size'          = "-------------"
+                    'ssd'           = "------"
+                    'scsiLun'       = "-------------"
+                }
+                Foreach ($disk in $disks) {
+                    If ($disk.ScsiLun.CapacityGB -ne $null) {
                         $disksDisplayObject += [pscustomobject]@{
-                            'ID'    = $disksIndex
+                            'ID'            = $disksIndex
                             'canonicalName' = $disk.ScsiLun.CanonicalName
-                            'size' = $disk.ScsiLun.CapacityGB
-                            'ssd' = $disk.ScsiLun.IsSsd
-                            'scsiLun' = $disk.ScsiLun.RuntimeName
+                            'size'          = $disk.ScsiLun.CapacityGB
+                            'ssd'           = $disk.ScsiLun.IsSsd
+                            'scsiLun'       = $disk.ScsiLun.RuntimeName
                         }
                         $disksIndex++
                     }
                 }
-                For ($i = 1; $i -le $using:diskGroupNumber; $i++)
-                {
+                For ($i = 1; $i -le $using:diskGroupNumber; $i++) {
                     $diskGroupConfigurationIndex = ($i -1)
                     $diskGroupConfiguration = $using:diskGroupConfiguration
                     $cacheDiskCanonicalName = (($disksDisplayObject | Where-Object {$_.id -eq $diskGroupConfiguration[$diskGroupConfigurationIndex].cacheDiskID}).canonicalName)
@@ -3441,8 +3414,7 @@ Function New-RebuiltVsanDatastore {
 }
 Export-ModuleMember -Function New-RebuiltVsanDatastore
 
-Function New-RebuiltVdsConfiguration
-{
+Function New-RebuiltVdsConfiguration {
     <#
     .SYNOPSIS
     Guides the rebuild of the VDS configuration on a recovered cluster based on the configuration present in the backup data
@@ -3485,12 +3457,9 @@ Function New-RebuiltVdsConfiguration
     $workloadDomain = ($extractedSddcData.workloadDomains | Where-Object {$_.vsphereClusterDetails.name -contains $clustername})
     $clusterVdsDetails = ($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object {$_.name -eq $clusterName}).vdsDetails
     $isPrimaryCluster = ($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object {$_.name -eq $clusterName}).isDefault
-    If (($workloadDomain.domainType -eq "MANAGEMENT") -and ($isPrimaryCluster -eq 't'))
-    {
+    If (($workloadDomain.domainType -eq "MANAGEMENT") -and ($isPrimaryCluster -eq 't')) {
         $isPrimaryManagementCluster = $true
-    }
-    else
-    {
+    } else {
         $isPrimaryManagementCluster = $false
     }
 
@@ -3505,26 +3474,25 @@ Function New-RebuiltVdsConfiguration
     $nicsDisplayObject=@()
     $nicsIndex = 1
     $nicsDisplayObject += [pscustomobject]@{
-            'ID'    = "ID"
-            'deviceName' = "Device Name"
-            'driver' = "Driver"
-            'linkStatus' = "Link Status"
-            'description' = "Description"
-        }
+        'ID'          = "ID"
+        'deviceName'  = "Device Name"
+        'driver'      = "Driver"
+        'linkStatus'  = "Link Status"
+        'description' = "Description"
+    }
     $nicsDisplayObject += [pscustomobject]@{
-            'ID'    = "--"
-            'deviceName' = "-----------"
-            'driver' = "----------"
-            'linkStatus' = "-----------"
-            'description' = "-----------------------------------------------"
-        }
-    Foreach ($nic in $nics)
-    {
+        'ID'          = "--"
+        'deviceName'  = "-----------"
+        'driver'      = "----------"
+        'linkStatus'  = "-----------"
+        'description' = "-----------------------------------------------"
+    }
+    Foreach ($nic in $nics) {
         $nicsDisplayObject += [pscustomobject]@{
-            'ID'    = $nicsIndex
-            'deviceName' = $nic.name
-            'driver' = $nic.driver
-            'linkStatus' = $nic.linkStatus
+            'ID'          = $nicsIndex
+            'deviceName'  = $nic.name
+            'driver'      = $nic.driver
+            'linkStatus'  = $nic.linkStatus
             'description' = $nic.description
         }
         $nicsIndex++
@@ -3534,25 +3502,20 @@ Function New-RebuiltVdsConfiguration
     $remainingNicsDisplayObject = $nicsDisplayObject
 
     #Loop Through VDS Creation
-    For ($i = 1; $i -le $clusterVdsDetails.count; $i++)
-    {
+    For ($i = 1; $i -le $clusterVdsDetails.count; $i++) {
         $vdsConfigurationIndex = ($i -1)
-        Do
-        {
+        Do {
             $nicNamesArray =@()
-            Write-Host ""; $remainingNicsDisplayObject | format-table -Property @{Expression=" "},id,deviceName,driver,linkStatus,description -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
-            Write-Host ""; Write-Host " Recreating $($clusterVdsDetails[$vdsConfigurationIndex].dvsName) which contained the networks: $(($clusterVdsDetails[$vdsConfigurationIndex].networks) -join (","))"  -ForegroundColor Yellow
+            Write-Host ""; $remainingNicsDisplayObject | format-table -Property @{Expression =" "},id,deviceName,driver,linkStatus,description -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
+            Write-Host ""; Write-Host " Recreating $($clusterVdsDetails[$vdsConfigurationIndex].dvsName) which contained the networks: $(($clusterVdsDetails[$vdsConfigurationIndex].networks) -join (","))" -ForegroundColor Yellow
             Write-Host " Enter a comma seperated list of IDs to use as vmnics for this VDS, or C to Cancel: " -ForegroundColor Yellow -nonewline
             $nicSelection = Read-Host
-            If ($nicSelection -ne "C")
-            {
+            If ($nicSelection -ne "C") {
                 $nicSelectionInvalid = $false
                 $nicArray = $nicSelection -split(",")
-                Foreach ($nic in $nicArray)
-                {
+                Foreach ($nic in $nicArray) {
                     $nicNamesArray += ($nicsDisplayObject | Where-Object {$_.id -eq $nic}).deviceName
-                    If ($nic -notin $nicsDisplayObject.id)
-                    {
+                    If ($nic -notin $nicsDisplayObject.id) {
                         $nicSelectionInvalid = $true
                     }
                 }
@@ -3560,74 +3523,64 @@ Function New-RebuiltVdsConfiguration
         } Until (($nicSelectionInvalid -eq $false) -OR ($nicSelection -eq "c"))
         If ($nicSelection -eq "c") {Break}
         $vdsConfiguration += [PSCustomObject]@{
-            'vdsName' = $clusterVdsDetails[$vdsConfigurationIndex].dvsName
-            'nicnames' = $nicNamesArray
+            'vdsName'     = $clusterVdsDetails[$vdsConfigurationIndex].dvsName
+            'nicnames'    = $nicNamesArray
             'vdsNetworks' = $clusterVdsDetails[$vdsConfigurationIndex].networks
-            'portgroups' = $clusterVdsDetails[$vdsConfigurationIndex].portgroups
+            'portgroups'  = $clusterVdsDetails[$vdsConfigurationIndex].portgroups
         }
         $tempremainingNicsDisplayObject = @()
-        Foreach( $displaynic in $remainingNicsDisplayObject)
-        {
-            If ($displaynic.id -notin $nicArray)
-            {
+        Foreach ( $displaynic in $remainingNicsDisplayObject) {
+            If ($displaynic.id -notin $nicArray) {
                 $tempremainingNicsDisplayObject += $displaynic
             }
         }
         $remainingNicsDisplayObject = $tempremainingNicsDisplayObject
     }
-    If (($nicSelection -eq "c") -or ($nicSelection -eq "c")){Break}
+    If (($nicSelection -eq "c") -or ($nicSelection -eq "c")) {Break}
 
     $proposedConfigDisplayObject = @()
     $configIndex = 1
     $proposedConfigDisplayObject += [pscustomobject]@{
-        'vdsName'    = "VDS Name"
-        'nicnames' = "NIC Names"
+        'vdsName'     = "VDS Name"
+        'nicnames'    = "NIC Names"
         'vdsNetworks' = "VDS Networks"
-        }
+    }
     $proposedConfigDisplayObject += [pscustomobject]@{
-        'vdsName'    = "----------------------------------------"
-        'nicnames' = "---------------"
+        'vdsName'     = "----------------------------------------"
+        'nicnames'    = "---------------"
         'vdsNetworks' = "------------------------------"
+    }
+    Foreach ($config in $vdsConfiguration) {
+        $proposedConfigDisplayObject += [pscustomobject]@{
+            'vdsName'     = $config.vdsName
+            'nicnames'    = $config.nicnames -join (", ")
+            'vdsNetworks' = $config.vdsNetworks -join (", ")
         }
-    Foreach ($config in $vdsConfiguration)
-    {
-            $proposedConfigDisplayObject += [pscustomobject]@{
-                'vdsName'    = $config.vdsName
-                'nicnames' = $config.nicnames -join (", ")
-                'vdsNetworks' = $config.vdsNetworks -join (", ")
-            }
-            $configIndex++
+        $configIndex++
     }
     Write-Host ""; Write-Host " Proposed VDS Configuration " -ForegroundColor Yellow
-    Write-Host ""; $proposedConfigDisplayObject | format-table -Property @{Expression=" "},vdsName,nicnames,vdsNetworks,-autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
+    Write-Host ""; $proposedConfigDisplayObject | format-table -Property @{Expression =" "},vdsName,nicnames,vdsNetworks,-autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
     Write-Host ""; Write-Host " Do you wish to proceed with the proposed configuration? (Y/N): " -ForegroundColor Yellow -nonewline
     $proposedConfigAccepted = Read-Host
     $proposedConfigAccepted = $proposedConfigAccepted -replace "`t|`n|`r", ""
-    If ($proposedConfigAccepted -eq "Y")
-    {
-        Foreach ($vds in $vdsConfiguration)
-        {
+    If ($proposedConfigAccepted -eq "Y") {
+        Foreach ($vds in $vdsConfiguration) {
             $vdsHosts = (Get-VDSwitch -name $vds.vdsName).extensionData.summary.hostmember.value
-            Foreach ($vmHost in $vmHosts)
-            {
+            Foreach ($vmHost in $vmHosts) {
                 $vmNicArray = @()
                 $portgroupArray = @()
                 $vmnicMinusOne = $vmhost | Get-VMHostNetworkAdapter | Where-Object {$_.deviceName -eq $vds.nicNames[0] }
 
-                If (($vds.portgroups | Where-Object {$_.transportType -eq 'VM_MANAGEMENT'}).name)
-                {
+                If (($vds.portgroups | Where-Object {$_.transportType -eq 'VM_MANAGEMENT'}).name) {
                     $managementPortGroupName = ($vds.portgroups | Where-Object {$_.transportType -eq 'VM_MANAGEMENT'}).name
-                }
-                else
-                {
+                } else {
                     $managementPortGroupName = ($vds.portgroups | Where-Object {$_.transportType -eq 'MANAGEMENT'}).name
                 }
 
                 $portgroupArray += $managementPortGroupName
                 $vmk0 = Get-VMHostNetworkAdapter -VMHost $vmHost -Name "vmk0"
                 $vmNicArray += $vmk0
-                If ($isPrimaryManagementCluster)
-                {
+                If ($isPrimaryManagementCluster) {
                     $vmotionPortgroupName = ($vds.portgroups | Where-Object {$_.transportType -eq 'VMOTION'}).name
                     $portgroupArray += $vmotionPortgroupName
                     $vsanPortgroupName = ($vds.portgroups | Where-Object {$_.transportType -eq 'VSAN'}).name
@@ -3639,13 +3592,10 @@ Function New-RebuiltVdsConfiguration
                 }
 
                 $hostMoRef = $vmhost.ExtensionData.moref.value
-                If ($hostMoRef -notin $vdsHosts)
-                {
+                If ($hostMoRef -notin $vdsHosts) {
                     LogMessage -type INFO -message "[$($vmhost.name)] Adding to $($vds.vdsName)"
                     Get-VDSwitch -name $vds.vdsName | Add-VDSwitchVMHost -vmhost $vmHost -confirm:$false
-                }
-                else
-                {
+                } else {
                     LogMessage -type INFO -message "[$($vmhost.name)] Already in $($vds.vdsName). Skipping"
                 }
 
@@ -3653,9 +3603,7 @@ Function New-RebuiltVdsConfiguration
                 If (!$vmnicInVds) {
                     LogMessage -type INFO -message "[$($vmhost.name)] Adding Physical Adapter $($vds.nicNames[0]) to $($vds.vdsName) and migrating $($vmNicArray.name -join(", "))"
                     Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $vmnicMinusOne -VMHostVirtualNic $vmNicArray -VirtualNicPortgroup $portgroupArray -confirm:$false
-                }
-                else
-                {
+                } else {
                     LogMessage -type INFO -message "[$($vmhost.name)] Physical Adapter $($vds.nicNames[0]) already in $($vds.vdsName). Skipping"
                 }
 
@@ -3668,9 +3616,7 @@ Function New-RebuiltVdsConfiguration
                     If ((Get-VM -Name $vmToMove | Get-NetworkAdapter).NetworkName -ne $managementPortGroupName) {
                         LogMessage -type INFO -message "[$($vmToMove.name)] Moving to $managementPortGroupName"
                         Get-VM -Name $vmToMove | Get-NetworkAdapter | Set-NetworkAdapter -NetworkName $managementPortGroupName -confirm:$false | Out-Null
-                    }
-                    else
-                    {
+                    } else {
                         LogMessage -type INFO -message "[$($vmToMove.name)] Already moved to $managementPortGroupName. Skipping"
                     }
                 }
@@ -3679,13 +3625,10 @@ Function New-RebuiltVdsConfiguration
             Foreach ($vmHost in $vmHosts) {
                 #Remove Virtual Switch
                 $hostvss = Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name "vSwitch0" -errorAction silentlyContinue
-                If ($hostvss)
-                {
+                If ($hostvss) {
                     LogMessage -type INFO -message "[$($vmhost.name)] Removing vSwitch0"
                     Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name "vSwitch0" | Remove-VirtualSwitch -Confirm:$false | Out-Null
-                }
-                else
-                {
+                } else {
                     LogMessage -type INFO -message "[$($vmhost.name)] vSwitch0 already removed. Skipping"
                 }
 
@@ -3702,9 +3645,7 @@ Function New-RebuiltVdsConfiguration
                         LogMessage -type INFO -message "[$($vmhost.name)] Adding Additional Nic $nic to $($vds.vdsName)"
                         $additionalNic = $vmhost | Get-VMHostNetworkAdapter -Physical -Name $nic
                         Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $additionalNic -confirm:$false
-                    }
-                    else
-                    {
+                    } else {
                         LogMessage -type INFO -message "[$($vmhost.name)] Physical Adapter $nic already in $($vds.vdsName). Skipping"
                     }
                 }
@@ -3715,8 +3656,7 @@ Function New-RebuiltVdsConfiguration
 }
 Export-ModuleMember -Function New-RebuiltVdsConfiguration
 
-Function Backup-ClusterVMOverrides
-{
+Function Backup-ClusterVMOverrides {
     <#
     .SYNOPSIS
     Backs up the VM Overrides for the specified cluster
@@ -3766,7 +3706,7 @@ Function Backup-ClusterVMOverrides
             #APD
             'VmStorageProtectionForAPD' = $vmMonitoringSettings.VmComponentProtectionSettings.VmStorageProtectionForAPD
             'VmTerminateDelayForAPDSec' = $vmMonitoringSettings.VmComponentProtectionSettings.VmTerminateDelayForAPDSec
-            'VmReactionOnAPDCleared' = $vmMonitoringSettings.VmComponentProtectionSettings.VmReactionOnAPDCleared
+            'VmReactionOnAPDCleared'    = $vmMonitoringSettings.VmComponentProtectionSettings.VmReactionOnAPDCleared
             #PDL
             'VmStorageProtectionForPDL' = $vmMonitoringSettings.VmComponentProtectionSettings.VmStorageProtectionForPDL
         }
@@ -3776,8 +3716,7 @@ Function Backup-ClusterVMOverrides
 }
 Export-ModuleMember -Function Backup-ClusterVMOverrides
 
-Function Backup-ClusterVMLocations
-{
+Function Backup-ClusterVMLocations {
     <#
     .SYNOPSIS
     Backs up the VM Locations for the specified cluster
@@ -3813,16 +3752,14 @@ Function Backup-ClusterVMLocations
             $allVMs += $vmSettings
         }
         $allVMs | ConvertTo-Json -depth 10 | Out-File "$clusterName-vmLocations.json"
-    }
-    Catch {
+    } Catch {
         catchWriter -object $_
     }
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Backup-ClusterVMLocations
 
-Function Backup-ClusterDRSGroupsAndRules
-{
+Function Backup-ClusterDRSGroupsAndRules {
     <#
     .SYNOPSIS
     Backs up the DRS Groups and Rules for the specified cluster
@@ -3911,16 +3848,14 @@ Function Backup-ClusterDRSGroupsAndRules
 
         }
         $drsBackup | ConvertTo-Json -depth 10 | Out-File "$clusterName-drsConfiguration.json"
-    }
-    Catch {
+    } Catch {
         catchWriter -object $_
     }
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Backup-ClusterDRSGroupsAndRules
 
-Function Backup-ClusterVMTags
-{
+Function Backup-ClusterVMTags {
     <#
     .SYNOPSIS
     Backs up the VM tags for the specified cluster
@@ -3948,23 +3883,21 @@ Function Backup-ClusterVMTags
         Foreach ($vm in $clusterVMTags) {
             $vmSettings = @()
             $vmSettings += [pscustomobject]@{
-                'Tag'         = $vm.Tag.Name
-                'Category'         = $vm.Tag.Category
-                'Entity'           = $vm.Entity.Name
+                'Tag'      = $vm.Tag.Name
+                'Category' = $vm.Tag.Category
+                'Entity'   = $vm.Entity.Name
             }
             $allVMs += $vmSettings
         }
         $allVMs | ConvertTo-Json -depth 10 | Out-File "$clusterName-vmTags.json"
-    }
-    Catch {
+    } Catch {
         catchWriter -object $_
     }
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Backup-ClusterVMTags
 
-Function Restore-ClusterVMOverrides
-{
+Function Restore-ClusterVMOverrides {
     <#
     .SYNOPSIS
     Restores the VM Overrides for the specified cluster
@@ -3991,10 +3924,8 @@ Function Restore-ClusterVMOverrides
     try {
         If (Test-Path -path $jsonFile) {
             $vmOverRideInstances = Get-Content -path $jsonFile | ConvertFrom-Json
-            Foreach ($vmOverRideInstance in $vmOverRideInstances)
-            {
-                If ($vmOverRideInstance.name -notlike "vCLS*")
-                {
+            Foreach ($vmOverRideInstance in $vmOverRideInstances) {
+                If ($vmOverRideInstance.name -notlike "vCLS*") {
                     LogMessage -type INFO -message "[$($vmOverRideInstance.name)] Restoring VM Overide Settings"
                     $dasVmConfigSpecRequired = $false
                     $drsVmConfigSpecRequired = $false
@@ -4002,23 +3933,19 @@ Function Restore-ClusterVMOverrides
                     $dasVmConfigSpecSettings = @("VmMonitoring","ClusterSettings","FailureInterval","MinUpTime","MaxFailures","MaxFailureWindow","VmStorageProtectionForAPD","VmTerminateDelayForAPDSec","VmReactionOnAPDCleared","VmStorageProtectionForPDL","RestartPriority","RestartPriorityTimeout","IsolationResponse")
                     $vmOverRideInstanceOrchestrationSpecSettings = @("readyCondition","PostReadyDelay")
 
-                    Foreach ($dasVmConfigSpecSetting in $dasVmConfigSpecSettings)
-                    {
+                    Foreach ($dasVmConfigSpecSetting in $dasVmConfigSpecSettings) {
                         If ($vmOverRideInstance.$dasVmConfigSpecSetting -ne $null) {$dasVmConfigSpecRequired = $true}
                     }
-                    If (($vmOverRideInstance.DrsAutomationLevel -ne $null) -and ($vmOverRideInstance.DrsAutomationLevel -ne 'AsSpecifiedByCluster'))
-                    {
+                    If (($vmOverRideInstance.DrsAutomationLevel -ne $null) -and ($vmOverRideInstance.DrsAutomationLevel -ne 'AsSpecifiedByCluster')) {
                         $drsVmConfigSpecRequired = $true
                     }
-                    Foreach ($vmOverRideInstanceOrchestrationSpecSetting in $vmOverRideInstanceOrchestrationSpecSettings)
-                    {
+                    Foreach ($vmOverRideInstanceOrchestrationSpecSetting in $vmOverRideInstanceOrchestrationSpecSettings) {
                         If ($vmOverRideInstance.$vmOverRideInstanceOrchestrationSpecSetting -ne $null) {$vmOverRideInstanceOrchestrationSpecRequired = $true}
                     }
                     $cluster = Get-Cluster -Name $clusterName
                     $vm = Get-VM $vmOverRideInstance.name
                     $spec = New-Object VMware.Vim.ClusterConfigSpecEx
-                    If ($dasVmConfigSpecRequired)
-                    {
+                    If ($dasVmConfigSpecRequired) {
                         $spec.dasVmConfigSpec = New-Object VMware.Vim.ClusterDasVmConfigSpec[] (1)
                         $spec.dasVmConfigSpec[0] = New-Object VMware.Vim.ClusterDasVmConfigSpec
                         $spec.dasVmConfigSpec[0].operation = "add"
@@ -4028,8 +3955,7 @@ Function Restore-ClusterVMOverrides
                         $spec.dasVmConfigSpec[0].info.key.value = $vm.ExtensionData.MoRef.Value
                         $spec.dasVmConfigSpec[0].info.dasSettings = New-Object VMware.Vim.ClusterDasVmSettings
                     }
-                    If ($drsVmConfigSpecRequired)
-                    {
+                    If ($drsVmConfigSpecRequired) {
                         $spec.drsVmConfigSpec = New-Object VMware.Vim.ClusterDrsVmConfigSpec[] (1)
                         $spec.drsVmConfigSpec[0] = New-Object VMware.Vim.ClusterDrsVmConfigSpec
                         $spec.drsVmConfigSpec[0].operation = "add"
@@ -4038,8 +3964,7 @@ Function Restore-ClusterVMOverrides
                         $spec.drsVmConfigSpec[0].info.key.type = "VirtualMachine"
                         $spec.drsVmConfigSpec[0].info.key.value = $vm.ExtensionData.MoRef.Value
                     }
-                    If ($vmOverRideInstanceOrchestrationSpecRequired)
-                    {
+                    If ($vmOverRideInstanceOrchestrationSpecRequired) {
                         $spec.vmOrchestrationSpec = New-Object VMware.Vim.ClusterVmOrchestrationSpec[] (1)
                         $spec.vmOrchestrationSpec[0] = New-Object VMware.Vim.ClusterVmOrchestrationSpec
                         $spec.vmOrchestrationSpec[0].operation = "add"
@@ -4052,54 +3977,44 @@ Function Restore-ClusterVMOverrides
                     #Set VM Monitoring settings [Done]
                     $vmOverRideInstanceMonitoringSettings = @("VmMonitoring","ClusterSettings","FailureInterval","MinUpTime","MaxFailures","MaxFailureWindow")
                     $vmOverRideInstanceMonitoringRequired = $false
-                    Foreach ($vmOverRideInstanceMonitoringSetting in $vmOverRideInstanceMonitoringSettings)
-                    {
+                    Foreach ($vmOverRideInstanceMonitoringSetting in $vmOverRideInstanceMonitoringSettings) {
                         If ($vmOverRideInstance.$vmOverRideInstanceMonitoringSetting -ne $null) {$vmOverRideInstanceMonitoringRequired = $true}
                     }
-                    If ($vmOverRideInstanceMonitoringRequired)
-                    {
+                    If ($vmOverRideInstanceMonitoringRequired) {
                         $spec.dasVmConfigSpec[0].info.dasSettings.vmToolsMonitoringSettings = New-Object VMware.Vim.ClusterVmToolsMonitoringSettings
-                        Foreach ($vmOverRideInstanceMonitoringSetting in $vmOverRideInstanceMonitoringSettings)
-                        {
+                        Foreach ($vmOverRideInstanceMonitoringSetting in $vmOverRideInstanceMonitoringSettings) {
                             If ($vmOverRideInstance.$vmOverRideInstanceMonitoringSetting -ne $null) { $spec.dasVmConfigSpec[0].info.dasSettings.vmToolsMonitoringSettings.$vmOverRideInstanceMonitoringSetting = $vmOverRideInstance.$vmOverRideInstanceMonitoringSetting }
                         }
                     }
 
                     $vmOverRideInstanceComponentProtectionSettings = @("VmStorageProtectionForAPD","VmTerminateDelayForAPDSec","VmReactionOnAPDCleared","VmStorageProtectionForPDL")
                     $vmOverRideInstanceComponentProtectionRequired = $false
-                    Foreach ($vmOverRideInstanceComponentProtectionSetting in $vmOverRideInstanceComponentProtectionSettings)
-                    {
+                    Foreach ($vmOverRideInstanceComponentProtectionSetting in $vmOverRideInstanceComponentProtectionSettings) {
                         If ($vmOverRideInstance.$vmOverRideInstanceComponentProtectionSetting -ne $null) {$vmOverRideInstanceComponentProtectionRequired = $true}
                     }
-                    If ($vmOverRideInstanceComponentProtectionRequired)
-                    {
+                    If ($vmOverRideInstanceComponentProtectionRequired) {
                         $spec.dasVmConfigSpec[0].info.dasSettings.vmComponentProtectionSettings = New-Object VMware.Vim.ClusterVmComponentProtectionSettings
-                        Foreach ($vmOverRideInstanceComponentProtectionSetting in $vmOverRideInstanceComponentProtectionSettings)
-                        {
+                        Foreach ($vmOverRideInstanceComponentProtectionSetting in $vmOverRideInstanceComponentProtectionSettings) {
                             If ($vmOverRideInstance.$vmOverRideInstanceComponentProtectionSetting -ne $null) { $spec.dasVmConfigSpec[0].info.dasSettings.vmComponentProtectionSettings.$vmOverRideInstanceComponentProtectionSetting = $vmOverRideInstance.$vmOverRideInstanceComponentProtectionSetting }
                         }
                     }
 
                     #Set DRS Level [Done]
-                    If (($vmOverRideInstance.DrsAutomationLevel -ne "AsSpecifiedByCluster") -AND ($vmOverRideInstance.DrsAutomationLevel -ne $null))
-                    {
+                    If (($vmOverRideInstance.DrsAutomationLevel -ne "AsSpecifiedByCluster") -AND ($vmOverRideInstance.DrsAutomationLevel -ne $null)) {
                         $spec.drsVmConfigSpec[0].info.Behavior = $vmOverRideInstance.DrsAutomationLevel #$vmOverRideInstance.DrsAutomationLevel AsSpecifiedByCluster
                         $spec.drsVmConfigSpec[0].info.enabled = $true
                     }
 
                     #Set vSphere HA Settings [Done]
-                    If ($vmOverRideInstanceOrchestrationSpecRequired)
-                    {
+                    If ($vmOverRideInstanceOrchestrationSpecRequired) {
                         $spec.vmOrchestrationSpec[0].info.vmReadiness = New-Object VMware.Vim.ClusterVmReadiness
-                        Foreach ($vmOverRideInstanceOrchestrationSpecSetting in $vmOverRideInstanceOrchestrationSpecSettings)
-                        {
+                        Foreach ($vmOverRideInstanceOrchestrationSpecSetting in $vmOverRideInstanceOrchestrationSpecSettings) {
                             If ($vmOverRideInstance.$vmOverRideInstanceOrchestrationSpecSetting -ne $null) { $spec.vmOrchestrationSpec[0].info.vmReadiness.$vmOverRideInstanceOrchestrationSpecSetting = $vmOverRideInstance.$vmOverRideInstanceOrchestrationSpecSetting }
                         }
 
                     }
                     $haDasVmConfigSpecSettings = @("RestartPriority","RestartPriorityTimeout","IsolationResponse")
-                    Foreach ($haDasVmConfigSpecSetting in $haDasVmConfigSpecSettings)
-                    {
+                    Foreach ($haDasVmConfigSpecSetting in $haDasVmConfigSpecSettings) {
                         If ($vmOverRideInstance.$haDasVmConfigSpecSetting -ne $null) { $spec.dasVmConfigSpec[0].info.dasSettings.$haDasVmConfigSpecSetting = $vmOverRideInstance.$haDasVmConfigSpecSetting }
                     }
 
@@ -4107,20 +4022,17 @@ Function Restore-ClusterVMOverrides
                     $cluster.ExtensionData.ReconfigureComputeResource($spec,$True)
                 }
             }
-        }
-        else {
+        } else {
             Write-Error "$jsonfile not found"
         }
-    }
-    catch {
+    } catch {
         catchWriter -object $_
     }
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Restore-ClusterVMOverrides
 
-Function Restore-ClusterVMLocations
-{
+Function Restore-ClusterVMLocations {
     <#
     .SYNOPSIS
     Restores the VM Locations for the specified cluster
@@ -4159,27 +4071,23 @@ Function Restore-ClusterVMLocations
                             LogMessage -type INFO -message "[$($vmLocation.name)] Setting ResourcePool to $($vmLocation.resourcePool)"
                             Move-VM -VM $vm -Destination $vmLocation.resourcePool -confirm:$false
                         }
-                    }
-                    else {
+                    } else {
                         Write-Error "[$(Get-VM -name $vmLocation.name)] Not found. Check that it has been restored"
                     }
                 }
             }
-        }
-        else {
+        } else {
             $jumpboxName = hostname
             Write-Error "[$jumpboxName] $jsonfile not found"
         }
-    }
-    catch {
+    } catch {
         catchWriter -object $_
     }
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Restore-ClusterVMLocations
 
-Function Restore-ClusterDRSGroupsAndRules
-{
+Function Restore-ClusterDRSGroupsAndRules {
     <#
     .SYNOPSIS
     Restores the DRS Groups and Rules for the specified cluster
@@ -4214,34 +4122,29 @@ Function Restore-ClusterDRSGroupsAndRules
                             LogMessage -type INFO -message "[$member] Adding to VMHostGroup $($vmDrsGroup.name)"
                             Set-DrsClusterGroup -DrsClusterGroup $vmDrsGroup.name -Add -VMHost $member -confirm:$false | Out-Null
                         }
-                    }
-                    elseif ($vmDrsGroup.type -eq "VMGroup") {
+                    } elseif ($vmDrsGroup.type -eq "VMGroup") {
                         Foreach ($member in $vmDrsGroup.members) {
                             LogMessage -type INFO -message "[$member] Adding to VMGroup $($vmDrsGroup.name)"
                             Set-DrsClusterGroup -DrsClusterGroup $vmDrsGroup.name -Add -VM $member -confirm:$false | Out-Null
                         }
                     }
-                }
-                else {
+                } else {
                     If ($vmDrsGroup.type -eq "VMHostGroup") {
                         LogMessage -type INFO -message "[$($vmDrsGroup.name)] Creating VMHostGroup with Members $($vmDrsGroup.members)"
                         New-DrsClusterGroup -Name $vmDrsGroup.name -VMHost $vmDrsGroup.members -Cluster $clusterName | Out-Null
-                    }
-                    elseif ($vmDrsGroup.type -eq "VMGroup") {
+                    } elseif ($vmDrsGroup.type -eq "VMGroup") {
                         LogMessage -type INFO -message "[$($vmDrsGroup.name)] Creating VMGroup with Members $($vmDrsGroup.members)"
                         New-DrsClusterGroup -Name $vmDrsGroup.name -VM $vmDrsGroup.members -Cluster $clusterName | Out-Null
                     }
                 }
             }
             Foreach ($vmAffinityRule in $drsRulesAndGroups.vmAffinityRules) {
-                If ($vmAffinityRule.members.count -gt 1)
-                {
+                If ($vmAffinityRule.members.count -gt 1) {
                     $vmRule = Get-DrsRule -name $vmAffinityRule.name -cluster $clusterName -errorAction SilentlyContinue
                     If ($vmRule) {
                         LogMessage -type INFO -message "[$($vmAffinityRule.name)] Setting VM Rule with Members $($vmAffinityRule.members)"
                         Set-DrsRule -rule $vmRule -VM $vmAffinityRule.members -Enabled $true -confirm:$false | Out-Null
-                    }
-                    else {
+                    } else {
                         LogMessage -type INFO -message "[$($vmAffinityRule.name)] Creating VM Rule with Members $($vmAffinityRule.members)"
                         New-DrsRule -cluster $clusterName -name $vmAffinityRule.name -VM $vmAffinityRule.members -keepTogether $vmAffinityRule.keepTogether -Enabled $true | Out-Null
                     }
@@ -4252,8 +4155,7 @@ Function Restore-ClusterDRSGroupsAndRules
                 If ($hostRule) {
                     LogMessage -type INFO -message "[$($vmHostAffinityRule.name)] Setting VMHost Rule with VM Group $($vmHostAffinityRule.vmGroupName) and Host Group $($vmHostAffinityRule.hostGroupName)"
                     Set-DrsVMHostRule -rule $hostRule -VMGroup $vmHostAffinityRule.vmGroupName -VMHostGroup $vmHostAffinityRule.hostGroupName -Type $vmHostAffinityRule.variant -confirm:$false | Out-Null
-                }
-                else {
+                } else {
                     LogMessage -type INFO -message "[$($vmHostAffinityRule.name)] Creating VMHost Rule with VM Group $($vmHostAffinityRule.vmGroupName) and Host Group $($vmHostAffinityRule.hostGroupName)"
                     New-DrsVMHostRule -Name $vmHostAffinityRule.name -Cluster $clusterName -VMGroup $vmHostAffinityRule.vmGroupName -VMHostGroup $vmHostAffinityRule.hostGroupName -Type $vmHostAffinityRule.variant | Out-Null
                 }
@@ -4277,21 +4179,18 @@ Function Restore-ClusterDRSGroupsAndRules
                     $cluster.ExtensionData.ReconfigureComputeResource($spec, $True)
                 }
             }
-        }
-        else {
+        } else {
             $jumpboxName = hostname
             Write-Error "[$jumpboxName] $jsonfile not found"
         }
-    }
-    catch {
+    } catch {
         catchWriter -object $_
     }
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Restore-ClusterDRSGroupsAndRules
 
-Function Restore-ClusterVMTags
-{
+Function Restore-ClusterVMTags {
     <#
     .SYNOPSIS
     Restores the VM tags for the specified cluster
@@ -4322,21 +4221,18 @@ Function Restore-ClusterVMTags
                 If ($vmTag.Entity -notlike "vCLS*") {
                     $vm = Get-VM -name $vmTag.Entity -errorAction SilentlyContinue
                     If ($vm) {
-                            LogMessage -type INFO -message "[$($vmTag.Entity)] Setting VM Tag to $($vmTag.Tag)"
-                            New-TagAssignment -Entity $vm -Tag $vmTag.Tag -confirm:$false | Out-Null
-                        }
-                    else {
+                        LogMessage -type INFO -message "[$($vmTag.Entity)] Setting VM Tag to $($vmTag.Tag)"
+                        New-TagAssignment -Entity $vm -Tag $vmTag.Tag -confirm:$false | Out-Null
+                    } else {
                         Write-Error "[$(Get-VM -name $vmTag.Entity)] Not found. Check that it has been restored"
                     }
                 }
             }
-        }
-        else {
+        } else {
             $jumpboxName = hostname
             Write-Error "[$jumpboxName] $jsonfile not found"
         }
-    }
-    catch {
+    } catch {
         catchWriter -object $_
     }
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
@@ -4347,8 +4243,7 @@ Export-ModuleMember -Function Restore-ClusterVMTags
 
 #Region NSXT Functions
 
-Function Invoke-NSXManagerRestore
-{
+Function Invoke-NSXManagerRestore {
     <#
     .SYNOPSIS
     Performs the restore of an NSX Manager from a user chosen backup presented from a list available on supplied SFTP server
@@ -4397,26 +4292,24 @@ Function Invoke-NSXManagerRestore
     $nsxManagersDisplayObject=@()
     $nsxManagersIndex = 1
     $nsxManagersDisplayObject += [pscustomobject]@{
-            'ID'    = "ID"
-            'Manager' = "NSX Manager"
-        }
+        'ID'      = "ID"
+        'Manager' = "NSX Manager"
+    }
     $nsxManagersDisplayObject += [pscustomobject]@{
-            'ID'    = "--"
-            'Manager' = "------------------"
-        }
-    Foreach ($nsxNode in $nsxNodes)
-    {
+        'ID'      = "--"
+        'Manager' = "------------------"
+    }
+    Foreach ($nsxNode in $nsxNodes) {
         $nsxManagersDisplayObject += [pscustomobject]@{
-            'ID'    = $nsxManagersIndex
+            'ID'      = $nsxManagersIndex
             'Manager' = $nsxNode.vmName
         }
         $nsxManagersIndex++
     }
-    Write-Host ""; $nsxManagersDisplayObject | format-table -Property @{Expression=" "},id,Manager -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
-    Do
-    {
-    Write-Host ""; Write-Host " Enter the ID of the Manager you wish to restore, or C to Cancel: " -ForegroundColor Yellow -nonewline
-    $nsxManagerSelection = Read-Host
+    Write-Host ""; $nsxManagersDisplayObject | format-table -Property @{Expression =" "},id,Manager -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
+    Do {
+        Write-Host ""; Write-Host " Enter the ID of the Manager you wish to restore, or C to Cancel: " -ForegroundColor Yellow -nonewline
+        $nsxManagerSelection = Read-Host
     } Until (($nsxManagerSelection -in $nsxManagersDisplayObject.ID) -OR ($nsxManagerSelection -eq "c"))
     If ($nsxManagerSelection -eq "c") {Break}
     $selectedNsxManager = $nsxNodes | Where-Object {$_.vmName -eq ($nsxManagersDisplayObject | Where-Object {$_.id -eq $nsxManagerSelection}).manager }
@@ -4437,14 +4330,10 @@ Function Invoke-NSXManagerRestore
     LogMessage -type WAIT -message "[$nsxManagerFQDN] Waiting for services to be started"
     $headers = VCFIRCreateHeader -username $nsxManagerAdminUsername -password $nsxManagerAdminPassword
     $uri = "https://$nsxManagerFQDN/api/v1/cluster/backups/config"
-    Do
-    {
-        Try
-        {
+    Do {
+        Try {
             $existingBackup = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
-        }
-        catch
-        {
+        } catch {
             Sleep 30
         }
     } Until ($existingBackup)
@@ -4488,35 +4377,33 @@ Function Invoke-NSXManagerRestore
     $relevantbackupsDisplayObject=@()
     $relevantbackupIndex = 1
     $relevantbackupsDisplayObject += [pscustomobject]@{
-        'ID'    = "ID"
+        'ID'        = "ID"
         'ipAddress' = "IP Address"
         'timeStamp' = "TimeStamp"
         'humanTime' = "Backup TimeStamp"
-        'nodeID' = "Node ID"
+        'nodeID'    = "Node ID"
     }
     $relevantbackupsDisplayObject += [pscustomobject]@{
-        'ID'    = "--"
+        'ID'        = "--"
         'ipAddress' = "---------------"
         'timeStamp' = "------------------"
         'humanTime' = "-------------------"
-        'nodeID' = "------------------------------------"
+        'nodeID'    = "------------------------------------"
     }
-    Foreach ($relevantBackup in $relevantBackups)
-    {
-    $relevantbackupsDisplayObject += [pscustomobject]@{
-        'ID'    = $relevantbackupIndex
-        'ipAddress' = $relevantBackup.ip_address
-        'timeStamp' = $relevantBackup.timestamp
-        'humanTime' = (Get-Date -Date "01-01-1970") + ([System.TimeSpan]::FromSeconds(($relevantBackup.timestamp -replace ".{3}$")))
-        'nodeID' = $relevantBackup.node_id
+    Foreach ($relevantBackup in $relevantBackups) {
+        $relevantbackupsDisplayObject += [pscustomobject]@{
+            'ID'        = $relevantbackupIndex
+            'ipAddress' = $relevantBackup.ip_address
+            'timeStamp' = $relevantBackup.timestamp
+            'humanTime' = (Get-Date -Date "01-01-1970") + ([System.TimeSpan]::FromSeconds(($relevantBackup.timestamp -replace ".{3}$")))
+            'nodeID'    = $relevantBackup.node_id
+        }
+        $relevantbackupIndex++
     }
-    $relevantbackupIndex++
-    }
-    Write-Host ""; $relevantbackupsDisplayObject | format-table -Property @{Expression=" "},id,ipAddress,nodeId,humanTime -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
-    Do
-    {
-    Write-Host ""; Write-Host " Enter the ID of the Backup you wish to restore, or C to Cancel: " -ForegroundColor Yellow -nonewline
-    $backupSelection = Read-Host
+    Write-Host ""; $relevantbackupsDisplayObject | format-table -Property @{Expression =" "},id,ipAddress,nodeId,humanTime -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
+    Do {
+        Write-Host ""; Write-Host " Enter the ID of the Backup you wish to restore, or C to Cancel: " -ForegroundColor Yellow -nonewline
+        $backupSelection = Read-Host
     } Until (($backupSelection -in $relevantbackupsDisplayObject.ID) -OR ($backupSelection -eq "c"))
     If ($backupSelection -eq "c") {Break}
 
@@ -4532,13 +4419,11 @@ Function Invoke-NSXManagerRestore
     #QueryRestore
     LogMessage -type INFO -message "[$nsxManagerFQDN] Polling restore status every 60 seconds"
     $queryUri = "https://$nsxManagerFQDN/api/v1/cluster/restore/status"
-    Do
-    {
+    Do {
         Sleep 60
         Try {
             $restoreStatus = (Invoke-WebRequest -Method GET -URI $queryUri -ContentType application/json -headers $headers).content | ConvertFrom-Json
-            If ($restoreStatus.status.value -eq "SUSPENDED_FOR_USER_ACTION")
-            {
+            If ($restoreStatus.status.value -eq "SUSPENDED_FOR_USER_ACTION") {
                 LogMessage -type INFO -message "[$nsxManagerFQDN] Resuming restore at step $($restoreStatus.step.step_number): $($restoreStatus.step.value)"
                 $instructionIds = $restoreStatus.instructions.id
                 $body= "{
@@ -4552,21 +4437,17 @@ Function Invoke-NSXManagerRestore
                 }"
                 $resumeUri = "https://$nsxManagerFQDN/api/v1/cluster/restore?action=advance"
                 $resumeRestore = (Invoke-WebRequest -Method POST -URI $resumeUri -ContentType application/json -body $body -headers $headers).content | ConvertFrom-Json
-            }
-            else
-            {
+            } else {
                 LogMessage -type INFO -message "[$nsxManagerFQDN] Restore is currently $($restoreStatus.status.value)"
             }
-        }
-        Catch {}
+        } Catch {}
     } Until ($restoreStatus.status.value -eq "SUCCESS")
     LogMessage -type INFO -message "[$nsxManagerFQDN] Restore finished with status: $($restoreStatus.status.value)"
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Invoke-NSXManagerRestore
 
-Function Invoke-NSXEdgeClusterRecovery
-{
+Function Invoke-NSXEdgeClusterRecovery {
     <#
     .SYNOPSIS
     Redeploys the NSX Egdes from the provided vSphere Cluster
@@ -4626,23 +4507,21 @@ Function Invoke-NSXEdgeClusterRecovery
 
     $edgeLocations = @()
     #$resourcePoolLocations = @()
-    Foreach ($resourcePool in $resourcePools)
-    {
+    Foreach ($resourcePool in $resourcePools) {
         $edgeLocations += [PSCustomObject]@{
-            'Type' = 'ResourcePool'
-            'Name' = $resourcePool.Name
+            'Type'  = 'ResourcePool'
+            'Name'  = $resourcePool.Name
             'moRef' = $resourcePool.extensionData.moref.value
         }
         #$resourcePoolLocations += $resourcePool.extensionData.moref.value
     }
     $edgeLocations += [PSCustomObject]@{
-        'Type' = 'Cluster'
-        'Name' = $cluster.Name
+        'Type'  = 'Cluster'
+        'Name'  = $cluster.Name
         'moRef' = $cluster.extensionData.moref.value
     }
 
-    Foreach ($edgeLocation in $edgeLocations)
-    {
+    Foreach ($edgeLocation in $edgeLocations) {
         #Get TransportNodes
         LogMessage -type INFO -message "[$nsxManagerFqdn] Looking for Edges to recover in $($edgeLocation.type): $($edgeLocation.name)"
         $headers = VCFIRCreateHeader -username $nsxManagerAdmin -password $nsxManagerAdminPassword
@@ -4650,27 +4529,22 @@ Function Invoke-NSXEdgeClusterRecovery
         $transportNodeContents = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
         #If ($edgeLocation.type -eq 'ResourcePool')
         #{
-            $allEdgeTransportNodes = ($transportNodeContents.results | Where-Object { ($_.node_deployment_info.resource_type -eq "EdgeNode") -and ($_.node_deployment_info.deployment_config.vm_deployment_config.compute_id -eq $edgeLocation.MoRef)}) | Sort-Object -Property display_name
+        $allEdgeTransportNodes = ($transportNodeContents.results | Where-Object { ($_.node_deployment_info.resource_type -eq "EdgeNode") -and ($_.node_deployment_info.deployment_config.vm_deployment_config.compute_id -eq $edgeLocation.MoRef)}) | Sort-Object -Property display_name
         #}
         #else
         #{
-            #$allEdgeTransportNodes = ($transportNodeContents.results | Where-Object { ($_.node_deployment_info.resource_type -eq "EdgeNode") -and ($_.node_deployment_info.deployment_config.vm_deployment_config.compute_id -notin $resourcePoolLocations)}) | Sort-Object -Property display_name
+        #$allEdgeTransportNodes = ($transportNodeContents.results | Where-Object { ($_.node_deployment_info.resource_type -eq "EdgeNode") -and ($_.node_deployment_info.deployment_config.vm_deployment_config.compute_id -notin $resourcePoolLocations)}) | Sort-Object -Property display_name
         #}
 
-        If ($allEdgeTransportNodes)
-        {
+        If ($allEdgeTransportNodes) {
             LogMessage -type INFO -message "[$nsxManagerFqdn] Found Edges to recover: $($allEdgeTransportNodes.display_name -join(","))"
-        }
-        else
-        {
+        } else {
             LogMessage -type INFO -message "[$nsxManagerFqdn] No Edges found needing recovery"
         }
         #Redeploy Failed Edges
-        Foreach ($edge in $allEdgeTransportNodes)
-        {
+        Foreach ($edge in $allEdgeTransportNodes) {
             $edgeVmPresent = get-vm -name $edge.display_name -ErrorAction SilentlyContinue
-            If (!$edgeVmPresent)
-            {
+            If (!$edgeVmPresent) {
                 #Getting Existing Placement Details
                 LogMessage -type INFO -message "[$($edge.display_name)] Getting Placement References"
                 $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($edge.node_id)"
@@ -4688,19 +4562,15 @@ Function Invoke-NSXEdgeClusterRecovery
                 $nestedNetworkPG = Get-VDPortGroup -name $portgroup -ErrorAction silentlyContinue | Where-Object {$_.VDSwitch -match $clusterVdsName}
                 $datastore = ($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object {$_.name -eq $clusterName}).primaryDatastoreName
 
-                If ($edgeLocation.type -eq "ResourcePool")
-                {
+                If ($edgeLocation.type -eq "ResourcePool") {
                     New-VM -VMhost (get-cluster -name $clusterName | Get-VMHost | Get-Random ) -Name $edge.display_name -Datastore $datastore -resourcePool $edgeLocation.name -DiskGB 200 -DiskStorageFormat Thin -MemoryGB $MemoryGB -NumCpu $NumCpu -portgroup $portgroup -GuestID "ubuntu64Guest" -Confirm:$false | Out-Null
-                }
-                else
-                {
+                } else {
                     New-VM -VMhost (get-cluster -name $clusterName | Get-VMHost | Get-Random ) -Name $edge.display_name -Datastore $datastore -DiskGB 200 -DiskStorageFormat Thin -MemoryGB $MemoryGB -NumCpu $NumCpu -portgroup $portgroup -GuestID "ubuntu64Guest" -Confirm:$false | Out-Null
                 }
 
                 Get-VM -Name $edge.display_name | Get-VMResourceConfiguration | Set-VMResourceConfiguration -MemReservationGB $memoryGB | Out-Null
                 Get-VM -Name $edge.display_name | Get-VMResourceConfiguration | Set-VMResourceConfiguration -CpuSharesLevel $cpuShareLevel | Out-Null
-                Foreach ($attachedNetwork in $attachedNetworks)
-                {
+                Foreach ($attachedNetwork in $attachedNetworks) {
                     $attachedNetworkPg = Get-VDPortGroup -id ("DistributedVirtualPortgroup-" + $attachedNetwork)
                     Get-VM -Name $edge.display_name | New-NetworkAdapter -portGroup $attachedNetworkPg -StartConnected -Type Vmxnet3 -Confirm:$false | Out-Null
                 }
@@ -4725,19 +4595,15 @@ Function Invoke-NSXEdgeClusterRecovery
                 LogMessage -type INFO -message "[$($edge.display_name)] Getting Edge State"
                 $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($edge.node_id)/state"
                 $edgeState = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
-                If ($edgeState.node_deployment_state.state -ne "success")
-                {
+                If ($edgeState.node_deployment_state.state -ne "success") {
                     LogMessage -type INFO -message "[$($edge.display_name)] State is $($edgeState.node_deployment_state.state)"
-                    If ($edgeState.node_deployment_state.state -in "MPA_DISCONNECTED","VM_PLACEMENT_REFRESH_FAILED","NODE_READY")
-                    {
+                    If ($edgeState.node_deployment_state.state -in "MPA_DISCONNECTED","VM_PLACEMENT_REFRESH_FAILED","NODE_READY") {
                         LogMessage -type INFO -message "[$($edge.display_name)] Redeploying Edge"
                         $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($edge.node_id)"
                         $edgeResponse = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content
                         $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($edge.node_id)?action=redeploy"
                         $edgeRedeploy = Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -body $edgeResponse -headers $headers
-                    }
-                    else
-                    {
+                    } else {
                         LogMessage -type INFO -message "[$($edge.display_name)] Not in a suitable state for redeployment. Please review and retry"
                     }
                 }
@@ -4748,8 +4614,7 @@ Function Invoke-NSXEdgeClusterRecovery
 }
 Export-ModuleMember -Function Invoke-NSXEdgeClusterRecovery
 
-Function Add-AdditionalNSXManagers
-{
+Function Add-AdditionalNSXManagers {
     <#
     .SYNOPSIS
     Adds second and third NSX managers to a cluster after the restore of the first NSX Manager
@@ -4782,26 +4647,24 @@ Function Add-AdditionalNSXManagers
     $nsxManagersDisplayObject=@()
     $nsxManagersIndex = 1
     $nsxManagersDisplayObject += [pscustomobject]@{
-            'ID'    = "ID"
-            'Manager' = "NSX Manager"
-        }
+        'ID'      = "ID"
+        'Manager' = "NSX Manager"
+    }
     $nsxManagersDisplayObject += [pscustomobject]@{
-            'ID'    = "--"
-            'Manager' = "------------------"
-        }
-    Foreach ($nsxNode in $nsxNodes)
-    {
+        'ID'      = "--"
+        'Manager' = "------------------"
+    }
+    Foreach ($nsxNode in $nsxNodes) {
         $nsxManagersDisplayObject += [pscustomobject]@{
-            'ID'    = $nsxManagersIndex
+            'ID'      = $nsxManagersIndex
             'Manager' = $nsxNode.vmName
         }
         $nsxManagersIndex++
     }
-    Write-Host ""; $nsxManagersDisplayObject | format-table -Property @{Expression=" "},id,Manager -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
-    Do
-    {
+    Write-Host ""; $nsxManagersDisplayObject | format-table -Property @{Expression =" "},id,Manager -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
+    Do {
         Write-Host ""; Write-Host " Enter the ID of the First NSX Manager (i.e. the one you peformed the restore on), or C to Cancel: " -ForegroundColor Yellow -nonewline
-    $nsxManagerSelection = Read-Host
+        $nsxManagerSelection = Read-Host
     } Until (($nsxManagerSelection -in $nsxManagersDisplayObject.ID) -OR ($nsxManagerSelection -eq "c"))
     If ($nsxManagerSelection -eq "c") {Break}
     $selectedNsxManager = $nsxNodes | Where-Object {$_.vmName -eq ($nsxManagersDisplayObject | Where-Object {$_.id -eq $nsxManagerSelection}).manager }
@@ -4819,8 +4682,7 @@ Function Add-AdditionalNSXManagers
     $uri = "https://$nsxManagerFqdn/api/v1/node"
     $nsxManagerVersion = [INT](((((Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json).product_version).replace(".","")).substring(0,3))
 
-    If ($nsxManagerVersion)
-    {
+    If ($nsxManagerVersion) {
         #Get NSX Nodes
         LogMessage -type INFO -message "[$nsxManagerFQDN] Getting Cluster Node Details"
         $uri = "https://$nsxManagerFQDN/api/v1/cluster/"
@@ -4842,8 +4704,7 @@ Function Add-AdditionalNSXManagers
         $mycreds = New-Object System.Management.Automation.PSCredential ($nsxManagerAdminUsername, $SecurePassword)
         $inmem = New-SSHMemoryKnownHost
         New-SSHTrustedHost -KnownHostStore $inmem -HostName $nsxManagerFQDN -FingerPrint ((Get-SSHHostKey -ComputerName $nsxManagerFQDN).fingerprint) | Out-Null
-        Do
-        {
+        Do {
             $sshSession = New-SSHSession -computername $nsxManagerFQDN -Credential $mycreds -KnownHost $inmem
         } Until ($sshSession)
         $stream = New-SSHShellStream -SSHSession $sshSession
@@ -4897,8 +4758,7 @@ Function Add-AdditionalNSXManagers
         #Close SSH Session
         Remove-SSHSession -SSHSession $sshSession | Out-Null
 
-        Foreach ($otherNsxManager in $otherNsxManagers)
-        {
+        Foreach ($otherNsxManager in $otherNsxManagers) {
             $nsxManagerFQDN = $otherNsxManager.hostname
 
             #Create Headers
@@ -4913,8 +4773,7 @@ Function Add-AdditionalNSXManagers
             $mycreds = New-Object System.Management.Automation.PSCredential ($nsxManagerAdminUsername, $SecurePassword)
             $inmem = New-SSHMemoryKnownHost
             New-SSHTrustedHost -KnownHostStore $inmem -HostName $nsxManagerFQDN -FingerPrint ((Get-SSHHostKey -ComputerName $nsxManagerFQDN).fingerprint) | Out-Null
-            Do
-            {
+            Do {
                 $sshSession = New-SSHSession -computername $nsxManagerFQDN -Credential $mycreds -KnownHost $inmem
             } Until ($sshSession)
 
@@ -4927,14 +4786,12 @@ Function Add-AdditionalNSXManagers
             $stream.writeline("yes")
             Start-Sleep 2
             $stream.writeline("$($nsxManagerAdminPassword)")
-            Do
-            {
+            Do {
                 Start-Sleep 10
                 $response = $stream.Read()
 
             } Until ($response -like "*Join operation successful*")
-            Do
-            {
+            Do {
                 Start-Sleep 10
                 $stream.writeline("get cluster status")
                 Start-Sleep 5
@@ -4970,9 +4827,7 @@ Function Add-AdditionalNSXManagers
             }
             #>
         }
-    }
-    else
-    {
+    } else {
         LogMessage -type ERROR -message "[$jumpboxName] Unable to determine NSX Manager Version. Check that it was successfully restored."
     }
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
@@ -4981,8 +4836,7 @@ Export-ModuleMember -Function Add-AdditionalNSXManagers
 #EndRegion NSXT Functions
 
 #Region Marked for Deprecation
-Function Resolve-PhysicalHostTransportNodes
-{
+Function Resolve-PhysicalHostTransportNodes {
     <#
     .SYNOPSIS
     Resolves the state of ESXi Transport Nodes in a restored NSX Manager when the ESXi hosts have been rebuilt
@@ -5034,10 +4888,8 @@ Function Resolve-PhysicalHostTransportNodes
     $uri = "https://$nsxManagerFqdn/api/v1/node"
     $nsxManagerVersion = [INT](((((Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json).product_version).replace(".","")).substring(0,3))
 
-    If ($nsxManagerVersion)
-    {
-        If ($nsxManagerVersion -lt "412")
-        {
+    If ($nsxManagerVersion) {
+        If ($nsxManagerVersion -lt "412") {
             $vCenterConnection = Connect-VIServer -server $vCenterFQDN -username $vCenterAdmin -password $vCenterAdminPassword
             LogMessage -type INFO -message "[$clusterName] Getting Hosts"
             $clusterHosts = (Get-Cluster -name $clusterName | Get-VMHost).name
@@ -5061,31 +4913,25 @@ Function Resolve-PhysicalHostTransportNodes
             $hostIDs = ((Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json).results.node_id
          #>
             #Resolve Hosts
-            Foreach ($hostID in $hostIDs)
-            {
+            Foreach ($hostID in $hostIDs) {
                 $body = "{`"id`":5726703,`"method`":`"resolveError`",`"params`":[{`"errors`":[{`"user_metadata`":{`"user_input_list`":[]},`"error_id`":26080,`"entity_id`":`"$hostID`"}]}]}"
                 $uri = "https://$nsxManagerFqdn/nsxapi/rpc/call/ErrorResolverFacade"
                 LogMessage -type INFO -message "[$nsxManagerFqdn] Resolving NSX Installation on $(($allHostTransportNodes | Where-Object {$_.id -eq $hostID}).display_name)"
                 #LogMessage -type INFO -message "[$nsxManagerFqdn] Resolving NSX Installation on $hostID"
                 $response = Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -headers $headers -body $body
             }
-        }
-        else
-        {
+        } else {
             LogMessage -type NOTE -message "[$jumpboxName] This cmdlet is not required with NSX Manager version 4.1.2 and later"
         }
 
-    }
-    else
-    {
+    } else {
         LogMessage -type ERROR -message "[$jumpboxName] Unable to determine NSX Manager Version. Check that it was successfully restored."
     }
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 #Export-ModuleMember -Function Resolve-PhysicalHostTransportNodes
 
-Function Move-ClusterVMsToFirstHost
-{
+Function Move-ClusterVMsToFirstHost {
     <#
     .SYNOPSIS
     Moves all VMs in a cluster to a single ESXi host
@@ -5136,8 +4982,7 @@ Function Move-ClusterVMsToFirstHost
 }
 #Export-ModuleMember -Function Move-ClusterVMsToFirstHost
 
-Function Remove-StandardSwitch
-{
+Function Remove-StandardSwitch {
     <#
     .SYNOPSIS
     Removes a temporary standard switch from all hosts in a cluster
