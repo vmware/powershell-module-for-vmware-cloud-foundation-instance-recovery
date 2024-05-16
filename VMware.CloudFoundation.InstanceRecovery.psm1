@@ -2103,11 +2103,11 @@ Function Resolve-PhysicalHostServiceAccounts {
             LogMessage -type INFO -message "[$($hostInstance.name)] VCF Service Account Not Found: Creating"
             New-VMHostAccount -Id $svcAccountName -Password $svcAccountPassword -Description "ESXi User" | Out-Null
             New-VIPermission -Entity (Get-Folder root) -Principal $svcAccountName -Role Admin | Out-Null
-            Disconnect-VIServer $hostInstance.name -confirm:$false | Out-Null
         } else {
             LogMessage -type INFO -message "[$($hostInstance.name)] VCF Service Account Found: Setting Password"
             Set-VMHostAccount -UserAccount $svcAccountName -Password $svcAccountPassword | Out-Null
         }
+		Disconnect-VIServer $hostInstance.name -confirm:$false | Out-Null
     }
 
     Foreach ($hostInstance in $clusterHosts) {
