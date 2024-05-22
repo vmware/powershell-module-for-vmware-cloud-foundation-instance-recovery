@@ -4567,7 +4567,9 @@ Function Invoke-NSXEdgeClusterRecovery {
                 } else {
                     New-VM -VMhost (get-cluster -name $clusterName | Get-VMHost | Get-Random ) -Name $edge.display_name -Datastore $datastore -DiskGB 200 -DiskStorageFormat Thin -MemoryGB $MemoryGB -NumCpu $NumCpu -portgroup $portgroup -GuestID "ubuntu64Guest" -Confirm:$false | Out-Null
                 }
-
+                do {
+                    Start-Sleep 1
+                } until (Get-VM -Name $edge.display_name)
                 Get-VM -Name $edge.display_name | Get-VMResourceConfiguration | Set-VMResourceConfiguration -MemReservationGB $memoryGB | Out-Null
                 Get-VM -Name $edge.display_name | Get-VMResourceConfiguration | Set-VMResourceConfiguration -CpuSharesLevel $cpuShareLevel | Out-Null
                 Foreach ($attachedNetwork in $attachedNetworks) {
