@@ -2926,27 +2926,29 @@ Function Remove-NonResponsiveHosts {
         $clusterComputeCollectionId = ($computeCollections.results | Where-Object { $_.cm_local_id -eq $clusterMoRef }).external_id
         $clusterVlcmManaged = (($computeCollections.results | Where-Object { $_.cm_local_id -eq $clusterMoRef }).origin_properties | Where-Object { $_.key -eq "lifecycleManaged" }).value
         $uri = "https://$nsxManagerFqdn/api/v1/fabric/compute-collections/$($clusterComputeCollectionId)?action=remove_nsx"
-        $detachTNP = Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -headers $headers
 
-        #Wait for Hosts to be Orphaned
-        Foreach ($hostID in $hostIDs) {
-            LogMessage -type WAIT -message "[$nsxManagerFqdn] Waiting for Host $(($allHostTransportNodes | Where-Object {$_.id -eq $hostID}).display_name) to be `'Orphaned`'"
-            Do {
-                $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($hostID)/state"
-                $tnState = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
-            } Until ($tnState.state -eq "orphaned")
-        }
+        If ($nsxManagerVersion -ge "412") {
+            $detachTNP = Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -headers $headers
 
-        #Attempt to Force Delete the Transport Nodes
-        Foreach ($hostID in $hostIDs) {
-            If ($nsxManagerVersion -le "313") {
-                $uri = "https://$nsxManagerFqdn/api/v1/fabric/nodes/$($hostID)?unprepare_host=false"
-            } else {
-                $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($hostID)?force=true&unprepare_host=false"
+            #Wait for Hosts to be Orphaned
+            Foreach ($hostID in $hostIDs) {
+                LogMessage -type WAIT -message "[$nsxManagerFqdn] Waiting for Host $(($allHostTransportNodes | Where-Object {$_.id -eq $hostID}).display_name) to be `'Orphaned`'"
+                Do {
+                    $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($hostID)/state"
+                    $tnState = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
+                } Until ($tnState.state -eq "orphaned")
             }
-            LogMessage -type INFO -message "[$nsxManagerFqdn] Removing Transport Node associated with $(($allHostTransportNodes | Where-Object {$_.id -eq $hostID}).display_name)"
-            $deleteTN = Invoke-WebRequest -Method DELETE -URI $uri -ContentType application/json -headers $headers
         }
+            #Attempt to Force Delete the Transport Nodes
+            Foreach ($hostID in $hostIDs) {
+                If ($nsxManagerVersion -le "313") {
+                    $uri = "https://$nsxManagerFqdn/api/v1/fabric/nodes/$($hostID)?unprepare_host=false"
+                } else {
+                    $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($hostID)?force=true&unprepare_host=false"
+                }
+                LogMessage -type INFO -message "[$nsxManagerFqdn] Removing Transport Node associated with $(($allHostTransportNodes | Where-Object {$_.id -eq $hostID}).display_name)"
+                $deleteTN = Invoke-WebRequest -Method DELETE -URI $uri -ContentType application/json -headers $headers
+            }
 
         #Wait for Transport Nodes to flush
         LogMessage -type WAIT -message "[$nsxManagerFqdn] Waiting for Transport Nodes to flush"
