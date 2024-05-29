@@ -2,9 +2,9 @@
 
 ## v1.0.10
 
-> Released: 2024-04-xx
+> Released: 2024-05-29
 
-- Made New-RebuiltVdsConfigure more idem-potent so that it can be rerun
+- Made `New-RebuiltVdsConfigure` more idempotent so that it can be rerun.
 
 ## v1.0.9
 
