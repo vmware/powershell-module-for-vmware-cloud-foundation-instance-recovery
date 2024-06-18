@@ -326,7 +326,7 @@ Function New-ExtractDataFromSDDCBackup {
         'ntpServers'         = @($ntpJSON.ntpServers)
     }
 
-    $psqlContent = Get-Content "$extractedBackupFolder\database\sddc-postgres.bkp"
+    $psqlContent = Get-Content "$parentFolder\$extractedBackupFolder\database\sddc-postgres.bkp"
 
     LogMessage -type INFO -message "[$jumpboxName] Retrieving SDDC Manager Detail"
     #GetDomainDetails
