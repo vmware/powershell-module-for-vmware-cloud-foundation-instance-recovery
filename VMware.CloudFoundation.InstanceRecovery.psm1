@@ -1298,8 +1298,7 @@ Function New-ReconstructedPartialBringupJsonSpec {
     $proposedConfigAccepted = Read-Host
     $proposedConfigAccepted = $proposedConfigAccepted -replace "`t|`n|`r", ""
 
-    If ($proposedConfigAccepted -ieq "Y")
-    {
+    If ($proposedConfigAccepted -ieq "Y") {
         #Update Objects in Memory with chosen nics
         Foreach ($vds in $primaryCluster.vdsDetails) {
             $nicsToUse = ($proposedConfigDisplayObject | Where-Object { $_.vdsName -eq $vds.dvsName }).nicnames
@@ -1515,7 +1514,7 @@ Function New-ReconstructedPartialBringupJsonSpec {
             $clustervdsObject | Add-Member -notepropertyname 'mtu' -notepropertyvalue $vds.mtu
             #$clustervdsObject | Add-Member -notepropertyname 'niocSpecs' -notepropertyvalue $vds.niocSpecs
             $clustervdsObject | Add-Member -notepropertyname 'dvsName' -notepropertyvalue $vds.dvsName
-            $clustervdsObject | Add-Member -notepropertyname 'vmnics' -notepropertyvalue $vds0nics
+            $clustervdsObject | Add-Member -notepropertyname 'vmnics' -notepropertyvalue $vds.vmnics
             $clustervdsObject | Add-Member -notepropertyname 'networks' -notepropertyvalue @($vds.networks)
             If ($vds.transportZones) {
                 $transportZoneContent = @()
@@ -1605,10 +1604,8 @@ Function New-ReconstructedPartialBringupJsonSpec {
 
         LogMessage -type INFO -message "[$jumpboxName] Saving partial bringup JSON spec: $(($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).domainName + "-partial-bringup-spec.json")"
         ConvertTo-Json $mgmtDomainObject -depth 10 | Out-File (($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).domainName + "-partial-bringup-spec.json")
-         LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
-    }
-    else
-    {
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+    } else {
         LogMessage -type WARNING -message "[$jumpboxName] Aborted Task $($MyInvocation.MyCommand)"
     }
 }
