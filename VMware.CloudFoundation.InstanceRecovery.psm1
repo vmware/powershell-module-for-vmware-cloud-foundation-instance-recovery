@@ -1301,11 +1301,9 @@ Function New-ReconstructedPartialBringupJsonSpec {
     If ($proposedConfigAccepted -ieq "Y")
     {
         #Update Objects in Memory with chosen nics
-        Foreach ($vds in $proposedConfigDisplayObject)
-        {
-            $nicsToUse = $vds.nicnames
-            $vdsToUpdate = $primaryCluster.vdsDetails | Where-Object {$_.dvsName -eq $vds.vdsName}
-            $vdsToUpdate.vmnics = $nicsToUse
+        Foreach ($vds in $primaryCluster.vdsDetails) {
+            $nicsToUse = ($proposedConfigDisplayObject | Where-Object { $_.vdsName -eq $vds.dvsName }).nicnames
+            $vds.vmnics = @($nicsToUse)
         }
 
         $mgmtDomainObject = New-Object -type psobject
