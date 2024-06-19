@@ -556,7 +556,7 @@ Function New-ExtractDataFromSDDCBackup {
 
             If ($lineContent.split("`t")[11] -ne '\N') {
                 $transportZoneContent = $lineContent.split("`t")[11] | ConvertFrom-Json
-                $virtualDistributedSwitches | Add-Member -NotePropertyName 'transportZones' -NotePropertyValue $transportZoneContent
+                $virtualDistributedSwitch | Add-Member -NotePropertyName 'transportZones' -NotePropertyValue $transportZoneContent
             }
             $virtualDistributedSwitches += $virtualDistributedSwitch
         }
