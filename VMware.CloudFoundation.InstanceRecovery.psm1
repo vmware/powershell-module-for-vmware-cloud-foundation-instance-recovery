@@ -552,14 +552,12 @@ Function New-ExtractDataFromSDDCBackup {
                 'Name'       = $vdsName
                 'PortGroups' = $vdsPortgroups
                 'version'    = $version
-                'transportZones' = $lineContent.split("`t")[11]
+            }
 
-            }
-            <# If ($lineContent.split("`t")[11] -ne '\N') {
+            If ($lineContent.split("`t")[11] -ne '\N') {
                 $transportZoneContent = $lineContent.split("`t")[11] | ConvertFrom-Json
-                $virtualDistributedSwitch | Add-Member -NotePropertyName 'transportZones' -NotePropertyValue $transportZoneContent
+                $virtualDistributedSwitches | Add-Member -NotePropertyName 'transportZones' -NotePropertyValue $transportZoneContent
             }
-            #>
             $virtualDistributedSwitches += $virtualDistributedSwitch
         }
         $vdsLineIndex++
@@ -721,6 +719,9 @@ Function New-ExtractDataFromSDDCBackup {
                 $vdsObject | Add-Member -NotePropertyName 'dvsName' -NotePropertyValue $virtualDistributedSwitchDetails.name
                 $vdsObject | Add-Member -NotePropertyName 'vmnics' -NotePropertyValue $null
                 $vdsObject | Add-Member -NotePropertyName 'networks' -NotePropertyValue ("VM_MANAGEMENT", "MANAGEMENT", "VSAN", "VMOTION" | Where-Object { $_ -in $virtualDistributedSwitchDetails.portgroups.transportType })
+                If ($virtualDistributedSwitchDetails.transportZones) {
+                    $vdsObject | Add-Member -NotePropertyName 'transportZones' -NotePropertyValue $virtualDistributedSwitchDetails.transportZones
+                }
 
                 $vdsDetails += $vdsObject
             }
