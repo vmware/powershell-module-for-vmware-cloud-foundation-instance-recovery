@@ -1200,7 +1200,7 @@ Function New-ReconstructedPartialBringupJsonSpec {
         }
     }
 
-    LogMessage -type INFO -message "[$jumpboxName] Connecting to Reference host: $($mgmtHosts[0].entityName) as reference for Physical NICs"
+    LogMessage -type INFO -message "[$jumpboxName] Connecting to Reference host $($mgmtHosts[0].entityName) as reference for Physical NICs"
     $hostConnection = Connect-ViServer $($mgmtHosts[0].entityName) -user $hostSpecs[0].credentials.username -password $hostSpecs[0].credentials.password
     $nics = (Get-EsxCli -VMHost $($mgmtHosts[0].entityName)).network.nic.list() | Select-Object Name, Driver, LinkStatus, Description
 
@@ -1302,7 +1302,7 @@ Function New-ReconstructedPartialBringupJsonSpec {
         #Update Objects in Memory with chosen nics
         Foreach ($vds in $primaryCluster.vdsDetails) {
             $nicsToUse = ($proposedConfigDisplayObject | Where-Object { $_.vdsName -eq $vds.dvsName }).nicnames
-            $vds.vmnics = @($nicsToUse)
+            $vds.vmnics = @($nicsToUse -split (", "))
         }
 
         $mgmtDomainObject = New-Object -type psobject
