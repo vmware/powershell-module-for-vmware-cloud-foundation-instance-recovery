@@ -555,8 +555,11 @@ Function New-ExtractDataFromSDDCBackup {
             }
 
             If ($lineContent.split("`t")[11] -ne '\N') {
-                $transportZoneContent = $lineContent.split("`t")[11] | ConvertFrom-Json
+                $overlayContent = $lineContent.split("`t")[11] | ConvertFrom-Json
+                $transportZoneContent = $overlayContent.transportZones
+                $hostSwitchOperationalModeContent = $overlayContent.hostSwitchOperationalMode
                 $virtualDistributedSwitch | Add-Member -NotePropertyName 'transportZones' -NotePropertyValue $transportZoneContent
+                $virtualDistributedSwitch | Add-Member -NotePropertyName 'hostSwitchOperationalMode' -NotePropertyValue $hostSwitchOperationalModeContent
             }
             $virtualDistributedSwitches += $virtualDistributedSwitch
         }
@@ -1289,12 +1292,12 @@ Function New-ReconstructedPartialBringupJsonSpec {
             'ip'       = $nsxManager.ip
         }
     }
-    $overLayTransportZoneObject = New-Object -type psobject
+    <# $overLayTransportZoneObject = New-Object -type psobject
     $overLayTransportZoneObject | Add-Member -notepropertyname 'zoneName' -notepropertyvalue "$(($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).domainName)-tz-overlay01" #Review
     $overLayTransportZoneObject | Add-Member -notepropertyname 'networkName' -notepropertyvalue "netName-overlay"
     $vlanTransportZoneObject = New-Object -type psobject
     $vlanTransportZoneObject | Add-Member -notepropertyname 'zoneName' -notepropertyvalue "$(($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).domainName)-tz-vlan01" #Review
-    $vlanTransportZoneObject | Add-Member -notepropertyname 'networkName' -notepropertyvalue "netName-vlan"
+    $vlanTransportZoneObject | Add-Member -notepropertyname 'networkName' -notepropertyvalue "netName-vlan" #>
     $nsxtSpecObject = New-Object -type psobject
     $nsxtSpecObject | Add-Member -notepropertyname 'nsxtManagerSize' -notepropertyvalue "medium" #Review
     $nsxtSpecObject | Add-Member -notepropertyname 'nsxtManagers' -notepropertyvalue $nsxtManagersObject
@@ -1303,8 +1306,8 @@ Function New-ReconstructedPartialBringupJsonSpec {
     $nsxtSpecObject | Add-Member -notepropertyname 'nsxtAuditPassword' -notepropertyvalue ($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).nsxClusterDetails.nsxtAuditPassword
     $nsxtSpecObject | Add-Member -notepropertyname 'rootLoginEnabledForNsxtManager' -notepropertyvalue "true" #Review
     $nsxtSpecObject | Add-Member -notepropertyname 'sshEnabledForNsxtManager' -notepropertyvalue "true" #Review
-    $nsxtSpecObject | Add-Member -notepropertyname 'overLayTransportZone' -notepropertyvalue $overLayTransportZoneObject
-    $nsxtSpecObject | Add-Member -notepropertyname 'vlanTransportZone' -notepropertyvalue $vlanTransportZoneObject
+    #$nsxtSpecObject | Add-Member -notepropertyname 'overLayTransportZone' -notepropertyvalue $overLayTransportZoneObject
+    #$nsxtSpecObject | Add-Member -notepropertyname 'vlanTransportZone' -notepropertyvalue $vlanTransportZoneObject
     $nsxtSpecObject | Add-Member -notepropertyname 'vip' -notepropertyvalue ($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).nsxClusterDetails.clusterVip
     $nsxtSpecObject | Add-Member -notepropertyname 'vipFqdn' -notepropertyvalue ($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).nsxClusterDetails.clusterFqdn
     $nsxtSpecObject | Add-Member -notepropertyname 'nsxtLicense' -notepropertyvalue $nsxLicenseToUse
@@ -1363,6 +1366,12 @@ Function New-ReconstructedPartialBringupJsonSpec {
         $clustervdsObject | Add-Member -notepropertyname 'dvsName' -notepropertyvalue $vds.dvsName
         $clustervdsObject | Add-Member -notepropertyname 'vmnics' -notepropertyvalue $vds0nics
         $clustervdsObject | Add-Member -notepropertyname 'networks' -notepropertyvalue $vds.networks
+        If ($vds.transportZones) {
+            $nsxtSwitchConfigObject = New-Object -type psobject
+            $nsxtSwitchConfigObject | Add-Member -notepropertyname 'hostSwitchOperationalMode' -notepropertyvalue $vds.hostSwitchOperationalMode
+            $nsxtSwitchConfigObject | Add-Member -notepropertyname 'transportZones' -notepropertyvalue $vds.transportZones
+            $clustervdsObject | Add-Member -notepropertyname 'nsxtSwitchConfig' -notepropertyvalue $nsxtSwitchConfigObject
+        }
         $clusterVDSs += $clustervdsObject
     }
     $mgmtDomainObject | Add-Member -notepropertyname 'dvsSpecs' -notepropertyvalue $clusterVDSs
