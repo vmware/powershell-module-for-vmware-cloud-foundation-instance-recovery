@@ -552,11 +552,14 @@ Function New-ExtractDataFromSDDCBackup {
                 'Name'       = $vdsName
                 'PortGroups' = $vdsPortgroups
                 'version'    = $version
+                'transportZones' = $lineContent.split("`t")[11]
+
             }
-            If ($lineContent.split("`t")[11] -ne '\N') {
+            <# If ($lineContent.split("`t")[11] -ne '\N') {
                 $transportZoneContent = $lineContent.split("`t")[11] | ConvertFrom-Json
                 $virtualDistributedSwitch | Add-Member -NotePropertyName 'transportZones' -NotePropertyValue $transportZoneContent
             }
+            #>
             $virtualDistributedSwitches += $virtualDistributedSwitch
         }
         $vdsLineIndex++
