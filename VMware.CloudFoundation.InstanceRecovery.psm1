@@ -724,6 +724,7 @@ Function New-ExtractDataFromSDDCBackup {
                 $vdsObject | Add-Member -NotePropertyName 'networks' -NotePropertyValue ("VM_MANAGEMENT", "MANAGEMENT", "VSAN", "VMOTION" | Where-Object { $_ -in $virtualDistributedSwitchDetails.portgroups.transportType })
                 If ($virtualDistributedSwitchDetails.transportZones) {
                     $vdsObject | Add-Member -NotePropertyName 'transportZones' -NotePropertyValue $virtualDistributedSwitchDetails.transportZones
+                    $vdsObject | Add-Member -NotePropertyName 'hostSwitchOperationalMode' -NotePropertyValue $virtualDistributedSwitchDetails.hostSwitchOperationalMode
                 }
 
                 $vdsDetails += $vdsObject
