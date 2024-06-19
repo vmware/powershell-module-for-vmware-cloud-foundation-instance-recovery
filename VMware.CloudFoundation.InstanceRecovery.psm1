@@ -1476,7 +1476,7 @@ Function New-ReconstructedPartialBringupJsonSpec {
 
 
     #hostSpecs
-    $mgmtHosts = $extractedSddcData.passwords | where-object { ($_.domainName -eq $domainName) -and ($_.entityType -eq "ESXI") -and ($_.username -eq "root") -and (Test-MemberOfSubnet -IPAddress $mgmtHost.entityIpAddress -Subnet $managementNetworkSubnet) }
+    $mgmtHosts = $extractedSddcData.passwords | where-object { ($_.domainName -eq $domainName) -and ($_.entityType -eq "ESXI") -and ($_.username -eq "root") -and (Test-MemberOfSubnet -IPAddress $_.entityIpAddress -Subnet $managementNetworkSubnet) }
     $hostSpecs = @()
     Foreach ($mgmtHost in $mgmtHosts) {
         $credentialObject = New-Object -type psobject
