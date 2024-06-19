@@ -545,7 +545,7 @@ Function New-ExtractDataFromSDDCBackup {
             $niocs = $lineContent.split("`t")[5] | ConvertFrom-Json
             $vdsPortgroups = $lineContent.split("`t")[6] | ConvertFrom-Json
             $version = $lineContent.split("`t")[8]
-            $virtualDistributedSwitches += [pscustomobject]@{
+            $virtualDistributedSwitch = [pscustomobject]@{
                 'Id'         = $vdsId
                 'niocs'      = $niocs
                 'Mtu'        = $vdsMtu
@@ -555,8 +555,9 @@ Function New-ExtractDataFromSDDCBackup {
             }
             If ($lineContent.split("`t")[11] -ne '\N') {
                 $transportZoneContent = $lineContent.split("`t")[11] | ConvertFrom-Json
-                $virtualDistributedSwitches | Add-Member -NotePropertyName 'transportZones' -NotePropertyValue $transportZoneContent
+                $virtualDistributedSwitch | Add-Member -NotePropertyName 'transportZones' -NotePropertyValue $transportZoneContent
             }
+            $virtualDistributedSwitches += $virtualDistributedSwitch
         }
         $vdsLineIndex++
     }
