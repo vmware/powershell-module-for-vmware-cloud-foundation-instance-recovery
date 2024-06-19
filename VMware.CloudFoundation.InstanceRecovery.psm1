@@ -704,6 +704,7 @@ Function New-ExtractDataFromSDDCBackup {
             $primaryDatastoreName = $lineContent.split("`t")[12]
             $primaryDatastoreType = $lineContent.split("`t")[13]
             $sourceID = $lineContent.split("`t")[14]
+            $isImagedBased = $lineContent.split("`t")[18]
             $vdsDetails = @()
 
             #Experimental
@@ -768,6 +769,7 @@ Function New-ExtractDataFromSDDCBackup {
                 'vCenterID'            = $vCenterID
                 'primaryDatastoreName' = $primaryDatastoreName
                 'primaryDatastoreType' = $primaryDatastoreType
+                'isImageBased'         = $isImagedBased
                 'sourceID'             = $sourceID
                 'vdsDetails'           = $vdsDetails
                 'hosts'                = $hostsArray
@@ -1422,6 +1424,9 @@ Function New-ReconstructedPartialBringupJsonSpec {
     $clusterSpecObject | Add-Member -notepropertyname 'vmFolders' -notepropertyvalue $vmFoldersObject
     $clusterSpecObject | Add-Member -notepropertyname 'clusterName' -notepropertyvalue $primaryCluster.name
     $clusterSpecObject | Add-Member -notepropertyname 'clusterEvcMode' -notepropertyvalue ""
+    If ($primaryCluster.isImageBased -eq "t") {
+        $clusterSpecObject | Add-Member -notepropertyname 'clusterImageEnabled' -notepropertyvalue "true"
+    }
     $mgmtDomainObject | Add-Member -notepropertyname 'clusterSpec' -notepropertyvalue $clusterSpecObject
 
     #pscSpecs
