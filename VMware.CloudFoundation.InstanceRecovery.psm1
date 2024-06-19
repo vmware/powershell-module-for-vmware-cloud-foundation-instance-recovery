@@ -1346,17 +1346,16 @@ Function New-ReconstructedPartialBringupJsonSpec {
 
     #dvsSpecs
     $clusterVDSs = @()
-    $vds = ($primaryCluster.vdsDetails)[0]
-    #Foreach ($vds in ($primaryCluster.vdsDetails))
-    #{
-    $clustervdsObject = New-Object -type psobject
-    $clustervdsObject | Add-Member -notepropertyname 'mtu' -notepropertyvalue $vds.mtu
-    $clustervdsObject | Add-Member -notepropertyname 'niocSpecs' -notepropertyvalue $vds.niocSpecs
-    $clustervdsObject | Add-Member -notepropertyname 'dvsName' -notepropertyvalue $vds.dvsName
-    $clustervdsObject | Add-Member -notepropertyname 'vmnics' -notepropertyvalue $vds0nics
-    $clustervdsObject | Add-Member -notepropertyname 'networks' -notepropertyvalue $vds.networks
-    $clusterVDSs += $clustervdsObject
-    #}
+    #$vds = ($primaryCluster.vdsDetails)[0]
+    Foreach ($vds in ($primaryCluster.vdsDetails)) {
+        $clustervdsObject = New-Object -type psobject
+        $clustervdsObject | Add-Member -notepropertyname 'mtu' -notepropertyvalue $vds.mtu
+        $clustervdsObject | Add-Member -notepropertyname 'niocSpecs' -notepropertyvalue $vds.niocSpecs
+        $clustervdsObject | Add-Member -notepropertyname 'dvsName' -notepropertyvalue $vds.dvsName
+        $clustervdsObject | Add-Member -notepropertyname 'vmnics' -notepropertyvalue $vds0nics
+        $clustervdsObject | Add-Member -notepropertyname 'networks' -notepropertyvalue $vds.networks
+        $clusterVDSs += $clustervdsObject
+    }
     $mgmtDomainObject | Add-Member -notepropertyname 'dvsSpecs' -notepropertyvalue $clusterVDSs
 
     #clusterSpec
