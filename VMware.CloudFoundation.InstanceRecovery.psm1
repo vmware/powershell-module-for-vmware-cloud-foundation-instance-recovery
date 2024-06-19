@@ -557,7 +557,12 @@ Function New-ExtractDataFromSDDCBackup {
             If ($lineContent.split("`t")[11] -ne '\N') {
                 $overlayContent = $lineContent.split("`t")[11] | ConvertFrom-Json
                 $transportZoneContent = $overlayContent.transportZones
-                $hostSwitchOperationalModeContent = $overlayContent.hostSwitchOperationalMode
+                If ($overlayContent.hostSwitchOperationalMode -ne $null) {
+                    $hostSwitchOperationalModeContent = $overlayContent.hostSwitchOperationalMode
+                } else {
+                    $hostSwitchOperationalModeContent = 'STANDARD'
+                }
+
                 $virtualDistributedSwitch | Add-Member -NotePropertyName 'transportZones' -NotePropertyValue $transportZoneContent
                 $virtualDistributedSwitch | Add-Member -NotePropertyName 'hostSwitchOperationalMode' -NotePropertyValue $hostSwitchOperationalModeContent
             }
@@ -1368,9 +1373,16 @@ Function New-ReconstructedPartialBringupJsonSpec {
         $clustervdsObject | Add-Member -notepropertyname 'vmnics' -notepropertyvalue $vds0nics
         $clustervdsObject | Add-Member -notepropertyname 'networks' -notepropertyvalue $vds.networks
         If ($vds.transportZones) {
+            $transportZoneContent = @()
+            Foreach ($transportZone in $vds.transportZones) {
+                $transportZoneContent += [PSCustomObject]@{
+                    'name'          = $transportZone.name
+                    'transportType' = $transportZone.transportType
+                }
+            }
             $nsxtSwitchConfigObject = New-Object -type psobject
             $nsxtSwitchConfigObject | Add-Member -notepropertyname 'hostSwitchOperationalMode' -notepropertyvalue $vds.hostSwitchOperationalMode
-            $nsxtSwitchConfigObject | Add-Member -notepropertyname 'transportZones' -notepropertyvalue $vds.transportZones
+            $nsxtSwitchConfigObject | Add-Member -notepropertyname 'transportZones' -notepropertyvalue @($transportZoneContent)
             $clustervdsObject | Add-Member -notepropertyname 'nsxtSwitchConfig' -notepropertyvalue $nsxtSwitchConfigObject
         }
         $clusterVDSs += $clustervdsObject
