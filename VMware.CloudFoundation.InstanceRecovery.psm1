@@ -129,6 +129,29 @@ Function LogMessage {
     #Add-Content -path $logFile $logContent
 }
 
+Function Test-MemberOfSubnet {
+    [cmdletbinding()]
+    [outputtype([System.Boolean])]
+    param(
+        [parameter(Mandatory = $true)]
+        [string] $IPAddress,
+        [parameter(Mandatory = $true)]
+        [string] $Subnet
+    )
+
+    # Split Subnet into the address and the CIDR notation
+    [String]$CIDRAddress = $Subnet.Split('/')[0]
+    [int]$CIDRBits = $Subnet.Split('/')[1]
+
+    # Address from Subnet and the search address are converted to Int32 and the full mask is calculated from the CIDR notation.
+    [int]$BaseAddress = [System.BitConverter]::ToInt32((([System.Net.IPAddress]::Parse($CIDRAddress)).GetAddressBytes()), 0)
+    [int]$Address = [System.BitConverter]::ToInt32(([System.Net.IPAddress]::Parse($IPAddress).GetAddressBytes()), 0)
+    [int]$Mask = [System.Net.IPAddress]::HostToNetworkOrder(-1 -shl ( 32 - $CIDRBits))
+
+    # Determine whether the address is in the Subnet.
+    If (($BaseAddress -band $Mask) -eq ($Address -band $Mask)) { $true } else { $false }
+}
+
 Function VCFIRCreateHeader {
     Param(
         [Parameter (Mandatory = $true)]
@@ -142,6 +165,7 @@ Function VCFIRCreateHeader {
 
     Return $headers
 }
+
 Function Move-VMKernel {
     Param (
         [object]$VMHost,
@@ -1450,8 +1474,9 @@ Function New-ReconstructedPartialBringupJsonSpec {
     $vcenterSpecObject | Add-Member -notepropertyname 'vmSize' -notepropertyvalue $vcenterServerSize
     $mgmtDomainObject | Add-Member -notepropertyname 'vcenterSpec' -notepropertyvalue $vcenterSpecObject
 
+
     #hostSpecs
-    $mgmtHosts = $extractedSddcData.passwords | where-object { ($_.domainName -eq $domainName) -and ($_.entityType -eq "ESXI") -and ($_.username -eq "root") }
+    $mgmtHosts = $extractedSddcData.passwords | where-object { ($_.domainName -eq $domainName) -and ($_.entityType -eq "ESXI") -and ($_.username -eq "root") -and (Test-MemberOfSubnet -IPAddress $mgmtHost.entityIpAddress -Subnet $managementNetworkSubnet) }
     $hostSpecs = @()
     Foreach ($mgmtHost in $mgmtHosts) {
         $credentialObject = New-Object -type psobject
