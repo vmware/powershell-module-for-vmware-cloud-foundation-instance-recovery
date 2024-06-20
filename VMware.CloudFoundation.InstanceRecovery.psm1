@@ -1240,8 +1240,16 @@ Function New-ReconstructedPartialBringupJsonSpec {
         Do {
             $nicNamesArray = @()
             Write-Host ""; $remainingNicsDisplayObject | format-table -Property @{Expression = " " }, id, deviceName, driver, linkStatus, description -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
-            #Write-Host ""; Write-Host " Recreating $($clusterVdsDetails[$vdsConfigurationIndex].dvsName) which contained the networks: $(($clusterVdsDetails[$vdsConfigurationIndex].networks) -join (","))" -ForegroundColor Yellow
-            Write-Host ""; Write-Host " Recreating " -ForegroundColor Yellow -nonewline; Write-Host "$($primaryCluster.vdsDetails[$vdsConfigurationIndex].dvsName)" -ForegroundColor cyan -nonewline; Write-Host " which contained the networks: " -ForegroundColor Yellow -nonewline; Write-Host "$(($primaryCluster.vdsDetails[$vdsConfigurationIndex].networks) -join (","))" -ForegroundColor Cyan
+
+            If ($primaryCluster.vdsDetails[$vdsConfigurationIndex].transportZones){
+                $networksDisplay = ($primaryCluster.vdsDetails[$vdsConfigurationIndex].networks += "OVERLAY") -join (",")
+            }
+            else {
+                $networksDisplay = $primaryCluster.vdsDetails[$vdsConfigurationIndex].networks -join (",")
+            }
+
+
+            Write-Host ""; Write-Host " Recreating " -ForegroundColor Yellow -nonewline; Write-Host "$($primaryCluster.vdsDetails[$vdsConfigurationIndex].dvsName)" -ForegroundColor cyan -nonewline; Write-Host " which contained the networks: " -ForegroundColor Yellow -nonewline; Write-Host "$networksDisplay" -ForegroundColor Cyan
             Write-Host " Enter a comma seperated list of IDs to use as vmnics for this VDS, or C to Cancel: " -ForegroundColor Yellow -nonewline
             $nicSelection = Read-Host
             If ($nicSelection -ne "C") {
@@ -1261,9 +1269,6 @@ Function New-ReconstructedPartialBringupJsonSpec {
             'nicnames'    = $nicNamesArray
             'vdsNetworks' = $primaryCluster.vdsDetails[$vdsConfigurationIndex].networks
             'portgroups'  = $primaryCluster.vdsDetails[$vdsConfigurationIndex].portgroups
-        }
-        If ($primaryCluster.vdsDetails[$vdsConfigurationIndex].transportZones){
-            $individualVds.vdsNetworks += "OVERLAY"
         }
         $vdsConfiguration += $individualVds
         $tempremainingNicsDisplayObject = @()
