@@ -1521,7 +1521,7 @@ Function New-ReconstructedPartialBringupJsonSpec {
             #$clustervdsObject | Add-Member -notepropertyname 'niocSpecs' -notepropertyvalue $vds.niocSpecs
             $clustervdsObject | Add-Member -notepropertyname 'dvsName' -notepropertyvalue $vds.dvsName
             $clustervdsObject | Add-Member -notepropertyname 'vmnics' -notepropertyvalue $vds.vmnics
-            $clustervdsObject | Add-Member -notepropertyname 'networks' -notepropertyvalue @($vds.networks)
+            $clustervdsObject | Add-Member -notepropertyname 'networks' -notepropertyvalue @($vds.networks | Where-Object { $_ -ne "OVERLAY" })
             If ($vds.transportZones) {
                 $transportZoneContent = @()
                 Foreach ($transportZone in $vds.transportZones) {
