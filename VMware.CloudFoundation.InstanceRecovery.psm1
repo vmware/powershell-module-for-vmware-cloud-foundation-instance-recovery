@@ -1241,7 +1241,8 @@ Function New-ReconstructedPartialBringupJsonSpec {
             $nicNamesArray = @()
             Write-Host ""; $remainingNicsDisplayObject | format-table -Property @{Expression = " " }, id, deviceName, driver, linkStatus, description -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
             If ($primaryCluster.vdsDetails[$vdsConfigurationIndex].transportZones) {
-                $networksDisplay = ($primaryCluster.vdsDetails[$vdsConfigurationIndex].networks += "OVERLAY") -join (",")
+                $networksDisplay = $primaryCluster.vdsDetails[$vdsConfigurationIndex].networks
+                $networksDisplay = ($networksDisplay += "OVERLAY") -join (",")
             } else {
                 $networksDisplay = $primaryCluster.vdsDetails[$vdsConfigurationIndex].networks -join (",")
             }
@@ -3674,7 +3675,8 @@ Function New-RebuiltVdsConfiguration {
             $nicNamesArray = @()
             Write-Host ""; $remainingNicsDisplayObject | format-table -Property @{Expression = " " }, id, deviceName, driver, linkStatus, description -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
             If ($primaryCluster.vdsDetails[$vdsConfigurationIndex].transportZones) {
-                $networksDisplay = ($primaryCluster.vdsDetails[$vdsConfigurationIndex].networks += "OVERLAY") -join (",")
+                $networksDisplay = $primaryCluster.vdsDetails[$vdsConfigurationIndex].networks
+                $networksDisplay = ($networksDisplay += "OVERLAY") -join (",")
             } else {
                 $networksDisplay = $primaryCluster.vdsDetails[$vdsConfigurationIndex].networks -join (",")
             }
