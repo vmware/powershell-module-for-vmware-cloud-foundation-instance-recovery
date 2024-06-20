@@ -1256,12 +1256,16 @@ Function New-ReconstructedPartialBringupJsonSpec {
             }
         } Until (($nicSelectionInvalid -eq $false) -OR ($nicSelection -eq "c"))
         If ($nicSelection -eq "c") { Break }
-        $vdsConfiguration += [PSCustomObject]@{
+        $individualVds = [PSCustomObject]@{
             'vdsName'     = $primaryCluster.vdsDetails[$vdsConfigurationIndex].dvsName
             'nicnames'    = $nicNamesArray
             'vdsNetworks' = $primaryCluster.vdsDetails[$vdsConfigurationIndex].networks
             'portgroups'  = $primaryCluster.vdsDetails[$vdsConfigurationIndex].portgroups
         }
+        If ($primaryCluster.vdsDetails[$vdsConfigurationIndex].transportZones){
+            $individualVds.vdsNetworks += "OVERLAY"
+        }
+        $vdsConfiguration += $individualVds
         $tempremainingNicsDisplayObject = @()
         Foreach ( $displaynic in $remainingNicsDisplayObject) {
             If ($displaynic.id -notin $nicArray) {
@@ -3684,12 +3688,16 @@ Function New-RebuiltVdsConfiguration {
             }
         } Until (($nicSelectionInvalid -eq $false) -OR ($nicSelection -eq "c"))
         If ($nicSelection -eq "c") {Break}
-        $vdsConfiguration += [PSCustomObject]@{
-            'vdsName'     = $clusterVdsDetails[$vdsConfigurationIndex].dvsName
+        $individualVds = [PSCustomObject]@{
+            'vdsName'     = $primaryCluster.vdsDetails[$vdsConfigurationIndex].dvsName
             'nicnames'    = $nicNamesArray
-            'vdsNetworks' = $clusterVdsDetails[$vdsConfigurationIndex].networks
-            'portgroups'  = $clusterVdsDetails[$vdsConfigurationIndex].portgroups
+            'vdsNetworks' = $primaryCluster.vdsDetails[$vdsConfigurationIndex].networks
+            'portgroups'  = $primaryCluster.vdsDetails[$vdsConfigurationIndex].portgroups
         }
+        If ($primaryCluster.vdsDetails[$vdsConfigurationIndex].transportZones) {
+            $individualVds.vdsNetworks += "OVERLAY"
+        }
+        $vdsConfiguration += $individualVds
         $tempremainingNicsDisplayObject = @()
         Foreach ( $displaynic in $remainingNicsDisplayObject) {
             If ($displaynic.id -notin $nicArray) {
