@@ -324,7 +324,7 @@ Function New-ExtractDataFromSDDCBackup {
     .PARAMETER vcfBackupFilePath
     Relative or absolute to the VMware Cloud Foundation SDDC manager backup file somewhere on the local filesystem
 
-    .PARAMETER managementVcenterBackupFolder
+    .PARAMETER managementVcenterBackupFolderPath
     Relative or absolute to the Management vCenter backup folder somewhere on the local filesystem
 
     .PARAMETER encryptionPassword
@@ -333,14 +333,14 @@ Function New-ExtractDataFromSDDCBackup {
 
     Param(
         [Parameter (Mandatory = $true)][String] $vcfBackupFilePath,
-        [Parameter (Mandatory = $true)][String] $managementVcenterBackupFolder,
+        [Parameter (Mandatory = $true)][String] $managementVcenterBackupFolderPath,
         [Parameter (Mandatory = $true)][String] $encryptionPassword
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $backupFileFullPath = (Resolve-Path -Path $vcfBackupFilePath).path
     $backupFileName = (Get-ChildItem -path $backupFileFullPath).name
-    $vCenterbackupFileFullPath = (Resolve-Path -Path $managementVcenterBackupFolder).path
+    $vCenterbackupFolderFullPath = (Resolve-Path -Path $managementVcenterBackupFolderPath).path
     $parentFolder = Split-Path -Path $backupFileFullPath
     $extractedBackupFolder = ($backupFileName -Split (".tar.gz"))[0]
     $jumpboxName = hostname
@@ -376,7 +376,7 @@ Function New-ExtractDataFromSDDCBackup {
     $metadataJSON = Get-Content "$parentFolder\$extractedBackupFolder\metadata.json" | ConvertFrom-JSON
     $dnsJSON = Get-Content "$parentFolder\$extractedBackupFolder\appliancemanager_dns_configuration.json" | ConvertFrom-JSON
     $ntpJSON = Get-Content "$parentFolder\$extractedBackupFolder\appliancemanager_ntp_configuration.json" | ConvertFrom-JSON
-    $mgmtVcenterMetadata = Get-Content -Path ($vCenterbackupFileFullPath + "/backup-metadata.json") | ConvertFrom-JSON
+    $mgmtVcenterMetadata = Get-Content -Path ($vCenterbackupFolderFullPath + "/backup-metadata.json") | ConvertFrom-JSON
     $managementSubnetMask = cidrToMask $mgmtVcenterMetadata.PrimaryNetworkInfo.ipv4.prefix
 
     $sddcManagerIP = $metadataJSON.ip
@@ -391,7 +391,7 @@ Function New-ExtractDataFromSDDCBackup {
         'vsan_datastore'     = $metadataJSON.vsan_datastore
         'cluster'            = $metaDataJSON.cluster
         'datacenter'         = $metaDataJSON.datacenter
-        'netmask'            = $metaDataJSON.netmask
+        'netmask'            = $managementSubnetMask
         'subnet'             = $managementSubnet
         'gateway'            = $mgmtVcenterMetadata.PrimaryNetworkInfo.ipv4.defaultGateway
         'domain'             = $metaDataJSON.domain
@@ -1296,10 +1296,9 @@ Function New-ReconstructedPartialBringupJsonSpec {
         Do {
             $nicNamesArray = @()
             Write-Host ""; $remainingNicsDisplayObject | format-table -Property @{Expression = " " }, id, deviceName, driver, linkStatus, description -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
-            If ($primaryCluster.vdsDetails[$vdsConfigurationIndex].transportZones){
+            If ($primaryCluster.vdsDetails[$vdsConfigurationIndex].transportZones) {
                 $networksDisplay = ($primaryCluster.vdsDetails[$vdsConfigurationIndex].networks += "OVERLAY") -join (",")
-            }
-            else {
+            } else {
                 $networksDisplay = $primaryCluster.vdsDetails[$vdsConfigurationIndex].networks -join (",")
             }
             Write-Host ""; Write-Host " Recreating " -ForegroundColor Yellow -nonewline; Write-Host "$($primaryCluster.vdsDetails[$vdsConfigurationIndex].dvsName)" -ForegroundColor cyan -nonewline; Write-Host " which contained the networks: " -ForegroundColor Yellow -nonewline; Write-Host "$networksDisplay" -ForegroundColor Cyan
@@ -1672,6 +1671,123 @@ Function New-ReconstructedPartialBringupJsonSpec {
     }
 }
 Export-ModuleMember -Function New-ReconstructedPartialBringupJsonSpec
+
+Function New-PartialManagementDomainDeployment {
+    Param(
+        [Parameter (Mandatory = $true)][String] $partialBringupSpecFile,
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
+        [Parameter (Mandatory = $true)][String] $cloudBuilderFQDN,
+        [Parameter (Mandatory = $true)][String] $cloudBuilderAdminUserPassword
+    )
+
+    Try {
+        $jumpboxName = hostname
+        LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+        LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
+        $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
+        $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
+        $partialBringupSpecFilePath = (Resolve-Path -Path $partialBringupSpecFile).path
+
+        $url = "https://" + $cloudBuilderFQDN
+        LogMessage -Type INFO -Message "[$jumpboxName] Connecting to Cloud Builder Appliance $partialBringupSpecFilePath"
+        New-CloudBuilderConnection -instanceObject $instanceObject
+        Connect-CloudBuilder -fqdn $cloudBuilderFQDN -username 'admin' -password $cloudBuilderAdminUserPassword
+
+        LogMessage -Type WAIT -Message "[$cloudBuilderFQDN] Starting validation of Management Domain specification"
+        $sddcValidation = Start-CloudBuilderSDDCValidation -json $partialBringupSpecFilePath
+        Start-Sleep 5
+        $pollLoopCounter = 0
+        Do {
+            If (($pollLoopCounter % 5 -eq 0) -AND ($pollLoopCounter -gt 4)) {
+                LogMessage -Type INFO -Message "[$cloudBuilderFQDN] Checking status of the Management Domain specification validation"
+            }
+            $status = Get-CloudBuilderSDDCValidation -id $sddcValidation.id
+            If (($pollLoopCounter % 5 -eq 0) -AND ($pollLoopCounter -gt 4)) {
+                LogMessage -type INFO -Message "[$cloudBuilderFQDN] Management Domain specification validation: $($status.executionStatus)"
+            }
+            If ($status.executionStatus -eq "IN_PROGRESS") {
+                Start-Sleep 40
+                $pollLoopCounter ++
+            }
+        }
+        While ($status.executionStatus -eq "IN_PROGRESS")
+        $completedState = Get-CloudBuilderSDDCValidation -id $sddcValidation.id
+        $failed = $completedState.validationChecks | Where-Object { $_.resultStatus -eq "FAILED" }
+        If ($failed) {
+            $realErrorFound = "False"
+            $knownErrorFound = "False"
+            LogMessage -type NOTE -Message "The following validation errors were reported:"
+            Foreach ($failure in $failed) {
+                $failureMessages = $($failure.errorResponse.nestedErrors.message -split (";") | Get-Unique)
+                Foreach ($failureMessage in $failureMessages) {
+                    If ($failureMessage) {
+                        If (($failureMessage -like "*is not currently synchronising time with NTP Server*") -OR ($failureMessage -like "*reject or unable to use NTP server*")) {
+                            $knownErrorFound = "True"
+                            LogMessage -Type WARNING -Message "$($failure.description): $failureMessage"
+                        } else {
+                            $realErrorFound = "True"
+                            LogMessage -Type ERROR -Message "$($failure.description): $failureMessage"
+                        }
+                    } else {
+                        If ($failure -like "*Time Synchronization Validation*") {
+                            $knownErrorFound = "True"
+                            LogMessage -Type WARNING -Message "$($failure.description)"
+                        } else {
+                            $realErrorFound = "True"
+                            LogMessage -Type ERROR -Message "$($failure.description)"
+                        }
+                    }
+                }
+            }
+            If ($realErrorFound -eq "True") {
+                LogMessage -Type QUESTION -Message "Do you wish to proceed proceed (Y/N)? " -skipnewline
+                $confirmation = Read-Host
+                If ($confirmation -ne "Y") {
+                    Break
+                }
+            }
+        }
+        LogMessage -Type WAIT -Message "[$cloudBuilderFQDN] Starting Management Domain Deployment"
+        $sddcDeployment = Start-CloudBuilderSDDC -json -json $partialBringupSpecFilePath
+        $pollLoopCounter = 0
+        $status = Get-CloudBuilderSDDC $sddcDeployment.id
+        If ($status.Status -ne "IN_PROGRESS") {
+            Do {
+                Start-Sleep 5
+                $status = Get-CloudBuilderSDDC $sddcDeployment.id
+                $pollLoopCounter = $pollLoopCounter + 5
+            } Until (($status.Status -eq "IN_PROGRESS") -OR ($pollLoopCounter -eq 180))
+            If ($status.Status -ne "IN_PROGRESS") {
+                LogMessage -Type ERROR -Message "Management Domain Deployment failed to start after $pollLoopCounter seconds. Please check CloudBuilder UI / Logs for Errors"
+                anyKey
+                Break
+            }
+        }
+        $pollLoopCounter = 0
+        Do {
+            If (($pollLoopCounter % 10 -eq 0) -AND ($pollLoopCounter -gt 9)) {
+                LogMessage -Type INFO -Message "[$cloudBuilderFQDN] Checking the status of the Management Domain deployment"
+            }
+            $status = Get-CloudBuilderSDDC $sddcDeployment.id
+            If (($pollLoopCounter % 10 -eq 0) -AND ($pollLoopCounter -gt 9)) {
+                LogMessage -Type INFO -Message "[$cloudBuilderFQDN] Management Domain deployment: $($status.status)"
+            }
+            If ($status.Status -eq "IN_PROGRESS") {
+                Start-Sleep 60
+                $pollLoopCounter ++
+            }
+        }
+        While ($status.Status -eq "IN_PROGRESS")
+        If ($status.status -eq "COMPLETED_WITH_FAILURE") {
+            LogMessage -Type ERROR -Message "[$cloudBuilderFQDN] Deployment of Management Domain completed with errors. Please consult the UI and troubleshoot"
+        } else {
+            LogMessage -Type INFO -Message "[$cloudBuilderFQDN] Deployment of Management Domain completed successfully"
+        }
+    } Catch {
+        $ErrorMessage = $_.Exception.Message
+        LogMessage -Type EXCEPTION -Message "Error was: $ErrorMessage"
+    }
+}
 
 Function New-NSXManagerOvaDeployment {
     <#
