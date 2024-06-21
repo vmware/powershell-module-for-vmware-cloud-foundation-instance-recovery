@@ -567,7 +567,12 @@ Function New-ExtractDataFromSDDCBackup {
             $vdsMtu = $lineContent.split("`t")[3]
             $vdsName = $lineContent.split("`t")[4]
             $niocs = $lineContent.split("`t")[5] | ConvertFrom-Json
-            $vdsPortgroups = $lineContent.split("`t")[6] | ConvertFrom-Json
+            If ($lineContent.split("`t")[6] -ne '\N') {
+                $vdsPortgroups = $lineContent.split("`t")[6] | ConvertFrom-Json
+            } else {
+                $vdsPortgroups = $null
+            }
+
             $version = $lineContent.split("`t")[8]
             $virtualDistributedSwitch = [pscustomobject]@{
                 'Id'         = $vdsId
