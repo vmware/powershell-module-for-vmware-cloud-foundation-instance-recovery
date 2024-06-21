@@ -1747,7 +1747,7 @@ Function New-PartialManagementDomainDeployment {
             }
         }
         LogMessage -Type WAIT -Message "[$cloudBuilderFQDN] Starting Management Domain Deployment"
-        $sddcDeployment = Start-CloudBuilderSDDC -json -json $partialBringupSpecFilePath
+        $sddcDeployment = Start-CloudBuilderSDDC  -json $partialBringupSpecFilePath
         $pollLoopCounter = 0
         $status = Get-CloudBuilderSDDC $sddcDeployment.id
         If ($status.Status -ne "IN_PROGRESS") {
