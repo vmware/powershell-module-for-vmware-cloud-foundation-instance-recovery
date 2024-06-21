@@ -377,7 +377,7 @@ Function New-ExtractDataFromSDDCBackup {
     $dnsJSON = Get-Content "$parentFolder\$extractedBackupFolder\appliancemanager_dns_configuration.json" | ConvertFrom-JSON
     $ntpJSON = Get-Content "$parentFolder\$extractedBackupFolder\appliancemanager_ntp_configuration.json" | ConvertFrom-JSON
     $mgmtVcenterMetadata = Get-Content -Path ($vCenterbackupFileFullPath + "/backup-metadata.json") | ConvertFrom-JSON
-    $managementSubnetMask = cidrToMask $mgmtVcenterMetadata.PrimaryNetworkInfo.ipv4.defaultGateway.prefix
+    $managementSubnetMask = cidrToMask $mgmtVcenterMetadata.PrimaryNetworkInfo.ipv4.prefix
 
     $sddcManagerIP = $metadataJSON.ip
     $managementSubnetMask = $metaDataJSON.netmask
