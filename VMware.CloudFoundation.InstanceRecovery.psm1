@@ -333,7 +333,7 @@ Function New-ExtractDataFromSDDCBackup {
 
     Param(
         [Parameter (Mandatory = $true)][String] $vcfBackupFilePath,
-        [Parameter (Mandatory = $true)][String] $-managementVcenterBackupFolder,
+        [Parameter (Mandatory = $true)][String] $managementVcenterBackupFolder,
         [Parameter (Mandatory = $true)][String] $encryptionPassword
     )
     $jumpboxName = hostname
