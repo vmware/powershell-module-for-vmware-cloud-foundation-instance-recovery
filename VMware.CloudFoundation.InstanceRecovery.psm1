@@ -1690,7 +1690,6 @@ Function New-PartialManagementDomainDeployment {
 
         $url = "https://" + $cloudBuilderFQDN
         LogMessage -Type INFO -Message "[$jumpboxName] Connecting to Cloud Builder Appliance $partialBringupSpecFilePath"
-        New-CloudBuilderConnection -instanceObject $instanceObject
         Connect-CloudBuilder -fqdn $cloudBuilderFQDN -username 'admin' -password $cloudBuilderAdminUserPassword
 
         LogMessage -Type WAIT -Message "[$cloudBuilderFQDN] Starting validation of Management Domain specification"
