@@ -183,6 +183,50 @@ Function Move-VMKernel {
     $_this = Get-View -Id $networkid
     $_this.UpdateVirtualNic($Interface, $nic)
 }
+
+Function cidrToMask {
+    Param (
+        [Parameter (Mandatory = $true)] [String]$cidr
+    )
+
+    $subnetMasks = @(
+        ($32 = @{ cidr = "32"; mask = "255.255.255.255" }),
+        ($31 = @{ cidr = "31"; mask = "255.255.255.254" }),
+        ($30 = @{ cidr = "30"; mask = "255.255.255.252" }),
+        ($29 = @{ cidr = "29"; mask = "255.255.255.248" }),
+        ($28 = @{ cidr = "28"; mask = "255.255.255.240" }),
+        ($27 = @{ cidr = "27"; mask = "255.255.255.224" }),
+        ($26 = @{ cidr = "26"; mask = "255.255.255.192" }),
+        ($25 = @{ cidr = "25"; mask = "255.255.255.128" }),
+        ($24 = @{ cidr = "24"; mask = "255.255.255.0" }),
+        ($23 = @{ cidr = "23"; mask = "255.255.254.0" }),
+        ($22 = @{ cidr = "22"; mask = "255.255.252.0" }),
+        ($21 = @{ cidr = "21"; mask = "255.255.248.0" }),
+        ($20 = @{ cidr = "20"; mask = "255.255.240.0" }),
+        ($19 = @{ cidr = "19"; mask = "255.255.224.0" }),
+        ($18 = @{ cidr = "18"; mask = "255.255.192.0" }),
+        ($17 = @{ cidr = "17"; mask = "255.255.128.0" }),
+        ($16 = @{ cidr = "16"; mask = "255.255.0.0" }),
+        ($15 = @{ cidr = "15"; mask = "255.254.0.0" }),
+        ($14 = @{ cidr = "14"; mask = "255.252.0.0" }),
+        ($13 = @{ cidr = "13"; mask = "255.248.0.0" }),
+        ($12 = @{ cidr = "12"; mask = "255.240.0.0" }),
+        ($11 = @{ cidr = "11"; mask = "255.224.0.0" }),
+        ($10 = @{ cidr = "10"; mask = "255.192.0.0" }),
+        ($9 = @{ cidr = "9"; mask = "255.128.0.0" }),
+        ($8 = @{ cidr = "8"; mask = "255.0.0.0" }),
+        ($7 = @{ cidr = "7"; mask = "254.0.0.0" }),
+        ($6 = @{ cidr = "6"; mask = "252.0.0.0" }),
+        ($5 = @{ cidr = "5"; mask = "248.0.0.0" }),
+        ($4 = @{ cidr = "4"; mask = "240.0.0.0" }),
+        ($3 = @{ cidr = "3"; mask = "224.0.0.0" }),
+        ($2 = @{ cidr = "2"; mask = "192.0.0.0" }),
+        ($1 = @{ cidr = "1"; mask = "128.0.0.0" }),
+        ($0 = @{ cidr = "0"; mask = "0.0.0.0" })
+    )
+    $foundMask = $subnetMasks | Where-Object { $_.'cidr' -eq $cidr }
+    Return $foundMask.mask
+}
 #EndRegion Supporting Functions
 
 #Region Pre-Requisites
@@ -277,21 +321,26 @@ Function New-ExtractDataFromSDDCBackup {
     .EXAMPLE
     New-ExtractDataFromSDDCBackup -backupFilePath "F:\backup\vcf-backup-sfo-vcf01-sfo-rainpole-io-2023-09-19-10-53-02.tar.gz" -encryptionPassword "VMw@re1!VMw@re1!"
 
-    .PARAMETER backupFilePath
+    .PARAMETER vcfBackupFilePath
     Relative or absolute to the VMware Cloud Foundation SDDC manager backup file somewhere on the local filesystem
+
+    .PARAMETER managementVcenterBackupFolder
+    Relative or absolute to the Management vCenter backup folder somewhere on the local filesystem
 
     .PARAMETER encryptionPassword
     The password that should be used to decrypt the VMware Cloud Foundation SDDC manager backup file ie the password that was used to encrypt it originally.
     #>
 
     Param(
-        [Parameter (Mandatory = $true)][String] $backupFilePath,
+        [Parameter (Mandatory = $true)][String] $vcfBackupFilePath,
+        [Parameter (Mandatory = $true)][String] $managementVcenterBackupFilePath,
         [Parameter (Mandatory = $true)][String] $encryptionPassword
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
-    $backupFileFullPath = (Resolve-Path -Path $backupFilePath).path
+    $backupFileFullPath = (Resolve-Path -Path $vcfBackupFilePath).path
     $backupFileName = (Get-ChildItem -path $backupFileFullPath).name
+    $vCenterbackupFileFullPath = (Resolve-Path -Path $managementVcenterBackupFolder).path
     $parentFolder = Split-Path -Path $backupFileFullPath
     $extractedBackupFolder = ($backupFileName -Split (".tar.gz"))[0]
     $jumpboxName = hostname
@@ -327,6 +376,8 @@ Function New-ExtractDataFromSDDCBackup {
     $metadataJSON = Get-Content "$parentFolder\$extractedBackupFolder\metadata.json" | ConvertFrom-JSON
     $dnsJSON = Get-Content "$parentFolder\$extractedBackupFolder\appliancemanager_dns_configuration.json" | ConvertFrom-JSON
     $ntpJSON = Get-Content "$parentFolder\$extractedBackupFolder\appliancemanager_ntp_configuration.json" | ConvertFrom-JSON
+    $mgmtVcenterMetadata = Get-Content -Path ($vCenterbackupFileFullPath + "/backup-metadata.json") | ConvertFrom-JSON
+    $managementSubnetMask = cidrToMask $mgmtVcenterMetadata.PrimaryNetworkInfo.ipv4.defaultGateway.prefix
 
     $sddcManagerIP = $metadataJSON.ip
     $managementSubnetMask = $metaDataJSON.netmask
@@ -342,7 +393,7 @@ Function New-ExtractDataFromSDDCBackup {
         'datacenter'         = $metaDataJSON.datacenter
         'netmask'            = $metaDataJSON.netmask
         'subnet'             = $managementSubnet
-        'gateway'            = $metaDataJSON.gateway
+        'gateway'            = $mgmtVcenterMetadata.PrimaryNetworkInfo.ipv4.defaultGateway
         'domain'             = $metaDataJSON.domain
         'search_path'        = $metaDataJSON.search_path
         'primaryDnsServer'   = $dnsJSON.primaryDnsServer
@@ -1380,7 +1431,7 @@ Function New-ReconstructedPartialBringupJsonSpec {
                 'subnet'       = $managementVmNetworkSubnet
                 'vlanId'       = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).vdsDetails.portgroups | Where-Object { $_.transportType -eq 'VM_MANAGEMENT' }).vlanId -as [string]
                 'mtu'          = "1500"
-                'gateway'      = If ($extractedSddcData.sddcManager.version.replace(".", "").substring(0, 3) -ge "520") { $extractedSddcData.mgmtDomainInfrastructure.gateway } else { ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'MANAGEMENT' }).gateway }
+                'gateway'      = $extractedSddcData.mgmtDomainInfrastructure.gateway
                 'portGroupKey' = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }).vdsDetails.portgroups | Where-Object { ($_.transportType -eq 'VM_MANAGEMENT') -and ($_.name -notlike "az2*") }).name
             }
         }
