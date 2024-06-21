@@ -1788,6 +1788,7 @@ Function New-PartialManagementDomainDeployment {
         LogMessage -Type EXCEPTION -Message "Error was: $ErrorMessage"
     }
 }
+Export-ModuleMember -Function New-PartialManagementDomainDeployment
 
 Function New-NSXManagerOvaDeployment {
     <#
