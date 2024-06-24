@@ -3931,18 +3931,24 @@ Function New-RebuiltVdsConfiguration {
                 }
                 $managementPortGroupName = ($vds.portgroups | Where-Object { $_.transportType -eq 'MANAGEMENT' }).name
 
-                $portgroupArray += $managementPortGroupName
-                $vmk0 = Get-VMHostNetworkAdapter -VMHost $vmHost -Name "vmk0"
-                $vmNicArray += $vmk0
+                If ($vds.portgroups | Where-Object { $_.transportType -eq 'MANAGEMENT' }) {
+                    $portgroupArray += $managementPortGroupName
+                    $vmk0 = Get-VMHostNetworkAdapter -VMHost $vmHost -Name "vmk0"
+                    $vmNicArray += $vmk0
+                }
                 If ($isPrimaryManagementCluster) {
-                    $vmotionPortgroupName = ($vds.portgroups | Where-Object { $_.transportType -eq 'VMOTION' }).name
-                    $portgroupArray += $vmotionPortgroupName
-                    $vsanPortgroupName = ($vds.portgroups | Where-Object { $_.transportType -eq 'VSAN' }).name
-                    $portgroupArray += $vsanPortgroupName
-                    $vmk1 = Get-VMHostNetworkAdapter -VMHost $vmHost -Name "vmk1"
-                    $vmk2 = Get-VMHostNetworkAdapter -VMHost $vmHost -Name "vmk2"
-                    $vmNicArray += $vmk1
-                    $vmNicArray += $vmk2
+                    If ($vds.portgroups | Where-Object { $_.transportType -eq 'VMOTION' }) {
+                        $vmotionPortgroupName = ($vds.portgroups | Where-Object { $_.transportType -eq 'VMOTION' }).name
+                        $portgroupArray += $vmotionPortgroupName
+                        $vmk1 = Get-VMHostNetworkAdapter -VMHost $vmHost -Name "vmk1"
+                        $vmNicArray += $vmk1
+                    }
+                    If ($vds.portgroups | Where-Object { $_.transportType -eq 'VSAN' }) {
+                        $vsanPortgroupName = ($vds.portgroups | Where-Object { $_.transportType -eq 'VSAN' }).name
+                        $portgroupArray += $vsanPortgroupName
+                        $vmk2 = Get-VMHostNetworkAdapter -VMHost $vmHost -Name "vmk2"
+                        $vmNicArray += $vmk2
+                    }
                 }
 
                 $hostMoRef = $vmhost.ExtensionData.moref.value
@@ -3955,8 +3961,12 @@ Function New-RebuiltVdsConfiguration {
 
                 $vmnicInVds = Get-VDPort -VDSwitch $vds.vdsName | Where-Object { $_.proxyHost.name -eq $vmhost.name -and $_.connectedEntity.name -eq $vmnicMinusOne }
                 If (!$vmnicInVds) {
-                    LogMessage -type INFO -message "[$($vmhost.name)] Adding Physical Adapter $($vds.nicNames[0]) to $($vds.vdsName) and migrating $($vmNicArray.name -join(", "))"
-                    Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $vmnicMinusOne -VMHostVirtualNic $vmNicArray -VirtualNicPortgroup $portgroupArray -confirm:$false
+                    If ($portgroupArray.count -ne 0) {
+                        LogMessage -type INFO -message "[$($vmhost.name)] Adding Physical Adapter $($vds.nicNames[0]) to $($vds.vdsName) and migrating $($vmNicArray.name -join(", "))"
+                        Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $vmnicMinusOne -VMHostVirtualNic $vmNicArray -VirtualNicPortgroup $portgroupArray -confirm:$false
+                    } else {
+                        Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $vmnicMinusOne -confirm:$false
+                    }
                 } else {
                     LogMessage -type INFO -message "[$($vmhost.name)] Physical Adapter $($vds.nicNames[0]) already in $($vds.vdsName). Skipping"
                 }
