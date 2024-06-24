@@ -2872,6 +2872,12 @@ Function Move-ClusterHostNetworkingTovSS {
 
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
+    $truncatedSddcManagerVersion = $extractedSddcData.sddcManager.version.replace(".", "").substring(0, 2)
+    If ($truncatedSddcManagerVersion -ge "51") {
+        $mgmtVmVlanId = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "VM_MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).vdsDetails.portgroups | Where-Object { $_.transportType -eq "VM_MANAGEMENT" }).vlanID
+    } else {
+        $mgmtVmVlanId = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).vdsDetails.portgroups | Where-Object { $_.transportType -eq "MANAGEMENT" }).vlanID
+    }
     $mgmtVlanId = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).vdsDetails.portgroups | Where-Object { $_.transportType -eq "MANAGEMENT" }).vlanID
     $vMotionVlanId = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).vdsDetails.portgroups | Where-Object { $_.transportType -eq "VMOTION" }).vlanID
     $vSanVlanId = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).vdsDetails.portgroups | Where-Object { $_.transportType -eq "VSAN" }).vlanID
@@ -2924,7 +2930,7 @@ Function Move-ClusterHostNetworkingTovSS {
         $tempMgmtPgExists = Get-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $vmhost -Name $vss_name) -Name "mgmt_temp" -errorAction SilentlyContinue
         If (!($tempMgmtPgExists)) {
             LogMessage -type INFO -message "[$vmhost] Creating temporary management portgroup `'mgmt_temp`'"
-            New-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $vmhost -Name $vss_name) -Name "mgmt_temp" -VLanId $mgmtVlanId | Out-Null
+            New-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $vmhost -Name $vss_name) -Name "mgmt_temp" -VLanId $mgmtVmVlanId | Out-Null
         } else {
             LogMessage -type INFO -message "[$vmhost] Temporary management portgroup `'mgmt_temp`' already exists. Skipping"
         }
