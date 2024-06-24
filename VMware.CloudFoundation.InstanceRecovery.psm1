@@ -3878,7 +3878,7 @@ Function New-RebuiltVdsConfiguration {
             'vdsName'     = $cluster.vdsDetails[$vdsConfigurationIndex].dvsName
             'nicnames'    = $nicNamesArray
             'vdsNetworks' = $cluster.vdsDetails[$vdsConfigurationIndex].networks
-            'portgroups'  = $primaryCluster.vdsDetails[$vdsConfigurationIndex].portgroups
+            'portgroups'  = $cluster.vdsDetails[$vdsConfigurationIndex].portgroups
         }
         $vdsConfiguration += $individualVds
         $tempremainingNicsDisplayObject = @()
