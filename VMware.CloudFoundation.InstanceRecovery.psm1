@@ -3802,6 +3802,7 @@ Function New-RebuiltVdsConfiguration {
     $workloadDomain = ($extractedSddcData.workloadDomains | Where-Object {$_.vsphereClusterDetails.name -contains $clustername})
     $clusterVdsDetails = ($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object {$_.name -eq $clusterName}).vdsDetails
     $isPrimaryCluster = ($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object {$_.name -eq $clusterName}).isDefault
+    $cluster = ($workloadDomain.vsphereClusterDetails | Where-Object {$_.vsphereClusterDetails.name -eq $clustername })
     If (($workloadDomain.domainType -eq "MANAGEMENT") -and ($isPrimaryCluster -eq 't')) {
         $isPrimaryManagementCluster = $true
     } else {
@@ -3852,13 +3853,13 @@ Function New-RebuiltVdsConfiguration {
         Do {
             $nicNamesArray =@()
             Write-Host ""; $remainingNicsDisplayObject | format-table -Property @{Expression =" "},id,deviceName,driver,linkStatus,description -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r","`n") }
-            If ($primaryCluster.vdsDetails[$vdsConfigurationIndex].transportZones){
-                $networksDisplay = ($primaryCluster.vdsDetails[$vdsConfigurationIndex].networks += "OVERLAY") -join (",")
+            If ($cluster.vdsDetails[$vdsConfigurationIndex].transportZones){
+                $networksDisplay = ($cluster.vdsDetails[$vdsConfigurationIndex].networks += "OVERLAY") -join (",")
             }
             else {
-                $networksDisplay = $primaryCluster.vdsDetails[$vdsConfigurationIndex].networks -join (",")
+                $networksDisplay = $cluster.vdsDetails[$vdsConfigurationIndex].networks -join (",")
             }
-            Write-Host ""; Write-Host " Recreating " -ForegroundColor Yellow -nonewline; Write-Host "$($primaryCluster.vdsDetails[$vdsConfigurationIndex].dvsName)" -ForegroundColor cyan -nonewline; Write-Host " which contained the networks: " -ForegroundColor Yellow -nonewline; Write-Host "$networksDisplay" -ForegroundColor Cyan
+            Write-Host ""; Write-Host " Recreating " -ForegroundColor Yellow -nonewline; Write-Host "$($cluster.vdsDetails[$vdsConfigurationIndex].dvsName)" -ForegroundColor cyan -nonewline; Write-Host " which contained the networks: " -ForegroundColor Yellow -nonewline; Write-Host "$networksDisplay" -ForegroundColor Cyan
             Write-Host " Enter a comma seperated list of IDs to use as vmnics for this VDS, or C to Cancel: " -ForegroundColor Yellow -nonewline
             $nicSelection = Read-Host
             If ($nicSelection -ne "C") {
@@ -3874,9 +3875,9 @@ Function New-RebuiltVdsConfiguration {
         } Until (($nicSelectionInvalid -eq $false) -OR ($nicSelection -eq "c"))
         If ($nicSelection -eq "c") {Break}
         $individualVds = [PSCustomObject]@{
-            'vdsName'     = $primaryCluster.vdsDetails[$vdsConfigurationIndex].dvsName
+            'vdsName'     = $cluster.vdsDetails[$vdsConfigurationIndex].dvsName
             'nicnames'    = $nicNamesArray
-            'vdsNetworks' = $primaryCluster.vdsDetails[$vdsConfigurationIndex].networks
+            'vdsNetworks' = $cluster.vdsDetails[$vdsConfigurationIndex].networks
             'portgroups'  = $primaryCluster.vdsDetails[$vdsConfigurationIndex].portgroups
         }
         $vdsConfiguration += $individualVds
