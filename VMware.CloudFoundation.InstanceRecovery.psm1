@@ -3802,7 +3802,7 @@ Function New-RebuiltVdsConfiguration {
     $workloadDomain = ($extractedSddcData.workloadDomains | Where-Object {$_.vsphereClusterDetails.name -contains $clustername})
     $clusterVdsDetails = ($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object {$_.name -eq $clusterName}).vdsDetails
     $isPrimaryCluster = ($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object {$_.name -eq $clusterName}).isDefault
-    $cluster = ($workloadDomain.vsphereClusterDetails | Where-Object {$_.vsphereClusterDetails.name -eq $clustername })
+    $cluster = ($workloadDomain.vsphereClusterDetails | Where-Object { $_.name -eq $clustername })
     If (($workloadDomain.domainType -eq "MANAGEMENT") -and ($isPrimaryCluster -eq 't')) {
         $isPrimaryManagementCluster = $true
     } else {
