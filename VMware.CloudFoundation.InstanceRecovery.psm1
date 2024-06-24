@@ -3925,18 +3925,19 @@ Function New-RebuiltVdsConfiguration {
                 $vmnicMinusOne = $vmhost | Get-VMHostNetworkAdapter | Where-Object {$_.deviceName -eq $vds.nicNames[0] }
 
                 If (($vds.portgroups | Where-Object {$_.transportType -eq 'VM_MANAGEMENT'}).name) {
-                    $managementPortGroupName = ($vds.portgroups | Where-Object {$_.transportType -eq 'VM_MANAGEMENT'}).name
+                    $managementVmPortGroupName = ($vds.portgroups | Where-Object { $_.transportType -eq 'VM_MANAGEMENT' }).name
                 } else {
-                    $managementPortGroupName = ($vds.portgroups | Where-Object {$_.transportType -eq 'MANAGEMENT'}).name
+                    $managementVmPortGroupName = ($vds.portgroups | Where-Object { $_.transportType -eq 'MANAGEMENT' }).name
                 }
+                $managementPortGroupName = ($vds.portgroups | Where-Object { $_.transportType -eq 'MANAGEMENT' }).name
 
                 $portgroupArray += $managementPortGroupName
                 $vmk0 = Get-VMHostNetworkAdapter -VMHost $vmHost -Name "vmk0"
                 $vmNicArray += $vmk0
                 If ($isPrimaryManagementCluster) {
-                    $vmotionPortgroupName = ($vds.portgroups | Where-Object {$_.transportType -eq 'VMOTION'}).name
+                    $vmotionPortgroupName = ($vds.portgroups | Where-Object { $_.transportType -eq 'VMOTION' }).name
                     $portgroupArray += $vmotionPortgroupName
-                    $vsanPortgroupName = ($vds.portgroups | Where-Object {$_.transportType -eq 'VSAN'}).name
+                    $vsanPortgroupName = ($vds.portgroups | Where-Object { $_.transportType -eq 'VSAN' }).name
                     $portgroupArray += $vsanPortgroupName
                     $vmk1 = Get-VMHostNetworkAdapter -VMHost $vmHost -Name "vmk1"
                     $vmk2 = Get-VMHostNetworkAdapter -VMHost $vmHost -Name "vmk2"
@@ -3966,11 +3967,11 @@ Function New-RebuiltVdsConfiguration {
             If ($isPrimaryManagementCluster) {
                 $vmsTomove = get-cluster -name $clusterName | get-vm | Where-Object { $_.Name -notlike "*vCLS*" }
                 foreach ($vmToMove in $vmsTomove) {
-                    If ((Get-VM -Name $vmToMove | Get-NetworkAdapter).NetworkName -ne $managementPortGroupName) {
-                        LogMessage -type INFO -message "[$($vmToMove.name)] Moving to $managementPortGroupName"
-                        Get-VM -Name $vmToMove | Get-NetworkAdapter | Set-NetworkAdapter -NetworkName $managementPortGroupName -confirm:$false | Out-Null
+                    If ((Get-VM -Name $vmToMove | Get-NetworkAdapter).NetworkName -ne $managementVmPortGroupName) {
+                        LogMessage -type INFO -message "[$($vmToMove.name)] Moving to $managementVmPortGroupName"
+                        Get-VM -Name $vmToMove | Get-NetworkAdapter | Set-NetworkAdapter -NetworkName $managementVmPortGroupName -confirm:$false | Out-Null
                     } else {
-                        LogMessage -type INFO -message "[$($vmToMove.name)] Already moved to $managementPortGroupName. Skipping"
+                        LogMessage -type INFO -message "[$($vmToMove.name)] Already moved to $managementVmPortGroupName. Skipping"
                     }
                 }
             }
