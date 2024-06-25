@@ -3753,7 +3753,7 @@ Function New-RebuiltVsanDatastore {
         }
         Get-Job | Receive-Job -Wait -AutoRemoveJob
         LogMessage -type INFO -message "[$clusterName] Renaming new datastore to original name: $datastoreName"
-        Get-Cluster -name $clusterName | Get-Datastore -Name "vsanDatastore" | Set-Datastore -Name $datastoreName | Out-Null
+        Get-Cluster -name $clusterName | Get-Datastore -Name "vsanDatastore*" | Set-Datastore -Name $datastoreName | Out-Null
         LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
     }
 }
