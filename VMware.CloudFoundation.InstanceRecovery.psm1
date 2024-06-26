@@ -2858,8 +2858,7 @@ Function Move-ClusterHostNetworkingTovSS {
         [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
         [Parameter (Mandatory = $true)][String] $clusterName,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
-        [Parameter (Mandatory = $true)][String] $mtu,
-        [Parameter (Mandatory = $true)][String] $vmnic
+        [Parameter (Mandatory = $true)][String] $mtu
 
     )
     $jumpboxName = hostname
@@ -2876,143 +2875,181 @@ Function Move-ClusterHostNetworkingTovSS {
     $mgmtVlanId = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).vdsDetails.portgroups | Where-Object { $_.transportType -eq "MANAGEMENT" }).vlanID
     $vMotionVlanId = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).vdsDetails.portgroups | Where-Object { $_.transportType -eq "VMOTION" }).vlanID
     $vSanVlanId = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).vdsDetails.portgroups | Where-Object { $_.transportType -eq "VSAN" }).vlanID
-    $vdsName = (($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereclusterdetails | Where-Object { $_.isDefault -eq "t" }).vdsdetails.dvsName
+    #$vdsName = (($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereclusterdetails | Where-Object { $_.isDefault -eq "t" }).vdsdetails.dvsName
+    $clustervdswitches = ($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereclusterdetails.vdsDetails
+
     $vss_name = "vSwitch0"
     $mgmt_name = "Management"
     $vmotion_name = "vMotion"
     $storage_name = "vSAN"
 
     LogMessage -type INFO -message "[$vCenterFqdn] Establishing Connection"
-    $vCenterConnection = connect-viserver $vCenterFqdn -user $vCenterAdmin -password $vCenterAdminPassword
-    Get-CustomAttribute
-    New-CustomAttribute -Name vdsConfiguration -TargetType Cluster
+    Connect-VIServer $vCenterFqdn -user $vCenterAdmin -password $vCenterAdminPassword *>$null
+    $vmhostArray = Get-Cluster -name $clusterName | Get-VMhost
 
-    $vmhost_array = get-cluster -name $clusterName | get-vmhost
-
-    # Gather data on VDS to migrate from
-    $vds = Get-VDSwitch -Name $vdsName
-    $vdsUUID = $vds.ExtensionData.Summary.Uuid
-    $vdsReport = @()
-    $vds.ExtensionData.Config.Host | ForEach-Object {
-        $esx = Get-View $_.Config.Host
-        $netSys = Get-View $esx.ConfigManager.NetworkSystem
-        $netSys.NetworkConfig.ProxySwitch | where-object { $_.Uuid -eq $vdsUUID } | ForEach-Object {
-            $_.Spec.Backing.PnicSpec | ForEach-Object {
-                $row = "" | Select Host, dvSwitch, PNic
-                $row.Host = $esx.Name
-                $row.dvSwitch = $vds.Name
-                $row.PNic = $_.PnicDevice
-                $vdsReport += $row
-            }
-        }
+    $existingAttribute = Get-CustomAttribute -Name vdsConfiguration -TargetType Cluster -erroraction SilentlyContinue
+    If (!$existingAttribute) {
+        New-CustomAttribute -Name vdsConfiguration -TargetType Cluster | Out-Null
     }
 
-    foreach ($vmhost in $vmhost_array) {
-
-        $nicsInVds = ($vdsReport | Where-Object { $_.host -eq $vmhost.name }).PNic
-        If ($vmnic -in $nicsInVds) {
-            LogMessage -type INFO -message "[$vmhost] Removing $vmnic from VDS"
-            Get-VMHostNetworkAdapter -VMHost $vmhost -Physical -Name $vmnic | Remove-VDSwitchPhysicalNetworkAdapter -Confirm:$false | Out-Null
-        } else {
-            LogMessage -type INFO -message "[$vmhost] $vmnic already removed from VDS. Skipping"
-        }
-        $vssExists = Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name $vss_name -errorAction silentlyContinue
-
-        If (!($vssExists)) {
-            LogMessage -type INFO -message "[$vmhost] Creating new VSS"
-            New-VirtualSwitch -VMHost $vmhost -Name $vss_name -mtu $mtu | Out-Null
-        } else {
-            LogMessage -type INFO -message "[$vmhost] VSS already exists. Skipping"
-        }
-
-        $tempMgmtPgExists = Get-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $vmhost -Name $vss_name) -Name "mgmt_temp" -errorAction SilentlyContinue
-        If (!($tempMgmtPgExists)) {
-            LogMessage -type INFO -message "[$vmhost] Creating temporary management portgroup `'mgmt_temp`'"
-            New-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $vmhost -Name $vss_name) -Name "mgmt_temp" -VLanId $mgmtVmVlanId | Out-Null
-        } else {
-            LogMessage -type INFO -message "[$vmhost] Temporary management portgroup `'mgmt_temp`' already exists. Skipping"
-        }
-
-        # pNICs to migrate to VSS
-        $vmnicToMove = Get-VMHostNetworkAdapter -VMHost $vmhost -Name $vmnic
-
-        # Array of pNICs to migrate to VSS
-        #$pnic_array = @($vmnicToMove)
-
-        # vSwitch to migrate to
-        $vss = Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name $vss_name
-
-        # Create destination portgroups
-        $mgmtPgExists = Get-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $vmhost -Name $vss_name) -Name $mgmt_name -errorAction SilentlyContinue
-        If (!($mgmtPgExists)) {
-            LogMessage -type INFO -message "[$vmhost] Creating $mgmt_name portrgroup on $vss_name"
-            $mgmt_pg = New-VirtualPortGroup -VirtualSwitch $vss -Name $mgmt_name -VLanId $mgmtVlanId
-        } else {
-            LogMessage -type INFO -message "[$vmhost] Management portgroup $mgmt_name already exists. Skipping"
-        }
-
-        $vmotionPgExists = Get-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $vmhost -Name $vss_name) -Name $vmotion_name -errorAction SilentlyContinue
-        If (!($vmotionPgExists)) {
-            LogMessage -type INFO -message "[$vmhost] Creating $vmotion_name portrgroup on $vss_name"
-            $vmotion_pg = New-VirtualPortGroup -VirtualSwitch $vss -Name $vmotion_name -VLanId $vMotionVlanId
-        } else {
-            LogMessage -type INFO -message "[$vmhost] Management portgroup $vmotion_name already exists. Skipping"
-        }
-
-        $storagePgExists = Get-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $vmhost -Name $vss_name) -Name $storage_name -errorAction SilentlyContinue
-        If (!($storagePgExists)) {
-            LogMessage -type INFO -message "[$vmhost] Creating $storage_name Network portrgroup on $vss_name"
-            $storage_pg = New-VirtualPortGroup -VirtualSwitch $vss -Name $storage_name -VLanId $vSanVlanId
-        } else {
-            LogMessage -type INFO -message "[$vmhost] Management portgroup $storage_name already exists. Skipping"
-        }
-
-        # Array of portgroups to map VMkernel interfaces (order matters!)
-        #$pg_array = @($mgmt_pg, $vmotion_pg, $storage_pg)
-
-        # VMkernel interfaces to migrate to VSS
-        #$mgmt_vmk = Get-VMHostNetworkAdapter -VMHost $vmhost -Name "vmk0"
-        #$vmotion_vmk = Get-VMHostNetworkAdapter -VMHost $vmhost -Name "vmk1"
-        #$storage_vmk = Get-VMHostNetworkAdapter -VMHost $vmhost -Name "vmk2"
-
-        # Array of VMkernel interfaces to migrate to VSS (order matters!)
-        #$vmk_array = @($mgmt_vmk, $vmotion_vmk, $storage_vmk)
-
-        # Perform the migration
-        #Add-VirtualSwitchPhysicalNetworkAdapter -VirtualSwitch $vss -VMHostPhysicalNic $pnic_array -VMHostVirtualNic $vmk_array -VirtualNicPortgroup $pg_array  -Confirm:$false
-        If ($vss.ExtensionData.Pnic -notlike "*$vmnic") {
-            LogMessage -type INFO -message "[$vmhost] Migrating $vmnic from $vdsName to $vss_name"
-            Add-VirtualSwitchPhysicalNetworkAdapter -VirtualSwitch $vss -VMHostPhysicalNic $vmnicToMove -confirm:$false
-        } else {
-            LogMessage -type INFO -message "[$vmhost] $vmnic already part of VSS. Skipping"
-        }
-
-        $vss = Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name $vss_name
-        If ($vss.ExtensionData.Pnic -like "*$vmnic") {
-            $vmks = $vmHost | Get-VMHostNetwork | Select-Object -ExpandProperty VirtualNic | Sort-Object Name
-            $currentStorageVmkPortgroup = ($vmks | Where-Object { $_.name -eq "vmk2" }).PortGroupName
-            If ($currentStorageVmkPortgroup -ne $storage_name) {
-                LogMessage -type INFO -message "[$vmhost] Migrating VSAN vmKernel from $vdsName to $vss_name"
-                Move-VMKernel -VMHost $vmhost -Interface "vmk2" -NetworkName $storage_name
-            } else {
-                LogMessage -type INFO -message "[$vmhost] VSAN vmKernel already on $vss_name. Skipping"
+    $storedVdsConfiguration = ((Get-Cluster -name $clustername).customfields | Where-Object { $_.key -eq "vdsConfiguration" }).value
+    If (!$storedVdsConfiguration) {
+        $clustervdsConfiguration = @()
+        Foreach ($vds in $clustervdswitches) {
+            # Gather data on VDS to migrate from
+            $vds = Get-VDSwitch -Name $vds.dvsName
+            $vdsUUID = $vds.ExtensionData.Summary.Uuid
+            $vdsReport = @()
+            $vds.ExtensionData.Config.Host | ForEach-Object {
+                $esx = Get-View $_.Config.Host
+                $netSys = Get-View $esx.ConfigManager.NetworkSystem
+                $netSys.NetworkConfig.ProxySwitch | where-object { $_.Uuid -eq $vdsUUID } | ForEach-Object {
+                    $_.Spec.Backing.PnicSpec | ForEach-Object {
+                        $row = "" | Select Host, dvSwitch, PNic
+                        $row.Host = $esx.Name
+                        $row.dvSwitch = $vds.Name
+                        $row.PNic = $_.PnicDevice
+                        $vdsReport += $row
+                    }
+                }
             }
-            $currentVmotionVmkPortgroup = ($vmks | Where-Object { $_.name -eq "vmk1" }).PortGroupName
-            If ($currentVmotionVmkPortgroup -ne $vmotion_name) {
-                LogMessage -type INFO -message "[$vmhost] Migrating vMotion vmKernel from $vdsName to $vss_name"
-                Move-VMKernel -VMHost $vmhost -Interface "vmk1" -NetworkName $vmotion_name
-            } else {
-                LogMessage -type INFO -message "[$vmhost] vMotion vmKernel already on $vss_name. Skipping"
-            }
-            $currentMgmtVmkPortgroup = ($vmks | Where-Object { $_.name -eq "vmk0" }).PortGroupName
-            If ($currentMgmtVmkPortgroup -ne $mgmt_name) {
-                LogMessage -type INFO -message "[$vmhost] Migrating Management vmKernel from $vdsName to $vss_name"
-                Move-VMKernel -VMHost $vmhost -Interface "vmk0" -NetworkName $mgmt_name
-            } else {
-                LogMessage -type INFO -message "[$vmhost] Management vmKernel already on $vss_name. Skipping"
+            $clustervdsConfiguration += $vdsReport
+        }
+        $cluster = Get-Cluster -name $clusterName
+        $cluster | Set-Annotation -CustomAttribute "vdsConfiguration" -Value ($clustervdsConfiguration | ConvertTo-Json) | Out-Null
+        $storedVdsConfiguration = ((Get-Cluster -name $clustername).customfields | Where-Object { $_.key -eq "vdsConfiguration" }).value
+    }
+
+    Foreach ($vds in $clustervdswitches) {
+        #Get Current vDS Configuration
+        $vdsName = $vds.dvsName
+        $vds = Get-VDSwitch -Name $vdsName
+        $vdsUUID = $vds.ExtensionData.Summary.Uuid
+        $vdsReport = @()
+        $vds.ExtensionData.Config.Host | ForEach-Object {
+            $esx = Get-View $_.Config.Host
+            $netSys = Get-View $esx.ConfigManager.NetworkSystem
+            $netSys.NetworkConfig.ProxySwitch | where-object { $_.Uuid -eq $vdsUUID } | ForEach-Object {
+                $_.Spec.Backing.PnicSpec | ForEach-Object {
+                    $row = "" | Select Host, dvSwitch, PNic
+                    $row.Host = $esx.Name
+                    $row.dvSwitch = $vds.Name
+                    $row.PNic = $_.PnicDevice
+                    $vdsReport += $row
+                }
             }
         }
-        Start-Sleep 5
+        foreach ($vmhost in $vmhostArray) {
+            $nicToMoveToVdsFirst = (($clustervdsConfiguration | Where-Object { ($_.host -eq $vmhost.name) -and ($_.dvSwitch -eq $vdsName) }).pnic)[-1]
+            $nicsInVds = ($vdsReport | Where-Object { $_.host -eq $vmhost.name }).PNic
+            If ($nicToMoveToVdsFirst -in $nicsInVds) {
+                LogMessage -type INFO -message "[$vmhost] Removing $nicToMoveToVdsFirst from VDS"
+                Get-VMHostNetworkAdapter -VMHost $vmhost -Physical -Name $nicToMoveToVdsFirst | Remove-VDSwitchPhysicalNetworkAdapter -Confirm:$false | Out-Null
+            } else {
+                LogMessage -type INFO -message "[$vmhost] $nicToMoveToVdsFirst already removed from VDS. Skipping"
+            }
+            $vssExists = Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name $vss_name -errorAction silentlyContinue
+
+            If (!($vssExists)) {
+                LogMessage -type INFO -message "[$vmhost] Creating new VSS"
+                New-VirtualSwitch -VMHost $vmhost -Name $vss_name -mtu $mtu | Out-Null
+            } else {
+                LogMessage -type INFO -message "[$vmhost] VSS already exists. Skipping"
+            }
+
+            If (($vds.portgroups | Where-Object { $_.transportType -eq 'VM_MANAGEMENT' }) -OR ((!($vds.portgroups | Where-Object { $_.transportType -eq 'VM_MANAGEMENT' })) -and ($vds.portgroups | Where-Object { $_.transportType -eq 'MANAGEMENT' }))) {
+                $tempMgmtPgExists = Get-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $vmhost -Name $vss_name) -Name "mgmt_temp" -errorAction SilentlyContinue
+                If (!($tempMgmtPgExists)) {
+                    LogMessage -type INFO -message "[$vmhost] Creating temporary management portgroup `'mgmt_temp`'"
+                    New-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $vmhost -Name $vss_name) -Name "mgmt_temp" -VLanId $mgmtVmVlanId | Out-Null
+                } else {
+                    LogMessage -type INFO -message "[$vmhost] Temporary management portgroup `'mgmt_temp`' already exists. Skipping"
+                }
+            }
+
+            # pNICs to migrate to VSS
+            $vmnicToMove = Get-VMHostNetworkAdapter -VMHost $vmhost -Name $nicToMoveToVdsFirst
+
+            # vSwitch to migrate to
+            $vss = Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name $vss_name
+
+            # Create destination portgroups
+            If ($vds.portgroups | Where-Object { $_.transportType -eq 'MANAGEMENT' }) {
+                $mgmtPgExists = Get-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $vmhost -Name $vss_name) -Name $mgmt_name -errorAction SilentlyContinue
+                If (!($mgmtPgExists)) {
+                    LogMessage -type INFO -message "[$vmhost] Creating $mgmt_name portrgroup on $vss_name"
+                    $mgmt_pg = New-VirtualPortGroup -VirtualSwitch $vss -Name $mgmt_name -VLanId $mgmtVlanId
+                } else {
+                    LogMessage -type INFO -message "[$vmhost] Management portgroup $mgmt_name already exists. Skipping"
+                }
+
+            }
+
+            If ($vds.portgroups | Where-Object { $_.transportType -eq 'VMOTION' }) {
+                $vmotionPgExists = Get-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $vmhost -Name $vss_name) -Name $vmotion_name -errorAction SilentlyContinue
+                If (!($vmotionPgExists)) {
+                    LogMessage -type INFO -message "[$vmhost] Creating $vmotion_name portrgroup on $vss_name"
+                    $vmotion_pg = New-VirtualPortGroup -VirtualSwitch $vss -Name $vmotion_name -VLanId $vMotionVlanId
+                } else {
+                    LogMessage -type INFO -message "[$vmhost] Management portgroup $vmotion_name already exists. Skipping"
+                }
+
+            }
+
+            If ($vds.portgroups | Where-Object { $_.transportType -eq 'VSAN' }) {
+                $storagePgExists = Get-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $vmhost -Name $vss_name) -Name $storage_name -errorAction SilentlyContinue
+                If (!($storagePgExists)) {
+                    LogMessage -type INFO -message "[$vmhost] Creating $storage_name Network portrgroup on $vss_name"
+                    $storage_pg = New-VirtualPortGroup -VirtualSwitch $vss -Name $storage_name -VLanId $vSanVlanId
+                } else {
+                    LogMessage -type INFO -message "[$vmhost] Management portgroup $storage_name already exists. Skipping"
+                }
+
+            }
+
+            If ($vss.ExtensionData.Pnic -notlike "*$nicToMoveToVdsFirst") {
+                LogMessage -type INFO -message "[$vmhost] Migrating $nicToMoveToVdsFirst from $vdsName to $vss_name"
+                Add-VirtualSwitchPhysicalNetworkAdapter -VirtualSwitch $vss -VMHostPhysicalNic $vmnicToMove -confirm:$false
+            } else {
+                LogMessage -type INFO -message "[$vmhost] $nicToMoveToVdsFirst already part of VSS. Skipping"
+            }
+
+            $vss = Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name $vss_name
+            If ($vss.ExtensionData.Pnic -like "*$nicToMoveToVdsFirst") {
+                $vmks = $vmHost | Get-VMHostNetwork | Select-Object -ExpandProperty VirtualNic | Sort-Object Name
+                If ($vds.portgroups | Where-Object { $_.transportType -eq 'VSAN' }) {
+                    $currentStorageVmkPortgroup = ($vmks | Where-Object { $_.name -eq "vmk2" }).PortGroupName
+                    If ($currentStorageVmkPortgroup -ne $storage_name) {
+                        LogMessage -type INFO -message "[$vmhost] Migrating VSAN vmKernel from $vdsName to $vss_name"
+                        Move-VMKernel -VMHost $vmhost -Interface "vmk2" -NetworkName $storage_name
+                    } else {
+                        LogMessage -type INFO -message "[$vmhost] VSAN vmKernel already on $vss_name. Skipping"
+                    }
+
+                }
+                If ($vds.portgroups | Where-Object { $_.transportType -eq 'VMOTION' }) {
+                    $currentVmotionVmkPortgroup = ($vmks | Where-Object { $_.name -eq "vmk1" }).PortGroupName
+                    If ($currentVmotionVmkPortgroup -ne $vmotion_name) {
+                        LogMessage -type INFO -message "[$vmhost] Migrating vMotion vmKernel from $vdsName to $vss_name"
+                        Move-VMKernel -VMHost $vmhost -Interface "vmk1" -NetworkName $vmotion_name
+                    } else {
+                        LogMessage -type INFO -message "[$vmhost] vMotion vmKernel already on $vss_name. Skipping"
+                    }
+
+                }
+                If ($vds.portgroups | Where-Object { $_.transportType -eq 'VMOTION' }) {
+                    $currentMgmtVmkPortgroup = ($vmks | Where-Object { $_.name -eq "vmk0" }).PortGroupName
+                    If ($currentMgmtVmkPortgroup -ne $mgmt_name) {
+                        LogMessage -type INFO -message "[$vmhost] Migrating Management vmKernel from $vdsName to $vss_name"
+                        Move-VMKernel -VMHost $vmhost -Interface "vmk0" -NetworkName $mgmt_name
+                    } else {
+                        LogMessage -type INFO -message "[$vmhost] Management vmKernel already on $vss_name. Skipping"
+                    }
+
+                }
+            }
+            Start-Sleep 5
+        }
     }
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
