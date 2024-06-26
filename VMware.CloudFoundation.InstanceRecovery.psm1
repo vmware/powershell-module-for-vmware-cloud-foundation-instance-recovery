@@ -1739,15 +1739,11 @@ Function New-PartialManagementDomainDeployment {
                 }
             }
             If ($realErrorFound -eq "True") {
-                LogMessage -Type QUESTION -Message "Do you wish to proceed proceed (Y/N)? " -skipnewline
-                $confirmation = Read-Host
-                If ($confirmation -ne "Y") {
-                    Break
-                }
+                Break
             }
         }
         LogMessage -Type WAIT -Message "[$cloudBuilderFQDN] Starting Management Domain Deployment"
-        $sddcDeployment = Start-CloudBuilderSDDC  -json $partialBringupSpecFilePath
+        $sddcDeployment = Start-CloudBuilderSDDC -json $partialBringupSpecFilePath
         $pollLoopCounter = 0
         $status = Get-CloudBuilderSDDC $sddcDeployment.id
         If ($status.Status -ne "IN_PROGRESS") {
@@ -2431,7 +2427,7 @@ Function Resolve-PhysicalHostServiceAccounts {
     }
 
     Foreach ($hostInstance in $clusterHosts) {
-        $esxiRootPassword = [String]((Invoke-VcfGetCredentials).Elements | where-object {$_.Resource.ResourceName -eq $hostInstance.name}).password
+        $esxiRootPassword = [String]((Invoke-VcfGetCredentials).Elements | where-object { $_.Resource.ResourceName -eq $hostInstance.name }).password
         $esxiConnection = Connect-VIServer -Server $hostInstance.name -User root -Password $esxiRootPassword.Trim() | Out-Null
         $esxiHostName = $hostInstance.name.Split(".")[0]
         $svcAccountName = "svc-vcf-$esxiHostName"
@@ -2444,7 +2440,7 @@ Function Resolve-PhysicalHostServiceAccounts {
             LogMessage -type INFO -message "[$($hostInstance.name)] VCF Service Account Found: Setting Password"
             Set-VMHostAccount -UserAccount $svcAccountName -Password $svcAccountPassword | Out-Null
         }
-		Disconnect-VIServer $hostInstance.name -confirm:$false | Out-Null
+        Disconnect-VIServer $hostInstance.name -confirm:$false | Out-Null
     }
 
     Foreach ($hostInstance in $clusterHosts) {
@@ -2636,7 +2632,7 @@ Function Invoke-vCenterRestore {
             Start-Sleep 5
             $restoreStatus = $stream.Read()
             If ($restoreStatus) {
-                $restoreStatusArray = $restoreStatus -split("\r\n")
+                $restoreStatusArray = $restoreStatus -split ("\r\n")
                 If ($restoreStatusArray) {
                     If ($restoreStatusArray[2]) {
                         $state = $restoreStatusArray[2].trim()
@@ -2766,8 +2762,7 @@ Function Remove-ClusterHostsFromVds {
     $esxiHosts = Get-Cluster -name $clusterName | get-vmhost
     Foreach ($esxiHost in $esxiHosts) {
         $connectedVdswitches = Get-VDSwitch -VMHost $esxiHost
-        Foreach ($vds in $connectedVdswitches)
-        {
+        Foreach ($vds in $connectedVdswitches) {
             LogMessage -type INFO -message "[$($esxiHost.name)] Removing from $($vds.name)"
             $vmnicsInUse = Get-VDSwitch -Name $vds.name | Get-VMHostNetworkAdapter -VMHost $esxiHost -Physical
             Get-VDSwitch -Name $vds.name | Get-VMHostNetworkAdapter -VMHost $esxiHost -Physical | Remove-VDSwitchPhysicalNetworkAdapter -Confirm:$false | Out-Null
@@ -2887,7 +2882,10 @@ Function Move-ClusterHostNetworkingTovSS {
     $vmotion_name = "vMotion"
     $storage_name = "vSAN"
 
+    LogMessage -type INFO -message "[$vCenterFqdn] Establishing Connection"
     $vCenterConnection = connect-viserver $vCenterFqdn -user $vCenterAdmin -password $vCenterAdminPassword
+    Get-CustomAttribute
+    New-CustomAttribute -Name vdsConfiguration -TargetType Cluster
 
     $vmhost_array = get-cluster -name $clusterName | get-vmhost
 
