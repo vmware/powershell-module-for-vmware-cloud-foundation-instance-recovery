@@ -2767,14 +2767,18 @@ Function Remove-ClusterHostsFromVds {
     $vss_name = "vSwitch0"
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
-    $esxiHosts = get-cluster -name $clusterName | get-vmhost
+    $esxiHosts = Get-Cluster -name $clusterName | get-vmhost
     Foreach ($esxiHost in $esxiHosts) {
-        LogMessage -type INFO -message "[$($esxiHost.name)] Removing from $vdsName"
-        $vmnicsInUse = Get-VDSwitch -Name $vdsName | Get-VMHostNetworkAdapter -VMHost $esxiHost -Physical
-        Get-VDSwitch -Name $vdsName | Get-VMHostNetworkAdapter -VMHost $esxiHost -Physical | Remove-VDSwitchPhysicalNetworkAdapter -Confirm:$false | Out-Null
-        Get-VDSwitch -Name $vdsName | Remove-VDSwitchVMHost -VMHost $esxiHost -Confirm:$false | Out-Null
-        $vss = Get-VMHost -Name $esxiHost | Get-VirtualSwitch -Name $vss_name
-        Add-VirtualSwitchPhysicalNetworkAdapter -VirtualSwitch $vss -VMHostPhysicalNic $vmnicsInUse -Confirm:$false
+        $connectedVdswitches = Get-VDSwitch -VMHost $esxiHost
+        Foreach ($vds in $connectedVdswitches)
+        {
+            LogMessage -type INFO -message "[$($esxiHost.name)] Removing from $($vds.name)"
+            $vmnicsInUse = Get-VDSwitch -Name $vds.name | Get-VMHostNetworkAdapter -VMHost $esxiHost -Physical
+            Get-VDSwitch -Name $vds.name | Get-VMHostNetworkAdapter -VMHost $esxiHost -Physical | Remove-VDSwitchPhysicalNetworkAdapter -Confirm:$false | Out-Null
+            Get-VDSwitch -Name $vds.name | Remove-VDSwitchVMHost -VMHost $esxiHost -Confirm:$false | Out-Null
+            $vss = Get-VMHost -Name $esxiHost | Get-VirtualSwitch -Name $vss_name
+            Add-VirtualSwitchPhysicalNetworkAdapter -VirtualSwitch $vss -VMHostPhysicalNic $vmnicsInUse -Confirm:$false
+        }
     }
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
