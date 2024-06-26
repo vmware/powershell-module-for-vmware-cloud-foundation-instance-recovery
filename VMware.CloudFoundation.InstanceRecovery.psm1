@@ -2751,17 +2751,13 @@ Function Remove-ClusterHostsFromVds {
     .PARAMETER clusterName
     Name of the vSphere cluster instance from which hosts should be removed
 
-    .PARAMETER vdsName
-    Name of the vSphere Distributed Switch to remove cluster hosts from
-
     #>
 
     Param(
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
         [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
-        [Parameter (Mandatory = $true)][String] $clusterName,
-        [Parameter (Mandatory = $true)][String] $vdsName
+        [Parameter (Mandatory = $true)][String] $clusterName
     )
     $jumpboxName = hostname
     $vss_name = "vSwitch0"
