@@ -3986,31 +3986,34 @@ Function New-RebuiltVdsConfiguration {
                 }
             }
 
-            Foreach ($vmHost in $vmHosts) {
-                #Remove Virtual Switch
-                $hostvss = Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name "vSwitch0" -errorAction silentlyContinue
-                If ($hostvss) {
-                    LogMessage -type INFO -message "[$($vmhost.name)] Removing vSwitch0"
-                    Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name "vSwitch0" | Remove-VirtualSwitch -Confirm:$false | Out-Null
-                } else {
-                    LogMessage -type INFO -message "[$($vmhost.name)] vSwitch0 already removed. Skipping"
-                }
-
-
-                $remainingVmnics = @()
-                Foreach ($nic in $vds.nicNames) {
-                    If ($nic -ne $vds.nicNames[0]) {
-                        $remainingVmnics += $nic
-                    }
-                }
-                Foreach ($nic in $remainingVmnics) {
-                    $vmnicInVds = Get-VDPort -VDSwitch $vds.vdsName | Where-Object { $_.proxyHost.name -eq $vmhost.name -and $_.connectedEntity.name -eq $nic }
-                    If (!$vmnicInVds) {
-                        LogMessage -type INFO -message "[$($vmhost.name)] Adding Additional Nic $nic to $($vds.vdsName)"
-                        $additionalNic = $vmhost | Get-VMHostNetworkAdapter -Physical -Name $nic
-                        Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $additionalNic -confirm:$false
+            Foreach ($vds in $vdsConfiguration)
+            {
+                Foreach ($vmHost in $vmHosts)
+                {
+                    #Remove Virtual Switch
+                    $hostvss = Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name "vSwitch0" -errorAction silentlyContinue
+                    If ($hostvss) {
+                        LogMessage -type INFO -message "[$($vmhost.name)] Removing vSwitch0"
+                        Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name "vSwitch0" | Remove-VirtualSwitch -Confirm:$false | Out-Null
                     } else {
-                        LogMessage -type INFO -message "[$($vmhost.name)] Physical Adapter $nic already in $($vds.vdsName). Skipping"
+                        LogMessage -type INFO -message "[$($vmhost.name)] vSwitch0 already removed. Skipping"
+                    }
+
+                    $remainingVmnics = @()
+                    Foreach ($nic in $vds.nicNames) {
+                        If ($nic -ne $vds.nicNames[0]) {
+                            $remainingVmnics += $nic
+                        }
+                    }
+                    Foreach ($nic in $remainingVmnics) {
+                        $vmnicInVds = Get-VDPort -VDSwitch $vds.vdsName | Where-Object { $_.proxyHost.name -eq $vmhost.name -and $_.connectedEntity.name -eq $nic }
+                        If (!$vmnicInVds) {
+                            LogMessage -type INFO -message "[$($vmhost.name)] Adding Additional Nic $nic to $($vds.vdsName)"
+                            $additionalNic = $vmhost | Get-VMHostNetworkAdapter -Physical -Name $nic
+                            Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $additionalNic -confirm:$false
+                        } else {
+                            LogMessage -type INFO -message "[$($vmhost.name)] Physical Adapter $nic already in $($vds.vdsName). Skipping"
+                        }
                     }
                 }
             }
