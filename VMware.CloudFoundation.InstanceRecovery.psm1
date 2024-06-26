@@ -3922,9 +3922,9 @@ Function New-RebuiltVdsConfiguration {
             Foreach ($vmHost in $vmHosts) {
                 $vmNicArray = @()
                 $portgroupArray = @()
-                $vmnicMinusOne = $vmhost | Get-VMHostNetworkAdapter | Where-Object {$_.deviceName -eq $vds.nicNames[0] }
+                $vmnicMinusOne = $vmhost | Get-VMHostNetworkAdapter | Where-Object { $_.deviceName -eq $vds.nicNames[0] }
 
-                If (($vds.portgroups | Where-Object {$_.transportType -eq 'VM_MANAGEMENT'}).name) {
+                If (($vds.portgroups | Where-Object { $_.transportType -eq 'VM_MANAGEMENT' }).name) {
                     $managementVmPortGroupName = ($vds.portgroups | Where-Object { $_.transportType -eq 'VM_MANAGEMENT' }).name
                 } else {
                     $managementVmPortGroupName = ($vds.portgroups | Where-Object { $_.transportType -eq 'MANAGEMENT' }).name
@@ -3972,48 +3972,45 @@ Function New-RebuiltVdsConfiguration {
                 }
 
             }
-
-            #Move Mgmt VMs to Management Portgroup
-            If ($isPrimaryManagementCluster) {
-                $vmsTomove = get-cluster -name $clusterName | get-vm | Where-Object { $_.Name -notlike "*vCLS*" }
-                foreach ($vmToMove in $vmsTomove) {
-                    If ((Get-VM -Name $vmToMove | Get-NetworkAdapter).NetworkName -ne $managementVmPortGroupName) {
-                        LogMessage -type INFO -message "[$($vmToMove.name)] Moving to $managementVmPortGroupName"
-                        Get-VM -Name $vmToMove | Get-NetworkAdapter | Set-NetworkAdapter -NetworkName $managementVmPortGroupName -confirm:$false | Out-Null
-                    } else {
-                        LogMessage -type INFO -message "[$($vmToMove.name)] Already moved to $managementVmPortGroupName. Skipping"
-                    }
+        }
+        #Move Mgmt VMs to Management Portgroup
+        If ($isPrimaryManagementCluster) {
+            $vmsTomove = get-cluster -name $clusterName | get-vm | Where-Object { $_.Name -notlike "*vCLS*" }
+            foreach ($vmToMove in $vmsTomove) {
+                If ((Get-VM -Name $vmToMove | Get-NetworkAdapter).NetworkName -ne $managementVmPortGroupName) {
+                    LogMessage -type INFO -message "[$($vmToMove.name)] Moving to $managementVmPortGroupName"
+                    Get-VM -Name $vmToMove | Get-NetworkAdapter | Set-NetworkAdapter -NetworkName $managementVmPortGroupName -confirm:$false | Out-Null
+                } else {
+                    LogMessage -type INFO -message "[$($vmToMove.name)] Already moved to $managementVmPortGroupName. Skipping"
                 }
             }
+        }
 
-            Foreach ($vds in $vdsConfiguration)
-            {
-                Foreach ($vmHost in $vmHosts)
-                {
-                    #Remove Virtual Switch
-                    $hostvss = Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name "vSwitch0" -errorAction silentlyContinue
-                    If ($hostvss) {
-                        LogMessage -type INFO -message "[$($vmhost.name)] Removing vSwitch0"
-                        Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name "vSwitch0" | Remove-VirtualSwitch -Confirm:$false | Out-Null
+        Foreach ($vds in $vdsConfiguration) {
+            Foreach ($vmHost in $vmHosts) {
+                #Remove Virtual Switch
+                $hostvss = Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name "vSwitch0" -errorAction silentlyContinue
+                If ($hostvss) {
+                    LogMessage -type INFO -message "[$($vmhost.name)] Removing vSwitch0"
+                    Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name "vSwitch0" | Remove-VirtualSwitch -Confirm:$false | Out-Null
+                } else {
+                    LogMessage -type INFO -message "[$($vmhost.name)] vSwitch0 already removed. Skipping"
+                }
+
+                $remainingVmnics = @()
+                Foreach ($nic in $vds.nicNames) {
+                    If ($nic -ne $vds.nicNames[0]) {
+                        $remainingVmnics += $nic
+                    }
+                }
+                Foreach ($nic in $remainingVmnics) {
+                    $vmnicInVds = Get-VDPort -VDSwitch $vds.vdsName | Where-Object { $_.proxyHost.name -eq $vmhost.name -and $_.connectedEntity.name -eq $nic }
+                    If (!$vmnicInVds) {
+                        LogMessage -type INFO -message "[$($vmhost.name)] Adding Additional Nic $nic to $($vds.vdsName)"
+                        $additionalNic = $vmhost | Get-VMHostNetworkAdapter -Physical -Name $nic
+                        Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $additionalNic -confirm:$false
                     } else {
-                        LogMessage -type INFO -message "[$($vmhost.name)] vSwitch0 already removed. Skipping"
-                    }
-
-                    $remainingVmnics = @()
-                    Foreach ($nic in $vds.nicNames) {
-                        If ($nic -ne $vds.nicNames[0]) {
-                            $remainingVmnics += $nic
-                        }
-                    }
-                    Foreach ($nic in $remainingVmnics) {
-                        $vmnicInVds = Get-VDPort -VDSwitch $vds.vdsName | Where-Object { $_.proxyHost.name -eq $vmhost.name -and $_.connectedEntity.name -eq $nic }
-                        If (!$vmnicInVds) {
-                            LogMessage -type INFO -message "[$($vmhost.name)] Adding Additional Nic $nic to $($vds.vdsName)"
-                            $additionalNic = $vmhost | Get-VMHostNetworkAdapter -Physical -Name $nic
-                            Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $additionalNic -confirm:$false
-                        } else {
-                            LogMessage -type INFO -message "[$($vmhost.name)] Physical Adapter $nic already in $($vds.vdsName). Skipping"
-                        }
+                        LogMessage -type INFO -message "[$($vmhost.name)] Physical Adapter $nic already in $($vds.vdsName). Skipping"
                     }
                 }
             }
