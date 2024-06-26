@@ -3972,18 +3972,19 @@ Function New-RebuiltVdsConfiguration {
                 }
 
             }
-        }
-        #Move Mgmt VMs to Management Portgroup
-        If ($isPrimaryManagementCluster) {
-            $vmsTomove = get-cluster -name $clusterName | get-vm | Where-Object { $_.Name -notlike "*vCLS*" }
-            foreach ($vmToMove in $vmsTomove) {
-                If ((Get-VM -Name $vmToMove | Get-NetworkAdapter).NetworkName -ne $managementVmPortGroupName) {
-                    LogMessage -type INFO -message "[$($vmToMove.name)] Moving to $managementVmPortGroupName"
-                    Get-VM -Name $vmToMove | Get-NetworkAdapter | Set-NetworkAdapter -NetworkName $managementVmPortGroupName -confirm:$false | Out-Null
-                } else {
-                    LogMessage -type INFO -message "[$($vmToMove.name)] Already moved to $managementVmPortGroupName. Skipping"
+            #Move Mgmt VMs to Management Portgroup
+            If ($isPrimaryManagementCluster) {
+                $vmsTomove = get-cluster -name $clusterName | get-vm | Where-Object { $_.Name -notlike "*vCLS*" }
+                foreach ($vmToMove in $vmsTomove) {
+                    If ((Get-VM -Name $vmToMove | Get-NetworkAdapter).NetworkName -ne $managementVmPortGroupName) {
+                        LogMessage -type INFO -message "[$($vmToMove.name)] Moving to $managementVmPortGroupName"
+                        Get-VM -Name $vmToMove | Get-NetworkAdapter | Set-NetworkAdapter -NetworkName $managementVmPortGroupName -confirm:$false | Out-Null
+                    } else {
+                        LogMessage -type INFO -message "[$($vmToMove.name)] Already moved to $managementVmPortGroupName. Skipping"
+                    }
                 }
             }
+
         }
 
         Foreach ($vds in $vdsConfiguration) {
