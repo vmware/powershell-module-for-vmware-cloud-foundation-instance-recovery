@@ -2848,8 +2848,6 @@ Function Move-ClusterHostNetworkingTovSS {
     .PARAMETER mtu
     MTU to be assigned to the temporary standard switch
 
-    .PARAMETER vmnic
-    vmnic to be moved from the vDS to the vSS
     #>
 
     Param(
@@ -3037,7 +3035,7 @@ Function Move-ClusterHostNetworkingTovSS {
                     }
 
                 }
-                If ($vds.portgroups | Where-Object { $_.transportType -eq 'VMOTION' }) {
+                If ($vds.portgroups | Where-Object { $_.transportType -eq 'MANAGEMENT' }) {
                     $currentMgmtVmkPortgroup = ($vmks | Where-Object { $_.name -eq "vmk0" }).PortGroupName
                     If ($currentMgmtVmkPortgroup -ne $mgmt_name) {
                         LogMessage -type INFO -message "[$vmhost] Migrating Management vmKernel from $vdsName to $vss_name"
