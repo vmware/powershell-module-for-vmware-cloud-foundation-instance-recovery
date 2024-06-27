@@ -2890,7 +2890,7 @@ Function Move-ClusterHostNetworkingTovSS {
         New-CustomAttribute -Name vdsConfiguration -TargetType Cluster | Out-Null
     }
 
-    $storedVdsConfiguration = ((Get-Cluster -name $clustername).customfields | Where-Object { $_.key -eq "vdsConfiguration" }).value
+    $storedVdsConfiguration = (((Get-Cluster -name $clustername).customfields | Where-Object { $_.key -eq "vdsConfiguration" }).value) | ConvertFrom-Json
     If (!$storedVdsConfiguration) {
         $clustervdsConfiguration = @()
         Foreach ($vds in $clustervdswitches) {
@@ -2915,7 +2915,7 @@ Function Move-ClusterHostNetworkingTovSS {
         }
         $cluster = Get-Cluster -name $clusterName
         $cluster | Set-Annotation -CustomAttribute "vdsConfiguration" -Value ($clustervdsConfiguration | ConvertTo-Json) | Out-Null
-        $storedVdsConfiguration = ((Get-Cluster -name $clustername).customfields | Where-Object { $_.key -eq "vdsConfiguration" }).value
+        $storedVdsConfiguration = (((Get-Cluster -name $clustername).customfields | Where-Object { $_.key -eq "vdsConfiguration" }).value) | ConvertFrom-Json
     }
 
     Foreach ($vdsInstance in $clustervdswitches) {
@@ -2938,7 +2938,7 @@ Function Move-ClusterHostNetworkingTovSS {
             }
         }
         foreach ($vmhost in $vmhostArray) {
-            $nicToMoveToVdsFirst = (($clustervdsConfiguration | Where-Object { ($_.host -eq $vmhost.name) -and ($_.dvSwitch -eq $vdsName) }).pnic)[-1]
+            $nicToMoveToVdsFirst = (($storedVdsConfiguration | Where-Object { ($_.host -eq $vmhost.name) -and ($_.dvSwitch -eq $vdsName) }).pnic)[-1]
             $nicsInVds = ($vdsReport | Where-Object { $_.host -eq $vmhost.name }).PNic
             If ($nicToMoveToVdsFirst -in $nicsInVds) {
                 LogMessage -type INFO -message "[$vmhost] Removing $nicToMoveToVdsFirst from VDS"
