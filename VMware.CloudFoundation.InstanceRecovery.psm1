@@ -2918,9 +2918,9 @@ Function Move-ClusterHostNetworkingTovSS {
         $storedVdsConfiguration = ((Get-Cluster -name $clustername).customfields | Where-Object { $_.key -eq "vdsConfiguration" }).value
     }
 
-    Foreach ($vds in $clustervdswitches) {
+    Foreach ($vdsInstance in $clustervdswitches) {
         #Get Current vDS Configuration
-        $vdsName = $vds.dvsName
+        $vdsName = $vdsInstance.dvsName
         $vds = Get-VDSwitch -Name $vdsName
         $vdsUUID = $vds.ExtensionData.Summary.Uuid
         $vdsReport = @()
@@ -2955,7 +2955,7 @@ Function Move-ClusterHostNetworkingTovSS {
                 LogMessage -type INFO -message "[$vmhost] VSS already exists. Skipping"
             }
 
-            If (($vds.portgroups | Where-Object { $_.transportType -eq 'VM_MANAGEMENT' }) -OR ((!($vds.portgroups | Where-Object { $_.transportType -eq 'VM_MANAGEMENT' })) -and ($vds.portgroups | Where-Object { $_.transportType -eq 'MANAGEMENT' }))) {
+            If (($vdsInstance.portgroups | Where-Object { $_.transportType -eq 'VM_MANAGEMENT' }) -OR ((!($vdsInstance.portgroups | Where-Object { $_.transportType -eq 'VM_MANAGEMENT' })) -and ($vdsInstance.portgroups | Where-Object { $_.transportType -eq 'MANAGEMENT' }))) {
                 $tempMgmtPgExists = Get-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $vmhost -Name $vss_name) -Name "mgmt_temp" -errorAction SilentlyContinue
                 If (!($tempMgmtPgExists)) {
                     LogMessage -type INFO -message "[$vmhost] Creating temporary management portgroup `'mgmt_temp`'"
@@ -2972,7 +2972,7 @@ Function Move-ClusterHostNetworkingTovSS {
             $vss = Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name $vss_name
 
             # Create destination portgroups
-            If ($vds.portgroups | Where-Object { $_.transportType -eq 'MANAGEMENT' }) {
+            If ($vdsInstance.portgroups | Where-Object { $_.transportType -eq 'MANAGEMENT' }) {
                 $mgmtPgExists = Get-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $vmhost -Name $vss_name) -Name $mgmt_name -errorAction SilentlyContinue
                 If (!($mgmtPgExists)) {
                     LogMessage -type INFO -message "[$vmhost] Creating $mgmt_name portrgroup on $vss_name"
@@ -2983,7 +2983,7 @@ Function Move-ClusterHostNetworkingTovSS {
 
             }
 
-            If ($vds.portgroups | Where-Object { $_.transportType -eq 'VMOTION' }) {
+            If ($vdsInstance.portgroups | Where-Object { $_.transportType -eq 'VMOTION' }) {
                 $vmotionPgExists = Get-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $vmhost -Name $vss_name) -Name $vmotion_name -errorAction SilentlyContinue
                 If (!($vmotionPgExists)) {
                     LogMessage -type INFO -message "[$vmhost] Creating $vmotion_name portrgroup on $vss_name"
@@ -2994,7 +2994,7 @@ Function Move-ClusterHostNetworkingTovSS {
 
             }
 
-            If ($vds.portgroups | Where-Object { $_.transportType -eq 'VSAN' }) {
+            If ($vdsInstance.portgroups | Where-Object { $_.transportType -eq 'VSAN' }) {
                 $storagePgExists = Get-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $vmhost -Name $vss_name) -Name $storage_name -errorAction SilentlyContinue
                 If (!($storagePgExists)) {
                     LogMessage -type INFO -message "[$vmhost] Creating $storage_name Network portrgroup on $vss_name"
@@ -3015,7 +3015,7 @@ Function Move-ClusterHostNetworkingTovSS {
             $vss = Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name $vss_name
             If ($vss.ExtensionData.Pnic -like "*$nicToMoveToVdsFirst") {
                 $vmks = $vmHost | Get-VMHostNetwork | Select-Object -ExpandProperty VirtualNic | Sort-Object Name
-                If ($vds.portgroups | Where-Object { $_.transportType -eq 'VSAN' }) {
+                If ($vdsInstance.portgroups | Where-Object { $_.transportType -eq 'VSAN' }) {
                     $currentStorageVmkPortgroup = ($vmks | Where-Object { $_.name -eq "vmk2" }).PortGroupName
                     If ($currentStorageVmkPortgroup -ne $storage_name) {
                         LogMessage -type INFO -message "[$vmhost] Migrating VSAN vmKernel from $vdsName to $vss_name"
@@ -3025,7 +3025,7 @@ Function Move-ClusterHostNetworkingTovSS {
                     }
 
                 }
-                If ($vds.portgroups | Where-Object { $_.transportType -eq 'VMOTION' }) {
+                If ($vdsInstance.portgroups | Where-Object { $_.transportType -eq 'VMOTION' }) {
                     $currentVmotionVmkPortgroup = ($vmks | Where-Object { $_.name -eq "vmk1" }).PortGroupName
                     If ($currentVmotionVmkPortgroup -ne $vmotion_name) {
                         LogMessage -type INFO -message "[$vmhost] Migrating vMotion vmKernel from $vdsName to $vss_name"
@@ -3035,7 +3035,7 @@ Function Move-ClusterHostNetworkingTovSS {
                     }
 
                 }
-                If ($vds.portgroups | Where-Object { $_.transportType -eq 'MANAGEMENT' }) {
+                If ($vdsInstance.portgroups | Where-Object { $_.transportType -eq 'MANAGEMENT' }) {
                     $currentMgmtVmkPortgroup = ($vmks | Where-Object { $_.name -eq "vmk0" }).PortGroupName
                     If ($currentMgmtVmkPortgroup -ne $mgmt_name) {
                         LogMessage -type INFO -message "[$vmhost] Migrating Management vmKernel from $vdsName to $vss_name"
