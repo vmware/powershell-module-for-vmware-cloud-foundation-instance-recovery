@@ -5015,8 +5015,8 @@ Function Invoke-NSXEdgeClusterRecovery {
                     }
                 }
             }
-            LogMessage -type NOTE -message "[$jumpboxName] Discovered Edge Redeployments have been initiated. Please monitor in NSX UI for completion"
         }
+        LogMessage -type NOTE -message "[$jumpboxName] Discovered Edge Redeployments have been initiated. Please monitor in NSX UI for completion"
     }
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
