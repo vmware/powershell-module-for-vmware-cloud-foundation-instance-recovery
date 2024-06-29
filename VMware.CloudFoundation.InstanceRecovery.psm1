@@ -343,7 +343,6 @@ Function New-ExtractDataFromSDDCBackup {
     $vCenterbackupFolderFullPath = (Resolve-Path -Path $managementVcenterBackupFolderPath).path
     $parentFolder = Split-Path -Path $backupFileFullPath
     $extractedBackupFolder = ($backupFileName -Split (".tar.gz"))[0]
-    $jumpboxName = hostname
 
     #Decrypt Backup
     LogMessage -type INFO -message "[$jumpboxName] Decrypting Backup"
