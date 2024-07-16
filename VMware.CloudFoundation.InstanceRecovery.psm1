@@ -1688,7 +1688,7 @@ Function New-PartialManagementDomainDeployment {
         $partialBringupSpecFilePath = (Resolve-Path -Path $partialBringupSpecFile).path
 
         $url = "https://" + $cloudBuilderFQDN
-        LogMessage -Type INFO -Message "[$jumpboxName] Connecting to Cloud Builder Appliance $partialBringupSpecFilePath"
+        LogMessage -Type INFO -Message "[$jumpboxName] Connecting to Cloud Builder Appliance $cloudBuilderFQDN"
         $connectCloudbuilder = Connect-CloudBuilder -fqdn $cloudBuilderFQDN -username 'admin' -password $cloudBuilderAdminUserPassword
 
         LogMessage -Type WAIT -Message "[$cloudBuilderFQDN] Starting validation of Management Domain specification"
