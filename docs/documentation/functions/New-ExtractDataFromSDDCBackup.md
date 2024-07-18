@@ -7,7 +7,7 @@ Decrypts and extracts the contents of the provided SDDC Manager backup, parses i
 ## Syntax
 
 ```powershell
-New-ExtractDataFromSDDCBackup [-backupFilePath] <String> [-encryptionPassword] <String> [-ProgressAction <ActionPreference>] [<CommonParameters>]
+New-ExtractDataFromSDDCBackup [-vcfBackupFilePath] <String>  [-encryptionPassword] <String> [-managementVcenterBackupFolderPath] <String> [-ProgressAction <ActionPreference>] [<CommonParameters>]
 ```
 
 ## Description
@@ -19,12 +19,12 @@ The `New-ExtractDataFromSDDCBackup` cmdlet decrypts and extracts the contents of
 ### Example 1
 
 ```powershell
-New-ExtractDataFromSDDCBackup -backupFilePath "F:\backup\vcf-backup-sfo-vcf01-sfo-rainpole-io-2023-09-19-10-53-02.tar.gz" -encryptionPassword "VMw@re1!VMw@re1!"
+New-ExtractDataFromSDDCBackup -vcfBackupFilePath "F:\backup\vcf-backup-sfo-vcf01-sfo-rainpole-io-2023-09-19-10-53-02.tar.gz" -encryptionPassword "VMw@re1!VMw@re1!" -managementVcenterBackupFolderPath "10.221.78.133/F$/backup/vCenter/sn_sfo-m01-vc01.sfo.rainpole.io/M_8.0.1.00100_20231121-104120_"
 ```
 
 ## Parameters
 
-### -backupFilePath
+### -vcfBackupFilePath
 
 Relative or absolute to the SDDC Manager backup file on the local filesystem.
 
@@ -43,6 +43,22 @@ Accept wildcard characters: False
 ### -encryptionPassword
 
 The password that should be used to decrypt the SDDC Manager backup file ie the password that was used to encrypt it originally.
+
+```yaml
+Type: String
+Parameter Sets: (All)
+Aliases:
+
+Required: True
+Position: 2
+Default value: None
+Accept pipeline input: False
+Accept wildcard characters: False
+```
+
+### -managementVcenterBackupFolderPath
+
+SMB path to the management vCenter Server backup location.
 
 ```yaml
 Type: String
