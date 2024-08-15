@@ -246,33 +246,33 @@ Function Confirm-VCFInstanceRecoveryPreReqs {
     $jumpboxName = hostname
     $is7Zip4PowerShellInstalled = Get-InstalledModule -name "7Zip4PowerShell" -RequiredVersion "2.4.0" -ErrorAction SilentlyContinue
     If (!$is7Zip4PowerShellInstalled) {
-        LogMessage -type INFO -message "[$jumpboxName] 7Zip4PowerShell Module Missing. Please install"
+        LogMessage -type WARNING -message "[$jumpboxName] 7Zip4PowerShell Module Missing. Please install"
     } else {
         LogMessage -type INFO -message "[$jumpboxName] 7Zip4PowerShell Module found"
     }
 
     $isPoshSSHInstalled = Get-InstalledModule -name "Posh-SSH" -RequiredVersion "3.0.8" -ErrorAction SilentlyContinue
     If (!$isPoshSSHInstalled) {
-        LogMessage -type INFO -message "[$jumpboxName] Posh-SSH Module Missing. Please install"
+        LogMessage -type WARNING -message "[$jumpboxName] Posh-SSH Module Missing. Please install"
     } else {
         LogMessage -type INFO -message "[$jumpboxName] Posh-SSH Module found"
     }
 
     $isPowerCLIInstalled = Get-InstalledModule -name "VMware.PowerCLI" -ErrorAction SilentlyContinue
     If (!$isPowerCLIInstalled) {
-        LogMessage -type INFO -message "[$jumpboxName] PowerCLI Module Missing. Please install"
+        LogMessage -type WARNING -message "[$jumpboxName] PowerCLI Module Missing. Please install"
     } else {
         LogMessage -type INFO -message "[$jumpboxName] PowerCLI Module found"
     }
     $isPowerCLISddcmModuleInstalled = Get-InstalledModule -name "VMware.Sdk.Vcf.SddcManager" -RequiredVersion "5.1.0" -ErrorAction SilentlyContinue
     If (!$isPowerCLISddcmModuleInstalled) {
-        LogMessage -type INFO -message "[$jumpboxName] VMware.Sdk.Vcf.SddcManager Module Missing. Please install"
+        LogMessage -type WARNING -message "[$jumpboxName] VMware.Sdk.Vcf.SddcManager Module Missing. Please install"
     } else {
         LogMessage -type INFO -message "[$jumpboxName] VMware.Sdk.Vcf.SddcManager Module found"
     }
     $isPowerCLICloudBuilderModuleInstalled = Get-InstalledModule -name "VMware.Sdk.Vcf.CloudBuilder" -RequiredVersion "5.1.0" -ErrorAction SilentlyContinue
     If (!$isPowerCLICloudBuilderModuleInstalled) {
-        LogMessage -type INFO -message "[$jumpboxName] VMware.Sdk.Vcf.CloudBuilder Module Missing. Please install"
+        LogMessage -type WARNING -message "[$jumpboxName] VMware.Sdk.Vcf.CloudBuilder Module Missing. Please install"
     } else {
         LogMessage -type INFO -message "[$jumpboxName] VMware.Sdk.Vcf.CloudBuilder Module found"
     }
@@ -284,9 +284,9 @@ Function Confirm-VCFInstanceRecoveryPreReqs {
         $openSslLink = (($openSslLinks.Links | Where-Object { $_.href -like "/download/Win64OpenSSL_Light*.exe" }).href)[0]
         $Global:openSSLUrl = "https://slproweb.com" + $openSslLink
         If ($openSSLUrl) {
-            LogMessage -type INFO -message "[$jumpboxName] OpenSSL missing. Please install. Latest version detected is here: $openSSLUrl"
+            LogMessage -type WARNING -message "[$jumpboxName] OpenSSL missing. Please install. Latest version detected is here: $openSSLUrl"
         } else {
-            LogMessage -type INFO -message "[$jumpboxName] OpenSSL missing. Please install. Unable to detect latest version on web"
+            LogMessage -type WARNING -message "[$jumpboxName] OpenSSL missing. Please install. Unable to detect latest version on web"
         }
     } else {
         LogMessage -type INFO -message "[$jumpboxName] OpenSSL Utility found"
@@ -298,11 +298,21 @@ Function Confirm-VCFInstanceRecoveryPreReqs {
         IF ($testOpenSSExe) {
             LogMessage -type INFO -message "[$jumpboxName] openssl.exe found in $OpenSSLPath"
         } else {
-            LogMessage -type INFO -message "[$jumpboxName] $OpenSSLPath was found in environment path, but no openssl.exe was found in that path"
+            LogMessage -type WARNING -message "[$jumpboxName] $OpenSSLPath was found in environment path, but no openssl.exe was found in that path"
         }
 
     } else {
-        LogMessage -type INFO -message "[$jumpboxName] No folder path that looks like OpenSSL was discovered in the environment path variable. Please double check that the location of OpenSSL is included in the path variable"
+        LogMessage -type WARNING -message "[$jumpboxName] No folder path that looks like OpenSSL was discovered in the environment path variable. Please double check that the location of OpenSSL is included in the path variable"
+    }
+
+    $viServerModeConfig = (Get-PowerCLIConfiguration | Where-Object {$_.scope -eq "AllUsers"}).DefaultVIServerMode
+    If ($viServerModeConfig -eq 'Multiple')
+    {
+        LogMessage -type INFO -message "[$jumpboxName] DefaultVIServerMode is correctly set to 'Multiple'"
+    }
+    else
+    {
+        LogMessage -type WARNING -message "[$jumpboxName] DefaultVIServerMode is not correctly set. Please run 'Set-PowerCLIConfiguration -DefaultVIServerMode Multiple' to correct"
     }
 }
 Export-ModuleMember -Function Confirm-VCFInstanceRecoveryPreReqs
