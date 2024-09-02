@@ -24,12 +24,6 @@ Invoke-NSXEdgeClusterRecovery -nsxManagerFqdn "sfo-m01-nsx01.sfo.rainpole.io" -n
 
 ## Parameters
 
-```powershell
-Invoke-NSXEdgeClusterRecovery -nsxManagerFqdn "sfo-m01-nsx01.sfo.rainpole.io" -nsxManagerAdmin "admin" -nsxManagerAdminPassword "VMw@re1!VMw@re1!" -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -resourcePoolName "VCF-edge_sfo-m01-ec01_ResourcePool_7d6d6cb0abdfae659f6d36046ac7ddbc"
-```
-
-## Parameters
-
 ### -nsxManagerFqdn
 
 Fully qualified domain name of the NSX Manager whose Edges need to be redeployed.

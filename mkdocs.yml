@@ -128,13 +128,18 @@ nav:
   - License: license.md
 - Reference:
   - Functions:
+    - documentation/functions/Add-AdditionalNSXManagers.md
     - documentation/functions/Add-HostsToCluster.md
     - documentation/functions/Add-VMKernelsToHost.md
     - documentation/functions/Backup-ClusterDRSGroupsAndRules.md
     - documentation/functions/Backup-ClusterVMLocations.md
     - documentation/functions/Backup-ClusterVMOverrides.md
+    - documentation/functions/Backup-ClusterVMTags.md
     - documentation/functions/Confirm-VCFInstanceRecoveryPreReqs.md
     - documentation/functions/Invoke-NSXEdgeClusterRecovery.md
+    - documentation/functions/Invoke-NSXManagerRestore.md
+    - documentation/functions/Invoke-SDDCManagerRestore.md
+    - documentation/functions/Invoke-vCenterRestore.md
     - documentation/functions/Move-ClusterHostNetworkingToVss.md
     - documentation/functions/Move-ClusterHostsToRestoredVcenter.md
     - documentation/functions/Move-ClusterVMsToFirstHost.md
@@ -142,6 +147,10 @@ nav:
     - documentation/functions/Move-MgmtVmsToTempPg.md
     - documentation/functions/New-ExtractDataFromSDDCBackup.md
     - documentation/functions/New-NSXManagerOvaDeployment.md
+    - documentation/functions/New-PartialManagementDomainDeployment.md
+    - documentation/functions/New-PrepareforPartialBringup.md
+    - documentation/functions/New-RebuiltVdsConfiguration.md
+    - documentation/functions/New-RebuiltVsanDatastore.md
     - documentation/functions/New-ReconstructedPartialBringupJsonSpec.md
     - documentation/functions/New-SDDCManagerOvaDeployment.md
     - documentation/functions/New-UploadAndModifySDDCManagerBackup.md
@@ -154,6 +163,7 @@ nav:
     - documentation/functions/Restore-ClusterDRSGroupsAndRules.md
     - documentation/functions/Restore-ClusterVMLocations.md
     - documentation/functions/Restore-ClusterVMOverrides.md
+    - documentation/functions/Restore-ClusterVMTags.md
     - documentation/functions/Set-ClusterDRSLevel.md
     - documentation/functions/Set-ClusterHostsvSanIgnoreClusterMemberList.md
 - Community:
