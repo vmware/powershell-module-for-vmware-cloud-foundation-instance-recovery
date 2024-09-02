@@ -17,6 +17,7 @@ The following table lists the supported platforms for this module.
 
 Platform                                                     | Support
 -------------------------------------------------------------|------------------------------------
+:fontawesome-solid-cloud: &nbsp; VMware Cloud Foundation 5.2 | :fontawesome-solid-check:{ .green }
 :fontawesome-solid-cloud: &nbsp; VMware Cloud Foundation 5.1 | :fontawesome-solid-check:{ .green }
 :fontawesome-solid-cloud: &nbsp; VMware Cloud Foundation 5.0 | :fontawesome-solid-check:{ .green }
 :fontawesome-solid-cloud: &nbsp; VMware Cloud Foundation 4.5 | :fontawesome-solid-check:{ .green }
@@ -45,8 +46,7 @@ The following table lists the required dependencies for this module.
 
 Dependency                                           | Version   | Publisher                 | Reference
 -----------------------------------------------------|-----------|---------------------------|---------------------------------------------------------------------------
-[VMware.PowerCLI][psgallery-module-powercli]         | 13.1.0    | Broadcom                  | :fontawesome-solid-book: &nbsp; [Documentation][developer-module-powercli]
-[PowerVCF][psgallery-module-powervcf]                | 2.4.0     | Broadcom                  | :fontawesome-solid-book: &nbsp; [Documentation][docs-module-powervcf]
+[VMware.PowerCLI][psgallery-module-powercli]         | 13.3.0    | Broadcom                  | :fontawesome-solid-book: &nbsp; [Documentation][developer-module-powercli]
 [Posh-SSH][psgallery-module-poshssh]                 | 3.0.8     | Carlos Perez              | :fontawesome-brands-github: &nbsp; [GitHUb][github-module-poshssh]
 [7Zip4Powershell][psgallery-module-7zip4powershell]  | 2.4.0     | Thomas Freudenberg        | :fontawesome-brands-github: &nbsp; [GitHub][github-module-7zip4powershell]
 [OpenSSL for Windows][download-win64openssl]         | 3.2.1     | Shining Light Productions | :octicons-package-dependencies-24: &nbsp; [Download][download-win64openssl]
@@ -56,7 +56,6 @@ Dependency                                           | Version   | Publisher    
 [psgallery-module-7zip4powershell]: https://www.powershellgallery.com/packages/7Zip4Powershell
 [psgallery-module-poshssh]: https://www.powershellgallery.com/packages/Posh-SSH
 [psgallery-module-powercli]: https://www.powershellgallery.com/packages/VMware.PowerCLI
-[psgallery-module-powervcf]: https://www.powershellgallery.com/packages/PowerVCF
 [psgallery-module-recovery]: https://www.powershellgallery.com/packages/VMware.CloudFoundation.InstanceRecovery
 [developer-module-powercli]: https://developer.vmware.com/tool/vmware-powercli
 [docs-module-powervcf]: https://vmware.github.io/powershell-module-for-vmware-cloud-foundation
