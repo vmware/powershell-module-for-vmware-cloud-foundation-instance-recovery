@@ -128,6 +128,7 @@ nav:
   - License: license.md
 - Reference:
   - Functions:
+    - documentation/functions/Add-AdditionalNSXManagers.md
     - documentation/functions/Add-HostsToCluster.md
     - documentation/functions/Add-VMKernelsToHost.md
     - documentation/functions/Backup-ClusterDRSGroupsAndRules.md
@@ -136,6 +137,9 @@ nav:
     - documentation/functions/Backup-ClusterVMTags.md
     - documentation/functions/Confirm-VCFInstanceRecoveryPreReqs.md
     - documentation/functions/Invoke-NSXEdgeClusterRecovery.md
+    - documentation/functions/Invoke-NSXManagerRestore.md
+    - documentation/functions/Invoke-SDDCManagerRestore.md
+    - documentation/functions/Invoke-vCenterRestore.md
     - documentation/functions/Move-ClusterHostNetworkingToVss.md
     - documentation/functions/Move-ClusterHostsToRestoredVcenter.md
     - documentation/functions/Move-ClusterVMsToFirstHost.md
@@ -144,6 +148,9 @@ nav:
     - documentation/functions/New-ExtractDataFromSDDCBackup.md
     - documentation/functions/New-NSXManagerOvaDeployment.md
     - documentation/functions/New-PartialManagementDomainDeployment.md
+    - documentation/functions/New-PrepareforPartialBringup.md
+    - documentation/functions/New-RebuiltVdsConfiguration.md
+    - documentation/functions/New-RebuiltVsanDatastore.md
     - documentation/functions/New-ReconstructedPartialBringupJsonSpec.md
     - documentation/functions/New-SDDCManagerOvaDeployment.md
     - documentation/functions/New-UploadAndModifySDDCManagerBackup.md

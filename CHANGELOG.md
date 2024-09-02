@@ -2,7 +2,7 @@
 
 ## v1.0.12
 
-> Released: 2024-08-28
+> Released: 2024-09-02
 
 - Enhanced `New-ExtractDataFromSDDCBackup` to leverage the vCenter Server backup for additional data.
 - Added `New-PartialManagementDomainDeployment` to perform the partial bringup.
@@ -11,6 +11,7 @@
 - Enhanced ` upport for vSAN ESA configurations.
 - Enhanced `Remove-NonResponsiveHosts` to resolve handling transport node cleanup in versions of VCF using NSX 3.1.3 or higher.
 - Added check to `Confirm-VCFInstanceRecoveryPreReqs` for more than 1 concurrent VI server connections.
+- Added documentation for new & updated functions.
 
 ## v1.0.10
 
