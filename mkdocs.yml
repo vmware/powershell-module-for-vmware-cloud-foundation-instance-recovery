@@ -133,6 +133,7 @@ nav:
     - documentation/functions/Backup-ClusterDRSGroupsAndRules.md
     - documentation/functions/Backup-ClusterVMLocations.md
     - documentation/functions/Backup-ClusterVMOverrides.md
+    - documentation/functions/Backup-ClusterVMTags.md
     - documentation/functions/Confirm-VCFInstanceRecoveryPreReqs.md
     - documentation/functions/Invoke-NSXEdgeClusterRecovery.md
     - documentation/functions/Move-ClusterHostNetworkingToVss.md
@@ -142,6 +143,7 @@ nav:
     - documentation/functions/Move-MgmtVmsToTempPg.md
     - documentation/functions/New-ExtractDataFromSDDCBackup.md
     - documentation/functions/New-NSXManagerOvaDeployment.md
+    - documentation/functions/New-PartialManagementDomainDeployment.md
     - documentation/functions/New-ReconstructedPartialBringupJsonSpec.md
     - documentation/functions/New-SDDCManagerOvaDeployment.md
     - documentation/functions/New-UploadAndModifySDDCManagerBackup.md
@@ -154,6 +156,7 @@ nav:
     - documentation/functions/Restore-ClusterDRSGroupsAndRules.md
     - documentation/functions/Restore-ClusterVMLocations.md
     - documentation/functions/Restore-ClusterVMOverrides.md
+    - documentation/functions/Restore-ClusterVMTags.md
     - documentation/functions/Set-ClusterDRSLevel.md
     - documentation/functions/Set-ClusterHostsvSanIgnoreClusterMemberList.md
 - Community:
