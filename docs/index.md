@@ -4,12 +4,13 @@
 
 # PowerShell Module for VMware Cloud Foundation Instance Recovery
 
-`VMware.CloudFoundation.InstanceRecovery` is a PowerShell module that has been written to support the ability to automate and accelerate the recovery of a [VMware Cloud Foundation][docs-vmware-cloud-foundation] instance through the use of
-PowerShell cmdlets.
+`VMware.CloudFoundation.InstanceRecovery` is a PowerShell module that has been written to support
+the ability to automate and accelerate the recovery of a VMware Cloud Foundation instance through
+the use of PowerShell cmdlets.
 
 [:material-powershell: &nbsp; PowerShell Gallery][psgallery-module-recovery]{ .md-button .md-button--primary }.
 
-## Requirements.
+## Requirements
 
 ### Platforms
 
@@ -22,15 +23,6 @@ Platform                                                     | Support
 :fontawesome-solid-cloud: &nbsp; VMware Cloud Foundation 5.0 | :fontawesome-solid-check:{ .green }
 :fontawesome-solid-cloud: &nbsp; VMware Cloud Foundation 4.5 | :fontawesome-solid-check:{ .green }
 :fontawesome-solid-cloud: &nbsp; VMware Cloud Foundation 4.4 | :fontawesome-solid-check:{ .green }
-
-
-### Operating Systems
-
-The following table lists the supported operating systems for this module.
-
-Operating System                                                     | Version
----------------------------------------------------------------------|---------
-:fontawesome-brands-windows: &nbsp; Microsoft Windows Server         | 2019
 
 ### PowerShell
 
@@ -51,13 +43,12 @@ Dependency                                           | Version   | Publisher    
 [7Zip4Powershell][psgallery-module-7zip4powershell]  | 2.4.0     | Thomas Freudenberg        | :fontawesome-brands-github: &nbsp; [GitHub][github-module-7zip4powershell]
 [OpenSSL for Windows][download-win64openssl]         | 3.2.1     | Shining Light Productions | :octicons-package-dependencies-24: &nbsp; [Download][download-win64openssl]
 
-[docs-vmware-cloud-foundation]: https://docs.vmware.com/en/VMware-Cloud-Foundation/index.html
 [microsoft-powershell]: https://docs.microsoft.com/en-us/powershell
 [psgallery-module-7zip4powershell]: https://www.powershellgallery.com/packages/7Zip4Powershell
 [psgallery-module-poshssh]: https://www.powershellgallery.com/packages/Posh-SSH
 [psgallery-module-powercli]: https://www.powershellgallery.com/packages/VMware.PowerCLI
 [psgallery-module-recovery]: https://www.powershellgallery.com/packages/VMware.CloudFoundation.InstanceRecovery
-[developer-module-powercli]: https://developer.vmware.com/tool/vmware-powercli
+[developer-module-powercli]: https://developer.broadcom.com/powercli
 [docs-module-powervcf]: https://vmware.github.io/powershell-module-for-vmware-cloud-foundation
 [github-module-7zip4powershell]: https://github.com/thoemmi/7Zip4Powershell
 [github-module-poshssh]: https://github.com/darkoperator/Posh-SSH
