@@ -2579,7 +2579,7 @@ Function Invoke-vCenterRestore {
         Do {
             $sshSession = New-SSHSession -computername $restoredVcenterFqdn -Credential $mycreds -KnownHost $inmem -erroraction silentlyContinue
         } Until ($sshSession)
-        $rpmStatus = (Invoke-SSHCommand -SessionId $sshSession.sessionid -Command "api com.vmware.appliance.version1.services.status.get --name vmbase_init" -erroraction silentlyContinue).output
+        $rpmStatus = (Invoke-SSHCommand -SessionId $sshSession.sessionid -Command "api com.vmware.appliance.version1.services.status.get --name cap_init" -erroraction silentlyContinue).output
     } Until ($rpmStatus -eq "Status: down")
     LogMessage -type INFO -message "[$restoredVcenterFqdn] RPM initialization Complete"
 
