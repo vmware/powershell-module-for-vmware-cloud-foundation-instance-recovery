@@ -386,13 +386,13 @@ Function New-ExtractDataFromSDDCBackup {
     $metadataJSON = Get-Content "$parentFolder\$extractedBackupFolder\metadata.json" | ConvertFrom-JSON
     $dnsJSON = Get-Content "$parentFolder\$extractedBackupFolder\appliancemanager_dns_configuration.json" | ConvertFrom-JSON
     $ntpJSON = Get-Content "$parentFolder\$extractedBackupFolder\appliancemanager_ntp_configuration.json" | ConvertFrom-JSON
-    $mgmtVcenterMetadata = Get-Content -Path ($vCenterbackupFolderFullPath + "/backup-metadata.json") | ConvertFrom-JSON
-    $managementSubnetMask = cidrToMask $mgmtVcenterMetadata.PrimaryNetworkInfo.ipv4.prefix
+    #$mgmtVcenterMetadata = Get-Content -Path ($vCenterbackupFolderFullPath + "/backup-metadata.json") | ConvertFrom-JSON
+    #$managementSubnetMask = cidrToMask $mgmtVcenterMetadata.PrimaryNetworkInfo.ipv4.prefix
 
     $sddcManagerIP = $metadataJSON.ip
-    $managementSubnetMask = $metaDataJSON.netmask
+    #$managementSubnetMask = $metaDataJSON.netmask
     $ip = [ipaddress]$sddcManagerIP
-    $subnet = [ipaddress]$managementSubnetMask
+    $subnet = [ipaddress]$metaDataJSON.netmask
     $netid = [ipaddress]($ip.address -band $subnet.address)
     $managementSubnet = $($netid.ipaddresstostring)
 
@@ -401,9 +401,9 @@ Function New-ExtractDataFromSDDCBackup {
         'vsan_datastore'     = $metadataJSON.vsan_datastore
         'cluster'            = $metaDataJSON.cluster
         'datacenter'         = $metaDataJSON.datacenter
-        'netmask'            = $managementSubnetMask
+        'netmask'            = $metaDataJSON.netmask
         'subnet'             = $managementSubnet
-        'gateway'            = $mgmtVcenterMetadata.PrimaryNetworkInfo.ipv4.defaultGateway
+        'gateway'            = $metaDataJSON.gateway
         'domain'             = $metaDataJSON.domain
         'search_path'        = $metaDataJSON.search_path
         'primaryDnsServer'   = $dnsJSON.primaryDnsServer
@@ -475,7 +475,7 @@ Function New-ExtractDataFromSDDCBackup {
             $hostId = $lineContent.split("`t")[0]
             $gateway = $lineContent.split("`t")[7]
             $hostName = $lineContent.split("`t")[9]
-            $hostMgmtIp = $lineContent.split("`t")[10]
+            $hostMgmtIp = (Resolve-DnsName $lineContent.split("`t")[9]).IPAddress
             $hostMask = $lineContent.split("`t")[17]
             $hostVersion = $lineContent.split("`t")[18]
             $hostVmotionIp = $lineContent.split("`t")[19]
@@ -561,7 +561,7 @@ Function New-ExtractDataFromSDDCBackup {
             } else {
                 $vCenterVersion = $lineContent.split("`t")[9]
                 $vCenterFqdn = $lineContent.split("`t")[10]
-                $vCenterIp = $lineContent.split("`t")[11]
+                $vCenterIp = (Resolve-DnsName $vCenterFqdn).IPAddress
                 $vCenterVMname = $lineContent.split("`t")[12]
             }
             $vCenterDomainID = ($hostsAndDomains | Where-Object { $_.hostId -eq (($hostsandVcenters | Where-Object { $_.vCenterID -eq $vCenterID })[0].hostID) }).domainID
@@ -1055,10 +1055,10 @@ Function New-ExtractDataFromSDDCBackup {
     $sddcDataObject | ConvertTo-Json -Depth 10 | Out-File "$parentFolder\extracted-sddc-data.json"
 
     #Cleanup
-    LogMessage -type INFO -message "[$jumpboxName] Cleaning up extracted files"
+    <# LogMessage -type INFO -message "[$jumpboxName] Cleaning up extracted files"
     Remove-Item -Path "$parentFolder\decrypted-sddc-manager-backup.tar.gz" -force -confirm:$false
     Remove-Item -Path "$parentFolder\decrypted-sddc-manager-backup.tar" -force -confirm:$false
-    Remove-Item -path "$parentFolder\$extractedBackupFolder" -Recurse
+    Remove-Item -path "$parentFolder\$extractedBackupFolder" -Recurse #>
 
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
