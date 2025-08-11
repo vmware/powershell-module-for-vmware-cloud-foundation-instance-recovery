@@ -2610,15 +2610,15 @@ Function Invoke-vCenterRestore {
         $sshSession = New-SSHSession -computername $restoredVcenterFqdn -Credential $mycreds -KnownHost $inmem -erroraction silentlycontinue
         If ($sshSession) {
             $stream = New-SSHShellStream -SSHSession $sshSession
-            $stream.writeline('appliancesh')
+            <# $stream.writeline('appliancesh')
             Start-Sleep 5
-            $stream.writeline($restoredvCenterRootPassword)
+            $stream.writeline($restoredvCenterRootPassword) #>
             Start-Sleep 5
             $response = $stream.Read()
             Start-Sleep 5
             $stream.writeline('api com.vmware.appliance.recovery.restore.job.get')
             Start-Sleep 5
-            $restoreStatus = $stream.Read()
+            $Global:restoreStatus = $stream.Read()
             $restoreStatusArray = $restoreStatus -split ("\r\n")
             $state = $restoreStatusArray[2].trim()
         }
@@ -2644,7 +2644,7 @@ Function Invoke-vCenterRestore {
             If ($restoreStatus) {
                 $restoreStatusArray = $restoreStatus -split ("\r\n")
                 If ($restoreStatusArray) {
-                    If ($restoreStatusArray[2]) {
+                    If ($restoreStatusArray[1]) {
                         $state = $restoreStatusArray[2].trim()
                     }
                     If ($restoreStatusArray[6]) {
