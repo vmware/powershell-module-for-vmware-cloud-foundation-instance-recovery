@@ -3353,7 +3353,7 @@ Function Remove-NonResponsiveHosts {
         Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
 
         #If VLCM cluster, wait until cleanup of cluster post TN delete is done
-        If ($clusterVlcmManaged -eq "true") {
+        <# If ($clusterVlcmManaged -eq "true") {
             $SecurePassword = ConvertTo-SecureString -String $nsxManagerRootPassword -AsPlainText -Force
             $mycreds = New-Object System.Management.Automation.PSCredential ("root", $SecurePassword)
             $inmem = New-SSHMemoryKnownHost
@@ -3369,7 +3369,7 @@ Function Remove-NonResponsiveHosts {
                 $relevantUpdates = (Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $nsxCommand).output
             } Until ($relevantUpdates[-1] -like "*RemoveNsxVlcmActivity*phase= `'Begin`'*next phase= `'Success!`'")
             Remove-SSHSession -SSHSession $sshSession | Out-Null
-        }
+        } #>
 
         #Reattach TNP
         #Get Transport Node Profiles
