@@ -1129,11 +1129,16 @@ Function Update-ExtractdDataFromSDDCBackup {
             Foreach ($vds in $cluster.vdsDetails) {
                 $vdsName = (Invoke-VcfGetVdses -ClusterId $cluster.id | Where-Object {$_.id -eq $vds.id}).Name
                 $vds.dvsName = $vdsName
+
             }
+            Foreach ($vds in $cluster.vdsDetails) {
+                $vdsName = (Invoke-VcfGetVdses -ClusterId $cluster.id | Where-Object {$_.id -eq $vds.id}).Name
+                $vds.dvsName = $vdsName
         }
     }
+    }
     LogMessage -type INFO -message "[$jumpboxName] Updating Extracted Data"
-    $extractedSddcData | ConvertTo-Json -Depth 10 | Out-File "$parentFolder\extracted-sddc-data.json"
+    $extractedSddcData | ConvertTo-Json -Depth 20 | Out-File $extractedSDDCDataFile
 }
 Export-ModuleMember -Function Update-ExtractdDataFromSDDCBackup
 Function New-PrepareforPartialBringup {
