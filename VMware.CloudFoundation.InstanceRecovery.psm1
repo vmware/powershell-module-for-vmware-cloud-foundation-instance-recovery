@@ -1131,10 +1131,6 @@ Function Update-ExtractdDataFromSDDCBackup {
                 $vds.dvsName = $vdsName
 
             }
-            Foreach ($vds in $cluster.vdsDetails) {
-                $vdsName = (Invoke-VcfGetVdses -ClusterId $cluster.id | Where-Object {$_.id -eq $vds.id}).Name
-                $vds.dvsName = $vdsName
-        }
     }
     }
     LogMessage -type INFO -message "[$jumpboxName] Updating Extracted Data"
