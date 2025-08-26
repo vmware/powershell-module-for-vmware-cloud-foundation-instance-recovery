@@ -1130,6 +1130,26 @@ Function Update-ExtractdDataFromSDDCBackup {
                 $vdsName = (Invoke-VcfGetVdses -ClusterId $cluster.id | Where-Object {$_.id -eq $vds.id}).Name
                 $vds.dvsName = $vdsName
 
+                }
+
+                Foreach ($portGroup in $vds.PortGroups) {
+                    if ($portGroup.TransportType -eq "VM_MANAGEMENT") {
+                        $vmManagementPGName = ((Invoke-VcfGetVdses -ClusterId $cluster.id).PortGroups | Where-Object {$_.TransportType -eq "VM_MANAGEMENT"}).Name
+                        $portGroup | Add-Member -NotePropertyName "Name" -NotePropertyValue $vmManagementPGName -Force
+                }
+                    if ($portGroup.TransportType -eq "MANAGEMENT") {
+                        $managementPGName = ((Invoke-VcfGetVdses -ClusterId $cluster.id).PortGroups | Where-Object {$_.TransportType -eq "MANAGEMENT"}).Name
+                        $portGroup | Add-Member -NotePropertyName "Name" -NotePropertyValue $managementPGName -Force
+                }
+                    if ($portGroup.TransportType -eq "VMOTION") {
+                    $vMotionPGName = ((Invoke-VcfGetVdses -ClusterId $cluster.id).PortGroups | Where-Object {$_.TransportType -eq "VMOTION"}).Name
+                    $portGroup | Add-Member -NotePropertyName "Name" -NotePropertyValue $vMotionPGName -Force
+                }
+                    if ($portGroup.TransportType -eq "VSAN") {
+                    $vSanPGName = ((Invoke-VcfGetVdses -ClusterId $cluster.id).PortGroups | Where-Object {$_.TransportType -eq "VSAN"}).Name
+                    $portGroup | Add-Member -NotePropertyName "Name" -NotePropertyValue $vSanPGName -Force
+                }
+
             }
     }
     }
