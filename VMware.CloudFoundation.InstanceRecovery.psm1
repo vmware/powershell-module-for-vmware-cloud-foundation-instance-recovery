@@ -3371,7 +3371,7 @@ Function Move-ClusterHostNetworkingTovSS {
         [Parameter (Mandatory = $true)][String] $vCenterFqdn,
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
         [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
-        #[Parameter (Mandatory = $true)][String] $clusterName,
+        [Parameter (Mandatory = $true)][String] $clusterName,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
         [Parameter (Mandatory = $true)][String] $mtu
 
@@ -3381,10 +3381,11 @@ Function Move-ClusterHostNetworkingTovSS {
 
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
-    $mgmtVmVlanId = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq "t" }).vdsDetails.portgroups | Where-Object { $_.transportType -eq "VM_MANAGEMENT" }).vlanIDmtVlanId = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq "t" }).vdsDetails.portgroups | Where-Object { $_.transportType -eq "MANAGEMENT" }).vlanID
+    $mgmtVmVlanId = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq "t" }).vdsDetails.portgroups | Where-Object { $_.transportType -eq "VM_MANAGEMENT" }).vlanID
+    $mgmtVlanId = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq "t" }).vdsDetails.portgroups | Where-Object { $_.transportType -eq "MANAGEMENT" }).vlanID
     $vMotionVlanId = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq "t" }).vdsDetails.portgroups | Where-Object { $_.transportType -eq "VMOTION" }).vlanID
     $vSanVlanId = ((($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq "t" }).vdsDetails.portgroups | Where-Object { $_.transportType -eq "VSAN" }).vlanID
-    #$vdsName = (($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereclusterdetails | Where-Object { $_.isDefault -eq "t" }).vdsdetails.dvsName
+    $vdsName = (($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereclusterdetails | Where-Object { $_.isDefault -eq "t" }).vdsdetails.dvsName
     $clustervdswitches = (($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereclusterdetails | Where-Object { $_.isDefault -eq "t" }).vdsDetails
     $clusterMoRef = (($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereclusterdetails | Where-Object { $_.isDefault -eq "t" }).sourceID
 
@@ -3407,8 +3408,7 @@ Function Move-ClusterHostNetworkingTovSS {
         $clustervdsConfiguration = @()
         Foreach ($vds in $clustervdswitches) {
             # Gather data on VDS to migrate from
-            #$vds = Get-VDSwitch -Name $vds.dvsName
-            $vds = Get-VDSwitch -Name "sfo-m01-cl01-vds01"
+            $vds = Get-VDSwitch -Name $vds.dvsName
             $vdsUUID = $vds.ExtensionData.Summary.Uuid
             $vdsReport = @()
             $vds.ExtensionData.Config.Host | ForEach-Object {
@@ -3433,8 +3433,7 @@ Function Move-ClusterHostNetworkingTovSS {
 
     Foreach ($vdsInstance in $clustervdswitches) {
         #Get Current vDS Configuration
-        #$vdsName = $vdsInstance.dvsName
-        $vdsName = "sfo-m01-cl01-vds01"
+        $vdsName = $vdsInstance.dvsName
         $vds = Get-VDSwitch -Name $vdsName
         $vdsUUID = $vds.ExtensionData.Summary.Uuid
         $vdsReport = @()
