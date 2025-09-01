@@ -2481,7 +2481,7 @@ Function New-vCenterOvaDeployment {
     $restoredvCenterGateway = $extractedSddcData.mgmtDomainInfrastructure.gateway
     $restoredvCenterRootPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "VCENTER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "SSH") }).password
     LogMessage -type INFO -message "[$jumpboxName] Deploying vCenter OVA"
-    $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowExtraConfig --X:enableHiddenProperties --diskMode=thin --X:injectOvfEnv --X:waitForIp --X:logFile=ovftool.log --name="' + $restoredvCenterVMName + '" --net:"Network 1"="' + $vmNetwork + '" --datastore="' + $vmDatastore + '" --deploymentOption="' + $restoredvCenterDeploymentSize + '" --prop:guestinfo.cis.appliance.net.addr.family="ipv4" --prop:guestinfo.cis.appliance.net.addr="' + $restoredvCenterIpAddress + '" --prop:guestinfo.cis.appliance.net.pnid="' + $restoredvCenterFqdn + '" --prop:guestinfo.cis.appliance.net.prefix="' + $restoredvCenterNetworkPrefix + '" --prop:guestinfo.cis.appliance.net.mode="static" --prop:guestinfo.cis.appliance.net.dns.servers="' + $restoredvCenterDnsServers + '" --prop:guestinfo.cis.appliance.net.gateway="' + $restoredvCenterGateway + '" --prop:guestinfo.cis.appliance.root.passwd="' + $restoredvCenterRootPassword + '" --prop:guestinfo.cis.appliance.ssh.enabled="True" "' + $vCenterOvaFile + '" ' + '"vi://' + $vCenterAdmin + ':' + $vCenterAdminPassword + '@' + $vCenterFqdn + '/' + $datacenterName + '/host/' + $clusterName + '/"'
+    $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowExtraConfig --X:enableHiddenProperties --diskMode=thin --X:injectOvfEnv --powerOn --X:waitForIp --X:logFile=ovftool.log --name="' + $restoredvCenterVMName + '" --net:"Network 1"="' + $vmNetwork + '" --datastore="' + $vmDatastore + '" --deploymentOption="' + $restoredvCenterDeploymentSize + '" --prop:guestinfo.cis.appliance.net.addr.family="ipv4" --prop:guestinfo.cis.appliance.net.addr="' + $restoredvCenterIpAddress + '" --prop:guestinfo.cis.appliance.net.pnid="' + $restoredvCenterFqdn + '" --prop:guestinfo.cis.appliance.net.prefix="' + $restoredvCenterNetworkPrefix + '" --prop:guestinfo.cis.appliance.net.mode="static" --prop:guestinfo.cis.appliance.net.dns.servers="' + $restoredvCenterDnsServers + '" --prop:guestinfo.cis.appliance.net.gateway="' + $restoredvCenterGateway + '" --prop:guestinfo.cis.appliance.root.passwd="' + $restoredvCenterRootPassword + '" --prop:guestinfo.cis.appliance.ssh.enabled="True" "' + $vCenterOvaFile + '" ' + '"vi://' + $vCenterAdmin + ':' + $vCenterAdminPassword + '@' + $vCenterFqdn + '/' + $datacenterName + '/host/' + $clusterName + '/"'
     $scriptBlock = { Invoke-Expression "& $using:command" }
     $deploymentJob = Start-Job -scriptblock $scriptBlock -ArgumentList $command
     Do { Sleep 1; $jobStatus = (Get-Job -id $deploymentJob.id).state } Until ($jobStatus -eq "Running" )
@@ -3015,9 +3015,9 @@ Function Invoke-vCenterRestore {
     #>
 
     Param(
-        [Parameter (Mandatory = $true)][String] $vCenterFqdn,
-        [Parameter (Mandatory = $true)][String] $vCenterAdmin,
-        [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
+        #[Parameter (Mandatory = $true)][String] $vCenterFqdn,
+        #[Parameter (Mandatory = $true)][String] $vCenterAdmin,
+        #[Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
         [Parameter (Mandatory = $true)][String] $workloadDomain,
         [Parameter (Mandatory = $true)][String] $vCenterBackupPath,
@@ -3032,17 +3032,19 @@ Function Invoke-vCenterRestore {
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
     $restoredVcenterFqdn = ($extractedSddcData.workloadDomains | Where-Object { $_.domainName -eq $workloadDomain }).vCenterDetails.fqdn
-    $restoredVcenterVmName = ($extractedSddcData.workloadDomains | Where-Object { $_.domainName -eq $workloadDomain }).vCenterDetails.vmname
+    #$restoredVcenterVmName = ($extractedSddcData.workloadDomains | Where-Object { $_.domainName -eq $workloadDomain }).vCenterDetails.vmname
     $restoredvCenterRootPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "VCENTER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "SSH") }).password
     $ssoDomain = ($extractedSddcData.workloadDomains | Where-Object { $_.domainName -eq $workloadDomain }).ssoDomain
     $ssoAdminUserName = ($extractedSddcData.passwords | Where-Object { $_.entityType -eq "PSC" -and $_.username -like "*$($ssoDomain)" }).username
     $ssoAdminUserPassword = ($extractedSddcData.passwords | Where-Object { $_.entityType -eq "PSC" -and $_.username -like "*$($ssoDomain)" }).password
 
     #Power Up vCenter Appliance
+    <#
     $vCenterConnection = Connect-VIServer -server $vCenterFqdn -user $vCenterAdmin -password $vCenterAdminPassword
     LogMessage -type INFO -message "[$restoredVcenterVmName] Powering On VM"
     Get-VM -Name $restoredVcenterVmName | Start-VM -confirm:$false | Out-Null
     Disconnect-VIServer * -Force -Confirm:$false -ErrorAction SilentlyContinue
+    #>
 
     #Wait for successful ping test
     LogMessage -type WAIT -message "[$restoredVcenterFqdn] Waiting for successful ping test"
@@ -3105,9 +3107,9 @@ Function Invoke-vCenterRestore {
         $sshSession = New-SSHSession -computername $restoredVcenterFqdn -Credential $mycreds -KnownHost $inmem -erroraction silentlycontinue
         If ($sshSession) {
             $stream = New-SSHShellStream -SSHSession $sshSession
-            <# $stream.writeline('appliancesh')
+            $stream.writeline('appliancesh')
             Start-Sleep 5
-            $stream.writeline($restoredvCenterRootPassword) #>
+            $stream.writeline($restoredvCenterRootPassword)
             Start-Sleep 5
             $response = $stream.Read()
             Start-Sleep 5
