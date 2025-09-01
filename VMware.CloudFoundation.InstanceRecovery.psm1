@@ -2354,10 +2354,14 @@ Function New-NSXManagerOvaDeployment {
     If ($nsxManagerSelection -eq "c") { Break }
     $selectedNsxManager = $nsxNodes | Where-Object { $_.vmName -eq ($nsxManagersDisplayObject | Where-Object { $_.id -eq $nsxManagerSelection }).manager }
 
-    $vmNetwork = $extractedSDDCData.mgmtDomainInfrastructure.port_group
     $vmDatastore = $extractedSDDCData.mgmtDomainInfrastructure.vsan_datastore
-    $datacenterName = $extractedSDDCData.mgmtDomainInfrastructure.datacenter
-    $clusterName = $extractedSDDCData.mgmtDomainInfrastructure.cluster
+    #Following parameters converted to known entities for 9.0. Consider refactoring in 9.1 if data is saved in manifest.json
+    #$vmNetwork = $extractedSDDCData.mgmtDomainInfrastructure.port_group
+    $vmNetwork = "vcfir-cl01-vds01-pg-vm-mgmt"
+    #$datacenterName = $extractedSDDCData.mgmtDomainInfrastructure.datacenter
+    $datacenterName = "vcfir-dc01"
+    #$clusterName = $extractedSDDCData.mgmtDomainInfrastructure.cluster
+    $clusterName = "vcfir-cl01"
 
     # NSX Manager Appliance Configuration
     $nsxManagerVMName = $selectedNsxManager.vmName
@@ -2458,10 +2462,14 @@ Function New-vCenterOvaDeployment {
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
 
     $workloadDomainDetails = ($extractedSDDCData.workloadDomains | Where-Object { $_.domainName -eq $workloadDomain })
-    $vmNetwork = $extractedSDDCData.mgmtDomainInfrastructure.port_group
     $vmDatastore = $extractedSDDCData.mgmtDomainInfrastructure.vsan_datastore
-    $datacenterName = $extractedSDDCData.mgmtDomainInfrastructure.datacenter
-    $clusterName = $extractedSDDCData.mgmtDomainInfrastructure.cluster
+    #Following parameters converted to known entities for 9.0. Consider refactoring in 9.1 if data is saved in manifest.json
+    #$vmNetwork = $extractedSDDCData.mgmtDomainInfrastructure.port_group
+    $vmNetwork = "vcfir-cl01-vds01-pg-vm-mgmt"
+    #$datacenterName = $extractedSDDCData.mgmtDomainInfrastructure.datacenter
+    $datacenterName = "vcfir-dc01"
+    #$clusterName = $extractedSDDCData.mgmtDomainInfrastructure.cluster
+    $clusterName = "vcfir-cl01"
     $restoredvCenterVMName = $workloadDomainDetails.vCenterDetails.vmname
     $restoredvCenterIpAddress = $workloadDomainDetails.vCenterDetails.ip
     $restoredvCenterFqdn = $workloadDomainDetails.vCenterDetails.fqdn
@@ -2560,10 +2568,14 @@ Function New-SDDCManagerOvaDeployment {
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
 
     # SDDC Manager Configuration
-    $vmNetwork = $extractedSDDCData.mgmtDomainInfrastructure.port_group
     $vmDatastore = $extractedSDDCData.mgmtDomainInfrastructure.vsan_datastore
-    $datacenterName = $extractedSDDCData.mgmtDomainInfrastructure.datacenter
-    $clusterName = $extractedSDDCData.mgmtDomainInfrastructure.cluster
+    #Following parameters converted to known entities for 9.0. Consider refactoring in 9.1 if data is saved in manifest.json
+    #$vmNetwork = $extractedSDDCData.mgmtDomainInfrastructure.port_group
+    $vmNetwork = "vcfir-cl01-vds01-pg-vm-mgmt"
+    #$datacenterName = $extractedSDDCData.mgmtDomainInfrastructure.datacenter
+    $datacenterName = "vcfir-dc01"
+    #$clusterName = $extractedSDDCData.mgmtDomainInfrastructure.cluster
+    $clusterName = "vcfir-cl01"
     $sddcManagerVMName = $extractedSDDCData.sddcManager.vmname
     $sddcManagerBackupPassword = ($extractedSddcData.passwords | Where-Object { $_.entityType -eq "BACKUP" }).password
     $sddcManagerNetworkMask = $extractedSddcData.mgmtDomainInfrastructure.netmask
