@@ -1081,16 +1081,16 @@ Function New-ExtractDataFromSDDCBackup {
 }
 Export-ModuleMember -Function New-ExtractDataFromSDDCBackup
 
-Function Update-ExtractdDataFromSDDCBackup {
+Function Update-ExtractedDataFromSDDCBackup {
     <#
     .SYNOPSIS
     Updates extracted SDDC Data JSON file with detail not caprured in the SDDC manager backup VCF Instance Recovery.
 
     .DESCRIPTION
-    The Update-ExtractdDataFromSDDCBackup cmdlet Updates extracted SDDC Data JSON file with detail not caprured in the SDDC manager backup VCF Instance Recovery.
+    The Update-ExtractedDataFromSDDCBackup cmdlet Updates extracted SDDC Data JSON file with detail not caprured in the SDDC manager backup VCF Instance Recovery.
 
     .EXAMPLE
-    Update-ExtractdDataFromSDDCBackup -extractedSDDCDataFile "".\extracted-sddc-data.json" -sddcManagerFQDN "sfo-vcf01.sfo.rainpole.io" -sddcManagerAdmin "administrator@vsphere.local" -sddcManagerAdminPassword "VMw@re1!VMw@re1!"
+    Update-ExtractedDataFromSDDCBackup -extractedSDDCDataFile "".\extracted-sddc-data.json" -sddcManagerFQDN "sfo-vcf01.sfo.rainpole.io" -sddcManagerAdmin "administrator@vsphere.local" -sddcManagerAdminPassword "VMw@re1!VMw@re1!"
 
     .PARAMETER extractedSDDCDataFile
     Relative or absolute to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup) somewhere on the local filesystem
@@ -1119,41 +1119,45 @@ Function Update-ExtractdDataFromSDDCBackup {
     $sddcManagerConnection = Connect-VcfSddcManagerServer -server $sddcManagerFQDN -User $sddcManagerAdmin -Password $sddcManagerAdminPassword
 
     Foreach ($workloadDomain in $extractedSddcData.workloadDomains) {
-        Foreach ($cluster in $extractedSddcData.workloadDomains.vsphereClusterDetails) {
+        Foreach ($cluster in $workloadDomain.vsphereClusterDetails) {
             $clusterName = (Invoke-VcfGetCluster -Id $cluster.id).Name
+            LogMessage -type INFO -message "Injecting cluster name $clusterName into $($workloadDomain.domainName)"
             $cluster.name = $clusterName
 
             Foreach ($vds in $cluster.vdsDetails) {
                 $vdsName = (Invoke-VcfGetVdses -ClusterId $cluster.id | Where-Object { $_.id -eq $vds.id }).Name
                 $vds.dvsName = $vdsName
 
-            }
-
-            Foreach ($portGroup in $vds.PortGroups) {
-                if ($portGroup.TransportType -eq "VM_MANAGEMENT") {
-                    $vmManagementPGName = ((Invoke-VcfGetVdses -ClusterId $cluster.id).PortGroups | Where-Object { $_.TransportType -eq "VM_MANAGEMENT" }).Name
-                    $portGroup | Add-Member -NotePropertyName "Name" -NotePropertyValue $vmManagementPGName -Force
+                Foreach ($portGroup in $vds.PortGroups) {
+                    if ($portGroup.TransportType -eq "VM_MANAGEMENT") {
+                        $vmManagementPGName = ((Invoke-VcfGetVdses -ClusterId $cluster.id).PortGroups | Where-Object { $_.TransportType -eq "VM_MANAGEMENT" }).Name
+                        LogMessage -type INFO -message "Injecting portgroup name $vmManagementPGName on $($vds.dvsName)"
+                        $portGroup | Add-Member -NotePropertyName "Name" -NotePropertyValue $vmManagementPGName -Force
+                    }
+                    if ($portGroup.TransportType -eq "MANAGEMENT") {
+                        $managementPGName = ((Invoke-VcfGetVdses -ClusterId $cluster.id).PortGroups | Where-Object { $_.TransportType -eq "MANAGEMENT" }).Name
+                        LogMessage -type INFO -message "Injecting portgroup name $managementPGName on $($vds.dvsName)"
+                        $portGroup | Add-Member -NotePropertyName "Name" -NotePropertyValue $managementPGName -Force
+                    }
+                    if ($portGroup.TransportType -eq "VMOTION") {
+                        $vMotionPGName = ((Invoke-VcfGetVdses -ClusterId $cluster.id).PortGroups | Where-Object { $_.TransportType -eq "VMOTION" }).Name
+                        LogMessage -type INFO -message "Injecting portgroup name $vMotionPGName on $($vds.dvsName)"
+                        $portGroup | Add-Member -NotePropertyName "Name" -NotePropertyValue $vMotionPGName -Force
+                    }
+                    if ($portGroup.TransportType -eq "VSAN") {
+                        $vSanPGName = ((Invoke-VcfGetVdses -ClusterId $cluster.id).PortGroups | Where-Object { $_.TransportType -eq "VSAN" }).Name
+                        LogMessage -type INFO -message "Injecting portgroup name $vSanPGName on $($vds.dvsName)"
+                        $portGroup | Add-Member -NotePropertyName "Name" -NotePropertyValue $vSanPGName -Force
+                    }
                 }
-                if ($portGroup.TransportType -eq "MANAGEMENT") {
-                    $managementPGName = ((Invoke-VcfGetVdses -ClusterId $cluster.id).PortGroups | Where-Object { $_.TransportType -eq "MANAGEMENT" }).Name
-                    $portGroup | Add-Member -NotePropertyName "Name" -NotePropertyValue $managementPGName -Force
-                }
-                if ($portGroup.TransportType -eq "VMOTION") {
-                    $vMotionPGName = ((Invoke-VcfGetVdses -ClusterId $cluster.id).PortGroups | Where-Object { $_.TransportType -eq "VMOTION" }).Name
-                    $portGroup | Add-Member -NotePropertyName "Name" -NotePropertyValue $vMotionPGName -Force
-                }
-                if ($portGroup.TransportType -eq "VSAN") {
-                    $vSanPGName = ((Invoke-VcfGetVdses -ClusterId $cluster.id).PortGroups | Where-Object { $_.TransportType -eq "VSAN" }).Name
-                    $portGroup | Add-Member -NotePropertyName "Name" -NotePropertyValue $vSanPGName -Force
-                }
-
             }
         }
     }
     LogMessage -type INFO -message "[$jumpboxName] Updating Extracted Data"
     $extractedSddcData | ConvertTo-Json -Depth 20 | Out-File $extractedSDDCDataFile
 }
-Export-ModuleMember -Function Update-ExtractdDataFromSDDCBackup
+Export-ModuleMember -Function Update-ExtractedDataFromSDDCBackup
+
 Function New-PrepareforPartialBringup {
     <#
     .SYNOPSIS
@@ -2585,11 +2589,10 @@ Function New-SDDCManagerOvaDeployment {
     $sddcManagerDns = "$($extractedSddcData.mgmtDomainInfrastructure.primaryDnsServer),$($extractedSddcData.mgmtDomainInfrastructure.secondaryDnsServer)"
     $sddcManagerDomainSearch = $extractedSddcData.mgmtDomainInfrastructure.search_path
     $sddcManagerDnsDomain = $extractedSddcData.mgmtDomainInfrastructure.domain
-    $sddcManagerFipsSetting = $extractedSDDCData.sddcManager.fips_enabled
     $ntpServers = $extractedSddcData.mgmtDomainInfrastructure.ntpServers -join (",")
 
     LogMessage -type INFO -message "[$jumpboxName] Deploying SDDC Manager OVA"
-    $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowAllExtraConfig --X:logLevel=quiet --diskMode=thin --X:enableHiddenProperties --X:waitForIp --powerOn --name="' + $sddcManagerVMName + '" --network="' + $vmNetwork + '" --datastore="' + $vmDatastore + '" --prop:vami.hostname="' + $sddcManagerHostName + '" --prop:vami.ip0.SDDC-Manager="' + $sddcManagerIp + '" --prop:vami.netmask0.SDDC-Manager="' + $sddcManagerNetworkMask + '" --prop:vami.DNS.SDDC-Manager="' + $sddcManagerDns + '" --prop:vami.gateway.SDDC-Manager="' + $sddcManagerGateway + '" --prop:BACKUP_PASSWORD="' + $sddcManagerBackupPassword + '" --prop:ROOT_PASSWORD="' + $rootUserPassword + '" --prop:VCF_PASSWORD="' + $vcfUserPassword + '" --prop:BASIC_AUTH_PASSWORD="' + $basicAuthUserPassword + '" --prop:LOCAL_USER_PASSWORD="' + $localUserPassword + '" --prop:vami.searchpath.SDDC-Manager="' + $sddcManagerDomainSearch + '" --prop:vami.domain.SDDC-Manager="' + $sddcManagerDnsDomain + '" --prop:FIPS_ENABLE="' + $sddcManagerFipsSetting + '" --prop:guestinfo.ntp="' + $ntpServers + '" "' + $sddcManagerOvaFile + '" "vi://' + $vCenterAdmin + ':' + $vCenterAdminPassword + '@' + $vCenterFqdn + '/' + $datacenterName + '/host/' + $clusterName + '/"'
+    $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowAllExtraConfig --X:logLevel=quiet --diskMode=thin --X:enableHiddenProperties --X:waitForIp --powerOn --name="' + $sddcManagerVMName + '" --network="' + $vmNetwork + '" --datastore="' + $vmDatastore + '" --prop:vami.hostname="' + $sddcManagerHostName + '" --prop:vami.ip0.SDDC-Manager="' + $sddcManagerIp + '" --prop:vami.netmask0.SDDC-Manager="' + $sddcManagerNetworkMask + '" --prop:vami.DNS.SDDC-Manager="' + $sddcManagerDns + '" --prop:vami.gateway.SDDC-Manager="' + $sddcManagerGateway + '" --prop:BACKUP_PASSWORD="' + $sddcManagerBackupPassword + '" --prop:ROOT_PASSWORD="' + $rootUserPassword + '" --prop:VCF_PASSWORD="' + $vcfUserPassword + '" --prop:BASIC_AUTH_PASSWORD="' + $basicAuthUserPassword + '" --prop:LOCAL_USER_PASSWORD="' + $localUserPassword + '" --prop:vami.searchpath.SDDC-Manager="' + $sddcManagerDomainSearch + '" --prop:vami.domain.SDDC-Manager="' + $sddcManagerDnsDomain + '" --prop:guestinfo.ntp="' + $ntpServers + '" "' + $sddcManagerOvaFile + '" "vi://' + $vCenterAdmin + ':' + $vCenterAdminPassword + '@' + $vCenterFqdn + '/' + $datacenterName + '/host/' + $clusterName + '/"'
     $scriptBlock = { Invoke-Expression "& $using:command" }
     $deploymentJob = Start-Job -scriptblock $scriptBlock -ArgumentList $command
     Do { Sleep 1; $jobStatus = (Get-Job -id $deploymentJob.id).state } Until ($jobStatus -eq "Running" )
@@ -3195,8 +3198,8 @@ Function Move-ClusterHostsToRestoredVcenter {
     .PARAMETER restoredvCenterAdminPassword
     Admin password for the restored vCenter instance
 
-    .PARAMETER clusterName
-    Name of the restored vSphere cluster instance in the temporary vCenter
+    .PARAMETER restoredClusterName
+    Admin password for the restored vCenter instance
 
     .PARAMETER extractedSDDCDataFile
     Relative or absolute to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup) somewhere on the local filesystem
@@ -3206,10 +3209,10 @@ Function Move-ClusterHostsToRestoredVcenter {
         [Parameter (Mandatory = $true)][String] $tempvCenterFqdn,
         [Parameter (Mandatory = $true)][String] $tempvCenterAdmin,
         [Parameter (Mandatory = $true)][String] $tempvCenterAdminPassword,
-        [Parameter (Mandatory = $true)][String] $clusterName,
         [Parameter (Mandatory = $true)][String] $restoredvCenterFQDN,
         [Parameter (Mandatory = $true)][String] $restoredvCenterAdmin,
         [Parameter (Mandatory = $true)][String] $restoredvCenterAdminPassword,
+        [Parameter (Mandatory = $true)][String] $restoredClusterName,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile
     )
     $jumpboxName = hostname
@@ -3219,13 +3222,14 @@ Function Move-ClusterHostsToRestoredVcenter {
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
 
     $tempvCenterConnection = connect-viserver $tempvCenterFqdn -user $tempvCenterAdmin -password $tempvCenterAdminPassword
+    $clusterName = (Get-Cluster).name
     $esxiHosts = get-cluster -name $clusterName | get-vmhost | Sort-Object -Property Name
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
     $restoredvCenterConnection = connect-viserver $restoredvCenterFQDN -user $restoredvCenterAdmin -password $restoredvCenterAdminPassword
     Foreach ($esxiHost in $esxiHosts) {
         LogMessage -type INFO -message "[$($esxiHost.name)] Moving to $restoredvCenterFQDN"
         $esxiRootPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $esxiHost.Name) -and ($_.username -eq "root") }).password
-        Add-VMHost -Name $esxiHost.Name -Location $clusterName -User root -Password $esxiRootPassword -Force -Confirm:$false | Out-Null
+        Add-VMHost -Name $esxiHost.Name -Location $restoredClusterName -User root -Password $esxiRootPassword -Force -Confirm:$false | Out-Null
     }
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
@@ -3240,7 +3244,7 @@ Function Remove-ClusterHostsFromVds {
     The Remove-ClusterHostsFromVds cmdlet removes all hosts in the provided vSphere cluster from the provided vSphere Distributed Switch
 
     .EXAMPLE
-    Remove-ClusterHostsFromVds -vCenterFQDN "sfo-m01-vc02.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01" -vdsName "sfo-m01-cl01-vds01"
+    Remove-ClusterHostsFromVds -vCenterFQDN "sfo-m01-vc02.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -vdsName "sfo-m01-cl01-vds01"
 
     .PARAMETER vCenterFQDN
     FQDN of the vCenter instance hosting the cluster / vds from which hosts should be removed
@@ -3251,25 +3255,22 @@ Function Remove-ClusterHostsFromVds {
     .PARAMETER vCenterAdminPassword
     Admin password for the vCenter instance hosting the cluster / vds from which hosts should be removed
 
-    .PARAMETER clusterName
-    Name of the vSphere cluster instance from which hosts should be removed
-
     #>
 
     Param(
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
-        [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
-        [Parameter (Mandatory = $true)][String] $clusterName
+        [Parameter (Mandatory = $true)][String] $vCenterAdminPassword
     )
     $jumpboxName = hostname
-    $vss_name = "vSwitch0"
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
+    $clusterName = (Get-Cluster).name
     $esxiHosts = Get-Cluster -name $clusterName | get-vmhost | Sort-Object -Property Name
     Foreach ($esxiHost in $esxiHosts) {
         $connectedVdswitches = Get-VDSwitch -VMHost $esxiHost
         Foreach ($vds in $connectedVdswitches) {
+            $vss_name = "$($vds.name)-vss"
             LogMessage -type INFO -message "[$($esxiHost.name)] Removing from $($vds.name)"
             $vmnicsInUse = Get-VDSwitch -Name $vds.name | Get-VMHostNetworkAdapter -VMHost $esxiHost -Physical
             Get-VDSwitch -Name $vds.name | Get-VMHostNetworkAdapter -VMHost $esxiHost -Physical | Remove-VDSwitchPhysicalNetworkAdapter -Confirm:$false | Out-Null
@@ -3292,7 +3293,7 @@ Function Move-MgmtVmsToTempPg {
     The Move-MgmtVmsToTempPg cmdlet moves all management VMs in the provided vSphere cluster to a temporary management portgroup
 
     .EXAMPLE
-    Move-MgmtVmsToTempPg -vCenterFQDN "sfo-m01-vc02.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01"
+    Move-MgmtVmsToTempPg -vCenterFQDN "sfo-m01-vc02.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!"
 
     .PARAMETER vCenterFQDN
     FQDN of the vCenter instance hosting the cluster / VMs which should be removed
@@ -3303,25 +3304,45 @@ Function Move-MgmtVmsToTempPg {
     .PARAMETER vCenterAdminPassword
     Admin password for the vCenter instance hosting the cluster / VMs which should be removed
 
-    .PARAMETER clusterName
-    Name of the vSphere cluster instance hosting the VMS to be moved
+    .PARAMETER extractedSDDCDataFile
+    Relative or absolute to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup) somewhere on the local filesystem
     #>
 
     Param(
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
         [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
-        [Parameter (Mandatory = $true)][String] $clusterName
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
+    $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
+    $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
+    $workloadDomain = ($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" })
+    $domainName = $workloadDomain.domainName
+
+
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
-    $vmsTomove = get-cluster -name $clusterName | get-vm | ? { $_.Name -notlike "*vCLS*" }
-    foreach ($vmToMove in $vmsTomove) {
-        LogMessage -type INFO -message "[$($vmToMove.name)] Moving to vm_management"
-        Get-VM -Name $vmToMove | Get-NetworkAdapter | Set-NetworkAdapter -NetworkName "vm_management" -confirm:$false | Out-Null
-    }
+    $clusterName = (Get-Cluster).name
+    $vmhosts = (Get-Cluster -name $clusterName | Get-VMHost).name
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+
+    Foreach ($vmhost in $vmhosts) {
+        $vmHostUser = ($extractedSddcData.passwords | where-object { ($_.domainName -eq $domainName) -and ($_.entityType -eq "ESXI") -and ($_.username -eq "root") -and ($_.entityName -eq $vmhost) }).username
+        $vmHostPassword = ($extractedSddcData.passwords | where-object { ($_.domainName -eq $domainName) -and ($_.entityType -eq "ESXI") -and ($_.username -eq "root") -and ($_.entityName -eq $vmhost) }).password
+        $vmHostConnection = Connect-ViServer $vmhost -user $vmHostUser -password $vmHostPassword
+        $vmsTomove = Get-VM | Where-Object { $_.Name -notlike "*vCLS*" }
+        foreach ($vmToMove in $vmsTomove) {
+            If ((Get-VM -Name $vmToMove | Get-NetworkAdapter).NetworkName -ne "vm_management") {
+                LogMessage -type INFO -message "[$($vmToMove.name)] Moving to vm_management"
+                Get-VM -Name $vmToMove | Get-NetworkAdapter | Set-NetworkAdapter -NetworkName "vm_management" -confirm:$false | Out-Null
+            } else {
+                LogMessage -type INFO -message "[$($vmToMove.name)] Already moved to vm_management. Skipping"
+            }
+        }
+        Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+    }
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Move-MgmtVmsToTempPg
@@ -3470,24 +3491,24 @@ Function Move-ClusterHostNetworkingTovSS {
     }
 
     $vm_mgmt_name = "vm_management"
-    $esx_mgmt_name = "esxi_management"
+    $esx_mgmt_name = "esx_management"
     $vmotion_name = "vmotion"
     $storage_name = "vsan"
 
     foreach ($vmhost in $vmhostArray) {
         #VM Management Portgroup
-        $sourceVDSName = (Get-VDPortgroup -Name "vcfir-cl01-vds01-pg-vm-mgmt").VDSwitch.name
+        $sourceVDSName = (Get-VDPortgroup -Name "$($clusterName)-vds01-pg-vm-mgmt").VDSwitch.name
         $targetVssName = "$($sourceVDSName)-vss"
         $tempMgmtPgExists = Get-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $vmhost -Name $targetVssName) -Name $vm_mgmt_name -errorAction SilentlyContinue
         If (!($tempMgmtPgExists)) {
-            LogMessage -type INFO -message "[$vmhost] Creating temporary management portgroup `'$vm_mgmt_name`'"
+            LogMessage -type INFO -message "[$vmhost] Creating VM management portgroup `'$vm_mgmt_name`'"
             New-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $vmhost -Name $targetVssName) -Name $vm_mgmt_name -VLanId $mgmtVmVlanId | Out-Null
         } else {
-            LogMessage -type INFO -message "[$vmhost] Temporary management portgroup `'$vm_mgmt_name`' already exists. Skipping"
+            LogMessage -type INFO -message "[$vmhost] VM management portgroup `'$vm_mgmt_name`' already exists. Skipping"
         }
 
         #ESX Management Portgroup
-        $sourceVDSName = (Get-VDPortgroup -Name "vcfir-cl01-vds01-pg-esx-mgmt").VDSwitch.name
+        $sourceVDSName = (Get-VDPortgroup -Name "$($clusterName)-vds01-pg-esx-mgmt").VDSwitch.name
         $targetVssName = "$($sourceVDSName)-vss"
         $tempVsanPgExists = Get-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $vmhost -Name $targetVssName) -Name $esx_mgmt_name -errorAction SilentlyContinue
         If (!($tempVsanPgExists)) {
@@ -3508,14 +3529,14 @@ Function Move-ClusterHostNetworkingTovSS {
         }
 
         #vMotion Portgroup
-        $sourceVDSName = (Get-VDPortgroup -Name "vcfir-cl01-vds01-pg-vmotion").VDSwitch.name
+        $sourceVDSName = (Get-VDPortgroup -Name "$($clusterName)-vds01-pg-vmotion").VDSwitch.name
         $targetVssName = "$($sourceVDSName)-vss"
         $tempVmotionsPgExists = Get-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $vmhost -Name $targetVssName) -Name $vmotion_name -errorAction SilentlyContinue
         If (!($tempVmotionsPgExists)) {
-            LogMessage -type INFO -message "[$vmhost] Creating management portgroup `'$vmotion_name`'"
+            LogMessage -type INFO -message "[$vmhost] Creating vMotion portgroup `'$vmotion_name`'"
             New-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $vmhost -Name $targetVssName) -Name $vmotion_name -VLanId $vMotionVlanId | Out-Null
         } else {
-            LogMessage -type INFO -message "[$vmhost] Management portgroup `'$vmotion_name`' already exists. Skipping"
+            LogMessage -type INFO -message "[$vmhost] vMotion portgroup `'$vmotion_name`' already exists. Skipping"
         }
         #Migrate vMotion vmKernel
         $vss = Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name $targetVssName
@@ -3528,25 +3549,25 @@ Function Move-ClusterHostNetworkingTovSS {
             LogMessage -type INFO -message "[$vmhost] vMotion vmKernel already on $targetVssName. Skipping"
         }
 
-        #VSAN Portgroup
-        $sourceVDSName = (Get-VDPortgroup -Name "vcfir-cl01-vds01-pg-vsan").VDSwitch.name
+        #vSAN Portgroup
+        $sourceVDSName = (Get-VDPortgroup -Name "$($clusterName)-vds01-pg-vsan").VDSwitch.name
         $targetVssName = "$($sourceVDSName)-vss"
         $tempVsanPgExists = Get-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $vmhost -Name $targetVssName) -Name $storage_name -errorAction SilentlyContinue
         If (!($tempVsanPgExists)) {
-            LogMessage -type INFO -message "[$vmhost] Creating management portgroup `'$storage_name`'"
+            LogMessage -type INFO -message "[$vmhost] Creating vSAN portgroup `'$storage_name`'"
             New-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $vmhost -Name $targetVssName) -Name "$storage_name" -VLanId $vSanVlanId | Out-Null
         } else {
-            LogMessage -type INFO -message "[$vmhost] Management portgroup `'$storage_name`' already exists. Skipping"
+            LogMessage -type INFO -message "[$vmhost] vSAN portgroup `'$storage_name`' already exists. Skipping"
         }
         #Migrate VSAN vmKernel
         $vss = Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name $targetVssName
         $vmks = $vmHost | Get-VMHostNetwork | Select-Object -ExpandProperty VirtualNic | Sort-Object Name
         $currentStorageVmkPortgroup = ($vmks | Where-Object { $_.name -eq "vmk2" }).PortGroupName
         If ($currentStorageVmkPortgroup -ne $storage_name) {
-            LogMessage -type INFO -message "[$vmhost] Migrating VSAN vmKernel from $sourceVDSName to $targetVssName"
+            LogMessage -type INFO -message "[$vmhost] Migrating vSAN vmKernel from $sourceVDSName to $targetVssName"
             Move-VMKernel -VMHost $vmhost -Interface "vmk2" -NetworkName $storage_name
         } else {
-            LogMessage -type INFO -message "[$vmhost] VSAN vmKernel already on $targetVssName. Skipping"
+            LogMessage -type INFO -message "[$vmhost] vSAN vmKernel already on $targetVssName. Skipping"
         }
         Start-Sleep 5
     }
@@ -3844,23 +3865,22 @@ Function Remove-NonResponsiveHosts {
         Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
 
         #If VLCM cluster, wait until cleanup of cluster post TN delete is done
-        <# If ($clusterVlcmManaged -eq "true") {
+        If ($clusterVlcmManaged -eq "true") {
             $SecurePassword = ConvertTo-SecureString -String $nsxManagerRootPassword -AsPlainText -Force
             $mycreds = New-Object System.Management.Automation.PSCredential ("root", $SecurePassword)
             $inmem = New-SSHMemoryKnownHost
             New-SSHTrustedHost -KnownHostStore $inmem -HostName $nsxManagerFQDN -FingerPrint ((Get-SSHHostKey -ComputerName $nsxManagerFQDN).fingerprint) | Out-Null
             Do {
                 $sshSession = New-SSHSession -computername $nsxManagerFQDN -Credential $mycreds -KnownHost $inmem
-            } Until ($sshSession)
-            #$nsxCommand = "cat /var/log/proton/nsxapi.log | grep `".*RemoveNsxVlcmActivity.*entity= 'ComputeCollectionMsg/$clusterComputeCollectionId.*phase= `'Begin`'`""
-            $nsxCommand = "grep -a `".*RemoveNsxVlcmActivity.*entity= 'ComputeCollectionMsg/$clusterComputeCollectionId.*phase= `'Begin`'`" /var/log/proton/nsxapi.log"
+            } Until ($sshSession)Move-MgmtVmsToTempPg
+            $nsxCommand = "grep -a `".*RemoveNsxFromComputeCollectionActivity.*entity= 'ComputeCollectionMsg/$clusterComputeCollectionId.*phase= `'Begin`'`" /var/log/proton/nsxapi.log"
             LogMessage -type WAIT -message "[$nsxManagerFqdn] Waiting for Cluster Image Cleanup to Complete"
             Do {
                 Sleep 5
                 $relevantUpdates = (Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $nsxCommand).output
-            } Until ($relevantUpdates[-1] -like "*RemoveNsxVlcmActivity*phase= `'Begin`'*next phase= `'Success!`'")
+            } Until ($relevantUpdates[-1] -like "*RemoveNsxFromComputeCollectionActivity*phase= `'Begin`'*next phase= `'Success!`'")
             Remove-SSHSession -SSHSession $sshSession | Out-Null
-        } #>
+        }
 
         #Reattach TNP
         #Get Transport Node Profiles
@@ -4338,6 +4358,7 @@ Function New-RebuiltVdsConfiguration {
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
     $workloadDomain = ($extractedSddcData.workloadDomains | Where-Object { $_.vsphereClusterDetails.name -contains $clustername })
+    $domainName = $workloadDomain.domainName
     $clusterVdsDetails = ($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).vdsDetails
     $isPrimaryCluster = ($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).isDefault
     $cluster = ($workloadDomain.vsphereClusterDetails | Where-Object { $_.name -eq $clustername })
@@ -4510,17 +4531,27 @@ Function New-RebuiltVdsConfiguration {
 
             }
             If (($vds.portgroups | Where-Object { $_.transportType -eq 'VM_MANAGEMENT' }) -OR ((!($vds.portgroups | Where-Object { $_.transportType -eq 'VM_MANAGEMENT' })) -and ($vds.portgroups | Where-Object { $_.transportType -eq 'MANAGEMENT' }))) {
+
                 #Move Mgmt VMs to Management Portgroup
                 If ($isPrimaryManagementCluster) {
-                    $vmsTomove = get-cluster -name $clusterName | get-vm | Where-Object { $_.Name -notlike "*vCLS*" }
-                    foreach ($vmToMove in $vmsTomove) {
-                        If ((Get-VM -Name $vmToMove | Get-NetworkAdapter).NetworkName -ne $managementVmPortGroupName) {
-                            LogMessage -type INFO -message "[$($vmToMove.name)] Moving to $managementVmPortGroupName"
-                            Get-VM -Name $vmToMove | Get-NetworkAdapter | Set-NetworkAdapter -NetworkName $managementVmPortGroupName -confirm:$false | Out-Null
-                        } else {
-                            LogMessage -type INFO -message "[$($vmToMove.name)] Already moved to $managementVmPortGroupName. Skipping"
+                    Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+                    Foreach ($vmhost in $vmhosts.name) {
+                        $vmHostUser = ($extractedSddcData.passwords | where-object { ($_.domainName -eq $domainName) -and ($_.entityType -eq "ESXI") -and ($_.username -eq "root") -and ($_.entityName -eq $vmhost) }).username
+                        $vmHostPassword = ($extractedSddcData.passwords | where-object { ($_.domainName -eq $domainName) -and ($_.entityType -eq "ESXI") -and ($_.username -eq "root") -and ($_.entityName -eq $vmhost) }).password
+                        $vmHostConnection = Connect-ViServer $vmhost -user $vmHostUser -password $vmHostPassword
+                        $vmsTomove = Get-VM | Where-Object { $_.Name -notlike "*vCLS*" }
+                        foreach ($vmToMove in $vmsTomove) {
+
+                            If ((Get-VM -Name $vmToMove | Get-NetworkAdapter).NetworkName -ne $managementVmPortGroupName) {
+                                LogMessage -type INFO -message "[$($vmToMove.name)] Moving to $($managementVmPortGroupName)"
+                                Get-VM -Name $vmToMove | Get-NetworkAdapter | Set-NetworkAdapter -NetworkName $managementVmPortGroupName -confirm:$false | Out-Null
+                            } else {
+                                LogMessage -type INFO -message "[$($vmToMove.name)] Already moved to $($managementVmPortGroupName). Skipping"
+                            }
                         }
+                        Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
                     }
+                    $vCenterConnection = Connect-ViServer $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
                 }
             }
         }
@@ -4555,6 +4586,7 @@ Function New-RebuiltVdsConfiguration {
                 }
             }
         }
+        Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
         LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
     }
 }
