@@ -3872,7 +3872,7 @@ Function Remove-NonResponsiveHosts {
             New-SSHTrustedHost -KnownHostStore $inmem -HostName $nsxManagerFQDN -FingerPrint ((Get-SSHHostKey -ComputerName $nsxManagerFQDN).fingerprint) | Out-Null
             Do {
                 $sshSession = New-SSHSession -computername $nsxManagerFQDN -Credential $mycreds -KnownHost $inmem
-            } Until ($sshSession)Move-MgmtVmsToTempPg
+            } Until ($sshSession)
             $nsxCommand = "grep -a `".*RemoveNsxFromComputeCollectionActivity.*entity= 'ComputeCollectionMsg/$clusterComputeCollectionId.*phase= `'Begin`'`" /var/log/proton/nsxapi.log"
             LogMessage -type WAIT -message "[$nsxManagerFqdn] Waiting for Cluster Image Cleanup to Complete"
             Do {
