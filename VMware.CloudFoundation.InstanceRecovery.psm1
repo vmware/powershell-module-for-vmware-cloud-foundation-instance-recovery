@@ -266,12 +266,6 @@ Function Confirm-VCFInstanceRecoveryPreReqs {
 
     #Check Dependencies
     $jumpboxName = hostname
-    $is7Zip4PowerShellInstalled = Get-InstalledModule -name "7Zip4PowerShell" -RequiredVersion "2.4.0" -ErrorAction SilentlyContinue
-    If (!$is7Zip4PowerShellInstalled) {
-        LogMessage -type WARNING -message "[$jumpboxName] 7Zip4PowerShell Module Missing. Please install"
-    } else {
-        LogMessage -type INFO -message "[$jumpboxName] 7Zip4PowerShell Module found"
-    }
 
     $isPoshSSHInstalled = Get-InstalledModule -name "Posh-SSH" -RequiredVersion "3.0.8" -ErrorAction SilentlyContinue
     If (!$isPoshSSHInstalled) {
@@ -373,10 +367,11 @@ Function New-ExtractDataFromSDDCBackup {
     $command = "openssl enc -d -aes-256-cbc -md sha256 -in $backupFileFullPath -pass pass:`"$encryptionPassword`" -out `"$parentFolder\decrypted-sddc-manager-backup.tar.gz`""
     Invoke-Expression "& $command" *>$null
 
-    #Extract Backup
+    #Extract Required Files From Backup Leveraging Windows tar.exe
     LogMessage -type INFO -message "[$jumpboxName] Extracting Backup"
-    Expand-7Zip -ArchiveFileName "$parentFolder\decrypted-sddc-manager-backup.tar.gz" -TargetPath $parentFolder
-    Expand-7Zip -ArchiveFileName "$parentFolder\decrypted-sddc-manager-backup.tar" -TargetPath $parentFolder
+    Set-Location "$parentFolder"
+    tar -xzf "$parentFolder\decrypted-sddc-manager-backup.tar.gz" "$extractedBackupFolder/metadata.json" "$extractedBackupFolder/appliancemanager_dns_configuration.json" "$extractedBackupFolder/appliancemanager_ntp_configuration.json" "$extractedBackupFolder/security_password_vault.json" "$extractedBackupFolder/database/sddc-postgres.bkp"
+
 
     #Get Content of Password Vault
     LogMessage -type INFO -message "[$jumpboxName] Reading Password Vault"
