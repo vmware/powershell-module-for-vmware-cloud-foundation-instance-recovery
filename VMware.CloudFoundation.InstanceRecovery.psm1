@@ -267,6 +267,14 @@ Function Confirm-VCFInstanceRecoveryPreReqs {
     #Check Dependencies
     $jumpboxName = hostname
 
+    #Check for windows tar.exe
+    $isTarInstalled = Test-Path "C:\Windows\System32\tar.exe"
+    If (!$isTarInstalled) {
+        LogMessage -type WARNING -message "[$jumpboxName] tar.exe Missing. Please install"
+    } else {
+        LogMessage -type INFO -message "[$jumpboxName] tar.exe found"
+    }
+
     $isPoshSSHInstalled = Get-InstalledModule -name "Posh-SSH" -RequiredVersion "3.0.8" -ErrorAction SilentlyContinue
     If (!$isPoshSSHInstalled) {
         LogMessage -type WARNING -message "[$jumpboxName] Posh-SSH Module Missing. Please install"
