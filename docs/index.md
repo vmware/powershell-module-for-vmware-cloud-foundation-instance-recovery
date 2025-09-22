@@ -37,7 +37,6 @@ Dependency                                           | Version   | Publisher    
 -----------------------------------------------------|-----------|---------------------------|---------------------------------------------------------------------------
 [VMware.PowerCLI][psgallery-module-powercli]         | 13.3.0    | Broadcom                  | :fontawesome-solid-book: &nbsp; [Documentation][developer-module-powercli]
 [Posh-SSH][psgallery-module-poshssh]                 | 3.0.8     | Carlos Perez              | :fontawesome-brands-github: &nbsp; [GitHUb][github-module-poshssh]
-[7Zip4Powershell][psgallery-module-7zip4powershell]  | 2.4.0     | Thomas Freudenberg        | :fontawesome-brands-github: &nbsp; [GitHub][github-module-7zip4powershell]
 [OpenSSL for Windows][download-win64openssl]         | 3.2.1     | Shining Light Productions | :octicons-package-dependencies-24: &nbsp; [Download][download-win64openssl]
 
 [microsoft-powershell]: https://docs.microsoft.com/en-us/powershell
