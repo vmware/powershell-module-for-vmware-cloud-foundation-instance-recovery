@@ -16,10 +16,9 @@ the use of PowerShell cmdlets.
 
 The following table lists the supported releases for this module.
 
-| Platform                                                     | Support                             |
-|--------------------------------------------------------------| ----------------------------------- |
-| :fontawesome-solid-cloud: &nbsp; VMware Cloud Foundation 5.2 | :fontawesome-solid-check:{ .green } |
-| :fontawesome-solid-cloud: &nbsp; VMware Cloud Foundation 5.1 | :fontawesome-solid-check:{ .green } |
+| Platform                                                       | Support                             |
+|----------------------------------------------------------------| ----------------------------------- |
+| :fontawesome-solid-cloud: &nbsp; VMware Cloud Foundation 9.0.x | :fontawesome-solid-check:{ .green } |
 
 ### PowerShell
 
@@ -27,7 +26,7 @@ The following table lists the supported editions and versions of PowerShell for 
 
 Edition                                                              | Version
 ---------------------------------------------------------------------|----------
-:material-powershell: &nbsp; [PowerShell Core][microsoft-powershell] | >= 7.2.0
+:material-powershell: &nbsp; [PowerShell Core][microsoft-powershell] | >= 7.5.3
 
 ### Module Dependencies
 
@@ -35,17 +34,15 @@ The following table lists the required dependencies for this module.
 
 Dependency                                           | Version   | Publisher                 | Reference
 -----------------------------------------------------|-----------|---------------------------|---------------------------------------------------------------------------
-[VMware.PowerCLI][psgallery-module-powercli]         | 13.3.0    | Broadcom                  | :fontawesome-solid-book: &nbsp; [Documentation][developer-module-powercli]
-[Posh-SSH][psgallery-module-poshssh]                 | 3.0.8     | Carlos Perez              | :fontawesome-brands-github: &nbsp; [GitHUb][github-module-poshssh]
+[VCF.PowerCLI][psgallery-module-powercli]            | 9.0.0     | Broadcom                  | :fontawesome-solid-book: &nbsp; [Documentation][developer-module-powercli]
+[Posh-SSH][psgallery-module-poshssh]                 | 3.2.4     | Carlos Perez              | :fontawesome-brands-github: &nbsp; [GitHUb][github-module-poshssh]
 [OpenSSL for Windows][download-win64openssl]         | 3.2.1     | Shining Light Productions | :octicons-package-dependencies-24: &nbsp; [Download][download-win64openssl]
 
 [microsoft-powershell]: https://docs.microsoft.com/en-us/powershell
-[psgallery-module-7zip4powershell]: https://www.powershellgallery.com/packages/7Zip4Powershell
 [psgallery-module-poshssh]: https://www.powershellgallery.com/packages/Posh-SSH
-[psgallery-module-powercli]: https://www.powershellgallery.com/packages/VMware.PowerCLI
+[psgallery-module-powercli]: https://www.powershellgallery.com/packages/VCF.PowerCLI
 [psgallery-module-recovery]: https://www.powershellgallery.com/packages/VMware.CloudFoundation.InstanceRecovery
 [developer-module-powercli]: https://developer.broadcom.com/powercli
 [docs-module-powervcf]: https://vmware.github.io/powershell-module-for-vmware-cloud-foundation
-[github-module-7zip4powershell]: https://github.com/thoemmi/7Zip4Powershell
 [github-module-poshssh]: https://github.com/darkoperator/Posh-SSH
 [download-win64openssl]: https://slproweb.com/products/Win32OpenSSL.html
