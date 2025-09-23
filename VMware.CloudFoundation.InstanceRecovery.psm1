@@ -5684,14 +5684,23 @@ Function Add-AdditionalNSXManagers {
                 $response = $stream.Read()
 
             } Until ($response -like "*Join operation successful*")
-            Do {
+            <# Do {
                 Start-Sleep 10
                 $stream.writeline("get cluster status")
                 Start-Sleep 5
                 $response = $stream.Read()
 
             } Until ($response -notlike "*DOWN*")
+ #>
+            Do {
+                <# Start-Sleep 10
+                $stream.writeline("get cluster status")
+                Start-Sleep 5
+                $response = $stream.Read() #>
+                LogMessage -type INFO -message "[$nsxManagerFQDN] Monitoring cluster rebuild status"
+                $response = ((curl -k -s -u "admin:$nsxManagerAdminPassword" "https://$nsxManagerFqdn/api/v1/cluster/status") | ConvertFrom-Json).mgmt_cluster_status.status
 
+            } Until ($response -eq "stable")
             #Close SSH Session
             Remove-SSHSession -SSHSession $sshSession | Out-Null
         }
