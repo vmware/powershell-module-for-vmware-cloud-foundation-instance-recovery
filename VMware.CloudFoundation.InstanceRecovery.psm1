@@ -557,17 +557,10 @@ Function New-ExtractDataFromSDDCBackup {
         $lineContent = $psqlContent | Select-Object -Index $vCentersStartingLineNumber
         If ($lineContent -ne '\.') {
             $vCenterID = $lineContent.split("`t")[0]
-            If ($sddcManagerObject.version -like "4.4.*") {
-                $vCenterVersion = $lineContent.split("`t")[10]
-                $vCenterFqdn = $lineContent.split("`t")[11]
-                $vCenterIp = $lineContent.split("`t")[12]
-                $vCenterVMname = $lineContent.split("`t")[13]
-            } else {
-                $vCenterVersion = $lineContent.split("`t")[9]
-                $vCenterFqdn = $lineContent.split("`t")[10]
-                $vCenterIp = (Resolve-DnsName $vCenterFqdn).IPAddress
-                $vCenterVMname = $lineContent.split("`t")[12]
-            }
+            $vCenterVersion = $lineContent.split("`t")[9]
+            $vCenterFqdn = $lineContent.split("`t")[10]
+            $vCenterIp = (Resolve-DnsName $vCenterFqdn).IPAddress
+            $vCenterVMname = $lineContent.split("`t")[12]
             $vCenterDomainID = ($hostsAndDomains | Where-Object { $_.hostId -eq (($hostsandVcenters | Where-Object { $_.vCenterID -eq $vCenterID })[0].hostID) }).domainID
             $vCenters += [pscustomobject]@{
                 'vCenterID'       = $vCenterID
@@ -986,11 +979,7 @@ Function New-ExtractDataFromSDDCBackup {
             $domainName = $lineContent.split("`t")[3]
             $domainType = $lineContent.split("`t")[6]
             $vCenter = $vCenters | Where-Object { $_.vCenterDomainID -eq $domainId }
-            If ($sddcManagerObject.version -like "4.4.*") {
-                $ssoDomain = ($pscs | Where-Object { $_.id -eq (($vCentersAndPscs | Where-Object { $_.vcenterId -eq $vcenter.vCenterID }).pscId) }).ssoDomain
-            } else {
-                $ssoDomain = $lineContent.split("`t")[11]
-            }
+            $ssoDomain = $lineContent.split("`t")[11]
             $vCenterDetails = [pscustomobject]@{
                 'id'      = $vCenter.vCenterID
                 'version' = $vCenter.vCenterVersion
@@ -1012,18 +1001,7 @@ Function New-ExtractDataFromSDDCBackup {
             $vmotionNetwork = $networks | Where-Object { ($_.type -eq "VMOTION") -and ($_.id -in $domainNetworks) }
             $vsanNetwork = $networks | Where-Object { ($_.type -eq "VSAN") -and ($_.id -in $domainNetworks) }
 
-            <#
-            $mgmtNetworkDetails = @()
-            $mgmtNetworkDetails += [pscustomobject]@{  #Review
-                'type'         = "MANAGEMENT"
-                'subnet_mask'  = $metaDataJSON.netmask
-                'subnet'       = $managementSubnet
-                'mtu'          = "1500" # Review
-                'vlanID'       = ($virtualDistributedSwitches.portgroups | Where-Object { $_.name -eq $metadataJSON.port_group }).vlanId
-                'gateway'      = $metaDataJSON.gateway
-                'portgroupKey' = $metadataJSON.port_group
-            }
-            #>
+
             $nsxClusterDetailsObject = New-Object -type psobject
             $nsxClusterDetailsObject | Add-Member -NotePropertyName 'clusterVip' -NotePropertyValue ($nsxtManagerClusters | Where-Object { $_.domainIDs -contains $domainId }).clusterVip
             $nsxClusterDetailsObject | Add-Member -NotePropertyName 'clusterFqdn' -NotePropertyValue ($nsxtManagerClusters | Where-Object { $_.domainIDs -contains $domainId }).clusterFqdn
@@ -1044,7 +1022,6 @@ Function New-ExtractDataFromSDDCBackup {
                 'ssoDomain'             = $ssoDomain
                 'networkPool'           = $poolName
                 'vCenterDetails'        = $vCenterDetails
-                #'mgmtNetworkDetails'    = $mgmtNetworkDetails
                 'nsxClusterDetails'     = $nsxClusterDetailsObject
                 'nsxNodeDetails'        = ($nsxtManagerClusters | Where-Object { $_.domainIDs -contains $domainId }).nsxNodes
                 'vsphereClusterDetails' = @($clusters | Where-Object { $_.vCenterID -eq $vcenterDetails.id })
