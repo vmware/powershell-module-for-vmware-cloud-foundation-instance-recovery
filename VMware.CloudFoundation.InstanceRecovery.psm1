@@ -1,4 +1,4 @@
-# Copyright 2024 Broadcom. All Rights Reserved.
+# Copyright 2025 Broadcom. All Rights Reserved.
 # SPDX-License-Identifier: BSD-2
 
 # THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
@@ -282,23 +282,11 @@ Function Confirm-VCFInstanceRecoveryPreReqs {
         LogMessage -type INFO -message "[$jumpboxName] Posh-SSH Module found"
     }
 
-    $isPowerCLIInstalled = Get-InstalledModule -name "VMware.PowerCLI" -ErrorAction SilentlyContinue
+    $isPowerCLIInstalled = Get-InstalledModule -name "VCF.PowerCLI" -ErrorAction SilentlyContinue
     If (!$isPowerCLIInstalled) {
-        LogMessage -type WARNING -message "[$jumpboxName] PowerCLI Module Missing. Please install"
+        LogMessage -type WARNING -message "[$jumpboxName] VCF PowerCLI Module Missing. Please install"
     } else {
         LogMessage -type INFO -message "[$jumpboxName] PowerCLI Module found"
-    }
-    $isPowerCLISddcmModuleInstalled = Get-InstalledModule -name "VMware.Sdk.Vcf.SddcManager" -RequiredVersion "5.1.0" -ErrorAction SilentlyContinue
-    If (!$isPowerCLISddcmModuleInstalled) {
-        LogMessage -type WARNING -message "[$jumpboxName] VMware.Sdk.Vcf.SddcManager Module Missing. Please install"
-    } else {
-        LogMessage -type INFO -message "[$jumpboxName] VMware.Sdk.Vcf.SddcManager Module found"
-    }
-    $isPowerCLICloudBuilderModuleInstalled = Get-InstalledModule -name "VMware.Sdk.Vcf.CloudBuilder" -RequiredVersion "5.1.0" -ErrorAction SilentlyContinue
-    If (!$isPowerCLICloudBuilderModuleInstalled) {
-        LogMessage -type WARNING -message "[$jumpboxName] VMware.Sdk.Vcf.CloudBuilder Module Missing. Please install"
-    } else {
-        LogMessage -type INFO -message "[$jumpboxName] VMware.Sdk.Vcf.CloudBuilder Module found"
     }
 
     $installedSoftware = Get-InstalledSoftware
@@ -569,17 +557,10 @@ Function New-ExtractDataFromSDDCBackup {
         $lineContent = $psqlContent | Select-Object -Index $vCentersStartingLineNumber
         If ($lineContent -ne '\.') {
             $vCenterID = $lineContent.split("`t")[0]
-            If ($sddcManagerObject.version -like "4.4.*") {
-                $vCenterVersion = $lineContent.split("`t")[10]
-                $vCenterFqdn = $lineContent.split("`t")[11]
-                $vCenterIp = $lineContent.split("`t")[12]
-                $vCenterVMname = $lineContent.split("`t")[13]
-            } else {
-                $vCenterVersion = $lineContent.split("`t")[9]
-                $vCenterFqdn = $lineContent.split("`t")[10]
-                $vCenterIp = (Resolve-DnsName $vCenterFqdn).IPAddress
-                $vCenterVMname = $lineContent.split("`t")[12]
-            }
+            $vCenterVersion = $lineContent.split("`t")[9]
+            $vCenterFqdn = $lineContent.split("`t")[10]
+            $vCenterIp = (Resolve-DnsName $vCenterFqdn).IPAddress
+            $vCenterVMname = $lineContent.split("`t")[12]
             $vCenterDomainID = ($hostsAndDomains | Where-Object { $_.hostId -eq (($hostsandVcenters | Where-Object { $_.vCenterID -eq $vCenterID })[0].hostID) }).domainID
             $vCenters += [pscustomobject]@{
                 'vCenterID'       = $vCenterID
@@ -998,11 +979,7 @@ Function New-ExtractDataFromSDDCBackup {
             $domainName = $lineContent.split("`t")[3]
             $domainType = $lineContent.split("`t")[6]
             $vCenter = $vCenters | Where-Object { $_.vCenterDomainID -eq $domainId }
-            If ($sddcManagerObject.version -like "4.4.*") {
-                $ssoDomain = ($pscs | Where-Object { $_.id -eq (($vCentersAndPscs | Where-Object { $_.vcenterId -eq $vcenter.vCenterID }).pscId) }).ssoDomain
-            } else {
-                $ssoDomain = $lineContent.split("`t")[11]
-            }
+            $ssoDomain = $lineContent.split("`t")[11]
             $vCenterDetails = [pscustomobject]@{
                 'id'      = $vCenter.vCenterID
                 'version' = $vCenter.vCenterVersion
@@ -1024,18 +1001,7 @@ Function New-ExtractDataFromSDDCBackup {
             $vmotionNetwork = $networks | Where-Object { ($_.type -eq "VMOTION") -and ($_.id -in $domainNetworks) }
             $vsanNetwork = $networks | Where-Object { ($_.type -eq "VSAN") -and ($_.id -in $domainNetworks) }
 
-            <#
-            $mgmtNetworkDetails = @()
-            $mgmtNetworkDetails += [pscustomobject]@{  #Review
-                'type'         = "MANAGEMENT"
-                'subnet_mask'  = $metaDataJSON.netmask
-                'subnet'       = $managementSubnet
-                'mtu'          = "1500" # Review
-                'vlanID'       = ($virtualDistributedSwitches.portgroups | Where-Object { $_.name -eq $metadataJSON.port_group }).vlanId
-                'gateway'      = $metaDataJSON.gateway
-                'portgroupKey' = $metadataJSON.port_group
-            }
-            #>
+
             $nsxClusterDetailsObject = New-Object -type psobject
             $nsxClusterDetailsObject | Add-Member -NotePropertyName 'clusterVip' -NotePropertyValue ($nsxtManagerClusters | Where-Object { $_.domainIDs -contains $domainId }).clusterVip
             $nsxClusterDetailsObject | Add-Member -NotePropertyName 'clusterFqdn' -NotePropertyValue ($nsxtManagerClusters | Where-Object { $_.domainIDs -contains $domainId }).clusterFqdn
@@ -1056,7 +1022,6 @@ Function New-ExtractDataFromSDDCBackup {
                 'ssoDomain'             = $ssoDomain
                 'networkPool'           = $poolName
                 'vCenterDetails'        = $vCenterDetails
-                #'mgmtNetworkDetails'    = $mgmtNetworkDetails
                 'nsxClusterDetails'     = $nsxClusterDetailsObject
                 'nsxNodeDetails'        = ($nsxtManagerClusters | Where-Object { $_.domainIDs -contains $domainId }).nsxNodes
                 'vsphereClusterDetails' = @($clusters | Where-Object { $_.vCenterID -eq $vcenterDetails.id })
@@ -2294,7 +2259,7 @@ Function New-NSXManagerOvaDeployment {
     The New-NSXManagerOvaDeployment resents a list of NSX Mangers associated with the provided VCF Workload Domain, and deploys an NSX Manager from OVA using data previously extracted from the VCF SDDC Manager Backup
 
     .EXAMPLE
-    New-NSXManagerOvaDeployment -tempvCenterFqdn "sfo-m01-vc02.sfo.rainpole.io" -tempvCenterAdmin "administrator@vsphere.local" -tempvCenterAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -workloadDomain "sfo-m01" -restoredNsxManagerDeploymentSize medium -nsxManagerOvaFile "F:\OVA\nsx-unified-appliance-3.2.2.1.0.21487565.ova"
+    New-NSXManagerOvaDeployment -tempvCenterFqdn "sfo-m01-vc02.sfo.rainpole.io" -tempvCenterAdmin "administrator@vsphere.local" -tempvCenterAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -workloadDomain "sfo-m01" -restoredNsxManagerDeploymentSize medium -nsxManagerOvaFile "F:\OVA\nsx-unified-appliance-9.0.0.0.24733065.ova"
 
     .PARAMETER vCenterFqdn
     FQDN of the target vCenter to deploy the NSX Manager OVA to
@@ -2363,12 +2328,17 @@ Function New-NSXManagerOvaDeployment {
 
     $vmDatastore = $extractedSDDCData.mgmtDomainInfrastructure.vsan_datastore
     #Following parameters converted to known entities for 9.0. Consider refactoring in 9.1 if data is saved in manifest.json
-    #$vmNetwork = $extractedSDDCData.mgmtDomainInfrastructure.port_group
-    $vmNetwork = "vcfir-cl01-vds01-pg-vm-mgmt"
-    #$datacenterName = $extractedSDDCData.mgmtDomainInfrastructure.datacenter
-    $datacenterName = "vcfir-dc01"
-    #$clusterName = $extractedSDDCData.mgmtDomainInfrastructure.cluster
-    $clusterName = "vcfir-cl01"
+    if (!$extractedSDDCData.mgmtDomainInfrastructure.cluster) {
+        $vmNetwork = "vcfir-cl01-vds01-pg-vm-mgmt"
+        $datacenterName = "vcfir-dc01"
+        $clusterName = "vcfir-cl01"
+    } else {
+        $vmNetwork = $extractedSDDCData.mgmtDomainInfrastructure.port_group
+        $datacenterName = $extractedSDDCData.mgmtDomainInfrastructure.datacenter
+        $clusterName = $extractedSDDCData.mgmtDomainInfrastructure.cluster
+    }
+
+
 
     # NSX Manager Appliance Configuration
     $nsxManagerVMName = $selectedNsxManager.vmName
@@ -2429,7 +2399,7 @@ Function New-vCenterOvaDeployment {
     The New-vCenterOvaDeployment deploys a vCenter appliance from OVA using data previously extracted from the VCF SDDC Manager Backup
 
     .EXAMPLE
-    New-vCenterOvaDeployment -tempvCenterFqdn "sfo-m01-vc02.sfo.rainpole.io" -tempvCenterAdmin "administrator@vsphere.local" -tempvCenterAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -workloadDomain "sfo-m01" -restoredvCenterDeploymentSize "small" -vCenterOvaFile "F:\OVA\VMware-vCenter-Server-Appliance-7.0.3.01400-21477706_OVF10.ova"
+    New-vCenterOvaDeployment -tempvCenterFqdn "sfo-m01-vc02.sfo.rainpole.io" -tempvCenterAdmin "administrator@vsphere.local" -tempvCenterAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -workloadDomain "sfo-m01" -restoredvCenterDeploymentSize "small" -vCenterOvaFile "F:\OVA\VMware-vCenter-Server-Appliance-9.0.0.0.24755230_OVF10.ova"
 
     .PARAMETER vCenterFqdn
     FQDN of the target vCenter to deploy the vCenter OVA to
@@ -2471,12 +2441,16 @@ Function New-vCenterOvaDeployment {
     $workloadDomainDetails = ($extractedSDDCData.workloadDomains | Where-Object { $_.domainName -eq $workloadDomain })
     $vmDatastore = $extractedSDDCData.mgmtDomainInfrastructure.vsan_datastore
     #Following parameters converted to known entities for 9.0. Consider refactoring in 9.1 if data is saved in manifest.json
-    #$vmNetwork = $extractedSDDCData.mgmtDomainInfrastructure.port_group
-    $vmNetwork = "vcfir-cl01-vds01-pg-vm-mgmt"
-    #$datacenterName = $extractedSDDCData.mgmtDomainInfrastructure.datacenter
-    $datacenterName = "vcfir-dc01"
-    #$clusterName = $extractedSDDCData.mgmtDomainInfrastructure.cluster
-    $clusterName = "vcfir-cl01"
+    if (!$extractedSDDCData.mgmtDomainInfrastructure.cluster) {
+        $vmNetwork = "vcfir-cl01-vds01-pg-vm-mgmt"
+        $datacenterName = "vcfir-dc01"
+        $clusterName = "vcfir-cl01"
+    }
+    else {
+        $vmNetwork = $extractedSDDCData.mgmtDomainInfrastructure.port_group
+        $datacenterName = $extractedSDDCData.mgmtDomainInfrastructure.datacenter
+        $clusterName = $extractedSDDCData.mgmtDomainInfrastructure.cluster
+        }
     $restoredvCenterVMName = $workloadDomainDetails.vCenterDetails.vmname
     $restoredvCenterIpAddress = $workloadDomainDetails.vCenterDetails.ip
     $restoredvCenterFqdn = $workloadDomainDetails.vCenterDetails.fqdn
@@ -2527,7 +2501,7 @@ Function New-SDDCManagerOvaDeployment {
     The New-SDDCManagerOvaDeployment deploys an SDDC Manager appliance from OVA using data previously extracted from the VCF SDDC Manager Backup
 
     .EXAMPLE
-    New-SDDCManagerOvaDeployment -tempvCenterFqdn "sfo-m01-vc02.sfo.rainpole.io" -tempvCenterAdmin "administrator@vsphere.local" -tempvCenterAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -sddcManagerOvaFile "F:\OVA\VCF-SDDC-Manager-Appliance-4.5.1.0-21682411.ova" -rootUserPassword "VMw@re1!" -vcfUserPassword "VMw@re1!" -localUserPassword "VMw@re1!VMw@re1!" -basicAuthUserPassword "VMw@re1!"
+    New-SDDCManagerOvaDeployment -tempvCenterFqdn "sfo-m01-vc02.sfo.rainpole.io" -tempvCenterAdmin "administrator@vsphere.local" -tempvCenterAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -sddcManagerOvaFile "F:\OVA\VCF-SDDC-Manager-Appliance-9.0.0.0.24703748.ova" -rootUserPassword "VMw@re1!" -vcfUserPassword "VMw@re1!" -localUserPassword "VMw@re1!VMw@re1!" -basicAuthUserPassword "VMw@re1!"
 
     .PARAMETER vCenterFqdn
     FQDN of the target vCenter to deploy the SDDC Manager OVA to
@@ -3407,7 +3381,8 @@ Function Move-ClusterHostNetworkingTovSS {
         New-CustomAttribute -Name vdsConfiguration -TargetType Cluster | Out-Null
     }
 
-    $storedVdsConfiguration = (((Get-Cluster).customfields | Where-Object { $_.key -eq "vdsConfiguration" }).value) | ConvertFrom-Json
+    $index = [System.Array]::IndexOf((Get-Cluster).customfields.keys, "vdsConfiguration")
+    $storedVdsConfiguration = @((Get-Cluster).customfields.values)[$index] | ConvertFrom-Json
     If (!$storedVdsConfiguration) {
         $clustervdsConfiguration = @()
         Foreach ($vds in $clusterVdswitchNames) {
@@ -5618,8 +5593,8 @@ Function Add-AdditionalNSXManagers {
 
 
     $nsxManagerFQDN = $selectedNsxManager.hostname
-    $nsxManagerAdminUsername = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "API") }).username
-    $nsxManagerAdminPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "API") }).password
+    $nsxManagerAdminUsername = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain) -and ($_.username -eq "admin") }).username
+    $nsxManagerAdminPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain) -and ($_.username -eq "admin") }).password
 
     #Create Headers
     $headers = VCFIRCreateHeader -username $nsxManagerAdminUsername -password $nsxManagerAdminPassword
@@ -5655,18 +5630,6 @@ Function Add-AdditionalNSXManagers {
         } Until ($sshSession)
         $stream = New-SSHShellStream -SSHSession $sshSession
 
-        <#
-        If ($nsxManagerVersion -lt "400")
-        {
-            LogMessage -type INFO -message "[$nsxManagerFQDN] Deactivating Cluster"
-            $unwantedOutput = $stream.Read()
-            $stream.writeline("deactivate cluster")
-            Start-Sleep 5
-            $stream.writeline("yes")
-            Start-Sleep 2
-        }
-        #>
-
         LogMessage -type INFO -message "[$nsxManagerFQDN] Getting Cluster ID"
         $unwantedOutput = $stream.Read()
         Start-Sleep 2
@@ -5688,18 +5651,6 @@ Function Add-AdditionalNSXManagers {
         $certApiThumbprint = $stream.Readline()
         LogMessage -type INFO -message "[$nsxManagerFQDN] Cert Thumbprint: $certApiThumbprint retrieved"
 
-        <#
-        If ($nsxManagerVersion -lt "400")
-        {
-            Foreach ($otherclusterNodeID in $otherclusterNodeIDs)
-            {
-                $unwantedOutput = $stream.Read()
-                Start-Sleep 2
-                $stream.writeline("detach node $otherclusterNodeID")
-                #Need to undersand how to monitor here
-            }
-        }
-        #>
 
         #Close SSH Session
         Remove-SSHSession -SSHSession $sshSession | Out-Null
@@ -5737,41 +5688,25 @@ Function Add-AdditionalNSXManagers {
                 $response = $stream.Read()
 
             } Until ($response -like "*Join operation successful*")
-            Do {
+            <# Do {
                 Start-Sleep 10
                 $stream.writeline("get cluster status")
                 Start-Sleep 5
                 $response = $stream.Read()
 
             } Until ($response -notlike "*DOWN*")
+ #>
+            Do {
+                <# Start-Sleep 10
+                $stream.writeline("get cluster status")
+                Start-Sleep 5
+                $response = $stream.Read() #>
+                LogMessage -type INFO -message "[$nsxManagerFQDN] Monitoring cluster rebuild status"
+                $response = ((curl -k -s -u "admin:$nsxManagerAdminPassword" "https://$nsxManagerFqdn/api/v1/cluster/status") | ConvertFrom-Json).mgmt_cluster_status.status
 
+            } Until ($response -eq "stable")
             #Close SSH Session
             Remove-SSHSession -SSHSession $sshSession | Out-Null
-
-            <#
-            If ($nsxManagerVersion -lt "400")
-            {
-                #Restore Certificate on Manager
-                $clusterNodeID = ($clusterNodes | Where-Object {$_.fqdn -eq $nsxManagerFQDN}).node_uuid
-                $clusterNodeCertificateID = ($signedCertificates | Where-Object {$_.tags.scope -eq $otherNsxManager.ip}).id
-
-                LogMessage -type INFO -message "[$nsxManagerFQDN] Setting Node Certificate"
-                $uri = "https://$nsxManagerFQDN/api/v1/node/services/http?action=apply_certificate&certificate_id=$clusterNodeCertificateID"
-                $setCertificate = Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -headers $headers
-
-                $managementDomain = ($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"})
-                $managementDomainName = ($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).domainName
-                $vCenterFqdn = $managementDomain.vCenterDetails.fqdn
-                $vCenterAdmin = ($extractedSddcData.passwords | Where-Object {($_.entityType -eq "PSC") -and ($_.domainName -eq $managementDomainName)}).username
-                $vCenterAdminPassword = ($extractedSddcData.passwords | Where-Object {($_.entityType -eq "PSC") -and ($_.domainName -eq $managementDomainName)}).password
-
-                #Restart Manager
-                $vCenterConnection = Connect-VIServer $vCenterFqdn -user $vCenterAdmin -password $vCenterAdminPassword
-                LogMessage -type INFO -message "[$nsxManagerFQDN] Restarting Appliance"
-                Get-VM -Name $nsxManagerFQDN | Restart-VM -confirm:$false | Out-Null
-                Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
-            }
-            #>
         }
     } else {
         LogMessage -type ERROR -message "[$jumpboxName] Unable to determine NSX Manager Version. Check that it was successfully restored."
@@ -5782,192 +5717,5 @@ Export-ModuleMember -Function Add-AdditionalNSXManagers
 #EndRegion NSXT Functions
 
 #Region Marked for Deprecation
-Function Resolve-PhysicalHostTransportNodes {
-    <#
-    .SYNOPSIS
-    Resolves the state of ESXi Transport Nodes in a restored NSX Manager when the ESXi hosts have been rebuilt
 
-    .DESCRIPTION
-    The Resolve-PhysicalHostTransportNodes cmdlet resolves the state of ESXi Transport Nodes in a restored NSX Manager when the ESXi hosts have been rebuilt
-
-    .EXAMPLE
-    Resolve-PhysicalHostTransportNodes -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01" -NsxManagerFQDN "sfo-m01-nsx01a.sfo.rainpole.io" -NsxManagerAdmin "admin" -NsxManagerAdminPassword "VMw@re1!VMw@re1!"
-
-    .PARAMETER vCenterFQDN
-    FQDN of the vCenter instance that hosts the cluster whose hosts need to be resolved
-
-    .PARAMETER vCenterAdmin
-    Admin user of the vCenter instance that hosts the cluster whose hosts need to be resolved
-
-    .PARAMETER vCenterAdminPassword
-    Admin password for the vCenter instance that hosts the cluster  whose hosts need to be resolved
-
-    .PARAMETER clusterName
-    Name of the vSphere cluster instance whose hosts need to be resolved
-
-    .PARAMETER nsxManagerFqdn
-    FQDN of the NSX Manager where hosts need to be resolved
-
-    .PARAMETER nsxManagerAdmin
-    Admin user of the NSX Manager where hosts need to be resolved
-
-    .PARAMETER nsxManagerAdminPassword
-    Admin Password of the NSX Manager where hosts need to be resolved
-    #>
-
-    Param(
-        [Parameter (Mandatory = $true)][String] $vCenterFQDN,
-        [Parameter (Mandatory = $true)][String] $vCenterAdmin,
-        [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
-        [Parameter (Mandatory = $true)][String] $clusterName,
-        [Parameter (Mandatory = $true)][String] $nsxManagerFqdn,
-        [Parameter (Mandatory = $true)][String] $nsxManagerAdmin,
-        [Parameter (Mandatory = $true)][String] $nsxManagerAdminPassword
-    )
-    $jumpboxName = hostname
-    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
-    LogMessage -type INFO -message "[$jumpboxName] Checking NSX Manager Version"
-
-    $headers = VCFIRCreateHeader -username $nsxManagerAdmin -password $nsxManagerAdminPassword
-
-    #Check for Compatible NSX Manager version
-    $uri = "https://$nsxManagerFqdn/api/v1/node"
-    $nsxManagerVersion = [INT](((((Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json).product_version).replace(".", "")).substring(0, 3))
-
-    If ($nsxManagerVersion) {
-        If ($nsxManagerVersion -lt "412") {
-            $vCenterConnection = Connect-VIServer -server $vCenterFQDN -username $vCenterAdmin -password $vCenterAdminPassword
-            LogMessage -type INFO -message "[$clusterName] Getting Hosts"
-            $clusterHosts = (Get-Cluster -name $clusterName | Get-VMHost).name
-            #LogMessage -type INFO -message "[$clusterName] Getting MoRef"
-            #$clusterMoRef = (Get-Cluster -name $clusterName).ExtensionData.MoRef.Value
-
-            #Get TransportNodes
-            $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/"
-            LogMessage -type INFO -message "[$nsxManagerFqdn] Getting Transport Nodes"
-            $transportNodeContents = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
-            $allHostTransportNodes = ($transportNodeContents.results | Where-Object { ($_.resource_type -eq "TransportNode") -and ($_.node_deployment_info.os_type -eq "ESXI") })
-            LogMessage -type INFO -message "[$nsxManagerFqdn] Filtering Transport Nodes to members of cluster $clusterName"
-            $hostIDs = ($allHostTransportNodes | Where-Object { $_.display_name -in $clusterHosts }).id
-
-            #Get TransportNodes
-            <# $uri = "https://$nsxManagerFqdn/api/v1/fabric/compute-collections"
-            LogMessage -type INFO -message "[$nsxManagerFqdn] Getting Transport Nodes IDs"
-            $computeCollections = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
-            $clusterExternalId = ($computeCollections.results | Where-Object {$_.cm_local_id -eq $clusterMoRef}).external_id
-            $uri = "https://$nsxManagerFqdn/api/v1/fabric/compute-collections/$clusterExternalId/member-status"
-            $hostIDs = ((Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json).results.node_id
-         #>
-            #Resolve Hosts
-            Foreach ($hostID in $hostIDs) {
-                $body = "{`"id`":5726703,`"method`":`"resolveError`",`"params`":[{`"errors`":[{`"user_metadata`":{`"user_input_list`":[]},`"error_id`":26080,`"entity_id`":`"$hostID`"}]}]}"
-                $uri = "https://$nsxManagerFqdn/nsxapi/rpc/call/ErrorResolverFacade"
-                LogMessage -type INFO -message "[$nsxManagerFqdn] Resolving NSX Installation on $(($allHostTransportNodes | Where-Object {$_.id -eq $hostID}).display_name)"
-                #LogMessage -type INFO -message "[$nsxManagerFqdn] Resolving NSX Installation on $hostID"
-                $response = Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -headers $headers -body $body
-            }
-        } else {
-            LogMessage -type NOTE -message "[$jumpboxName] This cmdlet is not required with NSX Manager version 4.1.2 and later"
-        }
-
-    } else {
-        LogMessage -type ERROR -message "[$jumpboxName] Unable to determine NSX Manager Version. Check that it was successfully restored."
-    }
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
-}
-#Export-ModuleMember -Function Resolve-PhysicalHostTransportNodes
-
-Function Move-ClusterVMsToFirstHost {
-    <#
-    .SYNOPSIS
-    Moves all VMs in a cluster to a single ESXi host
-
-    .DESCRIPTION
-    The Move-ClusterVMsToFirstHost cmdlet moves all VMs in a cluster to a single ESXi host
-
-    .EXAMPLE
-    Move-ClusterVMsToFirstHost -vCenterFQDN "sfo-m01-vc02.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01"
-
-    .PARAMETER vCenterFQDN
-    FQDN of the vCenter instance hosting the VMs to be moved
-
-    .PARAMETER vCenterAdmin
-    Admin user of the vCenter instance hosting the VMs to be moved
-
-    .PARAMETER vCenterAdminPassword
-    Admin password for the vCenter instance hosting the VMs to be moved
-
-    .PARAMETER clusterName
-    Name of the vSphere cluster instance hosting the VMs to be moved
-    #>
-
-    Param(
-        [Parameter (Mandatory = $true)][String] $vCenterFQDN,
-        [Parameter (Mandatory = $true)][String] $vCenterAdmin,
-        [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
-        [Parameter (Mandatory = $true)][String] $clusterName
-
-    )
-    $jumpboxName = hostname
-    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
-    $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
-    $vms = Get-Cluster -Name $clusterName | Get-VM | Where-Object { $_.Name -notlike "vCLS*" } | Select-Object Name, VMhost
-    $firstHost = ((Get-cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)[0]).Name
-    Foreach ($vm in $vms) {
-        if ($vm.vmHost.Name -ne $firstHost) {
-            Get-VM -Name $vm.name | Move-VM -Location $firstHost -Runasync | Out-Null
-            LogMessage -type INFO -message "[$($vm.name)] Moving to $firstHost"
-        }
-    }
-    Do {
-        $runningTasks = Get-Task | Where-Object { ($_.Name -eq "RelocateVM_Task") -and ($_.State -eq "running") }
-        Sleep 5
-    } Until (!$runningTasks)
-    Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
-}
-#Export-ModuleMember -Function Move-ClusterVMsToFirstHost
-
-Function Remove-StandardSwitch {
-    <#
-    .SYNOPSIS
-    Removes a temporary standard switch from all hosts in a cluster
-
-    .DESCRIPTION
-    The Remove-StandardSwitch cmdlet removes a temporary standard switch from all hosts in a cluster
-
-    .EXAMPLE
-    Remove-StandardSwitch -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01"
-
-    .PARAMETER vCenterFQDN
-    FQDN of the vCenter instance hosting the ESXi hosts from which the standard switch will be removed
-
-    .PARAMETER vCenterAdmin
-    Admin user of the vCenter instance hosting the ESXi hosts from which the standard switch will be removed
-
-    .PARAMETER vCenterAdminPassword
-    Admin password for the vCenter instance hosting the ESXi hosts from which the standard switch will be removed
-
-    .PARAMETER clusterName
-    Name of the vSphere cluster instance hosting the ESXi hosts from which the standard switch will be removed
-    #>
-
-    Param(
-        [Parameter (Mandatory = $true)][String] $vCenterFQDN,
-        [Parameter (Mandatory = $true)][String] $vCenterAdmin,
-        [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
-        [Parameter (Mandatory = $true)][String] $clusterName
-    )
-    $jumpboxName = hostname
-    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
-    $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
-    $vmHosts = (Get-cluster -name $clusterName | Get-VMHost).Name | Sort-Object
-    foreach ($vmhost in $vmHosts) {
-        LogMessage -type INFO -message "[$vmhost] Removing standard vSwitch"
-        Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name "vSwitch0" | Remove-VirtualSwitch -Confirm:$false | Out-Null
-    }
-    Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
-}
-#Export-ModuleMember -Function Remove-StandardSwitch
 #EndRegion Marked for Deprecation
