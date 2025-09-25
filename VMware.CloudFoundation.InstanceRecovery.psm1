@@ -2964,7 +2964,7 @@ Function Invoke-vCenterRestore {
     The Invoke-vCenterRestore restores a vCenter appliance using the specified backup
 
     .EXAMPLE
-    Invoke-vCenterRestore -vCenterFqdn "sfo-m01-vc02.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" "-extractedSDDCDataFile .\extracted-sddc-data.json" -workloadDomain "sfo-m01" -vCenterBackupPath "10.50.5.63/F$/Backups/vcenter-backup/sn_sfo-m01-vc01.sfo.rainpole.io/M_8.0.2.00100_20231209-074557_" -locationtype "SMB" -locationUser "Administrator" -locationPassword "VMw@re1!"
+    Invoke-vCenterRestore -vCenterFqdn "sfo-m01-vc02.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" "-extractedSDDCDataFile .\extracted-sddc-data.json" -workloadDomain "sfo-m01" -vCenterBackupPath "10.50.5.63/F$/Backups/vcenter-backup/sn_sfo-m01-vc01.sfo.rainpole.io/M_9.0.0.0_20250922-105520_" -locationtype "SMB" -locationUser "Administrator" -locationPassword "VMw@re1!"
 
     .PARAMETER vCenterFqdn
     FQDN of the temporary vCenter hosting the deployed vCenter OVA to which the backup should be restored
@@ -3817,11 +3817,7 @@ Function Remove-NonResponsiveHosts {
         }
         #Attempt to Force Delete the Transport Nodes
         Foreach ($hostID in $hostIDs) {
-            If ($nsxManagerVersion -le "313") {
-                $uri = "https://$nsxManagerFqdn/api/v1/fabric/nodes/$($hostID)?unprepare_host=false"
-            } else {
                 $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($hostID)?force=true&unprepare_host=false"
-            }
             LogMessage -type INFO -message "[$nsxManagerFqdn] Removing Transport Node associated with $(($allHostTransportNodes | Where-Object {$_.id -eq $hostID}).display_name)"
             $deleteTN = Invoke-WebRequest -Method DELETE -URI $uri -ContentType application/json -headers $headers
         }
