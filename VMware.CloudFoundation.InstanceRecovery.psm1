@@ -3858,11 +3858,7 @@ Function Remove-NonResponsiveHosts {
 
         #Reattach TNP
         #Get Transport Node Profiles
-        If ($nsxManagerVersion -le "313") {
-            $uri = "https://$nsxManagerFqdn/api/v1/transport-node-profiles"
-        } else {
             $uri = "https://$nsxManagerFqdn/policy/api/v1/infra/host-transport-node-profiles"
-        }
 
         $transportNodeProfiles = ((Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json).results
         $clusterTransportNodeProfile = $transportNodeProfiles | where-object { $_.display_name -like "*$clusterName*" }
