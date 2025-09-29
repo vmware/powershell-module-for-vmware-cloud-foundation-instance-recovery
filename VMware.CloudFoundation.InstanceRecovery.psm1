@@ -1049,16 +1049,16 @@ Function New-ExtractDataFromSDDCBackup {
 }
 Export-ModuleMember -Function New-ExtractDataFromSDDCBackup
 
-Function Update-ExtractedDataFromSDDCBackup {
+Function Update-ExtractedSDDCData {
     <#
     .SYNOPSIS
     Updates extracted SDDC Data JSON file with detail not caprured in the SDDC manager backup VCF Instance Recovery.
 
     .DESCRIPTION
-    The Update-ExtractedDataFromSDDCBackup cmdlet Updates extracted SDDC Data JSON file with detail not caprured in the SDDC manager backup VCF Instance Recovery.
+    The Update-ExtractedSDDCData cmdlet Updates extracted SDDC Data JSON file with detail not caprured in the SDDC manager backup VCF Instance Recovery.
 
     .EXAMPLE
-    Update-ExtractedDataFromSDDCBackup -extractedSDDCDataFile "".\extracted-sddc-data.json" -sddcManagerFQDN "sfo-vcf01.sfo.rainpole.io" -sddcManagerAdmin "administrator@vsphere.local" -sddcManagerAdminPassword "VMw@re1!VMw@re1!"
+    Update-ExtractedSDDCData -extractedSDDCDataFile "".\extracted-sddc-data.json" -sddcManagerFQDN "sfo-vcf01.sfo.rainpole.io" -sddcManagerAdmin "administrator@vsphere.local" -sddcManagerAdminPassword "VMw@re1!VMw@re1!"
 
     .PARAMETER extractedSDDCDataFile
     Relative or absolute to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup) somewhere on the local filesystem
@@ -1071,13 +1071,17 @@ Function Update-ExtractedDataFromSDDCBackup {
 
     .PARAMETER sddcManagerAdminUserPassword
     Password for the admin user on SDDC Manager
+
+    .PARAMETER vCenterFqdn
+    FQDN of the target vCenter to update details from
     #>
 
     Param(
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
         [Parameter (Mandatory = $true)][String] $sddcManagerFQDN,
         [Parameter (Mandatory = $true)][String] $sddcManagerAdmin,
-        [Parameter (Mandatory = $true)][String] $sddcManagerAdminPassword
+        [Parameter (Mandatory = $true)][String] $sddcManagerAdminPassword,
+        [Parameter (Mandatory = $true)][String] $vCenterFQDN
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
@@ -1086,12 +1090,18 @@ Function Update-ExtractedDataFromSDDCBackup {
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
     $sddcManagerConnection = Connect-VcfSddcManagerServer -server $sddcManagerFQDN -User $sddcManagerAdmin -Password $sddcManagerAdminPassword
 
-    Foreach ($workloadDomain in $extractedSddcData.workloadDomains) {
+    Foreach ($workloadDomain in $extractedSddcData.workloadDomains | Where-Object {$_.vcenterDetails.fqdn -eq $vCenterFQDN}) {
+        $vCenterAdmin = ($extractedSddcData.passwords | Where-Object { ($_.credentialType -eq "SSO") -and ($_.entityName -eq $vCenterFQDN) -and ($_.entityType -eq "PSC") }).username
+        $vCenterAdminPassword = ($extractedSddcData.passwords | Where-Object { ($_.credentialType -eq "SSO") -and ($_.entityName -eq $vCenterFQDN) -and ($_.entityType -eq "PSC") }).password
+        $vCenterConnection = Connect-VIServer -server $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
+
         Foreach ($cluster in $workloadDomain.vsphereClusterDetails) {
             $clusterName = (Invoke-VcfGetCluster -Id $cluster.id).Name
             LogMessage -type INFO -message "Injecting cluster name $clusterName into $($workloadDomain.domainName)"
             $cluster.name = $clusterName
-
+            $primaryDatastoreName = (get-cluster -name $clusterName | get-datastore).Name
+            LogMessage -type INFO -message "Injecting primary datastore name $primaryDatastoreName into $($workloadDomain.domainName)"
+            $cluster.primaryDatastoreName = $primaryDatastoreName
             Foreach ($vds in $cluster.vdsDetails) {
                 $vdsName = (Invoke-VcfGetVdses -ClusterId $cluster.id | Where-Object { $_.id -eq $vds.id }).Name
                 $vds.dvsName = $vdsName
@@ -1120,11 +1130,12 @@ Function Update-ExtractedDataFromSDDCBackup {
                 }
             }
         }
+        Disconnect-VIServer * -confirm:$false
     }
     LogMessage -type INFO -message "[$jumpboxName] Updating Extracted Data"
     $extractedSddcData | ConvertTo-Json -Depth 20 | Out-File $extractedSDDCDataFile
 }
-Export-ModuleMember -Function Update-ExtractedDataFromSDDCBackup
+Export-ModuleMember -Function Update-ExtractedSDDCData
 
 Function New-PrepareforPartialBringup {
     <#
