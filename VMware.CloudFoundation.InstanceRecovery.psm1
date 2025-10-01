@@ -3812,6 +3812,14 @@ Function Remove-NonResponsiveHosts {
         $computeCollections = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
         $clusterComputeCollectionId = ($computeCollections.results | Where-Object { $_.cm_local_id -eq $clusterMoRef }).external_id
         $clusterVlcmManaged = (($computeCollections.results | Where-Object { $_.cm_local_id -eq $clusterMoRef }).origin_properties | Where-Object { $_.key -eq "lifecycleManaged" }).value
+
+        #Remove non-responsive hosts
+        Foreach ($nonResponsiveHost in $nonResponsiveHosts) {
+            LogMessage -type INFO -message "[$($nonResponsiveHost.name)] Removing from $clusterName"
+            Get-VMHost | Where-Object { $_.Name -eq $nonResponsiveHost.Name } | Remove-VMHost -Confirm:$false
+        }
+        Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+
         $uri = "https://$nsxManagerFqdn/api/v1/fabric/compute-collections/$($clusterComputeCollectionId)?action=remove_nsx"
 
         If ($nsxManagerVersion -ge "412") {
@@ -3828,48 +3836,23 @@ Function Remove-NonResponsiveHosts {
         }
         #Attempt to Force Delete the Transport Nodes
         Foreach ($hostID in $hostIDs) {
-                $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($hostID)?force=true&unprepare_host=false"
+            $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($hostID)?force=true&unprepare_host=false"
             LogMessage -type INFO -message "[$nsxManagerFqdn] Removing Transport Node associated with $(($allHostTransportNodes | Where-Object {$_.id -eq $hostID}).display_name)"
             $deleteTN = Invoke-WebRequest -Method DELETE -URI $uri -ContentType application/json -headers $headers
         }
 
         #Wait for Transport Nodes to flush
-        LogMessage -type WAIT -message "[$nsxManagerFqdn] Waiting for Transport Nodes to flush"
-        $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/"
+        LogMessage -type WAIT -message "[$nsxManagerFqdn] Waiting for Transport Nodes to flush. This Task May Take Some Time To Complete"
+        $body = '{"primary": {"resource_type": "HostTransportNode"}}'
+        $uri = "https://$nsxManagerFqdn/policy/api/v1/search/aggregate?page_size=50"
         Do {
-            $transportNodeContents = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
-            $allHostTransportNodes = ($transportNodeContents.results | Where-Object { ($_.resource_type -eq "TransportNode") -and ($_.node_deployment_info.os_type -eq "ESXI") })
-            $deletedhostIDs = ($allHostTransportNodes | Where-Object { $_.display_name -in $clusterHosts }).id
+            $transportNodeContents = ((Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -headers $headers -body $body).content | ConvertFrom-Json).results
+            $deletedhostIDs = ($transportNodeContents.Primary | Where-Object { $_.display_name -in $clusterHosts }).id
         } Until(!$deletedhostIDs)
-
-        #Remove non-responsive hosts
-        Foreach ($nonResponsiveHost in $nonResponsiveHosts) {
-            LogMessage -type INFO -message "[$($nonResponsiveHost.name)] Removing from $clusterName"
-            Get-VMHost | Where-Object { $_.Name -eq $nonResponsiveHost.Name } | Remove-VMHost -Confirm:$false
-        }
-        Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
-
-        #If VLCM cluster, wait until cleanup of cluster post TN delete is done
-        If ($clusterVlcmManaged -eq "true") {
-            $SecurePassword = ConvertTo-SecureString -String $nsxManagerRootPassword -AsPlainText -Force
-            $mycreds = New-Object System.Management.Automation.PSCredential ("root", $SecurePassword)
-            $inmem = New-SSHMemoryKnownHost
-            New-SSHTrustedHost -KnownHostStore $inmem -HostName $nsxManagerFQDN -FingerPrint ((Get-SSHHostKey -ComputerName $nsxManagerFQDN).fingerprint) | Out-Null
-            Do {
-                $sshSession = New-SSHSession -computername $nsxManagerFQDN -Credential $mycreds -KnownHost $inmem
-            } Until ($sshSession)
-            $nsxCommand = "grep -a `".*RemoveNsxFromComputeCollectionActivity.*entity= 'ComputeCollectionMsg/$clusterComputeCollectionId.*phase= `'Begin`'`" /var/log/proton/nsxapi.log"
-            LogMessage -type WAIT -message "[$nsxManagerFqdn] Waiting for Cluster Image Cleanup to Complete"
-            Do {
-                Sleep 5
-                $relevantUpdates = (Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command $nsxCommand).output
-            } Until ($relevantUpdates[-1] -like "*RemoveNsxFromComputeCollectionActivity*phase= `'Begin`'*next phase= `'Success!`'")
-            Remove-SSHSession -SSHSession $sshSession | Out-Null
-        }
 
         #Reattach TNP
         #Get Transport Node Profiles
-            $uri = "https://$nsxManagerFqdn/policy/api/v1/infra/host-transport-node-profiles"
+        $uri = "https://$nsxManagerFqdn/policy/api/v1/infra/host-transport-node-profiles"
 
         $transportNodeProfiles = ((Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json).results
         $clusterTransportNodeProfile = $transportNodeProfiles | where-object { $_.display_name -like "*$clusterName*" }
