@@ -3418,7 +3418,9 @@ Function Move-ClusterHostNetworkingTovSS {
         }
         $cluster = Get-Cluster -name $clusterName
         $cluster | Set-Annotation -CustomAttribute "vdsConfiguration" -Value ($clustervdsConfiguration | ConvertTo-Json) | Out-Null
-        $storedVdsConfiguration = (((Get-Cluster -name $clustername).customfields | Where-Object { $_.key -eq "vdsConfiguration" }).value) | ConvertFrom-Json
+        #$storedVdsConfiguration = (((Get-Cluster -name $clustername).customfields | Where-Object { $_.key -eq "vdsConfiguration" }).value) | ConvertFrom-Json
+        $index = [System.Array]::IndexOf((Get-Cluster).customfields.keys, "vdsConfiguration")
+        $storedVdsConfiguration = @((Get-Cluster).customfields.values)[$index] | ConvertFrom-Json
     }
 
     Foreach ($vdsName in $clusterVdswitchNames) {
