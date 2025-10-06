@@ -2270,7 +2270,7 @@ Function New-NSXManagerOvaDeployment {
     The New-NSXManagerOvaDeployment resents a list of NSX Mangers associated with the provided VCF Workload Domain, and deploys an NSX Manager from OVA using data previously extracted from the VCF SDDC Manager Backup
 
     .EXAMPLE
-    New-NSXManagerOvaDeployment -tempvCenterFqdn "sfo-m01-vc02.sfo.rainpole.io" -tempvCenterAdmin "administrator@vsphere.local" -tempvCenterAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -workloadDomain "sfo-m01" -restoredNsxManagerDeploymentSize medium -nsxManagerOvaFile "F:\OVA\nsx-unified-appliance-9.0.0.0.24733065.ova"
+    New-NSXManagerOvaDeployment -tempvCenterFqdn "sfo-m01-vc02.sfo.rainpole.io" -tempvCenterAdmin "administrator@vsphere.local" -tempvCenterAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -workloadDomain "sfo-m01" -restoredNsxManagerDeploymentSize medium -nsxManagerOvaFile "F:\OVA\nsx-unified-appliance-3.2.2.1.0.21487565.ova"
 
     .PARAMETER vCenterFqdn
     FQDN of the target vCenter to deploy the NSX Manager OVA to
@@ -2339,17 +2339,10 @@ Function New-NSXManagerOvaDeployment {
 
     $vmDatastore = $extractedSDDCData.mgmtDomainInfrastructure.vsan_datastore
     #Following parameters converted to known entities for 9.0. Consider refactoring in 9.1 if data is saved in manifest.json
-    if (!$extractedSDDCData.mgmtDomainInfrastructure.cluster) {
+
         $vmNetwork = "vcfir-cl01-vds01-pg-vm-mgmt"
         $datacenterName = "vcfir-dc01"
         $clusterName = "vcfir-cl01"
-    } else {
-        $vmNetwork = $extractedSDDCData.mgmtDomainInfrastructure.port_group
-        $datacenterName = $extractedSDDCData.mgmtDomainInfrastructure.datacenter
-        $clusterName = $extractedSDDCData.mgmtDomainInfrastructure.cluster
-    }
-
-
 
     # NSX Manager Appliance Configuration
     $nsxManagerVMName = $selectedNsxManager.vmName
@@ -2410,7 +2403,7 @@ Function New-vCenterOvaDeployment {
     The New-vCenterOvaDeployment deploys a vCenter appliance from OVA using data previously extracted from the VCF SDDC Manager Backup
 
     .EXAMPLE
-    New-vCenterOvaDeployment -tempvCenterFqdn "sfo-m01-vc02.sfo.rainpole.io" -tempvCenterAdmin "administrator@vsphere.local" -tempvCenterAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -workloadDomain "sfo-m01" -restoredvCenterDeploymentSize "small" -vCenterOvaFile "F:\OVA\VMware-vCenter-Server-Appliance-9.0.0.0.24755230_OVF10.ova"
+    New-vCenterOvaDeployment -tempvCenterFqdn "sfo-m01-vc02.sfo.rainpole.io" -tempvCenterAdmin "administrator@vsphere.local" -tempvCenterAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -workloadDomain "sfo-m01" -restoredvCenterDeploymentSize "small" -vCenterOvaFile "F:\OVA\VMware-vCenter-Server-Appliance-7.0.3.01400-21477706_OVF10.ova"
 
     .PARAMETER vCenterFqdn
     FQDN of the target vCenter to deploy the vCenter OVA to
@@ -2452,16 +2445,11 @@ Function New-vCenterOvaDeployment {
     $workloadDomainDetails = ($extractedSDDCData.workloadDomains | Where-Object { $_.domainName -eq $workloadDomain })
     $vmDatastore = $extractedSDDCData.mgmtDomainInfrastructure.vsan_datastore
     #Following parameters converted to known entities for 9.0. Consider refactoring in 9.1 if data is saved in manifest.json
-    if (!$extractedSDDCData.mgmtDomainInfrastructure.cluster) {
+
         $vmNetwork = "vcfir-cl01-vds01-pg-vm-mgmt"
         $datacenterName = "vcfir-dc01"
         $clusterName = "vcfir-cl01"
-    }
-    else {
-        $vmNetwork = $extractedSDDCData.mgmtDomainInfrastructure.port_group
-        $datacenterName = $extractedSDDCData.mgmtDomainInfrastructure.datacenter
-        $clusterName = $extractedSDDCData.mgmtDomainInfrastructure.cluster
-        }
+
     $restoredvCenterVMName = $workloadDomainDetails.vCenterDetails.vmname
     $restoredvCenterIpAddress = $workloadDomainDetails.vCenterDetails.ip
     $restoredvCenterFqdn = $workloadDomainDetails.vCenterDetails.fqdn
@@ -2512,7 +2500,7 @@ Function New-SDDCManagerOvaDeployment {
     The New-SDDCManagerOvaDeployment deploys an SDDC Manager appliance from OVA using data previously extracted from the VCF SDDC Manager Backup
 
     .EXAMPLE
-    New-SDDCManagerOvaDeployment -tempvCenterFqdn "sfo-m01-vc02.sfo.rainpole.io" -tempvCenterAdmin "administrator@vsphere.local" -tempvCenterAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -sddcManagerOvaFile "F:\OVA\VCF-SDDC-Manager-Appliance-9.0.0.0.24703748.ova" -rootUserPassword "VMw@re1!" -vcfUserPassword "VMw@re1!" -localUserPassword "VMw@re1!VMw@re1!" -basicAuthUserPassword "VMw@re1!"
+    New-SDDCManagerOvaDeployment -tempvCenterFqdn "sfo-m01-vc02.sfo.rainpole.io" -tempvCenterAdmin "administrator@vsphere.local" -tempvCenterAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -sddcManagerOvaFile "F:\OVA\VCF-SDDC-Manager-Appliance-4.5.1.0-21682411.ova" -rootUserPassword "VMw@re1!" -vcfUserPassword "VMw@re1!" -localUserPassword "VMw@re1!VMw@re1!" -basicAuthUserPassword "VMw@re1!"
 
     .PARAMETER vCenterFqdn
     FQDN of the target vCenter to deploy the SDDC Manager OVA to
@@ -2562,11 +2550,8 @@ Function New-SDDCManagerOvaDeployment {
     # SDDC Manager Configuration
     $vmDatastore = $extractedSDDCData.mgmtDomainInfrastructure.vsan_datastore
     #Following parameters converted to known entities for 9.0. Consider refactoring in 9.1 if data is saved in manifest.json
-    #$vmNetwork = $extractedSDDCData.mgmtDomainInfrastructure.port_group
     $vmNetwork = "vcfir-cl01-vds01-pg-vm-mgmt"
-    #$datacenterName = $extractedSDDCData.mgmtDomainInfrastructure.datacenter
     $datacenterName = "vcfir-dc01"
-    #$clusterName = $extractedSDDCData.mgmtDomainInfrastructure.cluster
     $clusterName = "vcfir-cl01"
     $sddcManagerVMName = $extractedSDDCData.sddcManager.vmname
     $sddcManagerBackupPassword = ($extractedSddcData.passwords | Where-Object { $_.entityType -eq "BACKUP" }).password
