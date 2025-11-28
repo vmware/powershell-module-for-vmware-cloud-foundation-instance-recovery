@@ -328,7 +328,6 @@ Export-ModuleMember -Function Confirm-VCFInstanceRecoveryPreReqs
 #EndRegion Pre-Requisites
 
 #Region Data Gathering
-
 Function New-ExtractDataFromSDDCBackup {
     <#
     .SYNOPSIS
@@ -418,14 +417,24 @@ Function New-ExtractDataFromSDDCBackup {
     $psqlContent = Get-Content "$parentFolder\$extractedBackupFolder\database\sddc-postgres.bkp"
 
     LogMessage -type INFO -message "[$jumpboxName] Retrieving SDDC Manager Detail"
+    #Find the column number for each required element. Future proofed if column number changes
+    $headerLine = ($psqlContent | Select-String -SimpleMatch "COPY public.sddc_manager_controller" | Select-Object Line).Line
+    $columnHeaders = [regex]::Match($headerLine, '\((.*?)\)').Groups[1].Value
+    $columns = $columnHeaders -split '\s*,\s*'
+    $sddcManagerIpColumn = $columns.IndexOf('vm_management_ip_address')
+    $sddcManagerFqdnColumn = $columns.IndexOf('vm_hostname')
+    $sddcManagerVersionColumn = $columns.IndexOf('version')
+    $sddcManagerVmNameColumn = $columns.IndexOf('vm_name')
+    $ceipStatusColumn = $columns.IndexOf('ceip_status')
+
     #GetDomainDetails
     $ceipStartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.sddc_manager_controller" | Select-Object Line, LineNumber).LineNumber
     $lineContent = $psqlContent | Select-Object -Index $ceipStartingLineNumber
-    $sddcManagerIp = $lineContent.split("`t")[3]
-    $sddcManagerVersion = $lineContent.split("`t")[5]
-    $sddcManagerFqdn = $lineContent.split("`t")[6]
-    $sddcManagerVmName = $lineContent.split("`t")[8]
-    If ($lineContent.split("`t")[9] -eq 'ENABLED') { $ceipStatus = $true } else { $ceipStatus = $false }
+    $sddcManagerIp = $lineContent.split("`t")[$sddcManagerIpColumn]
+    $sddcManagerVersion = $lineContent.split("`t")[$sddcManagerVersionColumn]
+    $sddcManagerFqdn = $lineContent.split("`t")[$sddcManagerFqdnColumn]
+    $sddcManagerVmName = $lineContent.split("`t")[$sddcManagerVmNameColumn]
+    If ($lineContent.split("`t")[$ceipStatusColumn] -eq 'ENABLED') { $ceipStatus = $true } else { $ceipStatus = $false }
 
     $sddcManagerObject = @()
     $sddcManagerObject += [pscustomobject]@{
@@ -438,15 +447,20 @@ Function New-ExtractDataFromSDDCBackup {
     }
 
     LogMessage -type INFO -message "[$jumpboxName] Retrieving NSX Manager Details"
-
     #Get All NSX Manager Clusters
+    #Find the column number for each required element. Future proofed if column number changes
+    $headerLine = ($psqlContent | Select-String -SimpleMatch "COPY public.nsxt (id" | Select-Object Line).Line
+    $columnHeaders = [regex]::Match($headerLine, '\((.*?)\)').Groups[1].Value
+    $columns = $columnHeaders -split '\s*,\s*'
+    $nsxConfigurationColumn = $columns.IndexOf('configuration')
+
     $nsxManagerstartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.nsxt (id" | Select-Object Line, LineNumber).LineNumber
     $nsxManagerlineIndex = $nsxManagerstartingLineNumber
     $nsxtManagerClusters = @()
     Do {
         $lineContent = $psqlContent | Select-Object -Index $nsxManagerlineIndex
         If ($lineContent -ne '\.') {
-            $nodeContent = (($lineContent.split("`t")[9]).replace("\n", "")) | ConvertFrom-Json
+            $nodeContent = (($lineContent.split("`t")[$nsxConfigurationColumn]).replace("\n", "")) | ConvertFrom-Json
             $nodeIPs = ($nodeContent.managerIpsFqdnMap | Get-Member -type NoteProperty).name
             $nsxNodes = @()
             Foreach ($nodeIP in $nodeIPs) {
@@ -458,7 +472,7 @@ Function New-ExtractDataFromSDDCBackup {
                 }
             }
             $nsxtManagerClusters += [pscustomobject]@{
-                'clusterVip'  = $lineContent.split("`t")[5]
+                'clusterVip'  = (Resolve-DnsName $lineContent.split("`t")[6]).IPAddress
                 'clusterFqdn' = $lineContent.split("`t")[6]
                 'domainIDs'   = $nodeContent.domainIds
                 'nsxNodes'    = $nsxNodes
@@ -470,37 +484,47 @@ Function New-ExtractDataFromSDDCBackup {
 
     #Get Hosts
     LogMessage -type INFO -message "[$jumpboxName] Retrieving Host Details"
+    #Find the column number for each required element. Future proofed if column number changes
+    $headerLine = ($psqlContent | Select-String -SimpleMatch "COPY public.host " | Select-Object Line).Line
+    $columnHeaders = [regex]::Match($headerLine, '\((.*?)\)').Groups[1].Value
+    $columns = $columnHeaders -split '\s*,\s*'
+    $hostIdColumn = $columns.IndexOf('id')
+    $hostNameColumn = $columns.IndexOf('hostname')
+    $hostVersionColumn = $columns.IndexOf('version')
+    $hostVmotionIpColumn = $columns.IndexOf('vmotion_ip_address')
+    $hostVsanIpColumn = $columns.IndexOf('vsan_ip_address')
+
     $hostsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.host " | Select-Object Line, LineNumber).LineNumber
     $hostsLineIndex = $hostsLineNumber
     $hosts = @()
     Do {
         $lineContent = $psqlContent | Select-Object -Index $hostsLineIndex
         If ($lineContent -ne '\.') {
-            $hostId = $lineContent.split("`t")[0]
-            $gateway = $lineContent.split("`t")[7]
-            $hostName = $lineContent.split("`t")[9]
-            $hostMgmtIp = (Resolve-DnsName $lineContent.split("`t")[9]).IPAddress
-            $hostMask = $lineContent.split("`t")[17]
-            $hostVersion = $lineContent.split("`t")[18]
-            $hostVmotionIp = $lineContent.split("`t")[19]
-            $hostVsanIP = $lineContent.split("`t")[20]
+            $hostId = $lineContent.split("`t")[$hostIdColumn]
+            #$gateway = $lineContent.split("`t")[7]
+            $hostName = $lineContent.split("`t")[$hostNameColumn]
+            $hostMgmtIp = (Resolve-DnsName $lineContent.split("`t")[$hostnameColumn]).IPAddress
+            #$hostMask = $lineContent.split("`t")[17]
+            $hostVersion = $lineContent.split("`t")[$hostVersionColumn]
+            $hostVmotionIp = $lineContent.split("`t")[$hostVmotionIpColumn]
+            $hostVsanIP = $lineContent.split("`t")[$hostVsanIpColumn]
 
             #Calculate Managment Subnet (Management Domain Hosts Only)
-            If (($gateway -ne "\N") -AND ($hostMask -ne "\N")) {
+            <#  If (($gateway -ne "\N") -AND ($hostMask -ne "\N")) {
 
                 $ip = [ipaddress]$hostMgmtIp
                 $subnet = [ipaddress]$hostMask
                 $netid = [ipaddress]($ip.address -band $subnet.address)
                 $hostManagementSubnet = $($netid.ipaddresstostring)
-            }
+            } #>
 
             $hosts += [pscustomobject]@{
                 'id'        = $hostId
-                'gateway'   = $gateway
+                #'gateway'   = $gateway
                 'hostName'  = $hostName
                 'mgmtIp'    = $hostMgmtIp
-                'mask'      = $hostMask
-                'subnet'    = $hostManagementSubnet
+                #'mask'      = $hostMask
+                #'subnet'    = $hostManagementSubnet
                 'version'   = $hostVersion
                 'vmotionIP' = $hostVmotionIp
                 'vsanIP'    = $hostVsanIP
@@ -512,14 +536,21 @@ Function New-ExtractDataFromSDDCBackup {
 
     #Get Host and Domain Details
     LogMessage -type INFO -message "[$jumpboxName] Retrieving Host and Domain Mappings"
+    #Find the column number for each required element. Future proofed if column number changes
+    $headerLine = ($psqlContent | Select-String -SimpleMatch "COPY public.host_and_domain " | Select-Object Line).Line
+    $columnHeaders = [regex]::Match($headerLine, '\((.*?)\)').Groups[1].Value
+    $columns = $columnHeaders -split '\s*,\s*'
+    $hostIdColumn = $columns.IndexOf('host_id')
+    $domainIdColumn = $columns.IndexOf('domain_id')
+
     $hostsAndDomainsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.host_and_domain " | Select-Object Line, LineNumber).LineNumber
     $hostsAndDomainsLineIndex = $hostsAndDomainsLineNumber
     $hostsAndDomains = @()
     Do {
         $lineContent = $psqlContent | Select-Object -Index $hostsAndDomainsLineIndex
         If ($lineContent -ne '\.') {
-            $hostId = $lineContent.split("`t")[0]
-            $domainID = $lineContent.split("`t")[1]
+            $hostId = $lineContent.split("`t")[$hostIdColumn]
+            $domainID = $lineContent.split("`t")[$domainIdColumn]
             $hostsAndDomains += [pscustomobject]@{
                 'hostId'   = $hostId
                 'domainID' = $domainID
@@ -531,14 +562,21 @@ Function New-ExtractDataFromSDDCBackup {
 
     #Get Host and vCenter Details
     LogMessage -type INFO -message "[$jumpboxName] Retrieving Host and vCenter Mappings"
+    #Find the column number for each required element. Future proofed if column number changes
+    $headerLine = ($psqlContent | Select-String -SimpleMatch "COPY public.host_and_vcenter " | Select-Object Line).Line
+    $columnHeaders = [regex]::Match($headerLine, '\((.*?)\)').Groups[1].Value
+    $columns = $columnHeaders -split '\s*,\s*'
+    $hostIdColumn = $columns.IndexOf('host_id')
+    $vcenterIdColumn = $columns.IndexOf('vcenter_id')
+
     $hostsandVcentersLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.host_and_vcenter " | Select-Object Line, LineNumber).LineNumber
     $hostsandVcentersLineIndex = $hostsandVcentersLineNumber
     $hostsandVcenters = @()
     Do {
         $lineContent = $psqlContent | Select-Object -Index $hostsandVcentersLineIndex
         If ($lineContent -ne '\.') {
-            $hostId = $lineContent.split("`t")[0]
-            $vCenterID = $lineContent.split("`t")[1]
+            $hostId = $lineContent.split("`t")[$hostIdColumn]
+            $vCenterID = $lineContent.split("`t")[$vcenterIdColumn]
             $hostsandVcenters += [pscustomobject]@{
                 'hostId'    = $hostId
                 'vCenterID' = $vCenterID
@@ -550,17 +588,26 @@ Function New-ExtractDataFromSDDCBackup {
 
     #Get Host and vCenter Details
     LogMessage -type INFO -message "[$jumpboxName] Retrieving vCenter Details"
+    #Find the column number for each required element. Future proofed if column number changes
+    $headerLine = ($psqlContent | Select-String -SimpleMatch "COPY public.vcenter " | Select-Object Line).Line
+    $columnHeaders = [regex]::Match($headerLine, '\((.*?)\)').Groups[1].Value
+    $columns = $columnHeaders -split '\s*,\s*'
+    $vCenterIDColumn = $columns.IndexOf('id')
+    $vCenterVersionColumn = $columns.IndexOf('version')
+    $vCenterFqdnColumn = $columns.IndexOf('vm_hostname')
+    $vCenterVMnameColumn = $columns.IndexOf('vm_name')
+
     $vCentersStartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.vcenter " | Select-Object Line, LineNumber).LineNumber
     $vCenterLineIndex = $vCentersStartingLineNumber
     $vCenters = @()
     Do {
         $lineContent = $psqlContent | Select-Object -Index $vCentersStartingLineNumber
         If ($lineContent -ne '\.') {
-            $vCenterID = $lineContent.split("`t")[0]
-            $vCenterVersion = $lineContent.split("`t")[9]
-            $vCenterFqdn = $lineContent.split("`t")[10]
+            $vCenterID = $lineContent.split("`t")[$vCenterIDColumn]
+            $vCenterVersion = $lineContent.split("`t")[$vCenterVersionColumn]
+            $vCenterFqdn = $lineContent.split("`t")[$vCenterFqdnColumn]
             $vCenterIp = (Resolve-DnsName $vCenterFqdn).IPAddress
-            $vCenterVMname = $lineContent.split("`t")[12]
+            $vCenterVMname = $lineContent.split("`t")[$vCenterVMnameColumn]
             $vCenterDomainID = ($hostsAndDomains | Where-Object { $_.hostId -eq (($hostsandVcenters | Where-Object { $_.vCenterID -eq $vCenterID })[0].hostID) }).domainID
             $vCenters += [pscustomobject]@{
                 'vCenterID'       = $vCenterID
@@ -577,14 +624,21 @@ Function New-ExtractDataFromSDDCBackup {
 
     #Get Hosts and Pools
     LogMessage -type INFO -message "[$jumpboxName] Retrieving Host and Network Pool Mappings"
+    #Find the column number for each required element. Future proofed if column number changes
+    $headerLine = ($psqlContent | Select-String -SimpleMatch "COPY public.host_and_network_pool" | Select-Object Line).Line
+    $columnHeaders = [regex]::Match($headerLine, '\((.*?)\)').Groups[1].Value
+    $columns = $columnHeaders -split '\s*,\s*'
+    $hostIdColumn = $columns.IndexOf('host_id')
+    $poolIdColumn = $columns.IndexOf('network_pool_id')
+
     $hostsAndPoolsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.host_and_network_pool" | Select-Object Line, LineNumber).LineNumber
     $hostsAndPoolsLineIndex = $hostsAndPoolsLineNumber
     $hostsandPools = @()
     Do {
         $lineContent = $psqlContent | Select-Object -Index $hostsAndPoolsLineIndex
         If ($lineContent -ne '\.') {
-            $hostId = $lineContent.split("`t")[1]
-            $poolID = $lineContent.split("`t")[2]
+            $hostId = $lineContent.split("`t")[$hostIdColumn]
+            $poolID = $lineContent.split("`t")[$poolIdColumn]
             $hostsandPools += [pscustomobject]@{
                 'hostId' = $hostId
                 'poolId' = $poolID
@@ -596,14 +650,21 @@ Function New-ExtractDataFromSDDCBackup {
 
     #Get Network Pools
     LogMessage -type INFO -message "[$jumpboxName] Retrieving Network Pool Details"
+    #Find the column number for each required element. Future proofed if column number changes
+    $headerLine = ($psqlContent | Select-String -SimpleMatch "COPY public.network_pool " | Select-Object Line).Line
+    $columnHeaders = [regex]::Match($headerLine, '\((.*?)\)').Groups[1].Value
+    $columns = $columnHeaders -split '\s*,\s*'
+    $poolIdColumn = $columns.IndexOf('id')
+    $poolNameColumn = $columns.IndexOf('name')
+
     $networkPoolsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.network_pool " | Select-Object Line, LineNumber).LineNumber
     $networkPoolsLineIndex = $networkPoolsLineNumber
     $networkPools = @()
     Do {
         $lineContent = $psqlContent | Select-Object -Index $networkPoolsLineIndex
         If ($lineContent -ne '\.') {
-            $poolID = $lineContent.split("`t")[0]
-            $poolName = $lineContent.split("`t")[3]
+            $poolID = $lineContent.split("`t")[$poolIdColumn]
+            $poolName = $lineContent.split("`t")[$poolNameColumn]
             $networkPools += [pscustomobject]@{
                 'poolID'   = $poolID
                 'poolName' = $poolName
@@ -615,24 +676,37 @@ Function New-ExtractDataFromSDDCBackup {
 
     #Get VDSs
     LogMessage -type INFO -message "[$jumpboxName] Retrieving vDS Details"
+    #Find the column number for each required element. Future proofed if column number changes
+    $headerLine = ($psqlContent | Select-String -SimpleMatch "COPY public.vds" | Select-Object Line).Line
+    $columnHeaders = [regex]::Match($headerLine, '\((.*?)\)').Groups[1].Value
+    $columns = $columnHeaders -split '\s*,\s*'
+    $idColumn = $columns.IndexOf('id')
+    $mtuColumn = $columns.IndexOf('mtu')
+    $nameColumn = $columns.IndexOf('name')
+    $niocsColumn = $columns.IndexOf('niocs')
+    $portGroupsColumn = $columns.IndexOf('port_groups')
+    $sourceIdColumn = $columns.IndexOf('source_id')
+    $versionColumn = $columns.IndexOf('version')
+    $switchConfigColumn = $columns.IndexOf('nsxt_switch_config')
+
     $vdsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.vds" | Select-Object Line, LineNumber).LineNumber
     $vdsLineIndex = $vdsLineNumber
     $virtualDistributedSwitches = @()
     Do {
         $lineContent = $psqlContent | Select-Object -Index $vdsLineIndex
         If ($lineContent -ne '\.') {
-            $vdsId = $lineContent.split("`t")[0]
-            $vdsMtu = $lineContent.split("`t")[3]
-            $vdsName = $lineContent.split("`t")[4]
-            $niocs = $lineContent.split("`t")[5] | ConvertFrom-Json
-            If ($lineContent.split("`t")[6] -ne '\N') {
-                $vdsPortgroups = $lineContent.split("`t")[6] | ConvertFrom-Json
+            $vdsId = $lineContent.split("`t")[$idColumn]
+            $vdsMtu = $lineContent.split("`t")[$mtuColumn]
+            $vdsName = $lineContent.split("`t")[$nameColumn]
+            $niocs = $lineContent.split("`t")[$niocsColumn] | ConvertFrom-Json
+            If ($lineContent.split("`t")[$portGroupsColumn] -ne '\N') {
+                $vdsPortgroups = $lineContent.split("`t")[$portGroupsColumn] | ConvertFrom-Json
             } else {
                 $vdsPortgroups = $null
             }
-            $sourceID = $lineContent.split("`t")[10]
+            $sourceID = $lineContent.split("`t")[$sourceIdColumn]
 
-            $version = $lineContent.split("`t")[8]
+            $version = $lineContent.split("`t")[$versionColumn]
             $virtualDistributedSwitch = [pscustomobject]@{
                 'Id'         = $vdsId
                 'niocs'      = $niocs
@@ -643,8 +717,8 @@ Function New-ExtractDataFromSDDCBackup {
                 'sourceID'   = $sourceID
             }
 
-            If ($lineContent.split("`t")[11] -ne '\N') {
-                $overlayContent = $lineContent.split("`t")[11] | ConvertFrom-Json
+            If ($lineContent.split("`t")[$switchConfigColumn] -ne '\N') {
+                $overlayContent = $lineContent.split("`t")[$switchConfigColumn] | ConvertFrom-Json
                 $transportZoneContent = $overlayContent.transportZones
                 If ($overlayContent.hostSwitchOperationalMode -ne $null) {
                     $hostSwitchOperationalModeContent = $overlayContent.hostSwitchOperationalMode
@@ -663,22 +737,35 @@ Function New-ExtractDataFromSDDCBackup {
 
     #Get Networks
     LogMessage -type INFO -message "[$jumpboxName] Retrieving Network Details"
+    #Find the column number for each required element. Future proofed if column number changes
+    $headerLine = ($psqlContent | Select-String -SimpleMatch "COPY public.vcf_network " | Select-Object Line).Line
+    $columnHeaders = [regex]::Match($headerLine, '\((.*?)\)').Groups[1].Value
+    $columns = $columnHeaders -split '\s*,\s*'
+    $idColumn = $columns.IndexOf('id')
+    $mtuColumn = $columns.IndexOf('mtu')
+    $gatewayColumn = $columns.IndexOf('gateway')
+    $ipInclusionRangesColumn = $columns.IndexOf('ip_inclusion_ranges')
+    $subnetColumn = $columns.IndexOf('subnet')
+    $subnetMaskColumn = $columns.IndexOf('subnet_mask')
+    $typeColumn = $columns.IndexOf('type')
+    $vlanIdColumn = $columns.IndexOf('vlan_id')
+
     $networksLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.vcf_network " | Select-Object Line, LineNumber).LineNumber
     $networksLineIndex = $networksLineNumber
     $networks = @()
     Do {
         $lineContent = $psqlContent | Select-Object -Index $networksLineIndex
         If ($lineContent -ne '\.') {
-            $id = $lineContent.split("`t")[0]
-            $gateway = $lineContent.split("`t")[4]
-            $ipInclusionRanges = $lineContent.split("`t")[5] | ConvertFrom-Json
+            $id = $lineContent.split("`t")[$idColumn]
+            $gateway = $lineContent.split("`t")[$gatewayColumn]
+            $ipInclusionRanges = $lineContent.split("`t")[$ipInclusionRangesColumn] | ConvertFrom-Json
             $startIPAddress = $ipInclusionRanges.start
             $endIPAddress = $ipInclusionRanges.end
-            $mtu = $lineContent.split("`t")[6]
-            $subnet = $lineContent.split("`t")[7]
-            $subnetMask = $lineContent.split("`t")[8]
-            $type = $lineContent.split("`t")[9]
-            $vlanId = $lineContent.split("`t")[11]
+            $mtu = $lineContent.split("`t")[$mtuColumn]
+            $subnet = $lineContent.split("`t")[$subnetColumn]
+            $subnetMask = $lineContent.split("`t")[$subnetMaskColumn]
+            $type = $lineContent.split("`t")[$typeColumn]
+            $vlanId = $lineContent.split("`t")[$vlanIdColumn]
             $networks += [pscustomobject]@{
                 'id'             = $id
                 'gateway'        = $gateway
@@ -697,14 +784,21 @@ Function New-ExtractDataFromSDDCBackup {
 
     #Get Pools and Networks
     LogMessage -type INFO -message "[$jumpboxName] Retrieving Network Pools and Network Mappings"
+    #Find the column number for each required element. Future proofed if column number changes
+    $headerLine = ($psqlContent | Select-String -SimpleMatch "COPY public.vcf_network_and_network_pool" | Select-Object Line).Line
+    $columnHeaders = [regex]::Match($headerLine, '\((.*?)\)').Groups[1].Value
+    $columns = $columnHeaders -split '\s*,\s*'
+    $networkIDColumn = $columns.IndexOf('vcf_network_id')
+    $poolIDColumn = $columns.IndexOf('network_pool_id')
+
     $poolsAndNetworksLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.vcf_network_and_network_pool" | Select-Object Line, LineNumber).LineNumber
     $poolsAndNetworksLineIndex = $poolsAndNetworksLineNumber
     $poolsAndNetworks = @()
     Do {
         $lineContent = $psqlContent | Select-Object -Index $poolsAndNetworksLineIndex
         If ($lineContent -ne '\.') {
-            $networkID = $lineContent.split("`t")[0]
-            $poolID = $lineContent.split("`t")[1]
+            $networkID = $lineContent.split("`t")[$networkIDColumn]
+            $poolID = $lineContent.split("`t")[$poolIDColumn]
             $poolsAndNetworks += [pscustomobject]@{
                 'networkID' = $networkID
                 'poolID'    = $poolID
@@ -716,14 +810,21 @@ Function New-ExtractDataFromSDDCBackup {
 
     #Get Cluster and VDS
     LogMessage -type INFO -message "[$jumpboxName] Retrieving Cluster and vDS Mappings"
+    #Find the column number for each required element. Future proofed if column number changes
+    $headerLine = ($psqlContent | Select-String -SimpleMatch "COPY public.cluster_and_vds" | Select-Object Line).Line
+    $columnHeaders = [regex]::Match($headerLine, '\((.*?)\)').Groups[1].Value
+    $columns = $columnHeaders -split '\s*,\s*'
+    $clusterIDColumn = $columns.IndexOf('cluster_id')
+    $vdsIDColumn = $columns.IndexOf('vds_id')
+
     $clusterAndVdsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.cluster_and_vds" | Select-Object Line, LineNumber).LineNumber
     $clusterAndVdsLineIndex = $clusterAndVdsLineNumber
     $clusterAndVds = @()
     Do {
         $lineContent = $psqlContent | Select-Object -Index $clusterAndVdsLineIndex
         If ($lineContent -ne '\.') {
-            $clusterID = $lineContent.split("`t")[1]
-            $vdsID = $lineContent.split("`t")[2]
+            $clusterID = $lineContent.split("`t")[$clusterIDColumn]
+            $vdsID = $lineContent.split("`t")[$vdsIDColumn]
             $clusterAndVds += [pscustomobject]@{
                 'clusterID' = $clusterID
                 'vdsID'     = $vdsID
@@ -734,14 +835,21 @@ Function New-ExtractDataFromSDDCBackup {
     Until ($lineContent -eq '\.')
 
     LogMessage -type INFO -message "[$jumpboxName] Retrieving Host to Cluster Mappings"
+    #Find the column number for each required element. Future proofed if column number changes
+    $headerLine = ($psqlContent | Select-String -SimpleMatch "COPY public.host_and_cluster " | Select-Object Line).Line
+    $columnHeaders = [regex]::Match($headerLine, '\((.*?)\)').Groups[1].Value
+    $columns = $columnHeaders -split '\s*,\s*'
+    $hostIDColumn = $columns.IndexOf('host_id')
+    $clusterIDColumn = $columns.IndexOf('cluster_id')
+
     $hostAndClusterLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.host_and_cluster " | Select-Object Line, LineNumber).LineNumber
     $hostAndClusterLineIndex = $hostAndClusterLineNumber
     $hostAndCluster = @()
     Do {
         $lineContent = $psqlContent | Select-Object -Index $hostAndClusterLineIndex
         If ($lineContent -ne '\.') {
-            $hostID = $lineContent.split("`t")[0]
-            $clusterID = $lineContent.split("`t")[1]
+            $hostID = $lineContent.split("`t")[$hostIDColumn]
+            $clusterID = $lineContent.split("`t")[$clusterIDColumn]
             $hostAndCluster += [pscustomobject]@{
                 'hostID'    = $hostID
                 'clusterID' = $clusterID
@@ -753,23 +861,37 @@ Function New-ExtractDataFromSDDCBackup {
 
     #Get Clusters
     LogMessage -type INFO -message "[$jumpboxName] Retrieving Cluster Details"
+    #Find the column number for each required element. Future proofed if column number changes
+    $headerLine = ($psqlContent | Select-String -SimpleMatch "COPY public.cluster " | Select-Object Line).Line
+    $columnHeaders = [regex]::Match($headerLine, '\((.*?)\)').Groups[1].Value
+    $columns = $columnHeaders -split '\s*,\s*'
+    $idColumn = $columns.IndexOf('id')
+    $fttColumn = $columns.IndexOf('ftt')
+    $isDefaultColumn = $columns.IndexOf('is_default')
+    $isStretchedColumn = $columns.IndexOf('is_stretched')
+    $vCenterIDColumn = $columns.IndexOf('vcenter_id')
+    $primaryDatastoreNameColumn = $columns.IndexOf('primary_datastore_name')
+    $primaryDatastoreTypeColumn = $columns.IndexOf('primary_datastore_type')
+    $sourceIDColumn = $columns.IndexOf('source_id')
+    $isImagedBasedColumn = $columns.IndexOf('is_image_based')
+
     $clustersLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.cluster " | Select-Object Line, LineNumber).LineNumber
     $clustersLineIndex = $clustersLineNumber
     $clusters = @()
     Do {
         $lineContent = $psqlContent | Select-Object -Index $clustersLineIndex
         If ($lineContent -ne '\.') {
-            $id = $lineContent.split("`t")[0]
-            $datacenter = $lineContent.split("`t")[3]
-            $ftt = $lineContent.split("`t")[4]
-            $isDefault = $lineContent.split("`t")[5]
-            $isStretched = $lineContent.split("`t")[6]
+            $id = $lineContent.split("`t")[$idColumn]
+            #$datacenter = $lineContent.split("`t")[3]
+            $ftt = $lineContent.split("`t")[$fttColumn]
+            $isDefault = $lineContent.split("`t")[$isDefaultColumn]
+            $isStretched = $lineContent.split("`t")[$isStretchedColumn]
             #$name = $lineContent.split("`t")[7]
-            $vCenterID = $lineContent.split("`t")[9]
-            $primaryDatastoreName = $lineContent.split("`t")[12]
-            $primaryDatastoreType = $lineContent.split("`t")[13]
-            $sourceID = $lineContent.split("`t")[14]
-            $isImagedBased = $lineContent.split("`t")[18]
+            $vCenterID = $lineContent.split("`t")[$vCenterIDColumn]
+            $primaryDatastoreName = $lineContent.split("`t")[$primaryDatastoreNameColumn]
+            $primaryDatastoreType = $lineContent.split("`t")[$primaryDatastoreTypeColumn]
+            $sourceID = $lineContent.split("`t")[$sourceIDColumn]
+            $isImagedBased = $lineContent.split("`t")[$isImagedBasedColumn]
             $vdsDetails = @()
 
             #Experimental
@@ -848,14 +970,21 @@ Function New-ExtractDataFromSDDCBackup {
 
     #Get Cluster and vCenter
     LogMessage -type INFO -message "[$jumpboxName] Retrieving Cluster and vCenter Mappings"
+    #Find the column number for each required element. Future proofed if column number changes
+    $headerLine = ($psqlContent | Select-String -SimpleMatch "COPY public.cluster_and_vcenter" | Select-Object Line).Line
+    $columnHeaders = [regex]::Match($headerLine, '\((.*?)\)').Groups[1].Value
+    $columns = $columnHeaders -split '\s*,\s*'
+    $clusterIDColumn = $columns.IndexOf('cluster_id')
+    $vcenterIDColumn = $columns.IndexOf('vcenter_id')
+
     $clusterAndVcenterLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.cluster_and_vcenter" | Select-Object Line, LineNumber).LineNumber
     $clusterAndVcenterLineIndex = $clusterAndVcenterLineNumber
     $clusterAndVcenter = @()
     Do {
         $lineContent = $psqlContent | Select-Object -Index $clusterAndVcenterLineIndex
         If ($lineContent -ne '\.') {
-            $clusterID = $lineContent.split("`t")[0]
-            $vcenterID = $lineContent.split("`t")[1]
+            $clusterID = $lineContent.split("`t")[$clusterIDColumn]
+            $vcenterID = $lineContent.split("`t")[$vcenterIDColumn]
             $clusterAndVcenter += [pscustomobject]@{
                 'clusterID' = $clusterID
                 'vcenterID' = $vcenterID
@@ -867,14 +996,21 @@ Function New-ExtractDataFromSDDCBackup {
 
     #Get Cluster and Domain
     LogMessage -type INFO -message "[$jumpboxName] Retrieving Cluster and Domain Mappings"
+    #Find the column number for each required element. Future proofed if column number changes
+    $headerLine = ($psqlContent | Select-String -SimpleMatch "COPY public.cluster_and_domain" | Select-Object Line).Line
+    $columnHeaders = [regex]::Match($headerLine, '\((.*?)\)').Groups[1].Value
+    $columns = $columnHeaders -split '\s*,\s*'
+    $clusterIDColumn = $columns.IndexOf('cluster_id')
+    $domainIDColumn = $columns.IndexOf('domain_id')
+
     $clusterAndDomainLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.cluster_and_domain" | Select-Object Line, LineNumber).LineNumber
     $clusterAndDomainLineIndex = $clusterAndDomainLineNumber
     $clusterAndDomain = @()
     Do {
         $lineContent = $psqlContent | Select-Object -Index $clusterAndDomainLineIndex
         If ($lineContent -ne '\.') {
-            $clusterID = $lineContent.split("`t")[0]
-            $domainID = $lineContent.split("`t")[1]
+            $clusterID = $lineContent.split("`t")[$clusterIDColumn]
+            $domainID = $lineContent.split("`t")[$domainIDColumn]
             $clusterAndDomain += [pscustomobject]@{
                 'clusterID' = $clusterID
                 'domainID'  = $domainID
@@ -886,6 +1022,14 @@ Function New-ExtractDataFromSDDCBackup {
 
     #Get License Models
     LogMessage -type INFO -message "[$jumpboxName] Retrieving Licensing Models"
+    #Find the column number for each required element. Future proofed if column number changes
+    $headerLine = ($psqlContent | Select-String -SimpleMatch "COPY licensemanager.licensing_info" | Select-Object Line).Line
+    $columnHeaders = [regex]::Match($headerLine, '\((.*?)\)').Groups[1].Value
+    $columns = $columnHeaders -split '\s*,\s*'
+    $resourceTypeColumn = $columns.IndexOf('resource_type')
+    $resourceIdColumn = $columns.IndexOf('resource_id')
+    $licensingModeColumn = $columns.IndexOf('licensing_mode')
+
     $licenseModelLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY licensemanager.licensing_info" | Select-Object Line, LineNumber).LineNumber
     If ($licenseModelLineNumber) {
         $licenseModelLineIndex = $licenseModelLineNumber
@@ -893,9 +1037,9 @@ Function New-ExtractDataFromSDDCBackup {
         Do {
             $lineContent = $psqlContent | Select-Object -Index $licenseModelLineIndex
             If ($lineContent -ne '\.') {
-                $resourceType = $lineContent.split("`t")[1]
-                $resourceId = $lineContent.split("`t")[2]
-                $licensingMode = $lineContent.split("`t")[3]
+                $resourceType = $lineContent.split("`t")[$resourceTypeColumn]
+                $resourceId = $lineContent.split("`t")[$resourceIdColumn]
+                $licensingMode = $lineContent.split("`t")[$licensingModeColumn]
                 $licenseModels += [pscustomobject]@{
                     'resourceType'  = $resourceType
                     'resourceId'    = $resourceId
@@ -909,15 +1053,24 @@ Function New-ExtractDataFromSDDCBackup {
 
     #Get License Keys
     LogMessage -type INFO -message "[$jumpboxName] Retrieving License Keys"
+    #Find the column number for each required element. Future proofed if column number changes
+    $headerLine = ($psqlContent | Select-String -SimpleMatch "COPY licensemanager.licensekey" | Select-Object Line).Line
+    $columnHeaders = [regex]::Match($headerLine, '\((.*?)\)').Groups[1].Value
+    $columns = $columnHeaders -split '\s*,\s*'
+    $idColumn = $columns.IndexOf('id')
+    $keyColumn = $columns.IndexOf('key')
+    $descriptionColumn = $columns.IndexOf('description')
+    $productTypeColumn = $columns.IndexOf('product_type')
+
     $licenseLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY licensemanager.licensekey" | Select-Object Line, LineNumber).LineNumber
     $licenseLineIndex = $licenseLineNumber
     $licenseKeys = @()
     Do {
         $lineContent = $psqlContent | Select-Object -Index $licenseLineIndex
         If ($lineContent -ne '\.') {
-            $id = $lineContent.split("`t")[0]
-            $key = $lineContent.split("`t")[1]
-            $description = $lineContent.split("`t")[2]
+            $id = $lineContent.split("`t")[$idColumn]
+            $key = $lineContent.split("`t")[$keyColumn]
+            $description = $lineContent.split("`t")[$descriptionColumn]
             $productType = $lineContent.split("`t")[3]
             $licenseKeys += [pscustomobject]@{
                 'id'          = $id
@@ -932,14 +1085,21 @@ Function New-ExtractDataFromSDDCBackup {
 
     If ($sddcManagerObject.version -like "4.4.*") {
         LogMessage -type INFO -message "[$jumpboxName] Retrieving PSC Data"
+        #Find the column number for each required element. Future proofed if column number changes
+        $headerLine = ($psqlContent | Select-String -SimpleMatch "COPY public.psc (id" | Select-Object Line).Line
+        $columnHeaders = [regex]::Match($headerLine, '\((.*?)\)').Groups[1].Value
+        $columns = $columnHeaders -split '\s*,\s*'
+        $pscIdColumn = $columns.IndexOf('id')
+        $ssoDomainColumn = $columns.IndexOf('sso_domain')
+
         $pscsStartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.psc (id" | Select-Object Line, LineNumber).LineNumber
         $pscsLineIndex = $pscsStartingLineNumber
         $pscs = @()
         Do {
             $lineContent = $psqlContent | Select-Object -Index $pscsLineIndex
             If ($lineContent -ne '\.') {
-                $pscId = $lineContent.split("`t")[0]
-                $ssoDomain = $lineContent.split("`t")[9]
+                $pscId = $lineContent.split("`t")[$pscIdColumn]
+                $ssoDomain = $lineContent.split("`t")[$ssoDomainColumn]
                 $pscs += [pscustomobject]@{
                     'id'        = $pscId
                     'ssoDomain' = $ssoDomain
@@ -949,14 +1109,21 @@ Function New-ExtractDataFromSDDCBackup {
         }
         Until ($lineContent -eq '\.')
 
+        #Find the column number for each required element. Future proofed if column number changes
+        $headerLine = ($psqlContent | Select-String -SimpleMatch "COPY public.vcenter_and_psc" | Select-Object Line).Line
+        $columnHeaders = [regex]::Match($headerLine, '\((.*?)\)').Groups[1].Value
+        $columns = $columnHeaders -split '\s*,\s*'
+        $vCenterIdColumn = $columns.IndexOf('vcenter_id')
+        $pscIdColumn = $columns.IndexOf('psc_id')
+
         $vCentersAndPscsStartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.vcenter_and_psc" | Select-Object Line, LineNumber).LineNumber
         $vCentersAndPscsLineIndex = $vCentersAndPscsStartingLineNumber
         $vCentersAndPscs = @()
         Do {
             $lineContent = $psqlContent | Select-Object -Index $vCentersAndPscsLineIndex
             If ($lineContent -ne '\.') {
-                $vCenterId = $lineContent.split("`t")[0]
-                $pscId = $lineContent.split("`t")[1]
+                $vCenterId = $lineContent.split("`t")[$vCenterIdColumn]
+                $pscId = $lineContent.split("`t")[$pscIdColumn]
                 $vCentersAndPscs += [pscustomobject]@{
                     'vcenterId' = $vCenterId
                     'pscId'     = $pscId
@@ -969,17 +1136,25 @@ Function New-ExtractDataFromSDDCBackup {
 
     LogMessage -type INFO -message "[$jumpboxName] Assembling Workload Domain Data"
     #GetDomainDetails
+    #Find the column number for each required element. Future proofed if column number changes
+    $headerLine = ($psqlContent | Select-String -SimpleMatch "COPY public.domain (id" | Select-Object Line).Line
+    $columnHeaders = [regex]::Match($headerLine, '\((.*?)\)').Groups[1].Value
+    $columns = $columnHeaders -split '\s*,\s*'
+    $domainIdColumn = $columns.IndexOf('id')
+    $domainNameColumn = $columns.IndexOf('name')
+    $domainTypeColumn = $columns.IndexOf('type')
+
     $domainsStartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.domain (id" | Select-Object Line, LineNumber).LineNumber
     $domainLineIndex = $domainsStartingLineNumber
     $workloadDomains = @()
     Do {
         $lineContent = $psqlContent | Select-Object -Index $domainLineIndex
         If ($lineContent -ne '\.') {
-            $domainId = $lineContent.split("`t")[0]
-            $domainName = $lineContent.split("`t")[3]
-            $domainType = $lineContent.split("`t")[6]
+            $domainId = $lineContent.split("`t")[$domainIdColumn]
+            $domainName = $lineContent.split("`t")[$domainNameColumn]
+            $domainType = $lineContent.split("`t")[$domainTypeColumn]
             $vCenter = $vCenters | Where-Object { $_.vCenterDomainID -eq $domainId }
-            $ssoDomain = $lineContent.split("`t")[11]
+            #$ssoDomain = $lineContent.split("`t")[11]
             $vCenterDetails = [pscustomobject]@{
                 'id'      = $vCenter.vCenterID
                 'version' = $vCenter.vCenterVersion
@@ -1763,7 +1938,9 @@ Function New-VVFBasedPartialBringupJsonSpec {
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
         [Parameter (Mandatory = $true)][String] $transportVlanId,
         [Parameter (Mandatory = $true)][boolean] $dedupEnabled,
-        [Parameter (Mandatory = $true)][String] $vcenterServerSize
+        [Parameter (Mandatory = $true)][String] $vcenterServerSize,
+        [Parameter (Mandatory = $true)][String] $esxManagementNetworkSubnet,
+        [Parameter (Mandatory = $true)][String]$esxManagementNetworkGateway
     )
 
     $jumpboxName = hostname
@@ -1777,6 +1954,7 @@ Function New-VVFBasedPartialBringupJsonSpec {
     $domainName = $managementDomain.domainName
     $defaultManagementcluster = $managementDomain.vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' }
     $defaultManagementclusterDistributedSwitches = $defaultManagementcluster.vdsDetails
+    $managementNetworkSubnet = $esxManagementNetworkSubnet
 
     LogMessage -Type INFO -Message "[$jumpboxName] Generating VVF Bringup JSON Specification"
 
@@ -1814,8 +1992,8 @@ Function New-VVFBasedPartialBringupJsonSpec {
     #clusterSpec
     $clusterObject = @()
     $clusterObject += [pscustomobject]@{
-        'clusterName'    = 'vcfir-cl01'
-        'datacenterName' = 'vcfir-dc01'
+        'clusterName'    = $extractedSddcData.mgmtDomainInfrastructure.vsan_datastore
+        'datacenterName' = $extractedSddcData.mgmtDomainInfrastructure.datacenter
     }
 
     #vsanSpec
@@ -1889,18 +2067,14 @@ Function New-VVFBasedPartialBringupJsonSpec {
     Foreach ($octet in $octets) { $binary = [System.Convert]::ToString([int]$octet, 2).PadLeft(8, '0'); $managementVmNetworkCidr += ($binary.ToCharArray() | Where-Object { $_ -eq '1' }).Count }
     $managementVmNetworkSubnet = ($extractedSddcData.mgmtDomainInfrastructure.subnet + "/" + $managementVmNetworkCidr)
     $networkSpecsObject += [pscustomobject]@{
-        'networkType'            = "VM_MANAGEMENT"
-        'subnet'                 = $managementVmNetworkSubnet
-        'gateway'                = $extractedSddcData.mgmtDomainInfrastructure.gateway
-        'subnetMask'             = $null
-        'includeIpAddress'       = $null
-        'includeIpAddressRanges' = $null
-        'vlanId'                 = ($defaultManagementCluster.vdsDetails.portgroups | Where-Object { $_.transportType -eq 'VM_MANAGEMENT' }).vlanId -as [string]
-        'mtu'                    = "1500"
-        'teamingPolicy'          = 'loadbalance_loadbased'
-        'activeUplinks'          = $activeUplinksArray
-        'standbyUplinks'         = $null
-        'portGroupKey'           = "vcfir-cl01-vds01-pg-vm-mgmt"
+        'networkType'   = "VM_MANAGEMENT"
+        'subnet'        = $managementVmNetworkSubnet
+        'gateway'       = $extractedSddcData.mgmtDomainInfrastructure.gateway
+        'vlanId'        = ($defaultManagementCluster.vdsDetails.portgroups | Where-Object { $_.transportType -eq 'VM_MANAGEMENT' }).vlanId -as [string]
+        'mtu'           = "1500"
+        'teamingPolicy' = 'loadbalance_loadbased'
+        'activeUplinks' = $activeUplinksArray
+        'portGroupKey'  = $extractedSddcData.mgmtDomainInfrastructure.port_group
     }
 
     #MANAGEMENT network
@@ -1909,18 +2083,18 @@ Function New-VVFBasedPartialBringupJsonSpec {
     Foreach ($octet in $octets) { $binary = [System.Convert]::ToString([int]$octet, 2).PadLeft(8, '0'); $managementNetworkCidr += ($binary.ToCharArray() | Where-Object { $_ -eq '1' }).Count }
     $managementNetworkSubnet = ((($defaultManagementCluster | Where-Object { $_.isDefault -eq 't' }).hosts[0].networks | Where-Object { $_.type -eq 'MANAGEMENT' }).subnet + "/" + $managementNetworkCidr)
     $networkSpecsObject += [pscustomobject]@{
-        'networkType'            = "MANAGEMENT"
-        'subnet'                 = $managementNetworkSubnet
-        'gateway'                = ($defaultManagementCluster.hosts[0].networks | Where-Object { $_.type -eq 'MANAGEMENT' }).gateway
-        'subnetMask'             = $null
-        'includeIpAddress'       = $null
-        'includeIpAddressRanges' = $null
-        'vlanId'                 = ($defaultManagementCluster.vdsDetails.portgroups | Where-Object { $_.transportType -eq 'MANAGEMENT' }).vlanId -as [string]
-        'mtu'                    = ($defaultManagementCluster.hosts[0].networks | Where-Object { $_.type -eq 'MANAGEMENT' }).mtu -as [string]
-        'teamingPolicy'          = 'loadbalance_loadbased'
-        'activeUplinks'          = $activeUplinksArray
-        'standbyUplinks'         = $null
-        'portGroupKey'           = "vcfir-cl01-vds01-pg-esx-mgmt"
+        'networkType'   = "MANAGEMENT"
+        'subnet'        = $managementNetworkSubnet
+        'gateway'       = ($defaultManagementCluster.hosts[0].networks | Where-Object { $_.type -eq 'MANAGEMENT' }).gateway
+        #'subnetMask'             = $null
+        #'includeIpAddress'       = $null
+        #'includeIpAddressRanges' = $null
+        'vlanId'        = ($defaultManagementCluster.vdsDetails.portgroups | Where-Object { $_.transportType -eq 'MANAGEMENT' }).vlanId -as [string]
+        'mtu'           = ($defaultManagementCluster.hosts[0].networks | Where-Object { $_.type -eq 'MANAGEMENT' }).mtu -as [string]
+        'teamingPolicy' = 'loadbalance_loadbased'
+        'activeUplinks' = $activeUplinksArray
+        #'standbyUplinks'         = $null
+        'portGroupKey'  = "vcfir-cl01-vds01-pg-esx-mgmt"
     }
 
     #VMOTION network
@@ -1932,14 +2106,14 @@ Function New-VVFBasedPartialBringupJsonSpec {
         'networkType'            = "VMOTION"
         'subnet'                 = $vmotionNetworkSubnet
         'gateway'                = ($defaultManagementCluster.hosts[0].networks | Where-Object { $_.type -eq 'VMOTION' }).gateway
-        'subnetMask'             = $null
-        'includeIpAddress'       = $null
+        #'subnetMask'             = $null
+        #'includeIpAddress'       = $null
         'includeIpAddressRanges' = $vmotionIpObject
         'vlanId'                 = ($defaultManagementCluster.hosts[0].networks | Where-Object { $_.type -eq 'VMOTION' }).vlanId -as [string]
         'mtu'                    = ($defaultManagementCluster.hosts[0].networks | Where-Object { $_.type -eq 'VMOTION' }).mtu -as [string]
         'teamingPolicy'          = 'loadbalance_loadbased'
         'activeUplinks'          = $activeUplinksArray
-        'standbyUplinks'         = $null
+        #'standbyUplinks'         = $null
         'portGroupKey'           = "vcfir-cl01-vds01-pg-vmotion"
     }
 
@@ -1952,14 +2126,14 @@ Function New-VVFBasedPartialBringupJsonSpec {
         'networkType'            = "VSAN"
         'subnet'                 = $vsanNetworkSubnet
         'gateway'                = ($defaultManagementCluster.hosts[0].networks | Where-Object { $_.type -eq 'VSAN' }).gateway
-        'subnetMask'             = $null
-        'includeIpAddress'       = $null
+        #'subnetMask'             = $null
+        #'includeIpAddress'       = $null
         'includeIpAddressRanges' = $vsanIpObject
         'vlanId'                 = ($defaultManagementCluster.hosts[0].networks | Where-Object { $_.type -eq 'VSAN' }).vlanId -as [string]
         'mtu'                    = ($defaultManagementCluster.hosts[0].networks | Where-Object { $_.type -eq 'VSAN' }).mtu -as [string]
         'teamingPolicy'          = 'loadbalance_loadbased'
         'activeUplinks'          = $activeUplinksArray
-        'standbyUplinks'         = $null
+        #'standbyUplinks'         = $null
         'portGroupKey'           = "vcfir-cl01-vds01-pg-vsan"
     }
 
