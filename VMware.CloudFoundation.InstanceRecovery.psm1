@@ -1154,7 +1154,8 @@ Function New-ExtractDataFromSDDCBackup {
             $domainName = $lineContent.split("`t")[$domainNameColumn]
             $domainType = $lineContent.split("`t")[$domainTypeColumn]
             $vCenter = $vCenters | Where-Object { $_.vCenterDomainID -eq $domainId }
-            #$ssoDomain = $lineContent.split("`t")[11]
+            $pscId = $vCentersAndPscs.pscId | where-object {$vCentersAndPscs.vCenterId -eq $vCenter.vCenterID}
+            $ssoDomain = $pscs.ssoDomain | where-object {$pscs.id -eq $pscId}
             $vCenterDetails = [pscustomobject]@{
                 'id'      = $vCenter.vCenterID
                 'version' = $vCenter.vCenterVersion
