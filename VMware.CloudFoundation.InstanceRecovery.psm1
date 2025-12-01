@@ -1083,56 +1083,53 @@ Function New-ExtractDataFromSDDCBackup {
     }
     Until ($lineContent -eq '\.')
 
-    If ($sddcManagerObject.version -like "4.4.*") {
-        LogMessage -type INFO -message "[$jumpboxName] Retrieving PSC Data"
-        #Find the column number for each required element. Future proofed if column number changes
-        $headerLine = ($psqlContent | Select-String -SimpleMatch "COPY public.psc (id" | Select-Object Line).Line
-        $columnHeaders = [regex]::Match($headerLine, '\((.*?)\)').Groups[1].Value
-        $columns = $columnHeaders -split '\s*,\s*'
-        $pscIdColumn = $columns.IndexOf('id')
-        $ssoDomainColumn = $columns.IndexOf('sso_domain')
+    LogMessage -type INFO -message "[$jumpboxName] Retrieving PSC Data"
+    #Find the column number for each required element. Future proofed if column number changes
+    $headerLine = ($psqlContent | Select-String -SimpleMatch "COPY public.psc (id" | Select-Object Line).Line
+    $columnHeaders = [regex]::Match($headerLine, '\((.*?)\)').Groups[1].Value
+    $columns = $columnHeaders -split '\s*,\s*'
+    $pscIdColumn = $columns.IndexOf('id')
+    $ssoDomainColumn = $columns.IndexOf('sso_domain')
 
-        $pscsStartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.psc (id" | Select-Object Line, LineNumber).LineNumber
-        $pscsLineIndex = $pscsStartingLineNumber
-        $pscs = @()
-        Do {
-            $lineContent = $psqlContent | Select-Object -Index $pscsLineIndex
-            If ($lineContent -ne '\.') {
-                $pscId = $lineContent.split("`t")[$pscIdColumn]
-                $ssoDomain = $lineContent.split("`t")[$ssoDomainColumn]
-                $pscs += [pscustomobject]@{
-                    'id'        = $pscId
-                    'ssoDomain' = $ssoDomain
-                }
+    $pscsStartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.psc (id" | Select-Object Line, LineNumber).LineNumber
+    $pscsLineIndex = $pscsStartingLineNumber
+    $pscs = @()
+    Do {
+        $lineContent = $psqlContent | Select-Object -Index $pscsLineIndex
+        If ($lineContent -ne '\.') {
+            $pscId = $lineContent.split("`t")[$pscIdColumn]
+            $ssoDomain = $lineContent.split("`t")[$ssoDomainColumn]
+            $pscs += [pscustomobject]@{
+                'id'        = $pscId
+                'ssoDomain' = $ssoDomain
             }
-            $pscsLineIndex ++
         }
-        Until ($lineContent -eq '\.')
-
-        #Find the column number for each required element. Future proofed if column number changes
-        $headerLine = ($psqlContent | Select-String -SimpleMatch "COPY public.vcenter_and_psc" | Select-Object Line).Line
-        $columnHeaders = [regex]::Match($headerLine, '\((.*?)\)').Groups[1].Value
-        $columns = $columnHeaders -split '\s*,\s*'
-        $vCenterIdColumn = $columns.IndexOf('vcenter_id')
-        $pscIdColumn = $columns.IndexOf('psc_id')
-
-        $vCentersAndPscsStartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.vcenter_and_psc" | Select-Object Line, LineNumber).LineNumber
-        $vCentersAndPscsLineIndex = $vCentersAndPscsStartingLineNumber
-        $vCentersAndPscs = @()
-        Do {
-            $lineContent = $psqlContent | Select-Object -Index $vCentersAndPscsLineIndex
-            If ($lineContent -ne '\.') {
-                $vCenterId = $lineContent.split("`t")[$vCenterIdColumn]
-                $pscId = $lineContent.split("`t")[$pscIdColumn]
-                $vCentersAndPscs += [pscustomobject]@{
-                    'vcenterId' = $vCenterId
-                    'pscId'     = $pscId
-                }
-            }
-            $vCentersAndPscsLineIndex ++
-        }
-        Until ($lineContent -eq '\.')
+        $pscsLineIndex ++
     }
+    Until ($lineContent -eq '\.')
+
+    #Find the column number for each required element. Future proofed if column number changes
+    $headerLine = ($psqlContent | Select-String -SimpleMatch "COPY public.vcenter_and_psc" | Select-Object Line).Line
+    $columnHeaders = [regex]::Match($headerLine, '\((.*?)\)').Groups[1].Value
+    $columns = $columnHeaders -split '\s*,\s*'
+    $vCenterIdColumn = $columns.IndexOf('vcenter_id')
+    $pscIdColumn = $columns.IndexOf('psc_id')
+    $vCentersAndPscsStartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.vcenter_and_psc" | Select-Object Line, LineNumber).LineNumber
+    $vCentersAndPscsLineIndex = $vCentersAndPscsStartingLineNumber
+    $vCentersAndPscs = @()
+    Do {
+        $lineContent = $psqlContent | Select-Object -Index $vCentersAndPscsLineIndex
+        If ($lineContent -ne '\.') {
+            $vCenterId = $lineContent.split("`t")[$vCenterIdColumn]
+            $pscId = $lineContent.split("`t")[$pscIdColumn]
+            $vCentersAndPscs += [pscustomobject]@{
+                'vcenterId' = $vCenterId
+                'pscId'     = $pscId
+            }
+        }
+        $vCentersAndPscsLineIndex ++
+    }
+    Until ($lineContent -eq '\.')
 
     LogMessage -type INFO -message "[$jumpboxName] Assembling Workload Domain Data"
     #GetDomainDetails
@@ -1154,8 +1151,8 @@ Function New-ExtractDataFromSDDCBackup {
             $domainName = $lineContent.split("`t")[$domainNameColumn]
             $domainType = $lineContent.split("`t")[$domainTypeColumn]
             $vCenter = $vCenters | Where-Object { $_.vCenterDomainID -eq $domainId }
-            $pscId = $vCentersAndPscs.pscId | where-object {$vCentersAndPscs.vCenterId -eq $vCenter.vCenterID}
-            $ssoDomain = $pscs.ssoDomain | where-object {$pscs.id -eq $pscId}
+            $pscId = ($vCentersAndPscs | where-object {$_.vCenterId -eq $vCenters.vCenterID}).pscId
+            $ssoDomain = ($pscs | where-object {$pscs.id -eq $pscId}).ssoDomain
             $vCenterDetails = [pscustomobject]@{
                 'id'      = $vCenter.vCenterID
                 'version' = $vCenter.vCenterVersion
@@ -2619,11 +2616,14 @@ Function New-vCenterOvaDeployment {
 
     $workloadDomainDetails = ($extractedSDDCData.workloadDomains | Where-Object { $_.domainName -eq $workloadDomain })
     $vmDatastore = $extractedSDDCData.mgmtDomainInfrastructure.vsan_datastore
-    #Following parameters converted to known entities for 9.0. Consider refactoring in 9.1 if data is saved in manifest.json
+    $vmNetwork = $extractedSDDCData.mgmtDomainInfrastructure.port_group
+    $datacenterName = $extractedSDDCData.mgmtDomainInfrastructure.datacenter
+    $clusterName = $extractedSDDCData.mgmtDomainInfrastructure.cluster
+    <# #Following parameters converted to known entities for 9.0. Consider refactoring in 9.1 if data is saved in manifest.json
 
         $vmNetwork = "vcfir-cl01-vds01-pg-vm-mgmt"
         $datacenterName = "vcfir-dc01"
-        $clusterName = "vcfir-cl01"
+        $clusterName = "vcfir-cl01" #>
 
     $restoredvCenterVMName = $workloadDomainDetails.vCenterDetails.vmname
     $restoredvCenterIpAddress = $workloadDomainDetails.vCenterDetails.ip
