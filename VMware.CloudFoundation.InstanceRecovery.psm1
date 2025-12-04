@@ -2510,12 +2510,14 @@ Function New-NSXManagerOvaDeployment {
     $selectedNsxManager = $nsxNodes | Where-Object { $_.vmName -eq ($nsxManagersDisplayObject | Where-Object { $_.id -eq $nsxManagerSelection }).manager }
 
     $vmDatastore = $extractedSDDCData.mgmtDomainInfrastructure.vsan_datastore
-    #Following parameters converted to known entities for 9.0. Consider refactoring in 9.1 if data is saved in manifest.json
+    $vmNetwork = $extractedSDDCData.mgmtDomainInfrastructure.port_group
+    $datacenterName = $extractedSDDCData.mgmtDomainInfrastructure.datacenter
+    $clusterName = $extractedSDDCData.mgmtDomainInfrastructure.cluster
+    <# #Following parameters converted to known entities for 9.0. Consider refactoring in 9.1 if data is saved in manifest.json
 
         $vmNetwork = "vcfir-cl01-vds01-pg-vm-mgmt"
         $datacenterName = "vcfir-dc01"
-        $clusterName = "vcfir-cl01"
-
+        $clusterName = "vcfir-cl01" #>
     # NSX Manager Appliance Configuration
     $nsxManagerVMName = $selectedNsxManager.vmName
     $nsxManagerIp = $selectedNsxManager.ip
