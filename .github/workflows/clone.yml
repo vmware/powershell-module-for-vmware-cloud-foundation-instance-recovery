@@ -67,8 +67,7 @@ jobs:
             **Markdown**
             ```markdown' >> CLONE.md
             echo "[![GitHub Clones]($shields$url&logo=github)]($repo)" >> CLONE.md
-            echo '
-            ```>> CLONE.md
+            echo ```' >> CLONE.md
             
             git add CLONE.md
             git config --global user.name "GitHub Action"
