@@ -159,6 +159,6 @@ jobs:
         uses: ad-m/github-push-action@master
         with:
           github_token: ${{ secrets.SECRET_TOKEN }}
-          branch: ${{ github.ref }}
+          branch: "gh-actions"
           force_with_lease: true
 
