@@ -19,17 +19,17 @@ jobs:
         with:
           ref: ${{ github.ref }}
           fetch-depth: 0
-          token: ${{ secrets.SECRET_TOKEN }}
+          token: ${{ secrets.CLONE_SECRET_TOKEN }}
 
       - name: gh login
-        run: echo "${{ secrets.SECRET_TOKEN }}" | gh auth login --with-token
+        run: echo "${{ secrets.CLONE_SECRET_TOKEN }}" | gh auth login --with-token
 
       - name: parse latest clone count
         env:
-          GITHUB_TOKEN: ${{ secrets.SECRET_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.CLONE_SECRET_TOKEN }}
         run: |
           set -euo pipefail
-          # SECRET_TOKEN is required because:
+          # CLONE_SECRET_TOKEN is required because:
           # 1. The traffic/clones endpoint requires "Administration" (read) permissions
           # 2. GITHUB_TOKEN typically doesn't have access to traffic data
           # 3. A Personal Access Token (PAT) with repo scope is needed
@@ -127,7 +127,7 @@ jobs:
           EOF
       - name: Update gist with latest count
         env:
-          GITHUB_TOKEN: ${{ secrets.SECRET_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.CLONE_SECRET_TOKEN }}
         run: |
           set -euo pipefail
           # Using environment variable to avoid exposing secret in process list
@@ -158,7 +158,6 @@ jobs:
       - name: Push
         uses: ad-m/github-push-action@master
         with:
-          github_token: ${{ secrets.SECRET_TOKEN }}
+          github_token: ${{ secrets.CLONE_SECRET_TOKEN }}
           branch: "gh-actions"
           force_with_lease: true
-
