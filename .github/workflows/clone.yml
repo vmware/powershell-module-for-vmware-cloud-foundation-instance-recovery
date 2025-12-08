@@ -137,7 +137,7 @@ jobs:
             git commit -m "create clone count badge"
           fi
       - name: Push
-        uses: ad-m/github-push-action@v0.8.0
+        uses: ad-m/github-push-action@master
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
 
