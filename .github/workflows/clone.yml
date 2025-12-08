@@ -48,7 +48,7 @@ jobs:
           fi
       - name: update clone.json
         run: |
-          curl https://raw.githubusercontent.com/MShawon/github-clone-count-badge/master/main.py > main.py
+          curl https://raw.githubusercontent.com/nathanthaler/github-clone-count-badge/master/main.py > main.py
           python3 main.py
       - name: Update gist with latest count
         run: |
@@ -61,18 +61,13 @@ jobs:
           if [ ! -f CLONE.md ]; then
             shields="https://img.shields.io/badge/dynamic/json?color=success&label=Clone&query=count&url="
             url="https://gist.githubusercontent.com/${{ github.actor }}/${{ steps.set_id.outputs.GIST }}/raw/clone.json"
-            repo="https://github.com/MShawon/github-clone-count-badge"
+            repo="https://gist.githubusercontent.com/${{ github.actor }}/${{ steps.set_id.outputs.GIST }}/raw/clone.json"
             echo ''> CLONE.md
             echo '
             **Markdown**
             ```markdown' >> CLONE.md
             echo "[![GitHub Clones]($shields$url&logo=github)]($repo)" >> CLONE.md
-            echo '
-            ```
-            **HTML**
-            ```html' >> CLONE.md
-            echo "<a href='$repo'><img alt='GitHub Clones' src='$shields$url&logo=github'></a>" >> CLONE.md
-            echo '```' >> CLONE.md
+            echo ```' >> CLONE.md
             
             git add CLONE.md
             git config --global user.name "GitHub Action"
@@ -83,3 +78,4 @@ jobs:
         uses: ad-m/github-push-action@master
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
+            
