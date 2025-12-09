@@ -4,7 +4,7 @@
 
 # PowerShell Module for VMware Cloud Foundation Instance Recovery
 
-[![Documentation](https://img.shields.io/badge/Documentation-Read-blue?style=for-the-badge&logo=readthedocs&logoColor=white?label=Documentation)][docs-module]
+[![Documentation](https://img.shields.io/badge/Read-Documentation-blue?logo=readthedocs)][docs-module]
 [![PS Version](https://img.shields.io/powershellgallery/v/VMware.CloudFoundation.InstanceRecovery?label=Version)](https://www.powershellgallery.com/packages/VMware.CloudFoundation.InstanceRecovery)
 [![PS Downloads](https://img.shields.io/powershellgallery/dt/VMware.CloudFoundation.InstanceRecovery?label=Downloads)](https://www.powershellgallery.com/packages/VMware.CloudFoundation.InstanceRecovery)
 [![GitHub Clones](https://img.shields.io/badge/dynamic/json?color=success&label=Clone&query=count&url=https://gist.githubusercontent.com/nathanthaler/7879c8fd9af27b17da21abe20eedee1d/raw/clone.json&logo=github)](https://gist.githubusercontent.com/nathanthaler/7879c8fd9af27b17da21abe20eedee1d/raw/clone.json)
