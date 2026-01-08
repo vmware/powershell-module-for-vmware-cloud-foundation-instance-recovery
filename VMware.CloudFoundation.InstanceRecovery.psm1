@@ -2563,7 +2563,7 @@ Function Invoke-vCenterRestore {
     Do {
         Sleep 10
         $pingTest = Test-Connection -ComputerName $restoredVcenterFqdn -count 1 -ErrorAction SilentlyContinue
-    } Until ($pingTest)
+    } Until ($pingTest.status -eq "Success")
 
     #Form credentials for connecting to vCenter
     $SecurePassword = ConvertTo-SecureString -String $restoredvCenterRootPassword -AsPlainText -Force
