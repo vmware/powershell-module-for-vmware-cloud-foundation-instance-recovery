@@ -1870,7 +1870,11 @@ Function New-NSXManagerOvaDeployment {
     If ($nsxManagerSelection -eq "c") { Break }
     $selectedNsxManager = $nsxNodes | Where-Object { $_.vmName -eq ($nsxManagersDisplayObject | Where-Object { $_.id -eq $nsxManagerSelection }).manager }
 
-    $vmNetwork = $extractedSDDCData.mgmtDomainInfrastructure.port_group
+    $managementDomainDetails = ($extractedSDDCData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" })
+    $managementDomainDefaultCluster = $managementDomainDetails.vsphereClusterDetails | Where-Object {$_.isDefault -eq "t"}
+    $vmNetwork = (($managementDomainDefaultCluster.vdsDetails | Where-Object {$_.portgroups.transportType -like "VM_MANAGEMENT"}).Portgroups | Where-Object {$_.transportType -eq "VM_MANAGEMENT"}).name
+
+    #$vmNetwork = $extractedSDDCData.mgmtDomainInfrastructure.port_group
     $vmDatastore = $extractedSDDCData.mgmtDomainInfrastructure.vsan_datastore
     $datacenterName = $extractedSDDCData.mgmtDomainInfrastructure.datacenter
     $clusterName = $extractedSDDCData.mgmtDomainInfrastructure.cluster
@@ -1974,7 +1978,10 @@ Function New-vCenterOvaDeployment {
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
 
     $workloadDomainDetails = ($extractedSDDCData.workloadDomains | Where-Object { $_.domainName -eq $workloadDomain })
-    $vmNetwork = $extractedSDDCData.mgmtDomainInfrastructure.port_group
+    $managementDomainDetails = ($extractedSDDCData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" })
+    $managementDomainDefaultCluster = $managementDomainDetails.vsphereClusterDetails | Where-Object {$_.isDefault -eq "t"}
+    $vmNetwork = (($managementDomainDefaultCluster.vdsDetails | Where-Object {$_.portgroups.transportType -like "VM_MANAGEMENT"}).Portgroups | Where-Object {$_.transportType -eq "VM_MANAGEMENT"}).name
+    #$vmNetwork = $extractedSDDCData.mgmtDomainInfrastructure.port_group
     $vmDatastore = $extractedSDDCData.mgmtDomainInfrastructure.vsan_datastore
     $datacenterName = $extractedSDDCData.mgmtDomainInfrastructure.datacenter
     $clusterName = $extractedSDDCData.mgmtDomainInfrastructure.cluster
@@ -2076,7 +2083,10 @@ Function New-SDDCManagerOvaDeployment {
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
 
     # SDDC Manager Configuration
-    $vmNetwork = $extractedSDDCData.mgmtDomainInfrastructure.port_group
+    $managementDomainDetails = ($extractedSDDCData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" })
+    $managementDomainDefaultCluster = $managementDomainDetails.vsphereClusterDetails | Where-Object {$_.isDefault -eq "t"}
+    $vmNetwork = (($managementDomainDefaultCluster.vdsDetails | Where-Object {$_.portgroups.transportType -like "VM_MANAGEMENT"}).Portgroups | Where-Object {$_.transportType -eq "VM_MANAGEMENT"}).name
+    #$vmNetwork = $extractedSDDCData.mgmtDomainInfrastructure.port_group
     $vmDatastore = $extractedSDDCData.mgmtDomainInfrastructure.vsan_datastore
     $datacenterName = $extractedSDDCData.mgmtDomainInfrastructure.datacenter
     $clusterName = $extractedSDDCData.mgmtDomainInfrastructure.cluster

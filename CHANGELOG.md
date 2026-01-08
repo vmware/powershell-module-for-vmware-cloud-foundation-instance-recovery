@@ -1,5 +1,11 @@
 # Release History
 
+## v1.0.14
+
+> Released: 2026-01-xx
+
+- Fixed vm_management portgroup name references in environments with management seperation configured
+
 ## v1.0.13
 
 > Released: 2025-01-28
