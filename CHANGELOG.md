@@ -1,5 +1,11 @@
 # Release History
 
+## v1.0.13
+
+> Released: 2025-01-28
+
+- Enhanced `New-RebuiltVsanDatastore` to handle VSAN_MAX clusters correctly
+
 ## v1.0.12
 
 > Released: 2024-09-02

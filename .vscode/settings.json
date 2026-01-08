@@ -18,7 +18,7 @@
   "[powershell]": {
     "editor.defaultFormatter": "ms-vscode.powershell",
     "editor.formatOnPaste": true,
-    "editor.formatOnSave": true,
+    "editor.formatOnSave": false,
     "editor.formatOnType": true,
     "editor.trimAutoWhitespace": true,
     "editor.wordWrap": "off"
