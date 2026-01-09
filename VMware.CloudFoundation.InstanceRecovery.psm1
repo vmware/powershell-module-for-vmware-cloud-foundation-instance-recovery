@@ -2909,12 +2909,13 @@ Function Move-ClusterHostNetworkingTovSS {
         New-CustomAttribute -Name vdsConfiguration -TargetType Cluster | Out-Null
     }
 
-    $storedVdsConfiguration = (((Get-Cluster -name $clustername).customfields | Where-Object { $_.key -eq "vdsConfiguration" }).value) | ConvertFrom-Json
+    $index = [System.Array]::IndexOf((Get-Cluster).customfields.keys, "vdsConfiguration")
+    $storedVdsConfiguration = @((Get-Cluster).customfields.values)[$index] | ConvertFrom-Json
     If (!$storedVdsConfiguration) {
         $clustervdsConfiguration = @()
-        Foreach ($vds in $clustervdswitches) {
+        Foreach ($vds in $clustervdswitches.dvsName) {
             # Gather data on VDS to migrate from
-            $vds = Get-VDSwitch -Name $vds.dvsName
+            $vds = Get-VDSwitch -Name $vds
             $vdsUUID = $vds.ExtensionData.Summary.Uuid
             $vdsReport = @()
             $vds.ExtensionData.Config.Host | ForEach-Object {
@@ -2934,7 +2935,9 @@ Function Move-ClusterHostNetworkingTovSS {
         }
         $cluster = Get-Cluster -name $clusterName
         $cluster | Set-Annotation -CustomAttribute "vdsConfiguration" -Value ($clustervdsConfiguration | ConvertTo-Json) | Out-Null
-        $storedVdsConfiguration = (((Get-Cluster -name $clustername).customfields | Where-Object { $_.key -eq "vdsConfiguration" }).value) | ConvertFrom-Json
+        #$storedVdsConfiguration = (((Get-Cluster -name $clustername).customfields | Where-Object { $_.key -eq "vdsConfiguration" }).value) | ConvertFrom-Json
+        $index = [System.Array]::IndexOf((Get-Cluster).customfields.keys, "vdsConfiguration")
+        $storedVdsConfiguration = @((Get-Cluster).customfields.values)[$index] | ConvertFrom-Json
     }
 
     Foreach ($vdsInstance in $clustervdswitches) {
