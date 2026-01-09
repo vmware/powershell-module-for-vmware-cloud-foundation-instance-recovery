@@ -2804,7 +2804,7 @@ Function Move-MgmtVmsToTempPg {
     The Move-MgmtVmsToTempPg cmdlet moves all management VMs in the provided vSphere cluster to a temporary management portgroup
 
     .EXAMPLE
-    Move-MgmtVmsToTempPg -vCenterFQDN "sfo-m01-vc02.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01"
+    Move-MgmtVmsToTempPg -vCenterFQDN "sfo-m01-vc02.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!"
 
     .PARAMETER vCenterFQDN
     FQDN of the vCenter instance hosting the cluster / VMs which should be removed
@@ -2815,25 +2815,44 @@ Function Move-MgmtVmsToTempPg {
     .PARAMETER vCenterAdminPassword
     Admin password for the vCenter instance hosting the cluster / VMs which should be removed
 
-    .PARAMETER clusterName
-    Name of the vSphere cluster instance hosting the VMS to be moved
+    .PARAMETER extractedSDDCDataFile
+    Relative or absolute to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup) somewhere on the local filesystem
     #>
 
     Param(
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
         [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
-        [Parameter (Mandatory = $true)][String] $clusterName
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
+    $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
+    $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
+    $workloadDomain = ($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" })
+    $domainName = $workloadDomain.domainName
+
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
-    $vmsTomove = get-cluster -name $clusterName | get-vm | ? { $_.Name -notlike "*vCLS*" }
-    foreach ($vmToMove in $vmsTomove) {
-        LogMessage -type INFO -message "[$($vmToMove.name)] Moving to mgmt_temp"
-        Get-VM -Name $vmToMove | Get-NetworkAdapter | Set-NetworkAdapter -NetworkName "mgmt_temp" -confirm:$false | Out-Null
-    }
+    $clusterName = (Get-Cluster).name
+    $vmhosts = (Get-Cluster -name $clusterName | Get-VMHost).name
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+
+    Foreach ($vmhost in $vmhosts) {
+        $vmHostUser = ($extractedSddcData.passwords | where-object { ($_.domainName -eq $domainName) -and ($_.entityType -eq "ESXI") -and ($_.username -eq "root") -and ($_.entityName -eq $vmhost) }).username
+        $vmHostPassword = ($extractedSddcData.passwords | where-object { ($_.domainName -eq $domainName) -and ($_.entityType -eq "ESXI") -and ($_.username -eq "root") -and ($_.entityName -eq $vmhost) }).password
+        $vmHostConnection = Connect-ViServer $vmhost -user $vmHostUser -password $vmHostPassword
+        $vmsTomove = Get-VM | Where-Object { $_.Name -notlike "*vCLS*" }
+        foreach ($vmToMove in $vmsTomove) {
+            If ((Get-VM -Name $vmToMove | Get-NetworkAdapter).NetworkName -ne "mgmt_temp") {
+                LogMessage -type INFO -message "[$($vmToMove.name)] Moving to mgmt_temp"
+                Get-VM -Name $vmToMove | Get-NetworkAdapter | Set-NetworkAdapter -NetworkName "mgmt_temp" -confirm:$false | Out-Null
+            } else {
+                LogMessage -type INFO -message "[$($vmToMove.name)] Already moved to mgmt_temp. Skipping"
+            }
+        }
+        Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+    }
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Move-MgmtVmsToTempPg
