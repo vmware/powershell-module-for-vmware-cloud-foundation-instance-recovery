@@ -632,8 +632,9 @@ Function New-ExtractDataFromSDDCBackup {
             } else {
                 $vdsPortgroups = $null
             }
-
             $version = $lineContent.split("`t")[8]
+            $isUsedByNsx = $lineContent.split("`t")[9]
+
             $virtualDistributedSwitch = [pscustomobject]@{
                 'Id'         = $vdsId
                 'niocs'      = $niocs
@@ -641,6 +642,7 @@ Function New-ExtractDataFromSDDCBackup {
                 'Name'       = $vdsName
                 'PortGroups' = $vdsPortgroups
                 'version'    = $version
+                'isUsedByNsx'= $isUsedByNsx
             }
 
             If ($lineContent.split("`t")[11] -ne '\N') {
@@ -816,6 +818,7 @@ Function New-ExtractDataFromSDDCBackup {
                 $vdsObject | Add-Member -NotePropertyName 'portgroups' -NotePropertyValue $virtualDistributedSwitchDetails.portgroups
                 $vdsObject | Add-Member -NotePropertyName 'dvsName' -NotePropertyValue $virtualDistributedSwitchDetails.name
                 $vdsObject | Add-Member -NotePropertyName 'vmnics' -NotePropertyValue $null
+                $vdsObject | Add-Member -NotePropertyName 'isUsedByNsx' -NotePropertyValue $virtualDistributedSwitchDetails.isUsedByNsx
                 $vdsObject | Add-Member -NotePropertyName 'networks' -NotePropertyValue ("VM_MANAGEMENT", "MANAGEMENT", "VSAN", "VMOTION" | Where-Object { $_ -in $virtualDistributedSwitchDetails.portgroups.transportType })
                 If ($virtualDistributedSwitchDetails.transportZones) {
                     $vdsObject | Add-Member -NotePropertyName 'transportZones' -NotePropertyValue $virtualDistributedSwitchDetails.transportZones
@@ -1305,7 +1308,7 @@ Function New-ReconstructedPartialBringupJsonSpec {
         Do {
             $nicNamesArray = @()
             Write-Host ""; $remainingNicsDisplayObject | format-table -Property @{Expression = " " }, id, deviceName, driver, linkStatus, description -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
-            If ($primaryCluster.vdsDetails[$vdsConfigurationIndex].transportZones) {
+            If (($primaryCluster.vdsDetails[$vdsConfigurationIndex].transportZones) -or ($primaryCluster.vdsDetails[$vdsConfigurationIndex].isUsedByNsx -eq "t")) {
                 $networksDisplay = ($primaryCluster.vdsDetails[$vdsConfigurationIndex].networks += "OVERLAY") -join (",")
             } else {
                 $networksDisplay = $primaryCluster.vdsDetails[$vdsConfigurationIndex].networks -join (",")
@@ -1586,16 +1589,31 @@ Function New-ReconstructedPartialBringupJsonSpec {
             $clustervdsObject | Add-Member -notepropertyname 'dvsName' -notepropertyvalue $vds.dvsName
             $clustervdsObject | Add-Member -notepropertyname 'vmnics' -notepropertyvalue $vds.vmnics
             $clustervdsObject | Add-Member -notepropertyname 'networks' -notepropertyvalue @($vds.networks | Where-Object { $_ -ne "OVERLAY" })
-            If ($vds.transportZones) {
-                $transportZoneContent = @()
-                Foreach ($transportZone in $vds.transportZones) {
-                    $transportZoneContent += [PSCustomObject]@{
-                        'name'          = $transportZone.name
-                        'transportType' = $transportZone.transportType
-                    }
-                }
+            If (($vds.transportZones) -or ($vds.isUsedByNsx -eq "t")) {
                 $nsxtSwitchConfigObject = New-Object -type psobject
-                $nsxtSwitchConfigObject | Add-Member -notepropertyname 'hostSwitchOperationalMode' -notepropertyvalue $vds.hostSwitchOperationalMode
+                $transportZoneContent = @()
+                If ($vds.transportZones)
+                {
+                    Foreach ($transportZone in $vds.transportZones) {
+                        $transportZoneContent += [PSCustomObject]@{
+                            'name'          = $transportZone.name
+                            'transportType' = $transportZone.transportType
+                        }
+                    }
+                    $nsxtSwitchConfigObject | Add-Member -notepropertyname 'hostSwitchOperationalMode' -notepropertyvalue $vds.hostSwitchOperationalMode
+                }
+                else
+                {
+                    $transportZoneContent += [PSCustomObject]@{
+                            'name'          = "vlan-tz"
+                            'transportType' = 'VLAN'
+                        }
+                    $transportZoneContent += [PSCustomObject]@{
+                            'name'          = "overlay-tz"
+                            'transportType' = 'OVERLAY'
+                        }
+                    $nsxtSwitchConfigObject | Add-Member -notepropertyname 'hostSwitchOperationalMode' -notepropertyvalue "STANDARD"
+                }
                 $nsxtSwitchConfigObject | Add-Member -notepropertyname 'transportZones' -notepropertyvalue @($transportZoneContent)
                 $clustervdsObject | Add-Member -notepropertyname 'nsxtSwitchConfig' -notepropertyvalue $nsxtSwitchConfigObject
             }
@@ -1671,6 +1689,10 @@ Function New-ReconstructedPartialBringupJsonSpec {
         $licenseMode = ($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).licenseModel
         If ($licenseMode -eq "PERPETUAL") { $subscriptionLicensing = "False" } else { $subscriptionLicensing = "True" }
         $mgmtDomainObject | Add-Member -notepropertyname 'subscriptionLicensing' -notepropertyvalue $subscriptionLicensing
+        If ($extractedSddcData.licenseKeys.count -eq 0)
+        {
+            $mgmtDomainObject | Add-Member -notepropertyname 'deployWithoutLicenseKeys' -notepropertyvalue "true"
+        }
 
         LogMessage -type INFO -message "[$jumpboxName] Saving partial bringup JSON spec: $(($extractedSddcData.workloadDomains | Where-Object {$_.domainType -eq "MANAGEMENT"}).domainName + "-partial-bringup-spec.json")"
         ConvertTo-Json $mgmtDomainObject -depth 10 | Out-File (($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).domainName + "-partial-bringup-spec.json")
@@ -2958,27 +2980,31 @@ Function Move-ClusterHostNetworkingTovSS {
         $index = [System.Array]::IndexOf((Get-Cluster).customfields.keys, "vdsConfiguration")
         $storedVdsConfiguration = @((Get-Cluster).customfields.values)[$index] | ConvertFrom-Json
     }
-
+    Disconnect-Viserver * -confirm:$false
     Foreach ($vdsInstance in $clustervdswitches) {
-        #Get Current vDS Configuration
-        $vdsName = $vdsInstance.dvsName
-        $vds = Get-VDSwitch -Name $vdsName
-        $vdsUUID = $vds.ExtensionData.Summary.Uuid
-        $vdsReport = @()
-        $vds.ExtensionData.Config.Host | ForEach-Object {
-            $esx = Get-View $_.Config.Host
-            $netSys = Get-View $esx.ConfigManager.NetworkSystem
-            $netSys.NetworkConfig.ProxySwitch | where-object { $_.Uuid -eq $vdsUUID } | ForEach-Object {
-                $_.Spec.Backing.PnicSpec | ForEach-Object {
-                    $row = "" | Select Host, dvSwitch, PNic
-                    $row.Host = $esx.Name
-                    $row.dvSwitch = $vds.Name
-                    $row.PNic = $_.PnicDevice
-                    $vdsReport += $row
+
+        foreach ($hostInstance in $vmhostArray.name) {
+            $esxiRootPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $hostInstance) -and ($_.username -eq "root") }).password
+            Connect-ViServer -server $hostInstance -User "root" -Password $esxiRootPassword
+            $vmhost = Get-VMHost
+            #Get Current vDS Configuration
+            $vdsName = $vdsInstance.dvsName
+            $vds = Get-VDSwitch -Name $vdsName
+            $vdsUUID = $vds.ExtensionData.Summary.Uuid
+            $vdsReport = @()
+            $vds.ExtensionData.Config.Host | ForEach-Object {
+                $esx = Get-View $_.Config.Host
+                $netSys = Get-View $esx.ConfigManager.NetworkSystem
+                $netSys.NetworkConfig.ProxySwitch | where-object { $_.Uuid -eq $vdsUUID } | ForEach-Object {
+                    $_.Spec.Backing.PnicSpec | ForEach-Object {
+                        $row = "" | Select Host, dvSwitch, PNic
+                        $row.Host = $esx.Name
+                        $row.dvSwitch = $vds.Name
+                        $row.PNic = $_.PnicDevice
+                        $vdsReport += $row
+                    }
                 }
             }
-        }
-        foreach ($vmhost in $vmhostArray) {
             $nicToMoveToVdsFirst = (($storedVdsConfiguration | Where-Object { ($_.host -eq $vmhost.name) -and ($_.dvSwitch -eq $vdsName) }).pnic)[-1]
             $nicsInVds = ($vdsReport | Where-Object { $_.host -eq $vmhost.name }).PNic
             If ($nicToMoveToVdsFirst -in $nicsInVds) {
@@ -3088,6 +3114,7 @@ Function Move-ClusterHostNetworkingTovSS {
                 }
             }
             Start-Sleep 5
+            Disconnect-VIServer * -confirm:$false
         }
     }
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
@@ -3937,7 +3964,7 @@ Function New-RebuiltVdsConfiguration {
         Do {
             $nicNamesArray = @()
             Write-Host ""; $remainingNicsDisplayObject | format-table -Property @{Expression = " " }, id, deviceName, driver, linkStatus, description -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
-            If ($cluster.vdsDetails[$vdsConfigurationIndex].transportZones) {
+            If (($cluster.vdsDetails[$vdsConfigurationIndex].transportZones) -or ($cluster.vdsDetails[$vdsConfigurationIndex].isUsedByNsx -eq "t")) {
                 $networksDisplay = ($cluster.vdsDetails[$vdsConfigurationIndex].networks += "OVERLAY") -join (",")
             } else {
                 $networksDisplay = $cluster.vdsDetails[$vdsConfigurationIndex].networks -join (",")
