@@ -2985,7 +2985,8 @@ Function Move-ClusterHostNetworkingTovSS {
 
         foreach ($hostInstance in $vmhostArray.name) {
             $esxiRootPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $hostInstance) -and ($_.username -eq "root") }).password
-            Connect-ViServer -server $hostInstance -User "root" -Password $esxiRootPassword
+            LogMessage -type INFO -message "[$hostInstance] Establishing Connection"
+            $hostConnection = Connect-ViServer -server $hostInstance -User "root" -Password $esxiRootPassword
             $vmhost = Get-VMHost
             #Get Current vDS Configuration
             $vdsName = $vdsInstance.dvsName
