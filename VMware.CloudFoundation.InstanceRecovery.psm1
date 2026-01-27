@@ -3107,11 +3107,29 @@ Function Move-ClusterHostNetworkingTovSS {
                     $currentMgmtVmkPortgroup = ($vmks | Where-Object { $_.name -eq "vmk0" }).PortGroupName
                     If ($currentMgmtVmkPortgroup -ne $mgmt_name) {
                         LogMessage -type INFO -message "[$vmhost] Migrating Management vmKernel from $vdsName to $vss_name"
-                        Move-VMKernel -VMHost $vmhost -Interface "vmk0" -NetworkName $mgmt_name
+                        Try{
+                            Move-VMKernel -VMHost $vmhost -Interface "vmk0" -NetworkName $mgmt_name
+                        }
+                        catch{
+                            # Expected - connection lost during migration
+                            LogMessage -type INFO -message "[$vmhost] Connection lost during vmk0 migration (expected)"
+                        }
+                        Start-Sleep -Seconds 15
+                        Disconnect-VIServer * -Confirm:$false -ErrorAction SilentlyContinue
+
+                        # Reconnect and verify
+                        $hostConnection = Connect-VIServer -Server $hostInstance -User "root" -Password $esxiRootPassword
+                        $vmks = Get-VMHost | Get-VMHostNetwork | Select-Object -ExpandProperty VirtualNic
+                        $vmk0Portgroup = ($vmks | Where-Object { $_.Name -eq "vmk0" }).PortGroupName
+
+                        if ($vmk0Portgroup -eq $mgmt_name) {
+                            LogMessage -type INFO -message "[$vmhost] vmk0 successfully migrated to $mgmt_name"
+                        } else {
+                            LogMessage -type WARNING -message "[$vmhost] vmk0 migration may have failed - current portgroup: $vmk0Portgroup"
+                        }
                     } else {
                         LogMessage -type INFO -message "[$vmhost] Management vmKernel already on $vss_name. Skipping"
                     }
-
                 }
             }
             Start-Sleep 5
