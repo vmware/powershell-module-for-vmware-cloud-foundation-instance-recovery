@@ -1823,16 +1823,19 @@ Function New-NSXManagerOvaDeployment {
     The New-NSXManagerOvaDeployment resents a list of NSX Mangers associated with the provided VCF Workload Domain, and deploys an NSX Manager from OVA using data previously extracted from the VCF SDDC Manager Backup
 
     .EXAMPLE
-    New-NSXManagerOvaDeployment -tempvCenterFqdn "sfo-m01-vc02.sfo.rainpole.io" -tempvCenterAdmin "administrator@vsphere.local" -tempvCenterAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -workloadDomain "sfo-m01" -restoredNsxManagerDeploymentSize medium -nsxManagerOvaFile "F:\OVA\nsx-unified-appliance-3.2.2.1.0.21487565.ova"
+    New-NSXManagerOvaDeployment -targetFqdn "sfo-m01-vc02.sfo.rainpole.io" -targetAdmin "administrator@vsphere.local" -targetAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -workloadDomain "sfo-m01" -restoredNsxManagerDeploymentSize medium -nsxManagerOvaFile "F:\OVA\nsx-unified-appliance-3.2.2.1.0.21487565.ova" -targetType "vcenter"
 
-    .PARAMETER vCenterFqdn
-    FQDN of the target vCenter to deploy the NSX Manager OVA to
+    .EXAMPLE
+    New-NSXManagerOvaDeployment -targetFqdn "sfo01-m01-esx01.sfo.rainpole.io" -targetAdmin "root" -targetAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -workloadDomain "sfo-m01" -restoredNsxManagerDeploymentSize medium -nsxManagerOvaFile "F:\OVA\nsx-unified-appliance-3.2.2.1.0.21487565.ova" -targetType "esx"
 
-    .PARAMETER vCenterAdmin
-    Admin user of the target vCenter to deploy the NSX Manager OVA to
+    .PARAMETER targetFqdn
+    FQDN of the target vCenter or ESXi host to deploy the NSX Manager OVA to
 
-    .PARAMETER vCenterAdminPassword
-    Admin password for the target vCenter to deploy the NSX Manager OVA to
+    .PARAMETER targetAdmin
+    Admin user of the target vCenter or ESXi host to deploy the NSX Manager OVA to
+
+    .PARAMETER targetAdminPassword
+    Admin password for the target vCenter or ESXi host to deploy the NSX Manager OVA to
 
     .PARAMETER extractedSDDCDataFile
     Relative or absolute to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup) somewhere on the local filesystem
@@ -1845,16 +1848,20 @@ Function New-NSXManagerOvaDeployment {
 
     .PARAMETER nsxManagerOvaFile
     Relative or absolute to the NSX Manager OVA somewhere on the local filesystem
+
+    .PARAMETER targetType
+    Specifies the deployment target type. Valid values are 'vcenter' or 'esx'. Default is 'vcenter'.
     #>
 
     Param(
-        [Parameter (Mandatory = $true)][String] $vCenterFqdn,
-        [Parameter (Mandatory = $true)][String] $vCenterAdmin,
-        [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
+        [Parameter (Mandatory = $true)][String] $targetFqdn,
+        [Parameter (Mandatory = $true)][String] $targetAdmin,
+        [Parameter (Mandatory = $true)][String] $targetAdminPassword,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
         [Parameter (Mandatory = $true)][String] $workloadDomain,
         [Parameter (Mandatory = $true)][String] $restoredNsxManagerDeploymentSize,
-        [Parameter (Mandatory = $true)][String] $nsxManagerOvaFile
+        [Parameter (Mandatory = $true)][String] $nsxManagerOvaFile,
+        [Parameter (Mandatory = $false)][ValidateSet("vcenter", "esx")][String] $targetType = "vcenter"
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
@@ -1891,7 +1898,11 @@ Function New-NSXManagerOvaDeployment {
     $selectedNsxManager = $nsxNodes | Where-Object { $_.vmName -eq ($nsxManagersDisplayObject | Where-Object { $_.id -eq $nsxManagerSelection }).manager }
 
     $vmDatastore = $extractedSDDCData.mgmtDomainInfrastructure.vsan_datastore
-    $vmNetwork = $extractedSDDCData.mgmtDomainInfrastructure.port_group
+    If ($workloadDomainDetails.domainType -eq "MANAGEMENT") {
+        $vmNetwork = "vcfir-cl01-vds01-pg-vm-mgmt"
+    } else {
+        $vmNetwork = $extractedSDDCData.mgmtDomainInfrastructure.port_group
+    }
     $datacenterName = $extractedSDDCData.mgmtDomainInfrastructure.datacenter
     $clusterName = $extractedSDDCData.mgmtDomainInfrastructure.cluster
     <# #Following parameters converted to known entities for 9.0. Consider refactoring in 9.1 if data is saved in manifest.json
@@ -1915,12 +1926,19 @@ Function New-NSXManagerOvaDeployment {
     $nsxManagerCliAuditUsername = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "AUDIT") }).username
     $nsxManagerCliAuditPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "AUDIT") }).password
 
-    If ($nsxManagerCliAuditUsername) {
-        $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowExtraConfig --diskMode=thin --X:injectOvfEnv --X:logFile=ovftool.log --powerOn --X:waitForIp --name="' + $nsxManagerVMName + '" --datastore="' + $vmDatastore + '" --deploymentOption="' + $restoredNsxManagerDeploymentSize + '" --network="' + $vmNetwork + '" --prop:nsx_role="NSX Manager" --prop:nsx_ip_0="' + $nsxManagerIp + '" --prop:nsx_netmask_0="' + $nsxManagerNetworkMask + '" --prop:nsx_gateway_0="' + $nsxManagerGateway + '" --prop:nsx_dns1_0="' + $nsxManagerDns + '" --prop:nsx_domain_0="' + $nsxManagerDnsDomain + '" --prop:nsx_ntp_0="' + $nsxManagerNtpServer + '" --prop:nsx_isSSHEnabled=True --prop:nsx_allowSSHRootLogin=True --prop:nsx_passwd_0="' + $nsxManagerAdminPassword + '" --prop:nsx_cli_username="' + $nsxManagerAdminUsername + '" --prop:nsx_cli_passwd_0="' + $nsxManagerCliPassword + '" --prop:nsx_cli_audit_passwd_0="' + $nsxManagerCliAuditPassword + '" --prop:nsx_cli_audit_username="' + $nsxManagerCliAuditUsername + '" --prop:nsx_hostname="' + $nsxManagerHostName + '" "' + $nsxManagerOvaFile + '" ' + '"vi://' + $vCenterAdmin + ':' + $vCenterAdminPassword + '@' + $vCenterFqdn + '/' + $datacenterName + '/host/' + $clusterName + '/"'
+    LogMessage -type INFO -message "[$jumpboxName] Deploying NSX Manager OVA to $targetType target"
+
+    If ($targetType -eq "vcenter") {
+        $targetUrl = '"vi://' + $targetAdmin + ':' + $targetAdminPassword + '@' + $targetFqdn + '/' + $datacenterName + '/host/' + $clusterName + '/"'
     } else {
-        $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowExtraConfig --diskMode=thin --X:injectOvfEnv --X:logFile=ovftool.log --powerOn --X:waitForIp --name="' + $nsxManagerVMName + '" --datastore="' + $vmDatastore + '" --deploymentOption="' + $restoredNsxManagerDeploymentSize + '" --network="' + $vmNetwork + '" --prop:nsx_role="NSX Manager" --prop:nsx_ip_0="' + $nsxManagerIp + '" --prop:nsx_netmask_0="' + $nsxManagerNetworkMask + '" --prop:nsx_gateway_0="' + $nsxManagerGateway + '" --prop:nsx_dns1_0="' + $nsxManagerDns + '" --prop:nsx_domain_0="' + $nsxManagerDnsDomain + '" --prop:nsx_ntp_0="' + $nsxManagerNtpServer + '" --prop:nsx_isSSHEnabled=True --prop:nsx_allowSSHRootLogin=True --prop:nsx_passwd_0="' + $nsxManagerAdminPassword + '" --prop:nsx_cli_username="' + $nsxManagerAdminUsername + '" --prop:nsx_cli_passwd_0="' + $nsxManagerCliPassword + '" --prop:nsx_hostname="' + $nsxManagerHostName + '" "' + $nsxManagerOvaFile + '" ' + '"vi://' + $vCenterAdmin + ':' + $vCenterAdminPassword + '@' + $vCenterFqdn + '/' + $datacenterName + '/host/' + $clusterName + '/"'    <# Action when all if and elseif conditions are false #>
+        $targetUrl = '"vi://' + $targetAdmin + ':' + $targetAdminPassword + '@' + $targetFqdn + '/"'
     }
-    LogMessage -type INFO -message "[$jumpboxName] Deploying NSX Manager OVA"
+
+    If ($nsxManagerCliAuditUsername) {
+        $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowExtraConfig --diskMode=thin --X:injectOvfEnv --X:logFile=ovftool.log --powerOn --X:waitForIp --name="' + $nsxManagerVMName + '" --datastore="' + $vmDatastore + '" --deploymentOption="' + $restoredNsxManagerDeploymentSize + '" --network="' + $vmNetwork + '" --prop:nsx_role="NSX Manager" --prop:nsx_ip_0="' + $nsxManagerIp + '" --prop:nsx_netmask_0="' + $nsxManagerNetworkMask + '" --prop:nsx_gateway_0="' + $nsxManagerGateway + '" --prop:nsx_dns1_0="' + $nsxManagerDns + '" --prop:nsx_domain_0="' + $nsxManagerDnsDomain + '" --prop:nsx_ntp_0="' + $nsxManagerNtpServer + '" --prop:nsx_isSSHEnabled=True --prop:nsx_allowSSHRootLogin=True --prop:nsx_passwd_0="' + $nsxManagerAdminPassword + '" --prop:nsx_cli_username="' + $nsxManagerAdminUsername + '" --prop:nsx_cli_passwd_0="' + $nsxManagerCliPassword + '" --prop:nsx_cli_audit_passwd_0="' + $nsxManagerCliAuditPassword + '" --prop:nsx_cli_audit_username="' + $nsxManagerCliAuditUsername + '" --prop:nsx_hostname="' + $nsxManagerHostName + '" "' + $nsxManagerOvaFile + '" ' + $targetUrl
+    } else {
+        $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowExtraConfig --diskMode=thin --X:injectOvfEnv --X:logFile=ovftool.log --powerOn --X:waitForIp --name="' + $nsxManagerVMName + '" --datastore="' + $vmDatastore + '" --deploymentOption="' + $restoredNsxManagerDeploymentSize + '" --network="' + $vmNetwork + '" --prop:nsx_role="NSX Manager" --prop:nsx_ip_0="' + $nsxManagerIp + '" --prop:nsx_netmask_0="' + $nsxManagerNetworkMask + '" --prop:nsx_gateway_0="' + $nsxManagerGateway + '" --prop:nsx_dns1_0="' + $nsxManagerDns + '" --prop:nsx_domain_0="' + $nsxManagerDnsDomain + '" --prop:nsx_ntp_0="' + $nsxManagerNtpServer + '" --prop:nsx_isSSHEnabled=True --prop:nsx_allowSSHRootLogin=True --prop:nsx_passwd_0="' + $nsxManagerAdminPassword + '" --prop:nsx_cli_username="' + $nsxManagerAdminUsername + '" --prop:nsx_cli_passwd_0="' + $nsxManagerCliPassword + '" --prop:nsx_hostname="' + $nsxManagerHostName + '" "' + $nsxManagerOvaFile + '" ' + $targetUrl
+    }
     $scriptBlock = { Invoke-Expression "& $using:command" }
     $deploymentJob = Start-Job -scriptblock $scriptBlock -ArgumentList $command
     Do { Sleep 1; $jobStatus = (Get-Job -id $deploymentJob.id).state } Until ($jobStatus -eq "Running" )
@@ -1959,16 +1977,19 @@ Function New-vCenterOvaDeployment {
     The New-vCenterOvaDeployment deploys a vCenter appliance from OVA using data previously extracted from the VCF SDDC Manager Backup
 
     .EXAMPLE
-    New-vCenterOvaDeployment -tempvCenterFqdn "sfo-m01-vc02.sfo.rainpole.io" -tempvCenterAdmin "administrator@vsphere.local" -tempvCenterAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -workloadDomain "sfo-m01" -restoredvCenterDeploymentSize "small" -vCenterOvaFile "F:\OVA\VMware-vCenter-Server-Appliance-7.0.3.01400-21477706_OVF10.ova"
+    New-vCenterOvaDeployment -targetFqdn "sfo-m01-vc02.sfo.rainpole.io" -targetAdmin "administrator@vsphere.local" -targetAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -workloadDomain "sfo-m01" -restoredvCenterDeploymentSize "small" -vCenterOvaFile "F:\OVA\VMware-vCenter-Server-Appliance-7.0.3.01400-21477706_OVF10.ova" -targetType "vcenter"
 
-    .PARAMETER vCenterFqdn
-    FQDN of the target vCenter to deploy the vCenter OVA to
+    .EXAMPLE
+    New-vCenterOvaDeployment -targetFqdn "sfo01-m01-esx01.sfo.rainpole.io" -targetAdmin "root" -targetAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -workloadDomain "sfo-m01" -restoredvCenterDeploymentSize "small" -vCenterOvaFile "F:\OVA\VMware-vCenter-Server-Appliance-7.0.3.01400-21477706_OVF10.ova" -targetType "esx"
 
-    .PARAMETER vCenterAdmin
-    Admin user of the target vCenter to deploy the vCenter OVA to
+    .PARAMETER targetFqdn
+    FQDN of the target vCenter or ESXi host to deploy the vCenter OVA to
 
-    .PARAMETER vCenterAdminPassword
-    Admin password for the target vCenter to deploy the vCenter OVA to
+    .PARAMETER targetAdmin
+    Admin user of the target vCenter or ESXi host to deploy the vCenter OVA to
+
+    .PARAMETER targetAdminPassword
+    Admin password for the target vCenter or ESXi host to deploy the vCenter OVA to
 
     .PARAMETER extractedSDDCDataFile
     Relative or absolute to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup) somewhere on the local filesystem
@@ -1981,16 +2002,20 @@ Function New-vCenterOvaDeployment {
 
     .PARAMETER vCenterOvaFile
     Relative or absolute to the vCenter OVA somewhere on the local filesystem
+
+    .PARAMETER targetType
+    Specifies the deployment target type. Valid values are 'vcenter' or 'esx'. Default is 'vcenter'.
     #>
 
     Param(
-        [Parameter (Mandatory = $true)][String] $vCenterFqdn,
-        [Parameter (Mandatory = $true)][String] $vCenterAdmin,
-        [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
+        [Parameter (Mandatory = $true)][String] $targetFqdn,
+        [Parameter (Mandatory = $true)][String] $targetAdmin,
+        [Parameter (Mandatory = $true)][String] $targetAdminPassword,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
         [Parameter (Mandatory = $true)][String] $workloadDomain,
         [Parameter (Mandatory = $true)][String] $restoredvCenterDeploymentSize,
-        [Parameter (Mandatory = $true)][String] $vCenterOvaFile
+        [Parameter (Mandatory = $true)][String] $vCenterOvaFile,
+        [Parameter (Mandatory = $false)][ValidateSet("vcenter", "esx")][String] $targetType = "vcenter"
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
@@ -2000,7 +2025,11 @@ Function New-vCenterOvaDeployment {
 
     $workloadDomainDetails = ($extractedSDDCData.workloadDomains | Where-Object { $_.domainName -eq $workloadDomain })
     $vmDatastore = $extractedSDDCData.mgmtDomainInfrastructure.vsan_datastore
-    $vmNetwork = $extractedSDDCData.mgmtDomainInfrastructure.port_group
+    If ($workloadDomainDetails.domainType -eq "MANAGEMENT") {
+        $vmNetwork = "vcfir-cl01-vds01-pg-vm-mgmt"
+    } else {
+        $vmNetwork = $extractedSDDCData.mgmtDomainInfrastructure.port_group
+    }
     $datacenterName = $extractedSDDCData.mgmtDomainInfrastructure.datacenter
     $clusterName = $extractedSDDCData.mgmtDomainInfrastructure.cluster
     <# #Following parameters converted to known entities for 9.0. Consider refactoring in 9.1 if data is saved in manifest.json
@@ -2019,8 +2048,15 @@ Function New-vCenterOvaDeployment {
     $restoredvCenterDnsServers = "$($extractedSddcData.mgmtDomainInfrastructure.primaryDnsServer),$($extractedSddcData.mgmtDomainInfrastructure.secondaryDnsServer)"
     $restoredvCenterGateway = $extractedSddcData.mgmtDomainInfrastructure.gateway
     $restoredvCenterRootPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "VCENTER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "SSH") }).password
-    LogMessage -type INFO -message "[$jumpboxName] Deploying vCenter OVA"
-    $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowExtraConfig --X:enableHiddenProperties --diskMode=thin --X:injectOvfEnv --powerOn --X:waitForIp --X:logFile=ovftool.log --name="' + $restoredvCenterVMName + '" --net:"Network 1"="' + $vmNetwork + '" --datastore="' + $vmDatastore + '" --deploymentOption="' + $restoredvCenterDeploymentSize + '" --prop:guestinfo.cis.appliance.net.addr.family="ipv4" --prop:guestinfo.cis.appliance.net.addr="' + $restoredvCenterIpAddress + '" --prop:guestinfo.cis.appliance.net.pnid="' + $restoredvCenterFqdn + '" --prop:guestinfo.cis.appliance.net.prefix="' + $restoredvCenterNetworkPrefix + '" --prop:guestinfo.cis.appliance.net.mode="static" --prop:guestinfo.cis.appliance.net.dns.servers="' + $restoredvCenterDnsServers + '" --prop:guestinfo.cis.appliance.net.gateway="' + $restoredvCenterGateway + '" --prop:guestinfo.cis.appliance.root.passwd="' + $restoredvCenterRootPassword + '" --prop:guestinfo.cis.appliance.ssh.enabled="True" "' + $vCenterOvaFile + '" ' + '"vi://' + $vCenterAdmin + ':' + $vCenterAdminPassword + '@' + $vCenterFqdn + '/' + $datacenterName + '/host/' + $clusterName + '/"'
+    LogMessage -type INFO -message "[$jumpboxName] Deploying vCenter OVA to $targetType target"
+
+    If ($targetType -eq "vcenter") {
+        $targetUrl = '"vi://' + $targetAdmin + ':' + $targetAdminPassword + '@' + $targetFqdn + '/' + $datacenterName + '/host/' + $clusterName + '/"'
+    } else {
+        $targetUrl = '"vi://' + $targetAdmin + ':' + $targetAdminPassword + '@' + $targetFqdn + '/"'
+    }
+
+    $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowExtraConfig --X:enableHiddenProperties --diskMode=thin --X:injectOvfEnv --powerOn --X:waitForIp --X:logFile=ovftool.log --name="' + $restoredvCenterVMName + '" --net:"Network 1"="' + $vmNetwork + '" --datastore="' + $vmDatastore + '" --deploymentOption="' + $restoredvCenterDeploymentSize + '" --prop:guestinfo.cis.appliance.net.addr.family="ipv4" --prop:guestinfo.cis.appliance.net.addr="' + $restoredvCenterIpAddress + '" --prop:guestinfo.cis.appliance.net.pnid="' + $restoredvCenterFqdn + '" --prop:guestinfo.cis.appliance.net.prefix="' + $restoredvCenterNetworkPrefix + '" --prop:guestinfo.cis.appliance.net.mode="static" --prop:guestinfo.cis.appliance.net.dns.servers="' + $restoredvCenterDnsServers + '" --prop:guestinfo.cis.appliance.net.gateway="' + $restoredvCenterGateway + '" --prop:guestinfo.cis.appliance.root.passwd="' + $restoredvCenterRootPassword + '" --prop:guestinfo.cis.appliance.ssh.enabled="True" "' + $vCenterOvaFile + '" ' + $targetUrl
     $scriptBlock = { Invoke-Expression "& $using:command" }
     $deploymentJob = Start-Job -scriptblock $scriptBlock -ArgumentList $command
     Do { Sleep 1; $jobStatus = (Get-Job -id $deploymentJob.id).state } Until ($jobStatus -eq "Running" )
@@ -2059,16 +2095,19 @@ Function New-SDDCManagerOvaDeployment {
     The New-SDDCManagerOvaDeployment deploys an SDDC Manager appliance from OVA using data previously extracted from the VCF SDDC Manager Backup
 
     .EXAMPLE
-    New-SDDCManagerOvaDeployment -tempvCenterFqdn "sfo-m01-vc02.sfo.rainpole.io" -tempvCenterAdmin "administrator@vsphere.local" -tempvCenterAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -sddcManagerOvaFile "F:\OVA\VCF-SDDC-Manager-Appliance-4.5.1.0-21682411.ova" -rootUserPassword "VMw@re1!" -vcfUserPassword "VMw@re1!" -localUserPassword "VMw@re1!VMw@re1!" -basicAuthUserPassword "VMw@re1!"
+    New-SDDCManagerOvaDeployment -targetFqdn "sfo-m01-vc02.sfo.rainpole.io" -targetAdmin "administrator@vsphere.local" -targetAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -sddcManagerOvaFile "F:\OVA\VCF-SDDC-Manager-Appliance-4.5.1.0-21682411.ova" -rootUserPassword "VMw@re1!" -vcfUserPassword "VMw@re1!" -localUserPassword "VMw@re1!VMw@re1!" -basicAuthUserPassword "VMw@re1!" -targetType "vcenter"
 
-    .PARAMETER vCenterFqdn
-    FQDN of the target vCenter to deploy the SDDC Manager OVA to
+    .EXAMPLE
+    New-SDDCManagerOvaDeployment -targetFqdn "sfo01-m01-esx01.sfo.rainpole.io" -targetAdmin "root" -targetAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -sddcManagerOvaFile "F:\OVA\VCF-SDDC-Manager-Appliance-4.5.1.0-21682411.ova" -rootUserPassword "VMw@re1!" -vcfUserPassword "VMw@re1!" -localUserPassword "VMw@re1!VMw@re1!" -basicAuthUserPassword "VMw@re1!" -targetType "esx"
 
-    .PARAMETER vCenterAdmin
-    Admin user of the target vCenter to deploy the SDDC Manager OVA to
+    .PARAMETER targetFqdn
+    FQDN of the target vCenter or ESXi host to deploy the SDDC Manager OVA to
 
-    .PARAMETER vCenterAdminPassword
-    Admin password for the target vCenter to deploy the SDDC Manager OVA to
+    .PARAMETER targetAdmin
+    Admin user of the target vCenter or ESXi host to deploy the SDDC Manager OVA to
+
+    .PARAMETER targetAdminPassword
+    Admin password for the target vCenter or ESXi host to deploy the SDDC Manager OVA to
 
     .PARAMETER extractedSDDCDataFile
     Relative or absolute to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup) somewhere on the local filesystem
@@ -2087,18 +2126,22 @@ Function New-SDDCManagerOvaDeployment {
 
     .PARAMETER basicAuthUserPassword
     Password for the basic auth user on the newly deployed appliance
+
+    .PARAMETER targetType
+    Specifies the deployment target type. Valid values are 'vcenter' or 'esx'. Default is 'vcenter'.
     #>
 
     Param(
-        [Parameter (Mandatory = $true)][String] $vCenterFqdn,
-        [Parameter (Mandatory = $true)][String] $vCenterAdmin,
-        [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
+        [Parameter (Mandatory = $true)][String] $targetFqdn,
+        [Parameter (Mandatory = $true)][String] $targetAdmin,
+        [Parameter (Mandatory = $true)][String] $targetAdminPassword,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
         [Parameter (Mandatory = $true)][String] $sddcManagerOvaFile,
         [Parameter (Mandatory = $true)][String] $rootUserPassword,
         [Parameter (Mandatory = $true)][String] $vcfUserPassword,
         [Parameter (Mandatory = $true)][String] $localUserPassword,
-        [Parameter (Mandatory = $true)][String] $basicAuthUserPassword
+        [Parameter (Mandatory = $true)][String] $basicAuthUserPassword,
+        [Parameter (Mandatory = $false)][ValidateSet("vcenter", "esx")][String] $targetType = "vcenter"
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
@@ -2108,7 +2151,7 @@ Function New-SDDCManagerOvaDeployment {
 
     # SDDC Manager Configuration
     $vmDatastore = $extractedSDDCData.mgmtDomainInfrastructure.vsan_datastore
-    $vmNetwork = $extractedSDDCData.mgmtDomainInfrastructure.port_group
+    $vmNetwork = "vcfir-cl01-vds01-pg-vm-mgmt"
     $datacenterName = $extractedSDDCData.mgmtDomainInfrastructure.datacenter
     $clusterName = $extractedSDDCData.mgmtDomainInfrastructure.cluster
     <# #Following parameters converted to known entities for 9.0. Consider refactoring in 9.1 if data is saved in manifest.json
@@ -2127,8 +2170,15 @@ Function New-SDDCManagerOvaDeployment {
     $sddcManagerDnsDomain = $extractedSddcData.mgmtDomainInfrastructure.domain
     $ntpServers = $extractedSddcData.mgmtDomainInfrastructure.ntpServers -join (",")
 
-    LogMessage -type INFO -message "[$jumpboxName] Deploying SDDC Manager OVA"
-    $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowAllExtraConfig --X:logLevel=quiet --diskMode=thin --X:enableHiddenProperties --X:waitForIp --powerOn --name="' + $sddcManagerVMName + '" --network="' + $vmNetwork + '" --datastore="' + $vmDatastore + '" --prop:vami.hostname="' + $sddcManagerHostName + '" --prop:vami.ip0.SDDC-Manager="' + $sddcManagerIp + '" --prop:vami.netmask0.SDDC-Manager="' + $sddcManagerNetworkMask + '" --prop:vami.DNS.SDDC-Manager="' + $sddcManagerDns + '" --prop:vami.gateway.SDDC-Manager="' + $sddcManagerGateway + '" --prop:BACKUP_PASSWORD="' + $sddcManagerBackupPassword + '" --prop:ROOT_PASSWORD="' + $rootUserPassword + '" --prop:VCF_PASSWORD="' + $vcfUserPassword + '" --prop:BASIC_AUTH_PASSWORD="' + $basicAuthUserPassword + '" --prop:LOCAL_USER_PASSWORD="' + $localUserPassword + '" --prop:vami.searchpath.SDDC-Manager="' + $sddcManagerDomainSearch + '" --prop:vami.domain.SDDC-Manager="' + $sddcManagerDnsDomain + '" --prop:guestinfo.ntp="' + $ntpServers + '" "' + $sddcManagerOvaFile + '" "vi://' + $vCenterAdmin + ':' + $vCenterAdminPassword + '@' + $vCenterFqdn + '/' + $datacenterName + '/host/' + $clusterName + '/"'
+    LogMessage -type INFO -message "[$jumpboxName] Deploying SDDC Manager OVA to $targetType target"
+
+    If ($targetType -eq "vcenter") {
+        $targetUrl = '"vi://' + $targetAdmin + ':' + $targetAdminPassword + '@' + $targetFqdn + '/' + $datacenterName + '/host/' + $clusterName + '/"'
+    } else {
+        $targetUrl = '"vi://' + $targetAdmin + ':' + $targetAdminPassword + '@' + $targetFqdn + '/"'
+    }
+
+    $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowExtraConfig --diskMode=thin --X:enableHiddenProperties --X:injectOvfEnv --X:logFile=ovftool.log --X:waitForIp --powerOn --name="' + $sddcManagerVMName + '" --network="' + $vmNetwork + '" --datastore="' + $vmDatastore + '" --prop:vami.hostname="' + $sddcManagerHostName + '" --prop:vami.ip0.SDDC-Manager="' + $sddcManagerIp + '" --prop:vami.netmask0.SDDC-Manager="' + $sddcManagerNetworkMask + '" --prop:vami.DNS.SDDC-Manager="' + $sddcManagerDns + '" --prop:vami.gateway.SDDC-Manager="' + $sddcManagerGateway + '" --prop:BACKUP_PASSWORD="' + $sddcManagerBackupPassword + '" --prop:ROOT_PASSWORD="' + $rootUserPassword + '" --prop:VCF_PASSWORD="' + $vcfUserPassword + '" --prop:BASIC_AUTH_PASSWORD="' + $basicAuthUserPassword + '" --prop:LOCAL_USER_PASSWORD="' + $localUserPassword + '" --prop:vami.searchpath.SDDC-Manager="' + $sddcManagerDomainSearch + '" --prop:vami.domain.SDDC-Manager="' + $sddcManagerDnsDomain + '" --prop:guestinfo.ntp="' + $ntpServers + '" "' + $sddcManagerOvaFile + '" ' + $targetUrl
     $scriptBlock = { Invoke-Expression "& $using:command" }
     $deploymentJob = Start-Job -scriptblock $scriptBlock -ArgumentList $command
     Do { Sleep 1; $jobStatus = (Get-Job -id $deploymentJob.id).state } Until ($jobStatus -eq "Running" )
