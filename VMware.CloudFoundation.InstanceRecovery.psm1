@@ -2575,8 +2575,12 @@ Function Set-SDDCManagerOfflineDepot {
         [Parameter(Mandatory = $true)] [String] $offlineDepotUsername,
         [Parameter(Mandatory = $true)] [String] $offlineDepotPassword
     )
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
 
     # Get SDDC Manager API Token
+    LogMessage -type INFO -message "[$sddcManagerFqdn] Getting Authentication Token"
     $tokenUri = "https://$sddcManagerFqdn/v1/tokens"
     $tokenBody = @{
         username = $sddcManagerUser
@@ -2595,14 +2599,17 @@ Function Set-SDDCManagerOfflineDepot {
     $servicesConfigUri = "https://$sddcManagerFqdn/v1/services-config"
 
     #Get Current Depot Services Configuration
+    LogMessage -type INFO -message "[$sddcManagerFqdn] Capturing Original Depot Fleet Depot Configuration"
     $currentDepotServicesConfig = Invoke-RestMethod -Uri $servicesConfigUri -Method GET -Headers $headers -SkipCertificateCheck
-    $currentDepotServicesConfig | ConvertTo-Json -depth 10 >currentDepotServicesconfig.json
+    $currentDepotServicesConfig | ConvertTo-Json -depth 10 > originalDepotServicesconfig.json
 
     #Delete Services Configuration
+    LogMessage -type INFO -message "[$sddcManagerFqdn] Removing Original Depot Fleet Depot Configuration"
     $deleteServicesConfigURI = "https://$sddcManagerFqdn/v1/services-config/$($currentDepotServicesConfig.services.key)"
     Invoke-RestMethod -Uri $deleteServicesConfigURI -Method DELETE -Headers $headers -SkipCertificateCheck
 
     #Trust Depot Cert on SDDC Manager
+    LogMessage -type INFO -message "[$sddcManagerFqdn] Trusting Offline Depot Certificate"
     $SecurePassword = ConvertTo-SecureString -String $sddcManagerPassword -AsPlainText -Force
     $mycreds = New-Object System.Management.Automation.PSCredential ('vcf', $SecurePassword)
     $inmem = New-SSHMemoryKnownHost
@@ -2615,7 +2622,6 @@ Function Set-SDDCManagerOfflineDepot {
     $stream = New-SSHShellStream -SSHSession $sshSession
 
     # Switch to root
-    Write-Host "[$sddcManagerFqdn] Switching to root user..." -ForegroundColor Cyan
     $stream.WriteLine("su -")
     Start-Sleep 2
     $stream.WriteLine($sddcManagerPassword)  # Or use a separate $rootPassword variable if different
@@ -2629,7 +2635,6 @@ Function Set-SDDCManagerOfflineDepot {
     [void]$scriptCommand.Append("rm -f /tmp/trusted-cert-spec.json")
 
     #Trust the Cert
-    Write-Host "[$sddcManagerFqdn] Adding trusted certificate for depot..." -ForegroundColor Cyan
     $stream.WriteLine($scriptCommand.ToString())
     Start-Sleep 5
 
@@ -2642,6 +2647,7 @@ Function Set-SDDCManagerOfflineDepot {
     #Seting Depot URI
     $depotUri = "https://$sddcManagerFqdn/v1/system/settings/depot"
 
+    LogMessage -type INFO -message "[$sddcManagerFqdn] Configuring Offline Depot"
     #Configure Offline Depot
     $depotBody = @{
         offlineAccount     = @{
@@ -2655,6 +2661,8 @@ Function Set-SDDCManagerOfflineDepot {
         }
     } | ConvertTo-Json -Depth 3
     Invoke-RestMethod -Uri $depotUri -Method PUT -Headers $headers -Body $depotBody -SkipCertificateCheck
+
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Set-SDDCManagerOfflineDepot
 
@@ -2665,9 +2673,14 @@ Function Set-SDDCManagerFDSDepot {
         [Parameter(Mandatory = $true)] [String] $sddcManagerPassword,
         [Parameter(Mandatory = $true)] [String] $originalConfigurationFile
     )
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
 
+    LogMessage -type INFO -message "[$sddcManagerFqdn] Retrieving Original Configuration from JSON file"
     $servicesConfigBody = Get-Content -path $originalConfigurationFile
 
+    LogMessage -type INFO -message "[$sddcManagerFqdn] Getting Authentication Token"
     # Get SDDC Manager API Token
     $tokenUri = "https://$sddcManagerFqdn/v1/tokens"
     $tokenBody = @{
@@ -2686,19 +2699,21 @@ Function Set-SDDCManagerFDSDepot {
     #Seting Depot URI
     $depotUri = "https://$sddcManagerFqdn/v1/system/settings/depot"
 
+    LogMessage -type INFO -message "[$sddcManagerFqdn] Deleting Existing Depot Configuration"
     #Delete Depot Settings
     Invoke-RestMethod -Uri $depotUri -Method DELETE -Headers $headers -SkipCertificateCheck
-
 
     #Set services config URI
     $servicesConfigUri = "https://$sddcManagerFqdn/v1/services-config"
 
+    LogMessage -type INFO -message "[$sddcManagerFqdn] Reinstating Fleet Depot Configuration"
     #Reinstate service config
     $servicesConfigBody = $currentDepotServicesConfig | ConvertTo-Json -depth 10
     Invoke-RestMethod -Uri $servicesConfigUri -Method PUT -Headers $headers -Body $servicesConfigBody -SkipCertificateCheck
+
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Set-SDDCManagerFDSDepot
-#Download Binaries
 
 Function Invoke-SddcManagerBundleDownload {
     <#
@@ -2735,6 +2750,9 @@ Function Invoke-SddcManagerBundleDownload {
         [Parameter(Mandatory = $true)] [String] $VcfVersion,
         [Parameter(Mandatory = $false)] [Switch] $WaitForCompletion
     )
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
 
     # Use StringBuilder for efficient string concatenation
     $sb = [System.Text.StringBuilder]::new()
@@ -2815,7 +2833,7 @@ Function Invoke-SddcManagerBundleDownload {
     $scriptContent = $sb.ToString()
 
     # Establish SSH Connection using inmem method
-    Write-Host "[$sddcManagerFqdn] Establishing SSH connection..." -ForegroundColor Cyan
+    LogMessage -type INFO -message "[$sddcManagerFqdn] Establishing SSH Connection"
     $SecurePassword = ConvertTo-SecureString -String $vcfUserPassword -AsPlainText -Force
     $mycreds = New-Object System.Management.Automation.PSCredential ('vcf', $SecurePassword)
     $inmem = New-SSHMemoryKnownHost
@@ -2829,14 +2847,13 @@ Function Invoke-SddcManagerBundleDownload {
     $stream = New-SSHShellStream -SSHSession $sshSession
 
     # Switch to root
-    Write-Host "[$sddcManagerFqdn] Switching to root user..." -ForegroundColor Cyan
     $stream.WriteLine("su -")
     Start-Sleep 2
     $stream.WriteLine($rootPassword)
     Start-Sleep 2
 
     # Write script to remote file
-    Write-Host "[$sddcManagerFqdn] Creating bundle download script..." -ForegroundColor Cyan
+    LogMessage -type INFO -message "[$sddcManagerFqdn] Creating Download Script"
     $scriptPath = "/root/download-bundles.sh"
 
     $stream.WriteLine("cat > $scriptPath << 'EOFSCRIPT'")
@@ -2850,7 +2867,7 @@ Function Invoke-SddcManagerBundleDownload {
     $stream.WriteLine("chmod +x $scriptPath")
     Start-Sleep 1
 
-    Write-Host "[$sddcManagerFqdn] Executing bundle download script..." -ForegroundColor Cyan
+    LogMessage -type INFO -message "[$sddcManagerFqdn] Running Download Script"
     $stream.WriteLine("$scriptPath")
 
     # Wait for script to start and capture initial output
@@ -2859,7 +2876,7 @@ Function Invoke-SddcManagerBundleDownload {
     #Write-Host $output
 
     if ($WaitForCompletion) {
-        Write-Host "[$sddcManagerFqdn] Waiting for bundle downloads to complete (this may take a while)..." -ForegroundColor Yellow
+        LogMessage -type WAIT -message "[$sddcManagerFqdn] Waiting for bundle downloads to complete (this may take a while)..."
         $timeout = 7200  # 2 hour timeout
         $elapsed = 0
         $interval = 30
@@ -2878,16 +2895,16 @@ Function Invoke-SddcManagerBundleDownload {
     }
 
     # Cleanup
-    Write-Host "[$sddcManagerFqdn] Cleaning up..." -ForegroundColor Cyan
+
+    LogMessage -type INFO -message "[$sddcManagerFqdn] Cleaning Up"
     $stream.WriteLine("rm -f $scriptPath")
     Start-Sleep 1
     $stream.WriteLine("exit")
     Start-Sleep 1
-
     # Close SSH Session
     Remove-SSHSession -SSHSession $sshSession | Out-Null
 
-    Write-Host "[$sddcManagerFqdn] Bundle download process initiated successfully" -ForegroundColor Green
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function Invoke-SddcManagerBundleDownload
 #EndRegion SDDC Manager Functions
