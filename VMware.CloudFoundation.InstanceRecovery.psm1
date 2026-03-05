@@ -2564,6 +2564,332 @@ Function Resolve-PhysicalHostServiceAccounts {
 
 }
 Export-ModuleMember -Function Resolve-PhysicalHostServiceAccounts
+
+Function Set-SDDCManagerOfflineDepot {
+    Param (
+        [Parameter(Mandatory = $true)] [String] $sddcManagerFqdn,
+        [Parameter(Mandatory = $true)] [String] $sddcManagerUser,
+        [Parameter(Mandatory = $true)] [String] $sddcManagerPassword,
+        [Parameter(Mandatory = $true)] [String] $offlineDepotFqdn,
+        [Parameter(Mandatory = $true)] [INT] $offlineDepotPort,
+        [Parameter(Mandatory = $true)] [String] $offlineDepotUsername,
+        [Parameter(Mandatory = $true)] [String] $offlineDepotPassword
+    )
+
+    # Get SDDC Manager API Token
+    $tokenUri = "https://$sddcManagerFqdn/v1/tokens"
+    $tokenBody = @{
+        username = $sddcManagerUser
+        password = $sddcManagerPassword
+    } | ConvertTo-Json
+    $tokenResponse = Invoke-RestMethod -Uri $tokenUri -Method POST -ContentType "application/json" -Body $tokenBody -SkipCertificateCheck
+    $accessToken = $tokenResponse.accessToken
+
+    #Create Headers
+    $headers = @{
+        "Authorization" = "Bearer $accessToken"
+        "Content-Type"  = "application/json"
+    }
+
+    #Set services config URI
+    $servicesConfigUri = "https://$sddcManagerFqdn/v1/services-config"
+
+    #Get Current Depot Services Configuration
+    $currentDepotServicesConfig = Invoke-RestMethod -Uri $servicesConfigUri -Method GET -Headers $headers -SkipCertificateCheck
+    $currentDepotServicesConfig | ConvertTo-Json -depth 10 >currentDepotServicesconfig.json
+
+    #Delete Services Configuration
+    $deleteServicesConfigURI = "https://$sddcManagerFqdn/v1/services-config/$($currentDepotServicesConfig.services.key)"
+    Invoke-RestMethod -Uri $deleteServicesConfigURI -Method DELETE -Headers $headers -SkipCertificateCheck
+
+    #Trust Depot Cert on SDDC Manager
+    $SecurePassword = ConvertTo-SecureString -String $sddcManagerPassword -AsPlainText -Force
+    $mycreds = New-Object System.Management.Automation.PSCredential ('vcf', $SecurePassword)
+    $inmem = New-SSHMemoryKnownHost
+    New-SSHTrustedHost -KnownHostStore $inmem -HostName $sddcManagerFqdn -FingerPrint ((Get-SSHHostKey -ComputerName $sddcManagerFqdn).fingerprint) | Out-Null
+    Do {
+        $sshSession = New-SSHSession -ComputerName $sddcManagerFqdn -Credential $mycreds -KnownHost $inmem
+    } Until ($sshSession)
+
+    # Create shell stream for interactive session
+    $stream = New-SSHShellStream -SSHSession $sshSession
+
+    # Switch to root
+    Write-Host "[$sddcManagerFqdn] Switching to root user..." -ForegroundColor Cyan
+    $stream.WriteLine("su -")
+    Start-Sleep 2
+    $stream.WriteLine($sddcManagerPassword)  # Or use a separate $rootPassword variable if different
+    Start-Sleep 2
+
+    # Build the command to trust the depot certificate
+    $scriptCommand = [System.Text.StringBuilder]::new()
+    [void]$scriptCommand.AppendLine("echo '{ ""certificate"" : '`$(openssl s_client -connect ${offlineDepotFqdn}:${offlineDepotPort} 2>/dev/null </dev/null | sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' | jq -sR)',""certificateUsageType"" : ""TRUSTED_FOR_OUTBOUND""}' > /tmp/trusted-cert-spec.json && \")
+    [void]$scriptCommand.AppendLine("token=`$(curl -k --location ""https://localhost/v1/tokens"" --header 'Content-Type: application/json' --header 'Accept: application/json' --data-raw '{""username"" : ""admin@local"",""password"" : ""$sddcManagerPassword""}' | jq -r '.accessToken') && \")
+    [void]$scriptCommand.AppendLine("curl -k --location --request POST ""https://localhost/v1/sddc-manager/trusted-certificates"" --header 'Content-Type: application/json' --header ""Authorization: Bearer `$token"" -d@/tmp/trusted-cert-spec.json && \")
+    [void]$scriptCommand.Append("rm -f /tmp/trusted-cert-spec.json")
+
+    #Trust the Cert
+    Write-Host "[$sddcManagerFqdn] Adding trusted certificate for depot..." -ForegroundColor Cyan
+    $stream.WriteLine($scriptCommand.ToString())
+    Start-Sleep 5
+
+    # Exit from root and close session
+    $stream.WriteLine("exit")
+    Start-Sleep 1
+    Remove-SSHSession -SSHSession $sshSession | Out-Null
+    Write-Host "Trusted certificate for $offlineDepotFqdn has been added to SDDC Manager" -ForegroundColor Green
+
+    #Seting Depot URI
+    $depotUri = "https://$sddcManagerFqdn/v1/system/settings/depot"
+
+    #Configure Offline Depot
+    $depotBody = @{
+        offlineAccount     = @{
+            username = $offlineDepotUsername
+            password = $offlineDepotPassword
+        }
+        depotConfiguration = @{
+            isOfflineDepot = $true
+            hostname       = $offlineDepotFqdn
+            port           = $offlineDepotPort
+        }
+    } | ConvertTo-Json -Depth 3
+    Invoke-RestMethod -Uri $depotUri -Method PUT -Headers $headers -Body $depotBody -SkipCertificateCheck
+}
+Export-ModuleMember -Function Set-SDDCManagerOfflineDepot
+
+Function Set-SDDCManagerFDSDepot {
+    Param (
+        [Parameter(Mandatory = $true)] [String] $sddcManagerFqdn,
+        [Parameter(Mandatory = $true)] [String] $sddcManagerUser,
+        [Parameter(Mandatory = $true)] [String] $sddcManagerPassword,
+        [Parameter(Mandatory = $true)] [String] $originalConfigurationFile
+    )
+
+    $servicesConfigBody = Get-Content -path $originalConfigurationFile
+
+    # Get SDDC Manager API Token
+    $tokenUri = "https://$sddcManagerFqdn/v1/tokens"
+    $tokenBody = @{
+        username = $sddcManagerUser
+        password = $sddcManagerPassword
+    } | ConvertTo-Json
+    $tokenResponse = Invoke-RestMethod -Uri $tokenUri -Method POST -ContentType "application/json" -Body $tokenBody -SkipCertificateCheck
+    $accessToken = $tokenResponse.accessToken
+
+    #Create Headers
+    $headers = @{
+        "Authorization" = "Bearer $accessToken"
+        "Content-Type"  = "application/json"
+    }
+
+    #Seting Depot URI
+    $depotUri = "https://$sddcManagerFqdn/v1/system/settings/depot"
+
+    #Delete Depot Settings
+    Invoke-RestMethod -Uri $depotUri -Method DELETE -Headers $headers -SkipCertificateCheck
+
+
+    #Set services config URI
+    $servicesConfigUri = "https://$sddcManagerFqdn/v1/services-config"
+
+    #Reinstate service config
+    $servicesConfigBody = $currentDepotServicesConfig | ConvertTo-Json -depth 10
+    Invoke-RestMethod -Uri $servicesConfigUri -Method PUT -Headers $headers -Body $servicesConfigBody -SkipCertificateCheck
+}
+Export-ModuleMember -Function Set-SDDCManagerFDSDepot
+#Download Binaries
+
+Function Invoke-SddcManagerBundleDownload {
+    <#
+    .SYNOPSIS
+        Downloads VCF bundles from the depot on a SDDC manager appliance via SSH
+
+    .PARAMETER sddcManagerFqdn
+        FQDN of the SDDC manager appliance
+
+    .PARAMETER vcfUserPassword
+        SSH password for the vcf user
+
+    .PARAMETER rootPassword
+        Root password for the SDDC manager appliance
+
+    .PARAMETER adminPassword
+        Password for admin@local API user
+
+    .PARAMETER VcfVersion
+        VCF version to download bundles for (e.g., "9.0.0.0", "9.1.0.0")
+
+    .PARAMETER SkipMode
+        Optional: 'skipFleetManagement' or 'skipAutomationOnly' to skip certain bundles
+
+    .PARAMETER WaitForCompletion
+        If specified, waits for all bundle downloads to complete
+    #>
+
+    Param (
+        [Parameter(Mandatory = $true)] [String] $sddcManagerFqdn,
+        [Parameter(Mandatory = $true)] [String] $vcfUserPassword,
+        [Parameter(Mandatory = $true)] [String] $rootPassword,
+        [Parameter(Mandatory = $true)] [String] $adminPassword,
+        [Parameter(Mandatory = $true)] [String] $VcfVersion,
+        [Parameter(Mandatory = $false)] [Switch] $WaitForCompletion
+    )
+
+    # Use StringBuilder for efficient string concatenation
+    $sb = [System.Text.StringBuilder]::new()
+
+    # Script header and authentication
+    [void]$sb.AppendLine('#!/bin/bash')
+    [void]$sb.AppendLine("# Get authentication token")
+    [void]$sb.AppendLine("token=`$(curl -k --location ""https://localhost/v1/tokens"" --header 'Content-Type: application/json' --header 'Accept: application/json' --data-raw '{""username"" : ""admin@local"",""password"" : ""$adminPassword""}' | jq -r '.accessToken')")
+    [void]$sb.AppendLine("")
+    [void]$sb.AppendLine("version=""$VcfVersion""")
+    [void]$sb.AppendLine("")
+
+    # Define component names and their variable names
+    $components = @(
+        @{ Name = 'VRA'; Var = 'automationBundleId' }
+        @{ Name = 'TELEMETRY_ACCEPTOR'; Var = 'telemetryAcceptor' }
+        @{ Name = 'VSP'; Var = 'vsp' }
+        @{ Name = 'VCF_FLEET_LCM'; Var = 'fleetLcm' }
+        @{ Name = 'DEPOT_SERVICE'; Var = 'depotService' }
+        @{ Name = 'VCF_SDDC_LCM'; Var = 'sddcLcm' }
+        @{ Name = 'VCF_SALT'; Var = 'vcfSalt' }
+        @{ Name = 'VCF_SALT_RAAS'; Var = 'vcfSaltRaas' }
+        @{ Name = 'VIDB'; Var = 'vidb' }
+        @{ Name = 'VCF_SERVICE_VCD_MIGRATION_BACKEND'; Var = 'migrationServiceEngine' }
+    )
+
+    # Build bundle ID retrieval commands
+    [void]$sb.AppendLine("# Get bundle IDs for each component")
+    foreach ($component in $components) {
+        [void]$sb.AppendLine("$($component.Var)=`$(curl -k -H ""Authorization: Bearer `$token"" ""https://localhost/v1/releases/VCF/release-components?releaseVersion=$VcfVersion&imageType=INSTALL&automatedInstall=true"" | jq '.elements[].components' | jq '.[] | select(.name==""$($component.Name)"") | .versions' | jq '.[] | .artifacts.bundles' | jq '.[] | .id' | cut -d '""' -f 2)")
+    }
+    [void]$sb.AppendLine("")
+
+    # Build bundle selection based on version and skip mode
+    $bundleList = '($automationBundleId $telemetryAcceptor $vsp $fleetLcm $depotService $sddcLcm $vcfSalt $vcfSaltRaas $vidb $migrationServiceEngine)'
+
+    [void]$sb.AppendLine("declare -a bundlesToDownload=$bundleList")
+    [void]$sb.AppendLine("")
+
+    # Add download trigger logic
+    [void]$sb.AppendLine("# Trigger download for all bundles")
+    [void]$sb.AppendLine('for bundleId in "${bundlesToDownload[@]}"')
+    [void]$sb.AppendLine("do")
+    [void]$sb.AppendLine('   echo "Downloading $bundleId"')
+    [void]$sb.AppendLine('   curl -k --location --request PATCH "https://localhost/v1/bundles/$bundleId" --header ''Content-Type: application/json'' --header "Authorization: Bearer $token" --data ''{"bundleDownloadSpec": {"downloadNow": true}}''')
+    [void]$sb.AppendLine("done")
+
+    # Add wait for completion logic if requested
+    if ($WaitForCompletion) {
+        [void]$sb.AppendLine("")
+        [void]$sb.AppendLine("# Wait for all bundles to download")
+        [void]$sb.AppendLine('allBundlesDownloaded="false"')
+        [void]$sb.AppendLine('foundIncompleteBundle="false"')
+        [void]$sb.AppendLine('while [[ "$allBundlesDownloaded" = "false" ]]')
+        [void]$sb.AppendLine("do")
+        [void]$sb.AppendLine("   sleep 60")
+        [void]$sb.AppendLine('   for bundleId in "${bundlesToDownload[@]}"')
+        [void]$sb.AppendLine("   do")
+        [void]$sb.AppendLine("      downloadStatus=`$(curl -k -H ""Authorization: Bearer `$token"" ""https://localhost/v1/bundles/download-status?releaseVersion=$VcfVersion&imageType=INSTALL"" | jq '.elements' | jq --arg bundleId ""`$bundleId"" '.[] | select(.bundleId==`$bundleId) | .downloadStatus')")
+        [void]$sb.AppendLine('      echo "Bundle $bundleId status: $downloadStatus"')
+        [void]$sb.AppendLine('      if [ $downloadStatus != ''"SUCCESS"'' ]')
+        [void]$sb.AppendLine("      then")
+        [void]$sb.AppendLine('         foundIncompleteBundle="true"')
+        [void]$sb.AppendLine("      fi")
+        [void]$sb.AppendLine("   done")
+        [void]$sb.AppendLine('   if [ $foundIncompleteBundle = "true" ]')
+        [void]$sb.AppendLine("   then")
+        [void]$sb.AppendLine('      allBundlesDownloaded="false"')
+        [void]$sb.AppendLine('      foundIncompleteBundle="false"')
+        [void]$sb.AppendLine("   else")
+        [void]$sb.AppendLine('      allBundlesDownloaded="true"')
+        [void]$sb.AppendLine("   fi")
+        [void]$sb.AppendLine("done")
+        [void]$sb.AppendLine('echo "All bundles downloaded successfully!"')
+    }
+
+    # Get the final script content
+    $scriptContent = $sb.ToString()
+
+    # Establish SSH Connection using inmem method
+    Write-Host "[$sddcManagerFqdn] Establishing SSH connection..." -ForegroundColor Cyan
+    $SecurePassword = ConvertTo-SecureString -String $vcfUserPassword -AsPlainText -Force
+    $mycreds = New-Object System.Management.Automation.PSCredential ('vcf', $SecurePassword)
+    $inmem = New-SSHMemoryKnownHost
+    New-SSHTrustedHost -KnownHostStore $inmem -HostName $sddcManagerFqdn -FingerPrint ((Get-SSHHostKey -ComputerName $sddcManagerFqdn).fingerprint) | Out-Null
+
+    Do {
+        $sshSession = New-SSHSession -ComputerName $sddcManagerFqdn -Credential $mycreds -KnownHost $inmem
+    } Until ($sshSession)
+
+    # Create shell stream for interactive session
+    $stream = New-SSHShellStream -SSHSession $sshSession
+
+    # Switch to root
+    Write-Host "[$sddcManagerFqdn] Switching to root user..." -ForegroundColor Cyan
+    $stream.WriteLine("su -")
+    Start-Sleep 2
+    $stream.WriteLine($rootPassword)
+    Start-Sleep 2
+
+    # Write script to remote file
+    Write-Host "[$sddcManagerFqdn] Creating bundle download script..." -ForegroundColor Cyan
+    $scriptPath = "/root/download-bundles.sh"
+
+    $stream.WriteLine("cat > $scriptPath << 'EOFSCRIPT'")
+    Start-Sleep 1
+    $stream.WriteLine($scriptContent)
+    Start-Sleep 1
+    $stream.WriteLine("EOFSCRIPT")
+    Start-Sleep 2
+
+    # Make executable and run
+    $stream.WriteLine("chmod +x $scriptPath")
+    Start-Sleep 1
+
+    Write-Host "[$sddcManagerFqdn] Executing bundle download script..." -ForegroundColor Cyan
+    $stream.WriteLine("$scriptPath")
+
+    # Wait for script to start and capture initial output
+    Start-Sleep 10
+    $output = $stream.Read()
+    #Write-Host $output
+
+    if ($WaitForCompletion) {
+        Write-Host "[$sddcManagerFqdn] Waiting for bundle downloads to complete (this may take a while)..." -ForegroundColor Yellow
+        $timeout = 7200  # 2 hour timeout
+        $elapsed = 0
+        $interval = 30
+
+        while ($elapsed -lt $timeout) {
+            Start-Sleep $interval
+            $elapsed += $interval
+            $newOutput = $stream.Read()
+            if ($newOutput) {
+                Write-Host $newOutput
+                if ($newOutput -match "All bundles downloaded successfully!") {
+                    break
+                }
+            }
+        }
+    }
+
+    # Cleanup
+    Write-Host "[$sddcManagerFqdn] Cleaning up..." -ForegroundColor Cyan
+    $stream.WriteLine("rm -f $scriptPath")
+    Start-Sleep 1
+    $stream.WriteLine("exit")
+    Start-Sleep 1
+
+    # Close SSH Session
+    Remove-SSHSession -SSHSession $sshSession | Out-Null
+
+    Write-Host "[$sddcManagerFqdn] Bundle download process initiated successfully" -ForegroundColor Green
+}
+Export-ModuleMember -Function Invoke-SddcManagerBundleDownload
 #EndRegion SDDC Manager Functions
 
 #Region vCenter Functions
