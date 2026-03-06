@@ -2577,7 +2577,6 @@ Function Set-SDDCManagerOfflineDepot {
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
-    LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
 
     # Get SDDC Manager API Token
     LogMessage -type INFO -message "[$sddcManagerFqdn] Getting Authentication Token"
@@ -2606,7 +2605,7 @@ Function Set-SDDCManagerOfflineDepot {
     #Delete Services Configuration
     LogMessage -type INFO -message "[$sddcManagerFqdn] Removing Original Depot Fleet Depot Configuration"
     $deleteServicesConfigURI = "https://$sddcManagerFqdn/v1/services-config/$($currentDepotServicesConfig.services.key)"
-    Invoke-RestMethod -Uri $deleteServicesConfigURI -Method DELETE -Headers $headers -SkipCertificateCheck
+    Invoke-RestMethod -Uri $deleteServicesConfigURI -Method DELETE -Headers $headers -SkipCertificateCheck *>$null
 
     #Trust Depot Cert on SDDC Manager
     LogMessage -type INFO -message "[$sddcManagerFqdn] Trusting Offline Depot Certificate"
@@ -2642,7 +2641,6 @@ Function Set-SDDCManagerOfflineDepot {
     $stream.WriteLine("exit")
     Start-Sleep 1
     Remove-SSHSession -SSHSession $sshSession | Out-Null
-    Write-Host "Trusted certificate for $offlineDepotFqdn has been added to SDDC Manager" -ForegroundColor Green
 
     #Seting Depot URI
     $depotUri = "https://$sddcManagerFqdn/v1/system/settings/depot"
@@ -2660,7 +2658,7 @@ Function Set-SDDCManagerOfflineDepot {
             port           = $offlineDepotPort
         }
     } | ConvertTo-Json -Depth 3
-    Invoke-RestMethod -Uri $depotUri -Method PUT -Headers $headers -Body $depotBody -SkipCertificateCheck
+    $result = Invoke-RestMethod -Uri $depotUri -Method PUT -Headers $headers -Body $depotBody -SkipCertificateCheck
 
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
@@ -2675,7 +2673,6 @@ Function Set-SDDCManagerFDSDepot {
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
-    LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
 
     LogMessage -type INFO -message "[$sddcManagerFqdn] Retrieving Original Configuration from JSON file"
     $servicesConfigBody = Get-Content -path $originalConfigurationFile
@@ -2752,7 +2749,6 @@ Function Invoke-SddcManagerBundleDownload {
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
-    LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
 
     # Use StringBuilder for efficient string concatenation
     $sb = [System.Text.StringBuilder]::new()
@@ -2886,7 +2882,6 @@ Function Invoke-SddcManagerBundleDownload {
             $elapsed += $interval
             $newOutput = $stream.Read()
             if ($newOutput) {
-                Write-Host $newOutput
                 if ($newOutput -match "All bundles downloaded successfully!") {
                     break
                 }
@@ -2895,7 +2890,6 @@ Function Invoke-SddcManagerBundleDownload {
     }
 
     # Cleanup
-
     LogMessage -type INFO -message "[$sddcManagerFqdn] Cleaning Up"
     $stream.WriteLine("rm -f $scriptPath")
     Start-Sleep 1
