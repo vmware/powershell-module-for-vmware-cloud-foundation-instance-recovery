@@ -365,6 +365,7 @@ Function New-ExtractDataFromSDDCBackup {
 
     #Extract Required Files From Backup Leveraging Windows tar.exe
     LogMessage -type INFO -message "[$jumpboxName] Extracting Backup"
+    Push-Location
     Set-Location "$parentFolder"
     tar -xzf "$parentFolder\decrypted-sddc-manager-backup.tar.gz" "$extractedBackupFolder/metadata.json" "$extractedBackupFolder/appliancemanager_dns_configuration.json" "$extractedBackupFolder/appliancemanager_ntp_configuration.json" "$extractedBackupFolder/security_password_vault.json" "$extractedBackupFolder/database/sddc-postgres.bkp"
 
@@ -474,7 +475,7 @@ Function New-ExtractDataFromSDDCBackup {
             }
             $nsxtManagerClusters += [pscustomobject]@{
                 'clusterVip'  = (Resolve-DnsName $lineContent.split("`t")[5]).IPAddress
-                'clusterFqdn' = $lineContent.split("`t")[6]
+                'clusterFqdn' = $lineContent.split("`t")[5]
                 'domainIDs'   = $nodeContent.domainIds
                 'nsxNodes'    = $nsxNodes
             }
@@ -762,10 +763,10 @@ Function New-ExtractDataFromSDDCBackup {
             $ipInclusionRanges = $lineContent.split("`t")[$ipInclusionRangesColumn] | ConvertFrom-Json
             $ipInclusionRangeArray = $ipInclusionRanges | Select-Object -Property @{
                 Name       = 'startIPAddress'
-                Expression = {$_.Start}
+                Expression = { $_.Start }
             }, @{
                 Name       = 'endIPAddress'
-                Expression = {$_.end}
+                Expression = { $_.end }
             }
             $mtu = $lineContent.split("`t")[$mtuColumn]
             $subnet = $lineContent.split("`t")[$subnetColumn]
@@ -907,6 +908,8 @@ Function New-ExtractDataFromSDDCBackup {
                 $gateway = ($hosts | Where-Object { $_.id -eq $clusterHost.hostId }).gateway
                 $mask = ($hosts | Where-Object { $_.id -eq $clusterHost.hostId }).mask
                 $subnet = ($hosts | Where-Object { $_.id -eq $clusterHost.hostId }).subnet
+                $vmotionIp = ($hosts | Where-Object { $_.id -eq $clusterHost.hostId }).vmotionIp
+                $vsanIp = ($hosts | Where-Object { $_.id -eq $clusterHost.hostId }).vsanIp
 
                 $networkPoolID = ($hostsAndPools | Where-Object { $_.hostId -eq $clusterHost.hostId }).poolId
                 $hostNetworkIds = ($poolsAndNetworks | Where-Object { $_.poolID -eq $networkPoolID }).networkId
@@ -924,6 +927,8 @@ Function New-ExtractDataFromSDDCBackup {
                     'networkPoolID'  = $networkPoolID
                     'hostNetworkIds' = $hostNetworkIds
                     'networks'       = $hostNetworks
+                    'vmotionIp'      = $vmotionIp
+                    'vsanIp'         = $vsanIp
                 }
             }
             #End Experimental
@@ -955,7 +960,7 @@ Function New-ExtractDataFromSDDCBackup {
             }
             $clusters += [pscustomobject]@{
                 'id'                   = $id
-                'datacenter'           = $datacenter
+                #'datacenter'           = $datacenter
                 'ftt'                  = $ftt
                 'isDefault'            = $isDefault
                 'isStretched'          = $isStretched
@@ -966,7 +971,7 @@ Function New-ExtractDataFromSDDCBackup {
                 'isImageBased'         = $isImagedBased
                 'sourceID'             = $sourceID
                 'vdsDetails'           = $vdsDetails
-                'hosts'                = $hostsArray
+                'hosts'                = @($hostsArray | Sort-Object -Property hostname)
             }
         }
         $clustersLineIndex++
@@ -1156,8 +1161,8 @@ Function New-ExtractDataFromSDDCBackup {
             $domainName = $lineContent.split("`t")[$domainNameColumn]
             $domainType = $lineContent.split("`t")[$domainTypeColumn]
             $vCenter = $vCenters | Where-Object { $_.vCenterDomainID -eq $domainId }
-            $pscId = ($vCentersAndPscs | where-object {$_.vCenterId -eq $vCenters.vCenterID}).pscId
-            $ssoDomain = ($pscs | where-object {$pscs.id -eq $pscId}).ssoDomain
+            $pscId = ($vCentersAndPscs | where-object { $_.vCenterId -eq $vCenters.vCenterID }).pscId
+            $ssoDomain = ($pscs | where-object { $pscs.id -eq $pscId }).ssoDomain
             $vCenterDetails = [pscustomobject]@{
                 'id'      = $vCenter.vCenterID
                 'version' = $vCenter.vCenterVersion
@@ -1222,7 +1227,7 @@ Function New-ExtractDataFromSDDCBackup {
     Remove-Item -Path "$parentFolder\decrypted-sddc-manager-backup.tar.gz" -force -confirm:$false
     Remove-Item -Path "$parentFolder\decrypted-sddc-manager-backup.tar" -force -confirm:$false
     Remove-Item -path "$parentFolder\$extractedBackupFolder" -Recurse #>
-
+    Pop-Location
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 Export-ModuleMember -Function New-ExtractDataFromSDDCBackup
@@ -1268,7 +1273,7 @@ Function Update-ExtractedSDDCData {
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
     $sddcManagerConnection = Connect-VcfSddcManagerServer -server $sddcManagerFQDN -User $sddcManagerAdmin -Password $sddcManagerAdminPassword
 
-    Foreach ($workloadDomain in $extractedSddcData.workloadDomains | Where-Object {$_.vcenterDetails.fqdn -eq $vCenterFQDN}) {
+    Foreach ($workloadDomain in $extractedSddcData.workloadDomains | Where-Object { $_.vcenterDetails.fqdn -eq $vCenterFQDN }) {
         $vCenterAdmin = ($extractedSddcData.passwords | Where-Object { ($_.credentialType -eq "SSO") -and ($_.entityName -eq $vCenterFQDN) -and ($_.entityType -eq "PSC") }).username
         $vCenterAdminPassword = ($extractedSddcData.passwords | Where-Object { ($_.credentialType -eq "SSO") -and ($_.entityName -eq $vCenterFQDN) -and ($_.entityType -eq "PSC") }).password
         $vCenterConnection = Connect-VIServer -server $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
@@ -1900,7 +1905,7 @@ Function New-NSXManagerOvaDeployment {
 
     $vmDatastore = $extractedSDDCData.mgmtDomainInfrastructure.vsan_datastore
     If ($workloadDomainDetails.domainType -eq "MANAGEMENT") {
-        $vmNetwork = "vcfir-cl01-vds01-pg-vm-mgmt"
+        $vmNetwork = "vm_mgmt"
     } else {
         $vmNetwork = $extractedSDDCData.mgmtDomainInfrastructure.port_group
     }
@@ -2027,7 +2032,7 @@ Function New-vCenterOvaDeployment {
     $workloadDomainDetails = ($extractedSDDCData.workloadDomains | Where-Object { $_.domainName -eq $workloadDomain })
     $vmDatastore = $extractedSDDCData.mgmtDomainInfrastructure.vsan_datastore
     If ($workloadDomainDetails.domainType -eq "MANAGEMENT") {
-        $vmNetwork = "vcfir-cl01-vds01-pg-vm-mgmt"
+        $vmNetwork = "vm_mgmt"
     } else {
         $vmNetwork = $extractedSDDCData.mgmtDomainInfrastructure.port_group
     }
@@ -2152,7 +2157,7 @@ Function New-SDDCManagerOvaDeployment {
 
     # SDDC Manager Configuration
     $vmDatastore = $extractedSDDCData.mgmtDomainInfrastructure.vsan_datastore
-    $vmNetwork = "vcfir-cl01-vds01-pg-vm-mgmt"
+    $vmNetwork = "vm_mgmt"
     $datacenterName = $extractedSDDCData.mgmtDomainInfrastructure.datacenter
     $clusterName = $extractedSDDCData.mgmtDomainInfrastructure.cluster
     <# #Following parameters converted to known entities for 9.0. Consider refactoring in 9.1 if data is saved in manifest.json
@@ -4298,32 +4303,21 @@ Export-ModuleMember -Function New-RebuiltVsanDatastore
 Function New-SingleHostVsanDatastore {
     <#
     .SYNOPSIS
-    Guides the rebuild of a vSAN datastore on a single host. Allows the user user to control the vSAN configuration
+    Guides the rebuild of a vSAN datastore on the first host in the default management cluster. Allows the user to control the vSAN configuration
 
     .DESCRIPTION
-    The New-RebuiltVsanDatastore cmdlet guides the rebuild of a vSAN datastore on a recovered cluster. It leverages the first host in the cluster as a reference host for disk layout to allow the user to control the vSAN Diskgroup configuration
+    The New-SingleHostVsanDatastore cmdlet guides the rebuild of a vSAN datastore on the first host in the default management cluster.
+    It automatically identifies the first host and retrieves credentials from the extracted SDDC data.
     Should only be used if the disk configuration is standardized across the hosts
 
     .EXAMPLE
-    New-RebuiltVsanDatastore -esxHostFqdn "sfo-m01-vc01.sfo.rainpole.io" -esxHostAdmin "administrator@vsphere.local" -esxHostPassword "VMw@re1!" -clusterName "sfo-m01-cl01" -extractedSDDCDataFile ".\extracted-sddc-data.json"
-
-    .PARAMETER esxHostFqdn
-    FQDN of the ESX host the vSAN Datastore will be created on
-
-    .PARAMETER esxHostAdmin
-    Admin user of the ESX host the vSAN Datastore will be created on
-
-    .PARAMETER esxHostPassword
-    Admin password of the ESX host the vSAN Datastore will be created on
+    New-SingleHostVsanDatastore -extractedSDDCDataFile ".\extracted-sddc-data.json"
 
     .PARAMETER extractedSDDCDataFile
     Relative or absolute to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup) somewhere on the local filesystem
     #>
 
     Param(
-        [Parameter (Mandatory = $true)][String] $esxHostFqdn,
-        [Parameter (Mandatory = $true)][String] $esxHostAdmin,
-        [Parameter (Mandatory = $true)][String] $esxHostPassword,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile
     )
     $jumpboxName = hostname
@@ -4331,9 +4325,18 @@ Function New-SingleHostVsanDatastore {
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
-    $datastoreName = $extractedSddcData.mgmtDomainInfrastructure.vsan_datastore
-    $datastoreType = (($extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }).vsphereClusterDetails | Where-Object { $_.isDefault -eq "t" }).primaryDatastoreType
 
+    $workloadDomain = $extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }
+    $cluster = $workloadDomain.vsphereClusterDetails | Where-Object { $_.isDefault -eq "t" }
+
+    $esxHostFqdn = $cluster.hosts[0].hostname
+    $esxHostAdmin = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $esxHostFqdn) -and ($_.username -eq "root") }).username
+    $esxHostPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $esxHostFqdn) -and ($_.username -eq "root") }).password
+
+    $datastoreName = $extractedSddcData.mgmtDomainInfrastructure.vsan_datastore
+    $datastoreType = $cluster.primaryDatastoreType
+
+    LogMessage -type INFO -message "[$jumpboxName] Using first host in default management cluster: $esxHostFqdn"
     LogMessage -type INFO -message "[$jumpboxName] Connecting to ESX host: $esxHostFqdn"
     $esxHostConnection = Connect-ViServer $esxHostFqdn -user $esxHostAdmin -password $esxHostPassword
 
@@ -4548,7 +4551,9 @@ Function New-RebuiltVdsConfiguration {
 
     .DESCRIPTION
     The New-RebuiltVdsConfiguration cmdlet guides the rebuild of the VDS configuration on a recovered cluster based on the configuration present in the backup data. It leverage the first host in the cluster as a reference host for NIC layout to allow the user to choose the NIC to VDS/Function mapping.
-    Should only be used if the NIC configuration is standardized across the hosts
+    Should only be used if the NIC configuration is standardized across the hosts.
+
+    For the default management cluster, the function automatically determines the VDS to vSS mapping by parsing TRAFFIC_TYPES portgroups on the first host, eliminating the need for user interaction.
 
     .EXAMPLE
     New-RebuiltVdsConfiguration -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01" -extractedSDDCDataFile ".\extracted-sddc-data.json"
@@ -4588,6 +4593,7 @@ Function New-RebuiltVdsConfiguration {
     $cluster = ($workloadDomain.vsphereClusterDetails | Where-Object { $_.name -eq $clustername })
     If (($workloadDomain.domainType -eq "MANAGEMENT") -and ($isPrimaryCluster -eq 't')) {
         $isPrimaryManagementCluster = $true
+        LogMessage -type INFO -message "[$jumpboxName] Detected default management cluster - using automatic VDS configuration"
     } else {
         $isPrimaryManagementCluster = $false
     }
@@ -4626,78 +4632,185 @@ Function New-RebuiltVdsConfiguration {
         }
         $nicsIndex++
     }
-    Write-Host ""; Write-Host " Recreating Virtual Distributed Switches as per previous deployment" -ForegroundColor Yellow
-    $vdsConfiguration = @()
-    $remainingNicsDisplayObject = $nicsDisplayObject
 
-    #Loop Through VDS Creation
-    For ($i = 1; $i -le $clusterVdsDetails.count; $i++) {
-        $vdsConfigurationIndex = ($i - 1)
-        Do {
-            $nicNamesArray = @()
-            Write-Host ""; $remainingNicsDisplayObject | format-table -Property @{Expression = " " }, id, deviceName, driver, linkStatus, description -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
-            If ($cluster.vdsDetails[$vdsConfigurationIndex].transportZones) {
-                $networksDisplay = ($cluster.vdsDetails[$vdsConfigurationIndex].networks += "OVERLAY") -join (",")
-            } else {
-                $networksDisplay = $cluster.vdsDetails[$vdsConfigurationIndex].networks -join (",")
-            }
-            Write-Host ""; Write-Host " Recreating " -ForegroundColor Yellow -nonewline; Write-Host "$($cluster.vdsDetails[$vdsConfigurationIndex].dvsName)" -ForegroundColor cyan -nonewline; Write-Host " which contained the networks: " -ForegroundColor Yellow -nonewline; Write-Host "$networksDisplay" -ForegroundColor Cyan
-            Write-Host " Enter a comma seperated list of IDs to use as vmnics for this VDS, or C to Cancel: " -ForegroundColor Yellow -nonewline
-            $nicSelection = Read-Host
-            If ($nicSelection -ne "C") {
-                $nicSelectionInvalid = $false
-                $nicArray = $nicSelection -split (",")
-                Foreach ($nic in $nicArray) {
-                    $nicNamesArray += ($nicsDisplayObject | Where-Object { $_.id -eq $nic }).deviceName
-                    If ($nic -notin $nicsDisplayObject.id) {
-                        $nicSelectionInvalid = $true
+    $vdsConfiguration = @()
+    $vssToDelete = @()
+
+    If ($isPrimaryManagementCluster) {
+        LogMessage -type INFO -message "[$($vmhosts[0].name)] Discovering TRAFFIC_TYPES portgroups to determine VDS mapping"
+
+        $referenceHost = $vmhosts[0]
+        $allPortgroups = Get-VirtualPortGroup -VMHost $referenceHost
+        $allVswitches = Get-VirtualSwitch -VMHost $referenceHost
+
+        Foreach ($pg in $allPortgroups) {
+            If ($pg.Name -like "TRAFFIC_TYPES-*") {
+                $vssName = $pg.VirtualSwitchName
+                $trafficTypes = $pg.Name -replace "TRAFFIC_TYPES-", ""
+                $trafficTypesArray = $trafficTypes -split "-"
+
+                LogMessage -type INFO -message "[$($referenceHost.name)] Found TRAFFIC_TYPES portgroup: $($pg.Name) on vSS: $vssName"
+
+                $matchingVds = $null
+                Foreach ($vdsDetail in $clusterVdsDetails) {
+                    $vdsNetworksList = @($vdsDetail.networks | Where-Object { $_ })
+                    If ($vdsDetail.transportZones) {
+                        $vdsNetworksList += "OVERLAY"
+                    }
+
+                    $allMatch = $true
+                    Foreach ($trafficType in $trafficTypesArray) {
+                        If ($trafficType -notin $vdsNetworksList) {
+                            $allMatch = $false
+                            Break
+                        }
+                    }
+                    If ($allMatch -and ($trafficTypesArray.Count -eq $vdsNetworksList.Count)) {
+                        $matchingVds = $vdsDetail
+                        Break
                     }
                 }
-            }
-        } Until (($nicSelectionInvalid -eq $false) -OR ($nicSelection -eq "c"))
-        If ($nicSelection -eq "c") { Break }
-        $individualVds = [PSCustomObject]@{
-            'vdsName'     = $cluster.vdsDetails[$vdsConfigurationIndex].dvsName
-            'nicnames'    = $nicNamesArray
-            'vdsNetworks' = $cluster.vdsDetails[$vdsConfigurationIndex].networks
-            'portgroups'  = $cluster.vdsDetails[$vdsConfigurationIndex].portgroups
-        }
-        $vdsConfiguration += $individualVds
-        $tempremainingNicsDisplayObject = @()
-        Foreach ( $displaynic in $remainingNicsDisplayObject) {
-            If ($displaynic.id -notin $nicArray) {
-                $tempremainingNicsDisplayObject += $displaynic
-            }
-        }
-        $remainingNicsDisplayObject = $tempremainingNicsDisplayObject
-    }
-    If (($nicSelection -eq "c") -or ($nicSelection -eq "c")) { Break }
 
-    $proposedConfigDisplayObject = @()
-    $configIndex = 1
-    $proposedConfigDisplayObject += [pscustomobject]@{
-        'vdsName'     = "VDS Name"
-        'nicnames'    = "NIC Names"
-        'vdsNetworks' = "VDS Networks"
-    }
-    $proposedConfigDisplayObject += [pscustomobject]@{
-        'vdsName'     = "----------------------------------------"
-        'nicnames'    = "---------------"
-        'vdsNetworks' = "------------------------------"
-    }
-    Foreach ($config in $vdsConfiguration) {
-        $proposedConfigDisplayObject += [pscustomobject]@{
-            'vdsName'     = $config.vdsName
-            'nicnames'    = $config.nicnames -join (", ")
-            'vdsNetworks' = $config.vdsNetworks -join (", ")
+                If ($matchingVds) {
+                    LogMessage -type INFO -message "[$($referenceHost.name)] Matched vSS $vssName to VDS $($matchingVds.dvsName)"
+
+                    $vssObject = $allVswitches | Where-Object { $_.Name -eq $vssName }
+                    $vssNics = @()
+                    If ($vssObject.Nic) {
+                        $vssNics = @($vssObject.Nic) | Sort-Object
+                    }
+
+                    $individualVds = [PSCustomObject]@{
+                        'vdsName'           = $matchingVds.dvsName
+                        'nicnames'          = $vssNics
+                        'vdsNetworks'       = $matchingVds.networks
+                        'portgroups'        = $matchingVds.portgroups
+                        'sourceVss'         = $vssName
+                        'hasTransportZones' = [bool]$matchingVds.transportZones
+                    }
+                    $vdsConfiguration += $individualVds
+
+                    If ($vssName -notin $vssToDelete) {
+                        $vssToDelete += $vssName
+                    }
+                } else {
+                    LogMessage -type WARNING -message "[$($referenceHost.name)] Could not find matching VDS for vSS $vssName with traffic types: $trafficTypes"
+                }
+            }
         }
-        $configIndex++
+
+        If ($vdsConfiguration.Count -eq 0) {
+            LogMessage -type ERROR -message "[$jumpboxName] No TRAFFIC_TYPES portgroups found. Cannot proceed with automatic configuration."
+            Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+            Return
+        }
+
+        Write-Host ""; Write-Host " Automatic VDS Configuration (based on TRAFFIC_TYPES portgroups)" -ForegroundColor Yellow
+        $proposedConfigDisplayObject = @()
+        $proposedConfigDisplayObject += [pscustomobject]@{
+            'vdsName'     = "VDS Name"
+            'sourceVss'   = "Source vSS"
+            'nicnames'    = "NIC Names"
+            'vdsNetworks' = "VDS Networks"
+        }
+        $proposedConfigDisplayObject += [pscustomobject]@{
+            'vdsName'     = "----------------------------------------"
+            'sourceVss'   = "---------------"
+            'nicnames'    = "---------------"
+            'vdsNetworks' = "------------------------------"
+        }
+        Foreach ($config in $vdsConfiguration) {
+            $networksList = @($config.vdsNetworks | Where-Object { $_ })
+            If ($config.hasTransportZones) {
+                $networksList += "OVERLAY"
+            }
+            $proposedConfigDisplayObject += [pscustomobject]@{
+                'vdsName'     = $config.vdsName
+                'sourceVss'   = $config.sourceVss
+                'nicnames'    = $config.nicnames -join (", ")
+                'vdsNetworks' = $networksList -join (", ")
+            }
+        }
+        Write-Host ""; $proposedConfigDisplayObject | format-table -Property @{Expression = " " }, vdsName, sourceVss, nicnames, vdsNetworks -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
+
+        Write-Host ""; LogMessage -type INFO -message "Virtual Switches that will be deleted after migration: " -nonewline
+        Write-Host ($vssToDelete -join ", ") -ForegroundColor Cyan
+
+        $proposedConfigAccepted = "Y"
+    } else {
+        Write-Host ""; Write-Host " Recreating Virtual Distributed Switches as per previous deployment" -ForegroundColor Yellow
+        $remainingNicsDisplayObject = $nicsDisplayObject
+
+        #Loop Through VDS Creation
+        For ($i = 1; $i -le $clusterVdsDetails.count; $i++) {
+            $vdsConfigurationIndex = ($i - 1)
+            Do {
+                $nicNamesArray = @()
+                Write-Host ""; $remainingNicsDisplayObject | format-table -Property @{Expression = " " }, id, deviceName, driver, linkStatus, description -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
+                If ($cluster.vdsDetails[$vdsConfigurationIndex].transportZones) {
+                    $networksDisplay = (@($cluster.vdsDetails[$vdsConfigurationIndex].networks | Where-Object { $_ }) + "OVERLAY") -join (",")
+                } else {
+                    $networksDisplay = $cluster.vdsDetails[$vdsConfigurationIndex].networks -join (",")
+                }
+                Write-Host ""; Write-Host " Recreating " -ForegroundColor Yellow -nonewline; Write-Host "$($cluster.vdsDetails[$vdsConfigurationIndex].dvsName)" -ForegroundColor cyan -nonewline; Write-Host " which contained the networks: " -ForegroundColor Yellow -nonewline; Write-Host "$networksDisplay" -ForegroundColor Cyan
+                Write-Host " Enter a comma seperated list of IDs to use as vmnics for this VDS, or C to Cancel: " -ForegroundColor Yellow -nonewline
+                $nicSelection = Read-Host
+                If ($nicSelection -ne "C") {
+                    $nicSelectionInvalid = $false
+                    $nicArray = $nicSelection -split (",")
+                    Foreach ($nic in $nicArray) {
+                        $nicNamesArray += ($nicsDisplayObject | Where-Object { $_.id -eq $nic }).deviceName
+                        If ($nic -notin $nicsDisplayObject.id) {
+                            $nicSelectionInvalid = $true
+                        }
+                    }
+                }
+            } Until (($nicSelectionInvalid -eq $false) -OR ($nicSelection -eq "c"))
+            If ($nicSelection -eq "c") { Break }
+            $individualVds = [PSCustomObject]@{
+                'vdsName'     = $cluster.vdsDetails[$vdsConfigurationIndex].dvsName
+                'nicnames'    = $nicNamesArray
+                'vdsNetworks' = $cluster.vdsDetails[$vdsConfigurationIndex].networks
+                'portgroups'  = $cluster.vdsDetails[$vdsConfigurationIndex].portgroups
+            }
+            $vdsConfiguration += $individualVds
+            $tempremainingNicsDisplayObject = @()
+            Foreach ( $displaynic in $remainingNicsDisplayObject) {
+                If ($displaynic.id -notin $nicArray) {
+                    $tempremainingNicsDisplayObject += $displaynic
+                }
+            }
+            $remainingNicsDisplayObject = $tempremainingNicsDisplayObject
+        }
+        If (($nicSelection -eq "c") -or ($nicSelection -eq "c")) { Break }
+
+        $proposedConfigDisplayObject = @()
+        $configIndex = 1
+        $proposedConfigDisplayObject += [pscustomobject]@{
+            'vdsName'     = "VDS Name"
+            'nicnames'    = "NIC Names"
+            'vdsNetworks' = "VDS Networks"
+        }
+        $proposedConfigDisplayObject += [pscustomobject]@{
+            'vdsName'     = "----------------------------------------"
+            'nicnames'    = "---------------"
+            'vdsNetworks' = "------------------------------"
+        }
+        Foreach ($config in $vdsConfiguration) {
+            $proposedConfigDisplayObject += [pscustomobject]@{
+                'vdsName'     = $config.vdsName
+                'nicnames'    = $config.nicnames -join (", ")
+                'vdsNetworks' = $config.vdsNetworks -join (", ")
+            }
+            $configIndex++
+        }
+        Write-Host ""; Write-Host " Proposed VDS Configuration " -ForegroundColor Yellow
+        Write-Host ""; $proposedConfigDisplayObject | format-table -Property @{Expression = " " }, vdsName, nicnames, vdsNetworks, -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
+        Write-Host ""; Write-Host " Do you wish to proceed with the proposed configuration? (Y/N): " -ForegroundColor Yellow -nonewline
+        $proposedConfigAccepted = Read-Host
+        $proposedConfigAccepted = $proposedConfigAccepted -replace "`t|`n|`r", ""
     }
-    Write-Host ""; Write-Host " Proposed VDS Configuration " -ForegroundColor Yellow
-    Write-Host ""; $proposedConfigDisplayObject | format-table -Property @{Expression = " " }, vdsName, nicnames, vdsNetworks, -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
-    Write-Host ""; Write-Host " Do you wish to proceed with the proposed configuration? (Y/N): " -ForegroundColor Yellow -nonewline
-    $proposedConfigAccepted = Read-Host
-    $proposedConfigAccepted = $proposedConfigAccepted -replace "`t|`n|`r", ""
+
     If ($proposedConfigAccepted -eq "Y") {
         Foreach ($vds in $vdsConfiguration) {
             $vdsHosts = (Get-VDSwitch -name $vds.vdsName).extensionData.summary.hostmember.value
@@ -4782,10 +4895,20 @@ Function New-RebuiltVdsConfiguration {
 
         #Remove Virtual Switches
         Foreach ($vmHost in $vmHosts) {
-            $hostvssArray = Get-VMHost -Name $vmhost | Get-VirtualSwitch -errorAction silentlyContinue | Where-Object { $_.name -like "vcfir-*-vss" }
-            Foreach ($vss in $hostvssArray) {
-                LogMessage -type INFO -message "[$($vmhost.name)] Removing $($vss.name)"
-                Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name $vss.name | Remove-VirtualSwitch -Confirm:$false | Out-Null
+            If ($isPrimaryManagementCluster) {
+                Foreach ($vssName in $vssToDelete) {
+                    $vssExists = Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name $vssName -ErrorAction SilentlyContinue
+                    If ($vssExists) {
+                        LogMessage -type INFO -message "[$($vmhost.name)] Removing $vssName"
+                        Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name $vssName | Remove-VirtualSwitch -Confirm:$false | Out-Null
+                    }
+                }
+            } else {
+                $hostvssArray = Get-VMHost -Name $vmhost | Get-VirtualSwitch -errorAction silentlyContinue | Where-Object { $_.name -like "vcfir-*-vss" }
+                Foreach ($vss in $hostvssArray) {
+                    LogMessage -type INFO -message "[$($vmhost.name)] Removing $($vss.name)"
+                    Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name $vss.name | Remove-VirtualSwitch -Confirm:$false | Out-Null
+                }
             }
         }
 
@@ -4815,6 +4938,540 @@ Function New-RebuiltVdsConfiguration {
     }
 }
 Export-ModuleMember -Function New-RebuiltVdsConfiguration
+
+Function New-PrepareManagementHostNetworking {
+    <#
+    .SYNOPSIS
+    Prepares host networking by creating vSphere Standard Switches based on the VDS configuration from backup data
+
+    .DESCRIPTION
+    The New-PrepareManagementHostNetworking cmdlet interrogates the first host in the default management cluster and presents the available NICs along with the discovered VDS configuration from the extracted SDDC data. It allows the user to create a matching number of virtual standard switches using the NIC mapping of their choice.
+    Should only be used if the NIC configuration is standardized across the hosts.
+
+    .EXAMPLE
+    New-PrepareManagementHostNetworking -extractedSDDCDataFile ".\extracted-sddc-data.json"
+
+    .PARAMETER extractedSDDCDataFile
+    Relative or absolute to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup) somewhere on the local filesystem
+
+    .PARAMETER mtu
+    MTU to be assigned to the virtual standard switches. Default is 9000
+    #>
+
+    Param(
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
+        [Parameter (Mandatory = $false)][String] $mtu = "9000"
+    )
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
+    $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
+    $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
+
+    $workloadDomain = $extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }
+    $cluster = $workloadDomain.vsphereClusterDetails | Where-Object { $_.isDefault -eq "t" }
+    $clusterName = $cluster.name
+    $clusterVdsDetails = $cluster.vdsDetails
+
+    $vmMgmtVlanId = ($cluster.vdsDetails.portgroups | Where-Object { $_.transportType -eq "VM_MANAGEMENT" }).vlanId
+
+    $hostFQDN = $cluster.hosts[0].hostname
+    $hostAdmin = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $hostFQDN) -and ($_.username -eq "root") }).username
+    $hostAdminPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $hostFQDN) -and ($_.username -eq "root") }).password
+
+    LogMessage -type INFO -message "[$jumpboxName] Connecting to Reference Host: $hostFQDN"
+    $hostConnection = Connect-ViServer $hostFQDN -user $hostAdmin -password $hostAdminPassword
+    LogMessage -type INFO -message "[$hostFQDN] Using host as reference for Physical NICs"
+
+    $nics = (Get-EsxCli -VMHost $hostFQDN).network.nic.list() | Select-Object Name, Driver, LinkStatus, Description
+
+    $existingVswitches = Get-VirtualSwitch -VMHost $hostFQDN -ErrorAction SilentlyContinue
+    $nicToVssMapping = @{}
+    $nicsInUse = @()
+    $managementVss = $null
+    $managementVssNics = @()
+    Foreach ($vswitch in $existingVswitches) {
+        $vswitchNics = $vswitch.Nic
+        If ($vswitchNics) {
+            $managementVss = $vswitch.Name
+            $managementVssNics = @($vswitchNics)
+            Foreach ($vswitchNic in $vswitchNics) {
+                $nicToVssMapping[$vswitchNic] = $vswitch.Name
+                $nicsInUse += $vswitchNic
+            }
+        }
+    }
+
+    $nicsDisplayObject = @()
+    $selectableNicIds = @()
+    $nicsIndex = 1
+    $nicsDisplayObject += [pscustomobject]@{
+        'ID'          = "ID"
+        'deviceName'  = "Device Name"
+        'driver'      = "Driver"
+        'linkStatus'  = "Link Status"
+        'status'      = "Status"
+        'description' = "Description"
+    }
+    $nicsDisplayObject += [pscustomobject]@{
+        'ID'          = "--"
+        'deviceName'  = "-----------"
+        'driver'      = "----------"
+        'linkStatus'  = "-----------"
+        'status'      = "---------------"
+        'description' = "-----------------------------------------------"
+    }
+
+    Foreach ($nic in $nics) {
+        $currentVss = $nicToVssMapping[$nic.name]
+        If ($currentVss) {
+            $status = $currentVss
+        } else {
+            $status = "Unused"
+            $selectableNicIds += $nicsIndex
+        }
+        $nicsDisplayObject += [pscustomobject]@{
+            'ID'          = $nicsIndex
+            'deviceName'  = $nic.name
+            'driver'      = $nic.driver
+            'linkStatus'  = $nic.linkStatus
+            'status'      = $status
+            'description' = $nic.description
+        }
+        $nicsIndex++
+    }
+
+    If ($managementVss) {
+        Write-Host ""; Write-Host " Discovered existing vSS: " -ForegroundColor Yellow -NoNewline; Write-Host "$managementVss" -ForegroundColor Cyan -NoNewline; Write-Host " with NIC(s): " -ForegroundColor Yellow -NoNewline; Write-Host "$($managementVssNics -join ', ')" -ForegroundColor Cyan
+        Write-Host " This vSS will be used for the MANAGEMENT network." -ForegroundColor Yellow
+    }
+
+    Write-Host ""; Write-Host " Retrieved VDS Configuration from Backup Data" -ForegroundColor Yellow
+    $vdsDisplayObject = @()
+    $vdsDisplayObject += [pscustomobject]@{
+        'vdsName'  = "VDS"
+        'networks' = "Networks"
+    }
+    $vdsDisplayObject += [pscustomobject]@{
+        'vdsName'  = "-----------"
+        'networks' = "------------------------------"
+    }
+    $vdsIndex = 1
+    Foreach ($vds in $clusterVdsDetails) {
+        $networksList = @($vds.networks | Where-Object { $_ })
+        If ($vds.transportZones) {
+            $networksList += "OVERLAY"
+        }
+        $networksDisplay = $networksList -join (",")
+        $ordinalDisplay = switch ($vdsIndex) { 1 { "1st" } 2 { "2nd" } 3 { "3rd" } 4 { "4th" } 5 { "5th" } 6 { "6th" } 7 { "7th" } 8 { "8th" } default { "$vdsIndex" + "th" } }
+        $vdsDisplayObject += [pscustomobject]@{
+            'vdsName'  = "$ordinalDisplay VDS"
+            'networks' = $networksDisplay
+        }
+        $vdsIndex++
+    }
+    Write-Host ""; $vdsDisplayObject | format-table -Property @{Expression = " " }, vdsName, networks -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
+
+    Write-Host ""; Write-Host " Creating Virtual Standard Switches to match VDS configuration" -ForegroundColor Yellow
+    $vssConfiguration = @()
+    $remainingSelectableNicIds = $selectableNicIds.Clone()
+    $managementVdsIndex = $null
+
+    For ($vdsLoopIndex = 0; $vdsLoopIndex -lt $clusterVdsDetails.count; $vdsLoopIndex++) {
+        If ("MANAGEMENT" -in $cluster.vdsDetails[$vdsLoopIndex].networks) {
+            $managementVdsIndex = $vdsLoopIndex
+            Break
+        }
+    }
+
+    $newVswitchIndex = 1
+    For ($i = 1; $i -le $clusterVdsDetails.count; $i++) {
+        $vdsConfigurationIndex = ($i - 1)
+        $isManagementVds = ($vdsConfigurationIndex -eq $managementVdsIndex)
+
+        $networksList = @($cluster.vdsDetails[$vdsConfigurationIndex].networks | Where-Object { $_ })
+        If ($cluster.vdsDetails[$vdsConfigurationIndex].transportZones) {
+            $networksList += "OVERLAY"
+        }
+        $networksDisplay = $networksList -join (",")
+        $ordinal = switch ($i) { 1 { "1st" } 2 { "2nd" } 3 { "3rd" } 4 { "4th" } 5 { "5th" } 6 { "6th" } 7 { "7th" } 8 { "8th" } default { "$i" + "th" } }
+
+        If ($isManagementVds -and $managementVss) {
+            $vssName = $managementVss
+        } else {
+            $vssName = "vSwitch$newVswitchIndex"
+            $newVswitchIndex++
+        }
+
+        Do {
+            $nicNamesArray = @()
+            Write-Host ""; Write-Host " Physical NICs (only 'Unused' NICs may be selected):" -ForegroundColor Yellow
+            Write-Host ""; $nicsDisplayObject | format-table -Property @{Expression = " " }, id, deviceName, driver, linkStatus, status, description -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
+
+            If ($isManagementVds -and $managementVss) {
+                Write-Host ""; Write-Host " Configuring existing vSS " -ForegroundColor Yellow -nonewline; Write-Host "$vssName" -ForegroundColor cyan -nonewline; Write-Host " to match $ordinal VDS from backup" -ForegroundColor Yellow -nonewline; Write-Host " which contained the networks: " -ForegroundColor Yellow -nonewline; Write-Host "$networksDisplay" -ForegroundColor Cyan
+                Write-Host " Enter a comma seperated list of IDs for ADDITIONAL vmnics for this vSS, leave blank for none, or C to Cancel: " -ForegroundColor Yellow -nonewline
+            } else {
+                Write-Host ""; Write-Host " Creating vSS " -ForegroundColor Yellow -nonewline; Write-Host "$vssName" -ForegroundColor cyan -nonewline; Write-Host " to match $ordinal VDS from backup" -ForegroundColor Yellow -nonewline; Write-Host " which contained the networks: " -ForegroundColor Yellow -nonewline; Write-Host "$networksDisplay" -ForegroundColor Cyan
+                Write-Host " Enter a comma seperated list of IDs to use as vmnics for this vSS, or C to Cancel: " -ForegroundColor Yellow -nonewline
+            }
+            $nicSelection = Read-Host
+
+            If ($nicSelection -eq "") {
+                If ($isManagementVds -and $managementVss) {
+                    $nicSelectionInvalid = $false
+                    $nicArray = @()
+                } else {
+                    $nicSelectionInvalid = $true
+                }
+            } ElseIf ($nicSelection -ne "C") {
+                $nicSelectionInvalid = $false
+                $nicArray = $nicSelection -split (",")
+                Foreach ($nic in $nicArray) {
+                    $nicInt = [int]$nic
+                    If ($nicInt -in $remainingSelectableNicIds) {
+                        $selectedNicName = ($nicsDisplayObject | Where-Object { $_.id -eq $nicInt }).deviceName
+                        If ($selectedNicName) {
+                            $nicNamesArray += $selectedNicName
+                        }
+                    } else {
+                        $nicSelectionInvalid = $true
+                        Write-Host " Invalid selection: NIC ID $nic is either already in use or already assigned to another vSS" -ForegroundColor Red
+                    }
+                }
+            }
+        } Until (($nicSelectionInvalid -eq $false) -OR ($nicSelection -eq "c"))
+        If ($nicSelection -eq "c") { Break }
+
+        $allNicsForVss = $nicNamesArray
+        If ($isManagementVds -and $managementVss) {
+            $allNicsForVss = $managementVssNics + $nicNamesArray
+        }
+
+        $individualVss = [PSCustomObject]@{
+            'vssName'         = $vssName
+            'vdsName'         = $cluster.vdsDetails[$vdsConfigurationIndex].dvsName
+            'nicnames'        = $allNicsForVss
+            'newNicNames'     = $nicNamesArray
+            'vdsNetworks'     = $networksList
+            'isManagementVss' = $isManagementVds
+            'existingVssName' = If ($isManagementVds -and $managementVss) { $managementVss } else { $null }
+        }
+        $vssConfiguration += $individualVss
+
+        Foreach ($nic in $nicArray) {
+            $nicInt = [int]$nic
+            $remainingSelectableNicIds = @($remainingSelectableNicIds | Where-Object { $_ -ne $nicInt })
+            $nicEntry = $nicsDisplayObject | Where-Object { $_.id -eq $nicInt }
+            If ($nicEntry) {
+                $nicEntry.status = $vssName
+            }
+        }
+    }
+    If (($nicSelection -eq "c") -or ($nicSelection -eq "C")) { Break }
+
+    $proposedConfigDisplayObject = @()
+    $configIndex = 1
+    $proposedConfigDisplayObject += [pscustomobject]@{
+        'vssName'     = "vSS Name"
+        'vdsName'     = "Matching VDS"
+        'nicnames'    = "NIC Names"
+        'vdsNetworks' = "Networks"
+    }
+    $proposedConfigDisplayObject += [pscustomobject]@{
+        'vssName'     = "----------------------------------------"
+        'vdsName'     = "----------------------------------------"
+        'nicnames'    = "---------------"
+        'vdsNetworks' = "------------------------------"
+    }
+    Foreach ($config in $vssConfiguration) {
+        $ordinalDisplay = switch ($configIndex) { 1 { "1st" } 2 { "2nd" } 3 { "3rd" } 4 { "4th" } 5 { "5th" } 6 { "6th" } 7 { "7th" } 8 { "8th" } default { "$configIndex" + "th" } }
+        $proposedConfigDisplayObject += [pscustomobject]@{
+            'vssName'     = $config.vssName
+            'vdsName'     = "$ordinalDisplay VDS"
+            'nicnames'    = $config.nicnames -join (", ")
+            'vdsNetworks' = $config.vdsNetworks -join (", ")
+        }
+        $configIndex++
+    }
+    Write-Host ""; Write-Host " Proposed vSS Configuration (will be applied to all hosts in cluster)" -ForegroundColor Yellow
+    Write-Host ""; $proposedConfigDisplayObject | format-table -Property @{Expression = " " }, vssName, vdsName, nicnames, vdsNetworks -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
+
+    Write-Host ""; Write-Host " Hosts in cluster that will be configured:" -ForegroundColor Yellow
+    Foreach ($clusterHost in $cluster.hosts) {
+        Write-Host "   $($clusterHost.hostname)" -ForegroundColor Cyan
+    }
+
+    Write-Host ""; Write-Host " Do you wish to proceed with the proposed configuration? (Y/N): " -ForegroundColor Yellow -nonewline
+    $proposedConfigAccepted = Read-Host
+    $proposedConfigAccepted = $proposedConfigAccepted -replace "`t|`n|`r", ""
+    If ($proposedConfigAccepted -eq "Y") {
+        Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false -ErrorAction SilentlyContinue
+
+        Foreach ($clusterHost in $cluster.hosts) {
+            $currentHostFQDN = $clusterHost.hostname
+            $currentHostAdmin = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $currentHostFQDN) -and ($_.username -eq "root") }).username
+            $currentHostPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $currentHostFQDN) -and ($_.username -eq "root") }).password
+
+            LogMessage -type INFO -message "[$currentHostFQDN] Connecting to host"
+            $hostConnection = Connect-ViServer $currentHostFQDN -user $currentHostAdmin -password $currentHostPassword -ErrorAction Stop
+
+            Foreach ($vss in $vssConfiguration) {
+                If ($vss.isManagementVss -and $vss.existingVssName) {
+                    $vssObject = Get-VirtualSwitch -VMHost $currentHostFQDN -Name $vss.existingVssName -errorAction silentlyContinue
+                    If ($vssObject) {
+                        LogMessage -type INFO -message "[$currentHostFQDN] Using existing vSS $($vss.existingVssName) for MANAGEMENT network"
+                        LogMessage -type INFO -message "[$currentHostFQDN] Updating MTU to $mtu on $($vss.existingVssName)"
+                        Set-VirtualSwitch -VirtualSwitch $vssObject -Mtu $mtu -Confirm:$false | Out-Null
+                    }
+                    Foreach ($nic in $vss.newNicNames) {
+                        $vssObject = Get-VirtualSwitch -VMHost $currentHostFQDN -Name $vss.existingVssName
+                        If ($vssObject.ExtensionData.Pnic -notlike "*$nic") {
+                            LogMessage -type INFO -message "[$currentHostFQDN] Adding $nic to $($vss.existingVssName)"
+                            $vmnicToAdd = Get-VMHostNetworkAdapter -VMHost $currentHostFQDN -Physical -Name $nic
+                            Add-VirtualSwitchPhysicalNetworkAdapter -VirtualSwitch $vssObject -VMHostPhysicalNic $vmnicToAdd -confirm:$false
+                        } else {
+                            LogMessage -type INFO -message "[$currentHostFQDN] $nic already part of $($vss.existingVssName). Skipping"
+                        }
+                    }
+                    $trafficTypesPortgroupName = "TRAFFIC_TYPES-" + ($vss.vdsNetworks -join "-")
+                    $vssObject = Get-VirtualSwitch -VMHost $currentHostFQDN -Name $vss.existingVssName
+                    $pgExists = Get-VirtualPortGroup -VirtualSwitch $vssObject -Name $trafficTypesPortgroupName -ErrorAction SilentlyContinue
+                    If (!$pgExists) {
+                        LogMessage -type INFO -message "[$currentHostFQDN] Creating portgroup $trafficTypesPortgroupName on $($vss.existingVssName)"
+                        New-VirtualPortGroup -VirtualSwitch $vssObject -Name $trafficTypesPortgroupName | Out-Null
+                    } else {
+                        LogMessage -type INFO -message "[$currentHostFQDN] Portgroup $trafficTypesPortgroupName already exists. Skipping"
+                    }
+                    If ("VM_MANAGEMENT" -in $vss.vdsNetworks) {
+                        $vmMgmtPgExists = Get-VirtualPortGroup -VirtualSwitch $vssObject -Name "vm_mgmt" -ErrorAction SilentlyContinue
+                        If (!$vmMgmtPgExists) {
+                            LogMessage -type INFO -message "[$currentHostFQDN] Creating portgroup vm_mgmt on $($vss.existingVssName) with VLAN $vmMgmtVlanId"
+                            New-VirtualPortGroup -VirtualSwitch $vssObject -Name "vm_mgmt" -VLanId $vmMgmtVlanId | Out-Null
+                        } else {
+                            LogMessage -type INFO -message "[$currentHostFQDN] Portgroup vm_mgmt already exists. Skipping"
+                        }
+                    }
+                } else {
+                    $vssExists = Get-VirtualSwitch -VMHost $currentHostFQDN -Name $vss.vssName -errorAction silentlyContinue
+                    If (!($vssExists)) {
+                        LogMessage -type INFO -message "[$currentHostFQDN] Creating new vSS $($vss.vssName) with MTU $mtu"
+                        New-VirtualSwitch -VMHost $currentHostFQDN -Name $vss.vssName -mtu $mtu | Out-Null
+                    } else {
+                        LogMessage -type INFO -message "[$currentHostFQDN] vSS $($vss.vssName) already exists. Skipping creation"
+                    }
+
+                    $vssObject = Get-VirtualSwitch -VMHost $currentHostFQDN -Name $vss.vssName
+                    Foreach ($nic in $vss.nicNames) {
+                        If ($vssObject.ExtensionData.Pnic -notlike "*$nic") {
+                            LogMessage -type INFO -message "[$currentHostFQDN] Adding $nic to $($vss.vssName)"
+                            $vmnicToAdd = Get-VMHostNetworkAdapter -VMHost $currentHostFQDN -Physical -Name $nic
+                            Add-VirtualSwitchPhysicalNetworkAdapter -VirtualSwitch $vssObject -VMHostPhysicalNic $vmnicToAdd -confirm:$false
+                        } else {
+                            LogMessage -type INFO -message "[$currentHostFQDN] $nic already part of $($vss.vssName). Skipping"
+                        }
+                    }
+                    $trafficTypesPortgroupName = "TRAFFIC_TYPES-" + ($vss.vdsNetworks -join "-")
+                    $vssObject = Get-VirtualSwitch -VMHost $currentHostFQDN -Name $vss.vssName
+                    $pgExists = Get-VirtualPortGroup -VirtualSwitch $vssObject -Name $trafficTypesPortgroupName -ErrorAction SilentlyContinue
+                    If (!$pgExists) {
+                        LogMessage -type INFO -message "[$currentHostFQDN] Creating portgroup $trafficTypesPortgroupName on $($vss.vssName)"
+                        New-VirtualPortGroup -VirtualSwitch $vssObject -Name $trafficTypesPortgroupName | Out-Null
+                    } else {
+                        LogMessage -type INFO -message "[$currentHostFQDN] Portgroup $trafficTypesPortgroupName already exists. Skipping"
+                    }
+                    If ("VM_MANAGEMENT" -in $vss.vdsNetworks) {
+                        $vmMgmtPgExists = Get-VirtualPortGroup -VirtualSwitch $vssObject -Name "vm_mgmt" -ErrorAction SilentlyContinue
+                        If (!$vmMgmtPgExists) {
+                            LogMessage -type INFO -message "[$currentHostFQDN] Creating portgroup vm_mgmt on $($vss.vssName) with VLAN $vmMgmtVlanId"
+                            New-VirtualPortGroup -VirtualSwitch $vssObject -Name "vm_mgmt" -VLanId $vmMgmtVlanId | Out-Null
+                        } else {
+                            LogMessage -type INFO -message "[$currentHostFQDN] Portgroup vm_mgmt already exists. Skipping"
+                        }
+                    }
+                }
+            }
+            Disconnect-VIServer -Server $currentHostFQDN -Force -Confirm:$false
+        }
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+    } else {
+        Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false -ErrorAction SilentlyContinue
+        LogMessage -type WARNING -message "[$jumpboxName] Configuration not accepted. Task aborted"
+    }
+}
+Export-ModuleMember -Function New-PrepareManagementHostNetworking
+
+Function Add-VMKernelsToManagementHosts {
+    <#
+    .SYNOPSIS
+    Adds vMotion and vSAN VMkernels to ESXi hosts in the default management cluster using data from the extracted SDDC backup
+
+    .DESCRIPTION
+    The Add-VMKernelsToManagementHosts cmdlet connects directly to each ESXi host in the default management cluster,
+    identifies the appropriate vSS based on TRAFFIC_TYPES portgroups, creates vMotion and vSAN portgroups with the
+    correct VLAN IDs, and adds VMkernel adapters with IP addresses from the extracted SDDC backup data.
+
+    .EXAMPLE
+    Add-VMKernelsToManagementHosts -extractedSDDCDataFile ".\extracted-sddc-data.json"
+
+    .PARAMETER extractedSDDCDataFile
+    Relative or absolute path to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup)
+    #>
+
+    Param(
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile
+    )
+
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
+    $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
+    $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
+
+    $workloadDomain = $extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }
+    $cluster = $workloadDomain.vsphereClusterDetails | Where-Object { $_.isDefault -eq "t" }
+    $clusterName = $cluster.name
+
+    $vmotionNetwork = $cluster.hosts[0].networks | Where-Object { $_.type -eq "VMOTION" }
+    $vsanNetwork = $cluster.hosts[0].networks | Where-Object { $_.type -eq "VSAN" }
+
+    $vMotionVlanId = $vmotionNetwork.vlanId
+    $vMotionMtu = $vmotionNetwork.mtu
+    $vMotionMask = $vmotionNetwork.subnetMask
+    $vMotionGateway = $vmotionNetwork.gateway
+
+    $vsanVlanId = $vsanNetwork.vlanId
+    $vsanMtu = $vsanNetwork.mtu
+    $vsanMask = $vsanNetwork.subnetMask
+    $vsanGateway = $vsanNetwork.gateway
+
+    LogMessage -type INFO -message "[$jumpboxName] vMotion Network - VLAN: $vMotionVlanId, MTU: $vMotionMtu, Mask: $vMotionMask, Gateway: $vMotionGateway"
+    LogMessage -type INFO -message "[$jumpboxName] vSAN Network - VLAN: $vsanVlanId, MTU: $vsanMtu, Mask: $vsanMask, Gateway: $vsanGateway"
+
+    If ($global:DefaultVIServers) {
+        Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false -ErrorAction SilentlyContinue
+    }
+
+    Foreach ($clusterHost in $cluster.hosts) {
+        $currentHostFQDN = $clusterHost.hostname
+        $currentHostAdmin = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $currentHostFQDN) -and ($_.username -eq "root") }).username
+        $currentHostPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $currentHostFQDN) -and ($_.username -eq "root") }).password
+
+        $vmotionIP = $clusterHost.vmotionIP
+        $vsanIP = $clusterHost.vsanIP
+
+        LogMessage -type INFO -message "[$currentHostFQDN] Host IPs - vMotion: $vmotionIP, vSAN: $vsanIP"
+
+        LogMessage -type INFO -message "[$currentHostFQDN] Connecting to host"
+        $hostConnection = Connect-VIServer $currentHostFQDN -user $currentHostAdmin -password $currentHostPassword -ErrorAction Stop
+
+        $allPortgroups = Get-VirtualPortGroup -VMHost $currentHostFQDN
+        $vmotionVssName = $null
+        $vsanVssName = $null
+
+        Foreach ($pg in $allPortgroups) {
+            If ($pg.Name -like "TRAFFIC_TYPES-*") {
+                $trafficTypes = $pg.Name -replace "TRAFFIC_TYPES-", ""
+                $trafficTypesArray = $trafficTypes -split "-"
+                If ("VMOTION" -in $trafficTypesArray) {
+                    $vmotionVssName = $pg.VirtualSwitchName
+                    LogMessage -type INFO -message "[$currentHostFQDN] Found VMOTION traffic type on vSS: $vmotionVssName"
+                }
+                If ("VSAN" -in $trafficTypesArray) {
+                    $vsanVssName = $pg.VirtualSwitchName
+                    LogMessage -type INFO -message "[$currentHostFQDN] Found VSAN traffic type on vSS: $vsanVssName"
+                }
+            }
+        }
+
+        If (-not $vmotionVssName) {
+            LogMessage -type WARNING -message "[$currentHostFQDN] Could not find vSS with VMOTION in TRAFFIC_TYPES portgroup. Skipping vMotion configuration"
+        } else {
+            $vmotionPgName = "vmotion"
+            $vssVmotionPortgroupExists = Get-VirtualPortGroup -VMHost $currentHostFQDN -VirtualSwitch $vmotionVssName -Name $vmotionPgName -ErrorAction SilentlyContinue
+            If (-not $vssVmotionPortgroupExists) {
+                LogMessage -type INFO -message "[$currentHostFQDN] Creating vMotion portgroup '$vmotionPgName' on $vmotionVssName with VLAN $vMotionVlanId"
+                New-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $currentHostFQDN -Name $vmotionVssName) -Name $vmotionPgName -VLanId $vMotionVlanId | Out-Null
+            } else {
+                LogMessage -type INFO -message "[$currentHostFQDN] vMotion portgroup '$vmotionPgName' already exists. Skipping creation"
+            }
+
+            $vmk1Exists = Get-VMHostNetworkAdapter -VMHost $currentHostFQDN -Name "vmk1" -ErrorAction SilentlyContinue
+            If (-not $vmk1Exists) {
+                LogMessage -type INFO -message "[$currentHostFQDN] Creating vMotion VMkernel (vmk1) with IP $vmotionIP"
+                $vssVmotionPortgroup = Get-VirtualPortGroup -VMHost $currentHostFQDN -VirtualSwitch $vmotionVssName -Name $vmotionPgName
+                New-VMHostNetworkAdapter -VMHost $currentHostFQDN -VirtualSwitch $vmotionVssName -mtu $vMotionMtu -PortGroup $vssVmotionPortgroup -ip $vmotionIP -SubnetMask $vMotionMask -NetworkStack (Get-VMHostNetworkStack -VMHost $currentHostFQDN | Where-Object { $_.id -eq "vmotion" }) | Out-Null
+            } else {
+                LogMessage -type INFO -message "[$currentHostFQDN] VMkernel vmk1 already exists. Skipping creation"
+            }
+
+            $vmk1Check = Get-VMHostNetworkAdapter -VMHost $currentHostFQDN -Name "vmk1" -ErrorAction SilentlyContinue
+            If ($vmk1Check) {
+                LogMessage -type INFO -message "[$currentHostFQDN] Setting vMotion Gateway to $vMotionGateway"
+                $vmkName = 'vmk1'
+                $esx = Get-VMHost -Name $currentHostFQDN
+                $esxcli = Get-EsxCli -VMHost $esx -V2
+                $interface = $esxcli.network.ip.interface.ipv4.get.Invoke(@{interfacename = $vmkName })
+                If ($interface) {
+                    $interfaceArg = @{
+                        netmask       = $interface[0].IPv4Netmask
+                        type          = $interface[0].AddressType.ToLower()
+                        ipv4          = $interface[0].IPv4Address
+                        interfacename = $interface[0].Name
+                    }
+                    $esxcli.network.ip.interface.ipv4.set.Invoke($interfaceArg) *>$null
+                    $esxcli.network.ip.route.ipv4.add.Invoke(@{ netstack = 'vmotion'; network = 'default'; gateway = $vMotionGateway }) *>$null
+                }
+            }
+        }
+
+        If (-not $vsanVssName) {
+            LogMessage -type WARNING -message "[$currentHostFQDN] Could not find vSS with VSAN in TRAFFIC_TYPES portgroup. Skipping vSAN configuration"
+        } else {
+            $vsanPgName = "vsan"
+            $vssVsanPortgroupExists = Get-VirtualPortGroup -VMHost $currentHostFQDN -VirtualSwitch $vsanVssName -Name $vsanPgName -ErrorAction SilentlyContinue
+            If (-not $vssVsanPortgroupExists) {
+                LogMessage -type INFO -message "[$currentHostFQDN] Creating vSAN portgroup '$vsanPgName' on $vsanVssName with VLAN $vsanVlanId"
+                New-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $currentHostFQDN -Name $vsanVssName) -Name $vsanPgName -VLanId $vsanVlanId | Out-Null
+            } else {
+                LogMessage -type INFO -message "[$currentHostFQDN] vSAN portgroup '$vsanPgName' already exists. Skipping creation"
+            }
+
+            $vmk2Exists = Get-VMHostNetworkAdapter -VMHost $currentHostFQDN -Name "vmk2" -ErrorAction SilentlyContinue
+            If (-not $vmk2Exists) {
+                LogMessage -type INFO -message "[$currentHostFQDN] Creating vSAN VMkernel (vmk2) with IP $vsanIP"
+                $vssVsanPortgroup = Get-VirtualPortGroup -VMHost $currentHostFQDN -VirtualSwitch $vsanVssName -Name $vsanPgName
+                New-VMHostNetworkAdapter -VMHost $currentHostFQDN -VirtualSwitch $vsanVssName -mtu $vsanMtu -PortGroup $vssVsanPortgroup -ip $vsanIP -SubnetMask $vsanMask -VsanTrafficEnabled $true | Out-Null
+            } else {
+                LogMessage -type INFO -message "[$currentHostFQDN] VMkernel vmk2 already exists. Skipping creation"
+            }
+
+            $vmk2Check = Get-VMHostNetworkAdapter -VMHost $currentHostFQDN -Name "vmk2" -ErrorAction SilentlyContinue
+            If ($vmk2Check) {
+                LogMessage -type INFO -message "[$currentHostFQDN] Setting vSAN Gateway to $vsanGateway"
+                $vmkName = 'vmk2'
+                $esx = Get-VMHost -Name $currentHostFQDN
+                $esxcli = Get-EsxCli -VMHost $esx -V2
+                $interface = $esxcli.network.ip.interface.ipv4.get.Invoke(@{interfacename = $vmkName })
+                If ($interface) {
+                    $interfaceArg = @{
+                        netmask       = $interface[0].IPv4Netmask
+                        type          = $interface[0].AddressType.ToLower()
+                        ipv4          = $interface[0].IPv4Address
+                        interfacename = $interface[0].Name
+                        gateway       = $vsanGateway
+                    }
+                    $esxcli.network.ip.interface.ipv4.set.Invoke($interfaceArg) *>$null
+                }
+            }
+        }
+
+        Disconnect-VIServer -Server $currentHostFQDN -Force -Confirm:$false
+    }
+
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+}
+Export-ModuleMember -Function Add-VMKernelsToManagementHosts
 
 Function Backup-ClusterVMOverrides {
     <#

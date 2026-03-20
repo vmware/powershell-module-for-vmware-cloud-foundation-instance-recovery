@@ -12,7 +12,7 @@
     RootModule        = '.\VMware.CloudFoundation.InstanceRecovery.psm1'
 
     # Version number of this module.
-    ModuleVersion     = '9.0.1.1001'
+    ModuleVersion     = '9.1.0.1000'
 
     # Supported PSEditions
     # CompatiblePSEditions = @()
