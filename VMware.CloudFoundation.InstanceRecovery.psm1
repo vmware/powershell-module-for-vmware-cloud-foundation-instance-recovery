@@ -968,10 +968,11 @@ Function New-ExtractDataFromSDDCBackup {
                 'vCenterID'            = $vCenterID
                 'primaryDatastoreName' = $primaryDatastoreName
                 'primaryDatastoreType' = $primaryDatastoreType
-                'isImageBased'         = $isImagedBased
-                'sourceID'             = $sourceID
-                'vdsDetails'           = $vdsDetails
-                'hosts'                = @($hostsArray | Sort-Object -Property hostname)
+                'primaryDatastorePolicy' = $null
+                'isImageBased'           = $isImagedBased
+                'sourceID'               = $sourceID
+                'vdsDetails'             = $vdsDetails
+                'hosts'                  = @($hostsArray | Sort-Object -Property hostname)
             }
         }
         $clustersLineIndex++
@@ -1284,8 +1285,11 @@ Function Update-ExtractedSDDCData {
             LogMessage -type INFO -message "Injecting cluster name $clusterName into $($workloadDomain.domainName)"
             $cluster.name = $clusterName
             $primaryDatastoreName = $clusterInfo.PrimaryDatastoreName
+            $primaryDatastorePolicy = ((Get-Datastore -name $primaryDatastoreName | Get-SpbmEntityConfiguration)).storagePolicy.name
             LogMessage -type INFO -message "Injecting primary datastore name $primaryDatastoreName into $($workloadDomain.domainName)"
             $cluster.primaryDatastoreName = $primaryDatastoreName
+            LogMessage -type INFO -message "Injecting primary datastore storage policy $primaryDatastorePolicy into $($workloadDomain.domainName)"
+            $cluster.primaryDatastorePolicy = $primaryDatastorePolicy
             Foreach ($vds in $cluster.vdsDetails) {
                 $vdsName = (Invoke-VcfGetVdses -ClusterId $cluster.id | Where-Object { $_.id -eq $vds.id }).Name
                 $vds.dvsName = $vdsName
