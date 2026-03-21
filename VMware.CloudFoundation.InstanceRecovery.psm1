@@ -4641,72 +4641,106 @@ Function New-RebuiltVdsConfiguration {
     $vssToDelete = @()
 
     If ($isPrimaryManagementCluster) {
-        LogMessage -type INFO -message "[$($vmhosts[0].name)] Discovering TRAFFIC_TYPES portgroups to determine VDS mapping"
+        $existingAttribute = Get-CustomAttribute -Name intendedVdsConfiguration -TargetType Cluster -ErrorAction SilentlyContinue
+        If (!$existingAttribute) {
+            New-CustomAttribute -Name intendedVdsConfiguration -TargetType Cluster | Out-Null
+        }
 
-        $referenceHost = $vmhosts[0]
-        $allPortgroups = Get-VirtualPortGroup -VMHost $referenceHost
-        $allVswitches = Get-VirtualSwitch -VMHost $referenceHost
+        $clusterObject = Get-Cluster -Name $clusterName
+        $index = [System.Array]::IndexOf($clusterObject.CustomFields.Keys, "intendedVdsConfiguration")
+        $storedVdsConfiguration = $null
+        If ($index -ge 0) {
+            $storedVdsConfiguration = @($clusterObject.CustomFields.Values)[$index] | ConvertFrom-Json
+        }
 
-        Foreach ($pg in $allPortgroups) {
-            If ($pg.Name -like "TRAFFIC_TYPES-*") {
-                $vssName = $pg.VirtualSwitchName
-                $trafficTypes = $pg.Name -replace "TRAFFIC_TYPES-", ""
-                $trafficTypesArray = $trafficTypes -split "-"
+        If ($storedVdsConfiguration) {
+            LogMessage -type INFO -message "[$jumpboxName] Found stored VDS configuration on cluster - using for idempotency"
+            Foreach ($storedConfig in $storedVdsConfiguration) {
+                $individualVds = [PSCustomObject]@{
+                    'vdsName'           = $storedConfig.vdsName
+                    'nicnames'          = @($storedConfig.nicnames)
+                    'vdsNetworks'       = @($storedConfig.vdsNetworks)
+                    'portgroups'        = $storedConfig.portgroups
+                    'sourceVss'         = $storedConfig.sourceVss
+                    'hasTransportZones' = $storedConfig.hasTransportZones
+                }
+                $vdsConfiguration += $individualVds
 
-                LogMessage -type INFO -message "[$($referenceHost.name)] Found TRAFFIC_TYPES portgroup: $($pg.Name) on vSS: $vssName"
+                If ($storedConfig.sourceVss -notin $vssToDelete) {
+                    $vssToDelete += $storedConfig.sourceVss
+                }
+            }
+        } else {
+            LogMessage -type INFO -message "[$($vmhosts[0].name)] Discovering TRAFFIC_TYPES portgroups to determine VDS mapping"
 
-                $matchingVds = $null
-                Foreach ($vdsDetail in $clusterVdsDetails) {
-                    $vdsNetworksList = @($vdsDetail.networks | Where-Object { $_ })
-                    If ($vdsDetail.transportZones) {
-                        $vdsNetworksList += "OVERLAY"
-                    }
+            $referenceHost = $vmhosts[0]
+            $allPortgroups = Get-VirtualPortGroup -VMHost $referenceHost
+            $allVswitches = Get-VirtualSwitch -VMHost $referenceHost
 
-                    $allMatch = $true
-                    Foreach ($trafficType in $trafficTypesArray) {
-                        If ($trafficType -notin $vdsNetworksList) {
-                            $allMatch = $false
+            Foreach ($pg in $allPortgroups) {
+                If ($pg.Name -like "TRAFFIC_TYPES-*") {
+                    $vssName = $pg.VirtualSwitchName
+                    $trafficTypes = $pg.Name -replace "TRAFFIC_TYPES-", ""
+                    $trafficTypesArray = $trafficTypes -split "-"
+
+                    LogMessage -type INFO -message "[$($referenceHost.name)] Found TRAFFIC_TYPES portgroup: $($pg.Name) on vSS: $vssName"
+
+                    $matchingVds = $null
+                    Foreach ($vdsDetail in $clusterVdsDetails) {
+                        $vdsNetworksList = @($vdsDetail.networks | Where-Object { $_ })
+                        If ($vdsDetail.transportZones) {
+                            $vdsNetworksList += "OVERLAY"
+                        }
+
+                        $allMatch = $true
+                        Foreach ($trafficType in $trafficTypesArray) {
+                            If ($trafficType -notin $vdsNetworksList) {
+                                $allMatch = $false
+                                Break
+                            }
+                        }
+                        If ($allMatch -and ($trafficTypesArray.Count -eq $vdsNetworksList.Count)) {
+                            $matchingVds = $vdsDetail
                             Break
                         }
                     }
-                    If ($allMatch -and ($trafficTypesArray.Count -eq $vdsNetworksList.Count)) {
-                        $matchingVds = $vdsDetail
-                        Break
-                    }
-                }
 
-                If ($matchingVds) {
-                    LogMessage -type INFO -message "[$($referenceHost.name)] Matched vSS $vssName to VDS $($matchingVds.dvsName)"
+                    If ($matchingVds) {
+                        LogMessage -type INFO -message "[$($referenceHost.name)] Matched vSS $vssName to VDS $($matchingVds.dvsName)"
 
-                    $vssObject = $allVswitches | Where-Object { $_.Name -eq $vssName }
-                    $vssNics = @()
-                    If ($vssObject.Nic) {
-                        $vssNics = @($vssObject.Nic) | Sort-Object
-                    }
+                        $vssObject = $allVswitches | Where-Object { $_.Name -eq $vssName }
+                        $vssNics = @()
+                        If ($vssObject.Nic) {
+                            $vssNics = @($vssObject.Nic) | Sort-Object
+                        }
 
-                    $individualVds = [PSCustomObject]@{
-                        'vdsName'           = $matchingVds.dvsName
-                        'nicnames'          = $vssNics
-                        'vdsNetworks'       = $matchingVds.networks
-                        'portgroups'        = $matchingVds.portgroups
-                        'sourceVss'         = $vssName
-                        'hasTransportZones' = [bool]$matchingVds.transportZones
-                    }
-                    $vdsConfiguration += $individualVds
+                        $individualVds = [PSCustomObject]@{
+                            'vdsName'           = $matchingVds.dvsName
+                            'nicnames'          = $vssNics
+                            'vdsNetworks'       = $matchingVds.networks
+                            'portgroups'        = $matchingVds.portgroups
+                            'sourceVss'         = $vssName
+                            'hasTransportZones' = [bool]$matchingVds.transportZones
+                        }
+                        $vdsConfiguration += $individualVds
 
-                    If ($vssName -notin $vssToDelete) {
-                        $vssToDelete += $vssName
+                        If ($vssName -notin $vssToDelete) {
+                            $vssToDelete += $vssName
+                        }
+                    } else {
+                        LogMessage -type WARNING -message "[$($referenceHost.name)] Could not find matching VDS for vSS $vssName with traffic types: $trafficTypes"
                     }
-                } else {
-                    LogMessage -type WARNING -message "[$($referenceHost.name)] Could not find matching VDS for vSS $vssName with traffic types: $trafficTypes"
                 }
             }
-        }
 
-        If ($vdsConfiguration.Count -eq 0) {
-            LogMessage -type ERROR -message "[$jumpboxName] No TRAFFIC_TYPES portgroups found. Cannot proceed with automatic configuration."
-            Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
-            Return
+            If ($vdsConfiguration.Count -eq 0) {
+                LogMessage -type ERROR -message "[$jumpboxName] No TRAFFIC_TYPES portgroups found. Cannot proceed with automatic configuration."
+                Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+                Return
+            }
+
+            LogMessage -type INFO -message "[$jumpboxName] Storing VDS configuration on cluster for idempotency"
+            $clusterObject | Set-Annotation -CustomAttribute "intendedVdsConfiguration" -Value ($vdsConfiguration | ConvertTo-Json -Depth 5) | Out-Null
         }
 
         Write-Host ""; Write-Host " Automatic VDS Configuration (based on TRAFFIC_TYPES portgroups)" -ForegroundColor Yellow
