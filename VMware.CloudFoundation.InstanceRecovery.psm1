@@ -4700,7 +4700,7 @@ Function New-RebuiltVdsConfiguration {
     $cluster = ($workloadDomain.vsphereClusterDetails | Where-Object { $_.name -eq $clustername })
     If (($workloadDomain.domainType -eq "MANAGEMENT") -and ($isPrimaryCluster -eq 't')) {
         $isPrimaryManagementCluster = $true
-        LogMessage -type INFO -message "[$jumpboxName] Detected default management cluster - using automatic VDS configuration"
+        LogMessage -type INFO -message "[$jumpboxName] Detected default management cluster. Using automatic VDS configuration"
     } else {
         $isPrimaryManagementCluster = $false
     }
@@ -4757,7 +4757,7 @@ Function New-RebuiltVdsConfiguration {
         }
 
         If ($storedVdsConfiguration) {
-            LogMessage -type INFO -message "[$jumpboxName] Found stored VDS configuration on cluster - using for idempotency"
+            LogMessage -type INFO -message "[$jumpboxName] Using VDS configuration stored on cluster"
             Foreach ($storedConfig in $storedVdsConfiguration) {
                 $individualVds = [PSCustomObject]@{
                     'vdsName'           = $storedConfig.vdsName
@@ -5110,18 +5110,12 @@ Function New-RebuiltVdsConfiguration {
         #Remove Virtual Switches
         Foreach ($vmHost in $vmHosts) {
             If ($isPrimaryManagementCluster) {
+                LogMessage -type INFO -message "[$($vmhost.name)] Removing vSwitches: $($vssToDelete.join(","))"
                 Foreach ($vssName in $vssToDelete) {
                     $vssExists = Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name $vssName -ErrorAction SilentlyContinue
                     If ($vssExists) {
-                        LogMessage -type INFO -message "[$($vmhost.name)] Removing $vssName"
                         Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name $vssName | Remove-VirtualSwitch -Confirm:$false | Out-Null
                     }
-                }
-            } else {
-                $hostvssArray = Get-VMHost -Name $vmhost | Get-VirtualSwitch -errorAction silentlyContinue | Where-Object { $_.name -like "vcfir-*-vss" }
-                Foreach ($vss in $hostvssArray) {
-                    LogMessage -type INFO -message "[$($vmhost.name)] Removing $($vss.name)"
-                    Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name $vss.name | Remove-VirtualSwitch -Confirm:$false | Out-Null
                 }
             }
         }
