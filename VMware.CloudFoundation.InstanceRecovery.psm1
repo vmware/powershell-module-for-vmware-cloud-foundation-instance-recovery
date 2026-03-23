@@ -4304,6 +4304,109 @@ Function New-RebuiltVsanDatastore {
 }
 Export-ModuleMember -Function New-RebuiltVsanDatastore
 
+Function Set-ManagementDatastorePolicy {
+    <#
+    .SYNOPSIS
+    Sets the default storage policy on the vSAN datastore and applies it to all VMs in the cluster
+
+    .DESCRIPTION
+    The Set-ManagementDatastorePolicy cmdlet retrieves the primary datastore policy from the extracted SDDC data
+    and applies it as the default policy on the vSAN datastore for the specified cluster. It also applies the
+    policy to all discovered VMs on the cluster to ensure storage policy compliance.
+
+    .EXAMPLE
+    Set-ManagementDatastorePolicy -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01" -extractedSDDCDataFile ".\extracted-sddc-data.json"
+
+    .PARAMETER vCenterFQDN
+    FQDN of the vCenter instance hosting the cluster
+
+    .PARAMETER vCenterAdmin
+    Admin user of the vCenter instance hosting the cluster
+
+    .PARAMETER vCenterAdminPassword
+    Admin password for the vCenter instance hosting the cluster
+
+    .PARAMETER clusterName
+    Name of the vSphere cluster instance
+
+    .PARAMETER extractedSDDCDataFile
+    Relative or absolute to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup) somewhere on the local filesystem
+    #>
+
+    Param(
+        [Parameter (Mandatory = $true)][String] $vCenterFQDN,
+        [Parameter (Mandatory = $true)][String] $vCenterAdmin,
+        [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
+        [Parameter (Mandatory = $true)][String] $clusterName,
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile
+    )
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
+    $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
+    $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
+
+    $datastoreName = ($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).primaryDatastoreName
+    $datastorePolicy = ($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).primaryDatastorePolicy
+
+    If (-not $datastorePolicy) {
+        LogMessage -type ERROR -message "[$clusterName] No primaryDatastorePolicy found in extracted data. Ensure Update-ExtractedSDDCData has been run."
+        return
+    }
+
+    LogMessage -type INFO -message "[$jumpboxName] Connecting to vCenter: $vCenterFQDN"
+    $vCenterConnection = Connect-ViServer $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
+
+    LogMessage -type INFO -message "[$clusterName] Retrieved storage policy from extracted data: $datastorePolicy"
+
+    $storagePolicy = Get-SpbmStoragePolicy -Name $datastorePolicy -ErrorAction SilentlyContinue
+    If (-not $storagePolicy) {
+        LogMessage -type ERROR -message "[$clusterName] Storage policy '$datastorePolicy' not found in vCenter. Available policies:"
+        Get-SpbmStoragePolicy | ForEach-Object { LogMessage -type INFO -message "  - $($_.Name)" }
+        Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+        return
+    }
+
+    $datastore = Get-Cluster -Name $clusterName | Get-Datastore -Name $datastoreName -ErrorAction SilentlyContinue
+    If (-not $datastore) {
+        LogMessage -type ERROR -message "[$clusterName] Datastore '$datastoreName' not found"
+        Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+        return
+    }
+
+    LogMessage -type INFO -message "[$datastoreName] Setting default storage policy to: $datastorePolicy"
+    Get-SpbmEntityConfiguration -Datastore $datastore | Set-SpbmEntityConfiguration -StoragePolicy $storagePolicy | Out-Null
+
+    $clusterVMs = Get-Cluster -Name $clusterName | Get-VM | Where-Object { $_.Name -notlike "*vCLS*" }
+    $vmCount = ($clusterVMs | Measure-Object).Count
+    LogMessage -type INFO -message "[$clusterName] Discovered $vmCount VMs to apply storage policy"
+
+    Foreach ($vm in $clusterVMs) {
+        $vmConfig = Get-SpbmEntityConfiguration -VM $vm -ErrorAction SilentlyContinue
+        $currentVmPolicy = $vmConfig.StoragePolicy.Name
+        If ($currentVmPolicy -ne $datastorePolicy) {
+            LogMessage -type INFO -message "[$($vm.Name)] Applying storage policy: $datastorePolicy"
+            $vmConfig | Set-SpbmEntityConfiguration -StoragePolicy $storagePolicy | Out-Null
+
+            $vmHardDisks = $vm | Get-HardDisk
+            Foreach ($hardDisk in $vmHardDisks) {
+                $diskConfig = Get-SpbmEntityConfiguration -HardDisk $hardDisk -ErrorAction SilentlyContinue
+                $diskPolicy = $diskConfig.StoragePolicy.Name
+                If ($diskPolicy -ne $datastorePolicy) {
+                    #LogMessage -type INFO -message "[$($vm.Name)] Applying storage policy to disk: $($hardDisk.Name)"
+                    $diskConfig | Set-SpbmEntityConfiguration -StoragePolicy $storagePolicy | Out-Null
+                }
+            }
+        } else {
+            LogMessage -type INFO -message "[$($vm.Name)] Already has correct storage policy. Skipping"
+        }
+    }
+
+    Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+}
+Export-ModuleMember -Function Set-ManagementDatastorePolicy
+
 Function New-SingleHostVsanDatastore {
     <#
     .SYNOPSIS
@@ -4887,7 +4990,42 @@ Function New-RebuiltVdsConfiguration {
                 $hostMoRef = $vmhost.ExtensionData.moref.value
                 If ($hostMoRef -notin $vdsHosts) {
                     LogMessage -type INFO -message "[$($vmhost.name)] Adding to $($vds.vdsName)"
-                    Get-VDSwitch -name $vds.vdsName | Add-VDSwitchVMHost -vmhost $vmHost -confirm:$false
+                    $maxRetries = 3
+                    $retryCount = 0
+                    $addHostSuccess = $false
+                    $taskTimeoutSeconds = 120
+                    Do {
+                        try {
+                            $task = Get-VDSwitch -name $vds.vdsName | Add-VDSwitchVMHost -vmhost $vmHost -confirm:$false -RunAsync
+                            $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+                            $pollIntervalSeconds = 5
+                            Do {
+                                Start-Sleep -Seconds $pollIntervalSeconds
+                                $taskUpdate = Get-Task | Where-Object { $_.Id -eq $task.Id }
+                                If ($taskUpdate) { $task = $taskUpdate }
+                            } While ($task.State -eq "Running" -and $stopwatch.Elapsed.TotalSeconds -lt $taskTimeoutSeconds)
+                            $stopwatch.Stop()
+                            If ($task.State -eq "Success") {
+                                $addHostSuccess = $true
+                            } ElseIf ($task.State -eq "Running") {
+                                LogMessage -type WARNING -message "[$($vmhost.name)] Task timed out after $taskTimeoutSeconds seconds. Attempting to cancel..."
+                                Stop-Task -Task $task -Confirm:$false -ErrorAction SilentlyContinue
+                                throw "Task timed out"
+                            } Else {
+                                throw "Task failed with state: $($task.State)"
+                            }
+                        } catch {
+                            $retryCount++
+                            If ($retryCount -lt $maxRetries) {
+                                LogMessage -type WARNING -message "[$($vmhost.name)] Failed to add to $($vds.vdsName): $($_.Exception.Message). Retry $retryCount of $maxRetries in 30 seconds..."
+                                Start-Sleep -Seconds 30
+                                $vmHost = Get-VMHost -Name $vmHost.Name
+                            } else {
+                                LogMessage -type ERROR -message "[$($vmhost.name)] Failed to add to $($vds.vdsName) after $maxRetries attempts: $($_.Exception.Message)"
+                                throw $_
+                            }
+                        }
+                    } While ((-not $addHostSuccess) -and ($retryCount -lt $maxRetries))
                 } else {
                     LogMessage -type INFO -message "[$($vmhost.name)] Already in $($vds.vdsName). Skipping"
                 }
@@ -4896,9 +5034,47 @@ Function New-RebuiltVdsConfiguration {
                 If (!$vmnicInVds) {
                     If ($portgroupArray.count -ne 0) {
                         LogMessage -type INFO -message "[$($vmhost.name)] Adding Physical Adapter $($vds.nicNames[0]) to $($vds.vdsName) and migrating $($vmNicArray.name -join(", "))"
-                        Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $vmnicMinusOne -VMHostVirtualNic $vmNicArray -VirtualNicPortgroup $portgroupArray -confirm:$false
+                        $maxRetries = 3
+                        $retryCount = 0
+                        $addNicSuccess = $false
+                        Do {
+                            try {
+                                Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $vmnicMinusOne -VMHostVirtualNic $vmNicArray -VirtualNicPortgroup $portgroupArray -confirm:$false
+                                $addNicSuccess = $true
+                            } catch {
+                                $retryCount++
+                                If ($retryCount -lt $maxRetries) {
+                                    LogMessage -type WARNING -message "[$($vmhost.name)] Failed to add physical adapter to $($vds.vdsName): $($_.Exception.Message). Retry $retryCount of $maxRetries in 30 seconds..."
+                                    Start-Sleep -Seconds 30
+                                    $vmHost = Get-VMHost -Name $vmHost.Name
+                                    $vmnicMinusOne = $vmhost | Get-VMHostNetworkAdapter | Where-Object { $_.deviceName -eq $vds.nicNames[0] }
+                                } else {
+                                    LogMessage -type ERROR -message "[$($vmhost.name)] Failed to add physical adapter to $($vds.vdsName) after $maxRetries attempts: $($_.Exception.Message)"
+                                    throw $_
+                                }
+                            }
+                        } While ((-not $addNicSuccess) -and ($retryCount -lt $maxRetries))
                     } else {
-                        Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $vmnicMinusOne -confirm:$false
+                        $maxRetries = 3
+                        $retryCount = 0
+                        $addNicSuccess = $false
+                        Do {
+                            try {
+                                Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $vmnicMinusOne -confirm:$false
+                                $addNicSuccess = $true
+                            } catch {
+                                $retryCount++
+                                If ($retryCount -lt $maxRetries) {
+                                    LogMessage -type WARNING -message "[$($vmhost.name)] Failed to add physical adapter to $($vds.vdsName): $($_.Exception.Message). Retry $retryCount of $maxRetries in 30 seconds..."
+                                    Start-Sleep -Seconds 30
+                                    $vmHost = Get-VMHost -Name $vmHost.Name
+                                    $vmnicMinusOne = $vmhost | Get-VMHostNetworkAdapter | Where-Object { $_.deviceName -eq $vds.nicNames[0] }
+                                } else {
+                                    LogMessage -type ERROR -message "[$($vmhost.name)] Failed to add physical adapter to $($vds.vdsName) after $maxRetries attempts: $($_.Exception.Message)"
+                                    throw $_
+                                }
+                            }
+                        } While ((-not $addNicSuccess) -and ($retryCount -lt $maxRetries))
                     }
                 } else {
                     LogMessage -type INFO -message "[$($vmhost.name)] Physical Adapter $($vds.nicNames[0]) already in $($vds.vdsName). Skipping"
@@ -4963,8 +5139,26 @@ Function New-RebuiltVdsConfiguration {
                     $vmnicInVds = Get-VDPort -VDSwitch $vds.vdsName | Where-Object { $_.proxyHost.name -eq $vmhost.name -and $_.connectedEntity.name -eq $nic }
                     If (!$vmnicInVds) {
                         LogMessage -type INFO -message "[$($vmhost.name)] Adding Additional Nic $nic to $($vds.vdsName)"
-                        $additionalNic = $vmhost | Get-VMHostNetworkAdapter -Physical -Name $nic
-                        Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $additionalNic -confirm:$false
+                        $maxRetries = 3
+                        $retryCount = 0
+                        $addNicSuccess = $false
+                        Do {
+                            try {
+                                $additionalNic = $vmhost | Get-VMHostNetworkAdapter -Physical -Name $nic
+                                Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $additionalNic -confirm:$false
+                                $addNicSuccess = $true
+                            } catch {
+                                $retryCount++
+                                If ($retryCount -lt $maxRetries) {
+                                    LogMessage -type WARNING -message "[$($vmhost.name)] Failed to add additional NIC $nic to $($vds.vdsName): $($_.Exception.Message). Retry $retryCount of $maxRetries in 30 seconds..."
+                                    Start-Sleep -Seconds 30
+                                    $vmHost = Get-VMHost -Name $vmHost.Name
+                                } else {
+                                    LogMessage -type ERROR -message "[$($vmhost.name)] Failed to add additional NIC $nic to $($vds.vdsName) after $maxRetries attempts: $($_.Exception.Message)"
+                                    throw $_
+                                }
+                            }
+                        } While ((-not $addNicSuccess) -and ($retryCount -lt $maxRetries))
                     } else {
                         LogMessage -type INFO -message "[$($vmhost.name)] Physical Adapter $nic already in $($vds.vdsName). Skipping"
                     }
