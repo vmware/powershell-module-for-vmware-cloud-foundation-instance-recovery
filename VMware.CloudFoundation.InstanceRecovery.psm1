@@ -4909,10 +4909,11 @@ Function New-RebuiltVdsConfiguration {
             } Until (($nicSelectionInvalid -eq $false) -OR ($nicSelection -eq "c"))
             If ($nicSelection -eq "c") { Break }
             $individualVds = [PSCustomObject]@{
-                'vdsName'     = $cluster.vdsDetails[$vdsConfigurationIndex].dvsName
-                'nicnames'    = $nicNamesArray
-                'vdsNetworks' = $cluster.vdsDetails[$vdsConfigurationIndex].networks
-                'portgroups'  = $cluster.vdsDetails[$vdsConfigurationIndex].portgroups
+                'vdsName'           = $cluster.vdsDetails[$vdsConfigurationIndex].dvsName
+                'nicnames'          = $nicNamesArray
+                'vdsNetworks'       = $cluster.vdsDetails[$vdsConfigurationIndex].networks
+                'portgroups'        = $cluster.vdsDetails[$vdsConfigurationIndex].portgroups
+                'hasTransportZones' = [bool]$cluster.vdsDetails[$vdsConfigurationIndex].transportZones
             }
             $vdsConfiguration += $individualVds
             $tempremainingNicsDisplayObject = @()
@@ -4938,10 +4939,14 @@ Function New-RebuiltVdsConfiguration {
             'vdsNetworks' = "------------------------------"
         }
         Foreach ($config in $vdsConfiguration) {
+            $networksList = @($config.vdsNetworks | Where-Object { $_ })
+            If ($config.hasTransportZones) {
+                $networksList += "OVERLAY"
+            }
             $proposedConfigDisplayObject += [pscustomobject]@{
                 'vdsName'     = $config.vdsName
                 'nicnames'    = $config.nicnames -join (", ")
-                'vdsNetworks' = $config.vdsNetworks -join (", ")
+                'vdsNetworks' = $networksList -join (", ")
             }
             $configIndex++
         }
@@ -5063,7 +5068,7 @@ Function New-RebuiltVdsConfiguration {
                 Foreach ($nic in $remainingVmnics) {
                     $vmnicInVds = Get-VDPort -VDSwitch $vds.vdsName | Where-Object { $_.proxyHost.name -eq $vmhost.name -and $_.connectedEntity.name -eq $nic }
                     If (!$vmnicInVds) {
-                        LogMessage -type INFO -message "[$($vmhost.name)] Adding Additional Nic $nic to $($vds.vdsName)"
+                        LogMessage -type INFO -message "[$($vmhost.name)] Adding Additional NIC $nic to $($vds.vdsName)"
                         $additionalNic = $vmhost | Get-VMHostNetworkAdapter -Physical -Name $nic
                         Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $additionalNic -confirm:$false
                     } else {
