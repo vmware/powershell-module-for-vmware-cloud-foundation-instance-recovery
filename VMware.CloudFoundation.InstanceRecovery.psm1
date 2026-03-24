@@ -4959,7 +4959,6 @@ Function New-RebuiltVdsConfiguration {
                 $vmNicArray = @()
                 $portgroupArray = @()
                 $vmnicMinusOne = $vmhost | Get-VMHostNetworkAdapter | Where-Object { $_.deviceName -eq $vds.nicNames[0] }
-
                 If (($vds.portgroups | Where-Object { $_.transportType -eq 'VM_MANAGEMENT' }).name) {
                     $managementVmPortGroupName = ($vds.portgroups | Where-Object { $_.transportType -eq 'VM_MANAGEMENT' }).name
                 } else {
@@ -4990,42 +4989,7 @@ Function New-RebuiltVdsConfiguration {
                 $hostMoRef = $vmhost.ExtensionData.moref.value
                 If ($hostMoRef -notin $vdsHosts) {
                     LogMessage -type INFO -message "[$($vmhost.name)] Adding to $($vds.vdsName)"
-                    $maxRetries = 3
-                    $retryCount = 0
-                    $addHostSuccess = $false
-                    $taskTimeoutSeconds = 120
-                    Do {
-                        try {
-                            $task = Get-VDSwitch -name $vds.vdsName | Add-VDSwitchVMHost -vmhost $vmHost -confirm:$false -RunAsync
-                            $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-                            $pollIntervalSeconds = 5
-                            Do {
-                                Start-Sleep -Seconds $pollIntervalSeconds
-                                $taskUpdate = Get-Task | Where-Object { $_.Id -eq $task.Id }
-                                If ($taskUpdate) { $task = $taskUpdate }
-                            } While ($task.State -eq "Running" -and $stopwatch.Elapsed.TotalSeconds -lt $taskTimeoutSeconds)
-                            $stopwatch.Stop()
-                            If ($task.State -eq "Success") {
-                                $addHostSuccess = $true
-                            } ElseIf ($task.State -eq "Running") {
-                                LogMessage -type WARNING -message "[$($vmhost.name)] Task timed out after $taskTimeoutSeconds seconds. Attempting to cancel..."
-                                Stop-Task -Task $task -Confirm:$false -ErrorAction SilentlyContinue
-                                throw "Task timed out"
-                            } Else {
-                                throw "Task failed with state: $($task.State)"
-                            }
-                        } catch {
-                            $retryCount++
-                            If ($retryCount -lt $maxRetries) {
-                                LogMessage -type WARNING -message "[$($vmhost.name)] Failed to add to $($vds.vdsName): $($_.Exception.Message). Retry $retryCount of $maxRetries in 30 seconds..."
-                                Start-Sleep -Seconds 30
-                                $vmHost = Get-VMHost -Name $vmHost.Name
-                            } else {
-                                LogMessage -type ERROR -message "[$($vmhost.name)] Failed to add to $($vds.vdsName) after $maxRetries attempts: $($_.Exception.Message)"
-                                throw $_
-                            }
-                        }
-                    } While ((-not $addHostSuccess) -and ($retryCount -lt $maxRetries))
+                    Get-VDSwitch -name $vds.vdsName | Add-VDSwitchVMHost -vmhost $vmHost -confirm:$false
                 } else {
                     LogMessage -type INFO -message "[$($vmhost.name)] Already in $($vds.vdsName). Skipping"
                 }
@@ -5034,47 +4998,9 @@ Function New-RebuiltVdsConfiguration {
                 If (!$vmnicInVds) {
                     If ($portgroupArray.count -ne 0) {
                         LogMessage -type INFO -message "[$($vmhost.name)] Adding Physical Adapter $($vds.nicNames[0]) to $($vds.vdsName) and migrating $($vmNicArray.name -join(", "))"
-                        $maxRetries = 3
-                        $retryCount = 0
-                        $addNicSuccess = $false
-                        Do {
-                            try {
-                                Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $vmnicMinusOne -VMHostVirtualNic $vmNicArray -VirtualNicPortgroup $portgroupArray -confirm:$false
-                                $addNicSuccess = $true
-                            } catch {
-                                $retryCount++
-                                If ($retryCount -lt $maxRetries) {
-                                    LogMessage -type WARNING -message "[$($vmhost.name)] Failed to add physical adapter to $($vds.vdsName): $($_.Exception.Message). Retry $retryCount of $maxRetries in 30 seconds..."
-                                    Start-Sleep -Seconds 30
-                                    $vmHost = Get-VMHost -Name $vmHost.Name
-                                    $vmnicMinusOne = $vmhost | Get-VMHostNetworkAdapter | Where-Object { $_.deviceName -eq $vds.nicNames[0] }
-                                } else {
-                                    LogMessage -type ERROR -message "[$($vmhost.name)] Failed to add physical adapter to $($vds.vdsName) after $maxRetries attempts: $($_.Exception.Message)"
-                                    throw $_
-                                }
-                            }
-                        } While ((-not $addNicSuccess) -and ($retryCount -lt $maxRetries))
+                        Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $vmnicMinusOne -VMHostVirtualNic $vmNicArray -VirtualNicPortgroup $portgroupArray -confirm:$false
                     } else {
-                        $maxRetries = 3
-                        $retryCount = 0
-                        $addNicSuccess = $false
-                        Do {
-                            try {
-                                Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $vmnicMinusOne -confirm:$false
-                                $addNicSuccess = $true
-                            } catch {
-                                $retryCount++
-                                If ($retryCount -lt $maxRetries) {
-                                    LogMessage -type WARNING -message "[$($vmhost.name)] Failed to add physical adapter to $($vds.vdsName): $($_.Exception.Message). Retry $retryCount of $maxRetries in 30 seconds..."
-                                    Start-Sleep -Seconds 30
-                                    $vmHost = Get-VMHost -Name $vmHost.Name
-                                    $vmnicMinusOne = $vmhost | Get-VMHostNetworkAdapter | Where-Object { $_.deviceName -eq $vds.nicNames[0] }
-                                } else {
-                                    LogMessage -type ERROR -message "[$($vmhost.name)] Failed to add physical adapter to $($vds.vdsName) after $maxRetries attempts: $($_.Exception.Message)"
-                                    throw $_
-                                }
-                            }
-                        } While ((-not $addNicSuccess) -and ($retryCount -lt $maxRetries))
+                        Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $vmnicMinusOne -confirm:$false
                     }
                 } else {
                     LogMessage -type INFO -message "[$($vmhost.name)] Physical Adapter $($vds.nicNames[0]) already in $($vds.vdsName). Skipping"
@@ -5086,10 +5012,10 @@ Function New-RebuiltVdsConfiguration {
                 #Move Mgmt VMs to Management Portgroup
                 If ($isPrimaryManagementCluster) {
                     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
-                    Foreach ($vmhost in $vmhosts.name) {
-                        $vmHostUser = ($extractedSddcData.passwords | where-object { ($_.domainName -eq $domainName) -and ($_.entityType -eq "ESXI") -and ($_.username -eq "root") -and ($_.entityName -eq $vmhost) }).username
-                        $vmHostPassword = ($extractedSddcData.passwords | where-object { ($_.domainName -eq $domainName) -and ($_.entityType -eq "ESXI") -and ($_.username -eq "root") -and ($_.entityName -eq $vmhost) }).password
-                        $vmHostConnection = Connect-ViServer $vmhost -user $vmHostUser -password $vmHostPassword
+                    Foreach ($vmhost in $vmhosts) {
+                        $vmHostUser = ($extractedSddcData.passwords | where-object { ($_.domainName -eq $domainName) -and ($_.entityType -eq "ESXI") -and ($_.username -eq "root") -and ($_.entityName -eq $vmhost.name) }).username
+                        $vmHostPassword = ($extractedSddcData.passwords | where-object { ($_.domainName -eq $domainName) -and ($_.entityType -eq "ESXI") -and ($_.username -eq "root") -and ($_.entityName -eq $vmhost.name) }).password
+                        $vmHostConnection = Connect-ViServer $vmhost.name -user $vmHostUser -password $vmHostPassword
                         $vmsTomove = Get-VM | Where-Object { $_.Name -notlike "*vCLS*" }
                         foreach ($vmToMove in $vmsTomove) {
 
@@ -5100,8 +5026,13 @@ Function New-RebuiltVdsConfiguration {
                                 LogMessage -type INFO -message "[$($vmToMove.name)] Already moved to $($managementVmPortGroupName). Skipping"
                             }
                         }
+                        If (($vmsTomove.count -gt 0) -and ($vmhost.Manufacturer -eq "VMware, Inc.")) {
+                            LogMessage -type WAIT -message "Aha! You are using nested hosts. Waiting 5 mins to stabilize connection between vCenter and nested hosts after vmk0 migration"
+                            Sleep 300
+                        }
                         Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
                     }
+
                     $vCenterConnection = Connect-ViServer $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
                 }
             }
@@ -5110,10 +5041,10 @@ Function New-RebuiltVdsConfiguration {
         #Remove Virtual Switches
         Foreach ($vmHost in $vmHosts) {
             If ($isPrimaryManagementCluster) {
-                LogMessage -type INFO -message "[$($vmhost.name)] Removing vSwitches: $($vssToDelete.join(","))"
+                LogMessage -type INFO -message "[$($vmhost.name)] Removing vSwitches: $($vssToDelete -join(","))"
                 Foreach ($vssName in $vssToDelete) {
                     $vssExists = Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name $vssName -ErrorAction SilentlyContinue
-                    If ($vssExists) {
+                    If ($vssExists) {                        
                         Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name $vssName | Remove-VirtualSwitch -Confirm:$false | Out-Null
                     }
                 }
@@ -5133,26 +5064,8 @@ Function New-RebuiltVdsConfiguration {
                     $vmnicInVds = Get-VDPort -VDSwitch $vds.vdsName | Where-Object { $_.proxyHost.name -eq $vmhost.name -and $_.connectedEntity.name -eq $nic }
                     If (!$vmnicInVds) {
                         LogMessage -type INFO -message "[$($vmhost.name)] Adding Additional Nic $nic to $($vds.vdsName)"
-                        $maxRetries = 3
-                        $retryCount = 0
-                        $addNicSuccess = $false
-                        Do {
-                            try {
-                                $additionalNic = $vmhost | Get-VMHostNetworkAdapter -Physical -Name $nic
-                                Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $additionalNic -confirm:$false
-                                $addNicSuccess = $true
-                            } catch {
-                                $retryCount++
-                                If ($retryCount -lt $maxRetries) {
-                                    LogMessage -type WARNING -message "[$($vmhost.name)] Failed to add additional NIC $nic to $($vds.vdsName): $($_.Exception.Message). Retry $retryCount of $maxRetries in 30 seconds..."
-                                    Start-Sleep -Seconds 30
-                                    $vmHost = Get-VMHost -Name $vmHost.Name
-                                } else {
-                                    LogMessage -type ERROR -message "[$($vmhost.name)] Failed to add additional NIC $nic to $($vds.vdsName) after $maxRetries attempts: $($_.Exception.Message)"
-                                    throw $_
-                                }
-                            }
-                        } While ((-not $addNicSuccess) -and ($retryCount -lt $maxRetries))
+                        $additionalNic = $vmhost | Get-VMHostNetworkAdapter -Physical -Name $nic
+                        Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $additionalNic -confirm:$false
                     } else {
                         LogMessage -type INFO -message "[$($vmhost.name)] Physical Adapter $nic already in $($vds.vdsName). Skipping"
                     }
