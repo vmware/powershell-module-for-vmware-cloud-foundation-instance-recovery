@@ -5032,7 +5032,7 @@ Function New-RebuiltVdsConfiguration {
                             }
                         }
                         If (($vmsTomove.count -gt 0) -and ($vmhost.Manufacturer -eq "VMware, Inc.")) {
-                            LogMessage -type WAIT -message "Aha! You are using nested hosts. Waiting 5 mins to stabilize connection between vCenter and nested hosts after vmk0 migration"
+                            LogMessage -type WAIT -message "Aha! Nested hosts detected. Waiting 5 mins for connection between vCenter and hosts to stabilize after vmk0 / vm_mgmt portgroup migration"
                             Sleep 300
                         }
                         Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
