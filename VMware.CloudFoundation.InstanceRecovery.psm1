@@ -876,7 +876,6 @@ Function New-ExtractDataFromSDDCBackup {
     $isDefaultColumn = $columns.IndexOf('is_default')
     $isStretchedColumn = $columns.IndexOf('is_stretched')
     $vCenterIDColumn = $columns.IndexOf('vcenter_id')
-    $primaryDatastoreNameColumn = $columns.IndexOf('primary_datastore_name')
     $primaryDatastoreTypeColumn = $columns.IndexOf('primary_datastore_type')
     $sourceIDColumn = $columns.IndexOf('source_id')
     $isImagedBasedColumn = $columns.IndexOf('is_image_based')
@@ -894,7 +893,7 @@ Function New-ExtractDataFromSDDCBackup {
             $isStretched = $lineContent.split("`t")[$isStretchedColumn]
             #$name = $lineContent.split("`t")[7]
             $vCenterID = $lineContent.split("`t")[$vCenterIDColumn]
-            $primaryDatastoreName = $lineContent.split("`t")[$primaryDatastoreNameColumn]
+            $primaryDatastoreName = $null
             $primaryDatastoreType = $lineContent.split("`t")[$primaryDatastoreTypeColumn]
             $sourceID = $lineContent.split("`t")[$sourceIDColumn]
             $isImagedBased = $lineContent.split("`t")[$isImagedBasedColumn]
