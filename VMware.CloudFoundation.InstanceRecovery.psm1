@@ -699,7 +699,6 @@ Function New-ExtractDataFromSDDCBackup {
         If ($lineContent -ne '\.') {
             $vdsId = $lineContent.split("`t")[$idColumn]
             $vdsMtu = $lineContent.split("`t")[$mtuColumn]
-            $vdsName = $lineContent.split("`t")[$nameColumn]
             $niocs = $lineContent.split("`t")[$niocsColumn] | ConvertFrom-Json
             If ($lineContent.split("`t")[$portGroupsColumn] -ne '\N') {
                 $vdsPortgroups = $lineContent.split("`t")[$portGroupsColumn] | ConvertFrom-Json
@@ -713,7 +712,7 @@ Function New-ExtractDataFromSDDCBackup {
                 'Id'         = $vdsId
                 'niocs'      = $niocs
                 'Mtu'        = $vdsMtu
-                'Name'       = $vdsName
+                'Name'       = $null
                 'PortGroups' = $vdsPortgroups
                 'version'    = $version
                 'sourceID'   = $sourceID
@@ -887,13 +886,10 @@ Function New-ExtractDataFromSDDCBackup {
         $lineContent = $psqlContent | Select-Object -Index $clustersLineIndex
         If ($lineContent -ne '\.') {
             $id = $lineContent.split("`t")[$idColumn]
-            #$datacenter = $lineContent.split("`t")[3]
             $ftt = $lineContent.split("`t")[$fttColumn]
             $isDefault = $lineContent.split("`t")[$isDefaultColumn]
             $isStretched = $lineContent.split("`t")[$isStretchedColumn]
-            #$name = $lineContent.split("`t")[7]
             $vCenterID = $lineContent.split("`t")[$vCenterIDColumn]
-            $primaryDatastoreName = $null
             $primaryDatastoreType = $lineContent.split("`t")[$primaryDatastoreTypeColumn]
             $sourceID = $lineContent.split("`t")[$sourceIDColumn]
             $isImagedBased = $lineContent.split("`t")[$isImagedBasedColumn]
@@ -945,7 +941,7 @@ Function New-ExtractDataFromSDDCBackup {
                 $vdsObject | Add-Member -NotePropertyName 'mtu' -NotePropertyValue $virtualDistributedSwitchDetails.mtu
                 $vdsObject | Add-Member -NotePropertyName 'niocSpecs' -NotePropertyValue $niocSpecsObject
                 $vdsObject | Add-Member -NotePropertyName 'portgroups' -NotePropertyValue $virtualDistributedSwitchDetails.portgroups
-                $vdsObject | Add-Member -NotePropertyName 'dvsName' -NotePropertyValue $virtualDistributedSwitchDetails.name
+                $vdsObject | Add-Member -NotePropertyName 'dvsName' -NotePropertyValue $null
                 $vdsObject | Add-Member -NotePropertyName 'id' -NotePropertyValue $vds.vdsId
                 $vdsObject | Add-Member -NotePropertyName 'sourceID' -NotePropertyValue $virtualDistributedSwitchDetails.sourceID
                 $vdsObject | Add-Member -NotePropertyName 'vmnics' -NotePropertyValue $null
@@ -959,13 +955,13 @@ Function New-ExtractDataFromSDDCBackup {
             }
             $clusters += [pscustomobject]@{
                 'id'                   = $id
-                #'datacenter'           = $datacenter
+                'datacenter'           = $null
                 'ftt'                  = $ftt
                 'isDefault'            = $isDefault
                 'isStretched'          = $isStretched
-                'name'                 = $name
+                'name'                 = $null
                 'vCenterID'            = $vCenterID
-                'primaryDatastoreName' = $primaryDatastoreName
+                'primaryDatastoreName' = $null
                 'primaryDatastoreType' = $primaryDatastoreType
                 'primaryDatastorePolicy' = $null
                 'isImageBased'           = $isImagedBased
