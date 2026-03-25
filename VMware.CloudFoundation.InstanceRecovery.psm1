@@ -431,7 +431,7 @@ Function New-ExtractDataFromSDDCBackup {
     $sddcManagerObject += [pscustomobject]@{
         'fqdn'         = $sddcManagerFqdn
         'vmname'       = $sddcManagerVmName
-        'ip'           = (Resolve-DnsName $sddcManagerFqdn).IPAddress
+        'ip'           = (Resolve-DnsName $sddcManagerFqdn | Where-Object {$_.section -eq "Answer"}).IPAddress
         'fips_enabled' = $metadataJSON.fips_enabled
         'ceip_enabled' = $ceipStatus
         'version'      = $sddcManagerVersion
@@ -479,7 +479,7 @@ Function New-ExtractDataFromSDDCBackup {
             $hostId = $lineContent.split("`t")[0]
             $gateway = $lineContent.split("`t")[7]
             $hostName = $lineContent.split("`t")[9]
-            $hostMgmtIp = (Resolve-DnsName $lineContent.split("`t")[9]).IPAddress
+            $hostMgmtIp = (Resolve-DnsName $lineContent.split("`t")[9] | Where-Object {$_.section -eq "Answer"}).IPAddress
             $hostMask = $lineContent.split("`t")[17]
             $hostVersion = $lineContent.split("`t")[18]
             $hostVmotionIp = $lineContent.split("`t")[19]
@@ -559,7 +559,7 @@ Function New-ExtractDataFromSDDCBackup {
             $vCenterID = $lineContent.split("`t")[0]
             $vCenterVersion = $lineContent.split("`t")[9]
             $vCenterFqdn = $lineContent.split("`t")[10]
-            $vCenterIp = (Resolve-DnsName $vCenterFqdn).IPAddress
+            $vCenterIp = (Resolve-DnsName $vCenterFqdn | Where-Object {$_.section -eq "Answer"}).IPAddress
             $vCenterVMname = $lineContent.split("`t")[12]
             $vCenterDomainID = ($hostsAndDomains | Where-Object { $_.hostId -eq (($hostsandVcenters | Where-Object { $_.vCenterID -eq $vCenterID })[0].hostID) }).domainID
             $vCenters += [pscustomobject]@{
