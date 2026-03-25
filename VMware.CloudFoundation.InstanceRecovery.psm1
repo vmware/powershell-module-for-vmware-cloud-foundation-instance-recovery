@@ -760,7 +760,6 @@ Function New-ExtractDataFromSDDCBackup {
         $lineContent = $psqlContent | Select-Object -Index $clustersLineIndex
         If ($lineContent -ne '\.') {
             $id = $lineContent.split("`t")[0]
-            $datacenter = $lineContent.split("`t")[3]
             $ftt = $lineContent.split("`t")[4]
             $isDefault = $lineContent.split("`t")[5]
             $isStretched = $lineContent.split("`t")[6]
@@ -828,7 +827,7 @@ Function New-ExtractDataFromSDDCBackup {
             }
             $clusters += [pscustomobject]@{
                 'id'                   = $id
-                'datacenter'           = $datacenter
+                'datacenter'           = $null
                 'ftt'                  = $ftt
                 'isDefault'            = $isDefault
                 'isStretched'          = $isStretched
