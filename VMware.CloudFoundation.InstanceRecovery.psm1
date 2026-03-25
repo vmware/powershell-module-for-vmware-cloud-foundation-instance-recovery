@@ -458,7 +458,7 @@ Function New-ExtractDataFromSDDCBackup {
                 }
             }
             $nsxtManagerClusters += [pscustomobject]@{
-                'clusterVip'  = $lineContent.split("`t")[5]
+                'clusterVip'  = (Resolve-DnsName $lineContent.split("`t")[6] | Where-Object {$_.section -eq "Answer"}).IPAddress
                 'clusterFqdn' = $lineContent.split("`t")[6]
                 'domainIDs'   = $nodeContent.domainIds
                 'nsxNodes'    = $nsxNodes
