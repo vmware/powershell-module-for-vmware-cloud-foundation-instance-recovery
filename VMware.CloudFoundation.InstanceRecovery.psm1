@@ -623,7 +623,6 @@ Function New-ExtractDataFromSDDCBackup {
         If ($lineContent -ne '\.') {
             $vdsId = $lineContent.split("`t")[0]
             $vdsMtu = $lineContent.split("`t")[3]
-            $vdsName = $lineContent.split("`t")[4]
             $niocs = $lineContent.split("`t")[5] | ConvertFrom-Json
             If ($lineContent.split("`t")[6] -ne '\N') {
                 $vdsPortgroups = $lineContent.split("`t")[6] | ConvertFrom-Json
@@ -637,7 +636,7 @@ Function New-ExtractDataFromSDDCBackup {
                 'Id'         = $vdsId
                 'niocs'      = $niocs
                 'Mtu'        = $vdsMtu
-                'Name'       = $vdsName
+                'Name'       = $null
                 'PortGroups' = $vdsPortgroups
                 'version'    = $version
                 'sourceID'   = $sourceID
