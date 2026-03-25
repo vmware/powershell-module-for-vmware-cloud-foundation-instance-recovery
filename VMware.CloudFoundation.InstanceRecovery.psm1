@@ -763,7 +763,6 @@ Function New-ExtractDataFromSDDCBackup {
             $isDefault = $lineContent.split("`t")[5]
             $isStretched = $lineContent.split("`t")[6]
             $vCenterID = $lineContent.split("`t")[9]
-            $primaryDatastoreName = $lineContent.split("`t")[12]
             $primaryDatastoreType = $lineContent.split("`t")[13]
             $sourceID = $lineContent.split("`t")[14]
             $isImagedBased = $lineContent.split("`t")[18]
@@ -831,7 +830,7 @@ Function New-ExtractDataFromSDDCBackup {
                 'isStretched'          = $isStretched
                 'name'                 = $null
                 'vCenterID'            = $vCenterID
-                'primaryDatastoreName' = $primaryDatastoreName
+                'primaryDatastoreName' = $null
                 'primaryDatastoreType' = $primaryDatastoreType
                 'isImageBased'         = $isImagedBased
                 'sourceID'             = $sourceID
