@@ -762,7 +762,6 @@ Function New-ExtractDataFromSDDCBackup {
             $ftt = $lineContent.split("`t")[4]
             $isDefault = $lineContent.split("`t")[5]
             $isStretched = $lineContent.split("`t")[6]
-            #$name = $lineContent.split("`t")[7]
             $vCenterID = $lineContent.split("`t")[9]
             $primaryDatastoreName = $lineContent.split("`t")[12]
             $primaryDatastoreType = $lineContent.split("`t")[13]
@@ -830,7 +829,7 @@ Function New-ExtractDataFromSDDCBackup {
                 'ftt'                  = $ftt
                 'isDefault'            = $isDefault
                 'isStretched'          = $isStretched
-                'name'                 = $name
+                'name'                 = $null
                 'vCenterID'            = $vCenterID
                 'primaryDatastoreName' = $primaryDatastoreName
                 'primaryDatastoreType' = $primaryDatastoreType
