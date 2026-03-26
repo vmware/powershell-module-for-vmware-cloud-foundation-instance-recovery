@@ -3345,9 +3345,9 @@ Function Move-MgmtVmsToTempPg {
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
 
     Foreach ($vmhost in $vmhosts) {
-        $vmHostUser = ($extractedSddcData.passwords | where-object { ($_.domainName -eq $domainName) -and ($_.entityType -eq "ESXI") -and ($_.username -eq "root") -and ($_.entityName -eq $vmhost) }).username
-        $vmHostPassword = ($extractedSddcData.passwords | where-object { ($_.domainName -eq $domainName) -and ($_.entityType -eq "ESXI") -and ($_.username -eq "root") -and ($_.entityName -eq $vmhost) }).password
-        $vmHostConnection = Connect-ViServer $vmhost -user $vmHostUser -password $vmHostPassword
+        $vmHostUser = ($extractedSddcData.passwords | where-object { ($_.domainName -eq $domainName) -and ($_.entityType -eq "ESXI") -and ($_.username -eq "root") -and ($_.entityName -eq $vmhost.name) }).username
+        $vmHostPassword = ($extractedSddcData.passwords | where-object { ($_.domainName -eq $domainName) -and ($_.entityType -eq "ESXI") -and ($_.username -eq "root") -and ($_.entityName -eq $vmhost.name) }).password
+        $vmHostConnection = Connect-ViServer $vmhost.name -user $vmHostUser -password $vmHostPassword
         $vmsTomove = Get-VM | Where-Object { $_.Name -notlike "*vCLS*" }
         foreach ($vmToMove in $vmsTomove) {
             If ((Get-VM -Name $vmToMove | Get-NetworkAdapter).NetworkName -ne "vm_management") {
@@ -4569,10 +4569,10 @@ Function New-RebuiltVdsConfiguration {
                 #Move Mgmt VMs to Management Portgroup
                 If ($isPrimaryManagementCluster) {
                     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
-                    Foreach ($vmhost in $vmhosts.name) {
-                        $vmHostUser = ($extractedSddcData.passwords | where-object { ($_.domainName -eq $domainName) -and ($_.entityType -eq "ESXI") -and ($_.username -eq "root") -and ($_.entityName -eq $vmhost) }).username
-                        $vmHostPassword = ($extractedSddcData.passwords | where-object { ($_.domainName -eq $domainName) -and ($_.entityType -eq "ESXI") -and ($_.username -eq "root") -and ($_.entityName -eq $vmhost) }).password
-                        $vmHostConnection = Connect-ViServer $vmhost -user $vmHostUser -password $vmHostPassword
+                    Foreach ($vmhost in $vmhosts) {
+                        $vmHostUser = ($extractedSddcData.passwords | where-object { ($_.domainName -eq $domainName) -and ($_.entityType -eq "ESXI") -and ($_.username -eq "root") -and ($_.entityName -eq $vmhost.name) }).username
+                        $vmHostPassword = ($extractedSddcData.passwords | where-object { ($_.domainName -eq $domainName) -and ($_.entityType -eq "ESXI") -and ($_.username -eq "root") -and ($_.entityName -eq $vmhost.name) }).password
+                        $vmHostConnection = Connect-ViServer $vmhost.name -user $vmHostUser -password $vmHostPassword
                         $vmsTomove = Get-VM | Where-Object { $_.Name -notlike "*vCLS*" }
                         foreach ($vmToMove in $vmsTomove) {
 
