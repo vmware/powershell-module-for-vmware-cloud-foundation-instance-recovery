@@ -3342,7 +3342,7 @@ Function Move-MgmtVmsToTempPg {
 
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
     $clusterName = (Get-Cluster).name
-    $vmhosts = (Get-Cluster -name $clusterName | Get-VMHost).name
+    $vmhosts = (Get-Cluster -name $clusterName | Get-VMHost)
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
 
     Foreach ($vmhost in $vmhosts) {
@@ -3358,11 +3358,11 @@ Function Move-MgmtVmsToTempPg {
                 LogMessage -type INFO -message "[$($vmToMove.name)] Already moved to vm_management. Skipping"
             }
         }
-        If (($vmsTomove.count -gt 0) -and ($vmhost.Manufacturer -eq "VMware, Inc.")) {
-            LogMessage -type WAIT -message "Aha! Nested hosts detected. Waiting 5 mins for connection between vCenter and hosts to stabilize after vmk0 / vm_mgmt portgroup migration"
-            Sleep 300
-        }
         Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+    }
+    If ($vmhosts.Manufacturer -contains "VMware, Inc.") {
+        LogMessage -type WAIT -message "Aha! Nested hosts detected. Waiting 5 mins for connection between vCenter and hosts to stabilize after vmk0 / vm_management portgroup migration"
+        Sleep 300
     }
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
@@ -4576,7 +4576,6 @@ Function New-RebuiltVdsConfiguration {
                         $vmHostConnection = Connect-ViServer $vmhost.name -user $vmHostUser -password $vmHostPassword
                         $vmsTomove = Get-VM | Where-Object { $_.Name -notlike "*vCLS*" }
                         foreach ($vmToMove in $vmsTomove) {
-
                             If ((Get-VM -Name $vmToMove | Get-NetworkAdapter).NetworkName -ne $managementVmPortGroupName) {
                                 LogMessage -type INFO -message "[$($vmToMove.name)] Moving to $($managementVmPortGroupName)"
                                 Get-VM -Name $vmToMove | Get-NetworkAdapter | Set-NetworkAdapter -NetworkName $managementVmPortGroupName -confirm:$false | Out-Null
@@ -4584,13 +4583,13 @@ Function New-RebuiltVdsConfiguration {
                                 LogMessage -type INFO -message "[$($vmToMove.name)] Already moved to $($managementVmPortGroupName). Skipping"
                             }
                         }
-                        If (($vmsTomove.count -gt 0) -and ($vmhost.Manufacturer -eq "VMware, Inc.")) {
-                            LogMessage -type WAIT -message "Aha! Nested hosts detected. Waiting 5 mins for connection between vCenter and hosts to stabilize after vmk0 / vm_mgmt portgroup migration"
-                            Sleep 300
-                        }
                         Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
                     }
-                    $vCenterConnection = Connect-ViServer $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
+                    If (($vmsTomove.count -gt 0) -and ($vmhost.Manufacturer -eq "VMware, Inc.")) {
+                        LogMessage -type WAIT -message "Aha! Nested hosts detected. Waiting 5 mins for connection between vCenter and hosts to stabilize after vmk0 / vm_management portgroup migration"
+                        Sleep 300
+                    }
+                    $vCenterConnection = Connect-ViServer $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword                    
                 }
             }
         }
