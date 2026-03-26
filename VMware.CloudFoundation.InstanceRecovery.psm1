@@ -3357,6 +3357,10 @@ Function Move-MgmtVmsToTempPg {
                 LogMessage -type INFO -message "[$($vmToMove.name)] Already moved to vm_management. Skipping"
             }
         }
+        If (($vmsTomove.count -gt 0) -and ($vmhost.Manufacturer -eq "VMware, Inc.")) {
+            LogMessage -type WAIT -message "Aha! Nested hosts detected. Waiting 5 mins for connection between vCenter and hosts to stabilize after vmk0 / vm_mgmt portgroup migration"
+            Sleep 300
+        }
         Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
     }
     $StopWatch.Stop()
