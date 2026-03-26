@@ -5592,7 +5592,7 @@ Function Invoke-NSXEdgeClusterRecovery {
                 $vmDeploymentConfig.storage_id = $datastoreMoRef
                 $nodeUserSettingsObject = New-Object -type psobject
                 $nodeUserSettingsObject | Add-Member -NotePropertyName 'cli_username' -NotePropertyValue 'admin'
-                $nodeUserSettingsObject | Add-Member -NotePropertyName 'audit_username' -NotePropertyValue 'audit'
+                #$nodeUserSettingsObject | Add-Member -NotePropertyName 'audit_username' -NotePropertyValue 'audit'
                 $edgeRefreshObject = New-Object -type psobject
                 $edgeRefreshObject | Add-Member -NotePropertyName 'vm_id' -NotePropertyValue $vmID
                 $edgeRefreshObject | Add-Member -NotePropertyName 'vm_deployment_config' -NotePropertyValue $vmDeploymentConfig
