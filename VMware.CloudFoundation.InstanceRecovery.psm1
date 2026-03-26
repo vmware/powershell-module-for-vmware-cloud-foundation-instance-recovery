@@ -367,6 +367,7 @@ Function New-ExtractDataFromSDDCBackup {
 
     #Extract Required Files From Backup Leveraging Windows tar.exe
     LogMessage -type INFO -message "[$jumpboxName] Extracting Backup"
+    Push-Location
     Set-Location "$parentFolder"
     tar -xzf "$parentFolder\decrypted-sddc-manager-backup.tar.gz" "$extractedBackupFolder/metadata.json" "$extractedBackupFolder/appliancemanager_dns_configuration.json" "$extractedBackupFolder/appliancemanager_ntp_configuration.json" "$extractedBackupFolder/security_password_vault.json" "$extractedBackupFolder/database/sddc-postgres.bkp"
 
@@ -1042,7 +1043,7 @@ Function New-ExtractDataFromSDDCBackup {
     Remove-Item -Path "$parentFolder\decrypted-sddc-manager-backup.tar.gz" -force -confirm:$false
     Remove-Item -Path "$parentFolder\decrypted-sddc-manager-backup.tar" -force -confirm:$false
     Remove-Item -path "$parentFolder\$extractedBackupFolder" -Recurse #>
-
+    Pop-Location
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
