@@ -4,6 +4,7 @@
 > Released: 2026-04-xx
 
 - [Added] Timings to Functions
+- [Added] New-PartialVVFBringupValidation and New-PartialVVFBringup functions
 - [Changed] Handle multiple ip address retrieval during New-ExtractDataFromSDDCBackup
 
 ## v9.0.1
