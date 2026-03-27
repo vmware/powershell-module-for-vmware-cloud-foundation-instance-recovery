@@ -5810,6 +5810,82 @@ Function Add-AdditionalNSXManagers {
 Export-ModuleMember -Function Add-AdditionalNSXManagers
 #EndRegion NSXT Functions
 
+#Region VVF Functions
+Function New-PartialVVFBringupValidation {
+    Param (
+        [Parameter (Mandatory = $true)] [String]$vcfInstaller,
+        [Parameter (Mandatory = $true)] [String]$vcfInstallerAdminUser,
+        [Parameter (Mandatory = $true)] [String]$vcfInstallerAdminUserPassword,
+        [Parameter (Mandatory = $true)] [String]$partialBringupSpecFile
+    )
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+    LogMessage -type INFO -message "[$jumpboxName] Connecting to $vcfInstaller"
+    $connection = Connect-VcfInstallerServer -Server $vcfInstaller -User $vcfInstallerAdminUser -Password $vcfInstallerAdminUserPassword
+    $jsonBody = Get-Content -path $partialBringupSpecFile -raw
+    LogMessage -type INFO -message "[$vcfInstaller] Initiating Validation of $partialBringupSpecFile"
+    $response = Invoke-VcfInstallerValidateSddcSpec -sddcSpec $jsonBody
+    $id = $response.id
+    $savedPosition = "`e[s"
+    $restorePosition = "`e[u"
+    $clearBelow = "`e[J"
+    Write-Host $savedPosition -NoNewline
+    Do {
+        Write-Host "$restorePosition$clearBelow" -NoNewline
+        $response = Invoke-VcfInstallerGetSddcSpecValidation -id $id
+        $tableOutput = ($response.validationChecks | Select-Object Description, ResultStatus | Format-Table | Out-String).TrimEnd()
+        $tableOutput -split "`n" | ForEach-Object { Write-Host "  $_" }
+        Sleep 10
+    } Until ($response.ResultStatus -ne "UNKNOWN")
+    $StopWatch.Stop()
+    LogMessage -type INFO -message "[$vcfInstaller] Validation of $partialBringupSpecFile complete. Please review before proceeding."
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+}
+Export-ModuleMember -Function New-PartialVVFBringupValidation
+
+Function New-PartialVVFBringup {
+    Param (
+        [Parameter (Mandatory = $true)] [String]$vcfInstaller,
+        [Parameter (Mandatory = $true)] [String]$vcfInstallerAdminUser,
+        [Parameter (Mandatory = $true)] [String]$vcfInstallerAdminUserPassword,
+        [Parameter (Mandatory = $true)] [String]$partialBringupSpecFile
+    )
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+    LogMessage -type INFO -message "[$jumpboxName] Connecting to $vcfInstaller"
+    $connection = Connect-VcfInstallerServer -Server $vcfInstaller -User $vcfInstallerAdminUser -Password $vcfInstallerAdminUserPassword
+    $jsonBody = Get-Content -path $partialBringupSpecFile -raw
+    LogMessage -type INFO -message "[$vcfInstaller] Initiating Partial VVF Deployment using $partialBringupSpecFile"
+    $response = Invoke-VcfInstallerDeploySddc -sddcSpec $jsonBody
+    $id = $response.id
+    $counter = 0
+    $savedPosition = "`e[s"
+    $restorePosition = "`e[u"
+    $clearBelow = "`e[J"
+    Write-Host $savedPosition -NoNewline
+    Do {
+        If ($counter -ge 49) {
+            $connection = Connect-VcfInstallerServer -Server $vcfInstaller -User $vcfInstallerAdminUser -Password $vcfInstallerAdminUserPassword
+            $counter = 0
+        }
+        Write-Host "$restorePosition$clearBelow" -NoNewline
+        $response = Invoke-VcfInstallerGetSddcTaskByID -id $id
+        $tableOutput = ($response.sddcSubTasks | Select-Object name, status | Where-Object { $_.status -eq "IN_PROGRESS" } | Format-Table | Out-String).TrimEnd()
+        $tableOutput -split "`n" | ForEach-Object { Write-Host "  $_" }
+        Sleep 60
+        $counter ++
+    } Until ($response.status -ne "IN_PROGRESS")
+    $StopWatch.Stop()
+    $minutes = $stopwatch.Elapsed
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($Stopwatch.Elapsed.seconds) seconds"
+}
+Export-ModuleMember -Function New-PartialVVFBringup
+#EndRegion VVF Functions
+
 #Region Marked for Deprecation
 
 #EndRegion Marked for Deprecation
