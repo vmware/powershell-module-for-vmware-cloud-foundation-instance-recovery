@@ -5811,7 +5811,7 @@ Export-ModuleMember -Function Add-AdditionalNSXManagers
 #EndRegion NSXT Functions
 
 #Region VVF Functions
-Function New-PartialVVFBringupValidation {
+Function New-VVFBasedPartialBringupValidation {
     Param (
         [Parameter (Mandatory = $true)] [String]$vcfInstaller,
         [Parameter (Mandatory = $true)] [String]$vcfInstallerAdminUser,
@@ -5843,9 +5843,9 @@ Function New-PartialVVFBringupValidation {
     LogMessage -type INFO -message "[$vcfInstaller] Validation of $partialBringupSpecFile complete. Please review before proceeding."
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
-Export-ModuleMember -Function New-PartialVVFBringupValidation
+Export-ModuleMember -Function New-VVFBasedPartialBringupValidation
 
-Function New-PartialVVFBringup {
+Function New-VVFBasedPartialBringup {
     Param (
         [Parameter (Mandatory = $true)] [String]$vcfInstaller,
         [Parameter (Mandatory = $true)] [String]$vcfInstallerAdminUser,
@@ -5883,7 +5883,7 @@ Function New-PartialVVFBringup {
     $minutes = $stopwatch.Elapsed
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
-Export-ModuleMember -Function New-PartialVVFBringup
+Export-ModuleMember -Function New-VVFBasedPartialBringup
 #EndRegion VVF Functions
 
 #Region Marked for Deprecation
