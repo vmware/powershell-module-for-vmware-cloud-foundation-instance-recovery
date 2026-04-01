@@ -952,11 +952,8 @@ Function Get-VcfmsBackups {
 
     LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Found $($results.Count) backup(s) for $($Components.Count) component type(s)"
     Write-Host ""
-    $results | Format-Table -AutoSize -Property Component, Version, Name, Age, Path
-    Write-Host ""
-
+    $results | Format-Table -AutoSize -Property Component, Version, Name, Age, Path | Out-String | Write-Host
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
-    return $results
 }
 
 Function Restore-VcfmsBackup {
