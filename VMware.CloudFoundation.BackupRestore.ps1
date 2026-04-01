@@ -1550,16 +1550,21 @@ Function Stop-VcfmsTask {
 
     .PARAMETER TaskId
     The task ID to cancel.
+
+    .PARAMETER PollIntervalSeconds
+    Interval in seconds to poll the task status after cancellation. Default is 10.
     #>
 
     Param(
         [Parameter(Mandatory = $true)][String] $ServiceRuntimeFqdn,
         [Parameter(Mandatory = $true)][String] $ServiceRuntimePassword,
         [Parameter(Mandatory = $false)][String] $ServiceRuntimeUsername = "admin@vsp.local",
-        [Parameter(Mandatory = $true)][String] $TaskId
+        [Parameter(Mandatory = $true)][String] $TaskId,
+        [Parameter(Mandatory = $false)][Int] $PollIntervalSeconds = 10
     )
 
     $jumpboxName = hostname
+    $terminalStates = @("COMPLETED", "FAILED", "CANCELLED", "ERROR", "SUCCESS", "SUCCESSFUL", "Succeeded", "Failed", "Cancelled")
 
     $srToken = Get-VcfmsServicesRuntimeToken -ServiceRuntimeFqdn $ServiceRuntimeFqdn -Username $ServiceRuntimeUsername -Password $ServiceRuntimePassword
     if (-not $srToken) {
@@ -1578,9 +1583,6 @@ Function Stop-VcfmsTask {
     try {
         $response = Invoke-RestMethod -Uri $cancelUri -Method POST -Headers $headers -SkipCertificateCheck
         LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Task $TaskId cancel request submitted"
-        if ($response) {
-            $response | ConvertTo-Json -Depth 5 | Write-Host
-        }
     } catch {
         LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Failed to cancel task $TaskId : $($_.Exception.Message)"
         if ($_.Exception.Response) {
@@ -1591,7 +1593,35 @@ Function Stop-VcfmsTask {
                 LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Response body: $errorBody"
             } catch {}
         }
+        return
     }
+
+    # Poll until the task reaches a terminal state
+    LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Polling task status every $PollIntervalSeconds seconds"
+    $taskUri = "https://$ServiceRuntimeFqdn/api/v1/tasks/$TaskId"
+    $taskStatus = "Cancelling"
+    Do {
+        Start-Sleep -Seconds $PollIntervalSeconds
+        try {
+            $taskResponse = Invoke-RestMethod -Uri $taskUri -Method GET -Headers $headers -SkipCertificateCheck
+            $taskStatus = $taskResponse.status
+            LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Task $TaskId status: $taskStatus"
+        } catch {
+            LogMessage -type WARNING -message "[$ServiceRuntimeFqdn] Error polling task (will retry): $($_.Exception.Message)"
+            $newToken = Get-VcfmsServicesRuntimeToken -ServiceRuntimeFqdn $ServiceRuntimeFqdn -Username $ServiceRuntimeUsername -Password $ServiceRuntimePassword
+            if ($newToken) {
+                $headers["Authorization"] = "Bearer $newToken"
+            }
+        }
+    } While ($taskStatus -notin $terminalStates)
+
+    if ($taskStatus -in @("CANCELLED", "Cancelled")) {
+        LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Task $TaskId cancelled successfully"
+    } else {
+        LogMessage -type WARNING -message "[$ServiceRuntimeFqdn] Task $TaskId ended with status: $taskStatus"
+    }
+
+    return $taskResponse
 }
 
 Function Remove-VcfmsComponent {
