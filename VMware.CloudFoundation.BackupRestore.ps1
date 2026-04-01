@@ -1528,6 +1528,72 @@ Function Watch-VcfmsTask {
     return $taskResponse
 }
 
+Function Stop-VcfmsTask {
+    <#
+    .SYNOPSIS
+    Cancels a VCFMS Services Runtime task by ID.
+
+    .DESCRIPTION
+    The Stop-VcfmsTask cmdlet sends a cancel request to a Services Runtime task via POST /api/v1/tasks/{taskId}?action=cancel.
+
+    .EXAMPLE
+    Stop-VcfmsTask -ServiceRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServiceRuntimePassword "VMw@re1!VMw@re1!" -TaskId "2gvic5inrfauxgcnb6askblveu"
+
+    .PARAMETER ServiceRuntimeFqdn
+    FQDN of the VCFMS Services Runtime instance.
+
+    .PARAMETER ServiceRuntimePassword
+    Password for the Services Runtime admin user.
+
+    .PARAMETER ServiceRuntimeUsername
+    Username for the Services Runtime token. Default is "admin@vsp.local".
+
+    .PARAMETER TaskId
+    The task ID to cancel.
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][String] $ServiceRuntimeFqdn,
+        [Parameter(Mandatory = $true)][String] $ServiceRuntimePassword,
+        [Parameter(Mandatory = $false)][String] $ServiceRuntimeUsername = "admin@vsp.local",
+        [Parameter(Mandatory = $true)][String] $TaskId
+    )
+
+    $jumpboxName = hostname
+
+    $srToken = Get-VcfmsServicesRuntimeToken -ServiceRuntimeFqdn $ServiceRuntimeFqdn -Username $ServiceRuntimeUsername -Password $ServiceRuntimePassword
+    if (-not $srToken) {
+        LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain Services Runtime token. Aborting."
+        return
+    }
+
+    $headers = @{
+        "Authorization" = "Bearer $srToken"
+        "Accept"        = "application/json"
+    }
+
+    $cancelUri = "https://$ServiceRuntimeFqdn/api/v1/tasks/${TaskId}?action=cancel"
+    LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Cancelling task $TaskId"
+
+    try {
+        $response = Invoke-RestMethod -Uri $cancelUri -Method POST -Headers $headers -SkipCertificateCheck
+        LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Task $TaskId cancel request submitted"
+        if ($response) {
+            $response | ConvertTo-Json -Depth 5 | Write-Host
+        }
+    } catch {
+        LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Failed to cancel task $TaskId : $($_.Exception.Message)"
+        if ($_.Exception.Response) {
+            try {
+                $errorStream = $_.Exception.Response.GetResponseStream()
+                $reader = New-Object System.IO.StreamReader($errorStream)
+                $errorBody = $reader.ReadToEnd()
+                LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Response body: $errorBody"
+            } catch {}
+        }
+    }
+}
+
 Function Remove-VcfmsComponent {
     <#
     .SYNOPSIS
