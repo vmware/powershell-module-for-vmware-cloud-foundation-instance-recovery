@@ -84,6 +84,17 @@ Function Remove-SddcManagerVspClusterEntry {
     Start-Sleep 2
     $stream.Read() | Out-Null
 
+    # Filter to strip shell prompts and echo'd commands from SSH output
+    $cleanSshOutput = {
+        param([String]$raw)
+        ($raw -split "`n" | Where-Object {
+            $_ -notmatch '^\s*root@' -and
+            $_ -notmatch '^\s*vcf@' -and
+            $_ -notmatch '^\s*echo\s+"' -and
+            $_ -notmatch '^\s*\$\s*$'
+        }) -join "`n"
+    }
+
     # Query the vsp_cluster table for the entry matching the specified type
     LogMessage -type INFO -message "[$SddcManagerFqdn] Querying vsp_cluster table for $ClusterType entry"
     $stream.WriteLine("echo `"SELECT vsp_cluster_id FROM vsp_cluster WHERE type='$ClusterType';`" | psql -U postgres -h localhost -d platform -t -A")
@@ -97,7 +108,7 @@ Function Remove-SddcManagerVspClusterEntry {
     if (-not $vspClusterId) {
         LogMessage -type WARNING -message "[$SddcManagerFqdn] No $ClusterType entry found in vsp_cluster table. Nothing to delete."
         LogMessage -type INFO -message "[$SddcManagerFqdn] Raw output for diagnostics:"
-        Write-Host $rawOutput
+        Write-Host (& $cleanSshOutput $rawOutput)
         Remove-SSHSession -SSHSession $sshSession | Out-Null
         return
     }
@@ -110,7 +121,7 @@ Function Remove-SddcManagerVspClusterEntry {
     Start-Sleep 5
     $detailOutput = $stream.Read()
     Write-Host ""
-    Write-Host $detailOutput
+    Write-Host (& $cleanSshOutput $detailOutput)
     Write-Host ""
 
     $credentialUsername = "vsp/$vspClusterId/svc-sddc-manager-admin"
@@ -137,16 +148,18 @@ Function Remove-SddcManagerVspClusterEntry {
     $stream.WriteLine("echo `"DELETE FROM vsp_cluster WHERE vsp_cluster_id='$vspClusterId';`" | psql -U postgres -h localhost -d platform")
     Start-Sleep 5
     $deleteClusterOutput = $stream.Read()
-    Write-Host $deleteClusterOutput
-    LogMessage -type INFO -message "[$SddcManagerFqdn] vsp_cluster DELETE result: $($deleteClusterOutput.Trim())"
+    $cleanDeleteCluster = & $cleanSshOutput $deleteClusterOutput
+    Write-Host $cleanDeleteCluster
+    LogMessage -type INFO -message "[$SddcManagerFqdn] vsp_cluster DELETE result: $($cleanDeleteCluster.Trim())"
 
     # Delete the corresponding credential by username
     LogMessage -type INFO -message "[$SddcManagerFqdn] Deleting credential with username: $credentialUsername"
     $stream.WriteLine("echo `"DELETE FROM credential WHERE username='$credentialUsername';`" | psql -U postgres -h localhost -d platform")
     Start-Sleep 5
     $deleteCredOutput = $stream.Read()
-    Write-Host $deleteCredOutput
-    LogMessage -type INFO -message "[$SddcManagerFqdn] credential DELETE result: $($deleteCredOutput.Trim())"
+    $cleanDeleteCred = & $cleanSshOutput $deleteCredOutput
+    Write-Host $cleanDeleteCred
+    LogMessage -type INFO -message "[$SddcManagerFqdn] credential DELETE result: $($cleanDeleteCred.Trim())"
 
     # Close SSH session
     Remove-SSHSession -SSHSession $sshSession | Out-Null
