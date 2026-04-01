@@ -1134,61 +1134,71 @@ Function Restore-VcfmsBackup {
 
     LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Restore request accepted"
 
-    # Display the POST response
-    $responseJson = $response | ConvertTo-Json -Depth 10
-    Write-Host ""
-    Write-Host " Restore API Response:" -ForegroundColor Cyan
-    Write-Host $responseJson
-    Write-Host ""
-
-    # Check for a task ID in the response
+    # Check for a task ID in the POST response
     $taskId = $response.id
-    if ($taskId) {
-        LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Restore task ID: $taskId"
-        LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Polling task status every $PollIntervalSeconds seconds"
-
-        $taskUri = "https://$ServiceRuntimeFqdn/api/v1/tasks/$taskId"
-        $taskStatus = "IN_PROGRESS"
-        Do {
-            Start-Sleep -Seconds $PollIntervalSeconds
-
-            try {
-                $taskResponse = Invoke-RestMethod -Uri $taskUri -Method GET -Headers $headers -SkipCertificateCheck
-                $taskStatus = $taskResponse.status
-                LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Task $taskId status: $taskStatus"
-            } catch {
-                LogMessage -type WARNING -message "[$ServiceRuntimeFqdn] Error polling task (will retry): $($_.Exception.Message)"
-                $newToken = Get-VcfmsServicesRuntimeToken -ServiceRuntimeFqdn $ServiceRuntimeFqdn -Username $ServiceRuntimeUsername -Password $ServiceRuntimePassword
-                if ($newToken) {
-                    $headers["Authorization"] = "Bearer $newToken"
-                }
+    if (-not $taskId) {
+        # POST /backups?action=restore does not return a task ID directly;
+        # find the restore task by querying GET /api/v1/tasks
+        LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Searching for restore task via /api/v1/tasks"
+        Start-Sleep -Seconds 5
+        try {
+            $tasksResponse = Invoke-RestMethod -Uri "https://$ServiceRuntimeFqdn/api/v1/tasks" -Method GET -Headers $headers -SkipCertificateCheck
+            $restoreTask = $tasksResponse.tasks |
+                Where-Object { $_.type -eq "com.vmware.vcfms.task.RestoreMultipleComponents" -and $_.status -notin @("Succeeded", "Failed", "Cancelled") } |
+                Sort-Object createTime -Descending |
+                Select-Object -First 1
+            if ($restoreTask) {
+                $taskId = $restoreTask.id
             }
-        } While ($taskStatus -in @("IN_PROGRESS", "IN PROGRESS", "PENDING", "RUNNING", "RESTORING", "Running", "Pending"))
-
-        if ($taskStatus -in @("SUCCESSFUL", "SUCCESS", "COMPLETED", "Succeeded")) {
-            LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Restore completed successfully"
-        } else {
-            LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Restore ended with status: $taskStatus"
-            if ($taskResponse.errors) {
-                foreach ($err in $taskResponse.errors) {
-                    LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Error: $($err.message)"
-                }
-            }
+        } catch {
+            LogMessage -type WARNING -message "[$ServiceRuntimeFqdn] Could not query tasks endpoint: $($_.Exception.Message)"
         }
-
-        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
-        return $taskResponse
     }
 
-    # No task ID - check if the initial response status indicates success
-    $initialStatus = $response.status
-    if ($initialStatus -in @("SUCCESSFUL", "SUCCESS", "COMPLETED", "Succeeded")) {
-        LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Restore completed successfully (status: $initialStatus)"
-    } elseif ($initialStatus) {
-        LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Restore response status: $initialStatus"
-        LogMessage -type WARNING -message "[$ServiceRuntimeFqdn] No task ID returned. Check the Services Runtime UI for restore progress."
+    if (-not $taskId) {
+        LogMessage -type WARNING -message "[$ServiceRuntimeFqdn] Could not find restore task. Use Watch-VcfmsTask -FindRunning to check progress."
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+        return
+    }
+
+    LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Restore task ID: $taskId"
+    LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Polling task status every $PollIntervalSeconds seconds"
+
+    $taskUri = "https://$ServiceRuntimeFqdn/api/v1/tasks/$taskId"
+    $taskStatus = "Running"
+    Do {
+        Start-Sleep -Seconds $PollIntervalSeconds
+
+        try {
+            $taskResponse = Invoke-RestMethod -Uri $taskUri -Method GET -Headers $headers -SkipCertificateCheck
+            $taskStatus = $taskResponse.status
+            $elapsed = ""
+            if ($taskResponse.startTime) {
+                try {
+                    $start = [datetime]::Parse($taskResponse.startTime).ToUniversalTime()
+                    $now = [datetime]::UtcNow
+                    $elapsed = " (running: $(($now - $start).ToString('hh\:mm\:ss')))"
+                } catch {}
+            }
+            LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Task $taskId status: $taskStatus$elapsed"
+        } catch {
+            LogMessage -type WARNING -message "[$ServiceRuntimeFqdn] Error polling task (will retry): $($_.Exception.Message)"
+            $newToken = Get-VcfmsServicesRuntimeToken -ServiceRuntimeFqdn $ServiceRuntimeFqdn -Username $ServiceRuntimeUsername -Password $ServiceRuntimePassword
+            if ($newToken) {
+                $headers["Authorization"] = "Bearer $newToken"
+            }
+        }
+    } While ($taskStatus -in @("IN_PROGRESS", "IN PROGRESS", "PENDING", "RUNNING", "RESTORING", "Running", "Pending", "Queued"))
+
+    if ($taskStatus -in @("SUCCESSFUL", "SUCCESS", "COMPLETED", "Succeeded")) {
+        LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Restore completed successfully"
     } else {
-        LogMessage -type WARNING -message "[$ServiceRuntimeFqdn] No task ID or status returned. Check the Services Runtime UI for restore progress."
+        LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Restore ended with status: $taskStatus"
+        if ($taskResponse.messages) {
+            foreach ($msg in $taskResponse.messages) {
+                LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] $msg"
+            }
+        }
     }
 
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
@@ -1430,17 +1440,11 @@ Function Watch-VcfmsTask {
             return
         }
 
-        # Dump raw response to understand API structure
-        Write-Host ""
-        Write-Host " Raw API Response:" -ForegroundColor Cyan
-        $response | ConvertTo-Json -Depth 5 | Write-Host
-        Write-Host ""
-
-        # Extract tasks array from response - adapt to actual structure
-        $allTasks = if ($response.items) { $response.items }
-                    elseif ($response.tasks) { $response.tasks }
-                    elseif ($response -is [array]) { $response }
-                    else { @($response) }
+        $allTasks = $response.tasks
+        if (-not $allTasks -or ($allTasks | Measure-Object).Count -eq 0) {
+            LogMessage -type INFO -message "[$ServiceRuntimeFqdn] No tasks found"
+            return
+        }
 
         $runningTasks = $allTasks | Where-Object { $_.status -notin $terminalStates }
 
@@ -1449,19 +1453,20 @@ Function Watch-VcfmsTask {
             return
         }
 
-        $now = Get-Date
+        $now = [datetime]::UtcNow
         $results = @()
         foreach ($task in $runningTasks) {
             $running = ""
             if ($task.startTime) {
                 try {
-                    $start = [datetime]::Parse($task.startTime)
+                    $start = [datetime]::Parse($task.startTime).ToUniversalTime()
                     $running = ($now - $start).ToString('hh\:mm\:ss')
                 } catch {}
             }
+            $shortType = $task.type -replace '^com\.vmware\.vcfms\.task\.', ''
             $results += [PSCustomObject]@{
                 'Id'      = $task.id
-                'Type'    = $task.type
+                'Type'    = $shortType
                 'Status'  = $task.status
                 'Phase'   = $task.phase
                 'Running' = $running
