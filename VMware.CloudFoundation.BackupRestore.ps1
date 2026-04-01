@@ -88,9 +88,9 @@ Function Remove-SddcManagerVspClusterEntry {
     $cleanSshOutput = {
         param([String]$raw)
         ($raw -split "`n" | Where-Object {
-            $_ -notmatch '^\s*root@' -and
-            $_ -notmatch '^\s*vcf@' -and
-            $_ -notmatch '^\s*echo\s+"' -and
+            $_ -notmatch 'root@' -and
+            $_ -notmatch 'vcf@' -and
+            $_ -notmatch 'echo\s+"' -and
             $_ -notmatch '^\s*\$\s*$'
         }) -join "`n"
     }
