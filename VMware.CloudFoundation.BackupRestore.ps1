@@ -60,6 +60,7 @@ Function Remove-SddcManagerVspClusterEntry {
     )
 
     $jumpboxName = hostname
+    $functionStartTime = Get-Date
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     # Establish SSH connection as vcf user
@@ -165,7 +166,7 @@ Function Remove-SddcManagerVspClusterEntry {
     Remove-SSHSession -SSHSession $sshSession | Out-Null
 
     LogMessage -type INFO -message "[$SddcManagerFqdn] $ClusterType vsp_cluster_id was: $vspClusterId"
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $(((Get-Date) - $functionStartTime).ToString('hh\:mm\:ss'))"
     return $vspClusterId
 }
 
@@ -336,6 +337,7 @@ Function New-VcfmsRuntime {
     )
 
     $jumpboxName = hostname
+    $functionStartTime = Get-Date
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     # Get authentication token
@@ -437,7 +439,7 @@ Function New-VcfmsRuntime {
     if (-not $taskId) {
         LogMessage -type INFO -message "[$SddcManagerFqdn] API response:"
         $response | ConvertTo-Json -Depth 5 | Write-Host
-        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $(((Get-Date) - $functionStartTime).ToString('hh\:mm\:ss'))"
         return $response
     }
 
@@ -474,7 +476,7 @@ Function New-VcfmsRuntime {
         }
     }
 
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $(((Get-Date) - $functionStartTime).ToString('hh\:mm\:ss'))"
     return $taskResponse
 }
 
@@ -572,6 +574,7 @@ Function Add-VcfmsTrustedCertificate {
     )
 
     $jumpboxName = hostname
+    $functionStartTime = Get-Date
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     # Retrieve the remote host's TLS certificate
@@ -637,7 +640,7 @@ Function Add-VcfmsTrustedCertificate {
     $taskId = $response.id
     if (-not $taskId) {
         LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Certificate for $RemoteHostFqdn trusted successfully (no task returned)"
-        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $(((Get-Date) - $functionStartTime).ToString('hh\:mm\:ss'))"
         return $response
     }
 
@@ -673,7 +676,7 @@ Function Add-VcfmsTrustedCertificate {
         }
     }
 
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $(((Get-Date) - $functionStartTime).ToString('hh\:mm\:ss'))"
     return $taskResponse
 }
 
@@ -741,6 +744,7 @@ Function Set-VcfmsSftpBackupSettings {
     )
 
     $jumpboxName = hostname
+    $functionStartTime = Get-Date
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     # Retrieve the SFTP fingerprint if not provided
@@ -837,7 +841,7 @@ Function Set-VcfmsSftpBackupSettings {
     $taskId = $response.id
     if (-not $taskId) {
         LogMessage -type INFO -message "[$ServiceRuntimeFqdn] SFTP backup settings applied successfully (no task returned)"
-        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $(((Get-Date) - $functionStartTime).ToString('hh\:mm\:ss'))"
         return $response
     }
 
@@ -873,7 +877,7 @@ Function Set-VcfmsSftpBackupSettings {
         }
     }
 
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $(((Get-Date) - $functionStartTime).ToString('hh\:mm\:ss'))"
     return $taskResponse
 }
 
@@ -912,6 +916,7 @@ Function Get-VcfmsBackups {
     )
 
     $jumpboxName = hostname
+    $functionStartTime = Get-Date
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     # Get Services Runtime token
@@ -1025,7 +1030,7 @@ Function Get-VcfmsBackups {
         Write-Host ""
     }
 
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $(((Get-Date) - $functionStartTime).ToString('hh\:mm\:ss'))"
 }
 
 Function Restore-VcfmsBackup {
@@ -1080,6 +1085,7 @@ Function Restore-VcfmsBackup {
     )
 
     $jumpboxName = hostname
+    $functionStartTime = Get-Date
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     # Read and validate the payload file
@@ -1181,7 +1187,7 @@ Function Restore-VcfmsBackup {
 
     if (-not $taskId) {
         LogMessage -type WARNING -message "[$ServiceRuntimeFqdn] Could not find restore task. Use Watch-VcfmsTask -FindRunning to check progress."
-        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $(((Get-Date) - $functionStartTime).ToString('hh\:mm\:ss'))"
         return
     }
 
@@ -1225,7 +1231,7 @@ Function Restore-VcfmsBackup {
         }
     }
 
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $(((Get-Date) - $functionStartTime).ToString('hh\:mm\:ss'))"
 }
 
 Function Get-VcfmsFleetControllerToken {
@@ -1314,6 +1320,7 @@ Function Get-VcfmsComponents {
     )
 
     $jumpboxName = hostname
+    $functionStartTime = Get-Date
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     # Get Fleet Controller token
@@ -1375,7 +1382,7 @@ Function Get-VcfmsComponents {
     $results | Format-Table -AutoSize
     Write-Host ""
 
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $(((Get-Date) - $functionStartTime).ToString('hh\:mm\:ss'))"
     return $results
 }
 
@@ -1700,6 +1707,7 @@ Function Remove-VcfmsComponent {
     )
 
     $jumpboxName = hostname
+    $functionStartTime = Get-Date
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     LogMessage -type INFO -message "[$jumpboxName] $($ComponentIds.Count) component(s) to delete (serial processing)"
 
@@ -1786,6 +1794,6 @@ Function Remove-VcfmsComponent {
     $results | Format-Table -AutoSize -Property ComponentId, TaskId, Status
     Write-Host ""
 
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $(((Get-Date) - $functionStartTime).ToString('hh\:mm\:ss'))"
     return $results
 }
