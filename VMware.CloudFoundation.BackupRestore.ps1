@@ -28,10 +28,10 @@ Function LogMessage {
 Function Remove-SddcManagerVspClusterManagementEntry {
     <#
     .SYNOPSIS
-    Removes the MANAGEMENT entry from the vsp_clusters table and its corresponding credential in the SDDC Manager Postgres database.
+    Removes the MANAGEMENT entry from the vsp_cluster table and its corresponding credential in the SDDC Manager Postgres database.
 
     .DESCRIPTION
-    The Remove-SddcManagerVspClusterManagementEntry cmdlet connects to the SDDC Manager appliance via SSH as the vcf user, elevates to root, queries the Postgres platform database for the vsp_clusters entry with type MANAGEMENT, and deletes both the cluster row and its associated service credential. This is used during instance recovery when the stale management cluster entry must be purged before re-commissioning.
+    The Remove-SddcManagerVspClusterManagementEntry cmdlet connects to the SDDC Manager appliance via SSH as the vcf user, elevates to root, queries the Postgres platform database for the vsp_cluster entry with type MANAGEMENT, and deletes both the cluster row and its associated service credential. This is used during instance recovery when the stale management cluster entry must be purged before re-commissioning.
 
     .EXAMPLE
     Remove-SddcManagerVspClusterManagementEntry -SddcManagerFqdn "sfo-vcf01.sfo.rainpole.io" -VcfUserPassword "VMw@re1!" -RootPassword "VMw@re1!"
@@ -72,9 +72,9 @@ Function Remove-SddcManagerVspClusterManagementEntry {
     $stream.WriteLine("$RootPassword")
     Start-Sleep 2
 
-    # Query the vsp_clusters table for the MANAGEMENT entry
-    LogMessage -type INFO -message "[$SddcManagerFqdn] Querying vsp_clusters table for MANAGEMENT entry"
-    $queryCommand = "psql -U postgres -h localhost -d platform -t -A -c `"SELECT id FROM vsp_clusters WHERE type='MANAGEMENT';`""
+    # Query the vsp_cluster table for the MANAGEMENT entry
+    LogMessage -type INFO -message "[$SddcManagerFqdn] Querying vsp_cluster table for MANAGEMENT entry"
+    $queryCommand = "psql -U postgres -h localhost -d platform -t -A -c `"SELECT id FROM vsp_cluster WHERE type='MANAGEMENT';`""
     $stream.WriteLine($queryCommand)
     Start-Sleep 3
     $rawOutput = $stream.Read()
@@ -86,7 +86,7 @@ Function Remove-SddcManagerVspClusterManagementEntry {
     $managementClusterId = ($rawOutput | Select-String -Pattern $guidPattern -AllMatches).Matches | Select-Object -First 1 -ExpandProperty Value
 
     if (-not $managementClusterId) {
-        LogMessage -type WARNING -message "[$SddcManagerFqdn] No MANAGEMENT entry found in vsp_clusters table. Nothing to delete."
+        LogMessage -type WARNING -message "[$SddcManagerFqdn] No MANAGEMENT entry found in vsp_cluster table. Nothing to delete."
         Remove-SSHSession -SSHSession $sshSession | Out-Null
         return
     }
@@ -95,7 +95,7 @@ Function Remove-SddcManagerVspClusterManagementEntry {
 
     # Display the full row for confirmation
     LogMessage -type INFO -message "[$SddcManagerFqdn] Retrieving full row details"
-    $detailCommand = "psql -U postgres -h localhost -d platform -c `"SELECT * FROM vsp_clusters WHERE id='$managementClusterId';`""
+    $detailCommand = "psql -U postgres -h localhost -d platform -c `"SELECT * FROM vsp_cluster WHERE id='$managementClusterId';`""
     $stream.WriteLine($detailCommand)
     Start-Sleep 3
     $detailOutput = $stream.Read()
@@ -106,7 +106,7 @@ Function Remove-SddcManagerVspClusterManagementEntry {
     # Prompt for confirmation before deleting
     Write-Host ""
     Write-Host " The following operations will be performed:" -ForegroundColor Yellow
-    Write-Host "   1. DELETE FROM vsp_clusters WHERE id='$managementClusterId'" -ForegroundColor Cyan
+    Write-Host "   1. DELETE FROM vsp_cluster WHERE id='$managementClusterId'" -ForegroundColor Cyan
     Write-Host "   2. DELETE FROM credential WHERE username='vsp/$managementClusterId/svc-sddc-manager-admin'" -ForegroundColor Cyan
     Write-Host ""
     Do {
@@ -120,14 +120,14 @@ Function Remove-SddcManagerVspClusterManagementEntry {
         return
     }
 
-    # Delete the MANAGEMENT entry from vsp_clusters
-    LogMessage -type INFO -message "[$SddcManagerFqdn] Deleting MANAGEMENT entry from vsp_clusters"
-    $deleteClusterCommand = "psql -U postgres -h localhost -d platform -c `"DELETE FROM vsp_clusters WHERE id='$managementClusterId';`""
+    # Delete the MANAGEMENT entry from vsp_cluster
+    LogMessage -type INFO -message "[$SddcManagerFqdn] Deleting MANAGEMENT entry from vsp_cluster"
+    $deleteClusterCommand = "psql -U postgres -h localhost -d platform -c `"DELETE FROM vsp_cluster WHERE id='$managementClusterId';`""
     $stream.WriteLine($deleteClusterCommand)
     Start-Sleep 3
     $deleteClusterOutput = $stream.Read()
     Write-Host $deleteClusterOutput
-    LogMessage -type INFO -message "[$SddcManagerFqdn] vsp_clusters DELETE result: $($deleteClusterOutput.Trim())"
+    LogMessage -type INFO -message "[$SddcManagerFqdn] vsp_cluster DELETE result: $($deleteClusterOutput.Trim())"
 
     # Delete the corresponding credential
     $credentialUsername = "vsp/$managementClusterId/svc-sddc-manager-admin"
