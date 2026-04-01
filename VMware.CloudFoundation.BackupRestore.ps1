@@ -455,7 +455,7 @@ Function New-VcfmsRuntime {
         try {
             $taskResponse = Invoke-RestMethod -Uri $taskUri -Method GET -Headers $headers -SkipCertificateCheck
             $taskStatus = $taskResponse.status
-            LogMessage -type INFO -message "[$SddcManagerFqdn] Task $taskId status: $taskStatus"
+            LogMessage -type INFO -message "[$SddcManagerFqdn] Status: $taskStatus"
         } catch {
             LogMessage -type WARNING -message "[$SddcManagerFqdn] Error polling task (will retry): $($_.Exception.Message)"
             $newToken = Get-SddcManagerToken -SddcManagerFqdn $SddcManagerFqdn -Username $SddcManagerUser -Password $SddcManagerPassword
@@ -655,7 +655,7 @@ Function Add-VcfmsTrustedCertificate {
         try {
             $taskResponse = Invoke-RestMethod -Uri $taskUri -Method GET -Headers $headers -SkipCertificateCheck
             $taskStatus = $taskResponse.status
-            LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Task $taskId status: $taskStatus"
+            LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Status: $taskStatus"
         } catch {
             LogMessage -type WARNING -message "[$ServiceRuntimeFqdn] Error polling task (will retry): $($_.Exception.Message)"
             $newToken = Get-VcfmsServicesRuntimeToken -ServiceRuntimeFqdn $ServiceRuntimeFqdn -Username $ServiceRuntimeUsername -Password $ServiceRuntimePassword
@@ -856,7 +856,7 @@ Function Set-VcfmsSftpBackupSettings {
         try {
             $taskResponse = Invoke-RestMethod -Uri $taskUri -Method GET -Headers $headers -SkipCertificateCheck
             $taskStatus = $taskResponse.status
-            LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Task $taskId status: $taskStatus"
+            LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Status: $taskStatus"
         } catch {
             LogMessage -type WARNING -message "[$ServiceRuntimeFqdn] Error polling task (will retry): $($_.Exception.Message)"
             $newToken = Get-VcfmsServicesRuntimeToken -ServiceRuntimeFqdn $ServiceRuntimeFqdn -Username $ServiceRuntimeUsername -Password $ServiceRuntimePassword
@@ -1210,7 +1210,7 @@ Function Restore-VcfmsBackup {
                     $elapsed = " (running: $(($now - $start).ToString('hh\:mm\:ss')))"
                 } catch {}
             }
-            LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Task $taskId status: $taskStatus$elapsed"
+            LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Status: $taskStatus$elapsed"
         } catch {
             LogMessage -type WARNING -message "[$ServiceRuntimeFqdn] Error polling task (will retry): $($_.Exception.Message)"
             $newToken = Get-VcfmsServicesRuntimeToken -ServiceRuntimeFqdn $ServiceRuntimeFqdn -Username $ServiceRuntimeUsername -Password $ServiceRuntimePassword
@@ -1535,7 +1535,7 @@ Function Watch-VcfmsTask {
                     $elapsed = " (running: $(($now - $start).ToString('hh\:mm\:ss')))"
                 } catch {}
             }
-            LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Task $TaskId : $taskStatus$elapsed"
+            LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Status: $taskStatus$elapsed"
         } catch {
             LogMessage -type WARNING -message "[$ServiceRuntimeFqdn] Error polling task (will retry): $($_.Exception.Message)"
             $newToken = Get-VcfmsServicesRuntimeToken -ServiceRuntimeFqdn $ServiceRuntimeFqdn -Username $ServiceRuntimeUsername -Password $ServiceRuntimePassword
@@ -1637,7 +1637,7 @@ Function Stop-VcfmsTask {
         try {
             $taskResponse = Invoke-RestMethod -Uri $taskUri -Method GET -Headers $headers -SkipCertificateCheck
             $taskStatus = $taskResponse.status
-            LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Task $TaskId status: $taskStatus"
+            LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Status: $taskStatus"
         } catch {
             LogMessage -type WARNING -message "[$ServiceRuntimeFqdn] Error polling task (will retry): $($_.Exception.Message)"
             $newToken = Get-VcfmsServicesRuntimeToken -ServiceRuntimeFqdn $ServiceRuntimeFqdn -Username $ServiceRuntimeUsername -Password $ServiceRuntimePassword
