@@ -257,7 +257,7 @@ Function New-VcfmsRuntime {
     (ByParameter) Internal cluster CIDR in IPv4 format (e.g. 198.18.0.0/15).
 
     .PARAMETER PollIntervalSeconds
-    Interval in seconds to poll the task status. Default is 60.
+    Interval in seconds to poll the task status. Default is 300 (5 minutes).
     #>
 
     Param(
@@ -308,7 +308,7 @@ Function New-VcfmsRuntime {
 
         [Parameter(Mandatory = $false, ParameterSetName = "ByFile")]
         [Parameter(Mandatory = $false, ParameterSetName = "ByParameter")]
-        [Int] $PollIntervalSeconds = 60
+        [Int] $PollIntervalSeconds = 300
     )
 
     $jumpboxName = hostname
