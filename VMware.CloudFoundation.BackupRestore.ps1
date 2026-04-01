@@ -1044,7 +1044,7 @@ Function Restore-VcfmsBackup {
     Path to a JSON file containing the restore payload. The file must contain a "components" array with "path" and "point" for each component to restore.
 
     .PARAMETER PollIntervalSeconds
-    Interval in seconds to poll the restore status. Default is 60.
+    Interval in seconds to poll the restore status. Default is 300 (5 minutes).
     #>
 
     Param(
@@ -1052,7 +1052,7 @@ Function Restore-VcfmsBackup {
         [Parameter(Mandatory = $true)][String] $ServiceRuntimePassword,
         [Parameter(Mandatory = $false)][String] $ServiceRuntimeUsername = "admin@vsp.local",
         [Parameter(Mandatory = $true)][String] $RestoreJsonFile,
-        [Parameter(Mandatory = $false)][Int] $PollIntervalSeconds = 60
+        [Parameter(Mandatory = $false)][Int] $PollIntervalSeconds = 300
     )
 
     $jumpboxName = hostname
