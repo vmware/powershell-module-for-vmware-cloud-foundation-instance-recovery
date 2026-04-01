@@ -74,7 +74,7 @@ Function Remove-SddcManagerVspClusterManagementEntry {
 
     # Query the vsp_cluster table for the MANAGEMENT entry
     LogMessage -type INFO -message "[$SddcManagerFqdn] Querying vsp_cluster table for MANAGEMENT entry"
-    $queryCommand = "psql -U postgres -h localhost -d platform -t -A -c `"SELECT id FROM vsp_cluster WHERE type='MANAGEMENT';`""
+    $queryCommand = "sudo -u postgres psql -d platform -t -A -c `"SELECT id FROM vsp_cluster WHERE type='MANAGEMENT';`""
     $stream.WriteLine($queryCommand)
     Start-Sleep 3
     $rawOutput = $stream.Read()
@@ -95,7 +95,7 @@ Function Remove-SddcManagerVspClusterManagementEntry {
 
     # Display the full row for confirmation
     LogMessage -type INFO -message "[$SddcManagerFqdn] Retrieving full row details"
-    $detailCommand = "psql -U postgres -h localhost -d platform -c `"SELECT * FROM vsp_cluster WHERE id='$managementClusterId';`""
+    $detailCommand = "sudo -u postgres psql -d platform -c `"SELECT * FROM vsp_cluster WHERE id='$managementClusterId';`""
     $stream.WriteLine($detailCommand)
     Start-Sleep 3
     $detailOutput = $stream.Read()
@@ -122,7 +122,7 @@ Function Remove-SddcManagerVspClusterManagementEntry {
 
     # Delete the MANAGEMENT entry from vsp_cluster
     LogMessage -type INFO -message "[$SddcManagerFqdn] Deleting MANAGEMENT entry from vsp_cluster"
-    $deleteClusterCommand = "psql -U postgres -h localhost -d platform -c `"DELETE FROM vsp_cluster WHERE id='$managementClusterId';`""
+    $deleteClusterCommand = "sudo -u postgres psql -d platform -c `"DELETE FROM vsp_cluster WHERE id='$managementClusterId';`""
     $stream.WriteLine($deleteClusterCommand)
     Start-Sleep 3
     $deleteClusterOutput = $stream.Read()
@@ -132,7 +132,7 @@ Function Remove-SddcManagerVspClusterManagementEntry {
     # Delete the corresponding credential
     $credentialUsername = "vsp/$managementClusterId/svc-sddc-manager-admin"
     LogMessage -type INFO -message "[$SddcManagerFqdn] Deleting credential for username: $credentialUsername"
-    $deleteCredCommand = "psql -U postgres -h localhost -d platform -c `"DELETE FROM credential WHERE username='$credentialUsername';`""
+    $deleteCredCommand = "sudo -u postgres psql -d platform -c `"DELETE FROM credential WHERE username='$credentialUsername';`""
     $stream.WriteLine($deleteCredCommand)
     Start-Sleep 3
     $deleteCredOutput = $stream.Read()
