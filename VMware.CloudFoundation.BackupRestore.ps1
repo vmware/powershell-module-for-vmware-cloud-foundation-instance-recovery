@@ -110,7 +110,7 @@ Function Remove-SddcManagerVspClusterManagementEntry {
     Write-Host ""
     Write-Host " The following operations will be performed:" -ForegroundColor Yellow
     Write-Host "   1. DELETE FROM vsp_cluster WHERE id='$managementClusterId'" -ForegroundColor Cyan
-    Write-Host "   2. DELETE FROM credential WHERE username='vsp/$managementClusterId/svc-sddc-manager-admin'" -ForegroundColor Cyan
+    Write-Host "   2. DELETE FROM credential WHERE entityid='$managementClusterId'" -ForegroundColor Cyan
     Write-Host ""
     Do {
         Write-Host " Proceed with deletion? (Y/N): " -ForegroundColor Yellow -NoNewline
@@ -131,10 +131,9 @@ Function Remove-SddcManagerVspClusterManagementEntry {
     Write-Host $deleteClusterOutput
     LogMessage -type INFO -message "[$SddcManagerFqdn] vsp_cluster DELETE result: $($deleteClusterOutput.Trim())"
 
-    # Delete the corresponding credential
-    $credentialUsername = "vsp/$managementClusterId/svc-sddc-manager-admin"
-    LogMessage -type INFO -message "[$SddcManagerFqdn] Deleting credential for username: $credentialUsername"
-    $stream.WriteLine("echo `"DELETE FROM credential WHERE username='$credentialUsername';`" | psql -U postgres -h localhost -d platform")
+    # Delete the corresponding credential by entityid
+    LogMessage -type INFO -message "[$SddcManagerFqdn] Deleting credential with entityid: $managementClusterId"
+    $stream.WriteLine("echo `"DELETE FROM credential WHERE entityid='$managementClusterId';`" | psql -U postgres -h localhost -d platform")
     Start-Sleep 5
     $deleteCredOutput = $stream.Read()
     Write-Host $deleteCredOutput
