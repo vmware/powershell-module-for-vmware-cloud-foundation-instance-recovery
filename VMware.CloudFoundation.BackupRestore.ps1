@@ -1477,6 +1477,7 @@ Function Watch-VcfmsTask {
         LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Found $($results.Count) running task(s)"
         Write-Host ""
         $results | Format-Table -AutoSize | Out-String | Write-Host
+        return
     }
 
     # --- Monitor mode: poll a specific task ---
