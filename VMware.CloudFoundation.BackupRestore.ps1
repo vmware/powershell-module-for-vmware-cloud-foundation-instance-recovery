@@ -533,6 +533,9 @@ Function Add-VcfmsTrustedCertificate {
 
     .PARAMETER RemoteHostPort
     Port to connect to on the remote host. Default is 443.
+
+    .PARAMETER PollIntervalSeconds
+    Interval in seconds to poll the task status. Default is 10.
     #>
 
     Param(
@@ -540,7 +543,8 @@ Function Add-VcfmsTrustedCertificate {
         [Parameter(Mandatory = $true)][String] $ServiceRuntimePassword,
         [Parameter(Mandatory = $false)][String] $ServiceRuntimeUsername = "admin@vsp.local",
         [Parameter(Mandatory = $true)][String] $RemoteHostFqdn,
-        [Parameter(Mandatory = $false)][Int] $RemoteHostPort = 443
+        [Parameter(Mandatory = $false)][Int] $RemoteHostPort = 443,
+        [Parameter(Mandatory = $false)][Int] $PollIntervalSeconds = 10
     )
 
     $jumpboxName = hostname
@@ -592,8 +596,6 @@ Function Add-VcfmsTrustedCertificate {
 
     try {
         $response = Invoke-RestMethod -Uri $trustUri -Method POST -Headers $headers -Body $requestBody -SkipCertificateCheck
-        LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Certificate for $RemoteHostFqdn trusted successfully"
-        return $response
     } catch {
         LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Failed to add trusted certificate: $($_.Exception.Message)"
         if ($_.Exception.Response) {
@@ -606,6 +608,49 @@ Function Add-VcfmsTrustedCertificate {
         }
         return
     }
+
+    # Check for a task ID in the response
+    $taskId = $response.id
+    if (-not $taskId) {
+        LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Certificate for $RemoteHostFqdn trusted successfully (no task returned)"
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+        return $response
+    }
+
+    LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Trust certificate task submitted: $taskId"
+    LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Polling task status every $PollIntervalSeconds seconds"
+
+    $taskUri = "https://$ServiceRuntimeFqdn/api/v1/tasks/$taskId"
+    $taskStatus = "IN_PROGRESS"
+    Do {
+        Start-Sleep -Seconds $PollIntervalSeconds
+
+        try {
+            $taskResponse = Invoke-RestMethod -Uri $taskUri -Method GET -Headers $headers -SkipCertificateCheck
+            $taskStatus = $taskResponse.status
+            LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Task $taskId status: $taskStatus"
+        } catch {
+            LogMessage -type WARNING -message "[$ServiceRuntimeFqdn] Error polling task (will retry): $($_.Exception.Message)"
+            $newToken = Get-VcfmsServicesRuntimeToken -ServiceRuntimeFqdn $ServiceRuntimeFqdn -Username $ServiceRuntimeUsername -Password $ServiceRuntimePassword
+            if ($newToken) {
+                $headers["Authorization"] = "Bearer $newToken"
+            }
+        }
+    } While ($taskStatus -in @("IN_PROGRESS", "IN PROGRESS", "PENDING", "RUNNING"))
+
+    if ($taskStatus -eq "SUCCESSFUL" -or $taskStatus -eq "SUCCESS" -or $taskStatus -eq "COMPLETED") {
+        LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Certificate for $RemoteHostFqdn trusted successfully"
+    } else {
+        LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Trust certificate task ended with status: $taskStatus"
+        if ($taskResponse.errors) {
+            foreach ($err in $taskResponse.errors) {
+                LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Error: $($err.message)"
+            }
+        }
+    }
+
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+    return $taskResponse
 }
 
 Function Set-VcfmsSftpBackupSettings {
