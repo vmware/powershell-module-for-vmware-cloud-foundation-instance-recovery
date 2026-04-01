@@ -696,6 +696,9 @@ Function Set-VcfmsSftpBackupSettings {
 
     .PARAMETER SftpFingerprint
     SSH host key fingerprint of the SFTP server. If not provided, it is retrieved automatically via ssh-keyscan.
+
+    .PARAMETER PollIntervalSeconds
+    Interval in seconds to poll the task status. Default is 10.
     #>
 
     Param(
@@ -709,7 +712,8 @@ Function Set-VcfmsSftpBackupSettings {
         [Parameter(Mandatory = $true)][String] $SftpPassword,
         [Parameter(Mandatory = $true)][String] $SftpDirectory,
         [Parameter(Mandatory = $true)][String] $EncryptionPassphrase,
-        [Parameter(Mandatory = $false)][String] $SftpFingerprint
+        [Parameter(Mandatory = $false)][String] $SftpFingerprint,
+        [Parameter(Mandatory = $false)][Int] $PollIntervalSeconds = 10
     )
 
     $jumpboxName = hostname
@@ -792,8 +796,6 @@ Function Set-VcfmsSftpBackupSettings {
 
     try {
         $response = Invoke-RestMethod -Uri $applyUri -Method POST -Headers $headers -Body $requestBody -SkipCertificateCheck
-        LogMessage -type INFO -message "[$ServiceRuntimeFqdn] SFTP backup settings applied successfully"
-        return $response
     } catch {
         LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Failed to apply SFTP backup settings: $($_.Exception.Message)"
         if ($_.Exception.Response) {
@@ -806,6 +808,49 @@ Function Set-VcfmsSftpBackupSettings {
         }
         return
     }
+
+    # Check for a task ID in the response
+    $taskId = $response.id
+    if (-not $taskId) {
+        LogMessage -type INFO -message "[$ServiceRuntimeFqdn] SFTP backup settings applied successfully (no task returned)"
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+        return $response
+    }
+
+    LogMessage -type INFO -message "[$ServiceRuntimeFqdn] SFTP settings task submitted: $taskId"
+    LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Polling task status every $PollIntervalSeconds seconds"
+
+    $taskUri = "https://$ServiceRuntimeFqdn/api/v1/tasks/$taskId"
+    $taskStatus = "IN_PROGRESS"
+    Do {
+        Start-Sleep -Seconds $PollIntervalSeconds
+
+        try {
+            $taskResponse = Invoke-RestMethod -Uri $taskUri -Method GET -Headers $headers -SkipCertificateCheck
+            $taskStatus = $taskResponse.status
+            LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Task $taskId status: $taskStatus"
+        } catch {
+            LogMessage -type WARNING -message "[$ServiceRuntimeFqdn] Error polling task (will retry): $($_.Exception.Message)"
+            $newToken = Get-VcfmsServicesRuntimeToken -ServiceRuntimeFqdn $ServiceRuntimeFqdn -Username $ServiceRuntimeUsername -Password $ServiceRuntimePassword
+            if ($newToken) {
+                $headers["Authorization"] = "Bearer $newToken"
+            }
+        }
+    } While ($taskStatus -in @("IN_PROGRESS", "IN PROGRESS", "PENDING", "RUNNING"))
+
+    if ($taskStatus -eq "SUCCESSFUL" -or $taskStatus -eq "SUCCESS" -or $taskStatus -eq "COMPLETED") {
+        LogMessage -type INFO -message "[$ServiceRuntimeFqdn] SFTP backup settings applied successfully"
+    } else {
+        LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] SFTP settings task ended with status: $taskStatus"
+        if ($taskResponse.errors) {
+            foreach ($err in $taskResponse.errors) {
+                LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Error: $($err.message)"
+            }
+        }
+    }
+
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+    return $taskResponse
 }
 
 Function Get-VcfmsBackups {
