@@ -65,28 +65,32 @@ Function Remove-SddcManagerVspClusterManagementEntry {
         $sshSession = New-SSHSession -ComputerName $SddcManagerFqdn -Credential $mycreds -KnownHost $inmem
     } Until ($sshSession)
 
-    # Create shell stream and elevate to root
-    $stream = New-SSHShellStream -SSHSession $sshSession
+    # Create shell stream with wide terminal to avoid line-wrapping corruption
+    $stream = New-SSHShellStream -SSHSession $sshSession -TerminalName "xterm" -Columns 250
+    Start-Sleep 1
+    $stream.Read() | Out-Null
+
+    # Elevate to root
     $stream.WriteLine("su -")
     Start-Sleep 2
     $stream.WriteLine("$RootPassword")
     Start-Sleep 2
+    $stream.Read() | Out-Null
 
     # Query the vsp_cluster table for the MANAGEMENT entry
     LogMessage -type INFO -message "[$SddcManagerFqdn] Querying vsp_cluster table for MANAGEMENT entry"
-    $queryCommand = "psql -U postgres -h localhost -d platform -t -A -c `"SELECT id FROM vsp_cluster WHERE type='MANAGEMENT';`""
-    $stream.WriteLine($queryCommand)
-    Start-Sleep 3
+    $stream.WriteLine("echo `"SELECT id FROM vsp_cluster WHERE type='MANAGEMENT';`" | psql -U postgres -h localhost -d platform -t -A")
+    Start-Sleep 5
     $rawOutput = $stream.Read()
-    $stream.WriteLine("")
-    Start-Sleep 1
 
-    # Parse the UUID from the output (look for a GUID pattern)
+    # Parse the UUID from the output
     $guidPattern = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
     $managementClusterId = ($rawOutput | Select-String -Pattern $guidPattern -AllMatches).Matches | Select-Object -First 1 -ExpandProperty Value
 
     if (-not $managementClusterId) {
         LogMessage -type WARNING -message "[$SddcManagerFqdn] No MANAGEMENT entry found in vsp_cluster table. Nothing to delete."
+        LogMessage -type INFO -message "[$SddcManagerFqdn] Raw output for diagnostics:"
+        Write-Host $rawOutput
         Remove-SSHSession -SSHSession $sshSession | Out-Null
         return
     }
@@ -95,9 +99,8 @@ Function Remove-SddcManagerVspClusterManagementEntry {
 
     # Display the full row for confirmation
     LogMessage -type INFO -message "[$SddcManagerFqdn] Retrieving full row details"
-    $detailCommand = "psql -U postgres -h localhost -d platform -c `"SELECT * FROM vsp_cluster WHERE id='$managementClusterId';`""
-    $stream.WriteLine($detailCommand)
-    Start-Sleep 3
+    $stream.WriteLine("echo `"SELECT * FROM vsp_cluster WHERE id='$managementClusterId';`" | psql -U postgres -h localhost -d platform")
+    Start-Sleep 5
     $detailOutput = $stream.Read()
     Write-Host ""
     Write-Host $detailOutput
@@ -122,9 +125,8 @@ Function Remove-SddcManagerVspClusterManagementEntry {
 
     # Delete the MANAGEMENT entry from vsp_cluster
     LogMessage -type INFO -message "[$SddcManagerFqdn] Deleting MANAGEMENT entry from vsp_cluster"
-    $deleteClusterCommand = "psql -U postgres -h localhost -d platform -c `"DELETE FROM vsp_cluster WHERE id='$managementClusterId';`""
-    $stream.WriteLine($deleteClusterCommand)
-    Start-Sleep 3
+    $stream.WriteLine("echo `"DELETE FROM vsp_cluster WHERE id='$managementClusterId';`" | psql -U postgres -h localhost -d platform")
+    Start-Sleep 5
     $deleteClusterOutput = $stream.Read()
     Write-Host $deleteClusterOutput
     LogMessage -type INFO -message "[$SddcManagerFqdn] vsp_cluster DELETE result: $($deleteClusterOutput.Trim())"
@@ -132,9 +134,8 @@ Function Remove-SddcManagerVspClusterManagementEntry {
     # Delete the corresponding credential
     $credentialUsername = "vsp/$managementClusterId/svc-sddc-manager-admin"
     LogMessage -type INFO -message "[$SddcManagerFqdn] Deleting credential for username: $credentialUsername"
-    $deleteCredCommand = "psql -U postgres -h localhost -d platform -c `"DELETE FROM credential WHERE username='$credentialUsername';`""
-    $stream.WriteLine($deleteCredCommand)
-    Start-Sleep 3
+    $stream.WriteLine("echo `"DELETE FROM credential WHERE username='$credentialUsername';`" | psql -U postgres -h localhost -d platform")
+    Start-Sleep 5
     $deleteCredOutput = $stream.Read()
     Write-Host $deleteCredOutput
     LogMessage -type INFO -message "[$SddcManagerFqdn] credential DELETE result: $($deleteCredOutput.Trim())"
