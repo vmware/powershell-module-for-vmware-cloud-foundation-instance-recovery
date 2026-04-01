@@ -437,9 +437,9 @@ Function New-VcfmsRuntime {
                 $headers["Authorization"] = "Bearer $newToken"
             }
         }
-    } While ($taskStatus -in @("IN_PROGRESS", "IN PROGRESS", "PENDING"))
+    } While ($taskStatus -in @("IN_PROGRESS", "IN PROGRESS", "PENDING", "RUNNING", "Pending", "Running"))
 
-    if ($taskStatus -eq "SUCCESSFUL" -or $taskStatus -eq "SUCCESS") {
+    if ($taskStatus -in @("SUCCESSFUL", "SUCCESS", "COMPLETED", "Succeeded")) {
         LogMessage -type INFO -message "[$SddcManagerFqdn] VCFMS runtime deployment completed successfully"
     } else {
         LogMessage -type ERROR -message "[$SddcManagerFqdn] VCFMS runtime deployment ended with status: $taskStatus"
@@ -638,7 +638,7 @@ Function Add-VcfmsTrustedCertificate {
         }
     } While ($taskStatus -in @("IN_PROGRESS", "IN PROGRESS", "PENDING", "RUNNING"))
 
-    if ($taskStatus -eq "SUCCESSFUL" -or $taskStatus -eq "SUCCESS" -or $taskStatus -eq "COMPLETED") {
+    if ($taskStatus -in @("SUCCESSFUL", "SUCCESS", "COMPLETED", "Succeeded")) {
         LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Certificate for $RemoteHostFqdn trusted successfully"
     } else {
         LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Trust certificate task ended with status: $taskStatus"
@@ -838,7 +838,7 @@ Function Set-VcfmsSftpBackupSettings {
         }
     } While ($taskStatus -in @("IN_PROGRESS", "IN PROGRESS", "PENDING", "RUNNING"))
 
-    if ($taskStatus -eq "SUCCESSFUL" -or $taskStatus -eq "SUCCESS" -or $taskStatus -eq "COMPLETED") {
+    if ($taskStatus -in @("SUCCESSFUL", "SUCCESS", "COMPLETED", "Succeeded")) {
         LogMessage -type INFO -message "[$ServiceRuntimeFqdn] SFTP backup settings applied successfully"
     } else {
         LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] SFTP settings task ended with status: $taskStatus"
@@ -1120,9 +1120,9 @@ Function Restore-VcfmsBackup {
                 $headers["Authorization"] = "Bearer $newToken"
             }
         }
-    } While ($restoreStatus -in @("IN_PROGRESS", "IN PROGRESS", "PENDING", "RESTORING"))
+    } While ($restoreStatus -in @("IN_PROGRESS", "IN PROGRESS", "PENDING", "RESTORING", "Running", "Pending"))
 
-    if ($restoreStatus -in @("SUCCESSFUL", "SUCCESS", "COMPLETED")) {
+    if ($restoreStatus -in @("SUCCESSFUL", "SUCCESS", "COMPLETED", "Succeeded")) {
         LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Restore completed successfully"
     } else {
         LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Restore ended with status: $restoreStatus"
@@ -1332,7 +1332,7 @@ Function Watch-VcfmsTask {
     }
 
     $taskUri = "https://$FleetControllerFqdn/fleet-lcm/v1/tasks/$TaskId"
-    $terminalStates = @("COMPLETED", "FAILED", "CANCELLED", "ERROR", "SUCCESS", "SUCCESSFUL")
+    $terminalStates = @("COMPLETED", "FAILED", "CANCELLED", "ERROR", "SUCCESS", "SUCCESSFUL", "Succeeded", "Failed")
 
     LogMessage -type INFO -message "[$FleetControllerFqdn] Monitoring task $TaskId (polling every ${PollIntervalSeconds}s)"
 
@@ -1360,7 +1360,7 @@ Function Watch-VcfmsTask {
         }
     } While ($taskStatus -notin $terminalStates)
 
-    if ($taskStatus -in @("COMPLETED", "SUCCESS", "SUCCESSFUL")) {
+    if ($taskStatus -in @("COMPLETED", "SUCCESS", "SUCCESSFUL", "Succeeded")) {
         LogMessage -type INFO -message "[$FleetControllerFqdn] Task $TaskId completed successfully"
     } else {
         LogMessage -type ERROR -message "[$FleetControllerFqdn] Task $TaskId ended with status: $taskStatus"
@@ -1480,7 +1480,7 @@ Function Remove-VcfmsComponent {
             $finalStatus = $taskResult.status
             $results += [PSCustomObject]@{ ComponentId = $componentId; TaskId = $taskId; Status = $finalStatus }
 
-            if ($finalStatus -notin @("COMPLETED", "SUCCESS", "SUCCESSFUL")) {
+            if ($finalStatus -notin @("COMPLETED", "SUCCESS", "SUCCESSFUL", "Succeeded")) {
                 LogMessage -type ERROR -message "[$FleetControllerFqdn] Component $componentId deletion ended with status: $finalStatus. Stopping."
                 break
             }
