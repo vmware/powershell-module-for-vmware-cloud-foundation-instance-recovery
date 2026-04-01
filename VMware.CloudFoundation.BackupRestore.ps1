@@ -962,7 +962,9 @@ Function Get-VcfmsBackups {
 
     if ($buildJson -in @("Y", "y")) {
         $restoreComponents = @()
-        foreach ($componentType in $Components) {
+        $explicitlyPassed = $PSBoundParameters.ContainsKey("Components")
+        $restoreComponentTypes = if ($explicitlyPassed) { $Components } else { $Components | Where-Object { $_ -ne "ops-logs" } }
+        foreach ($componentType in $restoreComponentTypes) {
             $componentBackups = $allBackups | Where-Object { $_.component.type -eq $componentType }
             if (-not $componentBackups) { continue }
 
