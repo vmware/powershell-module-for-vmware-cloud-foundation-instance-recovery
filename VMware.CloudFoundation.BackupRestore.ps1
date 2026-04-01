@@ -34,7 +34,7 @@ Function Remove-SddcManagerVspClusterManagementEntry {
     The Remove-SddcManagerVspClusterManagementEntry cmdlet connects to the SDDC Manager appliance via SSH as the vcf user, elevates to root, queries the Postgres platform database for the vsp_cluster entry with type MANAGEMENT, and deletes both the cluster row and its associated service credential. This is used during instance recovery when the stale management cluster entry must be purged before re-commissioning.
 
     .EXAMPLE
-    Remove-SddcManagerVspClusterManagementEntry -SddcManagerFqdn "sfo-vcf01.sfo.rainpole.io" -VcfUserPassword "VMw@re1!" -RootPassword "VMw@re1!"
+    Remove-SddcManagerVspClusterManagementEntry -SddcManagerFqdn "sfo-vcf01.sfo.rainpole.io" -VcfUserPassword "VMw@re1!VMw@re1!" -RootPassword "VMw@re1!VMw@re1!"
 
     .PARAMETER SddcManagerFqdn
     FQDN of the SDDC Manager appliance to connect to.
@@ -198,30 +198,21 @@ Function Get-SddcManagerToken {
 Function New-VcfmsRuntime {
     <#
     .SYNOPSIS
-    Deploys a new VCF Management Services (VCFMS) runtime instance via the SDDC Manager API using a JSON payload file.
+    Deploys a new VCF Management Services (VCFMS) runtime instance via the SDDC Manager API.
 
     .DESCRIPTION
-    The New-VcfmsRuntime cmdlet calls the SDDC Manager POST /v1/vsp-clusters endpoint to deploy a new VCFMS runtime. The deployment payload is provided as a JSON file containing all required fields (domainId, FQDNs, clusterId, IP pool, networkMoId, etc.). The function retrieves an SDDC Manager token, displays the payload for verification, submits the deployment request, and polls the task until completion.
+    The New-VcfmsRuntime cmdlet calls the SDDC Manager POST /v1/vsp-clusters endpoint to deploy a new VCFMS runtime. Supports two modes:
+
+    ByFile      - Supply a pre-built JSON payload file.
+    ByParameter - Supply individual values; the management domain ID is automatically retrieved from the SDDC Manager /v1/domains API.
+
+    In both modes the function retrieves an SDDC Manager token, displays the payload for verification, submits the deployment request, and polls the task until completion.
 
     .EXAMPLE
-    # Step 1: Create a JSON file (vcfms-runtime.json):
-    # {
-    #   "domainId": "0810c87d-3758-4c28-95fc-458b1196f4eb",
-    #   "platformFqdn": "sfo-sr01.sfo.rainpole.io",
-    #   "instanceFqdn": "sfo-ic01.sfo.rainpole.io",
-    #   "fleetFqdn": "flt-fc01.rainpole.io",
-    #   "systemUserPassword": "VMw@re1!VMw@re1!",
-    #   "type": "MANAGEMENT",
-    #   "ipv4Pool": { "addresses": ["10.11.99.29","10.11.99.30","10.11.99.31","10.11.99.32","10.11.99.33","10.11.99.34","10.11.99.35","10.11.99.36","10.11.99.37","10.11.99.38","10.11.99.39","10.11.99.40"] },
-    #   "size": "small",
-    #   "networkMoId": "dvportgroup-28",
-    #   "gatewayCidrIpv4": "10.11.99.1/24",
-    #   "clusterId": "1f5c79fe-e3aa-41b1-a5cf-774a6497fa3d",
-    #   "internalClusterCidrIpv4": "198.18.0.0/15"
-    # }
+    New-VcfmsRuntime -SddcManagerFqdn "sfo-vcf01.sfo.rainpole.io" -SddcManagerUser "administrator@vsphere.local" -SddcManagerPassword "VMw@re1!VMw@re1!" -JsonFile ".\vcfms-runtime.json"
 
-    # Step 2: Run the deployment
-    New-VcfmsRuntime -SddcManagerFqdn "sfo-vcf01.sfo.rainpole.io" -SddcManagerUser "administrator@vsphere.local" -SddcManagerPassword "VMw@re1!" -PayloadFile ".\vcfms-runtime.json"
+    .EXAMPLE
+    New-VcfmsRuntime -SddcManagerFqdn "sfo-vcf01.sfo.rainpole.io" -SddcManagerUser "administrator@vsphere.local" -SddcManagerPassword "VMw@re1!VMw@re1!" -PlatformFqdn "sfo-sr01.sfo.rainpole.io" -InstanceFqdn "sfo-ic01.sfo.rainpole.io" -FleetFqdn "flt-fc01.rainpole.io" -SystemUserPassword "VMw@re1!VMw@re1!" -Ipv4Addresses "10.11.99.29","10.11.99.30","10.11.99.31" -Size "small" -NetworkMoId "dvportgroup-28" -GatewayCidrIpv4 "10.11.99.1/24" -ClusterId "1f5c79fe-e3aa-41b1-a5cf-774a6497fa3d" -InternalClusterCidrIpv4 "198.18.0.0/15"
 
     .PARAMETER SddcManagerFqdn
     FQDN of the SDDC Manager appliance.
@@ -232,53 +223,96 @@ Function New-VcfmsRuntime {
     .PARAMETER SddcManagerPassword
     Password for the SDDC Manager API user.
 
-    .PARAMETER PayloadFile
-    Path to a JSON file containing the VCFMS runtime deployment payload. Must include: domainId, platformFqdn, instanceFqdn, fleetFqdn, systemUserPassword, type, ipv4Pool, size, networkMoId, gatewayCidrIpv4, clusterId, internalClusterCidrIpv4.
+    .PARAMETER JsonFile
+    (ByFile) Path to a JSON file containing the full VCFMS runtime deployment payload.
+
+    .PARAMETER PlatformFqdn
+    (ByParameter) Platform FQDN for the VCFMS runtime. Must match the original.
+
+    .PARAMETER InstanceFqdn
+    (ByParameter) Instance FQDN for the VCFMS runtime. Must match the original.
+
+    .PARAMETER FleetFqdn
+    (ByParameter) Fleet FQDN for the VCFMS runtime. Must match the original.
+
+    .PARAMETER SystemUserPassword
+    (ByParameter) System user password for the VCFMS runtime.
+
+    .PARAMETER Ipv4Addresses
+    (ByParameter) Array of IPv4 addresses for the VCFMS IP pool.
+
+    .PARAMETER Size
+    (ByParameter) Deployment size (e.g. small, medium, large).
+
+    .PARAMETER NetworkMoId
+    (ByParameter) Managed Object ID of the dvportgroup (e.g. dvportgroup-28).
+
+    .PARAMETER GatewayCidrIpv4
+    (ByParameter) Gateway CIDR in IPv4 format (e.g. 10.11.99.1/24).
+
+    .PARAMETER ClusterId
+    (ByParameter) Cluster ID from the original deployment. Must match the original.
+
+    .PARAMETER InternalClusterCidrIpv4
+    (ByParameter) Internal cluster CIDR in IPv4 format (e.g. 198.18.0.0/15).
 
     .PARAMETER PollIntervalSeconds
     Interval in seconds to poll the task status. Default is 60.
     #>
 
     Param(
-        [Parameter(Mandatory = $true)][String] $SddcManagerFqdn,
-        [Parameter(Mandatory = $true)][String] $SddcManagerUser,
-        [Parameter(Mandatory = $true)][String] $SddcManagerPassword,
-        [Parameter(Mandatory = $true)][String] $PayloadFile,
-        [Parameter(Mandatory = $false)][Int] $PollIntervalSeconds = 60
+        [Parameter(Mandatory = $true, ParameterSetName = "ByFile")]
+        [Parameter(Mandatory = $true, ParameterSetName = "ByParameter")]
+        [String] $SddcManagerFqdn,
+
+        [Parameter(Mandatory = $true, ParameterSetName = "ByFile")]
+        [Parameter(Mandatory = $true, ParameterSetName = "ByParameter")]
+        [String] $SddcManagerUser,
+
+        [Parameter(Mandatory = $true, ParameterSetName = "ByFile")]
+        [Parameter(Mandatory = $true, ParameterSetName = "ByParameter")]
+        [String] $SddcManagerPassword,
+
+        [Parameter(Mandatory = $true, ParameterSetName = "ByFile")]
+        [String] $JsonFile,
+
+        [Parameter(Mandatory = $true, ParameterSetName = "ByParameter")]
+        [String] $PlatformFqdn,
+
+        [Parameter(Mandatory = $true, ParameterSetName = "ByParameter")]
+        [String] $InstanceFqdn,
+
+        [Parameter(Mandatory = $true, ParameterSetName = "ByParameter")]
+        [String] $FleetFqdn,
+
+        [Parameter(Mandatory = $true, ParameterSetName = "ByParameter")]
+        [String] $SystemUserPassword,
+
+        [Parameter(Mandatory = $true, ParameterSetName = "ByParameter")]
+        [String[]] $Ipv4Addresses,
+
+        [Parameter(Mandatory = $true, ParameterSetName = "ByParameter")]
+        [String] $Size,
+
+        [Parameter(Mandatory = $true, ParameterSetName = "ByParameter")]
+        [String] $NetworkMoId,
+
+        [Parameter(Mandatory = $true, ParameterSetName = "ByParameter")]
+        [String] $GatewayCidrIpv4,
+
+        [Parameter(Mandatory = $true, ParameterSetName = "ByParameter")]
+        [String] $ClusterId,
+
+        [Parameter(Mandatory = $true, ParameterSetName = "ByParameter")]
+        [String] $InternalClusterCidrIpv4,
+
+        [Parameter(Mandatory = $false, ParameterSetName = "ByFile")]
+        [Parameter(Mandatory = $false, ParameterSetName = "ByParameter")]
+        [Int] $PollIntervalSeconds = 60
     )
 
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
-
-    # Read and validate the payload file
-    $payloadPath = (Resolve-Path -Path $PayloadFile -ErrorAction SilentlyContinue).Path
-    if (-not $payloadPath) {
-        LogMessage -type ERROR -message "[$jumpboxName] Payload file not found: $PayloadFile"
-        return
-    }
-
-    $requestBody = Get-Content $payloadPath -Raw
-    try {
-        $payloadObject = $requestBody | ConvertFrom-Json
-    } catch {
-        LogMessage -type ERROR -message "[$jumpboxName] Failed to parse JSON from $PayloadFile : $($_.Exception.Message)"
-        return
-    }
-
-    # Validate required fields
-    $requiredFields = @("domainId", "platformFqdn", "instanceFqdn", "fleetFqdn", "systemUserPassword", "type", "ipv4Pool", "size", "networkMoId", "gatewayCidrIpv4", "clusterId", "internalClusterCidrIpv4")
-    $missingFields = $requiredFields | Where-Object { -not $payloadObject.$_ }
-    if ($missingFields) {
-        LogMessage -type ERROR -message "[$jumpboxName] Payload is missing required fields: $($missingFields -join ', ')"
-        return
-    }
-
-    # Display the payload for verification (password redacted)
-    $displayBody = $requestBody -replace '"systemUserPassword"\s*:\s*"[^"]*"', '"systemUserPassword": "***"'
-    Write-Host ""
-    Write-Host " VCFMS Runtime Deployment Payload:" -ForegroundColor Cyan
-    Write-Host $displayBody
-    Write-Host ""
 
     # Get authentication token
     $accessToken = Get-SddcManagerToken -SddcManagerFqdn $SddcManagerFqdn -Username $SddcManagerUser -Password $SddcManagerPassword
@@ -292,6 +326,69 @@ Function New-VcfmsRuntime {
         "Content-Type"  = "application/json"
         "Accept"        = "application/json"
     }
+
+    if ($PSCmdlet.ParameterSetName -eq "ByFile") {
+        # --- ByFile: read and validate the JSON payload ---
+        $payloadPath = (Resolve-Path -Path $JsonFile -ErrorAction SilentlyContinue).Path
+        if (-not $payloadPath) {
+            LogMessage -type ERROR -message "[$jumpboxName] Payload file not found: $JsonFile"
+            return
+        }
+
+        $requestBody = Get-Content $payloadPath -Raw
+        try {
+            $payloadObject = $requestBody | ConvertFrom-Json
+        } catch {
+            LogMessage -type ERROR -message "[$jumpboxName] Failed to parse JSON from $JsonFile : $($_.Exception.Message)"
+            return
+        }
+
+        $requiredFields = @("domainId", "platformFqdn", "instanceFqdn", "fleetFqdn", "systemUserPassword", "type", "ipv4Pool", "size", "networkMoId", "gatewayCidrIpv4", "clusterId", "internalClusterCidrIpv4")
+        $missingFields = $requiredFields | Where-Object { -not $payloadObject.$_ }
+        if ($missingFields) {
+            LogMessage -type ERROR -message "[$jumpboxName] Payload is missing required fields: $($missingFields -join ', ')"
+            return
+        }
+    } else {
+        # --- ByParameter: retrieve the management domain ID and build the payload ---
+        LogMessage -type INFO -message "[$SddcManagerFqdn] Retrieving management domain ID from /v1/domains"
+        try {
+            $domainsUri = "https://$SddcManagerFqdn/v1/domains"
+            $domainsResponse = Invoke-RestMethod -Uri $domainsUri -Method GET -Headers $headers -SkipCertificateCheck
+            $mgmtDomain = $domainsResponse.elements | Where-Object { $_.type -eq "MANAGEMENT" } | Select-Object -First 1
+            if (-not $mgmtDomain) {
+                LogMessage -type ERROR -message "[$SddcManagerFqdn] No MANAGEMENT domain found in /v1/domains response"
+                return
+            }
+            $domainId = $mgmtDomain.id
+            LogMessage -type INFO -message "[$SddcManagerFqdn] Management domain ID: $domainId"
+        } catch {
+            LogMessage -type ERROR -message "[$SddcManagerFqdn] Failed to retrieve domains: $($_.Exception.Message)"
+            return
+        }
+
+        $requestBody = @{
+            domainId                = $domainId
+            platformFqdn            = $PlatformFqdn
+            instanceFqdn            = $InstanceFqdn
+            fleetFqdn               = $FleetFqdn
+            systemUserPassword      = $SystemUserPassword
+            type                    = "MANAGEMENT"
+            ipv4Pool                = @{ addresses = $Ipv4Addresses }
+            size                    = $Size
+            networkMoId             = $NetworkMoId
+            gatewayCidrIpv4         = $GatewayCidrIpv4
+            clusterId               = $ClusterId
+            internalClusterCidrIpv4 = $InternalClusterCidrIpv4
+        } | ConvertTo-Json -Depth 5
+    }
+
+    # Display the payload for verification (password redacted)
+    $displayBody = $requestBody -replace '"systemUserPassword"\s*:\s*"[^"]*"', '"systemUserPassword": "***"'
+    Write-Host ""
+    Write-Host " VCFMS Runtime Deployment Payload:" -ForegroundColor Cyan
+    Write-Host $displayBody
+    Write-Host ""
 
     $vspClustersUri = "https://$SddcManagerFqdn/v1/vsp-clusters"
     LogMessage -type INFO -message "[$SddcManagerFqdn] Submitting VCFMS runtime deployment to POST /v1/vsp-clusters"
@@ -520,7 +617,7 @@ Function Set-VcfmsSftpBackupSettings {
     The Set-VcfmsSftpBackupSettings cmdlet retrieves the SFTP server's SSH host key fingerprint, then applies SFTP backup configuration to the specified VCFMS component via POST /api/v1/components/{componentId}?action=apply.
 
     .EXAMPLE
-    Set-VcfmsSftpBackupSettings -ServiceRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServiceRuntimePassword "VMw@re1!VMw@re1!" -ComponentId "1f5c79fe-e3aa-41b1-a5cf-774a6497fa3d" -SftpHost "10.167.173.126" -SftpUsername "svc-vcf-bck" -SftpPassword "VMw@re1!" -SftpDirectory "/media/backups/" -EncryptionPassphrase "VMw@re1!VMw@re1!"
+    Set-VcfmsSftpBackupSettings -ServiceRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServiceRuntimePassword "VMw@re1!VMw@re1!" -ComponentId "1f5c79fe-e3aa-41b1-a5cf-774a6497fa3d" -SftpHost "10.167.173.126" -SftpUsername "svc-vcf-bck" -SftpPassword "VMw@re1!VMw@re1!" -SftpDirectory "/media/backups/" -EncryptionPassphrase "VMw@re1!VMw@re1!"
 
     .PARAMETER ServiceRuntimeFqdn
     FQDN of the VCFMS Services Runtime instance.
@@ -797,7 +894,7 @@ Function Restore-VcfmsBackup {
     # }
 
     # Step 3: Run the restore
-    Restore-VcfmsBackup -ServiceRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServiceRuntimePassword "VMw@re1!VMw@re1!" -RestorePayloadFile ".\restore-payload.json"
+    Restore-VcfmsBackup -ServiceRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServiceRuntimePassword "VMw@re1!VMw@re1!" -RestoreJsonFile ".\restore-payload.json"
 
     .PARAMETER ServiceRuntimeFqdn
     FQDN of the VCFMS Services Runtime instance.
@@ -808,7 +905,7 @@ Function Restore-VcfmsBackup {
     .PARAMETER ServiceRuntimeUsername
     Username for the Services Runtime token. Default is "admin@vsp.local".
 
-    .PARAMETER RestorePayloadFile
+    .PARAMETER RestoreJsonFile
     Path to a JSON file containing the restore payload. The file must contain a "components" array with "path" and "point" for each component to restore.
 
     .PARAMETER PollIntervalSeconds
@@ -819,7 +916,7 @@ Function Restore-VcfmsBackup {
         [Parameter(Mandatory = $true)][String] $ServiceRuntimeFqdn,
         [Parameter(Mandatory = $true)][String] $ServiceRuntimePassword,
         [Parameter(Mandatory = $false)][String] $ServiceRuntimeUsername = "admin@vsp.local",
-        [Parameter(Mandatory = $true)][String] $RestorePayloadFile,
+        [Parameter(Mandatory = $true)][String] $RestoreJsonFile,
         [Parameter(Mandatory = $false)][Int] $PollIntervalSeconds = 60
     )
 
@@ -827,9 +924,9 @@ Function Restore-VcfmsBackup {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     # Read and validate the payload file
-    $payloadPath = (Resolve-Path -Path $RestorePayloadFile -ErrorAction SilentlyContinue).Path
+    $payloadPath = (Resolve-Path -Path $RestoreJsonFile -ErrorAction SilentlyContinue).Path
     if (-not $payloadPath) {
-        LogMessage -type ERROR -message "[$jumpboxName] Restore payload file not found: $RestorePayloadFile"
+        LogMessage -type ERROR -message "[$jumpboxName] Restore payload file not found: $RestoreJsonFile"
         return
     }
 
@@ -837,7 +934,7 @@ Function Restore-VcfmsBackup {
     try {
         $payloadObject = $payloadContent | ConvertFrom-Json
     } catch {
-        LogMessage -type ERROR -message "[$jumpboxName] Failed to parse JSON from $RestorePayloadFile : $($_.Exception.Message)"
+        LogMessage -type ERROR -message "[$jumpboxName] Failed to parse JSON from $RestoreJsonFile : $($_.Exception.Message)"
         return
     }
 
