@@ -154,7 +154,7 @@ Function Get-SddcManagerToken {
     The Get-SddcManagerToken cmdlet authenticates to the SDDC Manager /v1/tokens endpoint and returns the access token string for use in subsequent API calls.
 
     .EXAMPLE
-    $token = Get-SddcManagerToken -SddcManagerFqdn "sfo-vcf01.sfo.rainpole.io" -Username "administrator@vsphere.local" -Password "VMw@re1!"
+    $token = Get-SddcManagerToken -SddcManagerFqdn "sfo-vcf01.sfo.rainpole.io" -Username "administrator@vsphere.local" -Password "VMw@re1!VMw@re1!"
 
     .PARAMETER SddcManagerFqdn
     FQDN of the SDDC Manager appliance.
@@ -198,13 +198,30 @@ Function Get-SddcManagerToken {
 Function New-VcfmsRuntime {
     <#
     .SYNOPSIS
-    Deploys a new VCF Management Services (VCFMS) runtime instance via the SDDC Manager API.
+    Deploys a new VCF Management Services (VCFMS) runtime instance via the SDDC Manager API using a JSON payload file.
 
     .DESCRIPTION
-    The New-VcfmsRuntime cmdlet calls the SDDC Manager POST /v1/vsp-clusters endpoint to deploy a new VCFMS runtime. All values (domain ID, FQDNs, cluster ID, IP pool, network MoID) must match the original deployment. The function retrieves an SDDC Manager token, submits the deployment request, and polls the task until completion.
+    The New-VcfmsRuntime cmdlet calls the SDDC Manager POST /v1/vsp-clusters endpoint to deploy a new VCFMS runtime. The deployment payload is provided as a JSON file containing all required fields (domainId, FQDNs, clusterId, IP pool, networkMoId, etc.). The function retrieves an SDDC Manager token, displays the payload for verification, submits the deployment request, and polls the task until completion.
 
     .EXAMPLE
-    New-VcfmsRuntime -SddcManagerFqdn "sfo-vcf01.sfo.rainpole.io" -SddcManagerUser "administrator@vsphere.local" -SddcManagerPassword "VMw@re1!" -DomainId "0810c87d-3758-4c28-95fc-458b1196f4eb" -PlatformFqdn "sfo-sr01.sfo.rainpole.io" -InstanceFqdn "sfo-ic01.sfo.rainpole.io" -FleetFqdn "flt-fc01.rainpole.io" -SystemUserPassword "VMw@re1!VMw@re1!" -Ipv4Addresses "10.11.99.29","10.11.99.30","10.11.99.31","10.11.99.32","10.11.99.33","10.11.99.34","10.11.99.35","10.11.99.36","10.11.99.37","10.11.99.38","10.11.99.39","10.11.99.40" -Size "small" -NetworkMoId "dvportgroup-28" -GatewayCidrIpv4 "10.11.99.1/24" -ClusterId "1f5c79fe-e3aa-41b1-a5cf-774a6497fa3d" -InternalClusterCidrIpv4 "198.18.0.0/15"
+    # Step 1: Create a JSON file (vcfms-runtime.json):
+    # {
+    #   "domainId": "0810c87d-3758-4c28-95fc-458b1196f4eb",
+    #   "platformFqdn": "sfo-sr01.sfo.rainpole.io",
+    #   "instanceFqdn": "sfo-ic01.sfo.rainpole.io",
+    #   "fleetFqdn": "flt-fc01.rainpole.io",
+    #   "systemUserPassword": "VMw@re1!VMw@re1!",
+    #   "type": "MANAGEMENT",
+    #   "ipv4Pool": { "addresses": ["10.11.99.29","10.11.99.30","10.11.99.31","10.11.99.32","10.11.99.33","10.11.99.34","10.11.99.35","10.11.99.36","10.11.99.37","10.11.99.38","10.11.99.39","10.11.99.40"] },
+    #   "size": "small",
+    #   "networkMoId": "dvportgroup-28",
+    #   "gatewayCidrIpv4": "10.11.99.1/24",
+    #   "clusterId": "1f5c79fe-e3aa-41b1-a5cf-774a6497fa3d",
+    #   "internalClusterCidrIpv4": "198.18.0.0/15"
+    # }
+
+    # Step 2: Run the deployment
+    New-VcfmsRuntime -SddcManagerFqdn "sfo-vcf01.sfo.rainpole.io" -SddcManagerUser "administrator@vsphere.local" -SddcManagerPassword "VMw@re1!" -PayloadFile ".\vcfms-runtime.json"
 
     .PARAMETER SddcManagerFqdn
     FQDN of the SDDC Manager appliance.
@@ -215,38 +232,8 @@ Function New-VcfmsRuntime {
     .PARAMETER SddcManagerPassword
     Password for the SDDC Manager API user.
 
-    .PARAMETER DomainId
-    Management domain ID from SDDC Manager. Must match the original.
-
-    .PARAMETER PlatformFqdn
-    Platform FQDN for the VCFMS runtime. Must match the original.
-
-    .PARAMETER InstanceFqdn
-    Instance FQDN for the VCFMS runtime. Must match the original.
-
-    .PARAMETER FleetFqdn
-    Fleet FQDN for the VCFMS runtime. Must match the original.
-
-    .PARAMETER SystemUserPassword
-    System user password for the VCFMS runtime.
-
-    .PARAMETER Ipv4Addresses
-    Array of IPv4 addresses for the VCFMS IP pool.
-
-    .PARAMETER Size
-    Deployment size (e.g. small, medium, large).
-
-    .PARAMETER NetworkMoId
-    Managed Object ID of the dvportgroup (e.g. dvportgroup-28).
-
-    .PARAMETER GatewayCidrIpv4
-    Gateway CIDR in IPv4 format (e.g. 10.11.99.1/24).
-
-    .PARAMETER ClusterId
-    Cluster ID from the original deployment. Must match the original.
-
-    .PARAMETER InternalClusterCidrIpv4
-    Internal cluster CIDR in IPv4 format (e.g. 198.18.0.0/15).
+    .PARAMETER PayloadFile
+    Path to a JSON file containing the VCFMS runtime deployment payload. Must include: domainId, platformFqdn, instanceFqdn, fleetFqdn, systemUserPassword, type, ipv4Pool, size, networkMoId, gatewayCidrIpv4, clusterId, internalClusterCidrIpv4.
 
     .PARAMETER PollIntervalSeconds
     Interval in seconds to poll the task status. Default is 60.
@@ -256,22 +243,42 @@ Function New-VcfmsRuntime {
         [Parameter(Mandatory = $true)][String] $SddcManagerFqdn,
         [Parameter(Mandatory = $true)][String] $SddcManagerUser,
         [Parameter(Mandatory = $true)][String] $SddcManagerPassword,
-        [Parameter(Mandatory = $true)][String] $DomainId,
-        [Parameter(Mandatory = $true)][String] $PlatformFqdn,
-        [Parameter(Mandatory = $true)][String] $InstanceFqdn,
-        [Parameter(Mandatory = $true)][String] $FleetFqdn,
-        [Parameter(Mandatory = $true)][String] $SystemUserPassword,
-        [Parameter(Mandatory = $true)][String[]] $Ipv4Addresses,
-        [Parameter(Mandatory = $true)][String] $Size,
-        [Parameter(Mandatory = $true)][String] $NetworkMoId,
-        [Parameter(Mandatory = $true)][String] $GatewayCidrIpv4,
-        [Parameter(Mandatory = $true)][String] $ClusterId,
-        [Parameter(Mandatory = $true)][String] $InternalClusterCidrIpv4,
+        [Parameter(Mandatory = $true)][String] $PayloadFile,
         [Parameter(Mandatory = $false)][Int] $PollIntervalSeconds = 60
     )
 
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    # Read and validate the payload file
+    $payloadPath = (Resolve-Path -Path $PayloadFile -ErrorAction SilentlyContinue).Path
+    if (-not $payloadPath) {
+        LogMessage -type ERROR -message "[$jumpboxName] Payload file not found: $PayloadFile"
+        return
+    }
+
+    $requestBody = Get-Content $payloadPath -Raw
+    try {
+        $payloadObject = $requestBody | ConvertFrom-Json
+    } catch {
+        LogMessage -type ERROR -message "[$jumpboxName] Failed to parse JSON from $PayloadFile : $($_.Exception.Message)"
+        return
+    }
+
+    # Validate required fields
+    $requiredFields = @("domainId", "platformFqdn", "instanceFqdn", "fleetFqdn", "systemUserPassword", "type", "ipv4Pool", "size", "networkMoId", "gatewayCidrIpv4", "clusterId", "internalClusterCidrIpv4")
+    $missingFields = $requiredFields | Where-Object { -not $payloadObject.$_ }
+    if ($missingFields) {
+        LogMessage -type ERROR -message "[$jumpboxName] Payload is missing required fields: $($missingFields -join ', ')"
+        return
+    }
+
+    # Display the payload for verification (password redacted)
+    $displayBody = $requestBody -replace '"systemUserPassword"\s*:\s*"[^"]*"', '"systemUserPassword": "***"'
+    Write-Host ""
+    Write-Host " VCFMS Runtime Deployment Payload:" -ForegroundColor Cyan
+    Write-Host $displayBody
+    Write-Host ""
 
     # Get authentication token
     $accessToken = Get-SddcManagerToken -SddcManagerFqdn $SddcManagerFqdn -Username $SddcManagerUser -Password $SddcManagerPassword
@@ -286,30 +293,6 @@ Function New-VcfmsRuntime {
         "Accept"        = "application/json"
     }
 
-    # Build the request body
-    $requestBody = @{
-        domainId              = $DomainId
-        platformFqdn          = $PlatformFqdn
-        instanceFqdn          = $InstanceFqdn
-        fleetFqdn             = $FleetFqdn
-        systemUserPassword    = $SystemUserPassword
-        type                  = "MANAGEMENT"
-        ipv4Pool              = @{
-            addresses = $Ipv4Addresses
-        }
-        size                  = $Size
-        networkMoId           = $NetworkMoId
-        gatewayCidrIpv4       = $GatewayCidrIpv4
-        clusterId             = $ClusterId
-        internalClusterCidrIpv4 = $InternalClusterCidrIpv4
-    } | ConvertTo-Json -Depth 5
-
-    # Display the payload for verification
-    Write-Host ""
-    Write-Host " VCFMS Runtime Deployment Payload:" -ForegroundColor Cyan
-    Write-Host $requestBody
-    Write-Host ""
-
     $vspClustersUri = "https://$SddcManagerFqdn/v1/vsp-clusters"
     LogMessage -type INFO -message "[$SddcManagerFqdn] Submitting VCFMS runtime deployment to POST /v1/vsp-clusters"
 
@@ -318,10 +301,12 @@ Function New-VcfmsRuntime {
     } catch {
         LogMessage -type ERROR -message "[$SddcManagerFqdn] VCFMS deployment request failed: $($_.Exception.Message)"
         if ($_.Exception.Response) {
-            $errorStream = $_.Exception.Response.GetResponseStream()
-            $reader = New-Object System.IO.StreamReader($errorStream)
-            $errorBody = $reader.ReadToEnd()
-            LogMessage -type ERROR -message "[$SddcManagerFqdn] Response body: $errorBody"
+            try {
+                $errorStream = $_.Exception.Response.GetResponseStream()
+                $reader = New-Object System.IO.StreamReader($errorStream)
+                $errorBody = $reader.ReadToEnd()
+                LogMessage -type ERROR -message "[$SddcManagerFqdn] Response body: $errorBody"
+            } catch {}
         }
         return
     }
@@ -344,7 +329,6 @@ Function New-VcfmsRuntime {
     Do {
         Start-Sleep -Seconds $PollIntervalSeconds
 
-        # Refresh token in case it expires during long-running tasks
         try {
             $taskResponse = Invoke-RestMethod -Uri $taskUri -Method GET -Headers $headers -SkipCertificateCheck
             $taskStatus = $taskResponse.status
