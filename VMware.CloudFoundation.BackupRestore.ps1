@@ -1199,7 +1199,7 @@ Function Restore-VcfmsBackup {
             $elapsed = ""
             if ($taskResponse.startTime) {
                 try {
-                    $start = [datetime]::Parse($taskResponse.startTime).ToUniversalTime()
+                    $start = [datetimeoffset]::Parse($taskResponse.startTime).UtcDateTime
                     $now = [datetime]::UtcNow
                     $elapsed = " (running: $(($now - $start).ToString('hh\:mm\:ss')))"
                 } catch {}
@@ -1483,7 +1483,7 @@ Function Watch-VcfmsTask {
             $running = ""
             if ($task.startTime) {
                 try {
-                    $start = [datetime]::Parse($task.startTime).ToUniversalTime()
+                    $start = [datetimeoffset]::Parse($task.startTime).UtcDateTime
                     $running = ($now - $start).ToString('hh\:mm\:ss')
                 } catch {}
             }
@@ -1517,14 +1517,14 @@ Function Watch-VcfmsTask {
             $elapsed = ""
             if ($taskResponse.startTime -and $taskResponse.endTime) {
                 try {
-                    $start = [datetime]::Parse($taskResponse.startTime)
-                    $end = [datetime]::Parse($taskResponse.endTime)
+                    $start = [datetimeoffset]::Parse($taskResponse.startTime).UtcDateTime
+                    $end = [datetimeoffset]::Parse($taskResponse.endTime).UtcDateTime
                     $elapsed = " (elapsed: $(($end - $start).ToString('hh\:mm\:ss')))"
                 } catch {}
             } elseif ($taskResponse.startTime) {
                 try {
-                    $start = [datetime]::Parse($taskResponse.startTime)
-                    $now = Get-Date
+                    $start = [datetimeoffset]::Parse($taskResponse.startTime).UtcDateTime
+                    $now = [datetime]::UtcNow
                     $elapsed = " (running: $(($now - $start).ToString('hh\:mm\:ss')))"
                 } catch {}
             }
