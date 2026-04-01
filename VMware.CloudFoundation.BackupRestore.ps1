@@ -1430,7 +1430,17 @@ Function Watch-VcfmsTask {
             return
         }
 
-        $allTasks = if ($response.items) { $response.items } elseif ($response -is [array]) { $response } else { @($response) }
+        # Dump raw response to understand API structure
+        Write-Host ""
+        Write-Host " Raw API Response:" -ForegroundColor Cyan
+        $response | ConvertTo-Json -Depth 5 | Write-Host
+        Write-Host ""
+
+        # Extract tasks array from response - adapt to actual structure
+        $allTasks = if ($response.items) { $response.items }
+                    elseif ($response.tasks) { $response.tasks }
+                    elseif ($response -is [array]) { $response }
+                    else { @($response) }
 
         $runningTasks = $allTasks | Where-Object { $_.status -notin $terminalStates }
 
@@ -1453,6 +1463,7 @@ Function Watch-VcfmsTask {
                 'Id'      = $task.id
                 'Type'    = $task.type
                 'Status'  = $task.status
+                'Phase'   = $task.phase
                 'Running' = $running
                 'Created' = $task.createTime
             }
@@ -1461,7 +1472,6 @@ Function Watch-VcfmsTask {
         LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Found $($results.Count) running task(s)"
         Write-Host ""
         $results | Format-Table -AutoSize | Out-String | Write-Host
-        return $results
     }
 
     # --- Monitor mode: poll a specific task ---
