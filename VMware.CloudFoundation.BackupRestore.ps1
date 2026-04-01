@@ -1348,13 +1348,19 @@ Function Get-VcfmsComponents {
 Function Watch-VcfmsTask {
     <#
     .SYNOPSIS
-    Monitors a VCFMS Services Runtime task until completion.
+    Monitors a VCFMS Services Runtime task until completion, or finds currently running tasks.
 
     .DESCRIPTION
-    The Watch-VcfmsTask cmdlet polls a Services Runtime task by ID via GET /api/v1/tasks/{taskId} until the task reaches a terminal state (Succeeded, Failed, Cancelled). Returns the final task response.
+    The Watch-VcfmsTask cmdlet supports two modes:
+
+    Monitor  - Polls a specific task by ID via GET /api/v1/tasks/{taskId} until it reaches a terminal state (Succeeded, Failed, Cancelled). Returns the final task response.
+    FindRunning - Queries GET /api/v1/tasks to find all currently running (non-terminal) tasks and displays them in a table.
 
     .EXAMPLE
     $task = Watch-VcfmsTask -ServiceRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServiceRuntimePassword "VMw@re1!VMw@re1!" -TaskId "un56awijhfbudjma4mjin3cjwi"
+
+    .EXAMPLE
+    Watch-VcfmsTask -ServiceRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServiceRuntimePassword "VMw@re1!VMw@re1!" -FindRunning
 
     .PARAMETER ServiceRuntimeFqdn
     FQDN of the VCFMS Services Runtime instance.
@@ -1366,21 +1372,40 @@ Function Watch-VcfmsTask {
     Username for the Services Runtime token. Default is "admin@vsp.local".
 
     .PARAMETER TaskId
-    The task ID to monitor.
+    (Monitor mode) The task ID to monitor.
+
+    .PARAMETER FindRunning
+    (FindRunning mode) Switch to query and display all currently running tasks.
 
     .PARAMETER PollIntervalSeconds
-    Interval in seconds between status polls. Default is 30.
+    Interval in seconds between status polls. Default is 30. Only used in Monitor mode.
     #>
 
     Param(
-        [Parameter(Mandatory = $true)][String] $ServiceRuntimeFqdn,
-        [Parameter(Mandatory = $true)][String] $ServiceRuntimePassword,
-        [Parameter(Mandatory = $false)][String] $ServiceRuntimeUsername = "admin@vsp.local",
-        [Parameter(Mandatory = $true)][String] $TaskId,
-        [Parameter(Mandatory = $false)][Int] $PollIntervalSeconds = 30
+        [Parameter(Mandatory = $true, ParameterSetName = "Monitor")]
+        [Parameter(Mandatory = $true, ParameterSetName = "FindRunning")]
+        [String] $ServiceRuntimeFqdn,
+
+        [Parameter(Mandatory = $true, ParameterSetName = "Monitor")]
+        [Parameter(Mandatory = $true, ParameterSetName = "FindRunning")]
+        [String] $ServiceRuntimePassword,
+
+        [Parameter(Mandatory = $false, ParameterSetName = "Monitor")]
+        [Parameter(Mandatory = $false, ParameterSetName = "FindRunning")]
+        [String] $ServiceRuntimeUsername = "admin@vsp.local",
+
+        [Parameter(Mandatory = $true, ParameterSetName = "Monitor")]
+        [String] $TaskId,
+
+        [Parameter(Mandatory = $true, ParameterSetName = "FindRunning")]
+        [Switch] $FindRunning,
+
+        [Parameter(Mandatory = $false, ParameterSetName = "Monitor")]
+        [Int] $PollIntervalSeconds = 30
     )
 
     $jumpboxName = hostname
+    $terminalStates = @("COMPLETED", "FAILED", "CANCELLED", "ERROR", "SUCCESS", "SUCCESSFUL", "Succeeded", "Failed")
 
     $srToken = Get-VcfmsServicesRuntimeToken -ServiceRuntimeFqdn $ServiceRuntimeFqdn -Username $ServiceRuntimeUsername -Password $ServiceRuntimePassword
     if (-not $srToken) {
@@ -1393,8 +1418,54 @@ Function Watch-VcfmsTask {
         "Accept"        = "application/json"
     }
 
+    # --- FindRunning mode: list all non-terminal tasks ---
+    if ($PSCmdlet.ParameterSetName -eq "FindRunning") {
+        $tasksUri = "https://$ServiceRuntimeFqdn/api/v1/tasks"
+        LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Querying all tasks"
+
+        try {
+            $response = Invoke-RestMethod -Uri $tasksUri -Method GET -Headers $headers -SkipCertificateCheck
+        } catch {
+            LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Failed to retrieve tasks: $($_.Exception.Message)"
+            return
+        }
+
+        $allTasks = if ($response.items) { $response.items } elseif ($response -is [array]) { $response } else { @($response) }
+
+        $runningTasks = $allTasks | Where-Object { $_.status -notin $terminalStates }
+
+        if (-not $runningTasks -or ($runningTasks | Measure-Object).Count -eq 0) {
+            LogMessage -type INFO -message "[$ServiceRuntimeFqdn] No running tasks found"
+            return
+        }
+
+        $now = Get-Date
+        $results = @()
+        foreach ($task in $runningTasks) {
+            $running = ""
+            if ($task.startTime) {
+                try {
+                    $start = [datetime]::Parse($task.startTime)
+                    $running = ($now - $start).ToString('hh\:mm\:ss')
+                } catch {}
+            }
+            $results += [PSCustomObject]@{
+                'Id'      = $task.id
+                'Type'    = $task.type
+                'Status'  = $task.status
+                'Running' = $running
+                'Created' = $task.createTime
+            }
+        }
+
+        LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Found $($results.Count) running task(s)"
+        Write-Host ""
+        $results | Format-Table -AutoSize | Out-String | Write-Host
+        return $results
+    }
+
+    # --- Monitor mode: poll a specific task ---
     $taskUri = "https://$ServiceRuntimeFqdn/api/v1/tasks/$TaskId"
-    $terminalStates = @("COMPLETED", "FAILED", "CANCELLED", "ERROR", "SUCCESS", "SUCCESSFUL", "Succeeded", "Failed")
 
     LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Monitoring task $TaskId (polling every ${PollIntervalSeconds}s)"
 
@@ -1410,7 +1481,7 @@ Function Watch-VcfmsTask {
                     $end = [datetime]::Parse($taskResponse.endTime)
                     $elapsed = " (elapsed: $(($end - $start).ToString('hh\:mm\:ss')))"
                 } catch {}
-            } elseif ($taskResponse.startTime -and $taskResponse.createTime) {
+            } elseif ($taskResponse.startTime) {
                 try {
                     $start = [datetime]::Parse($taskResponse.startTime)
                     $now = Get-Date
