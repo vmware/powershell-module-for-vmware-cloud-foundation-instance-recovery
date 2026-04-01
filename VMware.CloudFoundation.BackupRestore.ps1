@@ -953,6 +953,52 @@ Function Get-VcfmsBackups {
     LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Found $($results.Count) backup(s) for $($Components.Count) component type(s)"
     Write-Host ""
     $results | Format-Table -AutoSize -Property Component, Version, Name, Age, Path | Out-String | Write-Host
+
+    # Offer to construct a restore JSON from the latest backup of each component
+    Do {
+        Write-Host " Would you like to construct a restore JSON with the latest backup of each component? (Y/N): " -ForegroundColor Yellow -NoNewline
+        $buildJson = Read-Host
+    } Until ($buildJson -in @("Y", "y", "N", "n"))
+
+    if ($buildJson -in @("Y", "y")) {
+        $restoreComponents = @()
+        foreach ($componentType in $Components) {
+            $componentBackups = $allBackups | Where-Object { $_.component.type -eq $componentType }
+            if (-not $componentBackups) { continue }
+
+            $latestBackup = $null
+            $latestDate = [datetime]::MinValue
+            foreach ($backup in $componentBackups) {
+                $normalizedName = $backup.name -replace 'T(\d{2})-(\d{2})-(\d{2})Z', 'T$1:$2:$3Z'
+                try {
+                    $backupDate = [datetime]::Parse($normalizedName, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal)
+                    if ($backupDate -gt $latestDate) {
+                        $latestDate = $backupDate
+                        $latestBackup = $backup
+                    }
+                } catch {
+                    if (-not $latestBackup) { $latestBackup = $backup }
+                }
+            }
+
+            if ($latestBackup) {
+                $restoreComponents += @{
+                    path  = $latestBackup.path
+                    point = $latestBackup.name
+                }
+            }
+        }
+
+        $restorePayload = @{ components = $restoreComponents } | ConvertTo-Json -Depth 5
+        $outputFile = ".\restore-payload.json"
+        $restorePayload | Out-File -FilePath $outputFile -Encoding utf8
+        LogMessage -type INFO -message "[$jumpboxName] Restore JSON saved to $outputFile ($($restoreComponents.Count) component(s))"
+        Write-Host ""
+        Write-Host " Restore JSON contents:" -ForegroundColor Cyan
+        Write-Host $restorePayload
+        Write-Host ""
+    }
+
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
 }
 
