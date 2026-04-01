@@ -1,0 +1,1331 @@
+Function LogMessage {
+    Param (
+        [Parameter (Mandatory = $true)] [AllowEmptyString()] [String]$message,
+        [Parameter (Mandatory = $false)] [Switch]$nonewline,
+        [Parameter (Mandatory = $false)] [ValidateSet("INFO", "ERROR", "WARNING", "EXCEPTION", "ADVISORY", "NOTE", "QUESTION", "WAIT")] [String]$type = "INFO"
+    )
+
+    If ($type -eq "INFO") {
+        $messageColour = "92m"
+    } elseIf ($type -in "ERROR", "EXCEPTION") {
+        $messageColour = "91m"
+    } elseIf ($type -in "WARNING", "ADVISORY", "QUESTION") {
+        $messageColour = "93m"
+    } elseIf ($type -in "NOTE", "WAIT") {
+        $messageColour = "97m"
+    }
+    $ESC = [char]0x1b
+    $timeStamp = Get-Date -Format "MM-dd-yyyy_HH:mm:ss"
+    $timestampColour = "97m"
+
+    If ($nonewline) {
+        Write-Host "$ESC[${timestampcolour} [$timestamp]$ESC[${messageColour} [$type] $message$ESC[0m" -NoNewline
+    } else {
+        Write-Host "$ESC[${timestampcolour} [$timestamp]$ESC[${messageColour} [$type] $message$ESC[0m"
+    }
+}
+
+Function Remove-SddcManagerVspClusterManagementEntry {
+    <#
+    .SYNOPSIS
+    Removes the MANAGEMENT entry from the vsp_clusters table and its corresponding credential in the SDDC Manager Postgres database.
+
+    .DESCRIPTION
+    The Remove-SddcManagerVspClusterManagementEntry cmdlet connects to the SDDC Manager appliance via SSH as the vcf user, elevates to root, queries the Postgres platform database for the vsp_clusters entry with type MANAGEMENT, and deletes both the cluster row and its associated service credential. This is used during instance recovery when the stale management cluster entry must be purged before re-commissioning.
+
+    .EXAMPLE
+    Remove-SddcManagerVspClusterManagementEntry -SddcManagerFqdn "sfo-vcf01.sfo.rainpole.io" -VcfUserPassword "VMw@re1!" -RootPassword "VMw@re1!"
+
+    .PARAMETER SddcManagerFqdn
+    FQDN of the SDDC Manager appliance to connect to.
+
+    .PARAMETER VcfUserPassword
+    Password for the vcf SSH user on the SDDC Manager appliance.
+
+    .PARAMETER RootPassword
+    Root password for the SDDC Manager appliance (used for su elevation).
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][String] $SddcManagerFqdn,
+        [Parameter(Mandatory = $true)][String] $VcfUserPassword,
+        [Parameter(Mandatory = $true)][String] $RootPassword
+    )
+
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    # Establish SSH connection as vcf user
+    LogMessage -type INFO -message "[$jumpboxName] Establishing SSH connection to $SddcManagerFqdn"
+    $SecurePassword = ConvertTo-SecureString -String $VcfUserPassword -AsPlainText -Force
+    $mycreds = New-Object System.Management.Automation.PSCredential ('vcf', $SecurePassword)
+    $inmem = New-SSHMemoryKnownHost
+    New-SSHTrustedHost -KnownHostStore $inmem -HostName $SddcManagerFqdn -FingerPrint ((Get-SSHHostKey -ComputerName $SddcManagerFqdn).fingerprint) | Out-Null
+    Do {
+        $sshSession = New-SSHSession -ComputerName $SddcManagerFqdn -Credential $mycreds -KnownHost $inmem
+    } Until ($sshSession)
+
+    # Create shell stream and elevate to root
+    $stream = New-SSHShellStream -SSHSession $sshSession
+    $stream.WriteLine("su -")
+    Start-Sleep 2
+    $stream.WriteLine("$RootPassword")
+    Start-Sleep 2
+
+    # Query the vsp_clusters table for the MANAGEMENT entry
+    LogMessage -type INFO -message "[$SddcManagerFqdn] Querying vsp_clusters table for MANAGEMENT entry"
+    $queryCommand = "psql -U postgres -h localhost -d platform -t -A -c `"SELECT id FROM vsp_clusters WHERE type='MANAGEMENT';`""
+    $stream.WriteLine($queryCommand)
+    Start-Sleep 3
+    $rawOutput = $stream.Read()
+    $stream.WriteLine("")
+    Start-Sleep 1
+
+    # Parse the UUID from the output (look for a GUID pattern)
+    $guidPattern = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
+    $managementClusterId = ($rawOutput | Select-String -Pattern $guidPattern -AllMatches).Matches | Select-Object -First 1 -ExpandProperty Value
+
+    if (-not $managementClusterId) {
+        LogMessage -type WARNING -message "[$SddcManagerFqdn] No MANAGEMENT entry found in vsp_clusters table. Nothing to delete."
+        Remove-SSHSession -SSHSession $sshSession | Out-Null
+        return
+    }
+
+    LogMessage -type INFO -message "[$SddcManagerFqdn] Found MANAGEMENT vsp_cluster id: $managementClusterId"
+
+    # Display the full row for confirmation
+    LogMessage -type INFO -message "[$SddcManagerFqdn] Retrieving full row details"
+    $detailCommand = "psql -U postgres -h localhost -d platform -c `"SELECT * FROM vsp_clusters WHERE id='$managementClusterId';`""
+    $stream.WriteLine($detailCommand)
+    Start-Sleep 3
+    $detailOutput = $stream.Read()
+    Write-Host ""
+    Write-Host $detailOutput
+    Write-Host ""
+
+    # Prompt for confirmation before deleting
+    Write-Host ""
+    Write-Host " The following operations will be performed:" -ForegroundColor Yellow
+    Write-Host "   1. DELETE FROM vsp_clusters WHERE id='$managementClusterId'" -ForegroundColor Cyan
+    Write-Host "   2. DELETE FROM credential WHERE username='vsp/$managementClusterId/svc-sddc-manager-admin'" -ForegroundColor Cyan
+    Write-Host ""
+    Do {
+        Write-Host " Proceed with deletion? (Y/N): " -ForegroundColor Yellow -NoNewline
+        $confirmation = Read-Host
+    } Until ($confirmation -in @("Y", "y", "N", "n"))
+
+    if ($confirmation -in @("N", "n")) {
+        LogMessage -type INFO -message "[$SddcManagerFqdn] Operation cancelled by user."
+        Remove-SSHSession -SSHSession $sshSession | Out-Null
+        return
+    }
+
+    # Delete the MANAGEMENT entry from vsp_clusters
+    LogMessage -type INFO -message "[$SddcManagerFqdn] Deleting MANAGEMENT entry from vsp_clusters"
+    $deleteClusterCommand = "psql -U postgres -h localhost -d platform -c `"DELETE FROM vsp_clusters WHERE id='$managementClusterId';`""
+    $stream.WriteLine($deleteClusterCommand)
+    Start-Sleep 3
+    $deleteClusterOutput = $stream.Read()
+    Write-Host $deleteClusterOutput
+    LogMessage -type INFO -message "[$SddcManagerFqdn] vsp_clusters DELETE result: $($deleteClusterOutput.Trim())"
+
+    # Delete the corresponding credential
+    $credentialUsername = "vsp/$managementClusterId/svc-sddc-manager-admin"
+    LogMessage -type INFO -message "[$SddcManagerFqdn] Deleting credential for username: $credentialUsername"
+    $deleteCredCommand = "psql -U postgres -h localhost -d platform -c `"DELETE FROM credential WHERE username='$credentialUsername';`""
+    $stream.WriteLine($deleteCredCommand)
+    Start-Sleep 3
+    $deleteCredOutput = $stream.Read()
+    Write-Host $deleteCredOutput
+    LogMessage -type INFO -message "[$SddcManagerFqdn] credential DELETE result: $($deleteCredOutput.Trim())"
+
+    # Close SSH session
+    Remove-SSHSession -SSHSession $sshSession | Out-Null
+
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+}
+
+Function Get-SddcManagerToken {
+    <#
+    .SYNOPSIS
+    Retrieves a Bearer access token from the SDDC Manager API.
+
+    .DESCRIPTION
+    The Get-SddcManagerToken cmdlet authenticates to the SDDC Manager /v1/tokens endpoint and returns the access token string for use in subsequent API calls.
+
+    .EXAMPLE
+    $token = Get-SddcManagerToken -SddcManagerFqdn "sfo-vcf01.sfo.rainpole.io" -Username "administrator@vsphere.local" -Password "VMw@re1!"
+
+    .PARAMETER SddcManagerFqdn
+    FQDN of the SDDC Manager appliance.
+
+    .PARAMETER Username
+    API username (e.g. administrator@vsphere.local or admin@local).
+
+    .PARAMETER Password
+    Password for the API user.
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][String] $SddcManagerFqdn,
+        [Parameter(Mandatory = $true)][String] $Username,
+        [Parameter(Mandatory = $true)][String] $Password
+    )
+
+    $jumpboxName = hostname
+    LogMessage -type INFO -message "[$jumpboxName] Requesting authentication token from $SddcManagerFqdn"
+    $tokenUri = "https://$SddcManagerFqdn/v1/tokens"
+    $tokenBody = @{
+        username = $Username
+        password = $Password
+    } | ConvertTo-Json
+
+    try {
+        $tokenResponse = Invoke-RestMethod -Uri $tokenUri -Method POST -ContentType "application/json" -Body $tokenBody -SkipCertificateCheck
+        $accessToken = $tokenResponse.accessToken
+        if (-not $accessToken) {
+            LogMessage -type ERROR -message "[$SddcManagerFqdn] Token response did not contain an accessToken."
+            return $null
+        }
+        LogMessage -type INFO -message "[$SddcManagerFqdn] Authentication token retrieved successfully"
+        return $accessToken
+    } catch {
+        LogMessage -type ERROR -message "[$SddcManagerFqdn] Failed to retrieve authentication token: $($_.Exception.Message)"
+        return $null
+    }
+}
+
+Function New-VcfmsRuntime {
+    <#
+    .SYNOPSIS
+    Deploys a new VCF Management Services (VCFMS) runtime instance via the SDDC Manager API.
+
+    .DESCRIPTION
+    The New-VcfmsRuntime cmdlet calls the SDDC Manager POST /v1/vsp-clusters endpoint to deploy a new VCFMS runtime. All values (domain ID, FQDNs, cluster ID, IP pool, network MoID) must match the original deployment. The function retrieves an SDDC Manager token, submits the deployment request, and polls the task until completion.
+
+    .EXAMPLE
+    New-VcfmsRuntime -SddcManagerFqdn "sfo-vcf01.sfo.rainpole.io" -SddcManagerUser "administrator@vsphere.local" -SddcManagerPassword "VMw@re1!" -DomainId "0810c87d-3758-4c28-95fc-458b1196f4eb" -PlatformFqdn "sfo-sr01.sfo.rainpole.io" -InstanceFqdn "sfo-ic01.sfo.rainpole.io" -FleetFqdn "flt-fc01.rainpole.io" -SystemUserPassword "VMw@re1!VMw@re1!" -Ipv4Addresses "10.11.99.29","10.11.99.30","10.11.99.31","10.11.99.32","10.11.99.33","10.11.99.34","10.11.99.35","10.11.99.36","10.11.99.37","10.11.99.38","10.11.99.39","10.11.99.40" -Size "small" -NetworkMoId "dvportgroup-28" -GatewayCidrIpv4 "10.11.99.1/24" -ClusterId "1f5c79fe-e3aa-41b1-a5cf-774a6497fa3d" -InternalClusterCidrIpv4 "198.18.0.0/15"
+
+    .PARAMETER SddcManagerFqdn
+    FQDN of the SDDC Manager appliance.
+
+    .PARAMETER SddcManagerUser
+    API username for SDDC Manager (e.g. administrator@vsphere.local).
+
+    .PARAMETER SddcManagerPassword
+    Password for the SDDC Manager API user.
+
+    .PARAMETER DomainId
+    Management domain ID from SDDC Manager. Must match the original.
+
+    .PARAMETER PlatformFqdn
+    Platform FQDN for the VCFMS runtime. Must match the original.
+
+    .PARAMETER InstanceFqdn
+    Instance FQDN for the VCFMS runtime. Must match the original.
+
+    .PARAMETER FleetFqdn
+    Fleet FQDN for the VCFMS runtime. Must match the original.
+
+    .PARAMETER SystemUserPassword
+    System user password for the VCFMS runtime.
+
+    .PARAMETER Ipv4Addresses
+    Array of IPv4 addresses for the VCFMS IP pool.
+
+    .PARAMETER Size
+    Deployment size (e.g. small, medium, large).
+
+    .PARAMETER NetworkMoId
+    Managed Object ID of the dvportgroup (e.g. dvportgroup-28).
+
+    .PARAMETER GatewayCidrIpv4
+    Gateway CIDR in IPv4 format (e.g. 10.11.99.1/24).
+
+    .PARAMETER ClusterId
+    Cluster ID from the original deployment. Must match the original.
+
+    .PARAMETER InternalClusterCidrIpv4
+    Internal cluster CIDR in IPv4 format (e.g. 198.18.0.0/15).
+
+    .PARAMETER PollIntervalSeconds
+    Interval in seconds to poll the task status. Default is 60.
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][String] $SddcManagerFqdn,
+        [Parameter(Mandatory = $true)][String] $SddcManagerUser,
+        [Parameter(Mandatory = $true)][String] $SddcManagerPassword,
+        [Parameter(Mandatory = $true)][String] $DomainId,
+        [Parameter(Mandatory = $true)][String] $PlatformFqdn,
+        [Parameter(Mandatory = $true)][String] $InstanceFqdn,
+        [Parameter(Mandatory = $true)][String] $FleetFqdn,
+        [Parameter(Mandatory = $true)][String] $SystemUserPassword,
+        [Parameter(Mandatory = $true)][String[]] $Ipv4Addresses,
+        [Parameter(Mandatory = $true)][String] $Size,
+        [Parameter(Mandatory = $true)][String] $NetworkMoId,
+        [Parameter(Mandatory = $true)][String] $GatewayCidrIpv4,
+        [Parameter(Mandatory = $true)][String] $ClusterId,
+        [Parameter(Mandatory = $true)][String] $InternalClusterCidrIpv4,
+        [Parameter(Mandatory = $false)][Int] $PollIntervalSeconds = 60
+    )
+
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    # Get authentication token
+    $accessToken = Get-SddcManagerToken -SddcManagerFqdn $SddcManagerFqdn -Username $SddcManagerUser -Password $SddcManagerPassword
+    if (-not $accessToken) {
+        LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain SDDC Manager token. Aborting."
+        return
+    }
+
+    $headers = @{
+        "Authorization" = "Bearer $accessToken"
+        "Content-Type"  = "application/json"
+        "Accept"        = "application/json"
+    }
+
+    # Build the request body
+    $requestBody = @{
+        domainId              = $DomainId
+        platformFqdn          = $PlatformFqdn
+        instanceFqdn          = $InstanceFqdn
+        fleetFqdn             = $FleetFqdn
+        systemUserPassword    = $SystemUserPassword
+        type                  = "MANAGEMENT"
+        ipv4Pool              = @{
+            addresses = $Ipv4Addresses
+        }
+        size                  = $Size
+        networkMoId           = $NetworkMoId
+        gatewayCidrIpv4       = $GatewayCidrIpv4
+        clusterId             = $ClusterId
+        internalClusterCidrIpv4 = $InternalClusterCidrIpv4
+    } | ConvertTo-Json -Depth 5
+
+    # Display the payload for verification
+    Write-Host ""
+    Write-Host " VCFMS Runtime Deployment Payload:" -ForegroundColor Cyan
+    Write-Host $requestBody
+    Write-Host ""
+
+    $vspClustersUri = "https://$SddcManagerFqdn/v1/vsp-clusters"
+    LogMessage -type INFO -message "[$SddcManagerFqdn] Submitting VCFMS runtime deployment to POST /v1/vsp-clusters"
+
+    try {
+        $response = Invoke-RestMethod -Uri $vspClustersUri -Method POST -Headers $headers -Body $requestBody -SkipCertificateCheck
+    } catch {
+        LogMessage -type ERROR -message "[$SddcManagerFqdn] VCFMS deployment request failed: $($_.Exception.Message)"
+        if ($_.Exception.Response) {
+            $errorStream = $_.Exception.Response.GetResponseStream()
+            $reader = New-Object System.IO.StreamReader($errorStream)
+            $errorBody = $reader.ReadToEnd()
+            LogMessage -type ERROR -message "[$SddcManagerFqdn] Response body: $errorBody"
+        }
+        return
+    }
+
+    # Check for a task ID in the response
+    $taskId = $response.id
+    if (-not $taskId) {
+        LogMessage -type INFO -message "[$SddcManagerFqdn] API response:"
+        $response | ConvertTo-Json -Depth 5 | Write-Host
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+        return $response
+    }
+
+    LogMessage -type INFO -message "[$SddcManagerFqdn] VCFMS deployment task submitted: $taskId"
+    LogMessage -type INFO -message "[$SddcManagerFqdn] Polling task status every $PollIntervalSeconds seconds"
+
+    # Poll the task until completion
+    $taskUri = "https://$SddcManagerFqdn/v1/tasks/$taskId"
+    $taskStatus = "IN_PROGRESS"
+    Do {
+        Start-Sleep -Seconds $PollIntervalSeconds
+
+        # Refresh token in case it expires during long-running tasks
+        try {
+            $taskResponse = Invoke-RestMethod -Uri $taskUri -Method GET -Headers $headers -SkipCertificateCheck
+            $taskStatus = $taskResponse.status
+            LogMessage -type INFO -message "[$SddcManagerFqdn] Task $taskId status: $taskStatus"
+        } catch {
+            LogMessage -type WARNING -message "[$SddcManagerFqdn] Error polling task (will retry): $($_.Exception.Message)"
+            $newToken = Get-SddcManagerToken -SddcManagerFqdn $SddcManagerFqdn -Username $SddcManagerUser -Password $SddcManagerPassword
+            if ($newToken) {
+                $headers["Authorization"] = "Bearer $newToken"
+            }
+        }
+    } While ($taskStatus -in @("IN_PROGRESS", "IN PROGRESS", "PENDING"))
+
+    if ($taskStatus -eq "SUCCESSFUL" -or $taskStatus -eq "SUCCESS") {
+        LogMessage -type INFO -message "[$SddcManagerFqdn] VCFMS runtime deployment completed successfully"
+    } else {
+        LogMessage -type ERROR -message "[$SddcManagerFqdn] VCFMS runtime deployment ended with status: $taskStatus"
+        if ($taskResponse.errors) {
+            foreach ($err in $taskResponse.errors) {
+                LogMessage -type ERROR -message "[$SddcManagerFqdn] Error: $($err.message)"
+            }
+        }
+    }
+
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+    return $taskResponse
+}
+
+Function Get-VcfmsServicesRuntimeToken {
+    <#
+    .SYNOPSIS
+    Retrieves an access token from a VCFMS Services Runtime instance.
+
+    .DESCRIPTION
+    The Get-VcfmsServicesRuntimeToken cmdlet authenticates against the VCFMS Services Runtime /api/v1/identity/token endpoint using a form-urlencoded password grant and returns the access token string.
+
+    .EXAMPLE
+    $srToken = Get-VcfmsServicesRuntimeToken -ServiceRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -Password "VMw@re1!VMw@re1!"
+
+    .EXAMPLE
+    $srToken = Get-VcfmsServicesRuntimeToken -ServiceRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -Username "admin@vsp.local" -Password "VMw@re1!VMw@re1!"
+
+    .PARAMETER ServiceRuntimeFqdn
+    FQDN of the VCFMS Services Runtime instance (e.g. sfo-sr01.sfo.rainpole.io).
+
+    .PARAMETER Username
+    Username for the token request. Default is "admin@vsp.local".
+
+    .PARAMETER Password
+    Password for the services runtime user.
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][String] $ServiceRuntimeFqdn,
+        [Parameter(Mandatory = $false)][String] $Username = "admin@vsp.local",
+        [Parameter(Mandatory = $true)][String] $Password
+    )
+
+    $jumpboxName = hostname
+    LogMessage -type INFO -message "[$jumpboxName] Requesting VCFMS Services Runtime token from $ServiceRuntimeFqdn"
+
+    $tokenUri = "https://$ServiceRuntimeFqdn/api/v1/identity/token"
+    $tokenBody = "grant_type=password&username=$([uri]::EscapeDataString($Username))&password=$([uri]::EscapeDataString($Password))"
+
+    try {
+        $tokenResponse = Invoke-RestMethod -Uri $tokenUri -Method POST -ContentType "application/x-www-form-urlencoded" -Body $tokenBody -SkipCertificateCheck
+        $accessToken = $tokenResponse.access_token
+        if (-not $accessToken) {
+            LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Token response did not contain an access_token."
+            return $null
+        }
+        LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Services Runtime token retrieved successfully"
+        return $accessToken
+    } catch {
+        LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Failed to retrieve Services Runtime token: $($_.Exception.Message)"
+        return $null
+    }
+}
+
+Function Add-VcfmsTrustedCertificate {
+    <#
+    .SYNOPSIS
+    Retrieves the TLS certificate from a remote host and trusts it on a VCFMS Services Runtime instance.
+
+    .DESCRIPTION
+    The Add-VcfmsTrustedCertificate cmdlet connects to the specified remote host to retrieve its TLS certificate in PEM format, then adds it as a trusted certificate on the VCFMS Services Runtime via POST /api/v1/system/trusted-certificates?action=add. A Services Runtime token is obtained automatically using Get-VcfmsServicesRuntimeToken.
+
+    .EXAMPLE
+    Add-VcfmsTrustedCertificate -ServiceRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServiceRuntimePassword "VMw@re1!VMw@re1!" -RemoteHostFqdn "sfo-ins01.sfo.rainpole.io"
+
+    .EXAMPLE
+    Add-VcfmsTrustedCertificate -ServiceRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServiceRuntimePassword "VMw@re1!VMw@re1!" -RemoteHostFqdn "sfo-ins01.sfo.rainpole.io" -RemoteHostPort 443
+
+    .PARAMETER ServiceRuntimeFqdn
+    FQDN of the VCFMS Services Runtime instance to add the trusted certificate to.
+
+    .PARAMETER ServiceRuntimePassword
+    Password for the Services Runtime admin user (used to obtain a token).
+
+    .PARAMETER ServiceRuntimeUsername
+    Username for the Services Runtime token. Default is "admin@vsp.local".
+
+    .PARAMETER RemoteHostFqdn
+    FQDN of the remote host whose TLS certificate should be retrieved and trusted (e.g. the VCF Installer).
+
+    .PARAMETER RemoteHostPort
+    Port to connect to on the remote host. Default is 443.
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][String] $ServiceRuntimeFqdn,
+        [Parameter(Mandatory = $true)][String] $ServiceRuntimePassword,
+        [Parameter(Mandatory = $false)][String] $ServiceRuntimeUsername = "admin@vsp.local",
+        [Parameter(Mandatory = $true)][String] $RemoteHostFqdn,
+        [Parameter(Mandatory = $false)][Int] $RemoteHostPort = 443
+    )
+
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    # Retrieve the remote host's TLS certificate
+    LogMessage -type INFO -message "[$jumpboxName] Retrieving TLS certificate from ${RemoteHostFqdn}:${RemoteHostPort}"
+    try {
+        $tcpClient = New-Object System.Net.Sockets.TcpClient($RemoteHostFqdn, $RemoteHostPort)
+        $sslStream = New-Object System.Net.Security.SslStream($tcpClient.GetStream(), $false, { $true })
+        $sslStream.AuthenticateAsClient($RemoteHostFqdn)
+        $remoteCert = $sslStream.RemoteCertificate
+        $sslStream.Close()
+        $tcpClient.Close()
+    } catch {
+        LogMessage -type ERROR -message "[$jumpboxName] Failed to retrieve certificate from ${RemoteHostFqdn}:${RemoteHostPort}: $($_.Exception.Message)"
+        return
+    }
+
+    if (-not $remoteCert) {
+        LogMessage -type ERROR -message "[$jumpboxName] No certificate returned from ${RemoteHostFqdn}:${RemoteHostPort}"
+        return
+    }
+
+    # Convert to PEM format
+    $certBytes = $remoteCert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert)
+    $certBase64 = [Convert]::ToBase64String($certBytes, [Base64FormattingOptions]::InsertLineBreaks)
+    $certPem = "-----BEGIN CERTIFICATE-----`n$certBase64`n-----END CERTIFICATE-----"
+
+    LogMessage -type INFO -message "[$jumpboxName] Certificate retrieved: Subject=$($remoteCert.Subject)"
+
+    # Get Services Runtime token
+    $srToken = Get-VcfmsServicesRuntimeToken -ServiceRuntimeFqdn $ServiceRuntimeFqdn -Username $ServiceRuntimeUsername -Password $ServiceRuntimePassword
+    if (-not $srToken) {
+        LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain Services Runtime token. Aborting."
+        return
+    }
+
+    $headers = @{
+        "Authorization" = "Bearer $srToken"
+        "Content-Type"  = "application/json"
+    }
+
+    # Build the request body
+    $requestBody = @{ cert = $certPem } | ConvertTo-Json
+
+    $trustUri = "https://$ServiceRuntimeFqdn/api/v1/system/trusted-certificates?action=add"
+    LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Adding trusted certificate for $RemoteHostFqdn"
+
+    try {
+        $response = Invoke-RestMethod -Uri $trustUri -Method POST -Headers $headers -Body $requestBody -SkipCertificateCheck
+        LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Certificate for $RemoteHostFqdn trusted successfully"
+        return $response
+    } catch {
+        LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Failed to add trusted certificate: $($_.Exception.Message)"
+        if ($_.Exception.Response) {
+            try {
+                $errorStream = $_.Exception.Response.GetResponseStream()
+                $reader = New-Object System.IO.StreamReader($errorStream)
+                $errorBody = $reader.ReadToEnd()
+                LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Response body: $errorBody"
+            } catch {}
+        }
+        return
+    }
+}
+
+Function Set-VcfmsSftpBackupSettings {
+    <#
+    .SYNOPSIS
+    Configures SFTP backup settings on a VCFMS Services Runtime instance.
+
+    .DESCRIPTION
+    The Set-VcfmsSftpBackupSettings cmdlet retrieves the SFTP server's SSH host key fingerprint, then applies SFTP backup configuration to the specified VCFMS component via POST /api/v1/components/{componentId}?action=apply.
+
+    .EXAMPLE
+    Set-VcfmsSftpBackupSettings -ServiceRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServiceRuntimePassword "VMw@re1!VMw@re1!" -ComponentId "1f5c79fe-e3aa-41b1-a5cf-774a6497fa3d" -SftpHost "10.167.173.126" -SftpUsername "svc-vcf-bck" -SftpPassword "VMw@re1!" -SftpDirectory "/media/backups/" -EncryptionPassphrase "VMw@re1!VMw@re1!"
+
+    .PARAMETER ServiceRuntimeFqdn
+    FQDN of the VCFMS Services Runtime instance.
+
+    .PARAMETER ServiceRuntimePassword
+    Password for the Services Runtime admin user (used to obtain a token).
+
+    .PARAMETER ServiceRuntimeUsername
+    Username for the Services Runtime token. Default is "admin@vsp.local".
+
+    .PARAMETER ComponentId
+    Component ID (cluster ID) to apply the SFTP settings to.
+
+    .PARAMETER SftpHost
+    IP address or FQDN of the SFTP server.
+
+    .PARAMETER SftpPort
+    SSH port on the SFTP server. Default is 22.
+
+    .PARAMETER SftpUsername
+    Username for SFTP authentication.
+
+    .PARAMETER SftpPassword
+    Password for SFTP authentication.
+
+    .PARAMETER SftpDirectory
+    Remote directory path for backups on the SFTP server.
+
+    .PARAMETER EncryptionPassphrase
+    Passphrase used to encrypt the backups.
+
+    .PARAMETER SftpFingerprint
+    SSH host key fingerprint of the SFTP server. If not provided, it is retrieved automatically via ssh-keyscan.
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][String] $ServiceRuntimeFqdn,
+        [Parameter(Mandatory = $true)][String] $ServiceRuntimePassword,
+        [Parameter(Mandatory = $false)][String] $ServiceRuntimeUsername = "admin@vsp.local",
+        [Parameter(Mandatory = $true)][String] $ComponentId,
+        [Parameter(Mandatory = $true)][String] $SftpHost,
+        [Parameter(Mandatory = $false)][String] $SftpPort = "22",
+        [Parameter(Mandatory = $true)][String] $SftpUsername,
+        [Parameter(Mandatory = $true)][String] $SftpPassword,
+        [Parameter(Mandatory = $true)][String] $SftpDirectory,
+        [Parameter(Mandatory = $true)][String] $EncryptionPassphrase,
+        [Parameter(Mandatory = $false)][String] $SftpFingerprint
+    )
+
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    # Retrieve the SFTP fingerprint if not provided
+    if (-not $SftpFingerprint) {
+        LogMessage -type INFO -message "[$jumpboxName] Retrieving SSH host key fingerprint from ${SftpHost}:${SftpPort}"
+        try {
+            $keyScanOutput = & ssh-keyscan -p $SftpPort $SftpHost 2>$null
+            if (-not $keyScanOutput) {
+                LogMessage -type ERROR -message "[$jumpboxName] ssh-keyscan returned no output for ${SftpHost}:${SftpPort}. Verify the host is reachable."
+                return
+            }
+            $fingerprintOutput = $keyScanOutput | & ssh-keygen -lf - 2>$null
+            if (-not $fingerprintOutput) {
+                LogMessage -type ERROR -message "[$jumpboxName] ssh-keygen could not compute fingerprint from keyscan output."
+                return
+            }
+            # Parse the fingerprint (e.g. "256 SHA256:xxxx host (ECDSA)" -> take the SHA256 part)
+            $fingerprintLines = $fingerprintOutput -split "`n" | Where-Object { $_ -match "SHA256:" }
+            if ($fingerprintLines) {
+                $SftpFingerprint = ($fingerprintLines[0].Trim() -split "\s+")[1]
+            } else {
+                $SftpFingerprint = ($fingerprintOutput -split "`n")[0].Trim()
+            }
+            LogMessage -type INFO -message "[$jumpboxName] SFTP fingerprint: $SftpFingerprint"
+        } catch {
+            LogMessage -type ERROR -message "[$jumpboxName] Failed to retrieve SFTP fingerprint: $($_.Exception.Message)"
+            return
+        }
+    } else {
+        LogMessage -type INFO -message "[$jumpboxName] Using provided SFTP fingerprint: $SftpFingerprint"
+    }
+
+    # Get Services Runtime token
+    $srToken = Get-VcfmsServicesRuntimeToken -ServiceRuntimeFqdn $ServiceRuntimeFqdn -Username $ServiceRuntimeUsername -Password $ServiceRuntimePassword
+    if (-not $srToken) {
+        LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain Services Runtime token. Aborting."
+        return
+    }
+
+    $headers = @{
+        "Authorization" = "Bearer $srToken"
+        "Content-Type"  = "application/json"
+    }
+
+    # Build the request body
+    $requestBody = @{
+        spec = @{
+            configuration = @{
+                backups = @{
+                    destination          = "sftp"
+                    encryptionPassphrase = $EncryptionPassphrase
+                    storage              = @{
+                        sftp = @{
+                            directory   = $SftpDirectory
+                            host        = $SftpHost
+                            port        = $SftpPort
+                            username    = $SftpUsername
+                            password    = $SftpPassword
+                            fingerprint = $SftpFingerprint
+                        }
+                    }
+                }
+            }
+        }
+        options = @{}
+    } | ConvertTo-Json -Depth 10
+
+    # Display the payload (password redacted)
+    $displayBody = $requestBody -replace '"password"\s*:\s*"[^"]*"', '"password": "***"' -replace '"encryptionPassphrase"\s*:\s*"[^"]*"', '"encryptionPassphrase": "***"'
+    Write-Host ""
+    Write-Host " SFTP Backup Settings Payload:" -ForegroundColor Cyan
+    Write-Host $displayBody
+    Write-Host ""
+
+    $applyUri = "https://$ServiceRuntimeFqdn/api/v1/components/${ComponentId}?action=apply"
+    LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Applying SFTP backup settings to component $ComponentId"
+
+    try {
+        $response = Invoke-RestMethod -Uri $applyUri -Method POST -Headers $headers -Body $requestBody -SkipCertificateCheck
+        LogMessage -type INFO -message "[$ServiceRuntimeFqdn] SFTP backup settings applied successfully"
+        return $response
+    } catch {
+        LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Failed to apply SFTP backup settings: $($_.Exception.Message)"
+        if ($_.Exception.Response) {
+            try {
+                $errorStream = $_.Exception.Response.GetResponseStream()
+                $reader = New-Object System.IO.StreamReader($errorStream)
+                $errorBody = $reader.ReadToEnd()
+                LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Response body: $errorBody"
+            } catch {}
+        }
+        return
+    }
+}
+
+Function Get-VcfmsBackups {
+    <#
+    .SYNOPSIS
+    Retrieves and displays VCFMS backup information for one or more component types.
+
+    .DESCRIPTION
+    The Get-VcfmsBackups cmdlet queries the VCFMS Services Runtime GET /api/v1/system/backups endpoint and returns backup details for the specified component types, sorted by component type and age. Output includes component type, version, backup name, age, and path.
+
+    .EXAMPLE
+    Get-VcfmsBackups -ServiceRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServiceRuntimePassword "VMw@re1!VMw@re1!"
+
+    .EXAMPLE
+    Get-VcfmsBackups -ServiceRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServiceRuntimePassword "VMw@re1!VMw@re1!" -Components "vsp","salt"
+
+    .PARAMETER ServiceRuntimeFqdn
+    FQDN of the VCFMS Services Runtime instance.
+
+    .PARAMETER ServiceRuntimePassword
+    Password for the Services Runtime admin user (used to obtain a token).
+
+    .PARAMETER ServiceRuntimeUsername
+    Username for the Services Runtime token. Default is "admin@vsp.local".
+
+    .PARAMETER Components
+    One or more component types to display. Valid values: vsp, vcf-fleet-lcm, vcf-fleet-depot, vcf-sddc-lcm, salt, salt-raas, vidb, ops-logs. Default is all of them.
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][String] $ServiceRuntimeFqdn,
+        [Parameter(Mandatory = $true)][String] $ServiceRuntimePassword,
+        [Parameter(Mandatory = $false)][String] $ServiceRuntimeUsername = "admin@vsp.local",
+        [Parameter(Mandatory = $false)][ValidateSet("vsp", "vcf-fleet-lcm", "vcf-fleet-depot", "vcf-sddc-lcm", "salt", "salt-raas", "vidb", "ops-logs")][String[]] $Components = @("vsp", "vcf-fleet-lcm", "vcf-fleet-depot", "vcf-sddc-lcm", "salt", "salt-raas", "vidb", "ops-logs")
+    )
+
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    # Get Services Runtime token
+    $srToken = Get-VcfmsServicesRuntimeToken -ServiceRuntimeFqdn $ServiceRuntimeFqdn -Username $ServiceRuntimeUsername -Password $ServiceRuntimePassword
+    if (-not $srToken) {
+        LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain Services Runtime token. Aborting."
+        return
+    }
+
+    $headers = @{
+        "Authorization" = "Bearer $srToken"
+        "Accept"        = "application/json"
+    }
+
+    $backupsUri = "https://$ServiceRuntimeFqdn/api/v1/system/backups"
+    LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Retrieving backup list"
+
+    try {
+        $response = Invoke-RestMethod -Uri $backupsUri -Method GET -Headers $headers -SkipCertificateCheck
+    } catch {
+        LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Failed to retrieve backups: $($_.Exception.Message)"
+        return
+    }
+
+    $allBackups = $response.backups
+    if (-not $allBackups -or ($allBackups | Measure-Object).Count -eq 0) {
+        LogMessage -type WARNING -message "[$ServiceRuntimeFqdn] No backups found."
+        return
+    }
+
+    # Build ordered results filtered by requested components
+    $results = @()
+    $now = Get-Date
+
+    foreach ($componentType in $Components) {
+        $componentBackups = $allBackups | Where-Object { $_.component.type -eq $componentType }
+        foreach ($backup in $componentBackups) {
+            $backupName = $backup.name
+            $normalizedName = $backupName -replace 'T(\d{2})-(\d{2})-(\d{2})Z', 'T$1:$2:$3Z'
+            try {
+                $backupDate = [datetime]::Parse($normalizedName, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal)
+                $daysOld = [math]::Floor(($now - $backupDate).TotalDays)
+                $ageDisplay = "$daysOld days ago"
+            } catch {
+                $ageDisplay = "unknown"
+            }
+
+            $results += [PSCustomObject]@{
+                'Component' = $componentType
+                'Version'   = $backup.component.version
+                'Name'      = $backupName
+                'Age'       = $ageDisplay
+                'Path'      = $backup.path
+            }
+        }
+    }
+
+    if ($results.Count -eq 0) {
+        LogMessage -type WARNING -message "[$ServiceRuntimeFqdn] No backups found for components: $($Components -join ', ')"
+        return
+    }
+
+    LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Found $($results.Count) backup(s) for $($Components.Count) component type(s)"
+    Write-Host ""
+    $results | Format-Table -AutoSize -Property Component, Version, Name, Age, Path
+    Write-Host ""
+
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+    return $results
+}
+
+Function Restore-VcfmsBackup {
+    <#
+    .SYNOPSIS
+    Restores VCFMS component backups from a user-provided JSON payload file.
+
+    .DESCRIPTION
+    The Restore-VcfmsBackup cmdlet submits a restore request to the VCFMS Services Runtime POST /api/v1/system/backups?action=restore endpoint.
+
+    The restore payload is a JSON file containing the "components" array, where each entry specifies the SFTP path and restore point for one component. Use Get-VcfmsBackups to list available backups and their paths, then construct the JSON file with the desired restore points.
+
+    The function displays the payload for confirmation before submitting, then polls the restore status until completion.
+
+    .EXAMPLE
+    # Step 1: List available backups to find paths and restore points
+    Get-VcfmsBackups -ServiceRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServiceRuntimePassword "VMw@re1!VMw@re1!"
+
+    # Step 2: Create a JSON file (restore-payload.json) with the desired components:
+    # {
+    #   "components": [
+    #     { "path": "sftp://svc-vcf-bck@10.167.173.126:22/media/backups/vcf/backups/.../vsp/.../2026-03-23T16-45-31Z", "point": "2026-03-23T16-45-31Z" },
+    #     { "path": "sftp://svc-vcf-bck@10.167.173.126:22/media/backups/vcf/backups/.../salt/.../2026-03-23T17-13-37Z", "point": "2026-03-23T17-13-37Z" }
+    #   ]
+    # }
+
+    # Step 3: Run the restore
+    Restore-VcfmsBackup -ServiceRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServiceRuntimePassword "VMw@re1!VMw@re1!" -RestorePayloadFile ".\restore-payload.json"
+
+    .PARAMETER ServiceRuntimeFqdn
+    FQDN of the VCFMS Services Runtime instance.
+
+    .PARAMETER ServiceRuntimePassword
+    Password for the Services Runtime admin user (used to obtain a token).
+
+    .PARAMETER ServiceRuntimeUsername
+    Username for the Services Runtime token. Default is "admin@vsp.local".
+
+    .PARAMETER RestorePayloadFile
+    Path to a JSON file containing the restore payload. The file must contain a "components" array with "path" and "point" for each component to restore.
+
+    .PARAMETER PollIntervalSeconds
+    Interval in seconds to poll the restore status. Default is 60.
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][String] $ServiceRuntimeFqdn,
+        [Parameter(Mandatory = $true)][String] $ServiceRuntimePassword,
+        [Parameter(Mandatory = $false)][String] $ServiceRuntimeUsername = "admin@vsp.local",
+        [Parameter(Mandatory = $true)][String] $RestorePayloadFile,
+        [Parameter(Mandatory = $false)][Int] $PollIntervalSeconds = 60
+    )
+
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    # Read and validate the payload file
+    $payloadPath = (Resolve-Path -Path $RestorePayloadFile -ErrorAction SilentlyContinue).Path
+    if (-not $payloadPath) {
+        LogMessage -type ERROR -message "[$jumpboxName] Restore payload file not found: $RestorePayloadFile"
+        return
+    }
+
+    $payloadContent = Get-Content $payloadPath -Raw
+    try {
+        $payloadObject = $payloadContent | ConvertFrom-Json
+    } catch {
+        LogMessage -type ERROR -message "[$jumpboxName] Failed to parse JSON from $RestorePayloadFile : $($_.Exception.Message)"
+        return
+    }
+
+    if (-not $payloadObject.components -or ($payloadObject.components | Measure-Object).Count -eq 0) {
+        LogMessage -type ERROR -message "[$jumpboxName] Payload file must contain a 'components' array with at least one entry."
+        return
+    }
+
+    # Display the payload for confirmation
+    Write-Host ""
+    Write-Host " Restore Payload ($($payloadObject.components.Count) component(s)):" -ForegroundColor Cyan
+    Write-Host " ----------------------------------------------------------------" -ForegroundColor Cyan
+    foreach ($comp in $payloadObject.components) {
+        $componentName = ($comp.path -split '/')  | Where-Object { $_ -in @("vsp", "vcf-fleet-lcm", "vcf-fleet-depot", "vcf-sddc-lcm", "salt", "salt-raas", "vidb", "ops-logs") } | Select-Object -First 1
+        if (-not $componentName) { $componentName = "unknown" }
+        Write-Host "   $componentName" -ForegroundColor Yellow -NoNewline
+        Write-Host " -> point: $($comp.point)" -ForegroundColor White
+        Write-Host "     path: $($comp.path)" -ForegroundColor Gray
+    }
+    Write-Host ""
+
+    Do {
+        Write-Host " Proceed with restore? (Y/N): " -ForegroundColor Yellow -NoNewline
+        $confirmation = Read-Host
+    } Until ($confirmation -in @("Y", "y", "N", "n"))
+
+    if ($confirmation -in @("N", "n")) {
+        LogMessage -type INFO -message "[$jumpboxName] Restore cancelled by user."
+        return
+    }
+
+    # Get Services Runtime token
+    $srToken = Get-VcfmsServicesRuntimeToken -ServiceRuntimeFqdn $ServiceRuntimeFqdn -Username $ServiceRuntimeUsername -Password $ServiceRuntimePassword
+    if (-not $srToken) {
+        LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain Services Runtime token. Aborting."
+        return
+    }
+
+    $headers = @{
+        "Authorization" = "Bearer $srToken"
+        "Content-Type"  = "application/json"
+        "Accept"        = "application/json"
+    }
+
+    $restoreUri = "https://$ServiceRuntimeFqdn/api/v1/system/backups?action=restore"
+    LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Submitting restore request"
+
+    try {
+        $response = Invoke-RestMethod -Uri $restoreUri -Method POST -Headers $headers -Body $payloadContent -SkipCertificateCheck
+    } catch {
+        LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Restore request failed: $($_.Exception.Message)"
+        if ($_.Exception.Response) {
+            try {
+                $errorStream = $_.Exception.Response.GetResponseStream()
+                $reader = New-Object System.IO.StreamReader($errorStream)
+                $errorBody = $reader.ReadToEnd()
+                LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Response body: $errorBody"
+            } catch {}
+        }
+        return
+    }
+
+    LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Restore request accepted"
+
+    # Check if response has a task/status to poll
+    $restoreStatus = $response.status
+    if (-not $restoreStatus) {
+        LogMessage -type INFO -message "[$ServiceRuntimeFqdn] API response:"
+        $response | ConvertTo-Json -Depth 10 | Write-Host
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+        return $response
+    }
+
+    # Poll restore status
+    LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Monitoring restore progress (polling every $PollIntervalSeconds seconds)"
+    $statusUri = "https://$ServiceRuntimeFqdn/api/v1/system/backups"
+
+    Do {
+        Start-Sleep -Seconds $PollIntervalSeconds
+
+        try {
+            $statusResponse = Invoke-RestMethod -Uri $statusUri -Method GET -Headers $headers -SkipCertificateCheck
+            $restoreStatus = $statusResponse.restoreStatus
+            if ($restoreStatus) {
+                LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Restore status: $restoreStatus"
+            } else {
+                LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Polling restore status..."
+            }
+        } catch {
+            LogMessage -type WARNING -message "[$ServiceRuntimeFqdn] Error polling restore status (will retry): $($_.Exception.Message)"
+            $newToken = Get-VcfmsServicesRuntimeToken -ServiceRuntimeFqdn $ServiceRuntimeFqdn -Username $ServiceRuntimeUsername -Password $ServiceRuntimePassword
+            if ($newToken) {
+                $headers["Authorization"] = "Bearer $newToken"
+            }
+        }
+    } While ($restoreStatus -in @("IN_PROGRESS", "IN PROGRESS", "PENDING", "RESTORING"))
+
+    if ($restoreStatus -in @("SUCCESSFUL", "SUCCESS", "COMPLETED")) {
+        LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Restore completed successfully"
+    } else {
+        LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Restore ended with status: $restoreStatus"
+    }
+
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+    return $statusResponse
+}
+
+Function Get-VcfmsFleetControllerToken {
+    <#
+    .SYNOPSIS
+    Retrieves an access token from a VCFMS Fleet Controller instance.
+
+    .DESCRIPTION
+    The Get-VcfmsFleetControllerToken cmdlet authenticates against the VCFMS Fleet Controller /api/v1/identity/token endpoint using a form-urlencoded password grant and returns the access token string.
+
+    .EXAMPLE
+    $fcToken = Get-VcfmsFleetControllerToken -FleetControllerFqdn "flt-fc01.rainpole.io" -Password "VMw@re1!VMw@re1!"
+
+    .PARAMETER FleetControllerFqdn
+    FQDN of the VCFMS Fleet Controller instance.
+
+    .PARAMETER Username
+    Username for the token request. Default is "admin@vsp.local".
+
+    .PARAMETER Password
+    Password for the Fleet Controller user.
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][String] $FleetControllerFqdn,
+        [Parameter(Mandatory = $false)][String] $Username = "admin@vsp.local",
+        [Parameter(Mandatory = $true)][String] $Password
+    )
+
+    $jumpboxName = hostname
+    LogMessage -type INFO -message "[$jumpboxName] Requesting VCFMS Fleet Controller token from $FleetControllerFqdn"
+
+    $tokenUri = "https://$FleetControllerFqdn/api/v1/identity/token"
+    $tokenBody = "grant_type=password&username=$([uri]::EscapeDataString($Username))&password=$([uri]::EscapeDataString($Password))"
+
+    try {
+        $tokenResponse = Invoke-RestMethod -Uri $tokenUri -Method POST -ContentType "application/x-www-form-urlencoded" -Body $tokenBody -SkipCertificateCheck
+        $accessToken = $tokenResponse.access_token
+        if (-not $accessToken) {
+            LogMessage -type ERROR -message "[$FleetControllerFqdn] Token response did not contain an access_token."
+            return $null
+        }
+        LogMessage -type INFO -message "[$FleetControllerFqdn] Fleet Controller token retrieved successfully"
+        return $accessToken
+    } catch {
+        LogMessage -type ERROR -message "[$FleetControllerFqdn] Failed to retrieve Fleet Controller token: $($_.Exception.Message)"
+        return $null
+    }
+}
+
+Function Get-VcfmsComponents {
+    <#
+    .SYNOPSIS
+    Retrieves VCFMS component IDs from the Fleet Controller. Optionally filters by component type description.
+
+    .DESCRIPTION
+    The Get-VcfmsComponents cmdlet queries the VCFMS Fleet Controller GET /fleet-lcm/v1/components endpoint and returns component details. If no ComponentTypes are specified, all components are returned. If one or more types are specified, only matching components are returned. For "VCF services runtime" components, the FQDN is also included in the output.
+
+    .EXAMPLE
+    Get-VcfmsComponents -FleetControllerFqdn "flt-fc01.rainpole.io" -FleetControllerPassword "VMw@re1!VMw@re1!"
+
+    .EXAMPLE
+    Get-VcfmsComponents -FleetControllerFqdn "flt-fc01.rainpole.io" -FleetControllerPassword "VMw@re1!VMw@re1!" -ComponentTypes "Log management","Salt master"
+
+    .EXAMPLE
+    Get-VcfmsComponents -FleetControllerFqdn "flt-fc01.rainpole.io" -FleetControllerPassword "VMw@re1!VMw@re1!" -ComponentTypes "VCF services runtime"
+
+    .PARAMETER FleetControllerFqdn
+    FQDN of the VCFMS Fleet Controller instance.
+
+    .PARAMETER FleetControllerPassword
+    Password for the Fleet Controller admin user (used to obtain a token).
+
+    .PARAMETER FleetControllerUsername
+    Username for the Fleet Controller token. Default is "admin@vsp.local".
+
+    .PARAMETER ComponentTypes
+    One or more component type descriptions to filter by (e.g. "VCF Operations", "Salt master", "VCF services runtime"). If not specified, all components are returned.
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][String] $FleetControllerFqdn,
+        [Parameter(Mandatory = $true)][String] $FleetControllerPassword,
+        [Parameter(Mandatory = $false)][String] $FleetControllerUsername = "admin@vsp.local",
+        [Parameter(Mandatory = $false)][String[]] $ComponentTypes
+    )
+
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    # Get Fleet Controller token
+    $fcToken = Get-VcfmsFleetControllerToken -FleetControllerFqdn $FleetControllerFqdn -Username $FleetControllerUsername -Password $FleetControllerPassword
+    if (-not $fcToken) {
+        LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain Fleet Controller token. Aborting."
+        return
+    }
+
+    $headers = @{
+        "Authorization" = "Bearer $fcToken"
+        "Accept"        = "application/json"
+    }
+
+    $componentsUri = "https://$FleetControllerFqdn/fleet-lcm/v1/components?includeConsumptionVsp=true&includeVcdMigrator=true"
+    LogMessage -type INFO -message "[$FleetControllerFqdn] Retrieving VCFMS components"
+
+    try {
+        $response = Invoke-RestMethod -Uri $componentsUri -Method GET -Headers $headers -SkipCertificateCheck
+    } catch {
+        LogMessage -type ERROR -message "[$FleetControllerFqdn] Failed to retrieve components: $($_.Exception.Message)"
+        return
+    }
+
+    $allComponents = $response.components
+    if (-not $allComponents -or ($allComponents | Measure-Object).Count -eq 0) {
+        LogMessage -type WARNING -message "[$FleetControllerFqdn] No components found."
+        return
+    }
+
+    # Filter by component types if specified
+    if ($ComponentTypes -and $ComponentTypes.Count -gt 0) {
+        $filteredComponents = $allComponents | Where-Object { $_.componentTypeDescription -in $ComponentTypes }
+    } else {
+        $filteredComponents = $allComponents
+    }
+
+    if (-not $filteredComponents -or ($filteredComponents | Measure-Object).Count -eq 0) {
+        LogMessage -type WARNING -message "[$FleetControllerFqdn] No components found matching: $($ComponentTypes -join ', ')"
+        return
+    }
+
+    # Build result objects
+    $results = @()
+    foreach ($comp in $filteredComponents) {
+        $obj = [PSCustomObject]@{
+            'Id'          = $comp.id
+            'Type'        = $comp.componentTypeDescription
+        }
+        if ($comp.componentTypeDescription -eq "VCF services runtime" -and $comp.fqdn) {
+            $obj | Add-Member -NotePropertyName 'Fqdn' -NotePropertyValue $comp.fqdn
+        }
+        $results += $obj
+    }
+
+    $filterMsg = if ($ComponentTypes) { "matching: $($ComponentTypes -join ', ')" } else { "(all)" }
+    LogMessage -type INFO -message "[$FleetControllerFqdn] Found $($results.Count) component(s) $filterMsg"
+    Write-Host ""
+    $results | Format-Table -AutoSize
+    Write-Host ""
+
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+    return $results
+}
+
+Function Watch-VcfmsTask {
+    <#
+    .SYNOPSIS
+    Monitors a VCFMS Fleet Controller task until completion.
+
+    .DESCRIPTION
+    The Watch-VcfmsTask cmdlet polls a Fleet Controller task by ID via GET /fleet-lcm/v1/tasks/{taskId} until the task reaches a terminal state (COMPLETED, FAILED, CANCELLED). Returns the final task response.
+
+    .EXAMPLE
+    $task = Watch-VcfmsTask -FleetControllerFqdn "flt-fc01.rainpole.io" -FleetControllerPassword "VMw@re1!VMw@re1!" -TaskId "019d2b0b-83c3-72cf-a642-2ad05f09b519"
+
+    .PARAMETER FleetControllerFqdn
+    FQDN of the VCFMS Fleet Controller instance.
+
+    .PARAMETER FleetControllerPassword
+    Password for the Fleet Controller admin user.
+
+    .PARAMETER FleetControllerUsername
+    Username for the Fleet Controller token. Default is "admin@vsp.local".
+
+    .PARAMETER TaskId
+    The task ID to monitor.
+
+    .PARAMETER PollIntervalSeconds
+    Interval in seconds between status polls. Default is 30.
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][String] $FleetControllerFqdn,
+        [Parameter(Mandatory = $true)][String] $FleetControllerPassword,
+        [Parameter(Mandatory = $false)][String] $FleetControllerUsername = "admin@vsp.local",
+        [Parameter(Mandatory = $true)][String] $TaskId,
+        [Parameter(Mandatory = $false)][Int] $PollIntervalSeconds = 30
+    )
+
+    $jumpboxName = hostname
+
+    $fcToken = Get-VcfmsFleetControllerToken -FleetControllerFqdn $FleetControllerFqdn -Username $FleetControllerUsername -Password $FleetControllerPassword
+    if (-not $fcToken) {
+        LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain Fleet Controller token. Aborting."
+        return
+    }
+
+    $headers = @{
+        "Authorization" = "Bearer $fcToken"
+        "Accept"        = "application/json"
+    }
+
+    $taskUri = "https://$FleetControllerFqdn/fleet-lcm/v1/tasks/$TaskId"
+    $terminalStates = @("COMPLETED", "FAILED", "CANCELLED", "ERROR", "SUCCESS", "SUCCESSFUL")
+
+    LogMessage -type INFO -message "[$FleetControllerFqdn] Monitoring task $TaskId (polling every ${PollIntervalSeconds}s)"
+
+    Do {
+        Start-Sleep -Seconds $PollIntervalSeconds
+        try {
+            $taskResponse = Invoke-RestMethod -Uri $taskUri -Method GET -Headers $headers -SkipCertificateCheck
+            $taskStatus = $taskResponse.status
+            $elapsed = ""
+            if ($taskResponse.startTime -and $taskResponse.updateTime) {
+                try {
+                    $start = [datetime]::Parse($taskResponse.startTime)
+                    $update = [datetime]::Parse($taskResponse.updateTime)
+                    $elapsed = " (elapsed: $(($update - $start).ToString('hh\:mm\:ss')))"
+                } catch {}
+            }
+            LogMessage -type INFO -message "[$FleetControllerFqdn] Task $TaskId : $taskStatus$elapsed"
+        } catch {
+            LogMessage -type WARNING -message "[$FleetControllerFqdn] Error polling task (will retry): $($_.Exception.Message)"
+            $newToken = Get-VcfmsFleetControllerToken -FleetControllerFqdn $FleetControllerFqdn -Username $FleetControllerUsername -Password $FleetControllerPassword
+            if ($newToken) {
+                $headers["Authorization"] = "Bearer $newToken"
+            }
+            $taskStatus = "POLLING_ERROR"
+        }
+    } While ($taskStatus -notin $terminalStates)
+
+    if ($taskStatus -in @("COMPLETED", "SUCCESS", "SUCCESSFUL")) {
+        LogMessage -type INFO -message "[$FleetControllerFqdn] Task $TaskId completed successfully"
+    } else {
+        LogMessage -type ERROR -message "[$FleetControllerFqdn] Task $TaskId ended with status: $taskStatus"
+        if ($taskResponse.description.localizedMessage) {
+            LogMessage -type ERROR -message "[$FleetControllerFqdn] $($taskResponse.description.localizedMessage)"
+        }
+    }
+
+    return $taskResponse
+}
+
+Function Remove-VcfmsComponent {
+    <#
+    .SYNOPSIS
+    Deletes one or more VCFMS components via the Fleet Controller API, processing them serially and waiting for each task to complete before proceeding.
+
+    .DESCRIPTION
+    The Remove-VcfmsComponent cmdlet calls DELETE /fleet-lcm/v1/components/{componentId} for each component ID provided. Components are deleted one at a time in the order given, and the function waits for each deletion task to reach a terminal state before starting the next. If a deletion fails, processing stops. Use Get-VcfmsComponents to discover component IDs.
+
+    .EXAMPLE
+    Remove-VcfmsComponent -FleetControllerFqdn "flt-fc01.rainpole.io" -FleetControllerPassword "VMw@re1!VMw@re1!" -ComponentIds "4e38afb4-ac83-481b-876f-922497eaada7"
+
+    .EXAMPLE
+    Remove-VcfmsComponent -FleetControllerFqdn "flt-fc01.rainpole.io" -FleetControllerPassword "VMw@re1!VMw@re1!" -ComponentIds "4e38afb4-ac83-481b-876f-922497eaada7","a669bd76-e75c-4c88-8e9e-a0e6526f4d28","3544191a-dc7a-409f-8c7a-4cd6cf5d93ca"
+
+    .PARAMETER FleetControllerFqdn
+    FQDN of the VCFMS Fleet Controller instance.
+
+    .PARAMETER FleetControllerPassword
+    Password for the Fleet Controller admin user.
+
+    .PARAMETER FleetControllerUsername
+    Username for the Fleet Controller token. Default is "admin@vsp.local".
+
+    .PARAMETER ComponentIds
+    One or more component IDs to delete. Processed serially in the order provided.
+
+    .PARAMETER PollIntervalSeconds
+    Interval in seconds to poll each deletion task. Default is 30.
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][String] $FleetControllerFqdn,
+        [Parameter(Mandatory = $true)][String] $FleetControllerPassword,
+        [Parameter(Mandatory = $false)][String] $FleetControllerUsername = "admin@vsp.local",
+        [Parameter(Mandatory = $true)][String[]] $ComponentIds,
+        [Parameter(Mandatory = $false)][Int] $PollIntervalSeconds = 30
+    )
+
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    LogMessage -type INFO -message "[$jumpboxName] $($ComponentIds.Count) component(s) to delete (serial processing)"
+
+    Write-Host ""
+    Write-Host " Components to delete (in order):" -ForegroundColor Cyan
+    $index = 1
+    foreach ($compId in $ComponentIds) {
+        Write-Host "   $index. $compId" -ForegroundColor Yellow
+        $index++
+    }
+    Write-Host ""
+    Do {
+        Write-Host " Proceed with deletion? (Y/N): " -ForegroundColor Yellow -NoNewline
+        $confirmation = Read-Host
+    } Until ($confirmation -in @("Y", "y", "N", "n"))
+
+    if ($confirmation -in @("N", "n")) {
+        LogMessage -type INFO -message "[$jumpboxName] Operation cancelled by user."
+        return
+    }
+
+    $results = @()
+    $current = 1
+
+    foreach ($componentId in $ComponentIds) {
+        LogMessage -type INFO -message "[$FleetControllerFqdn] Deleting component $current of $($ComponentIds.Count): $componentId"
+
+        $fcToken = Get-VcfmsFleetControllerToken -FleetControllerFqdn $FleetControllerFqdn -Username $FleetControllerUsername -Password $FleetControllerPassword
+        if (-not $fcToken) {
+            LogMessage -type ERROR -message "[$FleetControllerFqdn] Unable to obtain Fleet Controller token. Stopping."
+            return $results
+        }
+
+        $headers = @{
+            "Authorization" = "Bearer $fcToken"
+            "Accept"        = "application/json"
+        }
+
+        $deleteUri = "https://$FleetControllerFqdn/fleet-lcm/v1/components/$componentId"
+
+        try {
+            $response = Invoke-RestMethod -Uri $deleteUri -Method DELETE -Headers $headers -SkipCertificateCheck
+        } catch {
+            LogMessage -type ERROR -message "[$FleetControllerFqdn] DELETE failed for component $componentId : $($_.Exception.Message)"
+            if ($_.Exception.Response) {
+                try {
+                    $errorStream = $_.Exception.Response.GetResponseStream()
+                    $reader = New-Object System.IO.StreamReader($errorStream)
+                    $errorBody = $reader.ReadToEnd()
+                    LogMessage -type ERROR -message "[$FleetControllerFqdn] Response body: $errorBody"
+                } catch {}
+            }
+            $results += [PSCustomObject]@{ ComponentId = $componentId; TaskId = $null; Status = "DELETE_FAILED" }
+            $current++
+            continue
+        }
+
+        $taskId = $response.id
+        $taskDesc = $response.description.localizedMessage
+        if ($taskDesc) {
+            LogMessage -type INFO -message "[$FleetControllerFqdn] $taskDesc"
+        }
+
+        if ($taskId) {
+            LogMessage -type INFO -message "[$FleetControllerFqdn] Deletion task: $taskId - Waiting for completion"
+            $taskResult = Watch-VcfmsTask -FleetControllerFqdn $FleetControllerFqdn -FleetControllerPassword $FleetControllerPassword -FleetControllerUsername $FleetControllerUsername -TaskId $taskId -PollIntervalSeconds $PollIntervalSeconds
+            $finalStatus = $taskResult.status
+            $results += [PSCustomObject]@{ ComponentId = $componentId; TaskId = $taskId; Status = $finalStatus }
+
+            if ($finalStatus -notin @("COMPLETED", "SUCCESS", "SUCCESSFUL")) {
+                LogMessage -type ERROR -message "[$FleetControllerFqdn] Component $componentId deletion ended with status: $finalStatus. Stopping."
+                break
+            }
+        } else {
+            LogMessage -type INFO -message "[$FleetControllerFqdn] Component $componentId deleted (no async task returned)"
+            $results += [PSCustomObject]@{ ComponentId = $componentId; TaskId = $null; Status = "COMPLETED" }
+        }
+
+        $current++
+    }
+
+    Write-Host ""
+    Write-Host " Deletion Summary:" -ForegroundColor Cyan
+    $results | Format-Table -AutoSize -Property ComponentId, TaskId, Status
+    Write-Host ""
+
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+    return $results
+}
