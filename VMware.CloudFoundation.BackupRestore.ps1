@@ -1134,47 +1134,64 @@ Function Restore-VcfmsBackup {
 
     LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Restore request accepted"
 
-    # Check if response has a task/status to poll
-    $restoreStatus = $response.status
-    if (-not $restoreStatus) {
-        LogMessage -type INFO -message "[$ServiceRuntimeFqdn] API response:"
-        $response | ConvertTo-Json -Depth 10 | Write-Host
-        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
-        return $response
-    }
+    # Display the POST response
+    $responseJson = $response | ConvertTo-Json -Depth 10
+    Write-Host ""
+    Write-Host " Restore API Response:" -ForegroundColor Cyan
+    Write-Host $responseJson
+    Write-Host ""
 
-    # Poll restore status
-    LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Monitoring restore progress (polling every $PollIntervalSeconds seconds)"
-    $statusUri = "https://$ServiceRuntimeFqdn/api/v1/system/backups"
+    # Check for a task ID in the response
+    $taskId = $response.id
+    if ($taskId) {
+        LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Restore task ID: $taskId"
+        LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Polling task status every $PollIntervalSeconds seconds"
 
-    Do {
-        Start-Sleep -Seconds $PollIntervalSeconds
+        $taskUri = "https://$ServiceRuntimeFqdn/api/v1/tasks/$taskId"
+        $taskStatus = "IN_PROGRESS"
+        Do {
+            Start-Sleep -Seconds $PollIntervalSeconds
 
-        try {
-            $statusResponse = Invoke-RestMethod -Uri $statusUri -Method GET -Headers $headers -SkipCertificateCheck
-            $restoreStatus = $statusResponse.restoreStatus
-            if ($restoreStatus) {
-                LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Restore status: $restoreStatus"
-            } else {
-                LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Polling restore status..."
+            try {
+                $taskResponse = Invoke-RestMethod -Uri $taskUri -Method GET -Headers $headers -SkipCertificateCheck
+                $taskStatus = $taskResponse.status
+                LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Task $taskId status: $taskStatus"
+            } catch {
+                LogMessage -type WARNING -message "[$ServiceRuntimeFqdn] Error polling task (will retry): $($_.Exception.Message)"
+                $newToken = Get-VcfmsServicesRuntimeToken -ServiceRuntimeFqdn $ServiceRuntimeFqdn -Username $ServiceRuntimeUsername -Password $ServiceRuntimePassword
+                if ($newToken) {
+                    $headers["Authorization"] = "Bearer $newToken"
+                }
             }
-        } catch {
-            LogMessage -type WARNING -message "[$ServiceRuntimeFqdn] Error polling restore status (will retry): $($_.Exception.Message)"
-            $newToken = Get-VcfmsServicesRuntimeToken -ServiceRuntimeFqdn $ServiceRuntimeFqdn -Username $ServiceRuntimeUsername -Password $ServiceRuntimePassword
-            if ($newToken) {
-                $headers["Authorization"] = "Bearer $newToken"
+        } While ($taskStatus -in @("IN_PROGRESS", "IN PROGRESS", "PENDING", "RUNNING", "RESTORING", "Running", "Pending"))
+
+        if ($taskStatus -in @("SUCCESSFUL", "SUCCESS", "COMPLETED", "Succeeded")) {
+            LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Restore completed successfully"
+        } else {
+            LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Restore ended with status: $taskStatus"
+            if ($taskResponse.errors) {
+                foreach ($err in $taskResponse.errors) {
+                    LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Error: $($err.message)"
+                }
             }
         }
-    } While ($restoreStatus -in @("IN_PROGRESS", "IN PROGRESS", "PENDING", "RESTORING", "Running", "Pending"))
 
-    if ($restoreStatus -in @("SUCCESSFUL", "SUCCESS", "COMPLETED", "Succeeded")) {
-        LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Restore completed successfully"
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
+        return $taskResponse
+    }
+
+    # No task ID - check if the initial response status indicates success
+    $initialStatus = $response.status
+    if ($initialStatus -in @("SUCCESSFUL", "SUCCESS", "COMPLETED", "Succeeded")) {
+        LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Restore completed successfully (status: $initialStatus)"
+    } elseif ($initialStatus) {
+        LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Restore response status: $initialStatus"
+        LogMessage -type WARNING -message "[$ServiceRuntimeFqdn] No task ID returned. Check the Services Runtime UI for restore progress."
     } else {
-        LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Restore ended with status: $restoreStatus"
+        LogMessage -type WARNING -message "[$ServiceRuntimeFqdn] No task ID or status returned. Check the Services Runtime UI for restore progress."
     }
 
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand)"
-    return $statusResponse
 }
 
 Function Get-VcfmsFleetControllerToken {
