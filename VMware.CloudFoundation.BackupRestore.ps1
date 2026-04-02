@@ -1237,22 +1237,22 @@ Function Restore-VcfmsBackup {
 Function Get-VcfmsFleetLCMToken {
     <#
     .SYNOPSIS
-    Retrieves an access token from a VCFMS Fleet Controller instance.
+    Retrieves an access token from a VCFMS Fleet LCM instance.
 
     .DESCRIPTION
-    The Get-VcfmsFleetLCMToken cmdlet authenticates against the VCFMS Fleet Controller /api/v1/identity/token endpoint using a form-urlencoded password grant and returns the access token string.
+    The Get-VcfmsFleetLCMToken cmdlet authenticates against the VCFMS Fleet LCM /api/v1/identity/token endpoint using a form-urlencoded password grant and returns the access token string.
 
     .EXAMPLE
     $fcToken = Get-VcfmsFleetLCMToken -FleetLCMFqdn "flt-fc01.rainpole.io" -Password "VMw@re1!VMw@re1!"
 
     .PARAMETER FleetLCMFqdn
-    FQDN of the VCFMS Fleet Controller instance.
+    FQDN of the VCFMS Fleet LCM instance.
 
     .PARAMETER Username
     Username for the token request. Default is "admin@vsp.local".
 
     .PARAMETER Password
-    Password for the Fleet Controller user.
+    Password for the Fleet LCM user.
     #>
 
     Param(
@@ -1262,7 +1262,7 @@ Function Get-VcfmsFleetLCMToken {
     )
 
     $jumpboxName = hostname
-    LogMessage -type INFO -message "[$jumpboxName] Requesting VCFMS Fleet Controller token from $FleetLCMFqdn"
+    LogMessage -type INFO -message "[$jumpboxName] Requesting VCFMS Fleet LCM token from $FleetLCMFqdn"
 
     $tokenUri = "https://$FleetLCMFqdn/api/v1/identity/token"
     $tokenBody = "grant_type=password&username=$([uri]::EscapeDataString($Username))&password=$([uri]::EscapeDataString($Password))"
@@ -1274,10 +1274,10 @@ Function Get-VcfmsFleetLCMToken {
             LogMessage -type ERROR -message "[$FleetLCMFqdn] Token response did not contain an access_token."
             return $null
         }
-        LogMessage -type INFO -message "[$FleetLCMFqdn] Fleet Controller token retrieved successfully"
+        LogMessage -type INFO -message "[$FleetLCMFqdn] Fleet LCM token retrieved successfully"
         return $accessToken
     } catch {
-        LogMessage -type ERROR -message "[$FleetLCMFqdn] Failed to retrieve Fleet Controller token: $($_.Exception.Message)"
+        LogMessage -type ERROR -message "[$FleetLCMFqdn] Failed to retrieve Fleet LCM token: $($_.Exception.Message)"
         return $null
     }
 }
@@ -1285,10 +1285,10 @@ Function Get-VcfmsFleetLCMToken {
 Function Get-VcfmsComponents {
     <#
     .SYNOPSIS
-    Retrieves VCFMS component IDs from the Fleet Controller. Optionally filters by component type description.
+    Retrieves VCFMS component IDs from the Fleet LCM. Optionally filters by component type description.
 
     .DESCRIPTION
-    The Get-VcfmsComponents cmdlet queries the VCFMS Fleet Controller GET /fleet-lcm/v1/components endpoint and returns component details. If no ComponentTypes are specified, all components are returned. If one or more types are specified, only matching components are returned. For "VCF services runtime" components, the FQDN is also included in the output.
+    The Get-VcfmsComponents cmdlet queries the VCFMS Fleet LCM GET /fleet-lcm/v1/components endpoint and returns component details. If no ComponentTypes are specified, all components are returned. If one or more types are specified, only matching components are returned. For "VCF services runtime" components, the FQDN is also included in the output.
 
     .EXAMPLE
     Get-VcfmsComponents -FleetLCMFqdn "flt-fc01.rainpole.io" -FleetLCMPassword "VMw@re1!VMw@re1!"
@@ -1300,13 +1300,13 @@ Function Get-VcfmsComponents {
     Get-VcfmsComponents -FleetLCMFqdn "flt-fc01.rainpole.io" -FleetLCMPassword "VMw@re1!VMw@re1!" -ComponentTypes "VCF services runtime"
 
     .PARAMETER FleetLCMFqdn
-    FQDN of the VCFMS Fleet Controller instance.
+    FQDN of the VCFMS Fleet LCM instance.
 
     .PARAMETER FleetLCMPassword
-    Password for the Fleet Controller admin user (used to obtain a token).
+    Password for the Fleet LCM admin user (used to obtain a token).
 
     .PARAMETER FleetLCMUsername
-    Username for the Fleet Controller token. Default is "admin@vsp.local".
+    Username for the Fleet LCM token. Default is "admin@vsp.local".
 
     .PARAMETER ComponentTypes
     One or more component type descriptions to filter by (e.g. "VCF Operations", "Salt master", "VCF services runtime"). If not specified, all components are returned.
@@ -1323,10 +1323,10 @@ Function Get-VcfmsComponents {
     $functionStartTime = Get-Date
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
-    # Get Fleet Controller token
+    # Get Fleet LCM token
     $fcToken = Get-VcfmsFleetLCMToken -FleetLCMFqdn $FleetLCMFqdn -Username $FleetLCMUsername -Password $FleetLCMPassword
     if (-not $fcToken) {
-        LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain Fleet Controller token. Aborting."
+        LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain Fleet LCM token. Aborting."
         return
     }
 
@@ -1657,10 +1657,10 @@ Function Stop-VcfmsTask {
 Function Remove-VcfmsComponent {
     <#
     .SYNOPSIS
-    Deletes one or more VCFMS components via the Fleet Controller API, processing them serially and waiting for each task to complete before proceeding.
+    Deletes one or more VCFMS components via the Fleet LCM API, processing them serially and waiting for each task to complete before proceeding.
 
     .DESCRIPTION
-    The Remove-VcfmsComponent cmdlet calls DELETE /fleet-lcm/v1/components/{componentId} for each component ID provided. Components are deleted one at a time in the order given, and the function monitors each deletion task via the Fleet Controller /fleet-lcm/v1/tasks endpoint until it reaches a terminal state before starting the next. If a deletion fails, processing stops. Use Get-VcfmsComponents to discover component IDs.
+    The Remove-VcfmsComponent cmdlet calls DELETE /fleet-lcm/v1/components/{componentId} for each component ID provided. Components are deleted one at a time in the order given, and the function monitors each deletion task via the Fleet LCM /fleet-lcm/v1/tasks endpoint until it reaches a terminal state before starting the next. If a deletion fails, processing stops. Use Get-VcfmsComponents to discover component IDs.
 
     .EXAMPLE
     Remove-VcfmsComponent -FleetLCMFqdn "flt-fc01.rainpole.io" -FleetLCMPassword "VMw@re1!VMw@re1!" -ComponentIds "4e38afb4-ac83-481b-876f-922497eaada7"
@@ -1669,13 +1669,13 @@ Function Remove-VcfmsComponent {
     Remove-VcfmsComponent -FleetLCMFqdn "flt-fc01.rainpole.io" -FleetLCMPassword "VMw@re1!VMw@re1!" -ComponentIds "4e38afb4-ac83-481b-876f-922497eaada7","a669bd76-e75c-4c88-8e9e-a0e6526f4d28","3544191a-dc7a-409f-8c7a-4cd6cf5d93ca"
 
     .PARAMETER FleetLCMFqdn
-    FQDN of the VCFMS Fleet Controller instance.
+    FQDN of the VCFMS Fleet LCM instance.
 
     .PARAMETER FleetLCMPassword
-    Password for the Fleet Controller admin user.
+    Password for the Fleet LCM admin user.
 
     .PARAMETER FleetLCMUsername
-    Username for the Fleet Controller token. Default is "admin@vsp.local".
+    Username for the Fleet LCM token. Default is "admin@vsp.local".
 
     .PARAMETER ComponentIds
     One or more component IDs to delete. Processed serially in the order provided.
@@ -1724,7 +1724,7 @@ Function Remove-VcfmsComponent {
 
         $fcToken = Get-VcfmsFleetLCMToken -FleetLCMFqdn $FleetLCMFqdn -Username $FleetLCMUsername -Password $FleetLCMPassword
         if (-not $fcToken) {
-            LogMessage -type ERROR -message "[$FleetLCMFqdn] Unable to obtain Fleet Controller token. Stopping."
+            LogMessage -type ERROR -message "[$FleetLCMFqdn] Unable to obtain Fleet LCM token. Stopping."
             break
         }
 
