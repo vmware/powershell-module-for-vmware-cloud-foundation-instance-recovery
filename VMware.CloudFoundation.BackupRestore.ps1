@@ -1234,18 +1234,18 @@ Function Restore-VcfmsBackup {
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $(((Get-Date) - $functionStartTime).ToString('hh\:mm\:ss'))"
 }
 
-Function Get-VcfmsFleetControllerToken {
+Function Get-VcfmsFleetLCMToken {
     <#
     .SYNOPSIS
     Retrieves an access token from a VCFMS Fleet Controller instance.
 
     .DESCRIPTION
-    The Get-VcfmsFleetControllerToken cmdlet authenticates against the VCFMS Fleet Controller /api/v1/identity/token endpoint using a form-urlencoded password grant and returns the access token string.
+    The Get-VcfmsFleetLCMToken cmdlet authenticates against the VCFMS Fleet Controller /api/v1/identity/token endpoint using a form-urlencoded password grant and returns the access token string.
 
     .EXAMPLE
-    $fcToken = Get-VcfmsFleetControllerToken -FleetControllerFqdn "flt-fc01.rainpole.io" -Password "VMw@re1!VMw@re1!"
+    $fcToken = Get-VcfmsFleetLCMToken -FleetLCMFqdn "flt-fc01.rainpole.io" -Password "VMw@re1!VMw@re1!"
 
-    .PARAMETER FleetControllerFqdn
+    .PARAMETER FleetLCMFqdn
     FQDN of the VCFMS Fleet Controller instance.
 
     .PARAMETER Username
@@ -1256,28 +1256,28 @@ Function Get-VcfmsFleetControllerToken {
     #>
 
     Param(
-        [Parameter(Mandatory = $true)][String] $FleetControllerFqdn,
+        [Parameter(Mandatory = $true)][String] $FleetLCMFqdn,
         [Parameter(Mandatory = $false)][String] $Username = "admin@vsp.local",
         [Parameter(Mandatory = $true)][String] $Password
     )
 
     $jumpboxName = hostname
-    LogMessage -type INFO -message "[$jumpboxName] Requesting VCFMS Fleet Controller token from $FleetControllerFqdn"
+    LogMessage -type INFO -message "[$jumpboxName] Requesting VCFMS Fleet Controller token from $FleetLCMFqdn"
 
-    $tokenUri = "https://$FleetControllerFqdn/api/v1/identity/token"
+    $tokenUri = "https://$FleetLCMFqdn/api/v1/identity/token"
     $tokenBody = "grant_type=password&username=$([uri]::EscapeDataString($Username))&password=$([uri]::EscapeDataString($Password))"
 
     try {
         $tokenResponse = Invoke-RestMethod -Uri $tokenUri -Method POST -ContentType "application/x-www-form-urlencoded" -Body $tokenBody -SkipCertificateCheck
         $accessToken = $tokenResponse.access_token
         if (-not $accessToken) {
-            LogMessage -type ERROR -message "[$FleetControllerFqdn] Token response did not contain an access_token."
+            LogMessage -type ERROR -message "[$FleetLCMFqdn] Token response did not contain an access_token."
             return $null
         }
-        LogMessage -type INFO -message "[$FleetControllerFqdn] Fleet Controller token retrieved successfully"
+        LogMessage -type INFO -message "[$FleetLCMFqdn] Fleet Controller token retrieved successfully"
         return $accessToken
     } catch {
-        LogMessage -type ERROR -message "[$FleetControllerFqdn] Failed to retrieve Fleet Controller token: $($_.Exception.Message)"
+        LogMessage -type ERROR -message "[$FleetLCMFqdn] Failed to retrieve Fleet Controller token: $($_.Exception.Message)"
         return $null
     }
 }
@@ -1291,21 +1291,21 @@ Function Get-VcfmsComponents {
     The Get-VcfmsComponents cmdlet queries the VCFMS Fleet Controller GET /fleet-lcm/v1/components endpoint and returns component details. If no ComponentTypes are specified, all components are returned. If one or more types are specified, only matching components are returned. For "VCF services runtime" components, the FQDN is also included in the output.
 
     .EXAMPLE
-    Get-VcfmsComponents -FleetControllerFqdn "flt-fc01.rainpole.io" -FleetControllerPassword "VMw@re1!VMw@re1!"
+    Get-VcfmsComponents -FleetLCMFqdn "flt-fc01.rainpole.io" -FleetLCMPassword "VMw@re1!VMw@re1!"
 
     .EXAMPLE
-    Get-VcfmsComponents -FleetControllerFqdn "flt-fc01.rainpole.io" -FleetControllerPassword "VMw@re1!VMw@re1!" -ComponentTypes "Log management","Salt master"
+    Get-VcfmsComponents -FleetLCMFqdn "flt-fc01.rainpole.io" -FleetLCMPassword "VMw@re1!VMw@re1!" -ComponentTypes "Log management","Salt master"
 
     .EXAMPLE
-    Get-VcfmsComponents -FleetControllerFqdn "flt-fc01.rainpole.io" -FleetControllerPassword "VMw@re1!VMw@re1!" -ComponentTypes "VCF services runtime"
+    Get-VcfmsComponents -FleetLCMFqdn "flt-fc01.rainpole.io" -FleetLCMPassword "VMw@re1!VMw@re1!" -ComponentTypes "VCF services runtime"
 
-    .PARAMETER FleetControllerFqdn
+    .PARAMETER FleetLCMFqdn
     FQDN of the VCFMS Fleet Controller instance.
 
-    .PARAMETER FleetControllerPassword
+    .PARAMETER FleetLCMPassword
     Password for the Fleet Controller admin user (used to obtain a token).
 
-    .PARAMETER FleetControllerUsername
+    .PARAMETER FleetLCMUsername
     Username for the Fleet Controller token. Default is "admin@vsp.local".
 
     .PARAMETER ComponentTypes
@@ -1313,9 +1313,9 @@ Function Get-VcfmsComponents {
     #>
 
     Param(
-        [Parameter(Mandatory = $true)][String] $FleetControllerFqdn,
-        [Parameter(Mandatory = $true)][String] $FleetControllerPassword,
-        [Parameter(Mandatory = $false)][String] $FleetControllerUsername = "admin@vsp.local",
+        [Parameter(Mandatory = $true)][String] $FleetLCMFqdn,
+        [Parameter(Mandatory = $true)][String] $FleetLCMPassword,
+        [Parameter(Mandatory = $false)][String] $FleetLCMUsername = "admin@vsp.local",
         [Parameter(Mandatory = $false)][String[]] $ComponentTypes
     )
 
@@ -1324,7 +1324,7 @@ Function Get-VcfmsComponents {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     # Get Fleet Controller token
-    $fcToken = Get-VcfmsFleetControllerToken -FleetControllerFqdn $FleetControllerFqdn -Username $FleetControllerUsername -Password $FleetControllerPassword
+    $fcToken = Get-VcfmsFleetLCMToken -FleetLCMFqdn $FleetLCMFqdn -Username $FleetLCMUsername -Password $FleetLCMPassword
     if (-not $fcToken) {
         LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain Fleet Controller token. Aborting."
         return
@@ -1335,19 +1335,19 @@ Function Get-VcfmsComponents {
         "Accept"        = "application/json"
     }
 
-    $componentsUri = "https://$FleetControllerFqdn/fleet-lcm/v1/components?includeConsumptionVsp=true&includeVcdMigrator=true"
-    LogMessage -type INFO -message "[$FleetControllerFqdn] Retrieving VCFMS components"
+    $componentsUri = "https://$FleetLCMFqdn/fleet-lcm/v1/components?includeConsumptionVsp=true&includeVcdMigrator=true"
+    LogMessage -type INFO -message "[$FleetLCMFqdn] Retrieving VCFMS components"
 
     try {
         $response = Invoke-RestMethod -Uri $componentsUri -Method GET -Headers $headers -SkipCertificateCheck
     } catch {
-        LogMessage -type ERROR -message "[$FleetControllerFqdn] Failed to retrieve components: $($_.Exception.Message)"
+        LogMessage -type ERROR -message "[$FleetLCMFqdn] Failed to retrieve components: $($_.Exception.Message)"
         return
     }
 
     $allComponents = $response.components
     if (-not $allComponents -or ($allComponents | Measure-Object).Count -eq 0) {
-        LogMessage -type WARNING -message "[$FleetControllerFqdn] No components found."
+        LogMessage -type WARNING -message "[$FleetLCMFqdn] No components found."
         return
     }
 
@@ -1359,7 +1359,7 @@ Function Get-VcfmsComponents {
     }
 
     if (-not $filteredComponents -or ($filteredComponents | Measure-Object).Count -eq 0) {
-        LogMessage -type WARNING -message "[$FleetControllerFqdn] No components found matching: $($ComponentTypes -join ', ')"
+        LogMessage -type WARNING -message "[$FleetLCMFqdn] No components found matching: $($ComponentTypes -join ', ')"
         return
     }
 
@@ -1377,7 +1377,7 @@ Function Get-VcfmsComponents {
     }
 
     $filterMsg = if ($ComponentTypes) { "matching: $($ComponentTypes -join ', ')" } else { "(all)" }
-    LogMessage -type INFO -message "[$FleetControllerFqdn] Found $($results.Count) component(s) $filterMsg"
+    LogMessage -type INFO -message "[$FleetLCMFqdn] Found $($results.Count) component(s) $filterMsg"
     Write-Host ""
     $results | Format-Table -AutoSize | Out-String | Write-Host
 
@@ -1663,18 +1663,18 @@ Function Remove-VcfmsComponent {
     The Remove-VcfmsComponent cmdlet calls DELETE /fleet-lcm/v1/components/{componentId} for each component ID provided. Components are deleted one at a time in the order given, and the function monitors each deletion task via the Fleet Controller /fleet-lcm/v1/tasks endpoint until it reaches a terminal state before starting the next. If a deletion fails, processing stops. Use Get-VcfmsComponents to discover component IDs.
 
     .EXAMPLE
-    Remove-VcfmsComponent -FleetControllerFqdn "flt-fc01.rainpole.io" -FleetControllerPassword "VMw@re1!VMw@re1!" -ComponentIds "4e38afb4-ac83-481b-876f-922497eaada7"
+    Remove-VcfmsComponent -FleetLCMFqdn "flt-fc01.rainpole.io" -FleetLCMPassword "VMw@re1!VMw@re1!" -ComponentIds "4e38afb4-ac83-481b-876f-922497eaada7"
 
     .EXAMPLE
-    Remove-VcfmsComponent -FleetControllerFqdn "flt-fc01.rainpole.io" -FleetControllerPassword "VMw@re1!VMw@re1!" -ComponentIds "4e38afb4-ac83-481b-876f-922497eaada7","a669bd76-e75c-4c88-8e9e-a0e6526f4d28","3544191a-dc7a-409f-8c7a-4cd6cf5d93ca"
+    Remove-VcfmsComponent -FleetLCMFqdn "flt-fc01.rainpole.io" -FleetLCMPassword "VMw@re1!VMw@re1!" -ComponentIds "4e38afb4-ac83-481b-876f-922497eaada7","a669bd76-e75c-4c88-8e9e-a0e6526f4d28","3544191a-dc7a-409f-8c7a-4cd6cf5d93ca"
 
-    .PARAMETER FleetControllerFqdn
+    .PARAMETER FleetLCMFqdn
     FQDN of the VCFMS Fleet Controller instance.
 
-    .PARAMETER FleetControllerPassword
+    .PARAMETER FleetLCMPassword
     Password for the Fleet Controller admin user.
 
-    .PARAMETER FleetControllerUsername
+    .PARAMETER FleetLCMUsername
     Username for the Fleet Controller token. Default is "admin@vsp.local".
 
     .PARAMETER ComponentIds
@@ -1685,9 +1685,9 @@ Function Remove-VcfmsComponent {
     #>
 
     Param(
-        [Parameter(Mandatory = $true)][String] $FleetControllerFqdn,
-        [Parameter(Mandatory = $true)][String] $FleetControllerPassword,
-        [Parameter(Mandatory = $false)][String] $FleetControllerUsername = "admin@vsp.local",
+        [Parameter(Mandatory = $true)][String] $FleetLCMFqdn,
+        [Parameter(Mandatory = $true)][String] $FleetLCMPassword,
+        [Parameter(Mandatory = $false)][String] $FleetLCMUsername = "admin@vsp.local",
         [Parameter(Mandatory = $true)][String[]] $ComponentIds,
         [Parameter(Mandatory = $false)][Int] $PollIntervalSeconds = 30
     )
@@ -1720,11 +1720,11 @@ Function Remove-VcfmsComponent {
     $current = 1
 
     foreach ($componentId in $ComponentIds) {
-        LogMessage -type INFO -message "[$FleetControllerFqdn] Deleting component $current of $($ComponentIds.Count): $componentId"
+        LogMessage -type INFO -message "[$FleetLCMFqdn] Deleting component $current of $($ComponentIds.Count): $componentId"
 
-        $fcToken = Get-VcfmsFleetControllerToken -FleetControllerFqdn $FleetControllerFqdn -Username $FleetControllerUsername -Password $FleetControllerPassword
+        $fcToken = Get-VcfmsFleetLCMToken -FleetLCMFqdn $FleetLCMFqdn -Username $FleetLCMUsername -Password $FleetLCMPassword
         if (-not $fcToken) {
-            LogMessage -type ERROR -message "[$FleetControllerFqdn] Unable to obtain Fleet Controller token. Stopping."
+            LogMessage -type ERROR -message "[$FleetLCMFqdn] Unable to obtain Fleet Controller token. Stopping."
             break
         }
 
@@ -1733,18 +1733,18 @@ Function Remove-VcfmsComponent {
             "Accept"        = "application/json"
         }
 
-        $deleteUri = "https://$FleetControllerFqdn/fleet-lcm/v1/components/$componentId"
+        $deleteUri = "https://$FleetLCMFqdn/fleet-lcm/v1/components/$componentId"
 
         try {
             $response = Invoke-RestMethod -Uri $deleteUri -Method DELETE -Headers $headers -SkipCertificateCheck
         } catch {
-            LogMessage -type ERROR -message "[$FleetControllerFqdn] DELETE failed for component $componentId : $($_.Exception.Message)"
+            LogMessage -type ERROR -message "[$FleetLCMFqdn] DELETE failed for component $componentId : $($_.Exception.Message)"
             if ($_.Exception.Response) {
                 try {
                     $errorStream = $_.Exception.Response.GetResponseStream()
                     $reader = New-Object System.IO.StreamReader($errorStream)
                     $errorBody = $reader.ReadToEnd()
-                    LogMessage -type ERROR -message "[$FleetControllerFqdn] Response body: $errorBody"
+                    LogMessage -type ERROR -message "[$FleetLCMFqdn] Response body: $errorBody"
                 } catch {}
             }
             $results += [PSCustomObject]@{ ComponentId = $componentId; TaskId = $null; Status = "DELETE_FAILED" }
@@ -1755,12 +1755,12 @@ Function Remove-VcfmsComponent {
         $taskId = $response.id
         $taskDesc = $response.description.localizedMessage
         if ($taskDesc) {
-            LogMessage -type INFO -message "[$FleetControllerFqdn] $taskDesc"
+            LogMessage -type INFO -message "[$FleetLCMFqdn] $taskDesc"
         }
 
         if ($taskId) {
-            LogMessage -type INFO -message "[$FleetControllerFqdn] Deletion task: $taskId"
-            $taskUri = "https://$FleetControllerFqdn/fleet-lcm/v1/tasks/$taskId"
+            LogMessage -type INFO -message "[$FleetLCMFqdn] Deletion task: $taskId"
+            $taskUri = "https://$FleetLCMFqdn/fleet-lcm/v1/tasks/$taskId"
             $taskStatus = "IN_PROGRESS"
 
             Do {
@@ -1768,10 +1768,10 @@ Function Remove-VcfmsComponent {
                 try {
                     $taskResponse = Invoke-RestMethod -Uri $taskUri -Method GET -Headers $headers -SkipCertificateCheck
                     $taskStatus = $taskResponse.status
-                    LogMessage -type INFO -message "[$FleetControllerFqdn] Status: $taskStatus"
+                    LogMessage -type INFO -message "[$FleetLCMFqdn] Status: $taskStatus"
                 } catch {
-                    LogMessage -type WARNING -message "[$FleetControllerFqdn] Error polling task (will retry): $($_.Exception.Message)"
-                    $newToken = Get-VcfmsFleetControllerToken -FleetControllerFqdn $FleetControllerFqdn -Username $FleetControllerUsername -Password $FleetControllerPassword
+                    LogMessage -type WARNING -message "[$FleetLCMFqdn] Error polling task (will retry): $($_.Exception.Message)"
+                    $newToken = Get-VcfmsFleetLCMToken -FleetLCMFqdn $FleetLCMFqdn -Username $FleetLCMUsername -Password $FleetLCMPassword
                     if ($newToken) {
                         $headers["Authorization"] = "Bearer $newToken"
                     }
@@ -1782,16 +1782,16 @@ Function Remove-VcfmsComponent {
             $results += [PSCustomObject]@{ ComponentId = $componentId; TaskId = $taskId; Status = $finalStatus }
 
             if ($finalStatus -in @("COMPLETED", "SUCCESS", "SUCCESSFUL", "Succeeded")) {
-                LogMessage -type INFO -message "[$FleetControllerFqdn] Component $componentId deleted successfully"
+                LogMessage -type INFO -message "[$FleetLCMFqdn] Component $componentId deleted successfully"
             } else {
-                LogMessage -type ERROR -message "[$FleetControllerFqdn] Component $componentId deletion ended with status: $finalStatus. Stopping."
+                LogMessage -type ERROR -message "[$FleetLCMFqdn] Component $componentId deletion ended with status: $finalStatus. Stopping."
                 if ($taskResponse.description.localizedMessage) {
-                    LogMessage -type ERROR -message "[$FleetControllerFqdn] $($taskResponse.description.localizedMessage)"
+                    LogMessage -type ERROR -message "[$FleetLCMFqdn] $($taskResponse.description.localizedMessage)"
                 }
                 break
             }
         } else {
-            LogMessage -type INFO -message "[$FleetControllerFqdn] Component $componentId deleted (no async task returned)"
+            LogMessage -type INFO -message "[$FleetLCMFqdn] Component $componentId deleted (no async task returned)"
             $results += [PSCustomObject]@{ ComponentId = $componentId; TaskId = $null; Status = "COMPLETED" }
         }
 
