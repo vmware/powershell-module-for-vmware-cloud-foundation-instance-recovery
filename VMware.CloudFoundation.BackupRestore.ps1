@@ -1379,11 +1379,9 @@ Function Get-VcfmsComponents {
     $filterMsg = if ($ComponentTypes) { "matching: $($ComponentTypes -join ', ')" } else { "(all)" }
     LogMessage -type INFO -message "[$FleetControllerFqdn] Found $($results.Count) component(s) $filterMsg"
     Write-Host ""
-    $results | Format-Table -AutoSize
-    Write-Host ""
+    $results | Format-Table -AutoSize | Out-String | Write-Host
 
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $(((Get-Date) - $functionStartTime).ToString('hh\:mm\:ss'))"
-    return $results
 }
 
 Function Watch-VcfmsTask {
