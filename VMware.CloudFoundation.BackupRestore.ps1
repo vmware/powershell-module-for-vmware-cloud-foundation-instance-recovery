@@ -1660,31 +1660,22 @@ Function Remove-VcfmsComponent {
     Deletes one or more VCFMS components via the Fleet Controller API, processing them serially and waiting for each task to complete before proceeding.
 
     .DESCRIPTION
-    The Remove-VcfmsComponent cmdlet calls DELETE /fleet-lcm/v1/components/{componentId} for each component ID provided. Components are deleted one at a time in the order given, and the function monitors each deletion task via the Services Runtime API until it reaches a terminal state before starting the next. If a deletion fails, processing stops. Use Get-VcfmsComponents to discover component IDs.
+    The Remove-VcfmsComponent cmdlet calls DELETE /fleet-lcm/v1/components/{componentId} for each component ID provided. Components are deleted one at a time in the order given, and the function monitors each deletion task via the Fleet Controller /fleet-lcm/v1/tasks endpoint until it reaches a terminal state before starting the next. If a deletion fails, processing stops. Use Get-VcfmsComponents to discover component IDs.
 
     .EXAMPLE
-    Remove-VcfmsComponent -FleetControllerFqdn "flt-fc01.rainpole.io" -FleetControllerPassword "VMw@re1!VMw@re1!" -ServiceRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServiceRuntimePassword "VMw@re1!VMw@re1!" -ComponentIds "4e38afb4-ac83-481b-876f-922497eaada7"
+    Remove-VcfmsComponent -FleetControllerFqdn "flt-fc01.rainpole.io" -FleetControllerPassword "VMw@re1!VMw@re1!" -ComponentIds "4e38afb4-ac83-481b-876f-922497eaada7"
 
     .EXAMPLE
-    Remove-VcfmsComponent -FleetControllerFqdn "flt-fc01.rainpole.io" -FleetControllerPassword "VMw@re1!VMw@re1!" -ServiceRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServiceRuntimePassword "VMw@re1!VMw@re1!" -ComponentIds "4e38afb4-ac83-481b-876f-922497eaada7","a669bd76-e75c-4c88-8e9e-a0e6526f4d28","3544191a-dc7a-409f-8c7a-4cd6cf5d93ca"
+    Remove-VcfmsComponent -FleetControllerFqdn "flt-fc01.rainpole.io" -FleetControllerPassword "VMw@re1!VMw@re1!" -ComponentIds "4e38afb4-ac83-481b-876f-922497eaada7","a669bd76-e75c-4c88-8e9e-a0e6526f4d28","3544191a-dc7a-409f-8c7a-4cd6cf5d93ca"
 
     .PARAMETER FleetControllerFqdn
-    FQDN of the VCFMS Fleet Controller instance (used for the DELETE API call).
+    FQDN of the VCFMS Fleet Controller instance.
 
     .PARAMETER FleetControllerPassword
     Password for the Fleet Controller admin user.
 
     .PARAMETER FleetControllerUsername
     Username for the Fleet Controller token. Default is "admin@vsp.local".
-
-    .PARAMETER ServiceRuntimeFqdn
-    FQDN of the VCFMS Services Runtime instance (used for task monitoring).
-
-    .PARAMETER ServiceRuntimePassword
-    Password for the Services Runtime admin user (used for task monitoring).
-
-    .PARAMETER ServiceRuntimeUsername
-    Username for the Services Runtime token. Default is "admin@vsp.local".
 
     .PARAMETER ComponentIds
     One or more component IDs to delete. Processed serially in the order provided.
@@ -1697,15 +1688,13 @@ Function Remove-VcfmsComponent {
         [Parameter(Mandatory = $true)][String] $FleetControllerFqdn,
         [Parameter(Mandatory = $true)][String] $FleetControllerPassword,
         [Parameter(Mandatory = $false)][String] $FleetControllerUsername = "admin@vsp.local",
-        [Parameter(Mandatory = $true)][String] $ServiceRuntimeFqdn,
-        [Parameter(Mandatory = $true)][String] $ServiceRuntimePassword,
-        [Parameter(Mandatory = $false)][String] $ServiceRuntimeUsername = "admin@vsp.local",
         [Parameter(Mandatory = $true)][String[]] $ComponentIds,
         [Parameter(Mandatory = $false)][Int] $PollIntervalSeconds = 30
     )
 
     $jumpboxName = hostname
     $functionStartTime = Get-Date
+    $terminalStates = @("COMPLETED", "FAILED", "CANCELLED", "ERROR", "SUCCESS", "SUCCESSFUL", "Succeeded", "Failed")
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     LogMessage -type INFO -message "[$jumpboxName] $($ComponentIds.Count) component(s) to delete (serial processing)"
 
@@ -1736,7 +1725,7 @@ Function Remove-VcfmsComponent {
         $fcToken = Get-VcfmsFleetControllerToken -FleetControllerFqdn $FleetControllerFqdn -Username $FleetControllerUsername -Password $FleetControllerPassword
         if (-not $fcToken) {
             LogMessage -type ERROR -message "[$FleetControllerFqdn] Unable to obtain Fleet Controller token. Stopping."
-            return $results
+            break
         }
 
         $headers = @{
@@ -1770,13 +1759,35 @@ Function Remove-VcfmsComponent {
         }
 
         if ($taskId) {
-            LogMessage -type INFO -message "[$FleetControllerFqdn] Deletion task: $taskId - Waiting for completion"
-            $taskResult = Watch-VcfmsTask -ServiceRuntimeFqdn $ServiceRuntimeFqdn -ServiceRuntimePassword $ServiceRuntimePassword -ServiceRuntimeUsername $ServiceRuntimeUsername -TaskId $taskId -PollIntervalSeconds $PollIntervalSeconds
-            $finalStatus = $taskResult.status
+            LogMessage -type INFO -message "[$FleetControllerFqdn] Deletion task: $taskId"
+            $taskUri = "https://$FleetControllerFqdn/fleet-lcm/v1/tasks/$taskId"
+            $taskStatus = "IN_PROGRESS"
+
+            Do {
+                Start-Sleep -Seconds $PollIntervalSeconds
+                try {
+                    $taskResponse = Invoke-RestMethod -Uri $taskUri -Method GET -Headers $headers -SkipCertificateCheck
+                    $taskStatus = $taskResponse.status
+                    LogMessage -type INFO -message "[$FleetControllerFqdn] Status: $taskStatus"
+                } catch {
+                    LogMessage -type WARNING -message "[$FleetControllerFqdn] Error polling task (will retry): $($_.Exception.Message)"
+                    $newToken = Get-VcfmsFleetControllerToken -FleetControllerFqdn $FleetControllerFqdn -Username $FleetControllerUsername -Password $FleetControllerPassword
+                    if ($newToken) {
+                        $headers["Authorization"] = "Bearer $newToken"
+                    }
+                }
+            } While ($taskStatus -notin $terminalStates)
+
+            $finalStatus = $taskStatus
             $results += [PSCustomObject]@{ ComponentId = $componentId; TaskId = $taskId; Status = $finalStatus }
 
-            if ($finalStatus -notin @("COMPLETED", "SUCCESS", "SUCCESSFUL", "Succeeded")) {
+            if ($finalStatus -in @("COMPLETED", "SUCCESS", "SUCCESSFUL", "Succeeded")) {
+                LogMessage -type INFO -message "[$FleetControllerFqdn] Component $componentId deleted successfully"
+            } else {
                 LogMessage -type ERROR -message "[$FleetControllerFqdn] Component $componentId deletion ended with status: $finalStatus. Stopping."
+                if ($taskResponse.description.localizedMessage) {
+                    LogMessage -type ERROR -message "[$FleetControllerFqdn] $($taskResponse.description.localizedMessage)"
+                }
                 break
             }
         } else {
@@ -1789,9 +1800,7 @@ Function Remove-VcfmsComponent {
 
     Write-Host ""
     Write-Host " Deletion Summary:" -ForegroundColor Cyan
-    $results | Format-Table -AutoSize -Property ComponentId, TaskId, Status
-    Write-Host ""
+    $results | Format-Table -AutoSize -Property ComponentId, TaskId, Status | Out-String | Write-Host
 
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $(((Get-Date) - $functionStartTime).ToString('hh\:mm\:ss'))"
-    return $results
 }
