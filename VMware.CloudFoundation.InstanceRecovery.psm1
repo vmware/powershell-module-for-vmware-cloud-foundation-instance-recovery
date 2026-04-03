@@ -1879,14 +1879,23 @@ Function New-VVFBasedPartialBringupJsonSpec {
 
     #networkSpecs
     $vmotionIpObject = @()
-    $vmotionIpObject += [pscustomobject]@{
-        'startIpAddress' = ($defaultManagementCluster.hosts[0].networks | Where-Object { $_.type -eq 'VMOTION' }).startIPAddress
-        'endIpAddress'   = ($defaultManagementCluster.hosts[0].networks | Where-Object { $_.type -eq 'VMOTION' }).endIpAddress
+    $vmotionStartIpAddresses = @(($defaultManagementCluster.hosts[0].networks | Where-Object { $_.type -eq 'VMOTION' }).startIPAddress)
+    $vMotionEndIpAddresses = @(($defaultManagementCluster.hosts[0].networks | Where-Object { $_.type -eq 'VMOTION' }).endIpAddress)    
+    for ($i = 0; $i -lt $vmotionStartIpAddresses.Count; $i++) {
+        $vmotionIpObject += [pscustomobject]@{
+            'startIpAddress' = $vmotionStartIpAddresses[$i]
+            'endIpAddress'   = $vMotionEndIpAddresses[$i]
+        }
     }
+
     $vsanIpObject = @()
-    $vsanIpObject += [pscustomobject]@{
-        'startIpAddress' = ($defaultManagementCluster.hosts[0].networks | Where-Object { $_.type -eq 'VSAN' }).startIPAddress
-        'endIpAddress'   = ($defaultManagementCluster.hosts[0].networks | Where-Object { $_.type -eq 'VSAN' }).endIpAddress
+    $vsanStartIpAddresses = @(($defaultManagementCluster.hosts[0].networks | Where-Object { $_.type -eq 'VSAN' }).startIPAddress)
+    $vsanEndIpAddresses = @(($defaultManagementCluster.hosts[0].networks | Where-Object { $_.type -eq 'VSAN' }).endIpAddress)
+    for ($i = 0; $i -lt $vsanStartIpAddresses.Count; $i++) {
+        $vsanIpObject += [pscustomobject]@{
+            'startIpAddress' = $vsanStartIpAddresses[$i]
+            'endIpAddress'   = $vsanEndIpAddresses[$i]
+        }
     }
 
     $activeUplinksArray = @()

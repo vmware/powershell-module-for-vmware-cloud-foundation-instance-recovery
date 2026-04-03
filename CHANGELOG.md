@@ -6,6 +6,7 @@
 - [Added] Timings to Functions
 - [Added] New-VVFBasedPartialBringupValidation and New-VVFBasedPartialBringup functions
 - [Changed] Handle multiple ip address retrieval during New-ExtractDataFromSDDCBackup
+- [Changed] IP Pools for VVF Partial bringup now handle multiple ip ranges instead of just one
 
 ## v9.0.1
 > Released: 2025-09-23
