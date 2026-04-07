@@ -1,7 +1,7 @@
 # Release History
 
 ## v9.0.2
-> Released: 2026-04-xx
+> Released: 2026-04-07
 
 - [Added] Timings to Functions
 - [Added] New-VVFBasedPartialBringupValidation and New-VVFBasedPartialBringup functions
