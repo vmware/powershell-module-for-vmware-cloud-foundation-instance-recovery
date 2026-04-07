@@ -5895,7 +5895,7 @@ Function New-VVFBasedPartialBringup {
         $counter ++
     } Until ($response.status -ne "IN_PROGRESS")
     $StopWatch.Stop()
-    $minutes = $stopwatch.Elapsed
+    $minutes = (($stopwatch.Elapsed.hours * 60) + $stopwatch.Elapsed.minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
 Export-ModuleMember -Function New-VVFBasedPartialBringup
