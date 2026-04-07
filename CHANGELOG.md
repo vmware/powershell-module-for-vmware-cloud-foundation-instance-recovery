@@ -1,6 +1,12 @@
 # Release History
 
-## v9.0.2
+## v9.0.2.1001
+> Released: 2026-04-08
+
+- [Changed] nicindexing changed to match vmnic numbering
+- [Fixed] Poor display of time taken in New-VVFBasedPartialBringup
+
+## v9.0.2.1000
 > Released: 2026-04-07
 
 - [Added] Timings to Functions
