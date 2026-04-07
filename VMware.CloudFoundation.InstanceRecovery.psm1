@@ -1540,7 +1540,7 @@ Function New-VVFBasedPartialBringupJsonSpec {
     $nics = (Get-EsxCli -VMHost $($mgmtHosts[0].entityName)).network.nic.list() | Select-Object Name, Driver, LinkStatus, Description
 
     $nicsDisplayObject = @()
-    $nicsIndex = 1
+    $nicsIndex = 0
     $nicsDisplayObject += [pscustomobject]@{
         'ID'          = "ID"
         'deviceName'  = "Device Name"
@@ -4797,7 +4797,7 @@ Function New-RebuiltVdsConfiguration {
     $nics = (Get-EsxCli -VMHost ((Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)[0])).network.nic.list() | Select-Object Name, Driver, LinkStatus, Description
 
     $nicsDisplayObject = @()
-    $nicsIndex = 1
+    $nicsIndex = 0
     $nicsDisplayObject += [pscustomobject]@{
         'ID'          = "ID"
         'deviceName'  = "Device Name"
@@ -5234,7 +5234,7 @@ Function New-PrepareManagementHostNetworking {
 
     $nicsDisplayObject = @()
     $selectableNicIds = @()
-    $nicsIndex = 1
+    $nicsIndex = 0
     $nicsDisplayObject += [pscustomobject]@{
         'ID'          = "ID"
         'deviceName'  = "Device Name"
@@ -7099,7 +7099,7 @@ Function New-ReconstructedPartialBringupJsonSpec {
     $nics = (Get-EsxCli -VMHost $($mgmtHosts[0].entityName)).network.nic.list() | Select-Object Name, Driver, LinkStatus, Description
 
     $nicsDisplayObject = @()
-    $nicsIndex = 1
+    $nicsIndex = 0
     $nicsDisplayObject += [pscustomobject]@{
         'ID'          = "ID"
         'deviceName'  = "Device Name"
