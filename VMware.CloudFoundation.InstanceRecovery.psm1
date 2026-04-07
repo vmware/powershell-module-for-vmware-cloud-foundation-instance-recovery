@@ -444,11 +444,12 @@ Function New-ExtractDataFromSDDCBackup {
     $sddcManagerObject += [pscustomobject]@{
         'fqdn'         = $sddcManagerFqdn
         'vmname'       = $sddcManagerVmName
-        'ip'           = (Resolve-DnsName $sddcManagerFqdn).IPAddress
+        'ip'           = If (Resolve-DnsName $sddcManagerFqdn -errorAction SilentlyContinue) {(Resolve-DnsName $sddcManagerFqdn | Where-Object {$_.section -eq "Answer"}).IPAddress} else {$null}
         'fips_enabled' = $metadataJSON.fips_enabled
         'ceip_enabled' = $ceipStatus
         'version'      = $sddcManagerVersion
     }
+    If ($sddcManagerObject.ip -eq $null) { LogMessage -type WARNING -message "DNS Resolution for $($sddcManagerObject.fqdn) failed, please correct and retry"}
 
     LogMessage -type INFO -message "[$jumpboxName] Retrieving NSX Manager Details"
     #Get All NSX Manager Clusters
@@ -475,12 +476,14 @@ Function New-ExtractDataFromSDDCBackup {
                     'ip'       = $nodeIP
                 }
             }
-            $nsxtManagerClusters += [pscustomobject]@{
-                'clusterVip'  = (Resolve-DnsName $lineContent.split("`t")[5]).IPAddress
+            $nsxtManagerCluster = [pscustomobject]@{
+                'clusterVip' = If (Resolve-DnsName $lineContent.split("`t")[5] -erroraction SilentlyContinue) {(Resolve-DnsName $lineContent.split("`t")[5] | Where-Object { $_.section -eq "Answer" }).IPAddress } else { $null}
                 'clusterFqdn' = $lineContent.split("`t")[5]
                 'domainIDs'   = $nodeContent.domainIds
                 'nsxNodes'    = $nsxNodes
             }
+            If ($nsxtManagerCluster.clusterVip -eq $null) { LogMessage -type WARNING -message "DNS Resolution for $($nsxtManagerCluster.clusterFqdn) failed, please correct and retry" }
+            $nsxtManagerClusters += $nsxtManagerCluster
         }
         $nsxManagerlineIndex++
     }
@@ -505,10 +508,8 @@ Function New-ExtractDataFromSDDCBackup {
         $lineContent = $psqlContent | Select-Object -Index $hostsLineIndex
         If ($lineContent -ne '\.') {
             $hostId = $lineContent.split("`t")[$hostIdColumn]
-            #$gateway = $lineContent.split("`t")[7]
             $hostName = $lineContent.split("`t")[$hostNameColumn]
-            $hostMgmtIp = (Resolve-DnsName $lineContent.split("`t")[$hostnameColumn]).IPAddress
-            #$hostMask = $lineContent.split("`t")[17]
+            $hostMgmtIp = If (Resolve-DnsName $lineContent.split("`t")[$hostnameColumn] -errorAction SilentlyContinue) {(Resolve-DnsName $lineContent.split("`t")[$hostnameColumn] | Where-Object {$_.section -eq "Answer"}).IPAddress} else {$null}
             $hostVersion = $lineContent.split("`t")[$hostVersionColumn]
             $hostVmotionIp = $lineContent.split("`t")[$hostVmotionIpColumn]
             $hostVsanIP = $lineContent.split("`t")[$hostVsanIpColumn]
@@ -522,7 +523,7 @@ Function New-ExtractDataFromSDDCBackup {
                 $hostManagementSubnet = $($netid.ipaddresstostring)
             } #>
 
-            $hosts += [pscustomobject]@{
+            $hostInstance = [pscustomobject]@{
                 'id'        = $hostId
                 #'gateway'   = $gateway
                 'hostName'  = $hostName
@@ -533,6 +534,8 @@ Function New-ExtractDataFromSDDCBackup {
                 'vmotionIP' = $hostVmotionIp
                 'vsanIP'    = $hostVsanIP
             }
+            $hosts += $hostInstance
+            If ($hostInstance.mgmtIp -eq $null) { LogMessage -type WARNING -message "DNS Resolution for $($hostInstance.hostName) failed, please correct and retry" }
         }
         $hostsLineIndex++
     }
@@ -610,10 +613,10 @@ Function New-ExtractDataFromSDDCBackup {
             $vCenterID = $lineContent.split("`t")[$vCenterIDColumn]
             $vCenterVersion = $lineContent.split("`t")[$vCenterVersionColumn]
             $vCenterFqdn = $lineContent.split("`t")[$vCenterFqdnColumn]
-            $vCenterIp = (Resolve-DnsName $vCenterFqdn).IPAddress
+            $vCenterIp = If (Resolve-DnsName $vCenterFqdn -errorAction silentlyContinue) {(Resolve-DnsName $vCenterFqdn | Where-Object {$_.section -eq "Answer"}).IPAddress} else {$null}
             $vCenterVMname = $lineContent.split("`t")[$vCenterVMnameColumn]
             $vCenterDomainID = ($hostsAndDomains | Where-Object { $_.hostId -eq (($hostsandVcenters | Where-Object { $_.vCenterID -eq $vCenterID })[0].hostID) }).domainID
-            $vCenters += [pscustomobject]@{
+            $vCenter = [pscustomobject]@{
                 'vCenterID'       = $vCenterID
                 'vCenterVersion'  = $vCenterVersion
                 'vCenterFqdn'     = $vCenterFqdn
@@ -621,6 +624,8 @@ Function New-ExtractDataFromSDDCBackup {
                 'vCenterVMname'   = $vCenterVMname
                 'vCenterDomainID' = $vCenterDomainID
             }
+            $vCenters += $vCenter
+            If ($vCenter.vCenterIp -eq $null) { LogMessage -type WARNING -message "DNS Resolution for $($vCenter.vCenterFqdn) failed, please correct and retry" }
         }
         $vCentersStartingLineNumber++
     }
