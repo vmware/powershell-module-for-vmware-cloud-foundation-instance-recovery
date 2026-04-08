@@ -4,6 +4,8 @@
 > Released: 2026-04-08
 
 - [Changed] nicindexing changed to match vmnic numbering
+- [Changed] Handling of single NTP and single DNS server for New-VVFBasedPartialBringup
+- [Fixed] Fix overlay network issue in single vDS configurations during New-VVFBasedPartialBringup
 - [Fixed] Poor display of time taken in New-VVFBasedPartialBringup
 
 ## v9.0.2.1000
