@@ -2133,7 +2133,7 @@ Function New-VVFBasedPartialBringupJsonSpec {
                 'nsxtSwitchConfig' = $null
                 'vmnicsToUplinks'  = $vmnicObject
                 'nsxTeamings'      = $teamingsArray
-                'networks'         = @($distributedSwitch.networks)
+                'networks'         = @($distributedSwitch.networks | Where-Object {$._ -notlike "OVERLAY"})
             }
             $dvsSpecObject += $dvsObject
         }
