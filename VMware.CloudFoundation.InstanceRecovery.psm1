@@ -440,7 +440,7 @@ Function New-ExtractDataFromSDDCBackup {
         'version'      = $sddcManagerVersion
     }
     If ($sddcManagerObject.ip -eq $null) { LogMessage -type WARNING -message "DNS Resolution for $($sddcManagerObject.fqdn) failed, please correct and retry"}
-    
+
     #Get All NSX Manager Clusters
     LogMessage -type INFO -message "[$jumpboxName] Retrieving NSX Manager Details"
     $nsxManagerstartingLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.nsxt (id" | Select-Object Line, LineNumber).LineNumber
@@ -472,7 +472,7 @@ Function New-ExtractDataFromSDDCBackup {
         $nsxManagerlineIndex++
     }
     Until ($lineContent -eq '\.')
-    
+
     #Get Hosts
     LogMessage -type INFO -message "[$jumpboxName] Retrieving Host Details"
     $hostsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.host " | Select-Object Line, LineNumber).LineNumber
@@ -1886,7 +1886,7 @@ Function New-VVFBasedPartialBringupJsonSpec {
     #networkSpecs
     $vmotionIpObject = @()
     $vmotionStartIpAddresses = @(($defaultManagementCluster.hosts[0].networks | Where-Object { $_.type -eq 'VMOTION' }).startIPAddress)
-    $vMotionEndIpAddresses = @(($defaultManagementCluster.hosts[0].networks | Where-Object { $_.type -eq 'VMOTION' }).endIpAddress)    
+    $vMotionEndIpAddresses = @(($defaultManagementCluster.hosts[0].networks | Where-Object { $_.type -eq 'VMOTION' }).endIpAddress)
     for ($i = 0; $i -lt $vmotionStartIpAddresses.Count; $i++) {
         $vmotionIpObject += [pscustomobject]@{
             'startIpAddress' = $vmotionStartIpAddresses[$i]
@@ -4604,7 +4604,7 @@ Function New-RebuiltVdsConfiguration {
                         LogMessage -type WAIT -message "Aha! Nested hosts detected. Waiting 5 mins for connection between vCenter and hosts to stabilize after vmk0 / vm_management portgroup migration"
                         Sleep 300
                     }
-                    $vCenterConnection = Connect-ViServer $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword                    
+                    $vCenterConnection = Connect-ViServer $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
                 }
             }
         }
