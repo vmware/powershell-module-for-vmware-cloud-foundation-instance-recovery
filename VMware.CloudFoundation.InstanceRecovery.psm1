@@ -1799,7 +1799,7 @@ Function New-VVFBasedPartialBringupJsonSpec {
     LogMessage -Type INFO -Message "[$jumpboxName] Generating VVF Bringup JSON Specification"
 
     #dnsSpec
-    If ($extractedSddcData.mgmtDomainInfrastructure.secondaryDnsServer -eq "n/a") {
+    If ($extractedSddcData.mgmtDomainInfrastructure.secondaryDnsServer -in "n/a",$null) {
         [Array]$nameServers = $extractedSddcData.mgmtDomainInfrastructure.primaryDnsServer
     } else {
         [Array]$nameServers = $extractedSddcData.mgmtDomainInfrastructure.primaryDnsServer, $extractedSddcData.mgmtDomainInfrastructure.secondaryDnsServer
@@ -1811,7 +1811,7 @@ Function New-VVFBasedPartialBringupJsonSpec {
     }
 
     #ntpServers
-    If ($extractedSddcData.mgmtDomainInfrastructure.ntpServers[1] -eq "n/a") {
+    If ($extractedSddcData.mgmtDomainInfrastructure.ntpServers[1] -in "n/a",$null) {
         [Array]$ntpServers = $extractedSddcData.mgmtDomainInfrastructure.ntpServers[0]
     } else {
         [Array]$ntpServers = $extractedSddcData.mgmtDomainInfrastructure.ntpServers[0], $extractedSddcData.mgmtDomainInfrastructure.ntpServers[1]
@@ -2133,7 +2133,7 @@ Function New-VVFBasedPartialBringupJsonSpec {
                 'nsxtSwitchConfig' = $null
                 'vmnicsToUplinks'  = $vmnicObject
                 'nsxTeamings'      = $teamingsArray
-                'networks'         = @($distributedSwitch.networks | Where-Object {$._ -notlike "OVERLAY"})
+                'networks'         = @($distributedSwitch.networks | Where-Object {$_ -notlike "OVERLAY"})
             }
             $dvsSpecObject += $dvsObject
         }
