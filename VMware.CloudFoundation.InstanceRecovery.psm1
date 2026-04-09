@@ -5843,17 +5843,21 @@ Function New-VVFBasedPartialBringupValidation {
     LogMessage -type INFO -message "[$vcfInstaller] Initiating Validation of $partialBringupSpecFile"
     $response = Invoke-VcfInstallerValidateSddcSpec -sddcSpec $jsonBody
     $id = $response.id
-    $savedPosition = "`e[s"
-    $restorePosition = "`e[u"
-    $clearBelow = "`e[J"
-    Write-Host $savedPosition -NoNewline
     Do {
-        Write-Host "$restorePosition$clearBelow" -NoNewline
         $response = Invoke-VcfInstallerGetSddcSpecValidation -id $id
-        $tableOutput = ($response.validationChecks | Select-Object Description, ResultStatus | Format-Table | Out-String).TrimEnd()
-        $tableOutput -split "`n" | ForEach-Object { Write-Host "  $_" }
+        $totalChecks = $response.validationChecks.Count
+        $completedChecks = ($response.validationChecks | Where-Object { $_.ResultStatus -ne "UNKNOWN" }).Count
+        $percentComplete = if ($totalChecks -gt 0) { [math]::Round(($completedChecks / $totalChecks) * 100) } else { 0 }
+        $currentCheck = ($response.validationChecks | Where-Object { $_.ResultStatus -eq "UNKNOWN" } | Select-Object -First 1).Description
+        if (-not $currentCheck) { $currentCheck = "Finalizing..." }
+        Write-Progress -Activity " Validating Specification" `
+                       -Status "Current Check: $currentCheck ($completedChecks of $totalChecks checks complete)" `
+                       -PercentComplete $percentComplete `
+                       -CurrentOperation $currentCheck
         Sleep 10
     } Until ($response.ResultStatus -ne "UNKNOWN")
+    Write-Progress -Activity "Validating $partialBringupSpecFile" -Completed
+    $response.validationChecks | Select-Object Description, ResultStatus | Format-Table
     $StopWatch.Stop()
     LogMessage -type INFO -message "[$vcfInstaller] Validation of $partialBringupSpecFile complete. Please review before proceeding."
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
@@ -5878,84 +5882,6 @@ Function New-VVFBasedPartialBringup {
     $response = Invoke-VcfInstallerDeploySddc -sddcSpec $jsonBody
     $id = $response.id
     $counter = 0
-    $savedPosition = "`e[s"
-    $restorePosition = "`e[u"
-    $clearBelow = "`e[J"
-    Write-Host $savedPosition -NoNewline
-    Do {
-        If ($counter -ge 49) {
-            $connection = Connect-VcfInstallerServer -Server $vcfInstaller -User $vcfInstallerAdminUser -Password $vcfInstallerAdminUserPassword
-            $counter = 0
-        }
-        Write-Host "$restorePosition$clearBelow" -NoNewline
-        $response = Invoke-VcfInstallerGetSddcTaskByID -id $id
-        $tableOutput = ($response.sddcSubTasks | Select-Object name, status | Where-Object { $_.status -eq "IN_PROGRESS" } | Format-Table | Out-String).TrimEnd()
-        $tableOutput -split "`n" | ForEach-Object { Write-Host "  $_" }
-        Sleep 60
-        $counter ++
-    } Until ($response.status -ne "IN_PROGRESS")
-    $StopWatch.Stop()
-    $minutes = (($stopwatch.Elapsed.hours * 60) + $stopwatch.Elapsed.minutes)
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($Stopwatch.Elapsed.seconds) seconds"
-}
-Export-ModuleMember -Function New-VVFBasedPartialBringup
-
-Function New-VVFBasedPartialBringupValidationUsingWriteProgress {
-    Param (
-        [Parameter (Mandatory = $true)] [String]$vcfInstaller,
-        [Parameter (Mandatory = $true)] [String]$vcfInstallerAdminUser,
-        [Parameter (Mandatory = $true)] [String]$vcfInstallerAdminUserPassword,
-        [Parameter (Mandatory = $true)] [String]$partialBringupSpecFile
-    )
-    $jumpboxName = hostname
-    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
-    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
-    $StopWatch.Start()
-    LogMessage -type INFO -message "[$jumpboxName] Connecting to $vcfInstaller"
-    $connection = Connect-VcfInstallerServer -Server $vcfInstaller -User $vcfInstallerAdminUser -Password $vcfInstallerAdminUserPassword
-    $jsonBody = Get-Content -path $partialBringupSpecFile -raw
-    LogMessage -type INFO -message "[$vcfInstaller] Initiating Validation of $partialBringupSpecFile"
-    $response = Invoke-VcfInstallerValidateSddcSpec -sddcSpec $jsonBody
-    $id = $response.id
-    Do {
-        $response = Invoke-VcfInstallerGetSddcSpecValidation -id $id
-        $totalChecks = $response.validationChecks.Count
-        $completedChecks = ($response.validationChecks | Where-Object { $_.ResultStatus -ne "UNKNOWN" }).Count
-        $percentComplete = if ($totalChecks -gt 0) { [math]::Round(($completedChecks / $totalChecks) * 100) } else { 0 }
-        $currentCheck = ($response.validationChecks | Where-Object { $_.ResultStatus -eq "UNKNOWN" } | Select-Object -First 1).Description
-        if (-not $currentCheck) { $currentCheck = "Finalizing..." }
-        Write-Progress -Activity "Validating $partialBringupSpecFile" `
-                       -Status "Current Check: $currentCheck ($completedChecks of $totalChecks checks complete)" `
-                       -PercentComplete $percentComplete `
-                       -CurrentOperation $currentCheck
-        Sleep 10
-    } Until ($response.ResultStatus -ne "UNKNOWN")
-    Write-Progress -Activity "Validating $partialBringupSpecFile" -Completed
-    $response.validationChecks | Select-Object Description, ResultStatus | Format-Table
-    $StopWatch.Stop()
-    LogMessage -type INFO -message "[$vcfInstaller] Validation of $partialBringupSpecFile complete. Please review before proceeding."
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
-}
-Export-ModuleMember -Function New-VVFBasedPartialBringupValidationUsingWriteProgress
-
-Function New-VVFBasedPartialBringupUsingWriteProgress {
-    Param (
-        [Parameter (Mandatory = $true)] [String]$vcfInstaller,
-        [Parameter (Mandatory = $true)] [String]$vcfInstallerAdminUser,
-        [Parameter (Mandatory = $true)] [String]$vcfInstallerAdminUserPassword,
-        [Parameter (Mandatory = $true)] [String]$partialBringupSpecFile
-    )
-    $jumpboxName = hostname
-    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
-    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
-    $StopWatch.Start()
-    LogMessage -type INFO -message "[$jumpboxName] Connecting to $vcfInstaller"
-    $connection = Connect-VcfInstallerServer -Server $vcfInstaller -User $vcfInstallerAdminUser -Password $vcfInstallerAdminUserPassword
-    $jsonBody = Get-Content -path $partialBringupSpecFile -raw
-    LogMessage -type INFO -message "[$vcfInstaller] Initiating Partial VVF Deployment using $partialBringupSpecFile"
-    $response = Invoke-VcfInstallerDeploySddc -sddcSpec $jsonBody
-    $id = $response.id
-    $counter = 0
     Do {
         If ($counter -ge 49) {
             $connection = Connect-VcfInstallerServer -Server $vcfInstaller -User $vcfInstallerAdminUser -Password $vcfInstallerAdminUserPassword
@@ -5963,11 +5889,11 @@ Function New-VVFBasedPartialBringupUsingWriteProgress {
         }
         $response = Invoke-VcfInstallerGetSddcTaskByID -id $id
         $totalTasks = $response.sddcSubTasks.Count
-        $completedTasks = ($response.sddcSubTasks | Where-Object { $_.status -notin @("IN_PROGRESS", "PENDING") }).Count
+        $completedTasks = ($response.sddcSubTasks | Where-Object { $_.status -match "COMPLETED_WITH_SUCCESS" -or $_.status -match "COMPLETED_WITH_FAILURE" }).Count
         $inProgressTasks = ($response.sddcSubTasks | Where-Object { $_.status -eq "IN_PROGRESS" } | Select-Object -ExpandProperty name) -join ", "
         $percentComplete = if ($totalTasks -gt 0) { [math]::Round(($completedTasks / $totalTasks) * 100) } else { 0 }
         if (-not $inProgressTasks) { $inProgressTasks = "Waiting..." }
-        Write-Progress -Activity "Deploying VVF using $partialBringupSpecFile" `
+        Write-Progress -Activity " Deploying VVF" `
                        -Status "Current Task: $inProgressTasks ($completedTasks of $totalTasks tasks complete)" `
                        -PercentComplete $percentComplete `
                        -CurrentOperation $inProgressTasks
@@ -5980,7 +5906,7 @@ Function New-VVFBasedPartialBringupUsingWriteProgress {
     $minutes = (($stopwatch.Elapsed.hours * 60) + $stopwatch.Elapsed.minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
-Export-ModuleMember -Function New-VVFBasedPartialBringupUsingWriteProgress
+Export-ModuleMember -Function New-VVFBasedPartialBringup
 
 #EndRegion VVF Functions
 
