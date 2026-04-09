@@ -2,24 +2,25 @@
 
 ## v9.0.2.1002
 > Released: 2026-04-xx
-- [Added] Ability to discover OVFTool from environment path and the default back to expected location
-- [Changed] Revised New-VVFBasedPartialBringupValidation and New-VVFBasedPartialBringup functions that are more compatible with all systems for showing progress.
-- [Fixed] Incorrect handling of sso credentials in Invoke-vCenterRestore when more than one domain with the same sso domain exists
+
+- [Added] Ability to discover OVFTool from environment path and then default back to expected location if not found there
+- [Changed] Revised `New-VVFBasedPartialBringupValidation` and `New-VVFBasedPartialBringup` functions that are more compatible with all systems for showing progress.
+- [Fixed] Incorrect handling of sso credentials in `Invoke-vCenterRestore` when more than one domain with the same sso domain exists
 
 ## v9.0.2.1001
 > Released: 2026-04-08
 
 - [Changed] nicindexing changed to match vmnic numbering
-- [Changed] Handling of single NTP and single DNS server for New-VVFBasedPartialBringup
-- [Fixed] Fix overlay network issue in single vDS configurations during New-VVFBasedPartialBringup
-- [Fixed] Poor display of time taken in New-VVFBasedPartialBringup
+- [Changed] Handling of single NTP and single DNS server for `New-VVFBasedPartialBringup`
+- [Fixed] Fix overlay network issue in single vDS configurations during `New-VVFBasedPartialBringup`
+- [Fixed] Poor display of time taken in `New-VVFBasedPartialBringup`
 
 ## v9.0.2.1000
 > Released: 2026-04-07
 
 - [Added] Timings to Functions
-- [Added] New-VVFBasedPartialBringupValidation and New-VVFBasedPartialBringup functions
-- [Changed] Handle multiple ip address retrieval during New-ExtractDataFromSDDCBackup
+- [Added] `New-VVFBasedPartialBringupValidation` and `New-VVFBasedPartialBringup` functions
+- [Changed] Handle multiple ip address retrieval during `New-ExtractDataFromSDDCBackup`
 - [Changed] IP Pools for VVF Partial bringup now handle multiple ip ranges instead of just one
 - [Changed] DNS Resolution failures handled gracefully and warning given
 
