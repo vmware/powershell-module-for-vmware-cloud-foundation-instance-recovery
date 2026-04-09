@@ -2511,8 +2511,8 @@ Function Invoke-vCenterRestore {
     #$restoredVcenterVmName = ($extractedSddcData.workloadDomains | Where-Object { $_.domainName -eq $workloadDomain }).vCenterDetails.vmname
     $restoredvCenterRootPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "VCENTER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "SSH") }).password
     $ssoDomain = ($extractedSddcData.workloadDomains | Where-Object { $_.domainName -eq $workloadDomain }).ssoDomain
-    $ssoAdminUserName = ($extractedSddcData.passwords | Where-Object { $_.entityType -eq "PSC" -and $_.username -like "*$($ssoDomain)" }).username
-    $ssoAdminUserPassword = ($extractedSddcData.passwords | Where-Object { $_.entityType -eq "PSC" -and $_.username -like "*$($ssoDomain)" }).password
+    $ssoAdminUserName = ($extractedSddcData.passwords | Where-Object { $_.entityType -eq "PSC" -and $_.username -like "*$($ssoDomain)" -and $_.domainName -eq $workloadDomain } ).username
+    $ssoAdminUserPassword = ($extractedSddcData.passwords | Where-Object { $_.entityType -eq "PSC" -and $_.username -like "*$($ssoDomain)" -and $_.domainName -eq $workloadDomain}).password
 
     #Power Up vCenter Appliance
     <#
@@ -2563,6 +2563,7 @@ Function Invoke-vCenterRestore {
     If ($backupPassword) {
         $restoreString = $restoreString += " --backupPassword"
     }
+    LogMessage -type INFO -message "[$restoredVcenterFqdn] Restore string: $restoreString"
     $stream.writeline($restoreString)
     Start-Sleep 5
     If ($backupPassword) {
