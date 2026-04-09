@@ -3146,6 +3146,7 @@ Function Invoke-vCenterRestore {
     If ($backupPassword) {
         $restoreString = $restoreString += " --backupPassword"
     }
+    LogMessage -type INFO -message "[$restoredVcenterFqdn] Issuing restore command: $restoreString"
     $stream.writeline($restoreString)
     Start-Sleep 5
     If ($backupPassword) {
@@ -3155,8 +3156,6 @@ Function Invoke-vCenterRestore {
     $stream.writeline($locationPassword)
     Start-Sleep 5
     $stream.writeline($ssoAdminUserPassword)
-    $response = $stream.Read()
-    LogMessage -type INFO -message "[$restoredVcenterFqdn] Restore command response: $response"
 
     Remove-SSHSession -SSHSession $sshSession | Out-Null
 
