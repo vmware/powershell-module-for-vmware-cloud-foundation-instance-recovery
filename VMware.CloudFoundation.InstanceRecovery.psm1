@@ -5891,7 +5891,7 @@ Function New-VVFBasedPartialBringupValidation {
         Sleep 10
     } Until ($response.ResultStatus -ne "UNKNOWN")
     Write-Progress -Activity "Validating $partialBringupSpecFile" -Completed
-    $response.validationChecks | Select-Object Description, ResultStatus | Format-Table
+    $response.validationChecks | Select-Object Description, ResultStatus | Format-Table -AutoSize -Wrap
     $StopWatch.Stop()
     LogMessage -type INFO -message "[$vcfInstaller] Validation of $partialBringupSpecFile complete. Please review before proceeding."
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
@@ -5935,7 +5935,7 @@ Function New-VVFBasedPartialBringup {
         $counter ++
     } Until ($response.status -ne "IN_PROGRESS")
     Write-Progress -Activity "Deploying VVF using $partialBringupSpecFile" -Completed
-    $response.sddcSubTasks | Select-Object name, status | Format-Table
+    $response.sddcSubTasks | Select-Object name, status | Format-Table -AutoSize -Wrap
     $StopWatch.Stop()
     $minutes = (($stopwatch.Elapsed.hours * 60) + $stopwatch.Elapsed.minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($Stopwatch.Elapsed.seconds) seconds"
