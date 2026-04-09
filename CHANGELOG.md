@@ -7,6 +7,7 @@
 - Fixed vm_management portgroup name references in environments with management seperation configured
 - Fixes for 5.1.1 where nsx enabled switch does not have recorded transport zone configuration
 - Allow for partial bringup without license keys were source environment keys were not available
+- Fix for duplicate sso domain names when restoring vCenter
 
 ## v1.0.13
 
