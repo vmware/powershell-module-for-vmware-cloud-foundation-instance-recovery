@@ -286,7 +286,7 @@ Function Confirm-VCFInstanceRecoveryPreReqs {
     If (!$isPowerCLIInstalled) {
         LogMessage -type WARNING -message "[$jumpboxName] VCF PowerCLI Module Missing. Please install"
     } else {
-        LogMessage -type INFO -message "[$jumpboxName] PowerCLI Module found"
+        LogMessage -type INFO -message "[$jumpboxName] VCF PowerCLI Module found"
     }
 
     $installedSoftware = Get-InstalledSoftware
