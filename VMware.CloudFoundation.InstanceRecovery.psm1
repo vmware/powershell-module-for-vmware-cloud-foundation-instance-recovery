@@ -5925,7 +5925,7 @@ Function New-VVFBasedPartialBringupValidationUsingWriteProgress {
         $currentCheck = ($response.validationChecks | Where-Object { $_.ResultStatus -eq "UNKNOWN" } | Select-Object -First 1).Description
         if (-not $currentCheck) { $currentCheck = "Finalizing..." }
         Write-Progress -Activity "Validating $partialBringupSpecFile" `
-                       -Status "$completedChecks of $totalChecks checks complete" `
+                       -Status "$completedChecks of $totalChecks checks complete: Current Check $currentCheck" `
                        -PercentComplete $percentComplete `
                        -CurrentOperation $currentCheck
         Sleep 10
@@ -5968,7 +5968,7 @@ Function New-VVFBasedPartialBringupUsingWriteProgress {
         $percentComplete = if ($totalTasks -gt 0) { [math]::Round(($completedTasks / $totalTasks) * 100) } else { 0 }
         if (-not $inProgressTasks) { $inProgressTasks = "Waiting..." }
         Write-Progress -Activity "Deploying VVF using $partialBringupSpecFile" `
-                       -Status "$completedTasks of $totalTasks tasks complete" `
+                       -Status "$completedTasks of $totalTasks tasks complete: Current Task $inProgressTasks" `
                        -PercentComplete $percentComplete `
                        -CurrentOperation $inProgressTasks
         Sleep 60
