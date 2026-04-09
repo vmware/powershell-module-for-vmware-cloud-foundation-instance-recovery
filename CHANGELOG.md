@@ -4,6 +4,7 @@
 > Released: 2026-04-xx
 - [Added] Ability to discover OVFTool from environment path and the default back to expected location
 - [Changed] Revised New-VVFBasedPartialBringupValidation and New-VVFBasedPartialBringup functions that are more compatible with all systems for showing progress.
+- [Fixed] Incorrect handling of sso credentials in Invoke-vCenterRestore when more than one domain with the same sso domain exists
 
 ## v9.0.2.1001
 > Released: 2026-04-08
