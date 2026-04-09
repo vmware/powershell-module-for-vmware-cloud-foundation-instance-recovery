@@ -1,7 +1,9 @@
 # Release History
 
 ## v9.0.2.1002
-> Released: 2026-xx-xx
+> Released: 2026-04-xx
+- [Added] Ability to discover OVFTool from environment path and the default back to expected location
+- [Changed] Revised New-VVFBasedPartialBringupValidation and New-VVFBasedPartialBringup functions that are more compatible with all systems for showing progress.
 
 ## v9.0.2.1001
 > Released: 2026-04-08
