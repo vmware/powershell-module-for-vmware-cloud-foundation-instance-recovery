@@ -5891,7 +5891,11 @@ Function New-VVFBasedPartialBringupValidation {
         Sleep 10
     } Until ($response.ResultStatus -ne "UNKNOWN")
     Write-Progress -Activity "Validating $partialBringupSpecFile" -Completed
-    $response.validationChecks | Select-Object Description, ResultStatus | Format-Table -AutoSize -Wrap | Out-String -Stream -Width 200 | ForEach-Object { Write-Host " $_" }
+    $statusWidth = 16
+    $maxDescLength = ($response.validationChecks | ForEach-Object { $_.Description.Length } | Measure-Object -Maximum).Maximum
+    $availableWidth = $Host.UI.RawUI.WindowSize.Width - $statusWidth - 5
+    $descWidth = [math]::Max(30, [math]::Min($maxDescLength + 2, $availableWidth))
+    $response.validationChecks | Format-Table @{Label='Description';Expression={$_.Description};Width=$descWidth}, @{Label='ResultStatus';Expression={$_.ResultStatus};Width=$statusWidth} -Wrap | Out-String -Stream | ForEach-Object { " $_" }
     $StopWatch.Stop()
     LogMessage -type INFO -message "[$vcfInstaller] Validation of $partialBringupSpecFile complete. Please review before proceeding."
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
@@ -5935,7 +5939,11 @@ Function New-VVFBasedPartialBringup {
         $counter ++
     } Until ($response.status -ne "IN_PROGRESS")
     Write-Progress -Activity "Deploying VVF using $partialBringupSpecFile" -Completed
-    $response.sddcSubTasks | Select-Object name, status | Format-Table -AutoSize -Wrap | Out-String -Stream -Width 200 | ForEach-Object { Write-Host " $_" }
+    $statusWidth = 38
+    $maxNameLength = ($response.sddcSubTasks | ForEach-Object { $_.name.Length } | Measure-Object -Maximum).Maximum
+    $availableWidth = $Host.UI.RawUI.WindowSize.Width - $statusWidth - 5
+    $nameWidth = [math]::Max(30, [math]::Min($maxNameLength + 2, $availableWidth))
+    $response.sddcSubTasks | Format-Table @{Label='name';Expression={$_.name};Width=$nameWidth}, @{Label='status';Expression={$_.status};Width=$statusWidth} -Wrap | Out-String -Stream | ForEach-Object { " $_" }
     $StopWatch.Stop()
     $minutes = (($stopwatch.Elapsed.hours * 60) + $stopwatch.Elapsed.minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($Stopwatch.Elapsed.seconds) seconds"
