@@ -2400,13 +2400,23 @@ Function New-NSXManagerOvaDeployment {
     If ($nsxManagerSelection -eq "c") { Break }
     $selectedNsxManager = $nsxNodes | Where-Object { $_.vmName -eq ($nsxManagersDisplayObject | Where-Object { $_.id -eq $nsxManagerSelection }).manager }
 
-    $vmDatastore = $extractedSDDCData.mgmtDomainInfrastructure.vsan_datastore
-    #Following parameters converted to known entities for 9.0. Consider refactoring in 9.1 if data is saved in manifest.json
-
+    #Determine where to deploy the OVA to
+    $managementDomainDetails = ($extractedSDDCData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" })
+    $managementDomainDefaultCluster = $managementDomainDetails.vsphereClusterDetails | Where-Object {$_.isDefault -eq "t"}
+    If ($managementDomainDefaultCluster.name -eq $null)
+    {
         $vmNetwork = "vcfir-cl01-vds01-pg-vm-mgmt"
         $datacenterName = "vcfir-dc01"
         $clusterName = "vcfir-cl01"
-
+    }
+    else 
+    {
+        $vmNetwork = (($managementDomainDefaultCluster.vdsDetails | Where-Object {$_.portgroups.transportType -like "VM_MANAGEMENT"}).Portgroups | Where-Object {$_.transportType -eq "VM_MANAGEMENT"}).name
+        $datacenterName = $extractedSDDCData.mgmtDomainInfrastructure.datacenter
+        $clusterName = $extractedSDDCData.mgmtDomainInfrastructure.cluster
+    }
+    $vmDatastore = $extractedSDDCData.mgmtDomainInfrastructure.vsan_datastore
+    
     # NSX Manager Appliance Configuration
     $nsxManagerVMName = $selectedNsxManager.vmName
     $nsxManagerIp = $selectedNsxManager.ip
