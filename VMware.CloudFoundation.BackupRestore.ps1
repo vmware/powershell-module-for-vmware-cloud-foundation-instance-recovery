@@ -25,6 +25,45 @@ Function LogMessage {
     }
 }
 
+Function ConvertFrom-VcfmsTaskTimestampToUtc {
+    <#
+    Normalizes task timestamps from the VCFMS API to UTC for elapsed-time math.
+
+    Invoke-RestMethod often deserializes ISO-8601 instants as [DateTime] with Kind=Unspecified.
+    [DateTime]::ToUniversalTime() treats Unspecified as *local*, which skews elapsed by the
+    zone offset (often one hour vs UTC). VCFMS task times are UTC; Unspecified is treated as UTC.
+    #>
+    Param ($Timestamp)
+    if ($null -eq $Timestamp) { return $null }
+    try {
+        if ($Timestamp -is [DateTimeOffset]) {
+            return $Timestamp.UtcDateTime
+        }
+        if ($Timestamp -is [DateTime]) {
+            switch ($Timestamp.Kind) {
+                ([DateTimeKind]::Utc) { return $Timestamp }
+                ([DateTimeKind]::Local) { return $Timestamp.ToUniversalTime() }
+                default {
+                    return [DateTime]::SpecifyKind($Timestamp, [DateTimeKind]::Utc)
+                }
+            }
+        }
+        $s = ([string]$Timestamp).Trim()
+        if ([string]::IsNullOrWhiteSpace($s)) { return $null }
+        return [DateTimeOffset]::Parse($s, [CultureInfo]::InvariantCulture,
+            [System.Globalization.DateTimeStyles]::AssumeUniversal -bor
+            [System.Globalization.DateTimeStyles]::AdjustToUniversal).UtcDateTime
+    } catch {
+        return $null
+    }
+}
+
+Function Format-TimeSpanElapsedColons {
+    Param ([TimeSpan]$Span)
+    if ($Span -lt [TimeSpan]::Zero) { $Span = [TimeSpan]::Zero }
+    '{0:00}:{1:00}:{2:00}' -f [int][Math]::Floor($Span.TotalHours), $Span.Minutes, $Span.Seconds
+}
+
 Function Remove-SddcManagerVspClusterEntry {
     <#
     .SYNOPSIS
@@ -1208,11 +1247,10 @@ Function Restore-VcfmsBackup {
             $taskStatus = $taskResponse.status
             $elapsed = ""
             if ($taskResponse.startTime) {
-                try {
-                    $start = [datetimeoffset]::Parse($taskResponse.startTime).UtcDateTime
-                    $now = [datetime]::UtcNow
-                    $elapsed = " (running: $(($now - $start).ToString('hh\:mm\:ss')))"
-                } catch {}
+                $start = ConvertFrom-VcfmsTaskTimestampToUtc -Timestamp $taskResponse.startTime
+                if ($start) {
+                    $elapsed = " (running: $(Format-TimeSpanElapsedColons -Span ([datetime]::UtcNow - $start)))"
+                }
             }
             LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Status: $taskStatus$elapsed"
         } catch {
@@ -1491,10 +1529,10 @@ Function Watch-VcfmsTask {
         foreach ($task in $runningTasks) {
             $running = ""
             if ($task.startTime) {
-                try {
-                    $start = [datetimeoffset]::Parse($task.startTime).UtcDateTime
-                    $running = ($now - $start).ToString('hh\:mm\:ss')
-                } catch {}
+                $start = ConvertFrom-VcfmsTaskTimestampToUtc -Timestamp $task.startTime
+                if ($start) {
+                    $running = Format-TimeSpanElapsedColons -Span ($now - $start)
+                }
             }
             $shortType = $task.type -replace '^com\.vmware\.vcfms\.task\.', ''
             $results += [PSCustomObject]@{
@@ -1525,17 +1563,16 @@ Function Watch-VcfmsTask {
             $taskStatus = $taskResponse.status
             $elapsed = ""
             if ($taskResponse.startTime -and $taskResponse.endTime) {
-                try {
-                    $start = [datetimeoffset]::Parse($taskResponse.startTime).UtcDateTime
-                    $end = [datetimeoffset]::Parse($taskResponse.endTime).UtcDateTime
-                    $elapsed = " (elapsed: $(($end - $start).ToString('hh\:mm\:ss')))"
-                } catch {}
+                $start = ConvertFrom-VcfmsTaskTimestampToUtc -Timestamp $taskResponse.startTime
+                $end = ConvertFrom-VcfmsTaskTimestampToUtc -Timestamp $taskResponse.endTime
+                if ($start -and $end) {
+                    $elapsed = " (elapsed: $(Format-TimeSpanElapsedColons -Span ($end - $start)))"
+                }
             } elseif ($taskResponse.startTime) {
-                try {
-                    $start = [datetimeoffset]::Parse($taskResponse.startTime).UtcDateTime
-                    $now = [datetime]::UtcNow
-                    $elapsed = " (running: $(($now - $start).ToString('hh\:mm\:ss')))"
-                } catch {}
+                $start = ConvertFrom-VcfmsTaskTimestampToUtc -Timestamp $taskResponse.startTime
+                if ($start) {
+                    $elapsed = " (running: $(Format-TimeSpanElapsedColons -Span ([datetime]::UtcNow - $start)))"
+                }
             }
             LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Status: $taskStatus$elapsed"
         } catch {
