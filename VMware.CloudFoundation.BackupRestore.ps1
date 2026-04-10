@@ -768,7 +768,7 @@ Function Set-VcfmsSftpBackupSettings {
     SSH host key fingerprint of the SFTP server. If not provided, it is retrieved automatically via ssh-keyscan.
 
     .PARAMETER PollIntervalSeconds
-    Interval in seconds to poll the task status. Default is 10.
+    Interval in seconds to poll the task status. Default is 60 (one minute).
     #>
 
     Param(
@@ -783,7 +783,7 @@ Function Set-VcfmsSftpBackupSettings {
         [Parameter(Mandatory = $true)][String] $SftpDirectory,
         [Parameter(Mandatory = $true)][String] $EncryptionPassphrase,
         [Parameter(Mandatory = $false)][String] $SftpFingerprint,
-        [Parameter(Mandatory = $false)][Int] $PollIntervalSeconds = 10
+        [Parameter(Mandatory = $false)][Int] $PollIntervalSeconds = 60
     )
 
     $jumpboxName = hostname
