@@ -948,14 +948,14 @@ Function Get-VcfmsBackups {
     Username for the Services Runtime token. Default is "admin@vsp.local".
 
     .PARAMETER Components
-    One or more component types to display. Valid values: vsp, vcf-fleet-lcm, vcf-fleet-depot, vcf-sddc-lcm, salt, salt-raas, vidb, ops-logs. Default is all of them.
+    One or more component types to display. Valid values: vsp, vcf-fleet-lcm, vcf-fleet-depot, vcf-sddc-lcm, salt, salt-raas, vidb, ops-logs, vcfa. Default is all of them. When you opt in to generated restore JSON without passing -Components, ops-logs and vcfa are omitted from that JSON (you can still include them by passing -Components explicitly).
     #>
 
     Param(
         [Parameter(Mandatory = $true)][String] $ServiceRuntimeFqdn,
         [Parameter(Mandatory = $true)][String] $ServiceRuntimePassword,
         [Parameter(Mandatory = $false)][String] $ServiceRuntimeUsername = "admin@vsp.local",
-        [Parameter(Mandatory = $false)][ValidateSet("vsp", "vcf-fleet-lcm", "vcf-fleet-depot", "vcf-sddc-lcm", "salt", "salt-raas", "vidb", "ops-logs")][String[]] $Components = @("vsp", "vcf-fleet-lcm", "vcf-fleet-depot", "vcf-sddc-lcm", "salt", "salt-raas", "vidb", "ops-logs")
+        [Parameter(Mandatory = $false)][ValidateSet("vsp", "vcf-fleet-lcm", "vcf-fleet-depot", "vcf-sddc-lcm", "salt", "salt-raas", "vidb", "ops-logs", "vcfa")][String[]] $Components = @("vsp", "vcf-fleet-lcm", "vcf-fleet-depot", "vcf-sddc-lcm", "salt", "salt-raas", "vidb", "ops-logs", "vcfa")
     )
 
     $jumpboxName = hostname
@@ -1035,7 +1035,7 @@ Function Get-VcfmsBackups {
     if ($buildJson -in @("Y", "y")) {
         $restoreComponents = @()
         $explicitlyPassed = $PSBoundParameters.ContainsKey("Components")
-        $restoreComponentTypes = if ($explicitlyPassed) { $Components } else { $Components | Where-Object { $_ -ne "ops-logs" } }
+        $restoreComponentTypes = if ($explicitlyPassed) { $Components } else { $Components | Where-Object { $_ -notin @("ops-logs", "vcfa") } }
         foreach ($componentType in $restoreComponentTypes) {
             $componentBackups = $allBackups | Where-Object { $_.component.type -eq $componentType }
             if (-not $componentBackups) { continue }
