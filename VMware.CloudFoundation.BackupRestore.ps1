@@ -31,7 +31,7 @@ Function Remove-SddcManagerVspClusterEntry {
     Removes a vsp_cluster entry and its corresponding credential from the SDDC Manager Postgres database.
 
     .DESCRIPTION
-    The Remove-SddcManagerVspClusterEntry cmdlet connects to the SDDC Manager appliance via SSH as the vcf user, elevates to root, queries the Postgres platform database for the vsp_cluster entry matching the specified type (MANAGEMENT or CONSUMPTION), and deletes both the cluster row and its associated service credential (where username = 'vsp/<vsp_cluster_id>/svc-sddc-manager-admin').
+    The Remove-SddcManagerVspClusterEntry cmdlet connects to the SDDC Manager appliance via SSH as the vcf user, elevates to root, queries the Postgres platform database for the vsp_cluster entry matching the specified type (MANAGEMENT or CONSUMPTION), shows a short summary of the rows that will be removed, prompts for confirmation, then deletes both the cluster row and its associated service credential (where username = 'vsp/<vsp_cluster_id>/svc-sddc-manager-admin').
 
     .EXAMPLE
     Remove-SddcManagerVspClusterEntry -SddcManagerFqdn "sfo-vcf01.sfo.rainpole.io" -VcfUserPassword "VMw@re1!VMw@re1!" -RootPassword "VMw@re1!VMw@re1!" -ClusterType "MANAGEMENT"
@@ -114,24 +114,18 @@ Function Remove-SddcManagerVspClusterEntry {
         return
     }
 
-    LogMessage -type INFO -message "[$SddcManagerFqdn] Found $ClusterType vsp_cluster_id: $vspClusterId"
-
-    # Display the full row for confirmation
-    LogMessage -type INFO -message "[$SddcManagerFqdn] Retrieving full row details"
-    $stream.WriteLine("echo `"SELECT * FROM vsp_cluster WHERE vsp_cluster_id='$vspClusterId';`" | psql -U postgres -h localhost -d platform")
-    Start-Sleep 5
-    $detailOutput = $stream.Read()
-    Write-Host ""
-    Write-Host (& $cleanSshOutput $detailOutput)
-    Write-Host ""
-
     $credentialUsername = "vsp/$vspClusterId/svc-sddc-manager-admin"
 
-    # Prompt for confirmation before deleting
+    # Summary only (no full table dump); user must confirm before any DELETE runs
     Write-Host ""
-    Write-Host " The following operations will be performed:" -ForegroundColor Yellow
-    Write-Host "   1. DELETE FROM vsp_cluster WHERE vsp_cluster_id='$vspClusterId'" -ForegroundColor Cyan
-    Write-Host "   2. DELETE FROM credential WHERE username='$credentialUsername'" -ForegroundColor Cyan
+    Write-Host " Summary - the following will be deleted on $SddcManagerFqdn" -ForegroundColor Yellow
+    Write-Host "   Cluster type:     $ClusterType"
+    Write-Host "   vsp_cluster_id:   $vspClusterId"
+    Write-Host "   Credential user:  $credentialUsername"
+    Write-Host ""
+    Write-Host " SQL to execute:" -ForegroundColor Yellow
+    Write-Host "   1. DELETE FROM vsp_cluster WHERE vsp_cluster_id='$vspClusterId';" -ForegroundColor Cyan
+    Write-Host "   2. DELETE FROM credential WHERE username='$credentialUsername';" -ForegroundColor Cyan
     Write-Host ""
     Do {
         Write-Host " Proceed with deletion? (Y/N): " -ForegroundColor Yellow -NoNewline
@@ -231,7 +225,7 @@ Function New-VcfmsRuntime {
     ByFile      - Supply a pre-built JSON payload file.
     ByParameter - Supply individual values; the management domain ID is automatically retrieved from the SDDC Manager /v1/domains API.
 
-    In both modes the function retrieves an SDDC Manager token, displays the payload for verification, submits the deployment request, and polls the task until completion.
+    In both modes the function retrieves an SDDC Manager token, displays the payload for verification (with systemUserPassword redacted), prompts with Proceed with deployment? (Y/N), and only submits if you answer Y. N aborts without calling the API. After submit, the function polls the task until completion.
 
     .EXAMPLE
     New-VcfmsRuntime -SddcManagerFqdn "sfo-vcf01.sfo.rainpole.io" -SddcManagerUser "administrator@vsphere.local" -SddcManagerPassword "VMw@re1!VMw@re1!" -JsonFile ".\vcfms-runtime.json"
@@ -415,6 +409,16 @@ Function New-VcfmsRuntime {
     Write-Host " VCFMS Runtime Deployment Payload:" -ForegroundColor Cyan
     Write-Host $displayBody
     Write-Host ""
+
+    Do {
+        Write-Host " Proceed with deployment? (Y/N): " -ForegroundColor Yellow -NoNewline
+        $confirmation = Read-Host
+    } Until ($confirmation -in @("Y", "y", "N", "n"))
+
+    if ($confirmation -in @("N", "n")) {
+        LogMessage -type INFO -message "[$SddcManagerFqdn] VCFMS runtime deployment cancelled by user."
+        return
+    }
 
     $vspClustersUri = "https://$SddcManagerFqdn/v1/vsp-clusters"
     LogMessage -type INFO -message "[$SddcManagerFqdn] Submitting VCFMS runtime deployment to POST /v1/vsp-clusters"
@@ -689,7 +693,7 @@ Function Set-VcfmsSftpBackupSettings {
     The Set-VcfmsSftpBackupSettings cmdlet retrieves the SFTP server's SSH host key fingerprint, then applies SFTP backup configuration to the specified VCFMS component via POST /api/v1/components/{componentId}?action=apply.
 
     .EXAMPLE
-    Set-VcfmsSftpBackupSettings -ServiceRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServiceRuntimePassword "VMw@re1!VMw@re1!" -ComponentId "1f5c79fe-e3aa-41b1-a5cf-774a6497fa3d" -SftpHost "10.167.173.126" -SftpUsername "svc-vcf-bck" -SftpPassword "VMw@re1!VMw@re1!" -SftpDirectory "/media/backups/" -EncryptionPassphrase "VMw@re1!VMw@re1!"
+    Set-VcfmsSftpBackupSettings -ServiceRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServiceRuntimePassword "VMw@re1!VMw@re1!" -ComponentId "1f5c79fe-e3aa-41b1-a5cf-774a6497fa3d" -SftpHost "10.167.173.126" -SftpUsername "svc-vcf-bck" -SftpPassword "VMw@re1!" -SftpDirectory "/media/backups/" -EncryptionPassphrase "VMw@re1!VMw@re1!"
 
     .PARAMETER ServiceRuntimeFqdn
     FQDN of the VCFMS Services Runtime instance.
