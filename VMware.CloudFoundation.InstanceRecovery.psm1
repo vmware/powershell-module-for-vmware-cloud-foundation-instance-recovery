@@ -1900,7 +1900,7 @@ Function New-VVFBasedPartialBringupJsonSpec {
             'username' = $mgmtHost.Username
             'password' = $mgmtHost.Password
         }
-
+        LogMessage -Type INFO -Message "[$jumpboxName] Getting fingerprint for host: $mgmtHost.entityName"
         If ([System.Environment]::OSVersion.Platform -eq 'Win32NT') {
             $sslThumbPrint = (echo "Q" | openssl.exe s_client -connect "$($mgmtHost.entityName):443" -showcerts 2>$null | Filter-X509 | openssl.exe x509 -noout -fingerprint -sha256).split("sha256 Fingerprint=")[1]
         } else {
@@ -2021,6 +2021,7 @@ Function New-VVFBasedPartialBringupJsonSpec {
     }
 
     #dvsSpecsObject
+    LogMessage -Type INFO -Message "[$jumpboxName] Connecting to host $($mgmtHosts[0].entityName) to obtain list of available NICs"
     $hostConnection = Connect-ViServer $($mgmtHosts[0].entityName) -user $hostSpecsObject[0].credentials.username -password $hostSpecsObject[0].credentials.password
     $nics = (Get-EsxCli -VMHost $($mgmtHosts[0].entityName)).network.nic.list() | Select-Object Name, Driver, LinkStatus, Description
 
