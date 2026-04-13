@@ -5894,9 +5894,10 @@ Function New-VVFBasedPartialBringupValidation {
         $completedChecks = ($response.validationChecks | Where-Object { $_.ResultStatus -ne "UNKNOWN" }).Count
         $percentComplete = if ($totalChecks -gt 0) { [math]::Round(($completedChecks / $totalChecks) * 100) } else { 0 }
         $currentCheck = ($response.validationChecks | Where-Object { $_.ResultStatus -eq "UNKNOWN" } | Select-Object -First 1).Description
+        $timeStamp = Get-Date -Format "MM-dd-yyyy_HH:mm:ss"
         if (-not $currentCheck) { $currentCheck = "Finalizing..." }
         Write-Progress -Activity " Validating Specification" `
-                       -Status "Current Check: $currentCheck ($completedChecks of $totalChecks checks complete)" `
+                       -Status "[$timeStamp] Current Check: $currentCheck ($completedChecks of $totalChecks checks complete)" `
                        -PercentComplete $percentComplete `
                        -CurrentOperation $currentCheck
         Sleep 10
@@ -5941,9 +5942,10 @@ Function New-VVFBasedPartialBringup {
         $completedTasks = ($response.sddcSubTasks | Where-Object { $_.status -match "COMPLETED_WITH_SUCCESS" -or $_.status -match "COMPLETED_WITH_FAILURE" }).Count
         $inProgressTasks = ($response.sddcSubTasks | Where-Object { $_.status -eq "IN_PROGRESS" } | Select-Object -ExpandProperty name) -join ", "
         $percentComplete = if ($totalTasks -gt 0) { [math]::Round(($completedTasks / $totalTasks) * 100) } else { 0 }
+        $timeStamp = Get-Date -Format "MM-dd-yyyy_HH:mm:ss"
         if (-not $inProgressTasks) { $inProgressTasks = "Waiting..." }
         Write-Progress -Activity " Deploying VVF" `
-                       -Status "Current Task: $inProgressTasks ($completedTasks of $totalTasks tasks complete)" `
+                       -Status "[$timeStamp] Current Task: $inProgressTasks ($completedTasks of $totalTasks tasks complete)" `
                        -PercentComplete $percentComplete `
                        -CurrentOperation $inProgressTasks
         Sleep 60
