@@ -5896,13 +5896,13 @@ Function New-VVFBasedPartialBringupValidation {
         $currentCheck = ($response.validationChecks | Where-Object { $_.ResultStatus -eq "UNKNOWN" } | Select-Object -First 1).Description
         $timeStamp = Get-Date -Format "MM-dd-yyyy_HH:mm:ss"
         if (-not $currentCheck) { $currentCheck = "Finalizing..." }
-        Write-Progress -Activity " Validating Specification" `
-                       -Status "[$timeStamp] Current Check: $currentCheck ($completedChecks of $totalChecks checks complete)" `
+        Write-Progress -Activity " [$timeStamp] Validating Specification" `
+                       -Status "Current Check: $currentCheck ($completedChecks of $totalChecks checks complete)" `
                        -PercentComplete $percentComplete `
                        -CurrentOperation $currentCheck
         Sleep 10
     } Until ($response.ResultStatus -ne "UNKNOWN")
-    Write-Progress -Activity "Validating $partialBringupSpecFile" -Completed
+    Write-Progress -Activity " [$timeStamp] Validating $partialBringupSpecFile" -Completed
     $statusWidth = 16
     $maxDescLength = ($response.validationChecks | ForEach-Object { $_.Description.Length } | Measure-Object -Maximum).Maximum
     $availableWidth = $Host.UI.RawUI.WindowSize.Width - $statusWidth - 5
@@ -5944,14 +5944,14 @@ Function New-VVFBasedPartialBringup {
         $percentComplete = if ($totalTasks -gt 0) { [math]::Round(($completedTasks / $totalTasks) * 100) } else { 0 }
         $timeStamp = Get-Date -Format "MM-dd-yyyy_HH:mm:ss"
         if (-not $inProgressTasks) { $inProgressTasks = "Waiting..." }
-        Write-Progress -Activity " Deploying VVF" `
-                       -Status "[$timeStamp] Current Task: $inProgressTasks ($completedTasks of $totalTasks tasks complete)" `
+        Write-Progress -Activity " [$timeStamp] Deploying VVF" `
+                       -Status "Current Task: $inProgressTasks ($completedTasks of $totalTasks tasks complete)" `
                        -PercentComplete $percentComplete `
                        -CurrentOperation $inProgressTasks
         Sleep 60
         $counter ++
     } Until ($response.status -ne "IN_PROGRESS")
-    Write-Progress -Activity "Deploying VVF using $partialBringupSpecFile" -Completed
+    Write-Progress -Activity "[$timeStamp] Deploying VVF " -Completed
     $statusWidth = 38
     $maxNameLength = ($response.sddcSubTasks | ForEach-Object { $_.name.Length } | Measure-Object -Maximum).Maximum
     $availableWidth = $Host.UI.RawUI.WindowSize.Width - $statusWidth - 5
