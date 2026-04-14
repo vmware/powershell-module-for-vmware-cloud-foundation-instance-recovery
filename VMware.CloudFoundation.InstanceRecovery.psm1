@@ -1134,10 +1134,11 @@ Function Update-ExtractedSDDCData {
         $vCenterConnection = Connect-VIServer -server $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
 
         Foreach ($cluster in $workloadDomain.vsphereClusterDetails) {
-            $clusterName = (Invoke-VcfGetCluster -Id $cluster.id).Name
+                        $clusterInfo = Invoke-VcfGetCluster -Id $cluster.id
+            $clusterName = $clusterInfo.Name
             LogMessage -type INFO -message "Injecting cluster name $clusterName into $($workloadDomain.domainName)"
             $cluster.name = $clusterName
-            $primaryDatastoreName = (get-cluster -name $clusterName | get-datastore).Name
+            $primaryDatastoreName = $clusterInfo.PrimaryDatastoreName
             LogMessage -type INFO -message "Injecting primary datastore name $primaryDatastoreName into $($workloadDomain.domainName)"
             $cluster.primaryDatastoreName = $primaryDatastoreName
             Foreach ($vds in $cluster.vdsDetails) {
