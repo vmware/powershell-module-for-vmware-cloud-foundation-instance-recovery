@@ -7,6 +7,7 @@
 - [Changed] Revised `New-VVFBasedPartialBringupValidation` and `New-VVFBasedPartialBringup` functions that are more compatible with all systems for showing progress.
 - [Fixed] Incorrect handling of sso credentials in `Invoke-vCenterRestore` when more than one domain with the same sso domain exists
 - [Fixed] Delayed deployment of addtional NSX manager nodes in `New-NSXManagerOvaDeployment`
+- [Fixed] Primary datastore name retrieval on clusters with multiple datastores
 
 ## v9.0.2.1001
 > Released: 2026-04-08
