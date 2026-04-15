@@ -3176,7 +3176,7 @@ Function Invoke-vCenterRestore {
     $stream.writeline($locationPassword)
     Start-Sleep 5
     $stream.writeline($ssoAdminUserPassword)
-
+    
     Remove-SSHSession -SSHSession $sshSession | Out-Null
 
     LogMessage -type WAIT -message "[$restoredVcenterFqdn] Waiting for Restore to Start"
@@ -3195,51 +3195,59 @@ Function Invoke-vCenterRestore {
             Start-Sleep 5
             $stream.writeline('api com.vmware.appliance.recovery.restore.job.get')
             Start-Sleep 5
-            $Global:restoreStatus = $stream.Read()
+            $restoreStatus = $stream.Read()
+            If ($restoreStatus -match "Error in method")
+            {
+                LogMessage -type ERROR -message "[$restoredVcenterFqdn] Restore job failed to start. Please validated backupPassword (if required) and target appliance size"
+                Break
+            }
             $restoreStatusArray = $restoreStatus -split ("\r\n")
             $state = $restoreStatusArray[2].trim()
         }
     } Until ($state -eq "State: INPROGRESS")
-    LogMessage -type INFO -message "[$restoredVcenterFqdn] Restore $state"
 
-    Do {
-        #Note: Looped SSH connections is quite deliberate here as the connections appear to be continually dropped as the process progresses
-        Start-Sleep 20
-        Remove-SSHSession -SSHSession $sshSession | Out-Null
-        $sshSession = New-SSHSession -computername $restoredVcenterFqdn -Credential $mycreds -KnownHost $inmem -erroraction silentlycontinue
-        If ($sshSession) {
-            $stream = New-SSHShellStream -SSHSession $sshSession
-            $stream.writeline('appliancesh')
-            Start-Sleep 5
-            $stream.writeline($restoredvCenterRootPassword)
-            Start-Sleep 5
-            $response = $stream.Read()
-            Start-Sleep 5
-            $stream.writeline('api com.vmware.appliance.recovery.restore.job.get')
-            Start-Sleep 5
-            $restoreStatus = $stream.Read()
-            If ($restoreStatus) {
-                $restoreStatusArray = $restoreStatus -split ("\r\n")
-                If ($restoreStatusArray) {
-                    If ($restoreStatusArray[1]) {
-                        $state = $restoreStatusArray[2].trim()
-                    }
-                    If ($restoreStatusArray[6]) {
-                        $progress = $restoreStatusArray[6].trim()
-                        If (($progress -like "Progress*") -and ($state -eq "State: INPROGRESS")) {
-                            LogMessage -type INFO -message "[$restoredVcenterFqdn] Restore $($progress)%"
+    If ($state -eq "State: INPROGRESS")
+    {
+        LogMessage -type INFO -message "[$restoredVcenterFqdn] Restore $state"
+        Do {
+                #Note: Looped SSH connections is quite deliberate here as the connections appear to be continually dropped as the process progresses
+                Start-Sleep 20
+                Remove-SSHSession -SSHSession $sshSession | Out-Null
+                $sshSession = New-SSHSession -computername $restoredVcenterFqdn -Credential $mycreds -KnownHost $inmem -erroraction silentlycontinue
+                If ($sshSession) {
+                    $stream = New-SSHShellStream -SSHSession $sshSession
+                    $stream.writeline('appliancesh')
+                    Start-Sleep 5
+                    $stream.writeline($restoredvCenterRootPassword)
+                    Start-Sleep 5
+                    $response = $stream.Read()
+                    Start-Sleep 5
+                    $stream.writeline('api com.vmware.appliance.recovery.restore.job.get')
+                    Start-Sleep 5
+                    $restoreStatus = $stream.Read()
+                    If ($restoreStatus) {
+                        $restoreStatusArray = $restoreStatus -split ("\r\n")
+                        If ($restoreStatusArray) {
+                            If ($restoreStatusArray[1]) {
+                                $state = $restoreStatusArray[2].trim()
+                            }
+                            If ($restoreStatusArray[6]) {
+                                $progress = $restoreStatusArray[6].trim()
+                                If (($progress -like "Progress*") -and ($state -eq "State: INPROGRESS")) {
+                                    LogMessage -type INFO -message "[$restoredVcenterFqdn] Restore $($progress)%"
+                                }
+                            }
                         }
                     }
                 }
+            } Until (($state -eq "State: SUCCEEDED") -or ($state -eq "State: FAILED"))
+            If ($state -eq "State: SUCCEEDED") {
+            LogMessage -type INFO -message "[$restoredVcenterFqdn] Restore finished with $state"
+            } else {
+                LogMessage -type ERROR -message "[$restoredVcenterFqdn] Restore finished with $state"
             }
-        }
-    } Until (($state -eq "State: SUCCEEDED") -or ($state -eq "State: FAILED"))
-    If ($state -eq "State: SUCCEEDED") {
-        LogMessage -type INFO -message "[$restoredVcenterFqdn] Restore finished with $state"
-    } else {
-        LogMessage -type ERROR -message "[$restoredVcenterFqdn] Restore finished with $state"
     }
-
+    
     #Close SSH Session
     Remove-SSHSession -SSHSession $sshSession | Out-Null
     $StopWatch.Stop()
