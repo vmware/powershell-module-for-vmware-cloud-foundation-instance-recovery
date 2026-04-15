@@ -3198,7 +3198,7 @@ Function Invoke-vCenterRestore {
             $restoreStatus = $stream.Read()
             If ($restoreStatus -match "Error in method")
             {
-                LogMessage -type ERROR -message "[$restoredVcenterFqdn] Restore job failed to start. Please validated backupPassword (if required) and target appliance size"
+                LogMessage -type ERROR -message "[$restoredVcenterFqdn] Restore job failed to start. Please validate the target appliance size and the backupPassword (if required)"
                 Break
             }
             $restoreStatusArray = $restoreStatus -split ("\r\n")
