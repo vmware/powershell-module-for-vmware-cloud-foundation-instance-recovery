@@ -3199,49 +3199,45 @@ Function Invoke-vCenterRestore {
             $restoreStatusArray = $restoreStatus -split ("\r\n")
             $state = $restoreStatusArray[2].trim()
         }
-    } Until ($state -in "State: INPROGRESS","State: FAILED")
+    } Until ($state -eq "State: INPROGRESS")
     LogMessage -type INFO -message "[$restoredVcenterFqdn] Restore $state"
-    If ($state -ne "State: FAILED")
-    {
-        Do {
-            #Note: Looped SSH connections is quite deliberate here as the connections appear to be continually dropped as the process progresses
-            Start-Sleep 20
-            Remove-SSHSession -SSHSession $sshSession | Out-Null
-            $sshSession = New-SSHSession -computername $restoredVcenterFqdn -Credential $mycreds -KnownHost $inmem -erroraction silentlycontinue
-            If ($sshSession) {
-                $stream = New-SSHShellStream -SSHSession $sshSession
-                $stream.writeline('appliancesh')
-                Start-Sleep 5
-                $stream.writeline($restoredvCenterRootPassword)
-                Start-Sleep 5
-                $response = $stream.Read()
-                Start-Sleep 5
-                $stream.writeline('api com.vmware.appliance.recovery.restore.job.get')
-                Start-Sleep 5
-                $restoreStatus = $stream.Read()
-                If ($restoreStatus) {
-                    $restoreStatusArray = $restoreStatus -split ("\r\n")
-                    If ($restoreStatusArray) {
-                        If ($restoreStatusArray[1]) {
-                            $state = $restoreStatusArray[2].trim()
-                        }
-                        If ($restoreStatusArray[6]) {
-                            $progress = $restoreStatusArray[6].trim()
-                            If (($progress -like "Progress*") -and ($state -eq "State: INPROGRESS")) {
-                                LogMessage -type INFO -message "[$restoredVcenterFqdn] Restore $($progress)%"
-                            }
+
+    Do {
+        #Note: Looped SSH connections is quite deliberate here as the connections appear to be continually dropped as the process progresses
+        Start-Sleep 20
+        Remove-SSHSession -SSHSession $sshSession | Out-Null
+        $sshSession = New-SSHSession -computername $restoredVcenterFqdn -Credential $mycreds -KnownHost $inmem -erroraction silentlycontinue
+        If ($sshSession) {
+            $stream = New-SSHShellStream -SSHSession $sshSession
+            $stream.writeline('appliancesh')
+            Start-Sleep 5
+            $stream.writeline($restoredvCenterRootPassword)
+            Start-Sleep 5
+            $response = $stream.Read()
+            Start-Sleep 5
+            $stream.writeline('api com.vmware.appliance.recovery.restore.job.get')
+            Start-Sleep 5
+            $restoreStatus = $stream.Read()
+            If ($restoreStatus) {
+                $restoreStatusArray = $restoreStatus -split ("\r\n")
+                If ($restoreStatusArray) {
+                    If ($restoreStatusArray[1]) {
+                        $state = $restoreStatusArray[2].trim()
+                    }
+                    If ($restoreStatusArray[6]) {
+                        $progress = $restoreStatusArray[6].trim()
+                        If (($progress -like "Progress*") -and ($state -eq "State: INPROGRESS")) {
+                            LogMessage -type INFO -message "[$restoredVcenterFqdn] Restore $($progress)%"
                         }
                     }
                 }
             }
-        } Until (($state -eq "State: SUCCEEDED") -or ($state -eq "State: FAILED"))   
-    }
-
+        }
+    } Until (($state -eq "State: SUCCEEDED") -or ($state -eq "State: FAILED"))
     If ($state -eq "State: SUCCEEDED") {
         LogMessage -type INFO -message "[$restoredVcenterFqdn] Restore finished with $state"
     } else {
         LogMessage -type ERROR -message "[$restoredVcenterFqdn] Restore finished with $state"
-        LogMessage -type ERROR -message "[$restoredVcenterFqdn] Response from vCenter was $restoreStatusArray"
     }
 
     #Close SSH Session
