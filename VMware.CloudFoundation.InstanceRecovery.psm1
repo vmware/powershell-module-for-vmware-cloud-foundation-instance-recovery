@@ -3255,6 +3255,272 @@ Function Invoke-vCenterRestore {
 }
 Export-ModuleMember -Function Invoke-vCenterRestore
 
+Function Invoke-vCenterRestoreUsingAPI {
+    <#
+    .SYNOPSIS
+    Restores a vCenter appliance using the specified backup via REST API
+
+    .DESCRIPTION
+    The Invoke-vCenterRestoreUsingAPI restores a vCenter appliance using the VAMI REST API instead of SSH shell streams.
+    This approach provides better output capture and error handling compared to the SSH-based method.
+
+    .EXAMPLE
+    Invoke-vCenterRestoreUsingAPI -extractedSDDCDataFile ".\extracted-sddc-data.json" -workloadDomain "sfo-m01" -vCenterBackupPath "10.50.5.63/F$/Backups/vcenter-backup/sn_sfo-m01-vc01.sfo.rainpole.io/M_9.0.0.0_20250922-105520_" -locationtype "SMB" -locationUser "Administrator" -locationPassword "VMw@re1!"
+
+    .PARAMETER extractedSDDCDataFile
+    Relative or absolute to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup) somewhere on the local filesystem
+
+    .PARAMETER workloadDomain
+    Name of the VCF workload domain that the vCenter to restored is associated with
+
+    .PARAMETER vCenterBackupPath
+    Path to the vCenter Backup on the backup location
+
+    .PARAMETER locationtype
+    Type of backup location. Valid types are FTP, FTPS, HTTP, HTTPS, SFTP, NFS, or SMB
+
+    .PARAMETER locationUser
+    User account for connecting to the backup location passed with vCenterBackupPath
+
+    .PARAMETER locationPassword
+    Password for connecting to the backup location
+
+    .PARAMETER backupPassword
+    Password to decrypt an encrypted vCenter Server backup file
+    #>
+
+    Param(
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
+        [Parameter (Mandatory = $true)][String] $workloadDomain,
+        [Parameter (Mandatory = $true)][String] $vCenterBackupPath,
+        [Parameter (Mandatory = $true)][ValidateSet("FTP", "FTPS", "HTTP", "HTTPS", "SFTP", "NFS", "SMB")][String] $locationtype,
+        [Parameter (Mandatory = $true)][String] $locationUser,
+        [Parameter (Mandatory = $true)][String] $locationPassword,
+        [Parameter (Mandatory = $false)][String] $backupPassword
+    )
+
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+
+    LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
+    $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
+    $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
+
+    $restoredVcenterFqdn = ($extractedSddcData.workloadDomains | Where-Object { $_.domainName -eq $workloadDomain }).vCenterDetails.fqdn
+    $restoredvCenterRootPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "VCENTER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "SSH") }).password
+    $ssoDomain = ($extractedSddcData.workloadDomains | Where-Object { $_.domainName -eq $workloadDomain }).ssoDomain
+    $ssoAdminUserName = ($extractedSddcData.passwords | Where-Object { $_.entityType -eq "PSC" -and $_.username -like "*$($ssoDomain)" -and $_.domainName -eq $workloadDomain }).username
+    $ssoAdminUserPassword = ($extractedSddcData.passwords | Where-Object { $_.entityType -eq "PSC" -and $_.username -like "*$($ssoDomain)" -and $_.domainName -eq $workloadDomain }).password
+
+    # Wait for successful ping test
+    LogMessage -type WAIT -message "[$restoredVcenterFqdn] Waiting for successful ping test"
+    Do {
+        Start-Sleep 10
+        $pingTest = Test-Connection -ComputerName $restoredVcenterFqdn -count 1 -ErrorAction SilentlyContinue
+    } Until ($pingTest)
+
+    # Create authentication header for VAMI API (uses root credentials)
+    $headers = VCFIRCreateHeader -username "root" -password $restoredvCenterRootPassword
+
+    # Wait for VAMI API to become available
+    LogMessage -type WAIT -message "[$restoredVcenterFqdn] Waiting for VAMI API to become available"
+    $vamiAvailable = $false
+    $maxAttempts = 60
+    $attempt = 0
+    Do {
+        $attempt++
+        Try {
+            $uri = "https://$restoredVcenterFqdn`:5480/rest/appliance/health/system"
+            $healthCheck = Invoke-WebRequest -Method GET -URI $uri -ContentType "application/json" -Headers $headers -ErrorAction Stop
+            If ($healthCheck.StatusCode -eq 200) {
+                $vamiAvailable = $true
+                LogMessage -type INFO -message "[$restoredVcenterFqdn] VAMI API is available"
+            }
+        } Catch {
+            If ($attempt % 6 -eq 0) {
+                LogMessage -type INFO -message "[$restoredVcenterFqdn] VAMI API not yet available, continuing to wait... (attempt $attempt of $maxAttempts)"
+            }
+            Start-Sleep 10
+        }
+    } Until ($vamiAvailable -or $attempt -ge $maxAttempts)
+
+    If (-not $vamiAvailable) {
+        LogMessage -type ERROR -message "[$restoredVcenterFqdn] VAMI API did not become available after $maxAttempts attempts"
+        Return
+    }
+
+    # Build the restore request body
+    $restoreSpec = @{
+        location = $vCenterBackupPath
+        location_type = $locationtype
+        location_user = $locationUser
+        location_password = $locationPassword
+        sso_admin_user_name = $ssoAdminUserName
+        sso_admin_user_password = $ssoAdminUserPassword
+        ignore_warnings = $true
+    }
+
+    If ($backupPassword) {
+        $restoreSpec.backup_password = $backupPassword
+    }
+
+    $body = $restoreSpec | ConvertTo-Json -Depth 5
+
+    # Validate the restore request first
+    LogMessage -type INFO -message "[$restoredVcenterFqdn] Validating restore request"
+    Try {
+        $validateUri = "https://$restoredVcenterFqdn`:5480/rest/com/vmware/appliance/recovery/restore/job?~action=validate"
+        $validateResponse = Invoke-WebRequest -Method POST -URI $validateUri -ContentType "application/json" -Headers $headers -Body $body -ErrorAction Stop
+        $validateResult = ($validateResponse.Content | ConvertFrom-Json).value
+
+        If ($validateResult.messages) {
+            Foreach ($msg in $validateResult.messages) {
+                If ($msg.type -eq "ERROR") {
+                    LogMessage -type ERROR -message "[$restoredVcenterFqdn] Validation Error: $($msg.default_message)"
+                    Return
+                } ElseIf ($msg.type -eq "WARNING") {
+                    LogMessage -type WARNING -message "[$restoredVcenterFqdn] Validation Warning: $($msg.default_message)"
+                }
+            }
+        }
+        LogMessage -type INFO -message "[$restoredVcenterFqdn] Restore request validated successfully"
+    } Catch {
+        $errorMessage = $_.Exception.Message
+        Try {
+            $errorBody = $_.ErrorDetails.Message | ConvertFrom-Json
+            If ($errorBody.value.messages) {
+                $errorMessage = ($errorBody.value.messages | ForEach-Object { $_.default_message }) -join "; "
+            }
+        } Catch {}
+        LogMessage -type ERROR -message "[$restoredVcenterFqdn] Restore validation failed: $errorMessage"
+        Return
+    }
+
+    # Submit the restore request
+    LogMessage -type INFO -message "[$restoredVcenterFqdn] Submitting restore request via REST API"
+    Try {
+        $restoreUri = "https://$restoredVcenterFqdn`:5480/rest/com/vmware/appliance/recovery/restore/job"
+        $restoreResponse = Invoke-WebRequest -Method POST -URI $restoreUri -ContentType "application/json" -Headers $headers -Body $body -ErrorAction Stop
+        $restoreResult = ($restoreResponse.Content | ConvertFrom-Json).value
+
+        LogMessage -type INFO -message "[$restoredVcenterFqdn] Restore job submitted successfully"
+        LogMessage -type INFO -message "[$restoredVcenterFqdn] Initial State: $($restoreResult.state)"
+
+        If ($restoreResult.messages) {
+            Foreach ($msg in $restoreResult.messages) {
+                LogMessage -type INFO -message "[$restoredVcenterFqdn] $($msg.type): $($msg.default_message)"
+            }
+        }
+    } Catch {
+        $errorMessage = $_.Exception.Message
+        Try {
+            $errorBody = $_.ErrorDetails.Message | ConvertFrom-Json
+            If ($errorBody.value.messages) {
+                $errorMessage = ($errorBody.value.messages | ForEach-Object { $_.default_message }) -join "; "
+            } ElseIf ($errorBody.messages) {
+                $errorMessage = ($errorBody.messages | ForEach-Object { $_.default_message }) -join "; "
+            }
+        } Catch {}
+        LogMessage -type ERROR -message "[$restoredVcenterFqdn] Failed to submit restore job: $errorMessage"
+        Return
+    }
+
+    # Poll the restore job status
+    LogMessage -type WAIT -message "[$restoredVcenterFqdn] Monitoring restore progress"
+    $statusUri = "https://$restoredVcenterFqdn`:5480/rest/com/vmware/appliance/recovery/restore/job"
+    $lastProgress = -1
+    $consecutiveFailures = 0
+    $maxConsecutiveFailures = 10
+
+    Do {
+        Start-Sleep 20
+
+        Try {
+            $statusResponse = Invoke-WebRequest -Method GET -URI $statusUri -ContentType "application/json" -Headers $headers -ErrorAction Stop
+            $statusResult = ($statusResponse.Content | ConvertFrom-Json).value
+            $consecutiveFailures = 0
+
+            $state = $statusResult.state
+            $progress = $statusResult.progress
+
+            If ($progress -ne $lastProgress) {
+                LogMessage -type INFO -message "[$restoredVcenterFqdn] Restore State: $state, Progress: $progress%"
+                $lastProgress = $progress
+            }
+
+            If ($statusResult.messages) {
+                Foreach ($msg in $statusResult.messages) {
+                    If ($msg.default_message -and $msg.default_message -ne "") {
+                        LogMessage -type INFO -message "[$restoredVcenterFqdn] $($msg.type): $($msg.default_message)"
+                    }
+                }
+            }
+        } Catch {
+            $consecutiveFailures++
+            If ($consecutiveFailures -ge $maxConsecutiveFailures) {
+                LogMessage -type WARNING -message "[$restoredVcenterFqdn] Lost connection to VAMI API after $maxConsecutiveFailures attempts. This may be normal during restore reboot phase."
+                LogMessage -type WAIT -message "[$restoredVcenterFqdn] Waiting for appliance to come back online after restore..."
+
+                # Wait for appliance to come back online
+                $backOnline = $false
+                $rebootWaitAttempts = 0
+                $maxRebootWaitAttempts = 90
+
+                Do {
+                    $rebootWaitAttempts++
+                    Start-Sleep 20
+
+                    # First check if we can ping
+                    $pingTest = Test-Connection -ComputerName $restoredVcenterFqdn -count 1 -ErrorAction SilentlyContinue
+                    If ($pingTest) {
+                        Try {
+                            $healthUri = "https://$restoredVcenterFqdn`:5480/rest/appliance/health/system"
+                            $healthCheck = Invoke-WebRequest -Method GET -URI $healthUri -ContentType "application/json" -Headers $headers -ErrorAction Stop
+                            If ($healthCheck.StatusCode -eq 200) {
+                                $backOnline = $true
+                                LogMessage -type INFO -message "[$restoredVcenterFqdn] Appliance is back online"
+                            }
+                        } Catch {
+                            If ($rebootWaitAttempts % 6 -eq 0) {
+                                LogMessage -type INFO -message "[$restoredVcenterFqdn] Appliance responding to ping but VAMI not yet available... (attempt $rebootWaitAttempts of $maxRebootWaitAttempts)"
+                            }
+                        }
+                    }
+                } Until ($backOnline -or $rebootWaitAttempts -ge $maxRebootWaitAttempts)
+
+                If ($backOnline) {
+                    $consecutiveFailures = 0
+                    $state = "CHECKING"
+                    Continue
+                } Else {
+                    LogMessage -type ERROR -message "[$restoredVcenterFqdn] Appliance did not come back online after restore. Please check manually."
+                    Break
+                }
+            } Else {
+                LogMessage -type WARNING -message "[$restoredVcenterFqdn] Failed to get restore status (attempt $consecutiveFailures of $maxConsecutiveFailures): $($_.Exception.Message)"
+            }
+        }
+    } Until ($state -eq "SUCCEEDED" -or $state -eq "FAILED")
+
+    # Report final status
+    If ($state -eq "SUCCEEDED") {
+        LogMessage -type INFO -message "[$restoredVcenterFqdn] Restore completed successfully"
+    } ElseIf ($state -eq "FAILED") {
+        LogMessage -type ERROR -message "[$restoredVcenterFqdn] Restore failed"
+        If ($statusResult.messages) {
+            Foreach ($msg in $statusResult.messages) {
+                LogMessage -type ERROR -message "[$restoredVcenterFqdn] $($msg.type): $($msg.default_message)"
+            }
+        }
+    }
+
+    $StopWatch.Stop()
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+}
+Export-ModuleMember -Function Invoke-vCenterRestoreUsingAPI
+
 Function Move-ClusterHostsToRestoredVcenter {
     <#
     .SYNOPSIS
