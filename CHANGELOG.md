@@ -1,5 +1,10 @@
 # Release History
 
+## v9.0.2.1003
+> Released: 2026-04-xx
+
+- [Added] API based vCenter restore method
+
 ## v9.0.2.1002
 > Released: 2026-04-16
 
