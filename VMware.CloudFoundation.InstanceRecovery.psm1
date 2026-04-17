@@ -3427,6 +3427,8 @@ Function Invoke-vCenterRestoreUsingAPI {
                 $formattedMsg = $formattedMsg -replace "%\($i\)s", $msg.args[$i]
             }
         }
+        # Remove trailing period to match module style
+        $formattedMsg = $formattedMsg.TrimEnd('.')
         Return $formattedMsg
     }
 
@@ -3572,7 +3574,6 @@ Function Invoke-vCenterRestoreUsingAPI {
         }
 
         # Job started successfully
-        LogMessage -type INFO -message "[$restoredVcenterFqdn] Restore job started - State: $($restoreResult.state)"
         If ($restoreResult.messages) {
             Foreach ($msg in $restoreResult.messages) {
                 $formattedMsg = Format-VAMIMessage -msg $msg
@@ -3637,9 +3638,13 @@ Function Invoke-vCenterRestoreUsingAPI {
                 }
             }
 
-            # Only log when progress changes or status message changes
-            If ($progress -ne $lastProgress -or $currentStatusMessage -ne $lastStatusMessage) {
-                LogMessage -type INFO -message "[$restoredVcenterFqdn] Restore State: $state, Progress: $progress% - $currentStatusMessage"
+            # Only log when progress changes or status message changes (skip if SUCCEEDED - final status logged separately)
+            If ($state -ne "SUCCEEDED" -and ($progress -ne $lastProgress -or $currentStatusMessage -ne $lastStatusMessage)) {
+                If ($currentStatusMessage) {
+                    LogMessage -type INFO -message "[$restoredVcenterFqdn] Restore State: $state, Progress: $progress% - $currentStatusMessage"
+                } Else {
+                    LogMessage -type INFO -message "[$restoredVcenterFqdn] Restore State: $state, Progress: $progress%"
+                }
                 $lastProgress = $progress
                 $lastStatusMessage = $currentStatusMessage
             }
