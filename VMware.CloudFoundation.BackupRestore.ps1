@@ -1408,20 +1408,20 @@ Function Get-VcfmsComponents {
     # Build result objects
     $results = @()
     foreach ($comp in $filteredComponents) {
-        $obj = [PSCustomObject]@{
-            'Id'          = $comp.id
-            'Type'        = $comp.componentTypeDescription
+        # Include Fqdn on every row ($null when N/A) so Format-Table shows the column; otherwise the first
+        # objects without Fqdn determine columns and runtime FQDNs are hidden.
+        $fqdn = if ($comp.componentTypeDescription -eq 'VCF services runtime') { $comp.fqdn } else { $null }
+        $results += [PSCustomObject]@{
+            'Id'   = $comp.id
+            'Type' = $comp.componentTypeDescription
+            'Fqdn' = $fqdn
         }
-        if ($comp.componentTypeDescription -eq "VCF services runtime" -and $comp.fqdn) {
-            $obj | Add-Member -NotePropertyName 'Fqdn' -NotePropertyValue $comp.fqdn
-        }
-        $results += $obj
     }
 
     $filterMsg = if ($ComponentTypes) { "matching: $($ComponentTypes -join ', ')" } else { "(all)" }
     LogMessage -type INFO -message "[$FleetLCMFqdn] Found $($results.Count) component(s) $filterMsg"
     Write-Host ""
-    $results | Format-Table -AutoSize | Out-String | Write-Host
+    $results | Format-Table -AutoSize -Property Id, Type, Fqdn | Out-String | Write-Host
 
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $(((Get-Date) - $functionStartTime).ToString('hh\:mm\:ss'))"
 }
