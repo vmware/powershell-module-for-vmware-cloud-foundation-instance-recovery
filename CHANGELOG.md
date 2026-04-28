@@ -3,7 +3,8 @@
 ## v9.0.2.1003
 > Released: 2026-04-xx
 
-- [Added] API based vCenter restore method
+- [Added] Deprecation warning to signify transition to new module name of `VMware.Cloudfoundation.Restore`
+- [Changed] vCenter restore changed to use API instead of streamed appliance shell commands
 
 ## v9.0.2.1002
 > Released: 2026-04-16

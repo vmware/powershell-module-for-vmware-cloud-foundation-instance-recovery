@@ -6,6 +6,24 @@
 # COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
 # OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+# Deprecation Warning
+Write-Warning @"
+
+================================================================================
+DEPRECATION NOTICE
+================================================================================
+The 'VMware.CloudFoundation.InstanceRecovery' module has been renamed to
+'VMware.CloudFoundation.Restore'.
+
+This module will no longer receive updates. Please migrate to the new module:
+
+    Uninstall-Module VMware.CloudFoundation.InstanceRecovery -AllVersions
+    Install-Module VMware.CloudFoundation.Restore
+
+================================================================================
+
+"@
+
 If ($PSEdition -eq 'Core') {
     $Script:PSDefaultParameterValues = @{
         "invoke-restmethod:SkipCertificateCheck" = $true
@@ -3052,207 +3070,6 @@ Export-ModuleMember -Function Resolve-PhysicalHostServiceAccounts
 Function Invoke-vCenterRestore {
     <#
     .SYNOPSIS
-    Restores a vCenter appliance using the specified backup
-
-    .DESCRIPTION
-    The Invoke-vCenterRestore restores a vCenter appliance using the specified backup
-
-    .EXAMPLE
-    Invoke-vCenterRestore -vCenterFqdn "sfo-m01-vc02.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" "-extractedSDDCDataFile .\extracted-sddc-data.json" -workloadDomain "sfo-m01" -vCenterBackupPath "10.50.5.63/F$/Backups/vcenter-backup/sn_sfo-m01-vc01.sfo.rainpole.io/M_9.0.0.0_20250922-105520_" -locationtype "SMB" -locationUser "Administrator" -locationPassword "VMw@re1!"
-
-    .PARAMETER vCenterFqdn
-    FQDN of the temporary vCenter hosting the deployed vCenter OVA to which the backup should be restored
-
-    .PARAMETER vCenterAdmin
-    Admin user of the temporary vCenter hosting the deployed vCenter OVA to which the backup should be restored
-
-    .PARAMETER vCenterAdminPassword
-    Admin password of the temporary vCenter hosting the deployed vCenter OVA to which the backup should be restored
-
-    .PARAMETER extractedSDDCDataFile
-    Relative or absolute to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup) somewhere on the local filesystem
-
-    .PARAMETER workloadDomain
-    Name of the VCF workload domain that the vCenter to restored is associated with
-
-    .PARAMETER vCenterBackupPath
-    Path to the vCenter Backup on the backup location
-
-    .PARAMETER locationtype
-    Type of backup location. Valid types are FTP, FTPS, HTTP, HTTPS, SFTP, NFS, or SMB
-
-    .PARAMETER locationUser
-    User account for connecting to the backup location passed with vCenterBackupPath
-
-    .PARAMETER backupPassword
-    Password to decrypt an encrypted vCenter Server backup file
-    #>
-
-    Param(
-        #[Parameter (Mandatory = $true)][String] $vCenterFqdn,
-        #[Parameter (Mandatory = $true)][String] $vCenterAdmin,
-        #[Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
-        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
-        [Parameter (Mandatory = $true)][String] $workloadDomain,
-        [Parameter (Mandatory = $true)][String] $vCenterBackupPath,
-        [Parameter (Mandatory = $true)][String] $locationtype,
-        [Parameter (Mandatory = $true)][String] $locationUser,
-        [Parameter (Mandatory = $true)][String] $locationPassword,
-        [Parameter (Mandatory = $false)][String] $backupPassword
-    )
-    $jumpboxName = hostname
-    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
-    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
-    $StopWatch.Start()
-    LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
-    $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
-    $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
-    $restoredVcenterFqdn = ($extractedSddcData.workloadDomains | Where-Object { $_.domainName -eq $workloadDomain }).vCenterDetails.fqdn
-    #$restoredVcenterVmName = ($extractedSddcData.workloadDomains | Where-Object { $_.domainName -eq $workloadDomain }).vCenterDetails.vmname
-    $restoredvCenterRootPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "VCENTER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "SSH") }).password
-    $ssoDomain = ($extractedSddcData.workloadDomains | Where-Object { $_.domainName -eq $workloadDomain }).ssoDomain
-    $ssoAdminUserName = ($extractedSddcData.passwords | Where-Object { $_.entityType -eq "PSC" -and $_.username -like "*$($ssoDomain)" -and $_.domainName -eq $workloadDomain } ).username
-    $ssoAdminUserPassword = ($extractedSddcData.passwords | Where-Object { $_.entityType -eq "PSC" -and $_.username -like "*$($ssoDomain)" -and $_.domainName -eq $workloadDomain }).password
-
-    #Power Up vCenter Appliance
-    <#
-    $vCenterConnection = Connect-VIServer -server $vCenterFqdn -user $vCenterAdmin -password $vCenterAdminPassword
-    LogMessage -type INFO -message "[$restoredVcenterVmName] Powering On VM"
-    Get-VM -Name $restoredVcenterVmName | Start-VM -confirm:$false | Out-Null
-    Disconnect-VIServer * -Force -Confirm:$false -ErrorAction SilentlyContinue
-    #>
-
-    #Wait for successful ping test
-    LogMessage -type WAIT -message "[$restoredVcenterFqdn] Waiting for successful ping test"
-    Do {
-        Sleep 10
-        $pingTest = Test-Connection -ComputerName $restoredVcenterFqdn -count 1 -ErrorAction SilentlyContinue
-    } Until ($pingTest)
-
-    #Form credentials for connecting to vCenter
-    $SecurePassword = ConvertTo-SecureString -String $restoredvCenterRootPassword -AsPlainText -Force
-    $mycreds = New-Object System.Management.Automation.PSCredential ('root', $SecurePassword)
-
-    #Create SSH Trusted Host
-    LogMessage -type WAIT -message "[$jumpboxName] Waiting for SSH Connection to $restoredVcenterFqdn to be possible"
-    $inmem = New-SSHMemoryKnownHost
-    Do {
-        $sshHostKey = Get-SSHHostKey -ComputerName $restoredVcenterFqdn -ErrorAction SilentlyContinue
-        If ($sshHostKey) {
-            $sshTrustedHost = New-SSHTrustedHost -KnownHostStore $inmem -HostName $restoredVcenterFqdn -FingerPrint $sshHostKey.fingerprint
-        }
-    } Until ($sshTrustedHost)
-
-    #Wait for RPM initialization to Finish
-    LogMessage -type WAIT -message "[$restoredVcenterFqdn] Waiting for Appliance to finish RPM initialization"
-    Do {
-        #Note: Looped SSH connections is quite deliberate here as the connections appear to be continually dropped as the process progresses
-        Sleep 10
-        Remove-SSHSession -SSHSession $sshSession | Out-Null
-        Do {
-            $sshSession = New-SSHSession -computername $restoredVcenterFqdn -Credential $mycreds -KnownHost $inmem -erroraction silentlyContinue
-        } Until ($sshSession)
-        $rpmStatus = (Invoke-SSHCommand -SessionId $sshSession.sessionid -Command "api com.vmware.appliance.version1.services.status.get --name cap_init" -erroraction silentlyContinue).output
-    } Until ($rpmStatus -eq "Status: down")
-    LogMessage -type INFO -message "[$restoredVcenterFqdn] RPM initialization Complete"
-
-    #Restore vCenter
-    $stream = New-SSHShellStream -SSHSession $sshSession
-    LogMessage -type INFO -message "[$restoredVcenterFqdn] Submitting Restore Request"
-    $restoreString = "api com.vmware.appliance.recovery.restore.job.create --locationType $locationtype --location $vCenterBackupPath --locationUser $locationUser --locationPassword --ssoAdminUserName $ssoAdminUserName --ssoAdminUserPassword --ignoreWarnings TRUE"
-    If ($backupPassword) {
-        $restoreString = $restoreString += " --backupPassword"
-    }
-    LogMessage -type INFO -message "[$restoredVcenterFqdn] Issuing restore command: $restoreString"
-    $stream.writeline($restoreString)
-    Start-Sleep 5
-    If ($backupPassword) {
-        $stream.writeline($backupPassword)
-        Start-Sleep 5
-    }
-    $stream.writeline($locationPassword)
-    Start-Sleep 5
-    $stream.writeline($ssoAdminUserPassword)
-
-    Remove-SSHSession -SSHSession $sshSession | Out-Null
-
-    LogMessage -type WAIT -message "[$restoredVcenterFqdn] Waiting for Restore to Start"
-    Do {
-        #Note: Looped SSH connections is quite deliberate here as the connections appear to be continually dropped as the process progresses
-        Start-Sleep 5
-        Remove-SSHSession -SSHSession $sshSession | Out-Null
-        $sshSession = New-SSHSession -computername $restoredVcenterFqdn -Credential $mycreds -KnownHost $inmem -erroraction silentlycontinue
-        If ($sshSession) {
-            $stream = New-SSHShellStream -SSHSession $sshSession
-            $stream.writeline('appliancesh')
-            Start-Sleep 5
-            $stream.writeline($restoredvCenterRootPassword)
-            Start-Sleep 5
-            $response = $stream.Read()
-            Start-Sleep 5
-            $stream.writeline('api com.vmware.appliance.recovery.restore.job.get')
-            Start-Sleep 5
-            $restoreStatus = $stream.Read()
-            If ($restoreStatus -match "Error in method") {
-                LogMessage -type ERROR -message "[$restoredVcenterFqdn] Restore job failed to start. Please validate the target appliance size and the backupPassword (if required)"
-                Break
-            }
-            $restoreStatusArray = $restoreStatus -split ("\r\n")
-            $state = $restoreStatusArray[2].trim()
-        }
-    } Until ($state -eq "State: INPROGRESS")
-
-    If ($state -eq "State: INPROGRESS") {
-        LogMessage -type INFO -message "[$restoredVcenterFqdn] Restore $state"
-        Do {
-            #Note: Looped SSH connections is quite deliberate here as the connections appear to be continually dropped as the process progresses
-            Start-Sleep 20
-            Remove-SSHSession -SSHSession $sshSession | Out-Null
-            $sshSession = New-SSHSession -computername $restoredVcenterFqdn -Credential $mycreds -KnownHost $inmem -erroraction silentlycontinue
-            If ($sshSession) {
-                $stream = New-SSHShellStream -SSHSession $sshSession
-                $stream.writeline('appliancesh')
-                Start-Sleep 5
-                $stream.writeline($restoredvCenterRootPassword)
-                Start-Sleep 5
-                $response = $stream.Read()
-                Start-Sleep 5
-                $stream.writeline('api com.vmware.appliance.recovery.restore.job.get')
-                Start-Sleep 5
-                $restoreStatus = $stream.Read()
-                If ($restoreStatus) {
-                    $restoreStatusArray = $restoreStatus -split ("\r\n")
-                    If ($restoreStatusArray) {
-                        If ($restoreStatusArray[1]) {
-                            $state = $restoreStatusArray[2].trim()
-                        }
-                        If ($restoreStatusArray[6]) {
-                            $progress = $restoreStatusArray[6].trim()
-                            If (($progress -like "Progress*") -and ($state -eq "State: INPROGRESS")) {
-                                LogMessage -type INFO -message "[$restoredVcenterFqdn] Restore $($progress)%"
-                            }
-                        }
-                    }
-                }
-            }
-        } Until (($state -eq "State: SUCCEEDED") -or ($state -eq "State: FAILED"))
-        If ($state -eq "State: SUCCEEDED") {
-            LogMessage -type INFO -message "[$restoredVcenterFqdn] Restore finished with $state"
-        } else {
-            LogMessage -type ERROR -message "[$restoredVcenterFqdn] Restore finished with $state"
-        }
-    }
-
-    #Close SSH Session
-    Remove-SSHSession -SSHSession $sshSession | Out-Null
-    $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
-}
-Export-ModuleMember -Function Invoke-vCenterRestore
-
-Function Invoke-vCenterRestoreUsingAPI {
-    <#
-    .SYNOPSIS
     Restores a vCenter appliance using the specified backup via REST API
 
     .DESCRIPTION
@@ -3710,7 +3527,7 @@ Function Invoke-vCenterRestoreUsingAPI {
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
-Export-ModuleMember -Function Invoke-vCenterRestoreUsingAPI
+Export-ModuleMember -Function Invoke-vCenterRestore
 
 
 Function Move-ClusterHostsToRestoredVcenter {
