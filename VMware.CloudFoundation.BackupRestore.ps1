@@ -99,7 +99,8 @@ Function Remove-SddcManagerVspClusterEntry {
     )
 
     $jumpboxName = hostname
-    $functionStartTime = Get-Date
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     # Establish SSH connection as vcf user
@@ -162,10 +163,6 @@ Function Remove-SddcManagerVspClusterEntry {
     Write-Host "   vsp_cluster_id:   $vspClusterId"
     Write-Host "   Credential user:  $credentialUsername"
     Write-Host ""
-    Write-Host " SQL to execute:" -ForegroundColor Yellow
-    Write-Host "   1. DELETE FROM vsp_cluster WHERE vsp_cluster_id='$vspClusterId';" -ForegroundColor Cyan
-    Write-Host "   2. DELETE FROM credential WHERE username='$credentialUsername';" -ForegroundColor Cyan
-    Write-Host ""
     Do {
         Write-Host " Proceed with deletion? (Y/N): " -ForegroundColor Yellow -NoNewline
         $confirmation = Read-Host
@@ -199,7 +196,9 @@ Function Remove-SddcManagerVspClusterEntry {
     Remove-SSHSession -SSHSession $sshSession | Out-Null
 
     LogMessage -type INFO -message "[$SddcManagerFqdn] $ClusterType vsp_cluster_id was: $vspClusterId"
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $(((Get-Date) - $functionStartTime).ToString('hh\:mm\:ss'))"
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
     return $vspClusterId
 }
 
@@ -253,13 +252,13 @@ Function Get-SddcManagerToken {
     }
 }
 
-Function New-VcfmsRuntime {
+Function New-ServicesRuntime {
     <#
     .SYNOPSIS
     Deploys a new VCF Management Services (VCFMS) runtime instance via the SDDC Manager API.
 
     .DESCRIPTION
-    The New-VcfmsRuntime cmdlet calls the SDDC Manager POST /v1/vsp-clusters endpoint to deploy a new VCFMS runtime. Supports two modes:
+    The New-ServicesRuntime cmdlet calls the SDDC Manager POST /v1/vsp-clusters endpoint to deploy a new VCFMS runtime. Supports two modes:
 
     ByFile      - Supply a pre-built JSON payload file.
     ByParameter - Supply individual values; the management domain ID is automatically retrieved from the SDDC Manager /v1/domains API.
@@ -267,10 +266,10 @@ Function New-VcfmsRuntime {
     In both modes the function retrieves an SDDC Manager token, displays the payload for verification (with systemUserPassword redacted), prompts with Proceed with deployment? (Y/N), and only submits if you answer Y. N aborts without calling the API. After submit, the function polls the task until completion.
 
     .EXAMPLE
-    New-VcfmsRuntime -SddcManagerFqdn "sfo-vcf01.sfo.rainpole.io" -SddcManagerUser "administrator@vsphere.local" -SddcManagerPassword "VMw@re1!VMw@re1!" -JsonFile ".\vcfms-runtime.json"
+    New-ServicesRuntime -SddcManagerFqdn "sfo-vcf01.sfo.rainpole.io" -SddcManagerUser "administrator@vsphere.local" -SddcManagerPassword "VMw@re1!VMw@re1!" -Type MANAGEMENT -JsonFile ".\vcfms-runtime.json"
 
     .EXAMPLE
-    New-VcfmsRuntime -SddcManagerFqdn "sfo-vcf01.sfo.rainpole.io" -SddcManagerUser "administrator@vsphere.local" -SddcManagerPassword "VMw@re1!VMw@re1!" -PlatformFqdn "sfo-sr01.sfo.rainpole.io" -InstanceFqdn "sfo-ic01.sfo.rainpole.io" -FleetFqdn "flt-fc01.rainpole.io" -SystemUserPassword "VMw@re1!VMw@re1!" -Ipv4Addresses "10.11.99.29","10.11.99.30","10.11.99.31" -Size "small" -NetworkMoId "dvportgroup-28" -GatewayCidrIpv4 "10.11.99.1/24" -ClusterId "1f5c79fe-e3aa-41b1-a5cf-774a6497fa3d" -InternalClusterCidrIpv4 "198.18.0.0/15"
+    New-ServicesRuntime -SddcManagerFqdn "sfo-vcf01.sfo.rainpole.io" -SddcManagerUser "administrator@vsphere.local" -SddcManagerPassword "VMw@re1!VMw@re1!" -Type CONSUMPTION -JsonFile ".\vcfms-consumption.json"
 
     .PARAMETER SddcManagerFqdn
     FQDN of the SDDC Manager appliance.
@@ -280,6 +279,9 @@ Function New-VcfmsRuntime {
 
     .PARAMETER SddcManagerPassword
     Password for the SDDC Manager API user.
+
+    .PARAMETER Type
+    Type of VCFMS runtime to deploy. Valid values are MANAGEMENT or CONSUMPTION.
 
     .PARAMETER JsonFile
     (ByFile) Path to a JSON file containing the full VCFMS runtime deployment payload.
@@ -332,6 +334,11 @@ Function New-VcfmsRuntime {
         [String] $SddcManagerPassword,
 
         [Parameter(Mandatory = $true, ParameterSetName = "ByFile")]
+        [Parameter(Mandatory = $true, ParameterSetName = "ByParameter")]
+        [ValidateSet("MANAGEMENT", "CONSUMPTION")]
+        [String] $Type,
+
+        [Parameter(Mandatory = $true, ParameterSetName = "ByFile")]
         [String] $JsonFile,
 
         [Parameter(Mandatory = $true, ParameterSetName = "ByParameter")]
@@ -370,7 +377,8 @@ Function New-VcfmsRuntime {
     )
 
     $jumpboxName = hostname
-    $functionStartTime = Get-Date
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     # Get authentication token
@@ -432,7 +440,7 @@ Function New-VcfmsRuntime {
             instanceFqdn            = $InstanceFqdn
             fleetFqdn               = $FleetFqdn
             systemUserPassword      = $SystemUserPassword
-            type                    = "MANAGEMENT"
+            type                    = $Type
             ipv4Pool                = @{ addresses = $Ipv4Addresses }
             size                    = $Size
             networkMoId             = $NetworkMoId
@@ -482,7 +490,9 @@ Function New-VcfmsRuntime {
     if (-not $taskId) {
         LogMessage -type INFO -message "[$SddcManagerFqdn] API response:"
         $response | ConvertTo-Json -Depth 5 | Write-Host
-        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $(((Get-Date) - $functionStartTime).ToString('hh\:mm\:ss'))"
+        $StopWatch.Stop()
+        $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
         return $response
     }
 
@@ -519,7 +529,9 @@ Function New-VcfmsRuntime {
         }
     }
 
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $(((Get-Date) - $functionStartTime).ToString('hh\:mm\:ss'))"
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
     return $taskResponse
 }
 
@@ -532,12 +544,12 @@ Function Get-VcfmsServicesRuntimeToken {
     The Get-VcfmsServicesRuntimeToken cmdlet authenticates against the VCFMS Services Runtime /api/v1/identity/token endpoint using a form-urlencoded password grant and returns the access token string.
 
     .EXAMPLE
-    $srToken = Get-VcfmsServicesRuntimeToken -ServiceRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -Password "VMw@re1!VMw@re1!"
+    $srToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -Password "VMw@re1!VMw@re1!"
 
     .EXAMPLE
-    $srToken = Get-VcfmsServicesRuntimeToken -ServiceRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -Username "admin@vsp.local" -Password "VMw@re1!VMw@re1!"
+    $srToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -Username "admin@vsp.local" -Password "VMw@re1!VMw@re1!"
 
-    .PARAMETER ServiceRuntimeFqdn
+    .PARAMETER ServicesRuntimeFqdn
     FQDN of the VCFMS Services Runtime instance (e.g. sfo-sr01.sfo.rainpole.io).
 
     .PARAMETER Username
@@ -548,28 +560,28 @@ Function Get-VcfmsServicesRuntimeToken {
     #>
 
     Param(
-        [Parameter(Mandatory = $true)][String] $ServiceRuntimeFqdn,
+        [Parameter(Mandatory = $true)][String] $ServicesRuntimeFqdn,
         [Parameter(Mandatory = $false)][String] $Username = "admin@vsp.local",
         [Parameter(Mandatory = $true)][String] $Password
     )
 
     $jumpboxName = hostname
-    LogMessage -type INFO -message "[$jumpboxName] Requesting VCFMS Services Runtime token from $ServiceRuntimeFqdn"
+    LogMessage -type INFO -message "[$jumpboxName] Requesting VCFMS Services Runtime token from $ServicesRuntimeFqdn"
 
-    $tokenUri = "https://$ServiceRuntimeFqdn/api/v1/identity/token"
+    $tokenUri = "https://$ServicesRuntimeFqdn/api/v1/identity/token"
     $tokenBody = "grant_type=password&username=$([uri]::EscapeDataString($Username))&password=$([uri]::EscapeDataString($Password))"
 
     try {
         $tokenResponse = Invoke-RestMethod -Uri $tokenUri -Method POST -ContentType "application/x-www-form-urlencoded" -Body $tokenBody -SkipCertificateCheck
         $accessToken = $tokenResponse.access_token
         if (-not $accessToken) {
-            LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Token response did not contain an access_token."
+            LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Token response did not contain an access_token."
             return $null
         }
-        LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Services Runtime token retrieved successfully"
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Services Runtime token retrieved successfully"
         return $accessToken
     } catch {
-        LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Failed to retrieve Services Runtime token: $($_.Exception.Message)"
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Failed to retrieve Services Runtime token: $($_.Exception.Message)"
         return $null
     }
 }
@@ -583,18 +595,18 @@ Function Add-VcfmsTrustedCertificate {
     The Add-VcfmsTrustedCertificate cmdlet connects to the specified remote host to retrieve its TLS certificate in PEM format, then adds it as a trusted certificate on the VCFMS Services Runtime via POST /api/v1/system/trusted-certificates?action=add. A Services Runtime token is obtained automatically using Get-VcfmsServicesRuntimeToken.
 
     .EXAMPLE
-    Add-VcfmsTrustedCertificate -ServiceRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServiceRuntimePassword "VMw@re1!VMw@re1!" -RemoteHostFqdn "sfo-ins01.sfo.rainpole.io"
+    Add-VcfmsTrustedCertificate -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -RemoteHostFqdn "sfo-ins01.sfo.rainpole.io"
 
     .EXAMPLE
-    Add-VcfmsTrustedCertificate -ServiceRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServiceRuntimePassword "VMw@re1!VMw@re1!" -RemoteHostFqdn "sfo-ins01.sfo.rainpole.io" -RemoteHostPort 443
+    Add-VcfmsTrustedCertificate -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -RemoteHostFqdn "sfo-ins01.sfo.rainpole.io" -RemoteHostPort 443
 
-    .PARAMETER ServiceRuntimeFqdn
+    .PARAMETER ServicesRuntimeFqdn
     FQDN of the VCFMS Services Runtime instance to add the trusted certificate to.
 
-    .PARAMETER ServiceRuntimePassword
+    .PARAMETER ServicesRuntimePassword
     Password for the Services Runtime admin user (used to obtain a token).
 
-    .PARAMETER ServiceRuntimeUsername
+    .PARAMETER ServicesRuntimeUsername
     Username for the Services Runtime token. Default is "admin@vsp.local".
 
     .PARAMETER RemoteHostFqdn
@@ -608,16 +620,17 @@ Function Add-VcfmsTrustedCertificate {
     #>
 
     Param(
-        [Parameter(Mandatory = $true)][String] $ServiceRuntimeFqdn,
-        [Parameter(Mandatory = $true)][String] $ServiceRuntimePassword,
-        [Parameter(Mandatory = $false)][String] $ServiceRuntimeUsername = "admin@vsp.local",
+        [Parameter(Mandatory = $true)][String] $ServicesRuntimeFqdn,
+        [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
+        [Parameter(Mandatory = $false)][String] $ServicesRuntimeUsername = "admin@vsp.local",
         [Parameter(Mandatory = $true)][String] $RemoteHostFqdn,
         [Parameter(Mandatory = $false)][Int] $RemoteHostPort = 443,
         [Parameter(Mandatory = $false)][Int] $PollIntervalSeconds = 10
     )
 
     $jumpboxName = hostname
-    $functionStartTime = Get-Date
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     # Retrieve the remote host's TLS certificate
@@ -647,7 +660,7 @@ Function Add-VcfmsTrustedCertificate {
     LogMessage -type INFO -message "[$jumpboxName] Certificate retrieved: Subject=$($remoteCert.Subject)"
 
     # Get Services Runtime token
-    $srToken = Get-VcfmsServicesRuntimeToken -ServiceRuntimeFqdn $ServiceRuntimeFqdn -Username $ServiceRuntimeUsername -Password $ServiceRuntimePassword
+    $srToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
     if (-not $srToken) {
         LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain Services Runtime token. Aborting."
         return
@@ -661,19 +674,19 @@ Function Add-VcfmsTrustedCertificate {
     # Build the request body
     $requestBody = @{ cert = $certPem } | ConvertTo-Json
 
-    $trustUri = "https://$ServiceRuntimeFqdn/api/v1/system/trusted-certificates?action=add"
-    LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Adding trusted certificate for $RemoteHostFqdn"
+    $trustUri = "https://$ServicesRuntimeFqdn/api/v1/system/trusted-certificates?action=add"
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Adding trusted certificate for $RemoteHostFqdn"
 
     try {
         $response = Invoke-RestMethod -Uri $trustUri -Method POST -Headers $headers -Body $requestBody -SkipCertificateCheck
     } catch {
-        LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Failed to add trusted certificate: $($_.Exception.Message)"
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Failed to add trusted certificate: $($_.Exception.Message)"
         if ($_.Exception.Response) {
             try {
                 $errorStream = $_.Exception.Response.GetResponseStream()
                 $reader = New-Object System.IO.StreamReader($errorStream)
                 $errorBody = $reader.ReadToEnd()
-                LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Response body: $errorBody"
+                LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Response body: $errorBody"
             } catch {}
         }
         return
@@ -682,15 +695,17 @@ Function Add-VcfmsTrustedCertificate {
     # Check for a task ID in the response
     $taskId = $response.id
     if (-not $taskId) {
-        LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Certificate for $RemoteHostFqdn trusted successfully (no task returned)"
-        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $(((Get-Date) - $functionStartTime).ToString('hh\:mm\:ss'))"
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Certificate for $RemoteHostFqdn trusted successfully (no task returned)"
+        $StopWatch.Stop()
+        $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
         return $response
     }
 
-    LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Trust certificate task submitted: $taskId"
-    LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Polling task status every $PollIntervalSeconds seconds"
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Trust certificate task submitted: $taskId"
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Polling task status every $PollIntervalSeconds seconds"
 
-    $taskUri = "https://$ServiceRuntimeFqdn/api/v1/tasks/$taskId"
+    $taskUri = "https://$ServicesRuntimeFqdn/api/v1/tasks/$taskId"
     $taskStatus = "IN_PROGRESS"
     Do {
         Start-Sleep -Seconds $PollIntervalSeconds
@@ -698,10 +713,10 @@ Function Add-VcfmsTrustedCertificate {
         try {
             $taskResponse = Invoke-RestMethod -Uri $taskUri -Method GET -Headers $headers -SkipCertificateCheck
             $taskStatus = $taskResponse.status
-            LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Status: $taskStatus"
+            LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Status: $taskStatus"
         } catch {
-            LogMessage -type WARNING -message "[$ServiceRuntimeFqdn] Error polling task (will retry): $($_.Exception.Message)"
-            $newToken = Get-VcfmsServicesRuntimeToken -ServiceRuntimeFqdn $ServiceRuntimeFqdn -Username $ServiceRuntimeUsername -Password $ServiceRuntimePassword
+            LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Error polling task (will retry): $($_.Exception.Message)"
+            $newToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
             if ($newToken) {
                 $headers["Authorization"] = "Bearer $newToken"
             }
@@ -709,17 +724,19 @@ Function Add-VcfmsTrustedCertificate {
     } While ($taskStatus -in @("IN_PROGRESS", "IN PROGRESS", "PENDING", "RUNNING"))
 
     if ($taskStatus -in @("SUCCESSFUL", "SUCCESS", "COMPLETED", "Succeeded")) {
-        LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Certificate for $RemoteHostFqdn trusted successfully"
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Certificate for $RemoteHostFqdn trusted successfully"
     } else {
-        LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Trust certificate task ended with status: $taskStatus"
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Trust certificate task ended with status: $taskStatus"
         if ($taskResponse.errors) {
             foreach ($err in $taskResponse.errors) {
-                LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Error: $($err.message)"
+                LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Error: $($err.message)"
             }
         }
     }
 
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $(((Get-Date) - $functionStartTime).ToString('hh\:mm\:ss'))"
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
     return $taskResponse
 }
 
@@ -732,15 +749,15 @@ Function Set-VcfmsSftpBackupSettings {
     The Set-VcfmsSftpBackupSettings cmdlet retrieves the SFTP server's SSH host key fingerprint, then applies SFTP backup configuration to the specified VCFMS component via POST /api/v1/components/{componentId}?action=apply.
 
     .EXAMPLE
-    Set-VcfmsSftpBackupSettings -ServiceRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServiceRuntimePassword "VMw@re1!VMw@re1!" -ComponentId "1f5c79fe-e3aa-41b1-a5cf-774a6497fa3d" -SftpHost "10.167.173.126" -SftpUsername "svc-vcf-bck" -SftpPassword "VMw@re1!" -SftpDirectory "/media/backups/" -EncryptionPassphrase "VMw@re1!VMw@re1!"
+    Set-VcfmsSftpBackupSettings -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -ComponentId "1f5c79fe-e3aa-41b1-a5cf-774a6497fa3d" -SftpHost "10.167.173.126" -SftpUsername "svc-vcf-bck" -SftpPassword "VMw@re1!" -SftpDirectory "/media/backups/" -EncryptionPassphrase "VMw@re1!VMw@re1!"
 
-    .PARAMETER ServiceRuntimeFqdn
+    .PARAMETER ServicesRuntimeFqdn
     FQDN of the VCFMS Services Runtime instance.
 
-    .PARAMETER ServiceRuntimePassword
+    .PARAMETER ServicesRuntimePassword
     Password for the Services Runtime admin user (used to obtain a token).
 
-    .PARAMETER ServiceRuntimeUsername
+    .PARAMETER ServicesRuntimeUsername
     Username for the Services Runtime token. Default is "admin@vsp.local".
 
     .PARAMETER ComponentId
@@ -772,9 +789,9 @@ Function Set-VcfmsSftpBackupSettings {
     #>
 
     Param(
-        [Parameter(Mandatory = $true)][String] $ServiceRuntimeFqdn,
-        [Parameter(Mandatory = $true)][String] $ServiceRuntimePassword,
-        [Parameter(Mandatory = $false)][String] $ServiceRuntimeUsername = "admin@vsp.local",
+        [Parameter(Mandatory = $true)][String] $ServicesRuntimeFqdn,
+        [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
+        [Parameter(Mandatory = $false)][String] $ServicesRuntimeUsername = "admin@vsp.local",
         [Parameter(Mandatory = $true)][String] $ComponentId,
         [Parameter(Mandatory = $true)][String] $SftpHost,
         [Parameter(Mandatory = $false)][String] $SftpPort = "22",
@@ -787,7 +804,8 @@ Function Set-VcfmsSftpBackupSettings {
     )
 
     $jumpboxName = hostname
-    $functionStartTime = Get-Date
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     # Retrieve the SFTP fingerprint if not provided
@@ -821,7 +839,7 @@ Function Set-VcfmsSftpBackupSettings {
     }
 
     # Get Services Runtime token
-    $srToken = Get-VcfmsServicesRuntimeToken -ServiceRuntimeFqdn $ServiceRuntimeFqdn -Username $ServiceRuntimeUsername -Password $ServiceRuntimePassword
+    $srToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
     if (-not $srToken) {
         LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain Services Runtime token. Aborting."
         return
@@ -862,19 +880,19 @@ Function Set-VcfmsSftpBackupSettings {
     Write-Host $displayBody
     Write-Host ""
 
-    $applyUri = "https://$ServiceRuntimeFqdn/api/v1/components/${ComponentId}?action=apply"
-    LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Applying SFTP backup settings to component $ComponentId"
+    $applyUri = "https://$ServicesRuntimeFqdn/api/v1/components/${ComponentId}?action=apply"
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Applying SFTP backup settings to component $ComponentId"
 
     try {
         $response = Invoke-RestMethod -Uri $applyUri -Method POST -Headers $headers -Body $requestBody -SkipCertificateCheck
     } catch {
-        LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Failed to apply SFTP backup settings: $($_.Exception.Message)"
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Failed to apply SFTP backup settings: $($_.Exception.Message)"
         if ($_.Exception.Response) {
             try {
                 $errorStream = $_.Exception.Response.GetResponseStream()
                 $reader = New-Object System.IO.StreamReader($errorStream)
                 $errorBody = $reader.ReadToEnd()
-                LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Response body: $errorBody"
+                LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Response body: $errorBody"
             } catch {}
         }
         return
@@ -883,15 +901,17 @@ Function Set-VcfmsSftpBackupSettings {
     # Check for a task ID in the response
     $taskId = $response.id
     if (-not $taskId) {
-        LogMessage -type INFO -message "[$ServiceRuntimeFqdn] SFTP backup settings applied successfully (no task returned)"
-        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $(((Get-Date) - $functionStartTime).ToString('hh\:mm\:ss'))"
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] SFTP backup settings applied successfully (no task returned)"
+        $StopWatch.Stop()
+        $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
         return $response
     }
 
-    LogMessage -type INFO -message "[$ServiceRuntimeFqdn] SFTP settings task submitted: $taskId"
-    LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Polling task status every $PollIntervalSeconds seconds"
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] SFTP settings task submitted: $taskId"
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Polling task status every $PollIntervalSeconds seconds"
 
-    $taskUri = "https://$ServiceRuntimeFqdn/api/v1/tasks/$taskId"
+    $taskUri = "https://$ServicesRuntimeFqdn/api/v1/tasks/$taskId"
     $taskStatus = "IN_PROGRESS"
     Do {
         Start-Sleep -Seconds $PollIntervalSeconds
@@ -899,10 +919,10 @@ Function Set-VcfmsSftpBackupSettings {
         try {
             $taskResponse = Invoke-RestMethod -Uri $taskUri -Method GET -Headers $headers -SkipCertificateCheck
             $taskStatus = $taskResponse.status
-            LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Status: $taskStatus"
+            LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Status: $taskStatus"
         } catch {
-            LogMessage -type WARNING -message "[$ServiceRuntimeFqdn] Error polling task (will retry): $($_.Exception.Message)"
-            $newToken = Get-VcfmsServicesRuntimeToken -ServiceRuntimeFqdn $ServiceRuntimeFqdn -Username $ServiceRuntimeUsername -Password $ServiceRuntimePassword
+            LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Error polling task (will retry): $($_.Exception.Message)"
+            $newToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
             if ($newToken) {
                 $headers["Authorization"] = "Bearer $newToken"
             }
@@ -910,17 +930,19 @@ Function Set-VcfmsSftpBackupSettings {
     } While ($taskStatus -in @("IN_PROGRESS", "IN PROGRESS", "PENDING", "RUNNING"))
 
     if ($taskStatus -in @("SUCCESSFUL", "SUCCESS", "COMPLETED", "Succeeded")) {
-        LogMessage -type INFO -message "[$ServiceRuntimeFqdn] SFTP backup settings applied successfully"
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] SFTP backup settings applied successfully"
     } else {
-        LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] SFTP settings task ended with status: $taskStatus"
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] SFTP settings task ended with status: $taskStatus"
         if ($taskResponse.errors) {
             foreach ($err in $taskResponse.errors) {
-                LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Error: $($err.message)"
+                LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Error: $($err.message)"
             }
         }
     }
 
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $(((Get-Date) - $functionStartTime).ToString('hh\:mm\:ss'))"
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
     return $taskResponse
 }
 
@@ -933,37 +955,45 @@ Function Get-VcfmsBackups {
     The Get-VcfmsBackups cmdlet queries the VCFMS Services Runtime GET /api/v1/system/backups endpoint and returns backup details for the specified component types, sorted by component type and age. Output includes component type, version, backup name, age, and path.
 
     .EXAMPLE
-    Get-VcfmsBackups -ServiceRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServiceRuntimePassword "VMw@re1!VMw@re1!"
+    Get-VcfmsBackups -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!"
 
     .EXAMPLE
-    Get-VcfmsBackups -ServiceRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServiceRuntimePassword "VMw@re1!VMw@re1!" -Components "vsp","salt"
+    Get-VcfmsBackups -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -Components "vsp","salt"
 
-    .PARAMETER ServiceRuntimeFqdn
+    .EXAMPLE
+    Get-VcfmsBackups -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -VspId "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+
+    .PARAMETER ServicesRuntimeFqdn
     FQDN of the VCFMS Services Runtime instance.
 
-    .PARAMETER ServiceRuntimePassword
+    .PARAMETER ServicesRuntimePassword
     Password for the Services Runtime admin user (used to obtain a token).
 
-    .PARAMETER ServiceRuntimeUsername
+    .PARAMETER ServicesRuntimeUsername
     Username for the Services Runtime token. Default is "admin@vsp.local".
 
     .PARAMETER Components
     One or more component types to display. Valid values: vsp, vcf-fleet-lcm, vcf-fleet-depot, vcf-sddc-lcm, salt, salt-raas, vidb, ops-logs, vcfa. Default is all of them. When you opt in to generated restore JSON without passing -Components, ops-logs and vcfa are omitted from that JSON (you can still include them by passing -Components explicitly).
+
+    .PARAMETER VspId
+    When specified, only backups whose path contains /vcf/backups/<VspId>/ are returned. Use this to scope results to a specific VSP instance when multiple are present in the backup store.
     #>
 
     Param(
-        [Parameter(Mandatory = $true)][String] $ServiceRuntimeFqdn,
-        [Parameter(Mandatory = $true)][String] $ServiceRuntimePassword,
-        [Parameter(Mandatory = $false)][String] $ServiceRuntimeUsername = "admin@vsp.local",
-        [Parameter(Mandatory = $false)][ValidateSet("vsp", "vcf-fleet-lcm", "vcf-fleet-depot", "vcf-sddc-lcm", "salt", "salt-raas", "vidb", "ops-logs", "vcfa")][String[]] $Components = @("vsp", "vcf-fleet-lcm", "vcf-fleet-depot", "vcf-sddc-lcm", "salt", "salt-raas", "vidb", "ops-logs", "vcfa")
+        [Parameter(Mandatory = $true)][String] $ServicesRuntimeFqdn,
+        [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
+        [Parameter(Mandatory = $false)][String] $ServicesRuntimeUsername = "admin@vsp.local",
+        [Parameter(Mandatory = $false)][ValidateSet("vsp", "vcf-fleet-lcm", "vcf-fleet-depot", "vcf-sddc-lcm", "salt", "salt-raas", "vidb", "ops-logs", "vcfa")][String[]] $Components = @("vsp", "vcf-fleet-lcm", "vcf-fleet-depot", "vcf-sddc-lcm", "salt", "salt-raas", "vidb", "ops-logs", "vcfa"),
+        [Parameter(Mandatory = $false)][String] $VspId
     )
 
     $jumpboxName = hostname
-    $functionStartTime = Get-Date
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     # Get Services Runtime token
-    $srToken = Get-VcfmsServicesRuntimeToken -ServiceRuntimeFqdn $ServiceRuntimeFqdn -Username $ServiceRuntimeUsername -Password $ServiceRuntimePassword
+    $srToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
     if (-not $srToken) {
         LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain Services Runtime token. Aborting."
         return
@@ -974,20 +1004,29 @@ Function Get-VcfmsBackups {
         "Accept"        = "application/json"
     }
 
-    $backupsUri = "https://$ServiceRuntimeFqdn/api/v1/system/backups"
-    LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Retrieving backup list"
+    $backupsUri = "https://$ServicesRuntimeFqdn/api/v1/system/backups"
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Retrieving backup list"
 
     try {
         $response = Invoke-RestMethod -Uri $backupsUri -Method GET -Headers $headers -SkipCertificateCheck
     } catch {
-        LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Failed to retrieve backups: $($_.Exception.Message)"
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Failed to retrieve backups: $($_.Exception.Message)"
         return
     }
 
     $allBackups = $response.backups
     if (-not $allBackups -or ($allBackups | Measure-Object).Count -eq 0) {
-        LogMessage -type WARNING -message "[$ServiceRuntimeFqdn] No backups found."
+        LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] No backups found."
         return
+    }
+
+    if ($PSBoundParameters.ContainsKey('VspId')) {
+        $allBackups = @($allBackups | Where-Object { $_.path -match ('/vcf/backups/' + [regex]::Escape($VspId) + '(/|$)') })
+        if ($allBackups.Count -eq 0) {
+            LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] No backups found with VspId '$VspId' in path."
+            return
+        }
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Filtered to $($allBackups.Count) backup(s) matching VspId '$VspId'"
     }
 
     # Build ordered results filtered by requested components
@@ -1018,11 +1057,11 @@ Function Get-VcfmsBackups {
     }
 
     if ($results.Count -eq 0) {
-        LogMessage -type WARNING -message "[$ServiceRuntimeFqdn] No backups found for components: $($Components -join ', ')"
+        LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] No backups found for components: $($Components -join ', ')"
         return
     }
 
-    LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Found $($results.Count) backup(s) for $($Components.Count) component type(s)"
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Found $($results.Count) backup(s) for $($Components.Count) component type(s)"
     Write-Host ""
     $results | Format-Table -AutoSize -Property Component, Version, Name, Age, Path | Out-String | Write-Host
 
@@ -1073,7 +1112,9 @@ Function Get-VcfmsBackups {
         Write-Host ""
     }
 
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $(((Get-Date) - $functionStartTime).ToString('hh\:mm\:ss'))"
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
 }
 
 Function Restore-VcfmsBackup {
@@ -1090,7 +1131,7 @@ Function Restore-VcfmsBackup {
 
     .EXAMPLE
     # Step 1: List available backups to find paths and restore points
-    Get-VcfmsBackups -ServiceRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServiceRuntimePassword "VMw@re1!VMw@re1!"
+    Get-VcfmsBackups -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!"
 
     # Step 2: Create a JSON file (restore-payload.json) with the desired components:
     # {
@@ -1101,15 +1142,15 @@ Function Restore-VcfmsBackup {
     # }
 
     # Step 3: Run the restore
-    Restore-VcfmsBackup -ServiceRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServiceRuntimePassword "VMw@re1!VMw@re1!" -RestoreJsonFile ".\restore-payload.json"
+    Restore-VcfmsBackup -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -RestoreJsonFile ".\restore-payload.json"
 
-    .PARAMETER ServiceRuntimeFqdn
+    .PARAMETER ServicesRuntimeFqdn
     FQDN of the VCFMS Services Runtime instance.
 
-    .PARAMETER ServiceRuntimePassword
+    .PARAMETER ServicesRuntimePassword
     Password for the Services Runtime admin user (used to obtain a token).
 
-    .PARAMETER ServiceRuntimeUsername
+    .PARAMETER ServicesRuntimeUsername
     Username for the Services Runtime token. Default is "admin@vsp.local".
 
     .PARAMETER RestoreJsonFile
@@ -1120,15 +1161,16 @@ Function Restore-VcfmsBackup {
     #>
 
     Param(
-        [Parameter(Mandatory = $true)][String] $ServiceRuntimeFqdn,
-        [Parameter(Mandatory = $true)][String] $ServiceRuntimePassword,
-        [Parameter(Mandatory = $false)][String] $ServiceRuntimeUsername = "admin@vsp.local",
+        [Parameter(Mandatory = $true)][String] $ServicesRuntimeFqdn,
+        [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
+        [Parameter(Mandatory = $false)][String] $ServicesRuntimeUsername = "admin@vsp.local",
         [Parameter(Mandatory = $true)][String] $RestoreJsonFile,
         [Parameter(Mandatory = $false)][Int] $PollIntervalSeconds = 300
     )
 
     $jumpboxName = hostname
-    $functionStartTime = Get-Date
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     # Read and validate the payload file
@@ -1175,7 +1217,7 @@ Function Restore-VcfmsBackup {
     }
 
     # Get Services Runtime token
-    $srToken = Get-VcfmsServicesRuntimeToken -ServiceRuntimeFqdn $ServiceRuntimeFqdn -Username $ServiceRuntimeUsername -Password $ServiceRuntimePassword
+    $srToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
     if (-not $srToken) {
         LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain Services Runtime token. Aborting."
         return
@@ -1187,35 +1229,35 @@ Function Restore-VcfmsBackup {
         "Accept"        = "application/json"
     }
 
-    $restoreUri = "https://$ServiceRuntimeFqdn/api/v1/system/backups?action=restore"
-    LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Submitting restore request"
+    $restoreUri = "https://$ServicesRuntimeFqdn/api/v1/system/backups?action=restore"
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Submitting restore request"
 
     try {
         $response = Invoke-RestMethod -Uri $restoreUri -Method POST -Headers $headers -Body $payloadContent -SkipCertificateCheck
     } catch {
-        LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Restore request failed: $($_.Exception.Message)"
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Restore request failed: $($_.Exception.Message)"
         if ($_.Exception.Response) {
             try {
                 $errorStream = $_.Exception.Response.GetResponseStream()
                 $reader = New-Object System.IO.StreamReader($errorStream)
                 $errorBody = $reader.ReadToEnd()
-                LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Response body: $errorBody"
+                LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Response body: $errorBody"
             } catch {}
         }
         return
     }
 
-    LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Restore request accepted"
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Restore request accepted"
 
     # Check for a task ID in the POST response
     $taskId = $response.id
     if (-not $taskId) {
         # POST /backups?action=restore does not return a task ID directly;
         # find the restore task by querying GET /api/v1/tasks
-        LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Searching for restore task via /api/v1/tasks"
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Searching for restore task via /api/v1/tasks"
         Start-Sleep -Seconds 5
         try {
-            $tasksResponse = Invoke-RestMethod -Uri "https://$ServiceRuntimeFqdn/api/v1/tasks" -Method GET -Headers $headers -SkipCertificateCheck
+            $tasksResponse = Invoke-RestMethod -Uri "https://$ServicesRuntimeFqdn/api/v1/tasks" -Method GET -Headers $headers -SkipCertificateCheck
             $restoreTask = $tasksResponse.tasks |
                 Where-Object { $_.type -eq "com.vmware.vcfms.task.RestoreMultipleComponents" -and $_.status -notin @("Succeeded", "Failed", "Cancelled") } |
                 Sort-Object createTime -Descending |
@@ -1224,20 +1266,22 @@ Function Restore-VcfmsBackup {
                 $taskId = $restoreTask.id
             }
         } catch {
-            LogMessage -type WARNING -message "[$ServiceRuntimeFqdn] Could not query tasks endpoint: $($_.Exception.Message)"
+            LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Could not query tasks endpoint: $($_.Exception.Message)"
         }
     }
 
     if (-not $taskId) {
-        LogMessage -type WARNING -message "[$ServiceRuntimeFqdn] Could not find restore task. Use Watch-VcfmsTask -FindRunning to check progress."
-        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $(((Get-Date) - $functionStartTime).ToString('hh\:mm\:ss'))"
+        LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Could not find restore task. Use Watch-VcfmsTask -FindRunning to check progress."
+        $StopWatch.Stop()
+        $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
         return
     }
 
-    LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Restore task ID: $taskId"
-    LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Polling task status every $PollIntervalSeconds seconds"
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Restore task ID: $taskId"
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Polling task status every $PollIntervalSeconds seconds"
 
-    $taskUri = "https://$ServiceRuntimeFqdn/api/v1/tasks/$taskId"
+    $taskUri = "https://$ServicesRuntimeFqdn/api/v1/tasks/$taskId"
     $taskStatus = "Running"
     Do {
         Start-Sleep -Seconds $PollIntervalSeconds
@@ -1252,10 +1296,10 @@ Function Restore-VcfmsBackup {
                     $elapsed = " (running: $(Format-TimeSpanElapsedColons -Span ([datetime]::UtcNow - $start)))"
                 }
             }
-            LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Status: $taskStatus$elapsed"
+            LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Status: $taskStatus$elapsed"
         } catch {
-            LogMessage -type WARNING -message "[$ServiceRuntimeFqdn] Error polling task (will retry): $($_.Exception.Message)"
-            $newToken = Get-VcfmsServicesRuntimeToken -ServiceRuntimeFqdn $ServiceRuntimeFqdn -Username $ServiceRuntimeUsername -Password $ServiceRuntimePassword
+            LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Error polling task (will retry): $($_.Exception.Message)"
+            $newToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
             if ($newToken) {
                 $headers["Authorization"] = "Bearer $newToken"
             }
@@ -1263,17 +1307,19 @@ Function Restore-VcfmsBackup {
     } While ($taskStatus -in @("IN_PROGRESS", "IN PROGRESS", "PENDING", "RUNNING", "RESTORING", "Running", "Pending", "Queued"))
 
     if ($taskStatus -in @("SUCCESSFUL", "SUCCESS", "COMPLETED", "Succeeded")) {
-        LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Restore completed successfully"
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Restore completed successfully"
     } else {
-        LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Restore ended with status: $taskStatus"
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Restore ended with status: $taskStatus"
         if ($taskResponse.messages) {
             foreach ($msg in $taskResponse.messages) {
-                LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] $msg"
+                LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] $msg"
             }
         }
     }
 
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $(((Get-Date) - $functionStartTime).ToString('hh\:mm\:ss'))"
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
 }
 
 Function Get-VcfmsFleetLCMToken {
@@ -1362,7 +1408,8 @@ Function Get-VcfmsComponents {
     )
 
     $jumpboxName = hostname
-    $functionStartTime = Get-Date
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     # Get Fleet LCM token
@@ -1423,7 +1470,9 @@ Function Get-VcfmsComponents {
     Write-Host ""
     $results | Format-Table -AutoSize -Property Id, Type, Fqdn | Out-String | Write-Host
 
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $(((Get-Date) - $functionStartTime).ToString('hh\:mm\:ss'))"
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
 }
 
 Function Watch-VcfmsTask {
@@ -1438,18 +1487,18 @@ Function Watch-VcfmsTask {
     FindRunning - Queries GET /api/v1/tasks to find all currently running (non-terminal) tasks and displays them in a table.
 
     .EXAMPLE
-    $task = Watch-VcfmsTask -ServiceRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServiceRuntimePassword "VMw@re1!VMw@re1!" -TaskId "un56awijhfbudjma4mjin3cjwi"
+    $task = Watch-VcfmsTask -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -TaskId "un56awijhfbudjma4mjin3cjwi"
 
     .EXAMPLE
-    Watch-VcfmsTask -ServiceRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServiceRuntimePassword "VMw@re1!VMw@re1!" -FindRunning
+    Watch-VcfmsTask -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -FindRunning
 
-    .PARAMETER ServiceRuntimeFqdn
+    .PARAMETER ServicesRuntimeFqdn
     FQDN of the VCFMS Services Runtime instance.
 
-    .PARAMETER ServiceRuntimePassword
+    .PARAMETER ServicesRuntimePassword
     Password for the Services Runtime admin user.
 
-    .PARAMETER ServiceRuntimeUsername
+    .PARAMETER ServicesRuntimeUsername
     Username for the Services Runtime token. Default is "admin@vsp.local".
 
     .PARAMETER TaskId
@@ -1465,15 +1514,15 @@ Function Watch-VcfmsTask {
     Param(
         [Parameter(Mandatory = $true, ParameterSetName = "Monitor")]
         [Parameter(Mandatory = $true, ParameterSetName = "FindRunning")]
-        [String] $ServiceRuntimeFqdn,
+        [String] $ServicesRuntimeFqdn,
 
         [Parameter(Mandatory = $true, ParameterSetName = "Monitor")]
         [Parameter(Mandatory = $true, ParameterSetName = "FindRunning")]
-        [String] $ServiceRuntimePassword,
+        [String] $ServicesRuntimePassword,
 
         [Parameter(Mandatory = $false, ParameterSetName = "Monitor")]
         [Parameter(Mandatory = $false, ParameterSetName = "FindRunning")]
-        [String] $ServiceRuntimeUsername = "admin@vsp.local",
+        [String] $ServicesRuntimeUsername = "admin@vsp.local",
 
         [Parameter(Mandatory = $true, ParameterSetName = "Monitor")]
         [String] $TaskId,
@@ -1488,7 +1537,7 @@ Function Watch-VcfmsTask {
     $jumpboxName = hostname
     $terminalStates = @("COMPLETED", "FAILED", "CANCELLED", "ERROR", "SUCCESS", "SUCCESSFUL", "Succeeded", "Failed")
 
-    $srToken = Get-VcfmsServicesRuntimeToken -ServiceRuntimeFqdn $ServiceRuntimeFqdn -Username $ServiceRuntimeUsername -Password $ServiceRuntimePassword
+    $srToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
     if (-not $srToken) {
         LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain Services Runtime token. Aborting."
         return
@@ -1501,26 +1550,26 @@ Function Watch-VcfmsTask {
 
     # --- FindRunning mode: list all non-terminal tasks ---
     if ($PSCmdlet.ParameterSetName -eq "FindRunning") {
-        $tasksUri = "https://$ServiceRuntimeFqdn/api/v1/tasks"
-        LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Querying all tasks"
+        $tasksUri = "https://$ServicesRuntimeFqdn/api/v1/tasks"
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Querying all tasks"
 
         try {
             $response = Invoke-RestMethod -Uri $tasksUri -Method GET -Headers $headers -SkipCertificateCheck
         } catch {
-            LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Failed to retrieve tasks: $($_.Exception.Message)"
+            LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Failed to retrieve tasks: $($_.Exception.Message)"
             return
         }
 
         $allTasks = $response.tasks
         if (-not $allTasks -or ($allTasks | Measure-Object).Count -eq 0) {
-            LogMessage -type INFO -message "[$ServiceRuntimeFqdn] No tasks found"
+            LogMessage -type INFO -message "[$ServicesRuntimeFqdn] No tasks found"
             return
         }
 
         $runningTasks = $allTasks | Where-Object { $_.status -notin $terminalStates }
 
         if (-not $runningTasks -or ($runningTasks | Measure-Object).Count -eq 0) {
-            LogMessage -type INFO -message "[$ServiceRuntimeFqdn] No running tasks found"
+            LogMessage -type INFO -message "[$ServicesRuntimeFqdn] No running tasks found"
             return
         }
 
@@ -1545,16 +1594,16 @@ Function Watch-VcfmsTask {
             }
         }
 
-        LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Found $($results.Count) running task(s)"
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Found $($results.Count) running task(s)"
         Write-Host ""
         $results | Format-Table -AutoSize | Out-String | Write-Host
         return
     }
 
     # --- Monitor mode: poll a specific task ---
-    $taskUri = "https://$ServiceRuntimeFqdn/api/v1/tasks/$TaskId"
+    $taskUri = "https://$ServicesRuntimeFqdn/api/v1/tasks/$TaskId"
 
-    LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Monitoring task $TaskId (polling every ${PollIntervalSeconds}s)"
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Monitoring task $TaskId (polling every ${PollIntervalSeconds}s)"
 
     Do {
         Start-Sleep -Seconds $PollIntervalSeconds
@@ -1574,10 +1623,10 @@ Function Watch-VcfmsTask {
                     $elapsed = " (running: $(Format-TimeSpanElapsedColons -Span ([datetime]::UtcNow - $start)))"
                 }
             }
-            LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Status: $taskStatus$elapsed"
+            LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Status: $taskStatus$elapsed"
         } catch {
-            LogMessage -type WARNING -message "[$ServiceRuntimeFqdn] Error polling task (will retry): $($_.Exception.Message)"
-            $newToken = Get-VcfmsServicesRuntimeToken -ServiceRuntimeFqdn $ServiceRuntimeFqdn -Username $ServiceRuntimeUsername -Password $ServiceRuntimePassword
+            LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Error polling task (will retry): $($_.Exception.Message)"
+            $newToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
             if ($newToken) {
                 $headers["Authorization"] = "Bearer $newToken"
             }
@@ -1586,12 +1635,12 @@ Function Watch-VcfmsTask {
     } While ($taskStatus -notin $terminalStates)
 
     if ($taskStatus -in @("COMPLETED", "SUCCESS", "SUCCESSFUL", "Succeeded")) {
-        LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Task $TaskId completed successfully"
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Task $TaskId completed successfully"
     } else {
-        LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Task $TaskId ended with status: $taskStatus"
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Task $TaskId ended with status: $taskStatus"
         if ($taskResponse.messages) {
             foreach ($msg in $taskResponse.messages) {
-                LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] $msg"
+                LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] $msg"
             }
         }
     }
@@ -1608,15 +1657,15 @@ Function Stop-VcfmsTask {
     The Stop-VcfmsTask cmdlet sends a cancel request to a Services Runtime task via POST /api/v1/tasks/{taskId}?action=cancel.
 
     .EXAMPLE
-    Stop-VcfmsTask -ServiceRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServiceRuntimePassword "VMw@re1!VMw@re1!" -TaskId "2gvic5inrfauxgcnb6askblveu"
+    Stop-VcfmsTask -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -TaskId "2gvic5inrfauxgcnb6askblveu"
 
-    .PARAMETER ServiceRuntimeFqdn
+    .PARAMETER ServicesRuntimeFqdn
     FQDN of the VCFMS Services Runtime instance.
 
-    .PARAMETER ServiceRuntimePassword
+    .PARAMETER ServicesRuntimePassword
     Password for the Services Runtime admin user.
 
-    .PARAMETER ServiceRuntimeUsername
+    .PARAMETER ServicesRuntimeUsername
     Username for the Services Runtime token. Default is "admin@vsp.local".
 
     .PARAMETER TaskId
@@ -1627,9 +1676,9 @@ Function Stop-VcfmsTask {
     #>
 
     Param(
-        [Parameter(Mandatory = $true)][String] $ServiceRuntimeFqdn,
-        [Parameter(Mandatory = $true)][String] $ServiceRuntimePassword,
-        [Parameter(Mandatory = $false)][String] $ServiceRuntimeUsername = "admin@vsp.local",
+        [Parameter(Mandatory = $true)][String] $ServicesRuntimeFqdn,
+        [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
+        [Parameter(Mandatory = $false)][String] $ServicesRuntimeUsername = "admin@vsp.local",
         [Parameter(Mandatory = $true)][String] $TaskId,
         [Parameter(Mandatory = $false)][Int] $PollIntervalSeconds = 10
     )
@@ -1637,7 +1686,7 @@ Function Stop-VcfmsTask {
     $jumpboxName = hostname
     $terminalStates = @("COMPLETED", "FAILED", "CANCELLED", "ERROR", "SUCCESS", "SUCCESSFUL", "Succeeded", "Failed", "Cancelled")
 
-    $srToken = Get-VcfmsServicesRuntimeToken -ServiceRuntimeFqdn $ServiceRuntimeFqdn -Username $ServiceRuntimeUsername -Password $ServiceRuntimePassword
+    $srToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
     if (-not $srToken) {
         LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain Services Runtime token. Aborting."
         return
@@ -1648,38 +1697,38 @@ Function Stop-VcfmsTask {
         "Accept"        = "application/json"
     }
 
-    $cancelUri = "https://$ServiceRuntimeFqdn/api/v1/tasks/${TaskId}?action=cancel"
-    LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Cancelling task $TaskId"
+    $cancelUri = "https://$ServicesRuntimeFqdn/api/v1/tasks/${TaskId}?action=cancel"
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Cancelling task $TaskId"
 
     try {
         $response = Invoke-RestMethod -Uri $cancelUri -Method POST -Headers $headers -SkipCertificateCheck
-        LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Task $TaskId cancel request submitted"
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Task $TaskId cancel request submitted"
     } catch {
-        LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Failed to cancel task $TaskId : $($_.Exception.Message)"
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Failed to cancel task $TaskId : $($_.Exception.Message)"
         if ($_.Exception.Response) {
             try {
                 $errorStream = $_.Exception.Response.GetResponseStream()
                 $reader = New-Object System.IO.StreamReader($errorStream)
                 $errorBody = $reader.ReadToEnd()
-                LogMessage -type ERROR -message "[$ServiceRuntimeFqdn] Response body: $errorBody"
+                LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Response body: $errorBody"
             } catch {}
         }
         return
     }
 
     # Poll until the task reaches a terminal state
-    LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Polling task status every $PollIntervalSeconds seconds"
-    $taskUri = "https://$ServiceRuntimeFqdn/api/v1/tasks/$TaskId"
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Polling task status every $PollIntervalSeconds seconds"
+    $taskUri = "https://$ServicesRuntimeFqdn/api/v1/tasks/$TaskId"
     $taskStatus = "Cancelling"
     Do {
         Start-Sleep -Seconds $PollIntervalSeconds
         try {
             $taskResponse = Invoke-RestMethod -Uri $taskUri -Method GET -Headers $headers -SkipCertificateCheck
             $taskStatus = $taskResponse.status
-            LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Status: $taskStatus"
+            LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Status: $taskStatus"
         } catch {
-            LogMessage -type WARNING -message "[$ServiceRuntimeFqdn] Error polling task (will retry): $($_.Exception.Message)"
-            $newToken = Get-VcfmsServicesRuntimeToken -ServiceRuntimeFqdn $ServiceRuntimeFqdn -Username $ServiceRuntimeUsername -Password $ServiceRuntimePassword
+            LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Error polling task (will retry): $($_.Exception.Message)"
+            $newToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
             if ($newToken) {
                 $headers["Authorization"] = "Bearer $newToken"
             }
@@ -1687,9 +1736,9 @@ Function Stop-VcfmsTask {
     } While ($taskStatus -notin $terminalStates)
 
     if ($taskStatus -in @("CANCELLED", "Cancelled")) {
-        LogMessage -type INFO -message "[$ServiceRuntimeFqdn] Task $TaskId cancelled successfully"
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Task $TaskId cancelled successfully"
     } else {
-        LogMessage -type WARNING -message "[$ServiceRuntimeFqdn] Task $TaskId ended with status: $taskStatus"
+        LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Task $TaskId ended with status: $taskStatus"
     }
 
     return $taskResponse
@@ -1734,7 +1783,8 @@ Function Remove-VcfmsComponent {
     )
 
     $jumpboxName = hostname
-    $functionStartTime = Get-Date
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
     $terminalStates = @("COMPLETED", "FAILED", "CANCELLED", "ERROR", "SUCCESS", "SUCCESSFUL", "Succeeded", "Failed")
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     LogMessage -type INFO -message "[$jumpboxName] $($ComponentIds.Count) component(s) to delete (serial processing)"
@@ -1843,5 +1893,337 @@ Function Remove-VcfmsComponent {
     Write-Host " Deletion Summary:" -ForegroundColor Cyan
     $results | Format-Table -AutoSize -Property ComponentId, TaskId, Status | Out-String | Write-Host
 
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $(((Get-Date) - $functionStartTime).ToString('hh\:mm\:ss'))"
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+
+Function Set-VcfmsComponentVips {
+    <#
+    .SYNOPSIS
+    Updates the ingress VIPs for a VCFMS component via the Services Runtime apply API.
+
+    .DESCRIPTION
+    The Set-VcfmsComponentVips cmdlet locates the installed component of the specified type via
+    GET /api/v1/components (unless -ComponentId is supplied), then GET /api/v1/components/{id} to
+    resolve the JSON property name under spec.configuration.ingress (it must match the platform — for
+    some stacks this differs from the component type string, e.g. ops_logs vs ops-logs).
+
+    It builds an apply payload with spec.configuration.ingress.<resolvedKey>.vips.ipv4 and
+    POST /api/v1/components/{componentId}?action=apply including an empty options object (same shape
+    as other apply operations in this module).
+
+    Supported component types: vcfa, vidb, ops-logs.
+
+    The function:
+      1. Validates parameters and retrieves a Services Runtime token.
+      2. Resolves the component ID (by type or -ComponentId).
+      3. GETs component detail and resolves the ingress JSON property name.
+      4. Displays the payload for review.
+      5. Prompts "Proceed? (Y/N)" before calling the API (skipped when -Force is set).
+      6. Submits the apply request and polls the task; after success, GETs the component again to verify VIPs.
+
+    Use -DryRun to display the payload and exit without calling the API.
+
+    .EXAMPLE
+    Set-VcfmsComponentVips -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -ComponentType "vcfa" -Vips "10.0.0.5","10.0.0.6"
+
+    .EXAMPLE
+    Set-VcfmsComponentVips -ServicesRuntimeFqdn "lax-sr01.lax.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -ComponentType "vidb" -Vips "10.21.99.23" -DryRun
+
+    .EXAMPLE
+    Set-VcfmsComponentVips -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -ComponentType "ops-logs" -Vips "10.0.0.8","10.0.0.9" -Force
+
+    .PARAMETER ServicesRuntimeFqdn
+    FQDN of the VCFMS Services Runtime instance.
+
+    .PARAMETER ServicesRuntimePassword
+    Password for the Services Runtime admin user.
+
+    .PARAMETER ServicesRuntimeUsername
+    Username for the Services Runtime token. Default is "admin@vsp.local".
+
+    .PARAMETER ComponentType
+    The component type to update. Valid values: vcfa, vidb, ops-logs.
+
+    .PARAMETER Vips
+    Array of 1-3 IPv4 addresses to set as the new ingress VIPs.
+
+    .PARAMETER PollIntervalSeconds
+    Interval in seconds to poll the apply task. Default is 30.
+
+    .PARAMETER DryRun
+    Display the payload and exit without calling the API.
+
+    .PARAMETER Force
+    Skip the interactive confirmation prompt and proceed immediately.
+
+    .PARAMETER ComponentId
+    If set, applies to this component UUID directly instead of resolving by type from GET /api/v1/components.
+    Use when more than one component shares the same type or you already know the correct ID.
+
+    .PARAMETER IngressKey
+    Explicit JSON property name under spec.configuration.ingress (e.g. ops_logs vs ops-logs).
+    If omitted, the name is taken from GET /api/v1/components/{id} so it matches what the platform stores.
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][String] $ServicesRuntimeFqdn,
+        [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
+        [Parameter(Mandatory = $false)][String] $ServicesRuntimeUsername = "admin@vsp.local",
+        [Parameter(Mandatory = $true)][ValidateSet("vcfa", "vidb", "ops-logs")][String] $ComponentType,
+        [Parameter(Mandatory = $true)][ValidateCount(1,3)][String[]] $Vips,
+        [Parameter(Mandatory = $false)][String] $ComponentId,
+        [Parameter(Mandatory = $false)][String] $IngressKey,
+        [Parameter(Mandatory = $false)][Int] $PollIntervalSeconds = 30,
+        [Parameter(Mandatory = $false)][Switch] $DryRun,
+        [Parameter(Mandatory = $false)][Switch] $Force
+    )
+
+    $jumpboxName = hostname
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+    $terminalStates = @(
+        "COMPLETED", "Completed", "COMPLETE", "FAILED", "CANCELLED", "ERROR", "SUCCESS", "SUCCESSFUL",
+        "Succeeded", "Failed"
+    )
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    LogMessage -type INFO -message "[$jumpboxName] Component type : $ComponentType"
+    LogMessage -type INFO -message "[$jumpboxName] New VIPs       : $($Vips -join ', ')"
+
+    # Step 1: Token
+    $srToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
+    if (-not $srToken) {
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Unable to obtain Services Runtime token. Aborting."
+        return
+    }
+    $headers = @{
+        "Authorization" = "Bearer $srToken"
+        "Accept"        = "application/json"
+        "Content-Type"  = "application/json"
+    }
+
+    # Step 2: Resolve component ID
+    if ($ComponentId) {
+        $componentId = $ComponentId.Trim()
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Using supplied component ID: $componentId"
+    } else {
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Looking up component with type '$ComponentType'"
+        try {
+            $componentsResponse = Invoke-RestMethod -Uri "https://$ServicesRuntimeFqdn/api/v1/components" -Method GET -Headers $headers -SkipCertificateCheck
+        } catch {
+            LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Failed to retrieve components: $($_.Exception.Message)"
+            return
+        }
+
+        $matching = @($componentsResponse.components | Where-Object { $_.type -eq $ComponentType })
+        if ($matching.Count -eq 0) {
+            LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] No installed component found with type '$ComponentType'"
+            return
+        }
+        if ($matching.Count -gt 1) {
+            LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Multiple components with type '$ComponentType' ($($matching.Count)); using the first. Pass -ComponentId to select a specific instance."
+        }
+        $component = $matching[0]
+        $componentId = $component.id
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Found component: $componentId (type=$ComponentType)"
+    }
+
+    # Step 3: GET component detail — discover the real ingress property name (may differ from .type, e.g. ops_logs)
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Retrieving component detail for ingress key resolution"
+    try {
+        $compDetail = Invoke-RestMethod -Uri "https://$ServicesRuntimeFqdn/api/v1/components/$componentId" -Method GET -Headers $headers -SkipCertificateCheck
+    } catch {
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] GET /api/v1/components/$componentId failed: $($_.Exception.Message)"
+        return
+    }
+
+    $ingressParent = $compDetail.spec.configuration.ingress
+    $resolvedIngressKey = $null
+    if ($IngressKey) {
+        $resolvedIngressKey = $IngressKey.Trim()
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Using -IngressKey '$resolvedIngressKey'"
+    } elseif (-not $ingressParent) {
+        $resolvedIngressKey = $ComponentType
+        LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] No spec.configuration.ingress in component detail; using type string '$resolvedIngressKey' as JSON key"
+    } else {
+        $propNames = @($ingressParent.PSObject.Properties.Name)
+        if ($propNames -contains $ComponentType) {
+            $resolvedIngressKey = $ComponentType
+        } else {
+            $under = $ComponentType -replace '-', '_'
+            if ($propNames -contains $under) {
+                $resolvedIngressKey = $under
+                LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Ingress key in API is '$resolvedIngressKey' (underscore form); apply will use this key."
+            } elseif ($propNames.Count -eq 1) {
+                $resolvedIngressKey = $propNames[0]
+                LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Ingress uses a single key '$resolvedIngressKey' (component type filter was '$ComponentType')."
+            } else {
+                LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Could not map type '$ComponentType' to an ingress key. Available keys: $($propNames -join ', '). Re-run with -IngressKey."
+                return
+            }
+        }
+    }
+
+    # Force the VIPs into a typed string array so ConvertTo-Json always emits a JSON array.
+    [string[]]$vipsArray = @($Vips | ForEach-Object { $_.Trim() })
+
+    $ingressEntry = [ordered]@{
+        vips = [ordered]@{
+            ipv4 = $vipsArray
+        }
+    }
+    $ingressObject = [ordered]@{}
+    $ingressObject[$resolvedIngressKey] = $ingressEntry
+
+    # Include options like other apply operations (Set-VcfmsSftpBackupSettings); some stacks ignore partial applies without it.
+    $payload = [ordered]@{
+        spec = [ordered]@{
+            configuration = [ordered]@{
+                ingress = $ingressObject
+            }
+        }
+        options = [ordered]@{}
+    }
+    $payloadJson = $payload | ConvertTo-Json -Depth 10 -Compress:$false
+
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Current ingress ($resolvedIngressKey) before apply — fetching VIP list from detail"
+    try {
+        if ($ingressParent -and $resolvedIngressKey) {
+            $currentBlock = $ingressParent.$resolvedIngressKey
+            if ($currentBlock -and $currentBlock.vips.ipv4) {
+                LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Existing ipv4: $($currentBlock.vips.ipv4 -join ', ')"
+            }
+        }
+    } catch {
+        LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Could not read existing VIPs from detail object."
+    }
+
+    Write-Host ""
+    Write-Host " Apply payload:" -ForegroundColor Cyan
+    Write-Host $payloadJson
+    Write-Host ""
+
+    if ($DryRun) {
+        LogMessage -type ADVISORY -message "[$jumpboxName] Dry run — exiting without calling the API."
+        $StopWatch.Stop()
+        $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+        return
+    }
+
+    # Step 4: Confirmation
+    if (-not $Force) {
+        Do {
+            Write-Host " Proceed with VIP update for component $componentId ? (Y/N): " -ForegroundColor Yellow -NoNewline
+            $confirmation = Read-Host
+        } Until ($confirmation -in @("Y", "y", "N", "n"))
+
+        if ($confirmation -in @("N", "n")) {
+            LogMessage -type INFO -message "[$jumpboxName] Operation cancelled by user."
+            return
+        }
+    }
+
+    # Step 5: Refresh token and submit apply
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Submitting apply for component $componentId"
+    $srToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
+    if (-not $srToken) {
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Unable to refresh Services Runtime token. Aborting."
+        return
+    }
+    $headers["Authorization"] = "Bearer $srToken"
+
+    $applyUri = "https://$ServicesRuntimeFqdn/api/v1/components/$componentId`?action=apply"
+    try {
+        $applyResponse = Invoke-RestMethod -Uri $applyUri -Method POST -Headers $headers -Body $payloadJson -SkipCertificateCheck
+    } catch {
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Apply request failed: $($_.Exception.Message)"
+        if ($_.Exception.Response) {
+            try {
+                $errBody = (New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())).ReadToEnd()
+                LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Response body: $errBody"
+            } catch {}
+        }
+        return
+    }
+
+    $taskId = $applyResponse.id
+    if (-not $taskId) {
+        LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Apply accepted but no task ID returned; response:"
+        $applyResponse | ConvertTo-Json -Depth 5 | Write-Host
+        $StopWatch.Stop()
+        $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+        return
+    }
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Apply task created: $taskId"
+
+    # Step 6: Poll task (status falls back to phase — matches shell jq '.status // .phase')
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Polling task $taskId every ${PollIntervalSeconds}s"
+    $elapsed = 0
+    $taskStatus = "UNKNOWN"
+    $taskResponse = $null
+    Do {
+        Start-Sleep -Seconds $PollIntervalSeconds
+        $elapsed += $PollIntervalSeconds
+        try {
+            $srToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
+            if ($srToken) { $headers["Authorization"] = "Bearer $srToken" }
+            $taskResponse = Invoke-RestMethod -Uri "https://$ServicesRuntimeFqdn/api/v1/tasks/$taskId" -Method GET -Headers $headers -SkipCertificateCheck
+            $rawSt = $taskResponse.status
+            $rawPh = $taskResponse.phase
+            if (-not [string]::IsNullOrWhiteSpace([string]$rawSt)) {
+                $taskStatus = [string]$rawSt
+            } elseif (-not [string]::IsNullOrWhiteSpace([string]$rawPh)) {
+                $taskStatus = [string]$rawPh
+            } else {
+                $taskStatus = "UNKNOWN"
+            }
+        } catch {
+            LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Poll error (will retry): $($_.Exception.Message)"
+            $taskStatus = "UNKNOWN"
+        }
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Task $taskId status=$taskStatus (${elapsed}s elapsed)"
+    } While ($taskStatus -notin $terminalStates)
+
+    Write-Host ""
+    $successStates = @("COMPLETED", "Completed", "COMPLETE", "SUCCESS", "SUCCESSFUL", "Succeeded")
+    if ($taskStatus -in $successStates) {
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Apply task reported success (status/phase=$taskStatus)"
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Component : $componentId"
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Requested VIPs : $($Vips -join ', ')"
+
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Verifying desired VIPs in GET /api/v1/components/$componentId"
+        try {
+            $srToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
+            if ($srToken) { $headers["Authorization"] = "Bearer $srToken" }
+            $afterDetail = Invoke-RestMethod -Uri "https://$ServicesRuntimeFqdn/api/v1/components/$componentId" -Method GET -Headers $headers -SkipCertificateCheck
+            $ig = $afterDetail.spec.configuration.ingress
+            $afterBlock = $ig.$resolvedIngressKey
+            if ($afterBlock -and $afterBlock.vips.ipv4) {
+                $actual = @($afterBlock.vips.ipv4 | ForEach-Object { "$_" })
+                $want = @($vipsArray | ForEach-Object { "$_" })
+                $diff = Compare-Object -ReferenceObject ($want | Sort-Object) -DifferenceObject ($actual | Sort-Object)
+                $match = ($null -eq $diff)
+                LogMessage -type INFO -message "[$ServicesRuntimeFqdn] API reports ingress.$resolvedIngressKey.vips.ipv4 = $($actual -join ', ')"
+                if (-not $match) {
+                    LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] VIPs in API still do not match requested values. The apply task succeeded but configuration was not updated (check ingress key, platform logs, or merge a full spec)."
+                }
+            } else {
+                LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Could not read spec.configuration.ingress.$resolvedIngressKey.vips.ipv4 after apply; verify manually in the UI or API."
+            }
+        } catch {
+            LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Post-apply verification GET failed: $($_.Exception.Message)"
+        }
+    } else {
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] VIP update ended with status: $taskStatus"
+        if ($taskResponse -and $taskResponse.description.localizedMessage) {
+            LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] $($taskResponse.description.localizedMessage)"
+        }
+    }
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
 }
