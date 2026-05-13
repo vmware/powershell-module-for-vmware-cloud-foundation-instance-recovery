@@ -5956,6 +5956,7 @@ Function Remove-SddcManagerVspClusterEntry {
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
     return $vspClusterId
 }
+Export-ModuleMember -Function Remove-SddcManagerVspClusterEntry
 
 Function Get-SddcManagerToken {
     <#
@@ -6289,6 +6290,7 @@ Function New-ServicesRuntime {
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
     return $taskResponse
 }
+Export-ModuleMember -Function New-ServicesRuntime
 
 Function Get-VcfmsServicesRuntimeToken {
     <#
@@ -6494,6 +6496,7 @@ Function Add-VcfmsTrustedCertificate {
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
     return $taskResponse
 }
+Export-ModuleMember -Function Add-VcfmsTrustedCertificate
 
 Function Set-VcfmsSftpBackupSettings {
     <#
@@ -6700,6 +6703,7 @@ Function Set-VcfmsSftpBackupSettings {
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
     return $taskResponse
 }
+Export-ModuleMember -Function Set-VcfmsSftpBackupSettings
 
 Function Get-VcfmsBackups {
     <#
@@ -6871,6 +6875,7 @@ Function Get-VcfmsBackups {
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
 }
+Export-ModuleMember -Function Get-VcfmsBackups
 
 Function Restore-VcfmsBackup {
     <#
@@ -7076,6 +7081,7 @@ Function Restore-VcfmsBackup {
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
 }
+Export-ModuleMember -Function Restore-VcfmsBackup
 
 Function Get-VcfmsFleetLCMToken {
     <#
@@ -7229,6 +7235,7 @@ Function Get-VcfmsComponents {
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
 }
+Export-ModuleMember -Function Get-VcfmsComponents
 
 Function Watch-VcfmsTask {
     <#
@@ -7498,6 +7505,7 @@ Function Stop-VcfmsTask {
 
     return $taskResponse
 }
+Export-ModuleMember -Function Stop-VcfmsTask
 
 Function Remove-VcfmsComponent {
     <#
@@ -7652,6 +7660,7 @@ Function Remove-VcfmsComponent {
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
 }
+Export-ModuleMember -Function Remove-VcfmsComponent
 
 Function Set-VcfmsComponentVips {
     <#
@@ -7982,5 +7991,6 @@ Function Set-VcfmsComponentVips {
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
 }
+Export-ModuleMember -Function Set-VcfmsComponentVips
 
 #EndRegion Services Runtime
