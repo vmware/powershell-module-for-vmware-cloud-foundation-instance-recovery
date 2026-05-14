@@ -1332,6 +1332,151 @@ Function Update-ExtractedSDDCData {
 }
 Export-ModuleMember -Function Update-ExtractedSDDCData
 
+Function Update-ExtractedSDDCDataWithSupervisorDetails {
+    <#
+    .SYNOPSIS
+    Updates extracted SDDC Data JSON file with Supervisor Cluster details from a restored vCenter.
+
+    .DESCRIPTION
+    The Update-ExtractedSDDCDataWithSupervisorDetails cmdlet queries the restored vCenter for Supervisor Clusters associated with the workload domain matching the provided vCenter FQDN, determines the associated content library and its backing datastore details, and stores this data in a new 'supervisor' child property of that workload domain in the extracted SDDC data JSON file.
+
+    .EXAMPLE
+    Update-ExtractedSDDCDataWithSupervisorDetails -extractedSDDCDataFile ".\extracted-sddc-data.json" -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io"
+
+    .PARAMETER extractedSDDCDataFile
+    Relative or absolute path to the extracted-sddc-data.json file
+
+    .PARAMETER vCenterFQDN
+    FQDN of the restored vCenter to query
+    #>
+
+    Param(
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
+        [Parameter (Mandatory = $true)][String] $vCenterFQDN
+    )
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+
+    LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
+    $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
+    $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-Json
+
+    # Locate the workload domain for the provided vCenter FQDN
+    $workloadDomain = $extractedSddcData.workloadDomains | Where-Object { $_.vcenterDetails.fqdn -eq $vCenterFQDN }
+    if (-not $workloadDomain) {
+        LogMessage -type ERROR -message "[$jumpboxName] Could not find a workload domain with vCenter FQDN '$vCenterFQDN' in extracted data"
+        return
+    }
+    LogMessage -type INFO -message "[$vCenterFQDN] Processing workload domain '$($workloadDomain.domainName)'"
+
+    # Derive credentials from extracted data using the same method as Update-ExtractedSDDCData
+    $vCenterAdmin = ($extractedSddcData.passwords | Where-Object { ($_.credentialType -eq "SSO") -and ($_.entityName -eq $vCenterFQDN) -and ($_.entityType -eq "PSC") }).username
+    $vCenterAdminPassword = ($extractedSddcData.passwords | Where-Object { ($_.credentialType -eq "SSO") -and ($_.entityName -eq $vCenterFQDN) -and ($_.entityType -eq "PSC") }).password
+
+    # Connect CIS and PowerCLI for all queries
+    LogMessage -type INFO -message "[$vCenterFQDN] Connecting to CIS and vCenter"
+    $cisConnection = Connect-CisServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword
+    $supervisorService    = Get-CisService 'com.vmware.vcenter.namespace_management.clusters'
+    $contentLibraryService = Get-CisService 'com.vmware.content.library'
+    $viConnection = Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword
+
+    # Retrieve all enabled supervisor clusters via CIS
+    LogMessage -type INFO -message "[$vCenterFQDN] Querying supervisor clusters"
+    $supervisorSummaries = $supervisorService.list()
+
+    $supervisorsArray = @()
+    Foreach ($supervisorSummary in $supervisorSummaries) {
+        $supervisorId   = $supervisorSummary.cluster
+        $supervisorName = $supervisorSummary.cluster_name
+
+        # Collect all vSphere clusters in this workload domain that match this supervisor by name
+        $associatedClusters = $workloadDomain.vsphereClusterDetails | Where-Object { $_.name -eq $supervisorName }
+        if (-not $associatedClusters) {
+            continue
+        }
+        LogMessage -type INFO -message "[$vCenterFQDN] Found supervisor '$supervisorName'"
+
+        # Get full supervisor detail
+        $supervisor = $supervisorService.get($supervisorId)
+
+        # Build the associated clusters array using the SDDC Manager cluster details
+        $clusterArray = @()
+        Foreach ($cluster in $associatedClusters) {
+            $clusterEntry = New-Object -TypeName PSObject
+            $clusterEntry | Add-Member -NotePropertyName 'id'       -NotePropertyValue $cluster.id
+            $clusterEntry | Add-Member -NotePropertyName 'name'     -NotePropertyValue $cluster.name
+            $clusterEntry | Add-Member -NotePropertyName 'moRef'    -NotePropertyValue $supervisorId
+            $clusterArray += $clusterEntry
+        }
+
+        # Resolve content library and its datastore backing
+        $contentLibraryId = $supervisor.default_kubernetes_service_content_library
+        $contentLibraryDetail = $null
+        if (-not $contentLibraryId) {
+            LogMessage -type WARNING -message "[$vCenterFQDN] Supervisor '$supervisorName' has no associated content library"
+        } else {
+            $library = $contentLibraryService.get($contentLibraryId)
+            $contentLibraryName = $library.name
+            LogMessage -type INFO -message "[$vCenterFQDN] Content library: '$contentLibraryName'"
+
+            # Resolve datastore backing — may be DATASTORE (vSphere) or OTHER (NFS)
+            $datastoreBacking = $library.storage_backings | Select-Object -First 1
+            $datastoreDetail = New-Object -TypeName PSObject
+
+            if ($datastoreBacking.type -eq 'DATASTORE') {
+                $datastoreMoRef = $datastoreBacking.datastore_id
+                $datastore = Get-Datastore | Where-Object { $_.Id -eq $datastoreMoRef } | Select-Object -First 1
+                $datastoreDetail | Add-Member -NotePropertyName 'type'       -NotePropertyValue $datastore.Type
+                $datastoreDetail | Add-Member -NotePropertyName 'name'       -NotePropertyValue $datastore.Name
+                $datastoreDetail | Add-Member -NotePropertyName 'moRef'      -NotePropertyValue $datastoreMoRef
+                $datastoreDetail | Add-Member -NotePropertyName 'server'     -NotePropertyValue $null
+                $datastoreDetail | Add-Member -NotePropertyName 'mountPoint' -NotePropertyValue $null
+                LogMessage -type INFO -message "[$vCenterFQDN] Datastore backing: '$($datastore.Name)' (Type: $($datastore.Type))"
+            } else {
+                # OTHER type — NFS or similar, parse server and mount point from storage_url
+                $storageUrl = $datastoreBacking.storage_url
+                $uri = [System.Uri]$storageUrl
+                $datastoreDetail | Add-Member -NotePropertyName 'type'       -NotePropertyValue $datastoreBacking.type
+                $datastoreDetail | Add-Member -NotePropertyName 'name'       -NotePropertyValue $null
+                $datastoreDetail | Add-Member -NotePropertyName 'moRef'      -NotePropertyValue $null
+                $datastoreDetail | Add-Member -NotePropertyName 'server'     -NotePropertyValue $uri.Host
+                $datastoreDetail | Add-Member -NotePropertyName 'mountPoint' -NotePropertyValue $uri.AbsolutePath
+                LogMessage -type INFO -message "[$vCenterFQDN] Datastore backing: $($uri.Host)$($uri.AbsolutePath) (Type: $($datastoreBacking.type))"
+            }
+
+            $contentLibraryDetail = New-Object -TypeName PSObject
+            $contentLibraryDetail | Add-Member -NotePropertyName 'id'        -NotePropertyValue $contentLibraryId
+            $contentLibraryDetail | Add-Member -NotePropertyName 'name'      -NotePropertyValue $contentLibraryName
+            $contentLibraryDetail | Add-Member -NotePropertyName 'datastore' -NotePropertyValue $datastoreDetail
+        }
+
+        $supervisorDetail = New-Object -TypeName PSObject
+        $supervisorDetail | Add-Member -NotePropertyName 'supervisorName'    -NotePropertyValue $supervisorName
+        $supervisorDetail | Add-Member -NotePropertyName 'vsphereClusters'   -NotePropertyValue $clusterArray
+        $supervisorDetail | Add-Member -NotePropertyName 'contentLibrary'    -NotePropertyValue $contentLibraryDetail
+        $supervisorsArray += $supervisorDetail
+    }
+
+    if ($supervisorsArray.Count -gt 0) {
+        LogMessage -type INFO -message "[$vCenterFQDN] Injecting $($supervisorsArray.Count) supervisor(s) into workload domain '$($workloadDomain.domainName)'"
+        $workloadDomain | Add-Member -NotePropertyName 'supervisors' -NotePropertyValue $supervisorsArray -Force
+    } else {
+        LogMessage -type INFO -message "[$vCenterFQDN] No supervisor clusters found for workload domain '$($workloadDomain.domainName)'"
+    }
+
+    Disconnect-CisServer -Server $cisConnection -Confirm:$false
+    Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+
+    LogMessage -type INFO -message "[$jumpboxName] Updating Extracted Data"
+    $extractedSddcData | ConvertTo-Json -Depth 20 | Out-File $extractedDataFilePath
+
+    $StopWatch.Stop()
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($StopWatch.Elapsed.Minutes) minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+Export-ModuleMember -Function Update-ExtractedSDDCDataWithSupervisorDetails
+
 Function New-NSXManagerOvaDeployment {
     <#
     .SYNOPSIS
@@ -8314,7 +8459,7 @@ Function Set-ContentLibraryDatastoreMapping
     $psql = '/opt/vmware/vpostgres/current/bin/psql -d VCDB -U postgres -t -A'
 
     # Query cl_library for the content library's UUID and current serverguid (bytea decoded to readable UUID)
-    LogMessage -type INFO -message "[$vCenterFQDN] Querying VCDB for content library '$contentLibraryName'"
+    LogMessage -type INFO -message "[$vCenterFQDN] Querying VCDB for Content Library '$contentLibraryName'"
     $stream.WriteLine("echo `"SELECT id, encode(serverguid,'escape') FROM vc.cl_library WHERE name='$contentLibraryName';`" | $psql")
     Start-Sleep 3
     $clLibraryOutput = & $cleanSshOutput $stream.Read()
@@ -8322,7 +8467,7 @@ Function Set-ContentLibraryDatastoreMapping
     $libraryId       = $libraryMatches | Select-Object -First 1 -ExpandProperty Value
     $existinvCenterId = $libraryMatches | Select-Object -Last 1 -ExpandProperty Value
     if (-not $libraryId) {
-        LogMessage -type ERROR -message "[$vCenterFQDN] Could not find content library '$contentLibraryName' in VCDB"
+        LogMessage -type ERROR -message "[$vCenterFQDN] Could not find Content Library '$contentLibraryName' in VCDB"
         Remove-SSHSession -SSHSession $sshSession | Out-Null
         return
     }
@@ -8330,16 +8475,16 @@ Function Set-ContentLibraryDatastoreMapping
     LogMessage -type INFO -message "[$vCenterFQDN] vCenter ID: $existinvCenterId"
 
     # Query cl_library_storage for the storage backing UUID (bytea decoded to readable UUID)
-    LogMessage -type INFO -message "[$vCenterFQDN] Querying VCDB for content library storage_id of '$libraryId'"
+    LogMessage -type INFO -message "[$vCenterFQDN] Querying VCDB for Content Library storage_id of '$libraryId'"
     $stream.WriteLine("echo `"select storage_id from cl_library_storage where library_id='$libraryId';`" | $psql")
     Start-Sleep 3
     $storageId = (& $cleanSshOutput $stream.Read() | Select-String -Pattern $guidPattern -AllMatches).Matches | Select-Object -First 1 -ExpandProperty Value
     if (-not $storageId) {
-        LogMessage -type ERROR -message "[$vCenterFQDN] Could not find content library storage_id for '$libraryId' in VCDB"
+        LogMessage -type ERROR -message "[$vCenterFQDN] Could not find Content Library storage_id for '$libraryId' in VCDB"
         Remove-SSHSession -SSHSession $sshSession | Out-Null
         return
     }
-    LogMessage -type INFO -message "[$vCenterFQDN] Content Libary Storage ID: $storageId"
+    LogMessage -type INFO -message "[$vCenterFQDN] Content Library Storage ID: $storageId"
 
     # Query vc.vpx_datastore for the target datastore's MoRef
     LogMessage -type INFO -message "[$vCenterFQDN] Querying VCDB for MoRef of datastore '$datastoreName'"
