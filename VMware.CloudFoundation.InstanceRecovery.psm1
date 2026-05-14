@@ -3073,11 +3073,11 @@ Function Invoke-vCenterRestore {
     Restores a vCenter appliance using the specified backup via REST API
 
     .DESCRIPTION
-    The Invoke-vCenterRestoreUsingAPI restores a vCenter appliance using the VAMI REST API instead of SSH shell streams.
+    The Invoke-vCenterRestore restores a vCenter appliance using the VAMI REST API instead of SSH shell streams.
     This approach provides better output capture and error handling compared to the SSH-based method.
 
     .EXAMPLE
-    Invoke-vCenterRestoreUsingAPI -extractedSDDCDataFile ".\extracted-sddc-data.json" -workloadDomain "sfo-m01" -vCenterBackupPath "10.50.5.63/F$/Backups/vcenter-backup/sn_sfo-m01-vc01.sfo.rainpole.io/M_9.0.0.0_20250922-105520_" -locationtype "SMB" -locationUser "Administrator" -locationPassword "VMw@re1!"
+    Invoke-vCenterRestore -extractedSDDCDataFile ".\extracted-sddc-data.json" -workloadDomain "sfo-m01" -vCenterBackupPath "10.50.5.63/F$/Backups/vcenter-backup/sn_sfo-m01-vc01.sfo.rainpole.io/M_9.0.0.0_20250922-105520_" -locationtype "SMB" -locationUser "Administrator" -locationPassword "VMw@re1!"
 
     .PARAMETER extractedSDDCDataFile
     Relative or absolute to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup) somewhere on the local filesystem
