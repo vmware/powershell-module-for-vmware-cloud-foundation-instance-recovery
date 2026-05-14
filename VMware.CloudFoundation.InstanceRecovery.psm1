@@ -2454,22 +2454,14 @@ Export-ModuleMember -Function Invoke-SddcManagerBundleDownload
 Function Invoke-vCenterRestore {
     <#
     .SYNOPSIS
-    Restores a vCenter appliance using the specified backup
+    Restores a vCenter appliance using the specified backup via REST API
 
     .DESCRIPTION
-    The Invoke-vCenterRestore restores a vCenter appliance using the specified backup
+    The Invoke-vCenterRestore restores a vCenter appliance using the VAMI REST API instead of SSH shell streams.
+    This approach provides better output capture and error handling compared to the SSH-based method.
 
     .EXAMPLE
-    Invoke-vCenterRestore -vCenterFqdn "sfo-m01-vc02.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" "-extractedSDDCDataFile .\extracted-sddc-data.json" -workloadDomain "sfo-m01" -vCenterBackupPath "10.50.5.63/F$/Backups/vcenter-backup/sn_sfo-m01-vc01.sfo.rainpole.io/M_9.0.0.0_20250922-105520_" -locationtype "SMB" -locationUser "Administrator" -locationPassword "VMw@re1!"
-
-    .PARAMETER vCenterFqdn
-    FQDN of the temporary vCenter hosting the deployed vCenter OVA to which the backup should be restored
-
-    .PARAMETER vCenterAdmin
-    Admin user of the temporary vCenter hosting the deployed vCenter OVA to which the backup should be restored
-
-    .PARAMETER vCenterAdminPassword
-    Admin password of the temporary vCenter hosting the deployed vCenter OVA to which the backup should be restored
+    Invoke-vCenterRestore -extractedSDDCDataFile ".\extracted-sddc-data.json" -workloadDomain "sfo-m01" -vCenterBackupPath "10.50.5.63/F$/Backups/vcenter-backup/sn_sfo-m01-vc01.sfo.rainpole.io/M_9.0.0.0_20250922-105520_" -locationtype "SMB" -locationUser "Administrator" -locationPassword "VMw@re1!"
 
     .PARAMETER extractedSDDCDataFile
     Relative or absolute to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup) somewhere on the local filesystem
@@ -2486,161 +2478,436 @@ Function Invoke-vCenterRestore {
     .PARAMETER locationUser
     User account for connecting to the backup location passed with vCenterBackupPath
 
+    .PARAMETER locationPassword
+    Password for connecting to the backup location
+
     .PARAMETER backupPassword
     Password to decrypt an encrypted vCenter Server backup file
     #>
 
     Param(
-        #[Parameter (Mandatory = $true)][String] $vCenterFqdn,
-        #[Parameter (Mandatory = $true)][String] $vCenterAdmin,
-        #[Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
         [Parameter (Mandatory = $true)][String] $workloadDomain,
         [Parameter (Mandatory = $true)][String] $vCenterBackupPath,
-        [Parameter (Mandatory = $true)][String] $locationtype,
+        [Parameter (Mandatory = $true)][ValidateSet("FTP", "FTPS", "HTTP", "HTTPS", "SFTP", "NFS", "SMB")][String] $locationtype,
         [Parameter (Mandatory = $true)][String] $locationUser,
         [Parameter (Mandatory = $true)][String] $locationPassword,
         [Parameter (Mandatory = $false)][String] $backupPassword
     )
+
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
+
     $restoredVcenterFqdn = ($extractedSddcData.workloadDomains | Where-Object { $_.domainName -eq $workloadDomain }).vCenterDetails.fqdn
-    #$restoredVcenterVmName = ($extractedSddcData.workloadDomains | Where-Object { $_.domainName -eq $workloadDomain }).vCenterDetails.vmname
     $restoredvCenterRootPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "VCENTER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "SSH") }).password
     $ssoDomain = ($extractedSddcData.workloadDomains | Where-Object { $_.domainName -eq $workloadDomain }).ssoDomain
-    $ssoAdminUserName = ($extractedSddcData.passwords | Where-Object { $_.entityType -eq "PSC" -and $_.username -like "*$($ssoDomain)" -and $_.domainName -eq $workloadDomain } ).username
-    $ssoAdminUserPassword = ($extractedSddcData.passwords | Where-Object { $_.entityType -eq "PSC" -and $_.username -like "*$($ssoDomain)" -and $_.domainName -eq $workloadDomain}).password
+    $ssoAdminUserName = ($extractedSddcData.passwords | Where-Object { $_.entityType -eq "PSC" -and $_.username -like "*$($ssoDomain)" -and $_.domainName -eq $workloadDomain }).username
+    $ssoAdminUserPassword = ($extractedSddcData.passwords | Where-Object { $_.entityType -eq "PSC" -and $_.username -like "*$($ssoDomain)" -and $_.domainName -eq $workloadDomain }).password
 
-    #Power Up vCenter Appliance
-    <#
-    $vCenterConnection = Connect-VIServer -server $vCenterFqdn -user $vCenterAdmin -password $vCenterAdminPassword
-    LogMessage -type INFO -message "[$restoredVcenterVmName] Powering On VM"
-    Get-VM -Name $restoredVcenterVmName | Start-VM -confirm:$false | Out-Null
-    Disconnect-VIServer * -Force -Confirm:$false -ErrorAction SilentlyContinue
-    #>
-
-    #Wait for successful ping test
+    # Wait for successful ping test
     LogMessage -type WAIT -message "[$restoredVcenterFqdn] Waiting for successful ping test"
     Do {
-        Sleep 10
+        Start-Sleep 10
         $pingTest = Test-Connection -ComputerName $restoredVcenterFqdn -count 1 -ErrorAction SilentlyContinue
     } Until ($pingTest)
 
-    #Form credentials for connecting to vCenter
-    $SecurePassword = ConvertTo-SecureString -String $restoredvCenterRootPassword -AsPlainText -Force
-    $mycreds = New-Object System.Management.Automation.PSCredential ('root', $SecurePassword)
+    # Create authentication header for VAMI API (uses root credentials)
+    $headers = VCFIRCreateHeader -username "root" -password $restoredvCenterRootPassword
 
-    #Create SSH Trusted Host
-    LogMessage -type WAIT -message "[$jumpboxName] Waiting for SSH Connection to $restoredVcenterFqdn to be possible"
-    $inmem = New-SSHMemoryKnownHost
+    # Wait for VAMI API to become available
+    LogMessage -type WAIT -message "[$restoredVcenterFqdn] Waiting for VAMI API to become available"
+    $vamiAvailable = $false
+    $maxAttempts = 60
+    $attempt = 0
     Do {
-        $sshHostKey = Get-SSHHostKey -ComputerName $restoredVcenterFqdn -ErrorAction SilentlyContinue
-        If ($sshHostKey) {
-            $sshTrustedHost = New-SSHTrustedHost -KnownHostStore $inmem -HostName $restoredVcenterFqdn -FingerPrint $sshHostKey.fingerprint
+        $attempt++
+        Try {
+            $uri = "https://$restoredVcenterFqdn`:5480/rest/appliance/health/system"
+            $healthCheck = Invoke-WebRequest -Method GET -URI $uri -ContentType "application/json" -Headers $headers -ErrorAction Stop
+            If ($healthCheck.StatusCode -eq 200) {
+                $vamiAvailable = $true
+                LogMessage -type INFO -message "[$restoredVcenterFqdn] VAMI API is available"
+            }
+        } Catch {
+            If ($attempt % 6 -eq 0) {
+                LogMessage -type INFO -message "[$restoredVcenterFqdn] VAMI API not yet available, continuing to wait... (attempt $attempt of $maxAttempts)"
+            }
+            Start-Sleep 10
         }
-    } Until ($sshTrustedHost)
+    } Until ($vamiAvailable -or $attempt -ge $maxAttempts)
 
-    #Wait for RPM initialization to Finish
-    LogMessage -type WAIT -message "[$restoredVcenterFqdn] Waiting for Appliance to finish RPM initialization"
-    Do {
-        #Note: Looped SSH connections is quite deliberate here as the connections appear to be continually dropped as the process progresses
-        Sleep 10
-        Remove-SSHSession -SSHSession $sshSession | Out-Null
-        Do {
-            $sshSession = New-SSHSession -computername $restoredVcenterFqdn -Credential $mycreds -KnownHost $inmem -erroraction silentlyContinue
-        } Until ($sshSession)
-        $rpmStatus = (Invoke-SSHCommand -SessionId $sshSession.sessionid -Command "api com.vmware.appliance.version1.services.status.get --name cap_init" -erroraction silentlyContinue).output
-    } Until ($rpmStatus -eq "Status: down")
-    LogMessage -type INFO -message "[$restoredVcenterFqdn] RPM initialization Complete"
-
-    #Restore vCenter
-    $stream = New-SSHShellStream -SSHSession $sshSession
-    LogMessage -type INFO -message "[$restoredVcenterFqdn] Submitting Restore Request"
-    $restoreString = "api com.vmware.appliance.recovery.restore.job.create --locationType $locationtype --location $vCenterBackupPath --locationUser $locationUser --locationPassword --ssoAdminUserName $ssoAdminUserName --ssoAdminUserPassword --ignoreWarnings TRUE"
-    If ($backupPassword) {
-        $restoreString = $restoreString += " --backupPassword"
+    If (-not $vamiAvailable) {
+        LogMessage -type ERROR -message "[$restoredVcenterFqdn] VAMI API did not become available after $maxAttempts attempts"
+        Return
     }
-    LogMessage -type INFO -message "[$restoredVcenterFqdn] Restore string: $restoreString"
-    $stream.writeline($restoreString)
-    Start-Sleep 5
-    If ($backupPassword) {
-        $stream.writeline($backupPassword)
-        Start-Sleep 5
-    }
-    $stream.writeline($locationPassword)
-    Start-Sleep 5
-    $stream.writeline($ssoAdminUserPassword)
 
-    Remove-SSHSession -SSHSession $sshSession | Out-Null
-
-    LogMessage -type WAIT -message "[$restoredVcenterFqdn] Waiting for Restore to Start"
+    # Wait for RPM initialization to complete by monitoring /rest/vcenter/deployment
+    LogMessage -type WAIT -message "[$restoredVcenterFqdn] Waiting for appliance to finish RPM initialization"
+    $rpmInitComplete = $false
+    $rpmAttempt = 0
+    $maxRpmAttempts = 120  # 20 minutes max (120 * 10 seconds)
+    $lastProgress = -1
     Do {
-        #Note: Looped SSH connections is quite deliberate here as the connections appear to be continually dropped as the process progresses
-        Start-Sleep 5
-        Remove-SSHSession -SSHSession $sshSession | Out-Null
-        $sshSession = New-SSHSession -computername $restoredVcenterFqdn -Credential $mycreds -KnownHost $inmem -erroraction silentlycontinue
-        If ($sshSession) {
-            $stream = New-SSHShellStream -SSHSession $sshSession
-            $stream.writeline('appliancesh')
-            Start-Sleep 5
-            $stream.writeline($restoredvCenterRootPassword)
-            Start-Sleep 5
-            $response = $stream.Read()
-            Start-Sleep 5
-            $stream.writeline('api com.vmware.appliance.recovery.restore.job.get')
-            Start-Sleep 5
-            $Global:restoreStatus = $stream.Read()
-            $restoreStatusArray = $restoreStatus -split ("\r\n")
-            $state = $restoreStatusArray[2].trim()
+        $rpmAttempt++
+        Try {
+            $deploymentUri = "https://$restoredVcenterFqdn`:5480/rest/vcenter/deployment"
+            $deploymentResponse = Invoke-WebRequest -Method GET -URI $deploymentUri -ContentType "application/json" -Headers $headers -SkipCertificateCheck -ErrorAction Stop
+            $deployment = $deploymentResponse.Content | ConvertFrom-Json
+            
+            # Check if RPM install subtask exists and get its progress
+            $rpmSubtask = $deployment.subtasks | Where-Object { $_.key -eq "rpminstall" }
+            $currentProgress = If ($rpmSubtask) { $rpmSubtask.value.progress.completed } Else { 0 }
+            
+            # RPM initialization is complete when:
+            # 1. State is no longer NOT_INITIALIZED, OR
+            # 2. rpminstall subtask status is SUCCEEDED
+            If ($deployment.state -ne "NOT_INITIALIZED") {
+                $rpmInitComplete = $true
+                LogMessage -type INFO -message "[$restoredVcenterFqdn] RPM initialization complete (state: $($deployment.state))"
+            } ElseIf ($rpmSubtask -and $rpmSubtask.value.status -eq "SUCCEEDED") {
+                $rpmInitComplete = $true
+                LogMessage -type INFO -message "[$restoredVcenterFqdn] RPM initialization complete"
+            } Else {
+                # Log progress updates when percentage changes or periodically
+                If ($currentProgress -ne $lastProgress) {
+                    $lastProgress = $currentProgress
+                    $progressMsg = If ($rpmSubtask) { $rpmSubtask.value.progress.message.default_message } Else { "Initializing..." }
+                    LogMessage -type INFO -message "[$restoredVcenterFqdn] RPM initialization progress: $currentProgress% - $progressMsg"
+                } ElseIf ($rpmAttempt % 12 -eq 0) {
+                    LogMessage -type INFO -message "[$restoredVcenterFqdn] RPM initialization still in progress ($currentProgress%)... (attempt $rpmAttempt of $maxRpmAttempts)"
+                }
+            }
+        } Catch {
+            # API might not be ready yet - just continue waiting
+            If ($rpmAttempt % 12 -eq 0) {
+                LogMessage -type INFO -message "[$restoredVcenterFqdn] Waiting for deployment status... (attempt $rpmAttempt of $maxRpmAttempts)"
+            }
         }
-    } Until ($state -eq "State: INPROGRESS")
-    LogMessage -type INFO -message "[$restoredVcenterFqdn] Restore $state"
+        
+        If (-not $rpmInitComplete) {
+            Start-Sleep 10
+        }
+    } Until ($rpmInitComplete -or $rpmAttempt -ge $maxRpmAttempts)
 
-    Do {
-        #Note: Looped SSH connections is quite deliberate here as the connections appear to be continually dropped as the process progresses
-        Start-Sleep 20
-        Remove-SSHSession -SSHSession $sshSession | Out-Null
-        $sshSession = New-SSHSession -computername $restoredVcenterFqdn -Credential $mycreds -KnownHost $inmem -erroraction silentlycontinue
-        If ($sshSession) {
-            $stream = New-SSHShellStream -SSHSession $sshSession
-            $stream.writeline('appliancesh')
-            Start-Sleep 5
-            $stream.writeline($restoredvCenterRootPassword)
-            Start-Sleep 5
-            $response = $stream.Read()
-            Start-Sleep 5
-            $stream.writeline('api com.vmware.appliance.recovery.restore.job.get')
-            Start-Sleep 5
-            $restoreStatus = $stream.Read()
-            If ($restoreStatus) {
-                $restoreStatusArray = $restoreStatus -split ("\r\n")
-                If ($restoreStatusArray) {
-                    If ($restoreStatusArray[2]) {
-                        $state = $restoreStatusArray[2].trim()
+    If (-not $rpmInitComplete) {
+        LogMessage -type ERROR -message "[$restoredVcenterFqdn] RPM initialization did not complete after $maxRpmAttempts attempts (20 minutes)"
+        Return
+    }
+
+    # Build the restore request body with 'piece' wrapper (required for vSphere 9 /rest/ API)
+    $restoreSpec = @{
+        piece = @{
+            location                = $vCenterBackupPath
+            location_type           = $locationtype
+            location_user           = $locationUser
+            location_password       = $locationPassword
+            sso_admin_user_name     = $ssoAdminUserName
+            sso_admin_user_password = $ssoAdminUserPassword
+            ignore_warnings         = $true
+        }
+    }
+
+    If ($backupPassword) {
+        $restoreSpec.piece.backup_password = $backupPassword
+    }
+
+    $body = $restoreSpec | ConvertTo-Json -Depth 5
+
+    # Helper function to format VAMI API messages (replaces %(0)s, %(1)s placeholders with args)
+    Function Format-VAMIMessage {
+        Param([object]$msg)
+        $formattedMsg = $msg.default_message
+        If ($msg.args -and $msg.args.Count -gt 0) {
+            For ($i = 0; $i -lt $msg.args.Count; $i++) {
+                $formattedMsg = $formattedMsg -replace "%\($i\)s", $msg.args[$i]
+            }
+        }
+        # Remove trailing period to match module style
+        $formattedMsg = $formattedMsg.TrimEnd('.')
+        Return $formattedMsg
+    }
+
+    # vCenter Server Appliance sizing table (vSphere 9)
+    # MemoryGB is the official spec; MemoryReported is what the validation API reports (1GB less)
+    $vCenterSizes = @(
+        @{ Name = "Tiny"; vCPU = 2; MemoryGB = 14; MemoryReported = 13; Hosts = 10; VMs = 100 }
+        @{ Name = "Small"; vCPU = 4; MemoryGB = 21; MemoryReported = 20; Hosts = 100; VMs = 1000 }
+        @{ Name = "Medium"; vCPU = 8; MemoryGB = 30; MemoryReported = 29; Hosts = 400; VMs = 4000 }
+        @{ Name = "Large"; vCPU = 16; MemoryGB = 39; MemoryReported = 38; Hosts = 1000; VMs = 10000 }
+        @{ Name = "X-Large"; vCPU = 24; MemoryGB = 58; MemoryReported = 57; Hosts = 2000; VMs = 35000 }
+    )
+
+    # Helper function to recommend appliance size based on required resources
+    # Note: Validation API reports memory ~1GB less than actual spec, so we match against MemoryReported
+    Function Get-RecommendedApplianceSize {
+        Param(
+            [int]$RequiredCPU,
+            [int]$RequiredMemoryGB
+        )
+        Foreach ($size in $vCenterSizes) {
+            If ($size.vCPU -ge $RequiredCPU -and $size.MemoryReported -ge $RequiredMemoryGB) {
+                Return $size
+            }
+        }
+        Return $vCenterSizes[-1]  # Return X-Large if nothing else fits
+    }
+    
+    # Helper function to identify current appliance size from reported values
+    Function Get-CurrentApplianceSize {
+        Param(
+            [int]$CurrentCPU,
+            [int]$CurrentMemoryGB
+        )
+        Foreach ($size in $vCenterSizes) {
+            If ($size.vCPU -eq $CurrentCPU -and $size.MemoryReported -eq $CurrentMemoryGB) {
+                Return $size
+            }
+        }
+        Return $null
+    }
+
+    # Submit the restore request
+    LogMessage -type INFO -message "[$restoredVcenterFqdn] Submitting restore request via REST API"
+    Try {
+        $restoreUri = "https://$restoredVcenterFqdn`:5480/rest/appliance/recovery/restore/job"
+        $restoreResponse = Invoke-WebRequest -Method POST -URI $restoreUri -ContentType "application/json" -Headers $headers -Body $body -ErrorAction Stop
+        $restoreResult = $restoreResponse.Content | ConvertFrom-Json
+
+        # Analyze the response for errors or successful job start
+        If ($restoreResult.state -eq "FAILED") {
+            # Analyze messages for specific blocking issues
+            $hasSizeIssues = $false
+            $hasBackupPasswordIssue = $false
+            $sizeIssueMessages = @()
+            $requiredCPU = 0
+            $requiredMemoryGB = 0
+            $currentCPU = 0
+            $currentMemoryGB = 0
+
+            Foreach ($msg in $restoreResult.messages) {
+                $formattedMsg = Format-VAMIMessage -msg $msg
+                $msgId = $msg.id
+
+                # Check for size/resource mismatch issues and extract values
+                If ($msgId -match "resize" -or $formattedMsg -match "resize|resource type|memory|cpu|disk") {
+                    $hasSizeIssues = $true
+                    $sizeIssueMessages += $formattedMsg
+
+                    # Extract CPU requirements: "Resize 'cpu' from X to Y"
+                    If ($msg.args -and $msg.args[0] -eq "cpu" -and $msg.args.Count -ge 3) {
+                        $currentCPU = [int]$msg.args[1]
+                        $requiredCPU = [int]$msg.args[2]
                     }
-                    If ($restoreStatusArray[6]) {
-                        $progress = $restoreStatusArray[6].trim()
-                        If (($progress -like "Progress*") -and ($state -eq "State: INPROGRESS")) {
-                            LogMessage -type INFO -message "[$restoredVcenterFqdn] Restore $($progress)%"
-                        }
+                    # Extract Memory requirements: "Resize 'memory' from XGB to YGB"
+                    If ($msg.args -and $msg.args[0] -eq "memory" -and $msg.args.Count -ge 3) {
+                        $currentMemoryGB = [int]$msg.args[1]
+                        $requiredMemoryGB = [int]$msg.args[2]
+                    }
+                }
+                # Check for backup password issues
+                ElseIf ($msgId -match "backup.*password|password.*backup|decrypt" -or $formattedMsg -match "backup.*password|password.*required|decrypt|encrypt") {
+                    $hasBackupPasswordIssue = $true
+                }
+            }
+
+            # Report size issues and exit with recommendation
+            If ($hasSizeIssues) {
+                LogMessage -type ERROR -message "[$restoredVcenterFqdn] Restore failed - appliance size mismatch detected"
+                LogMessage -type ERROR -message "[$restoredVcenterFqdn] The deployed vCenter appliance size does not match the backup source."
+
+                # Provide sizing recommendation if we extracted the required resources
+                If ($requiredCPU -gt 0 -or $requiredMemoryGB -gt 0) {
+                    $currentSize = Get-CurrentApplianceSize -CurrentCPU $currentCPU -CurrentMemoryGB $currentMemoryGB
+                    $recommendedSize = Get-RecommendedApplianceSize -RequiredCPU $requiredCPU -RequiredMemoryGB $requiredMemoryGB
+                    
+                    $currentSizeName = If ($currentSize) { $currentSize.Name } Else { "Unknown" }
+                    
+                    LogMessage -type INFO -message "[$restoredVcenterFqdn] Current appliance size: $currentSizeName ($currentCPU vCPU, $($currentMemoryGB + 1) GB RAM)"
+                    LogMessage -type INFO -message "[$restoredVcenterFqdn] Required appliance size: $($recommendedSize.Name) ($($recommendedSize.vCPU) vCPU, $($recommendedSize.MemoryGB) GB RAM)"
+                    LogMessage -type INFO -message "[$restoredVcenterFqdn] "
+                    LogMessage -type INFO -message "[$restoredVcenterFqdn] vCenter Server Appliance Sizes (vSphere 9):"
+                    LogMessage -type INFO -message "[$restoredVcenterFqdn]   Tiny:     2 vCPU,  14 GB RAM (up to 10 hosts, 100 VMs)"
+                    LogMessage -type INFO -message "[$restoredVcenterFqdn]   Small:    4 vCPU,  21 GB RAM (up to 100 hosts, 1,000 VMs)"
+                    LogMessage -type INFO -message "[$restoredVcenterFqdn]   Medium:   8 vCPU,  30 GB RAM (up to 400 hosts, 4,000 VMs)"
+                    LogMessage -type INFO -message "[$restoredVcenterFqdn]   Large:   16 vCPU,  39 GB RAM (up to 1,000 hosts, 10,000 VMs)"
+                    LogMessage -type INFO -message "[$restoredVcenterFqdn]   X-Large: 24 vCPU,  58 GB RAM (up to 2,000 hosts, 35,000 VMs)"
+                } Else {
+                    Foreach ($sizeMsg in $sizeIssueMessages) {
+                        LogMessage -type ERROR -message "[$restoredVcenterFqdn] $sizeMsg"
+                    }
+                }
+                LogMessage -type ERROR -message "[$restoredVcenterFqdn] Please redeploy the vCenter OVA with the correct size and retry."
+                $StopWatch.Stop()
+                LogMessage -type NOTE -message "[$jumpboxName] Task $($MyInvocation.MyCommand) exited after $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+                Return
+            }
+
+            # Report backup password issues and exit
+            If ($hasBackupPasswordIssue) {
+                LogMessage -type ERROR -message "[$restoredVcenterFqdn] Restore failed - backup password issue detected"
+                If ($backupPassword) {
+                    LogMessage -type ERROR -message "[$restoredVcenterFqdn] A backup password was provided but may be incorrect, or the backup is not encrypted."
+                    LogMessage -type ERROR -message "[$restoredVcenterFqdn] Try running the command again WITHOUT the -backupPassword parameter."
+                } Else {
+                    LogMessage -type ERROR -message "[$restoredVcenterFqdn] The backup appears to be encrypted."
+                    LogMessage -type ERROR -message "[$restoredVcenterFqdn] Try running the command again WITH the -backupPassword parameter."
+                }
+                $StopWatch.Stop()
+                LogMessage -type NOTE -message "[$jumpboxName] Task $($MyInvocation.MyCommand) exited after $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+                Return
+            }
+
+            # Generic failure - show all messages
+            LogMessage -type ERROR -message "[$restoredVcenterFqdn] Restore job failed:"
+            Foreach ($msg in $restoreResult.messages) {
+                $formattedMsg = Format-VAMIMessage -msg $msg
+                LogMessage -type ERROR -message "[$restoredVcenterFqdn] $formattedMsg"
+            }
+            $StopWatch.Stop()
+            LogMessage -type NOTE -message "[$jumpboxName] Task $($MyInvocation.MyCommand) failed after $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+            Return
+        }
+
+        # Job started successfully
+        If ($restoreResult.messages) {
+            Foreach ($msg in $restoreResult.messages) {
+                $formattedMsg = Format-VAMIMessage -msg $msg
+                LogMessage -type INFO -message "[$restoredVcenterFqdn] $formattedMsg"
+            }
+        }
+    } Catch {
+        $errorMessage = $_.Exception.Message
+        Try {
+            $errorBody = $_.ErrorDetails.Message | ConvertFrom-Json
+            If ($errorBody.messages) {
+                $errorMessage = ($errorBody.messages | ForEach-Object { Format-VAMIMessage -msg $_ }) -join "; "
+            }
+        } Catch {}
+        
+        # Check for common error patterns and provide helpful guidance
+        If ($errorMessage -match "list index out of range") {
+            LogMessage -type ERROR -message "[$restoredVcenterFqdn] Restore request failed: $errorMessage"
+            If ($backupPassword) {
+                LogMessage -type ERROR -message "[$restoredVcenterFqdn] A backup password was provided but the backup may not be encrypted."
+                LogMessage -type ERROR -message "[$restoredVcenterFqdn] Try running the command again WITHOUT the -backupPassword parameter."
+            } Else {
+                LogMessage -type ERROR -message "[$restoredVcenterFqdn] The backup may be encrypted and require a password."
+                LogMessage -type ERROR -message "[$restoredVcenterFqdn] Try running the command again WITH the -backupPassword parameter."
+            }
+        } Else {
+            LogMessage -type ERROR -message "[$restoredVcenterFqdn] Failed to submit restore job: $errorMessage"
+        }
+        $StopWatch.Stop()
+        LogMessage -type NOTE -message "[$jumpboxName] Task $($MyInvocation.MyCommand) exited after $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+        Return
+    }
+
+    # Poll the restore job status
+    LogMessage -type WAIT -message "[$restoredVcenterFqdn] Monitoring restore progress"
+    $statusUri = "https://$restoredVcenterFqdn`:5480/rest/appliance/recovery/restore/job"
+    $healthUri = "https://$restoredVcenterFqdn`:5480/rest/appliance/health/system"
+    $lastProgress = -1
+    $consecutiveFailures = 0
+    $maxConsecutiveFailures = 10
+    $lastStatusMessage = ""
+
+    Do {
+        Start-Sleep 20
+
+        Try {
+            $statusResponse = Invoke-WebRequest -Method GET -URI $statusUri -ContentType "application/json" -Headers $headers -ErrorAction Stop
+            $statusResult = $statusResponse.Content | ConvertFrom-Json
+            $consecutiveFailures = 0
+
+            $state = $statusResult.state
+            $progress = $statusResult.progress
+
+            # Get the current status message (if any)
+            $currentStatusMessage = ""
+            If ($statusResult.messages) {
+                Foreach ($msg in $statusResult.messages) {
+                    If ($msg.default_message -and $msg.default_message -ne "") {
+                        $currentStatusMessage = Format-VAMIMessage -msg $msg
+                        Break
                     }
                 }
             }
+
+            # Only log when progress changes or status message changes (skip if SUCCEEDED - final status logged separately)
+            If ($state -ne "SUCCEEDED" -and ($progress -ne $lastProgress -or $currentStatusMessage -ne $lastStatusMessage)) {
+                If ($currentStatusMessage) {
+                    LogMessage -type INFO -message "[$restoredVcenterFqdn] Restore State: $state, Progress: $progress% - $currentStatusMessage"
+                } Else {
+                    LogMessage -type INFO -message "[$restoredVcenterFqdn] Restore State: $state, Progress: $progress%"
+                }
+                $lastProgress = $progress
+                $lastStatusMessage = $currentStatusMessage
+            }
+        } Catch {
+            $consecutiveFailures++
+            If ($consecutiveFailures -ge $maxConsecutiveFailures) {
+                LogMessage -type WARNING -message "[$restoredVcenterFqdn] Lost connection to VAMI API after $maxConsecutiveFailures attempts. This may be normal during restore reboot phase."
+                LogMessage -type WAIT -message "[$restoredVcenterFqdn] Waiting for appliance to come back online after restore..."
+
+                # Wait for appliance to come back online
+                $backOnline = $false
+                $rebootWaitAttempts = 0
+                $maxRebootWaitAttempts = 90
+
+                Do {
+                    $rebootWaitAttempts++
+                    Start-Sleep 20
+
+                    # First check if we can ping
+                    $pingTest = Test-Connection -ComputerName $restoredVcenterFqdn -count 1 -ErrorAction SilentlyContinue
+                    If ($pingTest) {
+                        Try {
+                            $healthCheck = Invoke-WebRequest -Method GET -URI $healthUri -ContentType "application/json" -Headers $headers -ErrorAction Stop
+                            If ($healthCheck.StatusCode -eq 200) {
+                                $backOnline = $true
+                                LogMessage -type INFO -message "[$restoredVcenterFqdn] Appliance is back online"
+                            }
+                        } Catch {
+                            If ($rebootWaitAttempts % 6 -eq 0) {
+                                LogMessage -type INFO -message "[$restoredVcenterFqdn] Appliance responding to ping but VAMI not yet available... (attempt $rebootWaitAttempts of $maxRebootWaitAttempts)"
+                            }
+                        }
+                    }
+                } Until ($backOnline -or $rebootWaitAttempts -ge $maxRebootWaitAttempts)
+
+                If ($backOnline) {
+                    $consecutiveFailures = 0
+                    $state = "CHECKING"
+                    Continue
+                } Else {
+                    LogMessage -type ERROR -message "[$restoredVcenterFqdn] Appliance did not come back online after restore. Please check manually."
+                    Break
+                }
+            } Else {
+                LogMessage -type INFO -message "[$restoredVcenterFqdn] Waiting for VAMI API during service restart (attempt $consecutiveFailures of $maxConsecutiveFailures)"
+            }
         }
-    } Until (($state -eq "State: SUCCEEDED") -or ($state -eq "State: FAILED"))
-    If ($state -eq "State: SUCCEEDED") {
-        LogMessage -type INFO -message "[$restoredVcenterFqdn] Restore finished with $state"
-    } else {
-        LogMessage -type ERROR -message "[$restoredVcenterFqdn] Restore finished with $state"
+    } Until ($state -eq "SUCCEEDED" -or $state -eq "FAILED")
+
+    # Report final status
+    If ($state -eq "SUCCEEDED") {
+        LogMessage -type INFO -message "[$restoredVcenterFqdn] Restore completed successfully"
+    } ElseIf ($state -eq "FAILED") {
+        LogMessage -type ERROR -message "[$restoredVcenterFqdn] Restore failed"
+        If ($statusResult.messages) {
+            Foreach ($msg in $statusResult.messages) {
+                $formattedMsg = Format-VAMIMessage -msg $msg
+                LogMessage -type ERROR -message "[$restoredVcenterFqdn] $formattedMsg"
+            }
+        }
     }
 
-    #Close SSH Session
-    Remove-SSHSession -SSHSession $sshSession | Out-Null
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
