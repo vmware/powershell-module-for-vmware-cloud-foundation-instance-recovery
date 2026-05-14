@@ -2308,16 +2308,16 @@ Function Invoke-SddcManagerBundleDownload {
 
     # Define component names and their variable names
     $components = @(
-        @{ Name = 'VRA'; Var = 'automationBundleId' }
-        @{ Name = 'TELEMETRY_ACCEPTOR'; Var = 'telemetryAcceptor' }
+        #@{ Name = 'VRA'; Var = 'automationBundleId' }
+        #@{ Name = 'TELEMETRY_ACCEPTOR'; Var = 'telemetryAcceptor' }
         @{ Name = 'VSP'; Var = 'vsp' }
-        @{ Name = 'VCF_FLEET_LCM'; Var = 'fleetLcm' }
-        @{ Name = 'DEPOT_SERVICE'; Var = 'depotService' }
-        @{ Name = 'VCF_SDDC_LCM'; Var = 'sddcLcm' }
-        @{ Name = 'VCF_SALT'; Var = 'vcfSalt' }
-        @{ Name = 'VCF_SALT_RAAS'; Var = 'vcfSaltRaas' }
-        @{ Name = 'VIDB'; Var = 'vidb' }
-        @{ Name = 'VCF_SERVICE_VCD_MIGRATION_BACKEND'; Var = 'migrationServiceEngine' }
+        #@{ Name = 'VCF_FLEET_LCM'; Var = 'fleetLcm' }
+        #@{ Name = 'DEPOT_SERVICE'; Var = 'depotService' }
+        #@{ Name = 'VCF_SDDC_LCM'; Var = 'sddcLcm' }
+        #@{ Name = 'VCF_SALT'; Var = 'vcfSalt' }
+        #@{ Name = 'VCF_SALT_RAAS'; Var = 'vcfSaltRaas' }
+        #@{ Name = 'VIDB'; Var = 'vidb' }
+        #@{ Name = 'VCF_SERVICE_VCD_MIGRATION_BACKEND'; Var = 'migrationServiceEngine' }
     )
 
     # Build bundle ID retrieval commands
