@@ -8371,4 +8371,84 @@ Function Set-ContentLibraryDatastoreMapping
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
 }
 Export-ModuleMember -Function Set-ContentLibraryDatastoreMapping
+
+Function Invoke-SupervisorRestore
+{
+    Param(
+        [Parameter (Mandatory = $true)][String] $vCenterFQDN,
+        [Parameter (Mandatory = $true)][String] $vCenterAdmin,
+        [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
+        [Parameter (Mandatory = $true)][String] $vCenterRootPassword,
+        [Parameter (Mandatory = $true)][String] $supervisorName,
+        [Parameter (Mandatory = $true)][String] $backupFilePath
+    )
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+
+    $backupFileName = (Get-Item -Path $backupFilePath).Name
+    $remoteBackupPath = "/storage/supervisorbackup/$backupFileName"
+
+    # Upload backup file to vCenter appliance via SCP
+    LogMessage -type INFO -message "[$vCenterFQDN] Uploading backup file '$backupFileName' to vCenter appliance"
+    $SecurePassword = ConvertTo-SecureString -String $vCenterRootPassword -AsPlainText -Force
+    $rootCreds = New-Object System.Management.Automation.PSCredential ("root", $SecurePassword)
+    Get-SSHTrustedHost | Remove-SSHTrustedHost | Out-Null
+    $inmem = New-SSHMemoryKnownHost
+    New-SSHTrustedHost -KnownHostStore $inmem -HostName $vCenterFQDN -FingerPrint ((Get-SSHHostKey -ComputerName $vCenterFQDN).fingerprint) | Out-Null
+    Set-SCPItem -ComputerName $vCenterFQDN -Credential $rootCreds -Path $backupFilePath -Destination "/storage/supervisorbackup" -KnownHost $inmem
+    LogMessage -type INFO -message "[$vCenterFQDN] Backup file uploaded to '$remoteBackupPath'"
+
+    # Obtain a vCenter REST API session token
+    LogMessage -type INFO -message "[$vCenterFQDN] Obtaining vCenter REST API session token"
+    $base64Creds = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("${vCenterAdmin}:${vCenterAdminPassword}"))
+    $sessionToken = (Invoke-WebRequest -Method POST -Uri "https://$vCenterFQDN/api/session" -Headers @{ Authorization = "Basic $base64Creds" } -SkipCertificateCheck).Content | ConvertFrom-Json
+    $headers = @{ 'vmware-api-session-id' = $sessionToken }
+
+    # Resolve the supervisor name to its ID
+    LogMessage -type INFO -message "[$vCenterFQDN] Resolving supervisor '$supervisorName' to ID"
+    $supervisors = (Invoke-WebRequest -Method GET -Uri "https://$vCenterFQDN/api/vcenter/namespace-management/supervisors/summaries" -Headers $headers -SkipCertificateCheck).Content | ConvertFrom-Json
+    $supervisorId = ($supervisors.items | Where-Object { $_.supervisor_summary.display_name -eq $supervisorName } | Select-Object -First 1).supervisor
+    if (-not $supervisorId) {
+        LogMessage -type ERROR -message "[$vCenterFQDN] Could not find supervisor '$supervisorName'"
+        return
+    }
+    LogMessage -type INFO -message "[$vCenterFQDN] Supervisor ID: $supervisorId"
+
+    # List backup archives and match the uploaded file by location
+    LogMessage -type INFO -message "[$vCenterFQDN] Locating backup archive matching '$backupFileName'"
+    $archives = (Invoke-WebRequest -Method GET -Uri "https://$vCenterFQDN/api/vcenter/namespace-management/supervisors/$supervisorId/recovery/backup/archives" -Headers $headers -SkipCertificateCheck).Content | ConvertFrom-Json
+    $archiveId = ($archives | Where-Object { $_.location -like "*$backupFileName*" } | Select-Object -First 1).archive
+    if (-not $archiveId) {
+        LogMessage -type ERROR -message "[$vCenterFQDN] Could not find backup archive matching '$backupFileName'"
+        return
+    }
+    LogMessage -type INFO -message "[$vCenterFQDN] Archive ID: $archiveId"
+
+    # Initiate the restore job
+    LogMessage -type INFO -message "[$vCenterFQDN] Initiating restore of supervisor '$supervisorName' from archive '$archiveId'"
+    $taskId = (Invoke-WebRequest -Method POST -Uri "https://$vCenterFQDN/api/vcenter/namespace-management/supervisors/$supervisorId/recovery/restore/jobs/$archiveId" -Headers $headers -SkipCertificateCheck).Content | ConvertFrom-Json
+    LogMessage -type INFO -message "[$vCenterFQDN] Restore task ID: $taskId"
+
+    # Monitor the restore task to completion
+    LogMessage -type INFO -message "[$vCenterFQDN] Monitoring restore task '$taskId'"
+    Do {
+        Start-Sleep 30
+        $taskStatus = (Invoke-WebRequest -Method GET -Uri "https://$vCenterFQDN/api/cis/tasks/$taskId" -Headers $headers -SkipCertificateCheck).Content | ConvertFrom-Json
+        LogMessage -type INFO -message "[$vCenterFQDN] Restore task status: $($taskStatus.status)"
+    } While ($taskStatus.status -in @('RUNNING', 'PENDING'))
+
+    if ($taskStatus.status -eq 'SUCCEEDED') {
+        LogMessage -type INFO -message "[$vCenterFQDN] Restore of supervisor '$supervisorName' completed successfully"
+    } else {
+        LogMessage -type ERROR -message "[$vCenterFQDN] Restore task ended with status '$($taskStatus.status)'"
+    }
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+Export-ModuleMember -Function Invoke-SupervisorRestore
+
 #EndRegion Supervisor
