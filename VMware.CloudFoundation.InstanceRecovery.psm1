@@ -8264,3 +8264,111 @@ Function Set-VcfmsComponentVips {
 Export-ModuleMember -Function Set-VcfmsComponentVips
 
 #EndRegion Services Runtime
+
+#Region Supervisor
+Function Set-ContentLibraryDatastoreMapping
+{
+    Param(
+        [Parameter (Mandatory = $true)][String] $vCenterFQDN,
+        [Parameter (Mandatory = $true)][String] $vCenterRootPassword,
+        [Parameter (Mandatory = $true)][String] $contentLibraryName,
+        [Parameter (Mandatory = $true)][String] $datastoreName
+    )
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+
+    # Establish SSH connection to vCenter as root
+    $SecurePassword = ConvertTo-SecureString -String $vCenterRootPassword -AsPlainText -Force
+    $rootCreds = New-Object System.Management.Automation.PSCredential ("root", $SecurePassword)
+    Get-SSHTrustedHost | Remove-SSHTrustedHost | Out-Null
+    $inmem = New-SSHMemoryKnownHost
+    New-SSHTrustedHost -KnownHostStore $inmem -HostName $vCenterFQDN -FingerPrint ((Get-SSHHostKey -ComputerName $vCenterFQDN).fingerprint) | Out-Null
+    Do {
+        $sshSession = New-SSHSession -ComputerName $vCenterFQDN -Credential $rootCreds -KnownHost $inmem
+    } Until ($sshSession)
+
+    # Open shell stream with wide terminal to avoid line-wrapping corruption
+    $stream = New-SSHShellStream -SSHSession $sshSession -TerminalName "xterm" -Columns 250
+    Start-Sleep 1
+    $stream.Read() | Out-Null
+
+    # Escape the VMware appliance shell to bash
+    LogMessage -type INFO -message "[$vCenterFQDN] Escaping appliance shell to bash"
+    $stream.WriteLine("shell")
+    Start-Sleep 2
+    $stream.Read() | Out-Null
+
+    # Filter to strip shell prompts and echo'd commands from SSH stream output
+    $cleanSshOutput = {
+        param([String]$raw)
+        ($raw -split "`n" | Where-Object {
+            $_ -notmatch 'root@' -and
+            $_ -notmatch 'vcf@' -and
+            $_ -notmatch 'echo\s+"' -and
+            $_ -notmatch '^\s*$'
+        }) -join "`n"
+    }
+    $guidPattern = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
+    $psql = '/opt/vmware/vpostgres/current/bin/psql -d VCDB -U postgres -t -A'
+
+    # Query cl_library for the content library's UUID and current serverguid (bytea decoded to readable UUID)
+    LogMessage -type INFO -message "[$vCenterFQDN] Querying VCDB for content library '$contentLibraryName'"
+    $stream.WriteLine("echo `"SELECT id, encode(serverguid,'escape') FROM vc.cl_library WHERE name='$contentLibraryName';`" | $psql")
+    Start-Sleep 3
+    $clLibraryOutput = & $cleanSshOutput $stream.Read()
+    $libraryMatches = ($clLibraryOutput | Select-String -Pattern $guidPattern -AllMatches).Matches
+    $libraryId       = $libraryMatches | Select-Object -First 1 -ExpandProperty Value
+    $existinvCenterId = $libraryMatches | Select-Object -Last 1 -ExpandProperty Value
+    if (-not $libraryId) {
+        LogMessage -type ERROR -message "[$vCenterFQDN] Could not find content library '$contentLibraryName' in VCDB"
+        Remove-SSHSession -SSHSession $sshSession | Out-Null
+        return
+    }
+    LogMessage -type INFO -message "[$vCenterFQDN] Library GUID: $libraryId"
+    LogMessage -type INFO -message "[$vCenterFQDN] vCenter ID: $existinvCenterId"
+
+    # Query cl_library_storage for the storage backing UUID (bytea decoded to readable UUID)
+    LogMessage -type INFO -message "[$vCenterFQDN] Querying VCDB for content library storage_id of '$libraryId'"
+    $stream.WriteLine("echo `"select storage_id from cl_library_storage where library_id='$libraryId';`" | $psql")
+    Start-Sleep 3
+    $storageId = (& $cleanSshOutput $stream.Read() | Select-String -Pattern $guidPattern -AllMatches).Matches | Select-Object -First 1 -ExpandProperty Value
+    if (-not $storageId) {
+        LogMessage -type ERROR -message "[$vCenterFQDN] Could not find content library storage_id for '$libraryId' in VCDB"
+        Remove-SSHSession -SSHSession $sshSession | Out-Null
+        return
+    }
+    LogMessage -type INFO -message "[$vCenterFQDN] Content Libary Storage ID: $storageId"
+
+    # Query vc.vpx_datastore for the target datastore's MoRef
+    LogMessage -type INFO -message "[$vCenterFQDN] Querying VCDB for MoRef of datastore '$datastoreName'"
+    $stream.WriteLine("echo `"SELECT 'datastore-' || id FROM vc.vpx_datastore WHERE name='$datastoreName';`" | $psql")
+    Start-Sleep 3
+    $newDatastoreMoRef = (& $cleanSshOutput $stream.Read() | Select-String -Pattern 'datastore-\d+' -AllMatches).Matches | Select-Object -First 1 -ExpandProperty Value
+    if (-not $newDatastoreMoRef) {
+        LogMessage -type ERROR -message "[$vCenterFQDN] Could not find datastore '$datastoreName' in VCDB"
+        Remove-SSHSession -SSHSession $sshSession | Out-Null
+        return
+    }
+    LogMessage -type INFO -message "[$vCenterFQDN] Datastore MoRef: $newDatastoreMoRef"
+
+    # Build the new storageuri in the format Datastore:<datastoreMoRef>:<serverGuid>
+    $newStorageUri = "Datastore:$newDatastoreMoRef`:$existinvCenterId"
+    LogMessage -type INFO -message "[$vCenterFQDN] New storageuri: $newStorageUri"
+
+    # Update cl_storage storageuri for the storage backing
+    LogMessage -type INFO -message "[$vCenterFQDN] Updating cl_storage storageuri for storage_id '$storageId'"
+    $stream.WriteLine("echo `"UPDATE cl_storage SET storageuri='$newStorageUri' WHERE id='$storageId';`" | $psql")
+    Start-Sleep 3
+    $updateResult = (& $cleanSshOutput $stream.Read()).Trim()
+    LogMessage -type INFO -message "[$vCenterFQDN] cl_storage UPDATE result: $updateResult"
+
+    Remove-SSHSession -SSHSession $sshSession | Out-Null
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+Export-ModuleMember -Function Set-ContentLibraryDatastoreMapping
+#EndRegion Supervisor
