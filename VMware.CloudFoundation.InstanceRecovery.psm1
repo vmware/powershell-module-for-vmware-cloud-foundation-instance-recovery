@@ -2009,15 +2009,15 @@ Function Resolve-PhysicalHostServiceAccounts {
     The Resolve-PhysicalHostServiceAccounts cmdlet creates a new VCF Service Account on each ESXi host and remediates the SDDC Manager inventory
 
     .EXAMPLE
-    Resolve-PhysicalHostServiceAccounts -vCenterFQDN "sfo-w01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-w01-cl01" -svcAccountPassword "VMw@re123!" -sddcManagerFQDN "sfo-vcf01.sfo.rainpole.io" -sddcManagerAdmin "administrator@vsphere.local" -sddcManagerAdminPassword "VMw@re1!"
+    Resolve-PhysicalHostServiceAccounts -targetFQDN "sfo-w01-vc01.sfo.rainpole.io" -targetAdmin "administrator@vsphere.local" -targetAdminPassword "VMw@re1!" -clusterName "sfo-w01-cl01" -svcAccountPassword "VMw@re123!" -sddcManagerFQDN "sfo-vcf01.sfo.rainpole.io" -sddcManagerAdmin "administrator@vsphere.local" -sddcManagerAdminPassword "VMw@re1!"
 
-    .PARAMETER vCenterFQDN
+    .PARAMETER targetFQDN
     FQDN of the vCenter instance hosting the ESXi hosts to be updated
 
-    .PARAMETER vCenterAdmin
+    .PARAMETER targetAdmin
     Admin user of the vCenter instance hosting the ESXi hosts to be updated
 
-    .PARAMETER vCenterAdminPassword
+    .PARAMETER targetAdminPassword
     Admin password for the vCenter instance hosting the ESXi hosts to be updated
 
     .PARAMETER clusterName
@@ -2037,9 +2037,9 @@ Function Resolve-PhysicalHostServiceAccounts {
     #>
 
     Param(
-        [Parameter (Mandatory = $true)][String] $vCenterFQDN,
-        [Parameter (Mandatory = $true)][String] $vCenterAdmin,
-        [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
+        [Parameter (Mandatory = $true)][String] $targetFQDN,
+        [Parameter (Mandatory = $true)][String] $targetAdmin,
+        [Parameter (Mandatory = $true)][String] $targetAdminPassword,
         [Parameter (Mandatory = $true)][String] $clusterName,
         [Parameter (Mandatory = $true)][String] $svcAccountPassword,
         [Parameter (Mandatory = $true)][String] $sddcManagerFQDN,
@@ -2050,7 +2050,7 @@ Function Resolve-PhysicalHostServiceAccounts {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
-    $vCenterConnection = Connect-VIServer -server $vCenterFQDN -username $vCenterAdmin -password $vCenterAdminPassword
+    $vCenterConnection = Connect-VIServer -server $targetFQDN -username $targetAdmin -password $targetAdminPassword
     $clusterHosts = Get-Cluster -name $clusterName | Get-VMHost
     Disconnect-VIServer * -confirm:$false
     $sddcManagerConnection = Connect-VcfSddcManagerServer -server $sddcManagerFQDN -User $sddcManagerAdmin -Password $sddcManagerAdminPassword
@@ -3053,15 +3053,15 @@ Function New-RebuiltVsanDatastore {
     Should only be used if the disk configuration is standardized across the hosts
 
     .EXAMPLE
-    New-RebuiltVsanDatastore -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01" -extractedSDDCDataFile ".\extracted-sddc-data.json"
+    New-RebuiltVsanDatastore -targetFQDN "sfo-m01-vc01.sfo.rainpole.io" -targetAdmin "administrator@vsphere.local" -targetAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01" -extractedSDDCDataFile ".\extracted-sddc-data.json"
 
-    .PARAMETER vCenterFQDN
+    .PARAMETER targetFQDN
     FQDN of the vCenter instance hosting the cluster where the vSAN Datastore will be rebuilt
 
-    .PARAMETER vCenterAdmin
+    .PARAMETER targetAdmin
     Admin user of the vCenter instance hosting the cluster where the vSAN Datastore will be rebuilt
 
-    .PARAMETER vCenterAdminPassword
+    .PARAMETER targetAdminPassword
     Admin password for the vCenter instance hosting the cluster where the vSAN Datastore will be rebuilt
 
     .PARAMETER clusterName
@@ -3072,9 +3072,9 @@ Function New-RebuiltVsanDatastore {
     #>
 
     Param(
-        [Parameter (Mandatory = $true)][String] $vCenterFQDN,
-        [Parameter (Mandatory = $true)][String] $vCenterAdmin,
-        [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
+        [Parameter (Mandatory = $true)][String] $targetFQDN,
+        [Parameter (Mandatory = $true)][String] $targetAdmin,
+        [Parameter (Mandatory = $true)][String] $targetAdminPassword,
         [Parameter (Mandatory = $true)][String] $clusterName,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile
     )
@@ -3088,8 +3088,8 @@ Function New-RebuiltVsanDatastore {
     $datastoreName = ($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).primaryDatastoreName
     $datastoreType = ($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).primaryDatastoreType
 
-    LogMessage -type INFO -message "[$jumpboxName] Connecting to Restored vCenter: $vCenterFQDN"
-    $restoredvCenterConnection = Connect-ViServer $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
+    LogMessage -type INFO -message "[$jumpboxName] Connecting to Restored vCenter: $targetFQDN"
+    $restoredvCenterConnection = Connect-ViServer $targetFQDN -user $targetAdmin -password $targetAdminPassword
     If ($datastoreType -ne "VSAN_ESA") {
         $vmhosts = (Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)
         LogMessage -type INFO -message "[$($vmhosts[0].name)] Using host as reference for Eligible Physical Disks"
@@ -3221,7 +3221,7 @@ Function New-RebuiltVsanDatastore {
             Foreach ($vmHost in $vmHosts) {
                 $scriptBlock = {
                     $moduleFunctions = Import-Module VMware.CloudFoundation.InstanceRecovery -passthru
-                    $restoredvCenterConnection = Connect-ViServer $using:vCenterFQDN -user $using:vCenterAdmin -password $using:vCenterAdminPassword
+                    $restoredvCenterConnection = Connect-ViServer $using:targetFQDN -user $using:targetAdmin -password $using:targetAdminPassword
                     $vmhost = Get-VMHost -name $using:vmhost.name
                     $disks = Get-VMHost -name $using:vmhost.name | Get-VMHostDisk | Where-Object { $_.ScsiLun.VsanStatus -eq 'Eligible' } | Sort-Object -Property @{e = { $_.scsilun.runtimename } }
                     $disksDisplayObject = @()
@@ -3262,7 +3262,7 @@ Function New-RebuiltVsanDatastore {
                     }
                     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
                 }
-                Start-Job -scriptblock $scriptBlock -ArgumentList ($diskGroupNumber, $diskGroupConfiguration, $vmhost, $vCenterFQDN, $vCenterAdmin, $vCenterAdminPassword) | Out-Null
+                Start-Job -scriptblock $scriptBlock -ArgumentList ($diskGroupNumber, $diskGroupConfiguration, $vmhost, $targetFQDN, $targetAdmin, $targetAdminPassword) | Out-Null
             }
             Get-Job | Receive-Job -Wait -AutoRemoveJob
         }
