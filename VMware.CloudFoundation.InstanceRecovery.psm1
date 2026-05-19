@@ -7454,6 +7454,7 @@ Function Restore-VcfmsBackup {
 
     $taskUri = "https://$ServicesRuntimeFqdn/api/v1/tasks/$taskId"
     $taskStatus = "Running"
+    $reportedComponentStatuses = @{}
     Do {
         Start-Sleep -Seconds $PollIntervalSeconds
 
@@ -7468,6 +7469,21 @@ Function Restore-VcfmsBackup {
                 }
             }
             LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Status: $taskStatus$elapsed"
+
+            # Report any new or changed restoreResults entries
+            if ($taskResponse.result -and $taskResponse.result.restoreResults) {
+                foreach ($entry in $taskResponse.result.restoreResults) {
+                    $cid = $entry.componentId
+                    $cStatus = $entry.status
+                    if ($cid -and $cStatus) {
+                        $prev = $reportedComponentStatuses[$cid]
+                        if ($prev -ne $cStatus) {
+                            LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Component $cid status: $cStatus"
+                            $reportedComponentStatuses[$cid] = $cStatus
+                        }
+                    }
+                }
+            }
         } catch {
             LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Error polling task (will retry): $($_.Exception.Message)"
             $newToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
