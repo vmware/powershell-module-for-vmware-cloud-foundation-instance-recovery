@@ -6703,7 +6703,6 @@ Function New-ServicesRuntime {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
-    return $taskResponse
 }
 Export-ModuleMember -Function New-ServicesRuntime
 
@@ -6909,7 +6908,6 @@ Function Add-VcfmsTrustedCertificate {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
-    return $taskResponse
 }
 Export-ModuleMember -Function Add-VcfmsTrustedCertificate
 
@@ -7115,7 +7113,6 @@ Function Set-VcfmsSftpBackupSettings {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
-    return $taskResponse
 }
 Export-ModuleMember -Function Set-VcfmsSftpBackupSettings
 
