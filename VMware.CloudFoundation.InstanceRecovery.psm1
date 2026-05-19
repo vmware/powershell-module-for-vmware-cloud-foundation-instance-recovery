@@ -8509,6 +8509,8 @@ Function Set-ContentLibraryDatastoreMapping
     $updateResult = (& $cleanSshOutput $stream.Read()).Trim()
     LogMessage -type INFO -message "[$vCenterFQDN] cl_storage UPDATE result: $updateResult"
 
+    $stream.WriteLine("service-control --restart vmware-content-library")
+    LogMessage -type INFO -message "[$vCenterFQDN] Restarted Content Library Service"
     Remove-SSHSession -SSHSession $sshSession | Out-Null
 
     $StopWatch.Stop()
