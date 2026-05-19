@@ -2704,11 +2704,11 @@ Function Invoke-vCenterRestore {
             $deploymentUri = "https://$restoredVcenterFqdn`:5480/rest/vcenter/deployment"
             $deploymentResponse = Invoke-WebRequest -Method GET -URI $deploymentUri -ContentType "application/json" -Headers $headers -SkipCertificateCheck -ErrorAction Stop
             $deployment = $deploymentResponse.Content | ConvertFrom-Json
-            
+
             # Check if RPM install subtask exists and get its progress
             $rpmSubtask = $deployment.subtasks | Where-Object { $_.key -eq "rpminstall" }
             $currentProgress = If ($rpmSubtask) { $rpmSubtask.value.progress.completed } Else { 0 }
-            
+
             # RPM initialization is complete when:
             # 1. State is no longer NOT_INITIALIZED, OR
             # 2. rpminstall subtask status is SUCCEEDED
@@ -2734,7 +2734,7 @@ Function Invoke-vCenterRestore {
                 LogMessage -type INFO -message "[$restoredVcenterFqdn] Waiting for deployment status... (attempt $rpmAttempt of $maxRpmAttempts)"
             }
         }
-        
+
         If (-not $rpmInitComplete) {
             Start-Sleep 10
         }
@@ -2802,7 +2802,7 @@ Function Invoke-vCenterRestore {
         }
         Return $vCenterSizes[-1]  # Return X-Large if nothing else fits
     }
-    
+
     # Helper function to identify current appliance size from reported values
     Function Get-CurrentApplianceSize {
         Param(
@@ -2870,9 +2870,9 @@ Function Invoke-vCenterRestore {
                 If ($requiredCPU -gt 0 -or $requiredMemoryGB -gt 0) {
                     $currentSize = Get-CurrentApplianceSize -CurrentCPU $currentCPU -CurrentMemoryGB $currentMemoryGB
                     $recommendedSize = Get-RecommendedApplianceSize -RequiredCPU $requiredCPU -RequiredMemoryGB $requiredMemoryGB
-                    
+
                     $currentSizeName = If ($currentSize) { $currentSize.Name } Else { "Unknown" }
-                    
+
                     LogMessage -type INFO -message "[$restoredVcenterFqdn] Current appliance size: $currentSizeName ($currentCPU vCPU, $($currentMemoryGB + 1) GB RAM)"
                     LogMessage -type INFO -message "[$restoredVcenterFqdn] Required appliance size: $($recommendedSize.Name) ($($recommendedSize.vCPU) vCPU, $($recommendedSize.MemoryGB) GB RAM)"
                     LogMessage -type INFO -message "[$restoredVcenterFqdn] "
@@ -2934,7 +2934,7 @@ Function Invoke-vCenterRestore {
                 $errorMessage = ($errorBody.messages | ForEach-Object { Format-VAMIMessage -msg $_ }) -join "; "
             }
         } Catch {}
-        
+
         # Check for common error patterns and provide helpful guidance
         If ($errorMessage -match "list index out of range") {
             LogMessage -type ERROR -message "[$restoredVcenterFqdn] Restore request failed: $errorMessage"
@@ -4440,7 +4440,7 @@ Function New-RebuiltVdsConfiguration {
                 LogMessage -type INFO -message "[$($vmhost.name)] Removing vSwitches: $($vssToDelete -join(","))"
                 Foreach ($vssName in $vssToDelete) {
                     $vssExists = Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name $vssName -ErrorAction SilentlyContinue
-                    If ($vssExists) {                        
+                    If ($vssExists) {
                         Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name $vssName | Remove-VirtualSwitch -Confirm:$false | Out-Null
                     }
                 }
@@ -7020,7 +7020,6 @@ Function Set-VcfmsSftpBackupSettings {
 
     $headers = @{
         "Authorization" = "Bearer $srToken"
-        "Content-Type"  = "application/json"
     }
 
     # Build the request body
