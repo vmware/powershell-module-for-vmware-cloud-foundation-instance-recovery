@@ -5999,6 +5999,237 @@ Function Invoke-NSXEdgeClusterRecovery {
 }
 Export-ModuleMember -Function Invoke-NSXEdgeClusterRecovery
 
+Function Invoke-NSXEdgeClusterRecoverySelective {
+    <#
+    .SYNOPSIS
+    Selectively redeploys NSX Edges from the provided vSphere Cluster based on user selection
+
+    .DESCRIPTION
+    The Invoke-NSXEdgeClusterRecoverySelective cmdlet discovers all NSX Edges associated with the provided vSphere Cluster, presents a list showing which Edge VMs are present or missing from the vCenter inventory, and allows the user to enter a comma-separated list of IDs to selectively redeploy only the missing Edges
+
+    .EXAMPLE
+    Invoke-NSXEdgeClusterRecoverySelective -nsxManagerFqdn "sfo-m01-nsx01.sfo.rainpole.io" -nsxManagerAdmin "admin" -nsxManagerAdminPassword "VMw@re1!VMw@re1!" -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01" -extractedSDDCDataFile ".\extracted-sddc-data.json"
+
+    .PARAMETER nsxManagerFqdn
+    FQDN of the NSX Manager whose Edges need to be redeployed
+
+    .PARAMETER nsxManagerAdmin
+    Admin user of the NSX Manager whose Edges need to be redeployed
+
+    .PARAMETER nsxManagerAdminPassword
+    Admin Password of the NSX Manager whose Edges need to be redeployed
+
+    .PARAMETER vCenterFQDN
+    FQDN of the vCenter instance that hosts the cluster whose Edges need to be redeployed
+
+    .PARAMETER vCenterAdmin
+    Admin user of the vCenter instance that hosts the cluster whose Edges need to be redeployed
+
+    .PARAMETER vCenterAdminPassword
+    Admin password for the vCenter instance that hosts the cluster whose Edges need to be redeployed
+
+    .PARAMETER clusterName
+    Name of the vSphere cluster instance whose Edges need to be redeployed
+
+    .PARAMETER extractedSDDCDataFile
+    Relative or absolute to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup) somewhere on the local filesystem
+    #>
+
+    Param(
+        [Parameter (Mandatory = $true)][String] $nsxManagerFqdn,
+        [Parameter (Mandatory = $true)][String] $nsxManagerAdmin,
+        [Parameter (Mandatory = $true)][String] $nsxManagerAdminPassword,
+        [Parameter (Mandatory = $true)][String] $vCenterFQDN,
+        [Parameter (Mandatory = $true)][String] $vCenterAdmin,
+        [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
+        [Parameter (Mandatory = $true)][String] $clusterName,
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile
+    )
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+    LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
+    $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
+    $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
+
+    $vcenterConnection = Connect-VIServer -server $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
+
+    $resourcePools = @(Get-Cluster -name $clusterName | Get-ResourcePool | Where-Object { $_.name -ne "Resources" })
+    $cluster = (Get-Cluster -name $clusterName)
+
+    $edgeLocations = @()
+    Foreach ($resourcePool in $resourcePools) {
+        $edgeLocations += [PSCustomObject]@{
+            'Type'  = 'ResourcePool'
+            'Name'  = $resourcePool.Name
+            'moRef' = $resourcePool.extensionData.moref.value
+        }
+    }
+    $edgeLocations += [PSCustomObject]@{
+        'Type'  = 'Cluster'
+        'Name'  = $cluster.Name
+        'moRef' = $cluster.extensionData.moref.value
+    }
+
+    $headers = VCFIRCreateHeader -username $nsxManagerAdmin -password $nsxManagerAdminPassword
+    $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/"
+    $transportNodeContents = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
+
+    # Build a complete list of all edges across all locations
+    $allEdges = @()
+    Foreach ($edgeLocation in $edgeLocations) {
+        $locationEdges = ($transportNodeContents.results | Where-Object { ($_.node_deployment_info.resource_type -eq "EdgeNode") -and ($_.node_deployment_info.deployment_config.vm_deployment_config.compute_id -eq $edgeLocation.MoRef) }) | Sort-Object -Property display_name
+        Foreach ($edge in $locationEdges) {
+            $allEdges += [PSCustomObject]@{
+                'Edge'         = $edge
+                'LocationType' = $edgeLocation.Type
+                'LocationName' = $edgeLocation.Name
+            }
+        }
+    }
+
+    If ($allEdges.Count -eq 0) {
+        LogMessage -type INFO -message "[$nsxManagerFqdn] No Edges found associated with cluster $clusterName"
+        Disconnect-VIServer * -confirm:$false
+        $StopWatch.Stop()
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+        return
+    }
+
+    # Build display object showing presence status of each edge
+    $edgeDisplayObject = @()
+    $edgeDisplayObject += [PSCustomObject]@{
+        'ID'       = "ID"
+        'Location' = "Location"
+        'Edge'     = "Edge Display Name"
+        'Present'  = "VM in vCenter"
+    }
+    $edgeDisplayObject += [PSCustomObject]@{
+        'ID'       = "--"
+        'Location' = "--------------------"
+        'Edge'     = "--------------------"
+        'Present'  = "--------------"
+    }
+    $edgeIndex = 1
+    $indexedEdges = @()
+    Foreach ($edgeEntry in $allEdges) {
+        $vmPresent = Get-VM -Name $edgeEntry.Edge.display_name -ErrorAction SilentlyContinue
+        $presentString = If ($vmPresent) { "Yes" } Else { "No" }
+        $edgeDisplayObject += [PSCustomObject]@{
+            'ID'       = $edgeIndex
+            'Location' = "$($edgeEntry.LocationType): $($edgeEntry.LocationName)"
+            'Edge'     = $edgeEntry.Edge.display_name
+            'Present'  = $presentString
+        }
+        $indexedEdges += [PSCustomObject]@{
+            'ID'          = $edgeIndex
+            'Edge'        = $edgeEntry.Edge
+            'LocationType' = $edgeEntry.LocationType
+            'LocationName' = $edgeEntry.LocationName
+            'VmPresent'   = [bool]$vmPresent
+        }
+        $edgeIndex++
+    }
+
+    Write-Host ""
+    $edgeDisplayObject | Format-Table -Property @{Expression = " " }, ID, Location, Edge, Present -AutoSize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
+    Write-Host ""
+    Write-Host " Enter a comma-separated list of Edge IDs to recover (e.g. 1,3), or C to Cancel: " -ForegroundColor Yellow -NoNewline
+    $userInput = Read-Host
+
+    If ($userInput -match "^[Cc]$") {
+        LogMessage -type INFO -message "[$jumpboxName] Recovery cancelled by user"
+        Disconnect-VIServer * -confirm:$false
+        $StopWatch.Stop()
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+        return
+    }
+
+    $selectedIDs = $userInput -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ -match "^\d+$" } | ForEach-Object { [int]$_ }
+    $selectedEdges = $indexedEdges | Where-Object { $_.ID -in $selectedIDs }
+
+    If ($selectedEdges.Count -eq 0) {
+        LogMessage -type INFO -message "[$jumpboxName] No valid Edge IDs selected. Exiting"
+        Disconnect-VIServer * -confirm:$false
+        $StopWatch.Stop()
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+        return
+    }
+
+    Foreach ($selectedEdge in $selectedEdges) {
+        $edge = $selectedEdge.Edge
+        LogMessage -type INFO -message "[$($edge.display_name)] Getting Placement References"
+        $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($edge.node_id)"
+        $edgeConfig = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
+        $vmDeploymentConfig = $edgeConfig.node_deployment_info.deployment_config.vm_deployment_config
+        $NumCpu = $vmDeploymentConfig.resource_allocation.cpu_count
+        $memoryGB = $vmDeploymentConfig.resource_allocation.memory_allocation_in_mb / 1024
+        $cpuShareLevel = (($vmDeploymentConfig.reservation_info.cpu_reservation.reservation_in_shares -split ("_"))[0]).tolower()
+        $attachedNetworks = $vmDeploymentConfig.data_network_ids
+
+        LogMessage -type INFO -message "[$($edge.display_name)] Preparing to Update Placement References"
+        $portgroup = (($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).vdsdetails.portgroups | Where-Object { $_.transportType -eq 'VM_MANAGEMENT' }).NAME
+        $clusterVdsName = (($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).vdsdetails | Where-Object { $_.portgroups.transportType -eq 'VM_MANAGEMENT' }).dvsName
+        If (!$portgroup) {
+            $portgroup = (($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).vdsdetails.portgroups | Where-Object { $_.transportType -eq 'MANAGEMENT' }).NAME
+            $clusterVdsName = (($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).vdsdetails | Where-Object { $_.portgroups.transportType -eq 'MANAGEMENT' }).dvsName
+        }
+        $datastore = ($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).primaryDatastoreName
+
+        If ($selectedEdge.LocationType -eq "ResourcePool") {
+            New-VM -VMhost (Get-Cluster -name $clusterName | Get-VMHost | Get-Random) -Name $edge.display_name -Datastore $datastore -resourcePool $selectedEdge.LocationName -DiskGB 200 -DiskStorageFormat Thin -MemoryGB $MemoryGB -NumCpu $NumCpu -portgroup $portgroup -GuestID "ubuntu64Guest" -Confirm:$false | Out-Null
+        } else {
+            New-VM -VMhost (Get-Cluster -name $clusterName | Get-VMHost | Get-Random) -Name $edge.display_name -Datastore $datastore -DiskGB 200 -DiskStorageFormat Thin -MemoryGB $MemoryGB -NumCpu $NumCpu -portgroup $portgroup -GuestID "ubuntu64Guest" -Confirm:$false | Out-Null
+        }
+        do {
+            Start-Sleep 1
+        } until (Get-VM -Name $edge.display_name -ErrorAction SilentlyContinue)
+        Get-VM -Name $edge.display_name | Get-VMResourceConfiguration | Set-VMResourceConfiguration -MemReservationGB $memoryGB | Out-Null
+        Get-VM -Name $edge.display_name | Get-VMResourceConfiguration | Set-VMResourceConfiguration -CpuSharesLevel $cpuShareLevel | Out-Null
+        Foreach ($attachedNetwork in $attachedNetworks) {
+            $attachedNetworkPg = Get-VDPortGroup -id ("DistributedVirtualPortgroup-" + $attachedNetwork)
+            Get-VM -Name $edge.display_name | New-NetworkAdapter -portGroup $attachedNetworkPg -StartConnected -Type Vmxnet3 -Confirm:$false | Out-Null
+        }
+        $vmID = (Get-VM -Name $edge.display_name).extensionData.moref.value
+
+        LogMessage -type INFO -message "[$($edge.display_name)] Updating Placement References"
+        $datastoreMoRef = (Get-Datastore -name $datastore).ExtensionData.moref.value
+        $vmDeploymentConfig.storage_id = $datastoreMoRef
+        $nodeUserSettingsObject = New-Object -type psobject
+        $nodeUserSettingsObject | Add-Member -NotePropertyName 'cli_username' -NotePropertyValue 'admin'
+        $nodeUserSettingsObject | Add-Member -NotePropertyName 'audit_username' -NotePropertyValue 'audit'
+        $edgeRefreshObject = New-Object -type psobject
+        $edgeRefreshObject | Add-Member -NotePropertyName 'vm_id' -NotePropertyValue $vmID
+        $edgeRefreshObject | Add-Member -NotePropertyName 'vm_deployment_config' -NotePropertyValue $vmDeploymentConfig
+        $edgeRefreshObject | Add-Member -NotePropertyName 'node_user_settings' -NotePropertyValue $nodeUserSettingsObject
+        $vmDeploymentConfigJson = $edgeRefreshObject | ConvertTo-Json -depth 10
+        $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($edge.node_id)?action=addOrUpdatePlacementReferences"
+        $edgeReConfig = (Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -body $vmDeploymentConfigJson -headers $headers).content | ConvertFrom-Json
+
+        LogMessage -type INFO -message "[$($edge.display_name)] Getting Edge State"
+        $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($edge.node_id)/state"
+        $edgeState = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
+        If ($edgeState.node_deployment_state.state -ne "success") {
+            LogMessage -type INFO -message "[$($edge.display_name)] State is $($edgeState.node_deployment_state.state)"
+            If ($edgeState.node_deployment_state.state -in "MPA_DISCONNECTED", "VM_PLACEMENT_REFRESH_FAILED", "NODE_READY") {
+                LogMessage -type INFO -message "[$($edge.display_name)] Redeploying Edge"
+                $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($edge.node_id)"
+                $edgeResponse = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content
+                $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($edge.node_id)?action=redeploy"
+                $edgeRedeploy = Invoke-WebRequest -Method POST -URI $uri -ContentType application/json -body $edgeResponse -headers $headers
+            } else {
+                LogMessage -type INFO -message "[$($edge.display_name)] Not in a suitable state for redeployment. Please review and retry"
+            }
+        }
+    }
+    LogMessage -type NOTE -message "[$jumpboxName] Selected Edge Redeployments have been initiated. Please monitor in NSX UI for completion"
+    Disconnect-VIServer * -confirm:$false
+    $StopWatch.Stop()
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+}
+Export-ModuleMember -Function Invoke-NSXEdgeClusterRecoverySelective
+
 Function Add-AdditionalNSXManagers {
     <#
     .SYNOPSIS
@@ -8506,8 +8737,9 @@ Function Set-ContentLibraryDatastoreMapping
     # Update cl_storage storageuri for the storage backing
     LogMessage -type INFO -message "[$vCenterFQDN] Updating cl_storage storageuri for storage_id '$storageId'"
     $stream.WriteLine("echo `"UPDATE cl_storage SET storageuri='$newStorageUri' WHERE id='$storageId';`" | $psql")
-    Start-Sleep 3
-    $updateResult = (& $cleanSshOutput $stream.Read()).Trim()
+    Start-Sleep 5
+    $updateRaw = $stream.Read()
+    $updateResult = ($updateRaw -split "`n" | Where-Object { $_ -match '^UPDATE\s+\d+' } | Select-Object -First 1).Trim()
     LogMessage -type INFO -message "[$vCenterFQDN] cl_storage UPDATE result: $updateResult"
 
     $stream.WriteLine("service-control --restart vmware-content-library")
