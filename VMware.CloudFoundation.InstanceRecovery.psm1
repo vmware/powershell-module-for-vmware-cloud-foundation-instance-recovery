@@ -3355,46 +3355,88 @@ Function Add-VMKernelsToHost
         $vsanMask = ((Invoke-VcfGetNetworksOfNetworkPool -id $networkPoolID).elements | ? { $_.type -eq "VSAN" }).Mask
         $vsanMTU = ((Invoke-VcfGetNetworksOfNetworkPool -id $networkPoolID).elements | ? { $_.type -eq "VSAN" }).mtu
         $vsanGW = ((Invoke-VcfGetNetworksOfNetworkPool -id $networkPoolID).elements | ? { $_.type -eq "VSAN" }).gateway
-        LogMessage -type INFO -message "[$vmhost] Creating vMotion vMK"
+        
+        #Get Host Details
+        $esx = Get-VMHost -Name $vmHost
+        $hostVmkernelInfo = $esx | Get-View -Property Name, Config.Network.Vnic | ForEach-Object {
+            $HostName = $_.Name
+            foreach ($Vmk in $_.Config.Network.Vnic) {
+                [PSCustomObject]@{
+                    VMHost        = $HostName
+                    Device        = $Vmk.Device
+                    Portgroup     = $Vmk.Portgroup
+                    IPAddress     = $Vmk.Spec.Ip.IpAddress
+                    SubnetMask    = $Vmk.Spec.Ip.SubnetMask
+                    MacAddress    = $Vmk.Spec.Mac
+                }
+            }
+        }
+
+        #create vmk1 if necessary
         $dvportgroup = Get-VDPortgroup -name $vmotionPG -VDSwitch $vmotionVDSName
-        $vmk1Exists = Get-VMHostNetworkAdapter -VMHost $vmhost -Name "vmk1" -ErrorAction SilentlyContinue
+        $vmk1Exists = $hostVmkernelInfo | Where-Object {$_.device -eq "vmk1"}
         If (!$vmk1Exists) {
-            $vmk = New-VMHostNetworkAdapter -VMHost $vmhost -VirtualSwitch $vmotionVDSName -mtu $vmotionMTU -PortGroup $dvportgroup -ip $vmotionIP -SubnetMask $vmotionMask -NetworkStack (Get-VMHostNetworkStack -vmhost $vmhost | Where-Object { $_.id -eq "vmotion" })
+            LogMessage -type INFO -message "[$vmhost] Creating vMotion vMK"
+            $vmk = New-VMHostNetworkAdapter -VMHost $esx -VirtualSwitch $vmotionVDSName -mtu $vmotionMTU -PortGroup $dvportgroup -ip $vmotionIP -SubnetMask $vmotionMask -NetworkStack (Get-VMHostNetworkStack -vmhost $esx | Where-Object { $_.id -eq "vmotion" })
         }
-        LogMessage -type INFO -message "[$vmhost] Setting vMotion Gateway"
+        else
+        {
+            LogMessage -type INFO -message "[$vmhost] vMotion vMK already present"
+        }
+
+        #create vmk1 gateway if necessary
         $vmkName = 'vmk1'
-        $esx = Get-VMHost -Name $vmHost
         $esxcli = Get-EsxCli -VMHost $esx -V2
         $interface = $esxcli.network.ip.interface.ipv4.get.Invoke(@{interfacename = $vmkName })
-        $interfaceArg = @{
-            netmask       = $interface[0].IPv4Netmask
-            type          = $interface[0].AddressType.ToLower()
-            ipv4          = $interface[0].IPv4Address
-            interfacename = $interface[0].Name
+        If ($interface[0].Gateway -ne $vmotionGW)
+        {
+            LogMessage -type INFO -message "[$vmhost] Setting vMotion Gateway"
+            $interfaceArg = @{
+                netmask       = $interface[0].IPv4Netmask
+                type          = $interface[0].AddressType.ToLower()
+                ipv4          = $interface[0].IPv4Address
+                interfacename = $interface[0].Name
+            }
+            $esxcli.network.ip.interface.ipv4.set.Invoke($interfaceArg) *>$null
+            $esxcli.network.ip.route.ipv4.add.Invoke(@{ netstack = 'vmotion'; network = 'default'; gateway = $vmotionGW }) *>$null
         }
-        $esxcli.network.ip.interface.ipv4.set.Invoke($interfaceArg) *>$null
-        $esxcli.network.ip.route.ipv4.add.Invoke(@{ netstack = 'vmotion'; network = 'default'; gateway = $vmotionGW }) *>$null
+        else
+        {
+            LogMessage -type INFO -message "[$vmhost] vMotion Gateway already configured"
+        }
 
-        LogMessage -type INFO -message "[$vmhost] Creating vSAN vMK"
+        #create vmk2 if necessary
         $dvportgroup = Get-VDPortgroup -name $vsanPG -VDSwitch $vsanVDSName
-        $vmk2Exists = Get-VMHostNetworkAdapter -VMHost $vmhost -Name "vmk2" -ErrorAction SilentlyContinue
+        $vmk2Exists = $hostVmkernelInfo | Where-Object {$_.device -eq "vmk2"}
         If (!$vmk2Exists) {
-            $vmk = New-VMHostNetworkAdapter -VMHost $vmhost -VirtualSwitch $vsanVDSName -mtu $vsanMTU -PortGroup $dvportgroup -ip $vsanIP -SubnetMask $vsanMask -VsanTrafficEnabled:$true
+            LogMessage -type INFO -message "[$vmhost] Creating vSAN vMK"
+            $vmk = New-VMHostNetworkAdapter -VMHost $esx -VirtualSwitch $vsanVDSName -mtu $vsanMTU -PortGroup $dvportgroup -ip $vsanIP -SubnetMask $vsanMask -VsanTrafficEnabled:$true
+        }
+        else
+        {
+            LogMessage -type INFO -message "[$vmhost] vSAN vMK already present"
         }
 
-        LogMessage -type INFO -message "[$vmhost] Setting vSAN Gateway"
+        #create vmk2 gateway if necessary
         $vmkName = 'vmk2'
-        $esx = Get-VMHost -Name $vmHost
         $esxcli = Get-EsxCli -VMHost $esx -V2
         $interface = $esxcli.network.ip.interface.ipv4.get.Invoke(@{interfacename = $vmkName })
-        $interfaceArg = @{
-            netmask       = $interface[0].IPv4Netmask
-            type          = $interface[0].AddressType.ToLower()
-            ipv4          = $interface[0].IPv4Address
-            interfacename = $interface[0].Name
-            gateway       = $vsanGW
+        If ($interface[0].Gateway -ne $vsanGW)
+        {
+            LogMessage -type INFO -message "[$vmhost] Setting vSAN Gateway"
+            $interfaceArg = @{
+                        netmask       = $interface[0].IPv4Netmask
+                        type          = $interface[0].AddressType.ToLower()
+                        ipv4          = $interface[0].IPv4Address
+                        interfacename = $interface[0].Name
+                        gateway       = $vsanGW
+                    }
+                    $esxcli.network.ip.interface.ipv4.set.Invoke($interfaceArg) *>$null
         }
-        $esxcli.network.ip.interface.ipv4.set.Invoke($interfaceArg) *>$null
+        else
+        {
+            LogMessage -type INFO -message "[$vmhost] vSAN Gateway already configured"
+        }
     }
     Disconnect-VcfSddcManagerServer *
     Disconnect-VIServer * -confirm:$false
