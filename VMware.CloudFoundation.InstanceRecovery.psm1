@@ -3320,9 +3320,9 @@ Function Add-VMKernelsToHost
     #>
 
     Param(
-        [Parameter (Mandatory = $true)][String] $vCenterFQDN,
-        [Parameter (Mandatory = $true)][String] $vCenterAdmin,
-        [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
+        [Parameter (Mandatory = $true)][String] $targetFQDN,
+        [Parameter (Mandatory = $true)][String] $targetAdmin,
+        [Parameter (Mandatory = $true)][String] $targetAdminPassword,
         [Parameter (Mandatory = $true)][String] $clusterName,
         [Parameter (Mandatory = $true)][String] $sddcManagerFQDN,
         [Parameter (Mandatory = $true)][String] $sddcManagerAdmin,
@@ -3338,8 +3338,8 @@ Function Add-VMKernelsToHost
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
     $sddcManagerConnection = Connect-VcfSddcManagerServer -server $sddcManagerFQDN -User $sddcManagerAdmin -Password $sddcManagerAdminPassword
 
-    $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
-    $workloadDomain = $extractedSDDCData.workloadDomains | where-object { $_.vCenterDetails.fqdn -eq $VcenterFqdn }
+    $vCenterConnection = connect-viserver $targetFQDN -user $targetAdmin -password $targetAdminPassword
+    $workloadDomain = $extractedSDDCData.workloadDomains | where-object { $_.vCenterDetails.fqdn -eq $targetFQDN }
     $vmHosts = (Get-cluster -name $clusterName | Get-VMHost).Name | Sort-Object
     foreach ($vmhost in $vmHosts) {
         $vmotionPG = ((Invoke-VcfGetVdses -ClusterId ((Invoke-VcfGetClusters).Elements | ? { $_.Name -eq $clusterName }).Id).PortGroups | ? { $_.TransportType -eq "VMOTION" }).Name
