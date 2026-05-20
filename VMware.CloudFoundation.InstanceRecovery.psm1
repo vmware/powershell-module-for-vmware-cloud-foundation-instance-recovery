@@ -8737,10 +8737,19 @@ Function Set-ContentLibraryDatastoreMapping
     # Update cl_storage storageuri for the storage backing
     LogMessage -type INFO -message "[$vCenterFQDN] Updating cl_storage storageuri for storage_id '$storageId'"
     $stream.WriteLine("echo `"UPDATE cl_storage SET storageuri='$newStorageUri' WHERE id='$storageId';`" | $psql")
-    Start-Sleep 5
-    $updateRaw = $stream.Read()
-    $updateResult = ($updateRaw -split "`n" | Where-Object { $_ -match '^UPDATE\s+\d+' } | Select-Object -First 1).Trim()
-    LogMessage -type INFO -message "[$vCenterFQDN] cl_storage UPDATE result: $updateResult"
+    Start-Sleep 3
+    $stream.Read() | Out-Null
+
+    # Verify the update by reading back the new storageuri
+    $stream.WriteLine("echo `"SELECT storageuri FROM cl_storage WHERE id='$storageId';`" | $psql")
+    Start-Sleep 3
+    $verifyOutput = & $cleanSshOutput $stream.Read()
+    $verifiedUri = ($verifyOutput -split "`n" | Where-Object { $_ -match 'Datastore:' } | Select-Object -First 1).Trim()
+    if ($verifiedUri -eq $newStorageUri) {
+        LogMessage -type INFO -message "[$vCenterFQDN] cl_storage UPDATE verified: $verifiedUri"
+    } else {
+        LogMessage -type WARNING -message "[$vCenterFQDN] cl_storage UPDATE could not be verified. Expected: $newStorageUri | Got: $verifiedUri"
+    }
 
     $stream.WriteLine("service-control --restart vmware-content-library")
     LogMessage -type INFO -message "[$vCenterFQDN] Restarted Content Library Service"
