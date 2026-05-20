@@ -3282,7 +3282,8 @@ Function Add-HostsToCluster {
 }
 Export-ModuleMember -Function Add-HostsToCluster
 
-Function Add-VMKernelsToHost {
+Function Add-VMKernelsToHost 
+{
     <#
     .SYNOPSIS
     Adds VMkernels to ESXi hosts using data from the SDDC Manager inventory to map the correct IP addresses
@@ -3291,16 +3292,16 @@ Function Add-VMKernelsToHost {
     The Add-VMKernelsToHost cmdlet adds VMkernels to ESXi hosts using data from the SDDC Manager inventory to map the correct IP addresses
 
     .EXAMPLE
-    Add-VMKernelsToHost -targetFQDN "sfo-m01-vc01.sfo.rainpole.io" -targetAdmin "administrator@vsphere.local" -targetAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01" -sddcManagerFQDN "sfo-vcf01.sfo.rainpole.io" -sddcManagerAdmin "administrator@vsphere.local" -sddcManagerAdminPassword "VMw@re1!"
+    Add-VMKernelsToHost -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01" -sddcManagerFQDN "sfo-vcf01.sfo.rainpole.io" -sddcManagerAdmin "administrator@vsphere.local" -sddcManagerAdminPassword "VMw@re1!"
 
-    .PARAMETER targetFqdn
-    FQDN of the target ESXi host or vCenter hosting the ESXi hosts to which VMkernels will be added
+    .PARAMETER vCenterFQDN
+    FQDN of the vCenter instance hosting the ESXi hosts to which VMkernels will be added
 
-    .PARAMETER targetAdmin
-    Admin user of the target ESXi host or vCenter hosting the ESXi hosts to which VMkernels will be added
+    .PARAMETER vCenterAdmin
+    Admin user of the vCenter instance hosting the ESXi hosts to which VMkernels will be added
 
-    .PARAMETER targetAdminPassword
-     Admin password of the target ESXi host or vCenter hosting the ESXi hosts to which VMkernels will be added
+    .PARAMETER vCenterAdminPassword
+    Admin password for the vCenter instance hosting the ESXi hosts to which VMkernels will be added
 
     .PARAMETER clusterName
     Name of the vSphere cluster instance hosting the ESXi hosts to which VMkernels will be added
@@ -3319,15 +3320,14 @@ Function Add-VMKernelsToHost {
     #>
 
     Param(
-        [Parameter (Mandatory = $false)][String] $targetFQDN,
-        [Parameter (Mandatory = $true)][String] $targetAdmin,
-        [Parameter (Mandatory = $true)][String] $targetAdminPassword,
+        [Parameter (Mandatory = $true)][String] $vCenterFQDN,
+        [Parameter (Mandatory = $true)][String] $vCenterAdmin,
+        [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
         [Parameter (Mandatory = $true)][String] $clusterName,
         [Parameter (Mandatory = $true)][String] $sddcManagerFQDN,
         [Parameter (Mandatory = $true)][String] $sddcManagerAdmin,
         [Parameter (Mandatory = $true)][String] $sddcManagerAdminPassword,
-        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
-        [Parameter (Mandatory = $false)][ValidateSet("vcenter", "esx")][String] $targetType = "vcenter"
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
@@ -3336,63 +3336,30 @@ Function Add-VMKernelsToHost {
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
-    $workloadDomain = $extractedSDDCData.workloadDomains | Where-Object { $_.vsphereClusterDetails.name -contains $clusterName }
-    $vmHosts = ($workloadDomain.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).hosts.hostname | Sort-Object # Can we just use this for both tracks?
     $sddcManagerConnection = Connect-VcfSddcManagerServer -server $sddcManagerFQDN -User $sddcManagerAdmin -Password $sddcManagerAdminPassword
-    $allHostDetails = (Invoke-VcfGetHosts).Elements | Where-Object { $_.fqdn -in $vmHosts }
-    $clusterDetails = (Invoke-VcfGetClusters).Elements | Where-Object { $_.Name -eq $clusterName }
-    $clusterVdses = (Invoke-VcfGetVdses -ClusterId $clusterDetails.id)
 
-    If ($targetType -eq "vCenter") {
-        $vCenterConnection = Connect-VIServer $targetFQDN -user $targetAdmin -password $targetAdminPassword
-    }
-
+    $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
+    $workloadDomain = $extractedSDDCData.workloadDomains | where-object { $_.vCenterDetails.fqdn -eq $VcenterFqdn }
+    $vmHosts = (Get-cluster -name $clusterName | Get-VMHost).Name | Sort-Object
     foreach ($vmhost in $vmHosts) {
+        $vmotionPG = ((Invoke-VcfGetVdses -ClusterId ((Invoke-VcfGetClusters).Elements | ? { $_.Name -eq $clusterName }).Id).PortGroups | ? { $_.TransportType -eq "VMOTION" }).Name
+        $vmotionVDSName = ((Invoke-VcfGetVdses -ClusterId ((Invoke-VcfGetClusters).Elements | ? { $_.Name -eq $clusterName }).Id) | ? { $_.Portgroups.TransportType -contains "VMOTION" }).Name
+        $vmotionIP = (((Invoke-VcfGetHosts).Elements | ? { $_.fqdn -eq $vmhost }).ipaddresses | ? { $_.type -eq "VMOTION" })._IpAddress
         $networkPoolId = ($workloadDomain.vsphereClusterDetails.hosts | Where-Object { $_.hostname -eq $vmhost }).networkPoolID
-        $networkPoolDetails = (Invoke-VcfGetNetworksOfNetworkPool -id $networkPoolID).elements
-
-        $vmotionIP = (($allHostDetails | Where-Object { $_.fqdn -eq $vmhost }).ipaddresses | Where-Object { $_.type -eq "VMOTION" })._IpAddress
-        $vmotionMask = ($networkPoolDetails | Where-Object { $_.type -eq "VMOTION" }).Mask
-        $vmotionMTU = ($networkPoolDetails | Where-Object { $_.type -eq "VMOTION" }).mtu
-        $vmotionGW = ($networkPoolDetails | Where-Object { $_.type -eq "VMOTION" }).gateway
-        $vmotionPG = ($clusterVdses.PortGroups | Where-Object { $_.TransportType -eq "VMOTION" }).Name
-
-        $vsanIP = (($allHostDetails | Where-Object { $_.fqdn -eq $vmhost }).ipaddresses | Where-Object { $_.type -eq "VSAN" })._IpAddress
-        $vsanMask = ($networkPoolDetails | Where-Object { $_.type -eq "VSAN" }).Mask
-        $vsanMTU = ($networkPoolDetails | Where-Object { $_.type -eq "VSAN" }).mtu
-        $vsanGW = ($networkPoolDetails | Where-Object { $_.type -eq "VSAN" }).gateway
-        $vsanPG = ($clusterVdses.PortGroups | Where-Object { $_.TransportType -eq "VSAN" }).Name
-
-        If ($targetType -eq "vCenter") {
-            $vmotionVDSName = ((Invoke-VcfGetVdses -ClusterId ((Invoke-VcfGetClusters).Elements | Where-Object { $_.Name -eq $clusterName }).Id) | Where-Object { $_.Portgroups.TransportType -contains "VMOTION" }).Name
-            $vsanVDSName = ((Invoke-VcfGetVdses -ClusterId ((Invoke-VcfGetClusters).Elements | Where-Object { $_.Name -eq $clusterName }).Id) | Where-Object { $_.Portgroups.TransportType -contains "VSAN" }).Name
-
-        } else {
-            $esxConnection = Connect-VIServer $vmhost -user $targetAdmin -password $targetAdminPassword
-            $targetVssName = 'vSwitch0'
-            $vMotionVlanId = ($networkPoolDetails | Where-Object { $_.type -eq "VMOTION" }).VlanId
-            $vsanVlanId = ($networkPoolDetails | Where-Object { $_.type -eq "VSAN" }).VlanId
-        }
-
+        $vmotionMask = ((Invoke-VcfGetNetworksOfNetworkPool -id $networkPoolID).elements | ? { $_.type -eq "VMOTION" }).Mask
+        $vmotionMTU = ((Invoke-VcfGetNetworksOfNetworkPool -id $networkPoolID).elements | ? { $_.type -eq "VMOTION" }).mtu
+        $vmotionGW = ((Invoke-VcfGetNetworksOfNetworkPool -id $networkPoolID).elements | ? { $_.type -eq "VMOTION" }).gateway
+        $vsanPG = ((Invoke-VcfGetVdses -ClusterId ((Invoke-VcfGetClusters).Elements | ? { $_.Name -eq $clusterName }).Id).PortGroups | ? { $_.transportType -eq "VSAN" }).Name
+        $vsanVDSName = ((Invoke-VcfGetVdses -ClusterId ((Invoke-VcfGetClusters).Elements | ? { $_.Name -eq $clusterName }).Id) | ? { $_.Portgroups.TransportType -contains "VSAN" }).Name
+        $vsanIP = (((Invoke-VcfGetHosts).Elements | ? { $_.fqdn -eq $vmhost }).ipaddresses | ? { $_.type -eq "VSAN" })._IpAddress
+        $vsanMask = ((Invoke-VcfGetNetworksOfNetworkPool -id $networkPoolID).elements | ? { $_.type -eq "VSAN" }).Mask
+        $vsanMTU = ((Invoke-VcfGetNetworksOfNetworkPool -id $networkPoolID).elements | ? { $_.type -eq "VSAN" }).mtu
+        $vsanGW = ((Invoke-VcfGetNetworksOfNetworkPool -id $networkPoolID).elements | ? { $_.type -eq "VSAN" }).gateway
         LogMessage -type INFO -message "[$vmhost] Creating vMotion vMK"
-        $vmk1Exists = Get-VMHostNetworkAdapter -VMHost $vmhost -name "vmk1" -ErrorAction SilentlyContinue
-        If ($targetType -eq "vCenter") {
-            $dvportgroup = Get-VDPortgroup -name $vmotionPG -VDSwitch $vmotionVDSName
-            If (!$vmk1Exists) {
-                $vmk = New-VMHostNetworkAdapter -VMHost $vmhost -VirtualSwitch $vmotionVDSName -mtu $vmotionMTU -PortGroup $dvportgroup -ip $vmotionIP -SubnetMask $vmotionMask -NetworkStack (Get-VMHostNetworkStack -vmhost $vmhost | Where-Object { $_.id -eq "vmotion" })
-            }
-        } else {
-            $vssVmotionPortgroupExists = Get-VirtualPortGroup -VirtualSwitch $targetVssName -Name $vmotionPG -errorAction SilentlyContinue
-            If (!($vssVmotionPortgroupExists)) {
-                LogMessage -type INFO -message "[$vmhost] Creating vMotion portgroup `'$vmotionPG`'"
-                New-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $vmhost -Name $targetVssName) -Name $vmotionPG -VLanId $vMotionVlanId | Out-Null
-            } else {
-                LogMessage -type INFO -message "[$vmhost] vMotion portgroup `'$vmotionPG`' already exists. Skipping"
-            }
-            $vssVmotionPortgroup = Get-VirtualPortGroup -name $vmotionPG -VirtualSwitch $targetVssName
-            If (!$vmk1Exists) {
-                $vmk = New-VMHostNetworkAdapter -VMHost $vmhost -VirtualSwitch $targetVssName -mtu $vmotionMTU -PortGroup $vssVmotionPortgroup -ip $vmotionIP -SubnetMask $vmotionMask -NetworkStack (Get-VMHostNetworkStack -vmhost $vmhost | Where-Object { $_.id -eq "vmotion" })
-            }
+        $dvportgroup = Get-VDPortgroup -name $vmotionPG -VDSwitch $vmotionVDSName
+        $vmk1Exists = Get-VMHostNetworkAdapter -VMHost $vmhost -Name "vmk1" -ErrorAction SilentlyContinue
+        If (!$vmk1Exists) {
+            $vmk = New-VMHostNetworkAdapter -VMHost $vmhost -VirtualSwitch $vmotionVDSName -mtu $vmotionMTU -PortGroup $dvportgroup -ip $vmotionIP -SubnetMask $vmotionMask -NetworkStack (Get-VMHostNetworkStack -vmhost $vmhost | Where-Object { $_.id -eq "vmotion" })
         }
         LogMessage -type INFO -message "[$vmhost] Setting vMotion Gateway"
         $vmkName = 'vmk1'
@@ -3409,24 +3376,10 @@ Function Add-VMKernelsToHost {
         $esxcli.network.ip.route.ipv4.add.Invoke(@{ netstack = 'vmotion'; network = 'default'; gateway = $vmotionGW }) *>$null
 
         LogMessage -type INFO -message "[$vmhost] Creating vSAN vMK"
-        $vmk2Exists = Get-VMHostNetworkAdapter -VMHost $vmhost -name "vmk2" -ErrorAction SilentlyContinue
-        If ($targetType -eq "vCenter") {
-            $dvportgroup = Get-VDPortgroup -name $vsanPG -VDSwitch $vsanVDSName
-            If (!$vmk2Exists) {
-                $vmk = New-VMHostNetworkAdapter -VMHost $vmhost -VirtualSwitch $vsanVDSName -mtu $vsanMTU -PortGroup $dvportgroup -ip $vsanIP -SubnetMask $vsanMask -VsanTrafficEnabled:$true
-            }
-        } else {
-            $vssVsanPortgroupExists = Get-VirtualPortGroup -VirtualSwitch $targetVssName -Name $vsanPG -errorAction SilentlyContinue
-            If (!($vssVsanPortgroupExists)) {
-                LogMessage -type INFO -message "[$vmhost] Creating vSAN portgroup `'$vsanPG`'"
-                New-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $vmhost -Name $targetVssName) -Name $vsanPG -VLanId $vsanVlanId | Out-Null
-            } else {
-                LogMessage -type INFO -message "[$vmhost] vSAN portgroup `'$vsanPG`' already exists. Skipping"
-            }
-            $vssVsanPortgroup = Get-VirtualPortGroup -name $vsanPG -VirtualSwitch $targetVssName
-            If (!$vmk2Exists) {
-                $vmk = New-VMHostNetworkAdapter -VMHost $vmhost -VirtualSwitch $targetVssName -mtu $vsanMTU -PortGroup $vssVsanPortgroup -ip $vsanIP -SubnetMask $vsanMask -VsanTrafficEnabled $true
-            }
+        $dvportgroup = Get-VDPortgroup -name $vsanPG -VDSwitch $vsanVDSName
+        $vmk2Exists = Get-VMHostNetworkAdapter -VMHost $vmhost -Name "vmk2" -ErrorAction SilentlyContinue
+        If (!$vmk2Exists) {
+            $vmk = New-VMHostNetworkAdapter -VMHost $vmhost -VirtualSwitch $vsanVDSName -mtu $vsanMTU -PortGroup $dvportgroup -ip $vsanIP -SubnetMask $vsanMask -VsanTrafficEnabled:$true
         }
 
         LogMessage -type INFO -message "[$vmhost] Setting vSAN Gateway"
@@ -3442,14 +3395,9 @@ Function Add-VMKernelsToHost {
             gateway       = $vsanGW
         }
         $esxcli.network.ip.interface.ipv4.set.Invoke($interfaceArg) *>$null
-        If ($targetType -eq "esx") {
-            Disconnect-VIServer * -confirm:$false
-        }
-    }
-    If ($targetType -eq "vCenter") {
-        Disconnect-VIServer * -confirm:$false
     }
     Disconnect-VcfSddcManagerServer *
+    Disconnect-VIServer * -confirm:$false
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
