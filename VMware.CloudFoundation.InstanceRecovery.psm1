@@ -3375,7 +3375,7 @@ Function Add-VMKernelsToHost {
         }
 
         LogMessage -type INFO -message "[$vmhost] Creating vMotion vMK"
-        $vmk1Exists = Get-VMHostNetworkAdapter -name "vmk1" -ErrorAction SilentlyContinue
+        $vmk1Exists = Get-VMHostNetworkAdapter -VMHost $vmhost -name "vmk1" -ErrorAction SilentlyContinue
         If ($targetType -eq "vCenter") {
             $dvportgroup = Get-VDPortgroup -name $vmotionPG -VDSwitch $vmotionVDSName
             If (!$vmk1Exists) {
@@ -3409,10 +3409,10 @@ Function Add-VMKernelsToHost {
         $esxcli.network.ip.route.ipv4.add.Invoke(@{ netstack = 'vmotion'; network = 'default'; gateway = $vmotionGW }) *>$null
 
         LogMessage -type INFO -message "[$vmhost] Creating vSAN vMK"
-        $vmk2Exists = Get-VMHostNetworkAdapter -name "vmk2" -ErrorAction SilentlyContinue
+        $vmk2Exists = Get-VMHostNetworkAdapter -VMHost $vmhost -name "vmk2" -ErrorAction SilentlyContinue
         If ($targetType -eq "vCenter") {
             $dvportgroup = Get-VDPortgroup -name $vsanPG -VDSwitch $vsanVDSName
-            If (!$vmk1Exists) {
+            If (!$vmk2Exists) {
                 $vmk = New-VMHostNetworkAdapter -VMHost $vmhost -VirtualSwitch $vsanVDSName -mtu $vsanMTU -PortGroup $dvportgroup -ip $vsanIP -SubnetMask $vsanMask -VsanTrafficEnabled:$true
             }
         } else {
@@ -3424,7 +3424,7 @@ Function Add-VMKernelsToHost {
                 LogMessage -type INFO -message "[$vmhost] vSAN portgroup `'$vsanPG`' already exists. Skipping"
             }
             $vssVsanPortgroup = Get-VirtualPortGroup -name $vsanPG -VirtualSwitch $targetVssName
-            If (!$vmk1Exists) {
+            If (!$vmk2Exists) {
                 $vmk = New-VMHostNetworkAdapter -VMHost $vmhost -VirtualSwitch $targetVssName -mtu $vsanMTU -PortGroup $vssVsanPortgroup -ip $vsanIP -SubnetMask $vsanMask -VsanTrafficEnabled $true
             }
         }
