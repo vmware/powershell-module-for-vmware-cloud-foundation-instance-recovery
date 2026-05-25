@@ -9932,6 +9932,185 @@ Function Set-VcfmsFleetIdentity {
 }
 Export-ModuleMember -Function Set-VcfmsFleetIdentity
 
+Function Invoke-VcfmsFleetComponentRegistration {
+    <#
+    .SYNOPSIS
+    Copies and executes the fleet component registration script on the Services Runtime
+    control plane node.
+
+    .DESCRIPTION
+    The Invoke-VcfmsFleetComponentRegistration cmdlet performs the following steps:
+
+      1. Resolves the Services Runtime control plane node (handles worker-node redirect
+         via node-agent.conf automatically).
+      2. Base64-encodes the bundled update_fleet_component_registration.sh script and
+         uploads it to /tmp on the control plane node via the existing SSH session —
+         no SCP binary required.
+      3. Executes the script under sudo with KUBECONFIG=/etc/kubernetes/admin.conf so
+         that all kubectl calls use the local cluster admin credentials.
+      4. Streams script output to the console in real time.
+      5. Removes the temporary script from the remote node on completion.
+
+    The script targets the Fleet LCM component registrations by VCF instance name
+    (--target-vcf) and optionally performs a dry run.
+
+    .EXAMPLE
+    # Update component registrations for VCF instance vcf02
+    Invoke-VcfmsFleetComponentRegistration `
+        -ServicesRuntimeFqdn     "sfo-sr01.sfo.rainpole.io" `
+        -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
+        -TargetVcfInstance       "vcf02"
+
+    .EXAMPLE
+    # Dry run — show what would be changed without writing anything
+    Invoke-VcfmsFleetComponentRegistration `
+        -ServicesRuntimeFqdn     "sfo-sr01.sfo.rainpole.io" `
+        -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
+        -TargetVcfInstance       "vcf02" `
+        -DryRun
+
+    .PARAMETER ServicesRuntimeFqdn
+    FQDN or IP of any Services Runtime cluster node. If a worker node is supplied the
+    function automatically resolves and connects to the control plane.
+
+    .PARAMETER ServicesRuntimePassword
+    Password for vmware-system-user (SSH login and sudo elevation).
+
+    .PARAMETER TargetVcfInstance
+    VCF instance name to target, e.g. "vcf01" or "vcf02". Passed as --target-vcf to
+    the script.
+
+    .PARAMETER DryRun
+    When specified, passes --dry-run to the script. No database changes are made;
+    the script shows what would be updated.
+
+    .PARAMETER RemoteScriptTimeout
+    Seconds to wait for the remote script to complete. Default is 300 (5 minutes).
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][String] $ServicesRuntimeFqdn,
+        [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
+        [Parameter(Mandatory = $true)][String] $TargetVcfInstance,
+        [Parameter(Mandatory = $false)][Switch] $DryRun,
+        [Parameter(Mandatory = $false)][Int] $RemoteScriptTimeout = 300
+    )
+
+    $jumpboxName  = hostname
+    $StopWatch    = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    # -------------------------------------------------------------------------
+    # Validate the local script exists
+    # -------------------------------------------------------------------------
+    $localScript = Join-Path -Path $PSScriptRoot -ChildPath "scripts/update_fleet_component_registration.sh"
+    if (-not (Test-Path $localScript)) {
+        LogMessage -type ERROR -message "[$jumpboxName] Script not found: $localScript"
+        $StopWatch.Stop(); return
+    }
+
+    # -------------------------------------------------------------------------
+    # Resolve the control plane node
+    # Reuse Get-VcfmsServicesRuntimeKubeconfig which handles worker → CP redirect.
+    # The kubeconfig is written as a useful side effect; we primarily need ControlPlaneHost.
+    # -------------------------------------------------------------------------
+    LogMessage -type INFO -message "[$jumpboxName] Resolving control plane node from $ServicesRuntimeFqdn"
+    $kubeconfigResult = Get-VcfmsServicesRuntimeKubeconfig `
+        -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
+        -Password            $ServicesRuntimePassword `
+        -OutputDir           "."
+    if (-not $kubeconfigResult) {
+        LogMessage -type ERROR -message "[$jumpboxName] Could not resolve control plane node. Aborting."
+        $StopWatch.Stop(); return
+    }
+    $controlPlaneHost = $kubeconfigResult.ControlPlaneHost
+    LogMessage -type INFO -message "[$jumpboxName] Control plane node  : $controlPlaneHost"
+    LogMessage -type INFO -message "[$jumpboxName] Target VCF instance : $TargetVcfInstance"
+    if ($DryRun) {
+        LogMessage -type INFO -message "[$jumpboxName] Mode               : DRY RUN (no changes will be written)"
+    }
+
+    # -------------------------------------------------------------------------
+    # Open SSH session to the control plane node
+    # -------------------------------------------------------------------------
+    $SecurePassword = ConvertTo-SecureString -String $ServicesRuntimePassword -AsPlainText -Force
+    $creds          = New-Object System.Management.Automation.PSCredential ('vmware-system-user', $SecurePassword)
+    $session        = $null
+    $remotePath     = "/tmp/update_fleet_component_registration.sh"
+
+    try {
+        $session = Open-VcfmsSshSession -Fqdn $controlPlaneHost -Creds $creds
+
+        # -------------------------------------------------------------------------
+        # Upload the script via base64 pipe — avoids any SCP binary dependency
+        # -------------------------------------------------------------------------
+        LogMessage -type INFO -message "[$controlPlaneHost] Uploading script to $remotePath"
+        $scriptBytes = [System.IO.File]::ReadAllBytes($localScript)
+        $b64         = [System.Convert]::ToBase64String($scriptBytes)
+
+        # printf is used instead of echo to avoid an appended newline corrupting the decode
+        $uploadCmd    = "printf '%s' '$b64' | base64 -d > $remotePath && chmod +x $remotePath"
+        $uploadResult = Invoke-SSHCommand -SessionId $session.SessionId -Command $uploadCmd -TimeOut 60
+        if ($uploadResult.ExitStatus -ne 0) {
+            LogMessage -type ERROR -message "[$controlPlaneHost] Script upload failed (exit $($uploadResult.ExitStatus)): $($uploadResult.Error -join ' ')"
+            return
+        }
+        LogMessage -type INFO -message "[$controlPlaneHost] Script uploaded successfully"
+
+        # -------------------------------------------------------------------------
+        # Build and execute the remote command
+        # sudo -S reads the password from stdin; env preserves KUBECONFIG across the
+        # sudo boundary so every kubectl call inside the script uses admin.conf
+        # -------------------------------------------------------------------------
+        $scriptArgs = "--target-vcf '$TargetVcfInstance'"
+        if ($DryRun) { $scriptArgs += " --dry-run" }
+
+        $execCmd = "echo '$ServicesRuntimePassword' | sudo -S env KUBECONFIG=/etc/kubernetes/admin.conf bash $remotePath $scriptArgs"
+
+        LogMessage -type INFO -message "[$controlPlaneHost] Executing script (timeout: ${RemoteScriptTimeout}s)"
+        Write-Host ""
+        Write-Host " ── update_fleet_component_registration output ──────────────────────" -ForegroundColor Cyan
+
+        $execResult = Invoke-SSHCommand -SessionId $session.SessionId -Command $execCmd -TimeOut $RemoteScriptTimeout
+
+        # Print stdout
+        $execResult.Output | ForEach-Object { Write-Host "  $_" }
+
+        # Print stderr as warnings (includes sudo password prompt noise, which is harmless)
+        if ($execResult.Error) {
+            $execResult.Error |
+                Where-Object { $_ -notmatch '^\[sudo\]' } |
+                ForEach-Object { Write-Host "  $_" -ForegroundColor Yellow }
+        }
+
+        Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+        Write-Host ""
+
+        if ($execResult.ExitStatus -eq 0) {
+            LogMessage -type INFO -message "[$controlPlaneHost] Script completed successfully"
+        } else {
+            LogMessage -type ERROR -message "[$controlPlaneHost] Script exited with code $($execResult.ExitStatus)"
+        }
+
+    } catch {
+        LogMessage -type ERROR -message "[$jumpboxName] $($_.Exception.Message)"
+    } finally {
+        # Always remove the temporary script from the remote node
+        if ($session) {
+            Invoke-SSHCommand -SessionId $session.SessionId `
+                -Command "rm -f $remotePath" -TimeOut 15 | Out-Null
+            Remove-SSHSession -SSHSession $session | Out-Null
+            LogMessage -type INFO -message "[$controlPlaneHost] Temporary script removed"
+        }
+    }
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+Export-ModuleMember -Function Invoke-VcfmsFleetComponentRegistration
+
 #EndRegion Services Runtime
 
 #Region Supervisor
