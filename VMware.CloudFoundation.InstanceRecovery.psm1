@@ -9210,6 +9210,656 @@ Function New-ExtractVcfmsBackup {
 }
 Export-ModuleMember -Function New-ExtractVcfmsBackup
 
+Function Disable-VcfmsClusterLogging {
+    <#
+    .SYNOPSIS
+    Disables logging on a VCFMS Services Runtime cluster by applying a logs.type=none configuration.
+
+    .DESCRIPTION
+    The Disable-VcfmsClusterLogging cmdlet posts a component apply task to the VCFMS Services
+    Runtime API that sets spec.configuration.logs.type to "none", then polls the task until it
+    reaches a terminal state.
+
+    The VSP component ID can be supplied directly via ComponentId, or resolved automatically from
+    the Services Runtime components API by matching the first component of type "vsp".
+
+    .EXAMPLE
+    # Disable logging and auto-retrieve kubeconfig for post-apply validation
+    Disable-VcfmsClusterLogging -ServicesRuntimeFqdn "lax-sr01.lax.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!"
+
+    .EXAMPLE
+    # Supply an existing kubeconfig so the validation step does not need to SSH
+    Disable-VcfmsClusterLogging `
+        -ServicesRuntimeFqdn     "lax-sr01.lax.rainpole.io" `
+        -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
+        -ComponentId             "e319236e-867e-4779-9270-4921bddf4f1f" `
+        -KubeconfigPath          "C:\kubeconfigs\lax-sr01.kubeconfig"
+
+    .PARAMETER ServicesRuntimeFqdn
+    FQDN of the VCFMS Services Runtime instance.
+
+    .PARAMETER ServicesRuntimePassword
+    Password for the Services Runtime admin user.
+
+    .PARAMETER ServicesRuntimeUsername
+    Username for the Services Runtime token. Default is "admin@vsp.local".
+
+    .PARAMETER ComponentId
+    VSP component ID to apply the logging change to. When omitted the cmdlet resolves the first
+    component of type "vsp" from GET /api/v1/components.
+
+    .PARAMETER PollIntervalSeconds
+    Interval in seconds between task status polls. Default is 30.
+
+    .PARAMETER KubeconfigPath
+    Path to an existing kubeconfig for the Services Runtime cluster, used for post-apply
+    validation of the fluentd operator. When omitted the kubeconfig is retrieved automatically
+    from the Services Runtime node using ServicesRuntimeFqdn and ServicesRuntimePassword.
+
+    .PARAMETER KubeconfigOutputDir
+    Directory where the auto-retrieved kubeconfig is written. Defaults to the current directory.
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][String] $ServicesRuntimeFqdn,
+        [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
+        [Parameter(Mandatory = $false)][String] $ServicesRuntimeUsername = "admin@vsp.local",
+        [Parameter(Mandatory = $false)][String] $ComponentId,
+        [Parameter(Mandatory = $false)][Int] $PollIntervalSeconds = 30,
+        [Parameter(Mandatory = $false)][String] $KubeconfigPath,
+        [Parameter(Mandatory = $false)][String] $KubeconfigOutputDir = "."
+    )
+
+    $jumpboxName = hostname
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+    $terminalStates = @("COMPLETED","Completed","COMPLETE","FAILED","CANCELLED","ERROR","SUCCESS","SUCCESSFUL","Succeeded","Failed")
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    # Step 1: Token
+    $srToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
+    if (-not $srToken) {
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Unable to obtain Services Runtime token. Aborting."
+        $StopWatch.Stop(); return
+    }
+    $headers = @{
+        "Authorization" = "Bearer $srToken"
+        "Accept"        = "application/json"
+        "Content-Type"  = "application/json"
+    }
+
+    # Step 2: Resolve VSP component ID
+    if ($ComponentId) {
+        $componentId = $ComponentId.Trim()
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Using supplied component ID: $componentId"
+    } else {
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Resolving VSP component ID"
+        try {
+            $componentsResponse = Invoke-RestMethod -Uri "https://$ServicesRuntimeFqdn/api/v1/components" -Method GET -Headers $headers -SkipCertificateCheck
+        } catch {
+            LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Failed to retrieve components: $($_.Exception.Message)"
+            $StopWatch.Stop(); return
+        }
+        $vspComponent = @($componentsResponse.components | Where-Object { $_.type -eq "vsp" }) | Select-Object -First 1
+        if (-not $vspComponent) {
+            LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] No component of type 'vsp' found. Pass -ComponentId to specify manually."
+            $StopWatch.Stop(); return
+        }
+        $componentId = $vspComponent.id
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Resolved VSP component ID: $componentId"
+    }
+
+    # Step 3: Submit apply task with logs.type = none
+    $body = @{
+        spec    = @{
+            configuration = @{
+                logs = @{ type = "none" }
+            }
+        }
+        options = @{
+            precheckOnly = $false
+            precheck     = $true
+            timeout      = "1h"
+        }
+    } | ConvertTo-Json -Depth 6
+
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Submitting apply task to disable logging on component $componentId"
+    try {
+        $applyResponse = Invoke-RestMethod -Uri "https://$ServicesRuntimeFqdn/api/v1/components/$componentId`?action=apply" -Method POST -Headers $headers -Body $body -SkipCertificateCheck
+    } catch {
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Apply request failed: $($_.Exception.Message)"
+        $StopWatch.Stop(); return
+    }
+
+    $taskId = $applyResponse.id
+    if (-not $taskId) {
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] No task ID returned from apply response"
+        $StopWatch.Stop(); return
+    }
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Apply task created: $taskId"
+
+    # Step 4: Poll task to completion
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Polling task $taskId every ${PollIntervalSeconds}s"
+    $elapsed = 0
+    $taskStatus = "UNKNOWN"
+    $taskResponse = $null
+    Do {
+        Start-Sleep -Seconds $PollIntervalSeconds
+        $elapsed += $PollIntervalSeconds
+        try {
+            $srToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
+            if ($srToken) { $headers["Authorization"] = "Bearer $srToken" }
+            $taskResponse = Invoke-RestMethod -Uri "https://$ServicesRuntimeFqdn/api/v1/tasks/$taskId" -Method GET -Headers $headers -SkipCertificateCheck
+            $rawSt = $taskResponse.status
+            $rawPh = $taskResponse.phase
+            if (-not [string]::IsNullOrWhiteSpace([string]$rawSt)) {
+                $taskStatus = [string]$rawSt
+            } elseif (-not [string]::IsNullOrWhiteSpace([string]$rawPh)) {
+                $taskStatus = [string]$rawPh
+            } else {
+                $taskStatus = "UNKNOWN"
+            }
+        } catch {
+            LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Poll error (will retry): $($_.Exception.Message)"
+            $taskStatus = "UNKNOWN"
+        }
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Task $taskId status=$taskStatus (${elapsed}s elapsed)"
+    } While ($taskStatus -notin $terminalStates)
+
+    Write-Host ""
+    $successStates = @("COMPLETED","Completed","COMPLETE","SUCCESS","SUCCESSFUL","Succeeded")
+    if ($taskStatus -in $successStates) {
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Logging disabled successfully on component $componentId"
+
+        # Post-apply validation — pass the kubeconfig directly if supplied, otherwise let the
+        # validation function retrieve it from the same Services Runtime node
+        if ($KubeconfigPath) {
+            Confirm-VcfmsFluentdOperatorState -KubeconfigPath $KubeconfigPath
+        } else {
+            Confirm-VcfmsFluentdOperatorState `
+                -ServicesRuntimeFqdn     $ServicesRuntimeFqdn `
+                -ServicesRuntimePassword $ServicesRuntimePassword `
+                -KubeconfigOutputDir     $KubeconfigOutputDir
+        }
+    } else {
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Apply task ended with status: $taskStatus"
+        if ($taskResponse -and $taskResponse.description.localizedMessage) {
+            LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] $($taskResponse.description.localizedMessage)"
+        }
+    }
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+Export-ModuleMember -Function Disable-VcfmsClusterLogging
+
+Function Confirm-VcfmsFluentdOperatorState {
+    <#
+    .SYNOPSIS
+    Validates the health of the fluentd logging operator on a VCFMS Services Runtime cluster.
+
+    .DESCRIPTION
+    The Confirm-VcfmsFluentdOperatorState cmdlet checks the rollout and readiness status of the
+    logging-operator-fluentd StatefulSet in the vmsp-platform namespace by running:
+
+      kubectl -n vmsp-platform rollout status sts/logging-operator-fluentd
+      kubectl -n vmsp-platform get sts logging-operator-fluentd
+
+    A healthy response shows "partitioned roll out complete" and READY = 1/1.
+
+    If the StatefulSet is not healthy the cmdlet automatically:
+      1. Flushes the Fluentd buffer:
+           kubectl exec logging-operator-fluentd-0 -n vmsp-platform -- find /buffers -name "*.buffer" -type f -delete
+      2. Scales down to 0 replicas then back to 1:
+           kubectl scale sts logging-operator-fluentd -n vmsp-platform --replicas=0
+           kubectl scale sts logging-operator-fluentd -n vmsp-platform --replicas=1
+
+    The kubeconfig used is resolved in this order:
+      1. -KubeconfigPath if supplied
+      2. Auto-retrieved from the Services Runtime node via Get-VcfmsServicesRuntimeKubeconfig
+         when -ServicesRuntimeFqdn and -ServicesRuntimePassword are supplied
+
+    .EXAMPLE
+    # Use an existing kubeconfig
+    Confirm-VcfmsFluentdOperatorState -KubeconfigPath "C:\kubeconfigs\sfo-sr01.kubeconfig"
+
+    .EXAMPLE
+    # Retrieve kubeconfig automatically
+    Confirm-VcfmsFluentdOperatorState `
+        -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" `
+        -ServicesRuntimePassword "VMw@re1!VMw@re1!"
+
+    .PARAMETER KubeconfigPath
+    Path to an existing kubeconfig file for the Services Runtime cluster.
+
+    .PARAMETER ServicesRuntimeFqdn
+    FQDN of the Services Runtime cluster. Used to retrieve the kubeconfig automatically when
+    KubeconfigPath is not supplied.
+
+    .PARAMETER ServicesRuntimePassword
+    Password for vmware-system-user on the Services Runtime node (also used for sudo elevation).
+
+    .PARAMETER KubeconfigOutputDir
+    Directory where the retrieved kubeconfig is written. Defaults to the current directory.
+    Only used when the kubeconfig is retrieved automatically.
+    #>
+
+    Param(
+        [Parameter(Mandatory = $false)][String] $KubeconfigPath,
+        [Parameter(Mandatory = $false)][String] $ServicesRuntimeFqdn,
+        [Parameter(Mandatory = $false)][String] $ServicesRuntimePassword,
+        [Parameter(Mandatory = $false)][String] $KubeconfigOutputDir = "."
+    )
+
+    $jumpboxName = hostname
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    # Resolve kubeconfig
+    $resolvedKubeconfig = $KubeconfigPath
+    if (-not $resolvedKubeconfig) {
+        if ($ServicesRuntimeFqdn -and $ServicesRuntimePassword) {
+            LogMessage -type INFO -message "[$jumpboxName] Retrieving kubeconfig from $ServicesRuntimeFqdn"
+            $kubeconfigResult = Get-VcfmsServicesRuntimeKubeconfig `
+                -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
+                -Password            $ServicesRuntimePassword `
+                -OutputDir           $KubeconfigOutputDir
+            if (-not $kubeconfigResult) {
+                LogMessage -type ERROR -message "[$jumpboxName] Failed to retrieve kubeconfig. Aborting."
+                $StopWatch.Stop(); return
+            }
+            $resolvedKubeconfig = $kubeconfigResult.KubeconfigPath
+        } else {
+            LogMessage -type ERROR -message "[$jumpboxName] Provide -KubeconfigPath or both -ServicesRuntimeFqdn and -ServicesRuntimePassword."
+            $StopWatch.Stop(); return
+        }
+    }
+
+    if (-not (Test-Path $resolvedKubeconfig)) {
+        LogMessage -type ERROR -message "[$jumpboxName] Kubeconfig not found: $resolvedKubeconfig"
+        $StopWatch.Stop(); return
+    }
+
+    LogMessage -type INFO -message "[$jumpboxName] Kubeconfig     : $resolvedKubeconfig"
+
+    $ns  = "vmsp-platform"
+    $sts = "logging-operator-fluentd"
+    $pod = "logging-operator-fluentd-0"
+
+    # -------------------------------------------------------------------------
+    # Step 1: rollout status
+    # -------------------------------------------------------------------------
+    LogMessage -type INFO -message "[$jumpboxName] Checking rollout status of sts/$sts"
+    $rolloutOutput = & kubectl --kubeconfig $resolvedKubeconfig -n $ns rollout status "sts/$sts" 2>&1
+    Write-Host ""
+    Write-Host " rollout status sts/$sts" -ForegroundColor Cyan
+    $rolloutOutput | ForEach-Object { Write-Host "   $_" }
+
+    $rolloutHealthy = ($rolloutOutput -join " ") -match "partitioned roll out complete|successfully rolled out"
+
+    # -------------------------------------------------------------------------
+    # Step 2: get sts
+    # -------------------------------------------------------------------------
+    LogMessage -type INFO -message "[$jumpboxName] Checking StatefulSet readiness"
+    $getOutput = & kubectl --kubeconfig $resolvedKubeconfig -n $ns get sts $sts 2>&1
+    Write-Host ""
+    Write-Host " get sts $sts" -ForegroundColor Cyan
+    $getOutput | ForEach-Object { Write-Host "   $_" }
+
+    # Parse READY column — healthy when reported as "1/1" (or N/N where both numbers match)
+    $readyHealthy = $false
+    $dataLine = $getOutput | Select-Object -Skip 1 | Select-Object -First 1
+    if ($dataLine -match '\s(\d+)/(\d+)\s') {
+        $readyHealthy = ($Matches[1] -eq $Matches[2]) -and ([int]$Matches[1] -gt 0)
+    }
+
+    Write-Host ""
+    if ($rolloutHealthy -and $readyHealthy) {
+        LogMessage -type INFO -message "[$jumpboxName] StatefulSet $sts is healthy (rollout complete, READY=$($Matches[1])/$($Matches[2]))"
+        $StopWatch.Stop()
+        $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+        return
+    }
+
+    LogMessage -type WARNING -message "[$jumpboxName] StatefulSet $sts is NOT healthy — rolloutOK=$rolloutHealthy, readyOK=$readyHealthy"
+
+    # -------------------------------------------------------------------------
+    # Step 3: flush the Fluentd buffer
+    # -------------------------------------------------------------------------
+    LogMessage -type INFO -message "[$jumpboxName] Flushing Fluentd buffer on $pod"
+    $flushOutput = & kubectl --kubeconfig $resolvedKubeconfig exec $pod -n $ns `
+        -- find /buffers -name "*.buffer" -type f -delete 2>&1
+    if ($flushOutput) {
+        $flushOutput | ForEach-Object { Write-Host "   $_" }
+    } else {
+        LogMessage -type INFO -message "[$jumpboxName] Buffer flush completed (no output — directory may have been empty)"
+    }
+
+    # -------------------------------------------------------------------------
+    # Step 4: scale down to 0
+    # -------------------------------------------------------------------------
+    LogMessage -type INFO -message "[$jumpboxName] Scaling $sts down to 0 replicas"
+    $scaleDownOutput = & kubectl --kubeconfig $resolvedKubeconfig scale sts $sts -n $ns --replicas=0 2>&1
+    $scaleDownOutput | ForEach-Object { Write-Host "   $_" }
+
+    LogMessage -type INFO -message "[$jumpboxName] Waiting 15 seconds before scaling back up"
+    Start-Sleep -Seconds 15
+
+    # -------------------------------------------------------------------------
+    # Step 5: scale back up to 1
+    # -------------------------------------------------------------------------
+    LogMessage -type INFO -message "[$jumpboxName] Scaling $sts up to 1 replica"
+    $scaleUpOutput = & kubectl --kubeconfig $resolvedKubeconfig scale sts $sts -n $ns --replicas=1 2>&1
+    $scaleUpOutput | ForEach-Object { Write-Host "   $_" }
+
+    # -------------------------------------------------------------------------
+    # Step 6: re-check rollout status after remediation
+    # -------------------------------------------------------------------------
+    LogMessage -type INFO -message "[$jumpboxName] Waiting 30 seconds for pod to initialise"
+    Start-Sleep -Seconds 30
+
+    LogMessage -type INFO -message "[$jumpboxName] Re-checking rollout status after remediation"
+    $rolloutOutput2 = & kubectl --kubeconfig $resolvedKubeconfig -n $ns rollout status "sts/$sts" 2>&1
+    Write-Host ""
+    Write-Host " rollout status sts/$sts (post-remediation)" -ForegroundColor Cyan
+    $rolloutOutput2 | ForEach-Object { Write-Host "   $_" }
+
+    $getOutput2 = & kubectl --kubeconfig $resolvedKubeconfig -n $ns get sts $sts 2>&1
+    Write-Host ""
+    Write-Host " get sts $sts (post-remediation)" -ForegroundColor Cyan
+    $getOutput2 | ForEach-Object { Write-Host "   $_" }
+
+    $rolloutHealthy2 = ($rolloutOutput2 -join " ") -match "partitioned roll out complete|successfully rolled out"
+    $readyHealthy2   = $false
+    $dataLine2 = $getOutput2 | Select-Object -Skip 1 | Select-Object -First 1
+    if ($dataLine2 -match '\s(\d+)/(\d+)\s') {
+        $readyHealthy2 = ($Matches[1] -eq $Matches[2]) -and ([int]$Matches[1] -gt 0)
+    }
+
+    Write-Host ""
+    if ($rolloutHealthy2 -and $readyHealthy2) {
+        LogMessage -type INFO -message "[$jumpboxName] StatefulSet $sts is healthy after remediation"
+    } else {
+        LogMessage -type ERROR -message "[$jumpboxName] StatefulSet $sts is still NOT healthy after remediation — manual investigation required"
+    }
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+Export-ModuleMember -Function Confirm-VcfmsFluentdOperatorState
+
+Function Set-VcfmsFleetIdentity {
+    <#
+    .SYNOPSIS
+    Applies fleet identity TLS secrets and configures fleet ingress on the recovery VCFMS cluster.
+
+    .DESCRIPTION
+    The Set-VcfmsFleetIdentity cmdlet performs two steps:
+
+    Step 1 — Apply fleet TLS secrets from a backup extraction:
+      kubectl apply -f ingress-fleet-tls.yaml
+      kubectl apply -f ingress-fleet-tls-ndc.yaml
+
+    Step 2 — Configure fleet ingress via the Services Runtime API:
+      Reads the VSP component ID from the vmsp-platform namespace label:
+        component.vmsp.vmware.com/id
+      Then posts an apply task to PATCH spec.configuration.ingress.fleet with the
+      provided FleetFqdn and FleetVip, and polls until the task reaches a terminal state.
+
+    Both files must exist in BackupYamlDir. The kubeconfig is resolved in this order:
+      1. -KubeconfigPath if supplied
+      2. Auto-retrieved from the Services Runtime node via Get-VcfmsServicesRuntimeKubeconfig
+         when -ServicesRuntimeFqdn and -ServicesRuntimePassword are supplied
+
+    .EXAMPLE
+    Set-VcfmsFleetIdentity `
+        -BackupYamlDir           "C:\backup-yaml" `
+        -ServicesRuntimeFqdn     "sfo-sr01.sfo.rainpole.io" `
+        -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
+        -FleetFqdn               "flt-fc01.sfo.rainpole.io" `
+        -FleetVip                "10.50.0.10"
+
+    .EXAMPLE
+    Set-VcfmsFleetIdentity `
+        -BackupYamlDir           "C:\backup-yaml" `
+        -KubeconfigPath          "C:\kubeconfigs\sfo-sr01.kubeconfig" `
+        -ServicesRuntimeFqdn     "sfo-sr01.sfo.rainpole.io" `
+        -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
+        -FleetFqdn               "flt-fc01.sfo.rainpole.io" `
+        -FleetVip                "10.50.0.10"
+
+    .PARAMETER BackupYamlDir
+    Directory containing the YAML files produced by New-ExtractVcfmsBackup. Must contain
+    both ingress-fleet-tls.yaml and ingress-fleet-tls-ndc.yaml.
+
+    .PARAMETER FleetFqdn
+    FQDN of the Fleet LCM instance to configure in the ingress spec.
+
+    .PARAMETER FleetVip
+    IPv4 VIP address for the Fleet LCM ingress to configure in the ingress spec.
+
+    .PARAMETER ServicesRuntimeFqdn
+    FQDN of the Services Runtime cluster. Required for the API apply call and for automatic
+    kubeconfig retrieval when KubeconfigPath is not supplied.
+
+    .PARAMETER ServicesRuntimePassword
+    Password for the Services Runtime admin user and vmware-system-user SSH access.
+
+    .PARAMETER ServicesRuntimeUsername
+    Username for the Services Runtime API token. Default is "admin@vsp.local".
+
+    .PARAMETER KubeconfigPath
+    Path to an existing kubeconfig for the recovery Services Runtime cluster. Takes precedence
+    over automatic retrieval.
+
+    .PARAMETER KubeconfigOutputDir
+    Directory where the auto-retrieved kubeconfig is written. Defaults to the current directory.
+
+    .PARAMETER PollIntervalSeconds
+    Interval in seconds between task status polls. Default is 30.
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][String] $BackupYamlDir,
+        [Parameter(Mandatory = $true)][String] $FleetFqdn,
+        [Parameter(Mandatory = $true)][String] $FleetVip,
+        [Parameter(Mandatory = $true)][String] $ServicesRuntimeFqdn,
+        [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
+        [Parameter(Mandatory = $false)][String] $ServicesRuntimeUsername = "admin@vsp.local",
+        [Parameter(Mandatory = $false)][String] $KubeconfigPath,
+        [Parameter(Mandatory = $false)][String] $KubeconfigOutputDir = ".",
+        [Parameter(Mandatory = $false)][Int]    $PollIntervalSeconds = 30
+    )
+
+    $jumpboxName   = hostname
+    $StopWatch     = New-Object -TypeName System.Diagnostics.Stopwatch
+    $terminalStates = @("COMPLETED","Completed","COMPLETE","FAILED","CANCELLED","ERROR","SUCCESS","SUCCESSFUL","Succeeded","Failed")
+    $StopWatch.Start()
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    # -------------------------------------------------------------------------
+    # Pre-flight: validate YAML files
+    # -------------------------------------------------------------------------
+    $resolvedYamlDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($BackupYamlDir)
+    if (-not (Test-Path $resolvedYamlDir)) {
+        LogMessage -type ERROR -message "[$jumpboxName] BackupYamlDir not found: $resolvedYamlDir"
+        $StopWatch.Stop(); return
+    }
+
+    $tlsYaml      = Join-Path $resolvedYamlDir "ingress-fleet-tls.yaml"
+    $ndcYaml      = Join-Path $resolvedYamlDir "ingress-fleet-tls-ndc.yaml"
+    $missingFiles = @()
+    if (-not (Test-Path $tlsYaml)) { $missingFiles += $tlsYaml }
+    if (-not (Test-Path $ndcYaml)) { $missingFiles += $ndcYaml }
+    if ($missingFiles.Count -gt 0) {
+        foreach ($f in $missingFiles) {
+            LogMessage -type ERROR -message "[$jumpboxName] Required YAML file not found: $f"
+        }
+        $StopWatch.Stop(); return
+    }
+
+    # -------------------------------------------------------------------------
+    # Resolve kubeconfig
+    # -------------------------------------------------------------------------
+    $resolvedKubeconfig = $KubeconfigPath
+    if (-not $resolvedKubeconfig) {
+        LogMessage -type INFO -message "[$jumpboxName] Retrieving kubeconfig from $ServicesRuntimeFqdn"
+        $kubeconfigResult = Get-VcfmsServicesRuntimeKubeconfig `
+            -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
+            -Password            $ServicesRuntimePassword `
+            -OutputDir           $KubeconfigOutputDir
+        if (-not $kubeconfigResult) {
+            LogMessage -type ERROR -message "[$jumpboxName] Failed to retrieve kubeconfig. Aborting."
+            $StopWatch.Stop(); return
+        }
+        $resolvedKubeconfig = $kubeconfigResult.KubeconfigPath
+    }
+
+    if (-not (Test-Path $resolvedKubeconfig)) {
+        LogMessage -type ERROR -message "[$jumpboxName] Kubeconfig not found: $resolvedKubeconfig"
+        $StopWatch.Stop(); return
+    }
+
+    LogMessage -type INFO -message "[$jumpboxName] YAML directory  : $resolvedYamlDir"
+    LogMessage -type INFO -message "[$jumpboxName] Kubeconfig      : $resolvedKubeconfig"
+    LogMessage -type INFO -message "[$jumpboxName] Fleet FQDN      : $FleetFqdn"
+    LogMessage -type INFO -message "[$jumpboxName] Fleet VIP       : $FleetVip"
+
+    # =========================================================================
+    # Step 1: Apply fleet TLS secrets
+    # =========================================================================
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Step 1: Applying fleet identity secrets"
+    $allSucceeded = $true
+    foreach ($yamlFile in @($tlsYaml, $ndcYaml)) {
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Applying $(Split-Path $yamlFile -Leaf)"
+        $output   = & kubectl --kubeconfig $resolvedKubeconfig apply -f $yamlFile 2>&1
+        $exitCode = $LASTEXITCODE
+        $output | ForEach-Object { Write-Host "   $_" }
+        if ($exitCode -eq 0) {
+            LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Applied: $(Split-Path $yamlFile -Leaf)"
+        } else {
+            LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] kubectl apply failed (exit $exitCode): $(Split-Path $yamlFile -Leaf)"
+            $allSucceeded = $false
+        }
+    }
+
+    if (-not $allSucceeded) {
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] One or more YAML files failed to apply — aborting ingress configuration"
+        $StopWatch.Stop(); return
+    }
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Fleet identity secrets applied successfully"
+
+    # =========================================================================
+    # Step 2: Configure fleet ingress via Services Runtime API
+    # =========================================================================
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Step 2: Configuring fleet ingress via API"
+
+    # Step 2a: Read VSP component ID from the vmsp-platform namespace label
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Reading VSP component ID from vmsp-platform namespace"
+    $nsLabelOutput = & kubectl --kubeconfig $resolvedKubeconfig get ns vmsp-platform `
+        -o "jsonpath={.metadata.labels.component\.vmsp\.vmware\.com/id}" 2>&1
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -ne 0 -or [string]::IsNullOrWhiteSpace($nsLabelOutput)) {
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Failed to read VSP component ID from namespace label (exit $exitCode): $nsLabelOutput"
+        $StopWatch.Stop(); return
+    }
+    $componentId = $nsLabelOutput.Trim()
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] VSP component ID: $componentId"
+
+    # Step 2b: Get Services Runtime token
+    $srToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
+    if (-not $srToken) {
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Unable to obtain Services Runtime token. Aborting."
+        $StopWatch.Stop(); return
+    }
+    $headers = @{
+        "Authorization" = "Bearer $srToken"
+        "Accept"        = "application/json"
+        "Content-Type"  = "application/json"
+    }
+
+    # Step 2c: Submit apply task with fleet ingress spec
+    $body = @{
+        spec = @{
+            configuration = @{
+                ingress = @{
+                    fleet = @{
+                        fqdn = $FleetFqdn
+                        vips = @{ ipv4 = $FleetVip }
+                    }
+                }
+            }
+        }
+    } | ConvertTo-Json -Depth 8
+
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Submitting fleet ingress apply for component $componentId"
+    try {
+        $applyResponse = Invoke-RestMethod `
+            -Uri "https://$ServicesRuntimeFqdn/api/v1/components/$componentId`?action=apply" `
+            -Method POST -Headers $headers -Body $body -SkipCertificateCheck
+    } catch {
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Apply request failed: $($_.Exception.Message)"
+        $StopWatch.Stop(); return
+    }
+
+    $taskId = $applyResponse.id
+    if (-not $taskId) {
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] No task ID returned from apply response"
+        $StopWatch.Stop(); return
+    }
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Apply task created: $taskId"
+
+    # Step 2d: Poll task to completion
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Polling task $taskId every ${PollIntervalSeconds}s"
+    $elapsed     = 0
+    $taskStatus  = "UNKNOWN"
+    $taskResponse = $null
+    Do {
+        Start-Sleep -Seconds $PollIntervalSeconds
+        $elapsed += $PollIntervalSeconds
+        try {
+            $srToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
+            if ($srToken) { $headers["Authorization"] = "Bearer $srToken" }
+            $taskResponse = Invoke-RestMethod -Uri "https://$ServicesRuntimeFqdn/api/v1/tasks/$taskId" -Method GET -Headers $headers -SkipCertificateCheck
+            $rawSt = $taskResponse.status
+            $rawPh = $taskResponse.phase
+            if (-not [string]::IsNullOrWhiteSpace([string]$rawSt)) {
+                $taskStatus = [string]$rawSt
+            } elseif (-not [string]::IsNullOrWhiteSpace([string]$rawPh)) {
+                $taskStatus = [string]$rawPh
+            } else {
+                $taskStatus = "UNKNOWN"
+            }
+        } catch {
+            LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Poll error (will retry): $($_.Exception.Message)"
+            $taskStatus = "UNKNOWN"
+        }
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Task $taskId status=$taskStatus (${elapsed}s elapsed)"
+    } While ($taskStatus -notin $terminalStates)
+
+    Write-Host ""
+    $successStates = @("COMPLETED","Completed","COMPLETE","SUCCESS","SUCCESSFUL","Succeeded")
+    if ($taskStatus -in $successStates) {
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Fleet ingress configured successfully"
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Fleet FQDN : $FleetFqdn"
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Fleet VIP  : $FleetVip"
+    } else {
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Apply task ended with status: $taskStatus"
+        if ($taskResponse -and $taskResponse.description.localizedMessage) {
+            LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] $($taskResponse.description.localizedMessage)"
+        }
+    }
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+Export-ModuleMember -Function Set-VcfmsFleetIdentity
+
 #EndRegion Services Runtime
 
 #Region Supervisor
