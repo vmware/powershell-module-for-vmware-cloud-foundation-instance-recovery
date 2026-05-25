@@ -3282,8 +3282,7 @@ Function Add-HostsToCluster {
 }
 Export-ModuleMember -Function Add-HostsToCluster
 
-Function Add-VMKernelsToHost 
-{
+Function Add-VMKernelsToHost {
     <#
     .SYNOPSIS
     Adds VMkernels to ESXi hosts using data from the SDDC Manager inventory to map the correct IP addresses
@@ -3355,19 +3354,19 @@ Function Add-VMKernelsToHost
         $vsanMask = ((Invoke-VcfGetNetworksOfNetworkPool -id $networkPoolID).elements | ? { $_.type -eq "VSAN" }).Mask
         $vsanMTU = ((Invoke-VcfGetNetworksOfNetworkPool -id $networkPoolID).elements | ? { $_.type -eq "VSAN" }).mtu
         $vsanGW = ((Invoke-VcfGetNetworksOfNetworkPool -id $networkPoolID).elements | ? { $_.type -eq "VSAN" }).gateway
-        
+
         #Get Host Details
         $esx = Get-VMHost -Name $vmHost
         $hostVmkernelInfo = $esx | Get-View -Property Name, Config.Network.Vnic | ForEach-Object {
             $HostName = $_.Name
             foreach ($Vmk in $_.Config.Network.Vnic) {
                 [PSCustomObject]@{
-                    VMHost        = $HostName
-                    Device        = $Vmk.Device
-                    Portgroup     = $Vmk.Portgroup
-                    IPAddress     = $Vmk.Spec.Ip.IpAddress
-                    SubnetMask    = $Vmk.Spec.Ip.SubnetMask
-                    MacAddress    = $Vmk.Spec.Mac
+                    VMHost     = $HostName
+                    Device     = $Vmk.Device
+                    Portgroup  = $Vmk.Portgroup
+                    IPAddress  = $Vmk.Spec.Ip.IpAddress
+                    SubnetMask = $Vmk.Spec.Ip.SubnetMask
+                    MacAddress = $Vmk.Spec.Mac
                 }
             }
         }
@@ -3378,9 +3377,7 @@ Function Add-VMKernelsToHost
         If (!$vmk1Exists) {
             LogMessage -type INFO -message "[$vmhost] Creating vMotion vMK"
             $vmk = New-VMHostNetworkAdapter -VMHost $esx -VirtualSwitch $vmotionVDSName -mtu $vmotionMTU -PortGroup $dvportgroup -ip $vmotionIP -SubnetMask $vmotionMask -NetworkStack (Get-VMHostNetworkStack -vmhost $esx | Where-Object { $_.id -eq "vmotion" })
-        }
-        else
-        {
+        } else {
             LogMessage -type INFO -message "[$vmhost] vMotion vMK already present"
         }
 
@@ -3388,8 +3385,7 @@ Function Add-VMKernelsToHost
         $vmkName = 'vmk1'
         $esxcli = Get-EsxCli -VMHost $esx -V2
         $interface = $esxcli.network.ip.interface.ipv4.get.Invoke(@{interfacename = $vmkName })
-        If ($interface[0].Gateway -ne $vmotionGW)
-        {
+        If ($interface[0].Gateway -ne $vmotionGW) {
             LogMessage -type INFO -message "[$vmhost] Setting vMotion Gateway"
             $interfaceArg = @{
                 netmask       = $interface[0].IPv4Netmask
@@ -3399,9 +3395,7 @@ Function Add-VMKernelsToHost
             }
             $esxcli.network.ip.interface.ipv4.set.Invoke($interfaceArg) *>$null
             $esxcli.network.ip.route.ipv4.add.Invoke(@{ netstack = 'vmotion'; network = 'default'; gateway = $vmotionGW }) *>$null
-        }
-        else
-        {
+        } else {
             LogMessage -type INFO -message "[$vmhost] vMotion Gateway already configured"
         }
 
@@ -3411,9 +3405,7 @@ Function Add-VMKernelsToHost
         If (!$vmk2Exists) {
             LogMessage -type INFO -message "[$vmhost] Creating vSAN vMK"
             $vmk = New-VMHostNetworkAdapter -VMHost $esx -VirtualSwitch $vsanVDSName -mtu $vsanMTU -PortGroup $dvportgroup -ip $vsanIP -SubnetMask $vsanMask -VsanTrafficEnabled:$true
-        }
-        else
-        {
+        } else {
             LogMessage -type INFO -message "[$vmhost] vSAN vMK already present"
         }
 
@@ -3421,20 +3413,17 @@ Function Add-VMKernelsToHost
         $vmkName = 'vmk2'
         $esxcli = Get-EsxCli -VMHost $esx -V2
         $interface = $esxcli.network.ip.interface.ipv4.get.Invoke(@{interfacename = $vmkName })
-        If ($interface[0].Gateway -ne $vsanGW)
-        {
+        If ($interface[0].Gateway -ne $vsanGW) {
             LogMessage -type INFO -message "[$vmhost] Setting vSAN Gateway"
             $interfaceArg = @{
-                        netmask       = $interface[0].IPv4Netmask
-                        type          = $interface[0].AddressType.ToLower()
-                        ipv4          = $interface[0].IPv4Address
-                        interfacename = $interface[0].Name
-                        gateway       = $vsanGW
-                    }
-                    $esxcli.network.ip.interface.ipv4.set.Invoke($interfaceArg) *>$null
-        }
-        else
-        {
+                netmask       = $interface[0].IPv4Netmask
+                type          = $interface[0].AddressType.ToLower()
+                ipv4          = $interface[0].IPv4Address
+                interfacename = $interface[0].Name
+                gateway       = $vsanGW
+            }
+            $esxcli.network.ip.interface.ipv4.set.Invoke($interfaceArg) *>$null
+        } else {
             LogMessage -type INFO -message "[$vmhost] vSAN Gateway already configured"
         }
     }
@@ -4460,7 +4449,7 @@ Function New-RebuiltVdsConfiguration {
         }
         Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
         $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
     }
 }
 Export-ModuleMember -Function New-RebuiltVdsConfiguration
@@ -4822,7 +4811,7 @@ Function New-PrepareManagementHostNetworking {
             Disconnect-VIServer -Server $currentHostFQDN -Force -Confirm:$false
         }
         $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
     } else {
         Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false -ErrorAction SilentlyContinue
         LogMessage -type WARNING -message "[$jumpboxName] Configuration not accepted. Task aborted"
@@ -6123,11 +6112,11 @@ Function Invoke-NSXEdgeClusterRecoverySelective {
             'Present'  = $presentString
         }
         $indexedEdges += [PSCustomObject]@{
-            'ID'          = $edgeIndex
-            'Edge'        = $edgeEntry.Edge
+            'ID'           = $edgeIndex
+            'Edge'         = $edgeEntry.Edge
             'LocationType' = $edgeEntry.LocationType
             'LocationName' = $edgeEntry.LocationName
-            'VmPresent'   = [bool]$vmPresent
+            'VmPresent'    = [bool]$vmPresent
         }
         $edgeIndex++
     }
@@ -7242,7 +7231,7 @@ Function Set-VcfmsSftpBackupSettings {
 
     # Build the request body
     $requestBody = @{
-        spec = @{
+        spec    = @{
             configuration = @{
                 backups = @{
                     destination          = "sftp"
@@ -7589,7 +7578,7 @@ Function Restore-VcfmsBackup {
     Write-Host " Restore Payload ($($payloadObject.components.Count) component(s)):" -ForegroundColor Cyan
     Write-Host " ----------------------------------------------------------------" -ForegroundColor Cyan
     foreach ($comp in $payloadObject.components) {
-        $componentName = ($comp.path -split '/')  | Where-Object { $_ -in @("vsp", "vcf-fleet-lcm", "vcf-fleet-depot", "vcf-sddc-lcm", "salt", "salt-raas", "vidb", "ops-logs") } | Select-Object -First 1
+        $componentName = ($comp.path -split '/') | Where-Object { $_ -in @("vsp", "vcf-fleet-lcm", "vcf-fleet-depot", "vcf-sddc-lcm", "salt", "salt-raas", "vidb", "ops-logs") } | Select-Object -First 1
         if (-not $componentName) { $componentName = "unknown" }
         Write-Host "   $componentName" -ForegroundColor Yellow -NoNewline
         Write-Host " -> point: $($comp.point)" -ForegroundColor White
@@ -7651,8 +7640,8 @@ Function Restore-VcfmsBackup {
             $tasksResponse = Invoke-RestMethod -Uri "https://$ServicesRuntimeFqdn/api/v1/tasks" -Method GET -Headers $headers -SkipCertificateCheck
             $restoreTask = $tasksResponse.tasks |
                 Where-Object { $_.type -eq "com.vmware.vcfms.task.RestoreMultipleComponents" -and $_.status -notin @("Succeeded", "Failed", "Cancelled") } |
-                Sort-Object createTime -Descending |
-                Select-Object -First 1
+                    Sort-Object createTime -Descending |
+                        Select-Object -First 1
             if ($restoreTask) {
                 $taskId = $restoreTask.id
             }
@@ -8489,7 +8478,7 @@ Function Set-VcfmsComponentVips {
 
     # Include options like other apply operations (Set-VcfmsSftpBackupSettings); some stacks ignore partial applies without it.
     $payload = [ordered]@{
-        spec = [ordered]@{
+        spec    = [ordered]@{
             configuration = [ordered]@{
                 ingress = $ingressObject
             }
@@ -8639,6 +8628,565 @@ Function Set-VcfmsComponentVips {
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
 }
 Export-ModuleMember -Function Set-VcfmsComponentVips
+
+Function Get-VcfmsServicesRuntimeKubeconfig {
+    <#
+    Connects to a Services Runtime node via SSH as vmware-system-user, elevates to root using
+    the same password, copies /etc/kubernetes/admin.conf to stdout, and writes it locally as
+    <ClusterName>.kubeconfig in the current working directory (or OutputDir when specified).
+
+    Returns the full path to the written file, or $null on failure.
+
+    This is an unexported helper — use it from other functions in this module; it is not
+    surfaced via Export-ModuleMember.
+    #>
+    Param(
+        [Parameter(Mandatory = $true)][String] $NodeFqdn,
+        [Parameter(Mandatory = $true)][String] $Password,
+        [Parameter(Mandatory = $true)][String] $ClusterName,
+        [Parameter(Mandatory = $false)][String] $OutputDir = "."
+    )
+
+    $jumpboxName = hostname
+    LogMessage -type INFO -message "[$jumpboxName] Retrieving kubeconfig from $NodeFqdn for cluster '$ClusterName'"
+
+    $SecurePassword = ConvertTo-SecureString -String $Password -AsPlainText -Force
+    $mycreds = New-Object System.Management.Automation.PSCredential ('vmware-system-user', $SecurePassword)
+    $inmem = New-SSHMemoryKnownHost
+    New-SSHTrustedHost -KnownHostStore $inmem -HostName $NodeFqdn -FingerPrint ((Get-SSHHostKey -ComputerName $NodeFqdn).fingerprint) | Out-Null
+
+    $sshSession = $null
+    try {
+        Do {
+            $sshSession = New-SSHSession -ComputerName $NodeFqdn -Credential $mycreds -KnownHost $inmem
+        } Until ($sshSession)
+
+        # base64-encode the file on the remote side before transferring. This collapses the entire
+        # content — including long certificate and private-key lines — into a single unwrapped line,
+        # completely avoiding the terminal column-wrap truncation that occurs when cat is used
+        # directly over an interactive shell stream.
+        # sudo -S reads the password from stdin so no interactive shell stream is needed.
+        $remoteCmd = "echo '$Password' | sudo -S base64 -w 0 /etc/kubernetes/admin.conf"
+        $result = Invoke-SSHCommand -SessionId $sshSession.SessionId -Command $remoteCmd -TimeOut 30
+
+        if ($result.ExitStatus -ne 0) {
+            LogMessage -type ERROR -message "[$NodeFqdn] Remote command failed (exit $($result.ExitStatus)): $($result.Error)"
+            return $null
+        }
+
+        # Join all output lines and strip anything that is not valid base64 (e.g. sudo password prompt)
+        $b64 = ($result.Output -join "") -replace '[^A-Za-z0-9+/=]', ''
+        if ([string]::IsNullOrWhiteSpace($b64)) {
+            LogMessage -type ERROR -message "[$NodeFqdn] No base64 content returned from remote command"
+            return $null
+        }
+
+        $kubeconfigContent = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($b64))
+
+        if ([string]::IsNullOrWhiteSpace($kubeconfigContent)) {
+            LogMessage -type ERROR -message "[$NodeFqdn] Decoded kubeconfig is empty"
+            return $null
+        }
+
+        # Write locally using WriteAllText to guarantee no BOM and exact UTF-8 bytes.
+        # Resolve OutputDir to an absolute path via PowerShell before passing to .NET —
+        # [System.IO.File]::WriteAllText resolves relative paths against the .NET working
+        # directory which differs from $PWD when the module is imported.
+        $resolvedOutputDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputDir)
+        if (-not (Test-Path $resolvedOutputDir)) {
+            New-Item -ItemType Directory -Path $resolvedOutputDir -Force | Out-Null
+        }
+        $outputPath = Join-Path -Path $resolvedOutputDir -ChildPath "$ClusterName.kubeconfig"
+        [System.IO.File]::WriteAllText($outputPath, $kubeconfigContent, (New-Object System.Text.UTF8Encoding $false))
+        LogMessage -type INFO -message "[$jumpboxName] Kubeconfig written to $outputPath"
+        return $outputPath
+
+    } catch {
+        LogMessage -type ERROR -message "[$jumpboxName] Failed to retrieve kubeconfig from $NodeFqdn : $($_.Exception.Message)"
+        return $null
+    } finally {
+        if ($sshSession) { Remove-SSHSession -SSHSession $sshSession | Out-Null }
+    }
+}
+
+Function New-ExtractVcfmsBackup {
+    <#
+    .SYNOPSIS
+    Extracts Kubernetes resource YAML from a locally downloaded VMSP component backup archive.
+
+    .DESCRIPTION
+    The New-ExtractVcfmsBackup cmdlet decrypts a local *.base.tgz VMSP backup archive, extracts
+    the inner Velero archive, and writes selected Kubernetes resources as YAML files to OutputDir.
+
+    The archive is decrypted using AES-256-CBC with PBKDF2 key derivation, matching the OpenSSL
+    enc -aes-256-cbc -pbkdf2 format produced by the VMSP backup service.
+
+    The following resources are extracted when present in the Velero archive:
+      vmsp-platform.yaml              PackageDeployment
+      ingress-fleet-tls-ndc.yaml     NDC mirror secret
+      ingress-instance-tls-ndc.yaml  NDC mirror secret
+      ingress-platform-tls-ndc.yaml  NDC mirror secret
+      ingress-fleet-tls.yaml         Standard TLS secret (from backup or synthesized from NDC)
+      ingress-instance-tls.yaml      Standard TLS secret (from backup or synthesized from NDC)
+      ingress-platform-tls.yaml      Standard TLS secret (from backup or synthesized from NDC)
+
+    Transient metadata fields (managedFields, resourceVersion, uid, creationTimestamp) are
+    stripped from every resource before writing.
+
+    When ServicesRuntimeNodeFqdn, ServicesRuntimePassword, and ClusterName are supplied the
+    kubeconfig is retrieved automatically from the Services Runtime node via
+    Get-VcfmsServicesRuntimeKubeconfig before extraction runs.
+
+    .EXAMPLE
+    New-ExtractVcfmsBackup `
+        -LocalArchivePath "C:\backups\2026-03-23T16-45-31Z.base.tgz" `
+        -EncryptionPassphrase "MyPassphrase!" `
+        -OutputDir "C:\backup-yaml" `
+        -ServicesRuntimeNodeFqdn "10.21.99.32" `
+        -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
+        -ClusterName "sfo-sr01"
+
+    .EXAMPLE
+    New-ExtractVcfmsBackup `
+        -LocalArchivePath "C:\backups\2026-03-23T16-45-31Z.base.tgz" `
+        -EncryptionPassphrase "MyPassphrase!" `
+        -OutputDir "C:\backup-yaml" `
+        -KubeconfigPath "C:\kubeconfigs\sfo-sr01.kubeconfig"
+
+    .PARAMETER LocalArchivePath
+    Path to the *.base.tgz backup archive on the local Windows host.
+
+    .PARAMETER EncryptionPassphrase
+    Passphrase used to decrypt the backup archive (AES-256-CBC / PBKDF2).
+
+    .PARAMETER OutputDir
+    Directory where extracted YAML files are written. Created if it does not exist.
+    Defaults to a timestamped subfolder in the current directory.
+
+    .PARAMETER ServicesRuntimeNodeFqdn
+    FQDN or IP of a Services Runtime control-plane node. When provided together with
+    ServicesRuntimePassword and ClusterName the kubeconfig is fetched automatically.
+
+    .PARAMETER ServicesRuntimePassword
+    Password for vmware-system-user on the Services Runtime node (also used for sudo elevation).
+
+    .PARAMETER ClusterName
+    Logical name for the Services Runtime cluster, used as the kubeconfig filename stem.
+
+    .PARAMETER KubeconfigPath
+    Path to an already-downloaded kubeconfig file. Takes precedence over automatic retrieval.
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][String] $LocalArchivePath,
+        [Parameter(Mandatory = $true)][String] $EncryptionPassphrase,
+        [Parameter(Mandatory = $false)][String] $OutputDir,
+        [Parameter(Mandatory = $false)][String] $ServicesRuntimeNodeFqdn,
+        [Parameter(Mandatory = $false)][String] $ServicesRuntimePassword,
+        [Parameter(Mandatory = $false)][String] $ClusterName,
+        [Parameter(Mandatory = $false)][String] $KubeconfigPath
+    )
+
+    $jumpboxName = hostname
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    # -------------------------------------------------------------------------
+    # Helper: YAML serialiser — block-style, no flow collections, sorts keys
+    # Matches PyYAML safe_dump(obj, default_flow_style=False, sort_keys=False)
+    # -------------------------------------------------------------------------
+    function ConvertTo-VcfmsYaml {
+        param($obj, [int]$indent = 0)
+        $pad  = ' ' * $indent
+        $pad2 = ' ' * ($indent + 2)
+        if ($null -eq $obj) { return 'null' }
+        if ($obj -is [bool])   { if ($obj) { return 'true' } else { return 'false' } }
+        if ($obj -is [int] -or $obj -is [long] -or $obj -is [double]) { return "$obj" }
+        if ($obj -is [string]) {
+            # Strings that need quoting: empty, look like YAML scalars, contain special chars
+            if ($obj -eq '' -or
+                $obj -match '^[\s]|[\s]$|^[>|!&*{}[\],#`@%]|: |^-\s|^[\d]' -or
+                $obj -match '[\r\n]' -or
+                $obj -in @('true','false','null','yes','no','on','off')) {
+                $escaped = $obj -replace "'", "''"
+                return "'$escaped'"
+            }
+            return $obj
+        }
+        if ($obj -is [System.Collections.IDictionary]) {
+            if ($obj.Count -eq 0) { return '{}' }
+            $lines = @()
+            foreach ($k in $obj.Keys) {
+                $v = $obj[$k]
+                $ks = ConvertTo-VcfmsYaml $k 0
+                if ($null -eq $v -or $v -is [bool] -or $v -is [int] -or $v -is [long] -or $v -is [double] -or $v -is [string]) {
+                    $lines += "$pad${ks}: $(ConvertTo-VcfmsYaml $v 0)"
+                } elseif ($v -is [System.Collections.IList]) {
+                    if ($v.Count -eq 0) {
+                        $lines += "$pad${ks}: []"
+                    } else {
+                        $lines += "$pad${ks}:"
+                        $lines += ConvertTo-VcfmsYaml $v $indent
+                    }
+                } else {
+                    $lines += "$pad${ks}:"
+                    $lines += ConvertTo-VcfmsYaml $v ($indent + 2)
+                }
+            }
+            return $lines -join "`n"
+        }
+        if ($obj -is [System.Collections.IList]) {
+            if ($obj.Count -eq 0) { return '[]' }
+            $lines = @()
+            foreach ($item in $obj) {
+                if ($null -eq $item -or $item -is [bool] -or $item -is [int] -or $item -is [long] -or $item -is [double] -or $item -is [string]) {
+                    $lines += "$pad- $(ConvertTo-VcfmsYaml $item 0)"
+                } elseif ($item -is [System.Collections.IList]) {
+                    $lines += "$pad-"
+                    $lines += ConvertTo-VcfmsYaml $item ($indent + 2)
+                } else {
+                    $inner = ConvertTo-VcfmsYaml $item ($indent + 2)
+                    $firstLine = $inner.TrimStart()
+                    $rest      = ($inner -split "`n" | Select-Object -Skip 1) -join "`n"
+                    $lines += "$pad- $firstLine"
+                    if ($rest) { $lines += $rest }
+                }
+            }
+            return $lines -join "`n"
+        }
+        return "$obj"
+    }
+
+    # -------------------------------------------------------------------------
+    # Helper: convert a PSCustomObject graph to ordered hashtables so the
+    # YAML serialiser can iterate keys deterministically
+    # -------------------------------------------------------------------------
+    function ConvertTo-OrderedHashtable {
+        param($obj)
+        if ($obj -is [System.Management.Automation.PSCustomObject]) {
+            $ht = [ordered]@{}
+            foreach ($prop in $obj.PSObject.Properties) {
+                $ht[$prop.Name] = ConvertTo-OrderedHashtable $prop.Value
+            }
+            return $ht
+        }
+        if ($obj -is [System.Collections.IList] -and $obj -isnot [string]) {
+            return @($obj | ForEach-Object { ConvertTo-OrderedHashtable $_ })
+        }
+        return $obj
+    }
+
+    # -------------------------------------------------------------------------
+    # Helper: strip transient metadata fields
+    # -------------------------------------------------------------------------
+    function Remove-VcfmsTransientMeta {
+        param($obj)
+        if ($obj -is [System.Collections.IDictionary] -and $obj.Contains('metadata')) {
+            foreach ($k in @('managedFields','resourceVersion','uid','creationTimestamp')) {
+                $obj['metadata'].Remove($k) | Out-Null
+            }
+        }
+        return $obj
+    }
+
+    # -------------------------------------------------------------------------
+    # Helper: OpenSSL-compatible AES-256-CBC / PBKDF2 decryption
+    # Replicates: openssl enc -d -aes-256-cbc -pbkdf2 -pass pass:<passphrase>
+    # -------------------------------------------------------------------------
+    function Invoke-OpensslDecrypt {
+        param([string]$InPath, [string]$OutPath, [string]$Passphrase)
+
+        $cipherBytes = [System.IO.File]::ReadAllBytes($InPath)
+
+        # OpenSSL PBKDF2 format: "Salted__" (8 bytes) + salt (8 bytes) + ciphertext
+        $magic = [System.Text.Encoding]::ASCII.GetString($cipherBytes[0..7])
+        if ($magic -ne 'Salted__') {
+            throw "Unexpected OpenSSL header: '$magic' — expected 'Salted__'"
+        }
+        $salt       = $cipherBytes[8..15]
+        $ciphertext = $cipherBytes[16..($cipherBytes.Length - 1)]
+
+        # PBKDF2-SHA256, 10000 iterations, 48 bytes → 32-byte key + 16-byte IV
+        $passBytes = [System.Text.Encoding]::UTF8.GetBytes($Passphrase)
+        $saltBytes = [byte[]]$salt
+        $pbkdf2    = New-Object System.Security.Cryptography.Rfc2898DeriveBytes(
+                         $passBytes, $saltBytes, 10000,
+                         [System.Security.Cryptography.HashAlgorithmName]::SHA256)
+        $key = $pbkdf2.GetBytes(32)
+        $iv  = $pbkdf2.GetBytes(16)
+
+        $aes = [System.Security.Cryptography.Aes]::Create()
+        $aes.Mode    = [System.Security.Cryptography.CipherMode]::CBC
+        $aes.Padding = [System.Security.Cryptography.PaddingMode]::PKCS7
+        $aes.Key     = $key
+        $aes.IV      = $iv
+
+        $decryptor   = $aes.CreateDecryptor()
+        $inStream    = [System.IO.MemoryStream]::new($ciphertext)
+        $cryptoStream = New-Object System.Security.Cryptography.CryptoStream(
+                            $inStream, $decryptor,
+                            [System.Security.Cryptography.CryptoStreamMode]::Read)
+        $outStream   = [System.IO.File]::OpenWrite($OutPath)
+        try { $cryptoStream.CopyTo($outStream) }
+        finally { $cryptoStream.Close(); $outStream.Close(); $aes.Dispose() }
+    }
+
+    # -------------------------------------------------------------------------
+    # Helper: extract a .tar.gz to a directory using SharpCompress via
+    # System.IO.Compression for gzip + a pure-.NET tar reader
+    # -------------------------------------------------------------------------
+    function Expand-TarGz {
+        param([string]$ArchivePath, [string]$DestDir)
+
+        [System.IO.Directory]::CreateDirectory($DestDir) | Out-Null
+        $fs  = [System.IO.File]::OpenRead($ArchivePath)
+        $gz  = New-Object System.IO.Compression.GZipStream($fs, [System.IO.Compression.CompressionMode]::Decompress)
+        $buf = New-Object byte[] 512
+
+        try {
+            while ($true) {
+                # Read 512-byte tar header block
+                $read = 0
+                while ($read -lt 512) {
+                    $n = $gz.Read($buf, $read, 512 - $read)
+                    if ($n -eq 0) { return }
+                    $read += $n
+                }
+
+                # All-zero block = end of archive
+                $allZero = $true
+                foreach ($b in $buf) { if ($b -ne 0) { $allZero = $false; break } }
+                if ($allZero) { return }
+
+                # Parse header fields (POSIX ustar)
+                $nameRaw  = [System.Text.Encoding]::ASCII.GetString($buf, 0,   100).TrimEnd([char]0)
+                $sizeOctal = [System.Text.Encoding]::ASCII.GetString($buf, 124, 12).Trim().TrimEnd([char]0)
+                $typeFlag  = [char]$buf[156]
+                $prefixRaw = [System.Text.Encoding]::ASCII.GetString($buf, 345, 155).TrimEnd([char]0)
+
+                $entryName = if ($prefixRaw) { "$prefixRaw/$nameRaw" } else { $nameRaw }
+                $entrySize = if ($sizeOctal) { [Convert]::ToInt64($sizeOctal.Trim(), 8) } else { 0 }
+
+                # Read data blocks
+                $blocks    = [int][Math]::Ceiling($entrySize / 512)
+                $dataBytes = New-Object byte[] ($blocks * 512)
+                $dataRead  = 0
+                while ($dataRead -lt $dataBytes.Length) {
+                    $n = $gz.Read($dataBytes, $dataRead, $dataBytes.Length - $dataRead)
+                    if ($n -eq 0) { break }
+                    $dataRead += $n
+                }
+
+                # Write regular files (type '0' or NUL, i.e. not directories/symlinks)
+                if ($typeFlag -eq '0' -or $typeFlag -eq [char]0) {
+                    $destPath = Join-Path $DestDir ($entryName -replace '/', [System.IO.Path]::DirectorySeparatorChar)
+                    $destParent = [System.IO.Path]::GetDirectoryName($destPath)
+                    [System.IO.Directory]::CreateDirectory($destParent) | Out-Null
+                    [System.IO.File]::WriteAllBytes($destPath, $dataBytes[0..([int]$entrySize - 1)])
+                }
+            }
+        } finally {
+            $gz.Close(); $fs.Close()
+        }
+    }
+
+    # -------------------------------------------------------------------------
+    # Helper: find a JSON file under two possible Velero path layouts
+    # -------------------------------------------------------------------------
+    function Resolve-VeleroJson {
+        param([string]$VeleroBase, [string]$ResourceKind, [string]$Namespace, [string]$Stem)
+        foreach ($layout in @(
+            (Join-Path $VeleroBase "resources\$ResourceKind\namespaces\$Namespace\$Stem.json"),
+            (Join-Path $VeleroBase "resources\$ResourceKind\v1-preferredversion\namespaces\$Namespace\$Stem.json")
+        )) {
+            if (Test-Path $layout) { return $layout }
+        }
+        return $null
+    }
+
+    # -------------------------------------------------------------------------
+    # Helper: synthesize a kubernetes.io/tls Secret from an NDC Opaque secret
+    # -------------------------------------------------------------------------
+    function New-TlsSecretFromNdc {
+        param([string]$NdcJsonPath, [string]$PlainStem)
+        $ndc  = Get-Content $NdcJsonPath -Raw | ConvertFrom-Json
+        $data = $ndc.data
+        $certB64 = if ($data.cert)    { $data.cert }    elseif ($data.'tls.crt') { $data.'tls.crt' } else { $null }
+        $keyB64  = if ($data.key)     { $data.key }     elseif ($data.'tls.key') { $data.'tls.key' } else { $null }
+        if (-not $certB64 -or -not $keyB64) {
+            throw "NDC secret $NdcJsonPath has no cert/key in .data; cannot synthesize $PlainStem"
+        }
+        $ns = if ($ndc.metadata.namespace) { $ndc.metadata.namespace } else { 'vmsp-platform' }
+        $md = [ordered]@{
+            name      = $PlainStem
+            namespace = $ns
+            annotations = [ordered]@{
+                'vmsp.vmware.com/generated-from-backup' = ([System.IO.Path]::GetFileNameWithoutExtension($NdcJsonPath))
+            }
+        }
+        $ndcLabels = @{}
+        if ($ndc.metadata.labels) {
+            $ndc.metadata.labels.PSObject.Properties | ForEach-Object {
+                if ($_.Name -ne 'backup.vmsp.vmware.com/skip-restore') { $ndcLabels[$_.Name] = $_.Value }
+            }
+        }
+        if ($ndcLabels.Count -gt 0) { $md['labels'] = $ndcLabels }
+        return [ordered]@{
+            apiVersion = 'v1'
+            kind       = 'Secret'
+            metadata   = $md
+            type       = 'kubernetes.io/tls'
+            data       = [ordered]@{ 'tls.crt' = $certB64; 'tls.key' = $keyB64 }
+        }
+    }
+
+    # =========================================================================
+    # Main logic
+    # =========================================================================
+
+    # Validate inputs
+    $resolvedArchive = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($LocalArchivePath)
+    if (-not (Test-Path $resolvedArchive)) {
+        LogMessage -type ERROR -message "[$jumpboxName] Local archive not found: $resolvedArchive"
+        $StopWatch.Stop(); return
+    }
+
+    # Resolve output directory
+    if ($OutputDir) {
+        $resolvedOutputDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputDir)
+    } else {
+        $resolvedOutputDir = Join-Path $PWD "backup-yaml-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+    }
+    [System.IO.Directory]::CreateDirectory($resolvedOutputDir) | Out-Null
+
+    # Optionally retrieve the kubeconfig (not needed for extraction itself, written alongside YAML
+    # for the caller's convenience)
+    $resolvedKubeconfig = $KubeconfigPath
+    if (-not $resolvedKubeconfig) {
+        if ($ServicesRuntimeNodeFqdn -and $ServicesRuntimePassword -and $ClusterName) {
+            LogMessage -type INFO -message "[$jumpboxName] Retrieving kubeconfig from $ServicesRuntimeNodeFqdn"
+            $resolvedKubeconfig = Get-VcfmsServicesRuntimeKubeconfig `
+                -NodeFqdn    $ServicesRuntimeNodeFqdn `
+                -Password    $ServicesRuntimePassword `
+                -ClusterName $ClusterName `
+                -OutputDir   $resolvedOutputDir
+            if (-not $resolvedKubeconfig) {
+                LogMessage -type ERROR -message "[$jumpboxName] Failed to retrieve kubeconfig. Aborting."
+                $StopWatch.Stop(); return
+            }
+        }
+    }
+
+    LogMessage -type INFO -message "[$jumpboxName] Local archive  : $resolvedArchive"
+    LogMessage -type INFO -message "[$jumpboxName] Output dir     : $resolvedOutputDir"
+    if ($resolvedKubeconfig) {
+        LogMessage -type INFO -message "[$jumpboxName] Kubeconfig     : $resolvedKubeconfig"
+    }
+
+    # Step 1: Decrypt the outer blob (OpenSSL AES-256-CBC / PBKDF2)
+    $workDir   = Join-Path ([System.IO.Path]::GetTempPath()) "vcfms-extract-$(Get-Random)"
+    [System.IO.Directory]::CreateDirectory($workDir) | Out-Null
+    try {
+        $outerTgz  = Join-Path $workDir "decoded.tgz"
+        LogMessage -type INFO -message "[$jumpboxName] Decrypting archive"
+        try {
+            Invoke-OpensslDecrypt -InPath $resolvedArchive -OutPath $outerTgz -Passphrase $EncryptionPassphrase
+        } catch {
+            LogMessage -type ERROR -message "[$jumpboxName] Decryption failed: $($_.Exception.Message)"
+            $StopWatch.Stop(); return
+        }
+
+        # Step 2: Extract the outer tar.gz — look for the inner *-vsp-*.tar.gz
+        $outerRoot = Join-Path $workDir "outer"
+        LogMessage -type INFO -message "[$jumpboxName] Extracting outer archive"
+        try {
+            Expand-TarGz -ArchivePath $outerTgz -DestDir $outerRoot
+        } catch {
+            LogMessage -type ERROR -message "[$jumpboxName] Outer archive extraction failed: $($_.Exception.Message)"
+            $StopWatch.Stop(); return
+        }
+
+        $innerTgz = Get-ChildItem -Path $outerRoot -Recurse -Filter '*-vsp-*.tar.gz' |
+                        Select-Object -First 1 -ExpandProperty FullName
+        if (-not $innerTgz) {
+            LogMessage -type ERROR -message "[$jumpboxName] Could not find inner *-vsp-*.tar.gz under extracted archive"
+            $StopWatch.Stop(); return
+        }
+
+        # Step 3: Extract the inner Velero tar.gz
+        $veleroRoot = Join-Path $workDir "velero"
+        LogMessage -type INFO -message "[$jumpboxName] Extracting inner Velero archive"
+        try {
+            Expand-TarGz -ArchivePath $innerTgz -DestDir $veleroRoot
+        } catch {
+            LogMessage -type ERROR -message "[$jumpboxName] Inner archive extraction failed: $($_.Exception.Message)"
+            $StopWatch.Stop(); return
+        }
+
+        # Step 4: Walk the Velero tree and write YAML files
+        $secretKind   = 'secrets'
+        $ns           = 'vmsp-platform'
+        $writtenFiles = @()
+
+        # ingress-fleet-tls-ndc.yaml
+        $ndcStem  = 'ingress-fleet-tls-ndc'
+        $ndcJson  = Resolve-VeleroJson -VeleroBase $veleroRoot -ResourceKind $secretKind -Namespace $ns -Stem $ndcStem
+        if ($ndcJson) {
+            $obj  = ConvertTo-OrderedHashtable (Get-Content $ndcJson -Raw | ConvertFrom-Json)
+            $obj  = Remove-VcfmsTransientMeta $obj
+            $yaml = ConvertTo-VcfmsYaml $obj
+            $dest = Join-Path $resolvedOutputDir "$ndcStem.yaml"
+            [System.IO.File]::WriteAllText($dest, $yaml + "`n", (New-Object System.Text.UTF8Encoding $false))
+            LogMessage -type INFO -message "[$jumpboxName] Written: $dest"
+            $writtenFiles += $dest
+        } else {
+            LogMessage -type WARNING -message "[$jumpboxName] $ndcStem not found in archive"
+        }
+
+        # ingress-fleet-tls.yaml — from backup directly, or synthesized from NDC
+        $plainStem = 'ingress-fleet-tls'
+        $dest      = Join-Path $resolvedOutputDir "$plainStem.yaml"
+        $plainJson = Resolve-VeleroJson -VeleroBase $veleroRoot -ResourceKind $secretKind -Namespace $ns -Stem $plainStem
+        if ($plainJson) {
+            $obj  = ConvertTo-OrderedHashtable (Get-Content $plainJson -Raw | ConvertFrom-Json)
+            $obj  = Remove-VcfmsTransientMeta $obj
+            $yaml = ConvertTo-VcfmsYaml $obj
+            [System.IO.File]::WriteAllText($dest, $yaml + "`n", (New-Object System.Text.UTF8Encoding $false))
+            LogMessage -type INFO -message "[$jumpboxName] Written: $dest"
+            $writtenFiles += $dest
+        } elseif ($ndcJson) {
+            try {
+                $obj  = New-TlsSecretFromNdc -NdcJsonPath $ndcJson -PlainStem $plainStem
+                $obj  = Remove-VcfmsTransientMeta $obj
+                $yaml = ConvertTo-VcfmsYaml $obj
+                [System.IO.File]::WriteAllText($dest, $yaml + "`n", (New-Object System.Text.UTF8Encoding $false))
+                LogMessage -type INFO -message "[$jumpboxName] Written (synthesized from NDC): $dest"
+                $writtenFiles += $dest
+            } catch {
+                LogMessage -type WARNING -message "[$jumpboxName] Could not synthesize $plainStem : $($_.Exception.Message)"
+            }
+        } else {
+            LogMessage -type WARNING -message "[$jumpboxName] $plainStem not found in archive and no NDC source to synthesize from"
+        }
+
+        Write-Host ""
+        Write-Host " YAML written to: $resolvedOutputDir" -ForegroundColor Cyan
+        foreach ($f in $writtenFiles) {
+            Write-Host "   $(Split-Path $f -Leaf)" -ForegroundColor White
+        }
+        Write-Host ""
+
+    } finally {
+        # Always clean up the temp work directory
+        if (Test-Path $workDir) { Remove-Item -Recurse -Force $workDir -ErrorAction SilentlyContinue }
+    }
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+Export-ModuleMember -Function New-ExtractVcfmsBackup
 
 #EndRegion Services Runtime
 
