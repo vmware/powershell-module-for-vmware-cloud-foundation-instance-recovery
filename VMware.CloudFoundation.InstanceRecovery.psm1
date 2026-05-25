@@ -6401,6 +6401,78 @@ Function Add-AdditionalNSXManagers {
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
 Export-ModuleMember -Function Add-AdditionalNSXManagers
+
+Function Wait-NSXTEdgeDeployment {
+    Param (
+        [Parameter (Mandatory = $true)][ValidateNotNullOrEmpty()][String]$nsxtManagerFqdn,
+        [Parameter (Mandatory = $true)][ValidateNotNullOrEmpty()][String]$nsxtUsername,
+        [Parameter (Mandatory = $true)][ValidateNotNullOrEmpty()][String]$nsxtPassword,
+        [Parameter (Mandatory = $true)][ValidateNotNullOrEmpty()][String]$edgeNamePattern,
+        [Parameter (Mandatory = $false)][Int]$expectedEdgeCount = 2,
+        [Parameter (Mandatory = $false)][Int]$pollIntervalSeconds = 30,
+        [Parameter (Mandatory = $false)][Int]$timeoutMinutes = 30
+    )
+
+    $headers = createHeader -username $nsxtUsername -password $nsxtPassword
+    $startTime = Get-Date
+    $timeout = New-TimeSpan -Minutes $timeoutMinutes
+
+    LogMessage -Type WAIT -Message "[$nsxtManagerFqdn] Waiting for $expectedEdgeCount Edge(s) matching '$edgeNamePattern*' to deploy and reach UP status"
+
+    Do {
+        Try {
+            $upCount = 0
+            $foundCount = 0
+            
+            # Get edges from Management API
+            $edgeUri = "https://$nsxtManagerFqdn/api/v1/transport-nodes?node_types=EdgeNode"
+            $edgeResponse = Invoke-WebRequest -Method GET -URI $edgeUri -ContentType "application/json" -Headers $headers
+            $allEdges = ($edgeResponse.Content | ConvertFrom-Json).results
+
+            $targetEdges = $allEdges | Where-Object { $_.display_name -like "$edgeNamePattern*" }
+
+            If ($targetEdges) {
+                $foundCount = $targetEdges.Count
+                
+                ForEach ($edge in $targetEdges) {
+                    Try {
+                        $statusUri = "https://$nsxtManagerFqdn/api/v1/transport-nodes/$($edge.id)/status"
+                        $statusResponse = Invoke-WebRequest -Method GET -URI $statusUri -ContentType "application/json" -Headers $headers
+                        $status = $statusResponse.Content | ConvertFrom-Json
+                        
+                        $nodeStatus = $status.status
+                        $controlStatus = $status.control_connection_status.status
+                        
+                        If ($nodeStatus -eq "UP" -and $controlStatus -eq "UP") {
+                            $upCount++
+                        }
+                    }
+                    Catch {
+                        # Edge status not yet available, continue polling
+                    }
+                }
+
+                If ($foundCount -ge $expectedEdgeCount -and $upCount -ge $expectedEdgeCount) {
+                    LogMessage -Type INFO -Message "[$nsxtManagerFqdn] $expectedEdgeCount Edge(s) deployed successfully and connectivity is UP"
+                    Return
+                }
+            }
+        }
+        Catch {
+            # Silent catch during polling - edges may not exist yet
+        }
+
+        $currentTime = Get-Date
+        If (($currentTime - $startTime) -ge $timeout) {
+            LogMessage -Type ERROR -Message "[$nsxtManagerFqdn] Timeout reached after $timeoutMinutes minutes waiting for Edge deployment"
+            Return
+        }
+
+        Start-Sleep -Seconds $pollIntervalSeconds
+
+    } While ($true)
+}
+Export-ModuleMember -Function Wait-NSXTEdgeDeployment
 #EndRegion NSXT Functions
 
 #Region Services Runtime
