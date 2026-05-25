@@ -8629,11 +8629,46 @@ Function Set-VcfmsComponentVips {
 }
 Export-ModuleMember -Function Set-VcfmsComponentVips
 
+Function Open-VcfmsSshSession {
+    # Opens a Posh-SSH session with an auto-trusted host key.
+    # Unexported — used by Get-VcfmsServicesRuntimeKubeconfig.
+    param([String]$Fqdn, [System.Management.Automation.PSCredential]$Creds)
+    $inmem = New-SSHMemoryKnownHost
+    New-SSHTrustedHost -KnownHostStore $inmem -HostName $Fqdn `
+        -FingerPrint ((Get-SSHHostKey -ComputerName $Fqdn).fingerprint) | Out-Null
+    $session = $null
+    Do { $session = New-SSHSession -ComputerName $Fqdn -Credential $Creds -KnownHost $inmem }
+    Until ($session)
+    return $session
+}
+
+Function Get-VcfmsRemoteFileContent {
+    # Fetches a remote file via sudo -S base64 and returns decoded UTF-8 text, or $null on failure.
+    # Unexported — used by Get-VcfmsServicesRuntimeKubeconfig.
+    param([int]$SessionId, [String]$RemotePath, [String]$Pwd)
+    $cmd    = "echo '$Pwd' | sudo -S base64 -w 0 $RemotePath"
+    $result = Invoke-SSHCommand -SessionId $SessionId -Command $cmd -TimeOut 30
+    if ($result.ExitStatus -ne 0) { return $null }
+    $b64 = ($result.Output -join "") -replace '[^A-Za-z0-9+/=]', ''
+    if ([string]::IsNullOrWhiteSpace($b64)) { return $null }
+    return [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($b64))
+}
+
 Function Get-VcfmsServicesRuntimeKubeconfig {
     <#
-    Connects to a Services Runtime node via SSH as vmware-system-user, elevates to root using
-    the same password, copies /etc/kubernetes/admin.conf to stdout, and writes it locally as
-    <ClusterName>.kubeconfig in the current working directory (or OutputDir when specified).
+    Connects to a Services Runtime cluster node via SSH as vmware-system-user, elevates to root
+    using the same password, and retrieves /etc/kubernetes/admin.conf.
+
+    The FQDN of the Services Runtime cluster is accepted as ServicesRuntimeFqdn. The short name
+    (host label before the first dot) is derived automatically and used as the kubeconfig filename
+    stem unless ClusterName is explicitly provided.
+
+    If the initial node is a worker (admin.conf absent), the function reads
+    /etc/kubernetes/node-agent.conf, extracts the control plane server address from the
+    clusters[].cluster.server field, connects to that address, and retrieves admin.conf from
+    there instead.
+
+    The kubeconfig is written locally as <ClusterName>.kubeconfig in OutputDir.
 
     Returns the full path to the written file, or $null on failure.
 
@@ -8641,57 +8676,72 @@ Function Get-VcfmsServicesRuntimeKubeconfig {
     surfaced via Export-ModuleMember.
     #>
     Param(
-        [Parameter(Mandatory = $true)][String] $NodeFqdn,
+        [Parameter(Mandatory = $true)][String] $ServicesRuntimeFqdn,
         [Parameter(Mandatory = $true)][String] $Password,
-        [Parameter(Mandatory = $true)][String] $ClusterName,
+        [Parameter(Mandatory = $false)][String] $ClusterName,
         [Parameter(Mandatory = $false)][String] $OutputDir = "."
     )
 
+    # Derive short name from FQDN when ClusterName is not explicitly supplied
+    if (-not $ClusterName) {
+        $ClusterName = $ServicesRuntimeFqdn.Split('.')[0]
+    }
+
     $jumpboxName = hostname
-    LogMessage -type INFO -message "[$jumpboxName] Retrieving kubeconfig from $NodeFqdn for cluster '$ClusterName'"
+    LogMessage -type INFO -message "[$jumpboxName] Retrieving kubeconfig from $ServicesRuntimeFqdn (cluster: $ClusterName)"
 
     $SecurePassword = ConvertTo-SecureString -String $Password -AsPlainText -Force
-    $mycreds = New-Object System.Management.Automation.PSCredential ('vmware-system-user', $SecurePassword)
-    $inmem = New-SSHMemoryKnownHost
-    New-SSHTrustedHost -KnownHostStore $inmem -HostName $NodeFqdn -FingerPrint ((Get-SSHHostKey -ComputerName $NodeFqdn).fingerprint) | Out-Null
+    $creds = New-Object System.Management.Automation.PSCredential ('vmware-system-user', $SecurePassword)
 
-    $sshSession = $null
+    $session          = $null
+    $controlPlaneHost = $ServicesRuntimeFqdn
     try {
-        Do {
-            $sshSession = New-SSHSession -ComputerName $NodeFqdn -Credential $mycreds -KnownHost $inmem
-        } Until ($sshSession)
+        $session = Open-VcfmsSshSession -Fqdn $ServicesRuntimeFqdn -Creds $creds
 
-        # base64-encode the file on the remote side before transferring. This collapses the entire
-        # content — including long certificate and private-key lines — into a single unwrapped line,
-        # completely avoiding the terminal column-wrap truncation that occurs when cat is used
-        # directly over an interactive shell stream.
-        # sudo -S reads the password from stdin so no interactive shell stream is needed.
-        $remoteCmd = "echo '$Password' | sudo -S base64 -w 0 /etc/kubernetes/admin.conf"
-        $result = Invoke-SSHCommand -SessionId $sshSession.SessionId -Command $remoteCmd -TimeOut 30
+        # Try admin.conf first (present on control plane nodes)
+        $kubeconfigContent = Get-VcfmsRemoteFileContent -SessionId $session.SessionId `
+            -RemotePath '/etc/kubernetes/admin.conf' -Pwd $Password
 
-        if ($result.ExitStatus -ne 0) {
-            LogMessage -type ERROR -message "[$NodeFqdn] Remote command failed (exit $($result.ExitStatus)): $($result.Error)"
-            return $null
+        if (-not $kubeconfigContent) {
+            # Likely a worker node — read node-agent.conf to discover the control plane address
+            LogMessage -type INFO -message "[$ServicesRuntimeFqdn] admin.conf not found; reading node-agent.conf to locate control plane"
+            $nodeAgentContent = Get-VcfmsRemoteFileContent -SessionId $session.SessionId `
+                -RemotePath '/etc/kubernetes/node-agent.conf' -Pwd $Password
+
+            if (-not $nodeAgentContent) {
+                LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Neither admin.conf nor node-agent.conf could be read"
+                return $null
+            }
+
+            # node-agent.conf is a kubeconfig; extract server from clusters[0].cluster.server
+            # Format: "    server: https://<host>:<port>"
+            $serverLine = ($nodeAgentContent -split "`n" | Where-Object { $_ -match '^\s*server:\s*https?://' } | Select-Object -First 1)
+            if (-not $serverLine) {
+                LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Could not find server field in node-agent.conf"
+                return $null
+            }
+            $controlPlaneUri  = ($serverLine -replace '^\s*server:\s*', '').Trim()
+            $controlPlaneHost = ([uri]$controlPlaneUri).Host
+            LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Control plane address from node-agent.conf: $controlPlaneHost"
+
+            # Close the worker session and open a new one to the control plane
+            Remove-SSHSession -SSHSession $session | Out-Null
+            $session = $null
+            $session = Open-VcfmsSshSession -Fqdn $controlPlaneHost -Creds $creds
+
+            $kubeconfigContent = Get-VcfmsRemoteFileContent -SessionId $session.SessionId `
+                -RemotePath '/etc/kubernetes/admin.conf' -Pwd $Password
+
+            if (-not $kubeconfigContent) {
+                LogMessage -type ERROR -message "[$controlPlaneHost] Could not read admin.conf from control plane node"
+                return $null
+            }
+            LogMessage -type INFO -message "[$controlPlaneHost] admin.conf retrieved from control plane"
+        } else {
+            LogMessage -type INFO -message "[$ServicesRuntimeFqdn] admin.conf retrieved (node is a control plane)"
         }
 
-        # Join all output lines and strip anything that is not valid base64 (e.g. sudo password prompt)
-        $b64 = ($result.Output -join "") -replace '[^A-Za-z0-9+/=]', ''
-        if ([string]::IsNullOrWhiteSpace($b64)) {
-            LogMessage -type ERROR -message "[$NodeFqdn] No base64 content returned from remote command"
-            return $null
-        }
-
-        $kubeconfigContent = [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($b64))
-
-        if ([string]::IsNullOrWhiteSpace($kubeconfigContent)) {
-            LogMessage -type ERROR -message "[$NodeFqdn] Decoded kubeconfig is empty"
-            return $null
-        }
-
-        # Write locally using WriteAllText to guarantee no BOM and exact UTF-8 bytes.
-        # Resolve OutputDir to an absolute path via PowerShell before passing to .NET —
-        # [System.IO.File]::WriteAllText resolves relative paths against the .NET working
-        # directory which differs from $PWD when the module is imported.
+        # Write locally — resolve OutputDir to an absolute path so .NET WriteAllText lands in $PWD
         $resolvedOutputDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputDir)
         if (-not (Test-Path $resolvedOutputDir)) {
             New-Item -ItemType Directory -Path $resolvedOutputDir -Force | Out-Null
@@ -8699,13 +8749,242 @@ Function Get-VcfmsServicesRuntimeKubeconfig {
         $outputPath = Join-Path -Path $resolvedOutputDir -ChildPath "$ClusterName.kubeconfig"
         [System.IO.File]::WriteAllText($outputPath, $kubeconfigContent, (New-Object System.Text.UTF8Encoding $false))
         LogMessage -type INFO -message "[$jumpboxName] Kubeconfig written to $outputPath"
-        return $outputPath
+        LogMessage -type INFO -message "[$jumpboxName] Control plane node  : $controlPlaneHost"
+
+        return [PSCustomObject]@{
+            KubeconfigPath   = $outputPath
+            ControlPlaneHost = $controlPlaneHost
+        }
 
     } catch {
-        LogMessage -type ERROR -message "[$jumpboxName] Failed to retrieve kubeconfig from $NodeFqdn : $($_.Exception.Message)"
+        LogMessage -type ERROR -message "[$jumpboxName] Failed to retrieve kubeconfig: $($_.Exception.Message)"
         return $null
     } finally {
-        if ($sshSession) { Remove-SSHSession -SSHSession $sshSession | Out-Null }
+        if ($session) { Remove-SSHSession -SSHSession $session | Out-Null }
+    }
+}
+
+Function ConvertTo-VcfmsYaml {
+    # Block-style YAML serialiser. Matches PyYAML safe_dump(default_flow_style=False).
+    # Unexported — used by New-ExtractVcfmsBackup.
+    param($obj, [int]$indent = 0)
+    $pad = ' ' * $indent
+    if ($null -eq $obj) { return 'null' }
+    if ($obj -is [bool])   { if ($obj) { return 'true' } else { return 'false' } }
+    if ($obj -is [int] -or $obj -is [long] -or $obj -is [double]) { return "$obj" }
+    if ($obj -is [string]) {
+        if ($obj -eq '' -or
+            $obj -match '^[\s]|[\s]$|^[>|!&*{}[\],#`@%]|: |^-\s|^[\d]' -or
+            $obj -match '[\r\n]' -or
+            $obj -in @('true','false','null','yes','no','on','off')) {
+            $escaped = $obj -replace "'", "''"
+            return "'$escaped'"
+        }
+        return $obj
+    }
+    if ($obj -is [System.Collections.IDictionary]) {
+        if ($obj.Count -eq 0) { return '{}' }
+        $lines = @()
+        foreach ($k in $obj.Keys) {
+            $v  = $obj[$k]
+            $ks = ConvertTo-VcfmsYaml $k 0
+            if ($null -eq $v -or $v -is [bool] -or $v -is [int] -or $v -is [long] -or $v -is [double] -or $v -is [string]) {
+                $lines += "$pad${ks}: $(ConvertTo-VcfmsYaml $v 0)"
+            } elseif ($v -is [System.Collections.IList]) {
+                if ($v.Count -eq 0) {
+                    $lines += "$pad${ks}: []"
+                } else {
+                    $lines += "$pad${ks}:"
+                    $lines += ConvertTo-VcfmsYaml $v $indent
+                }
+            } else {
+                $lines += "$pad${ks}:"
+                $lines += ConvertTo-VcfmsYaml $v ($indent + 2)
+            }
+        }
+        return $lines -join "`n"
+    }
+    if ($obj -is [System.Collections.IList]) {
+        if ($obj.Count -eq 0) { return '[]' }
+        $lines = @()
+        foreach ($item in $obj) {
+            if ($null -eq $item -or $item -is [bool] -or $item -is [int] -or $item -is [long] -or $item -is [double] -or $item -is [string]) {
+                $lines += "$pad- $(ConvertTo-VcfmsYaml $item 0)"
+            } elseif ($item -is [System.Collections.IList]) {
+                $lines += "$pad-"
+                $lines += ConvertTo-VcfmsYaml $item ($indent + 2)
+            } else {
+                $inner     = ConvertTo-VcfmsYaml $item ($indent + 2)
+                $firstLine = $inner.TrimStart()
+                $rest      = ($inner -split "`n" | Select-Object -Skip 1) -join "`n"
+                $lines += "$pad- $firstLine"
+                if ($rest) { $lines += $rest }
+            }
+        }
+        return $lines -join "`n"
+    }
+    return "$obj"
+}
+
+Function ConvertTo-VcfmsOrderedHashtable {
+    # Converts a PSCustomObject graph to ordered hashtables for deterministic YAML key order.
+    # Unexported — used by New-ExtractVcfmsBackup.
+    param($obj)
+    if ($obj -is [System.Management.Automation.PSCustomObject]) {
+        $ht = [ordered]@{}
+        foreach ($prop in $obj.PSObject.Properties) {
+            $ht[$prop.Name] = ConvertTo-VcfmsOrderedHashtable $prop.Value
+        }
+        return $ht
+    }
+    if ($obj -is [System.Collections.IList] -and $obj -isnot [string]) {
+        return @($obj | ForEach-Object { ConvertTo-VcfmsOrderedHashtable $_ })
+    }
+    return $obj
+}
+
+Function Remove-VcfmsTransientMeta {
+    # Strips transient metadata fields before writing YAML.
+    # Unexported — used by New-ExtractVcfmsBackup.
+    param($obj)
+    if ($obj -is [System.Collections.IDictionary] -and $obj.Contains('metadata')) {
+        foreach ($k in @('managedFields','resourceVersion','uid','creationTimestamp')) {
+            $obj['metadata'].Remove($k) | Out-Null
+        }
+    }
+    return $obj
+}
+
+Function Invoke-VcfmsOpensslDecrypt {
+    # Replicates: openssl enc -d -aes-256-cbc -pbkdf2 -pass pass:<passphrase>
+    # Unexported — used by New-ExtractVcfmsBackup.
+    param([string]$InPath, [string]$OutPath, [string]$Passphrase)
+
+    $cipherBytes = [System.IO.File]::ReadAllBytes($InPath)
+    $magic = [System.Text.Encoding]::ASCII.GetString($cipherBytes[0..7])
+    if ($magic -ne 'Salted__') {
+        throw "Unexpected OpenSSL header: '$magic' — expected 'Salted__'"
+    }
+    $salt       = $cipherBytes[8..15]
+    $ciphertext = $cipherBytes[16..($cipherBytes.Length - 1)]
+
+    $passBytes = [System.Text.Encoding]::UTF8.GetBytes($Passphrase)
+    $pbkdf2    = New-Object System.Security.Cryptography.Rfc2898DeriveBytes(
+                     $passBytes, [byte[]]$salt, 10000,
+                     [System.Security.Cryptography.HashAlgorithmName]::SHA256)
+    $key = $pbkdf2.GetBytes(32)
+    $iv  = $pbkdf2.GetBytes(16)
+
+    $aes          = [System.Security.Cryptography.Aes]::Create()
+    $aes.Mode     = [System.Security.Cryptography.CipherMode]::CBC
+    $aes.Padding  = [System.Security.Cryptography.PaddingMode]::PKCS7
+    $aes.Key      = $key
+    $aes.IV       = $iv
+    $decryptor    = $aes.CreateDecryptor()
+    $inStream     = [System.IO.MemoryStream]::new($ciphertext)
+    $cryptoStream = New-Object System.Security.Cryptography.CryptoStream(
+                        $inStream, $decryptor,
+                        [System.Security.Cryptography.CryptoStreamMode]::Read)
+    $outStream    = [System.IO.File]::OpenWrite($OutPath)
+    try { $cryptoStream.CopyTo($outStream) }
+    finally { $cryptoStream.Close(); $outStream.Close(); $aes.Dispose() }
+}
+
+Function Expand-VcfmsTarGz {
+    # Pure-.NET gzip + tar extractor.
+    # Unexported — used by New-ExtractVcfmsBackup.
+    param([string]$ArchivePath, [string]$DestDir)
+
+    [System.IO.Directory]::CreateDirectory($DestDir) | Out-Null
+    $fs  = [System.IO.File]::OpenRead($ArchivePath)
+    $gz  = New-Object System.IO.Compression.GZipStream($fs, [System.IO.Compression.CompressionMode]::Decompress)
+    $buf = New-Object byte[] 512
+
+    try {
+        while ($true) {
+            $read = 0
+            while ($read -lt 512) {
+                $n = $gz.Read($buf, $read, 512 - $read)
+                if ($n -eq 0) { return }
+                $read += $n
+            }
+            $allZero = $true
+            foreach ($b in $buf) { if ($b -ne 0) { $allZero = $false; break } }
+            if ($allZero) { return }
+
+            $nameRaw   = [System.Text.Encoding]::ASCII.GetString($buf, 0,   100).TrimEnd([char]0)
+            $sizeOctal = [System.Text.Encoding]::ASCII.GetString($buf, 124,  12).Trim().TrimEnd([char]0)
+            $typeFlag  = [char]$buf[156]
+            $prefixRaw = [System.Text.Encoding]::ASCII.GetString($buf, 345, 155).TrimEnd([char]0)
+            $entryName = if ($prefixRaw) { "$prefixRaw/$nameRaw" } else { $nameRaw }
+            $entrySize = if ($sizeOctal) { [Convert]::ToInt64($sizeOctal.Trim(), 8) } else { 0 }
+
+            $blocks    = [int][Math]::Ceiling($entrySize / 512)
+            $dataBytes = New-Object byte[] ($blocks * 512)
+            $dataRead  = 0
+            while ($dataRead -lt $dataBytes.Length) {
+                $n = $gz.Read($dataBytes, $dataRead, $dataBytes.Length - $dataRead)
+                if ($n -eq 0) { break }
+                $dataRead += $n
+            }
+
+            if ($typeFlag -eq '0' -or $typeFlag -eq [char]0) {
+                $destPath   = Join-Path $DestDir ($entryName -replace '/', [System.IO.Path]::DirectorySeparatorChar)
+                $destParent = [System.IO.Path]::GetDirectoryName($destPath)
+                [System.IO.Directory]::CreateDirectory($destParent) | Out-Null
+                [System.IO.File]::WriteAllBytes($destPath, $dataBytes[0..([int]$entrySize - 1)])
+            }
+        }
+    } finally {
+        $gz.Close(); $fs.Close()
+    }
+}
+
+Function Resolve-VcfmsVeleroJson {
+    # Finds a Velero resource JSON under either the direct or v1-preferredversion layout.
+    # Unexported — used by New-ExtractVcfmsBackup.
+    param([string]$VeleroBase, [string]$ResourceKind, [string]$Namespace, [string]$Stem)
+    foreach ($layout in @(
+        (Join-Path $VeleroBase "resources\$ResourceKind\namespaces\$Namespace\$Stem.json"),
+        (Join-Path $VeleroBase "resources\$ResourceKind\v1-preferredversion\namespaces\$Namespace\$Stem.json")
+    )) {
+        if (Test-Path $layout) { return $layout }
+    }
+    return $null
+}
+
+Function New-VcfmsTlsSecretFromNdc {
+    # Synthesizes a kubernetes.io/tls Secret from an NDC Opaque secret JSON.
+    # Unexported — used by New-ExtractVcfmsBackup.
+    param([string]$NdcJsonPath, [string]$PlainStem)
+    $ndc     = Get-Content $NdcJsonPath -Raw | ConvertFrom-Json
+    $data    = $ndc.data
+    $certB64 = if ($data.cert) { $data.cert } elseif ($data.'tls.crt') { $data.'tls.crt' } else { $null }
+    $keyB64  = if ($data.key)  { $data.key }  elseif ($data.'tls.key') { $data.'tls.key' } else { $null }
+    if (-not $certB64 -or -not $keyB64) {
+        throw "NDC secret $NdcJsonPath has no cert/key in .data; cannot synthesize $PlainStem"
+    }
+    $ns = if ($ndc.metadata.namespace) { $ndc.metadata.namespace } else { 'vmsp-platform' }
+    $md = [ordered]@{
+        name      = $PlainStem
+        namespace = $ns
+        annotations = [ordered]@{
+            'vmsp.vmware.com/generated-from-backup' = ([System.IO.Path]::GetFileNameWithoutExtension($NdcJsonPath))
+        }
+    }
+    $ndcLabels = @{}
+    if ($ndc.metadata.labels) {
+        $ndc.metadata.labels.PSObject.Properties | ForEach-Object {
+            if ($_.Name -ne 'backup.vmsp.vmware.com/skip-restore') { $ndcLabels[$_.Name] = $_.Value }
+        }
+    }
+    if ($ndcLabels.Count -gt 0) { $md['labels'] = $ndcLabels }
+    return [ordered]@{
+        apiVersion = 'v1'
+        kind       = 'Secret'
+        metadata   = $md
+        type       = 'kubernetes.io/tls'
+        data       = [ordered]@{ 'tls.crt' = $certB64; 'tls.key' = $keyB64 }
     }
 }
 
@@ -8742,9 +9021,8 @@ Function New-ExtractVcfmsBackup {
         -LocalArchivePath "C:\backups\2026-03-23T16-45-31Z.base.tgz" `
         -EncryptionPassphrase "MyPassphrase!" `
         -OutputDir "C:\backup-yaml" `
-        -ServicesRuntimeNodeFqdn "10.21.99.32" `
-        -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
-        -ClusterName "sfo-sr01"
+        -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" `
+        -ServicesRuntimePassword "VMw@re1!VMw@re1!"
 
     .EXAMPLE
     New-ExtractVcfmsBackup `
@@ -8763,15 +9041,13 @@ Function New-ExtractVcfmsBackup {
     Directory where extracted YAML files are written. Created if it does not exist.
     Defaults to a timestamped subfolder in the current directory.
 
-    .PARAMETER ServicesRuntimeNodeFqdn
-    FQDN or IP of a Services Runtime control-plane node. When provided together with
-    ServicesRuntimePassword and ClusterName the kubeconfig is fetched automatically.
+    .PARAMETER ServicesRuntimeFqdn
+    FQDN of the Services Runtime cluster. When provided together with ServicesRuntimePassword
+    the kubeconfig is fetched automatically. The short name (host label before the first dot)
+    is used as the kubeconfig filename stem unless KubeconfigPath is supplied instead.
 
     .PARAMETER ServicesRuntimePassword
     Password for vmware-system-user on the Services Runtime node (also used for sudo elevation).
-
-    .PARAMETER ClusterName
-    Logical name for the Services Runtime cluster, used as the kubeconfig filename stem.
 
     .PARAMETER KubeconfigPath
     Path to an already-downloaded kubeconfig file. Takes precedence over automatic retrieval.
@@ -8781,9 +9057,8 @@ Function New-ExtractVcfmsBackup {
         [Parameter(Mandatory = $true)][String] $LocalArchivePath,
         [Parameter(Mandatory = $true)][String] $EncryptionPassphrase,
         [Parameter(Mandatory = $false)][String] $OutputDir,
-        [Parameter(Mandatory = $false)][String] $ServicesRuntimeNodeFqdn,
+        [Parameter(Mandatory = $false)][String] $ServicesRuntimeFqdn,
         [Parameter(Mandatory = $false)][String] $ServicesRuntimePassword,
-        [Parameter(Mandatory = $false)][String] $ClusterName,
         [Parameter(Mandatory = $false)][String] $KubeconfigPath
     )
 
@@ -8791,259 +9066,6 @@ Function New-ExtractVcfmsBackup {
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
-
-    # -------------------------------------------------------------------------
-    # Helper: YAML serialiser — block-style, no flow collections, sorts keys
-    # Matches PyYAML safe_dump(obj, default_flow_style=False, sort_keys=False)
-    # -------------------------------------------------------------------------
-    function ConvertTo-VcfmsYaml {
-        param($obj, [int]$indent = 0)
-        $pad  = ' ' * $indent
-        $pad2 = ' ' * ($indent + 2)
-        if ($null -eq $obj) { return 'null' }
-        if ($obj -is [bool])   { if ($obj) { return 'true' } else { return 'false' } }
-        if ($obj -is [int] -or $obj -is [long] -or $obj -is [double]) { return "$obj" }
-        if ($obj -is [string]) {
-            # Strings that need quoting: empty, look like YAML scalars, contain special chars
-            if ($obj -eq '' -or
-                $obj -match '^[\s]|[\s]$|^[>|!&*{}[\],#`@%]|: |^-\s|^[\d]' -or
-                $obj -match '[\r\n]' -or
-                $obj -in @('true','false','null','yes','no','on','off')) {
-                $escaped = $obj -replace "'", "''"
-                return "'$escaped'"
-            }
-            return $obj
-        }
-        if ($obj -is [System.Collections.IDictionary]) {
-            if ($obj.Count -eq 0) { return '{}' }
-            $lines = @()
-            foreach ($k in $obj.Keys) {
-                $v = $obj[$k]
-                $ks = ConvertTo-VcfmsYaml $k 0
-                if ($null -eq $v -or $v -is [bool] -or $v -is [int] -or $v -is [long] -or $v -is [double] -or $v -is [string]) {
-                    $lines += "$pad${ks}: $(ConvertTo-VcfmsYaml $v 0)"
-                } elseif ($v -is [System.Collections.IList]) {
-                    if ($v.Count -eq 0) {
-                        $lines += "$pad${ks}: []"
-                    } else {
-                        $lines += "$pad${ks}:"
-                        $lines += ConvertTo-VcfmsYaml $v $indent
-                    }
-                } else {
-                    $lines += "$pad${ks}:"
-                    $lines += ConvertTo-VcfmsYaml $v ($indent + 2)
-                }
-            }
-            return $lines -join "`n"
-        }
-        if ($obj -is [System.Collections.IList]) {
-            if ($obj.Count -eq 0) { return '[]' }
-            $lines = @()
-            foreach ($item in $obj) {
-                if ($null -eq $item -or $item -is [bool] -or $item -is [int] -or $item -is [long] -or $item -is [double] -or $item -is [string]) {
-                    $lines += "$pad- $(ConvertTo-VcfmsYaml $item 0)"
-                } elseif ($item -is [System.Collections.IList]) {
-                    $lines += "$pad-"
-                    $lines += ConvertTo-VcfmsYaml $item ($indent + 2)
-                } else {
-                    $inner = ConvertTo-VcfmsYaml $item ($indent + 2)
-                    $firstLine = $inner.TrimStart()
-                    $rest      = ($inner -split "`n" | Select-Object -Skip 1) -join "`n"
-                    $lines += "$pad- $firstLine"
-                    if ($rest) { $lines += $rest }
-                }
-            }
-            return $lines -join "`n"
-        }
-        return "$obj"
-    }
-
-    # -------------------------------------------------------------------------
-    # Helper: convert a PSCustomObject graph to ordered hashtables so the
-    # YAML serialiser can iterate keys deterministically
-    # -------------------------------------------------------------------------
-    function ConvertTo-OrderedHashtable {
-        param($obj)
-        if ($obj -is [System.Management.Automation.PSCustomObject]) {
-            $ht = [ordered]@{}
-            foreach ($prop in $obj.PSObject.Properties) {
-                $ht[$prop.Name] = ConvertTo-OrderedHashtable $prop.Value
-            }
-            return $ht
-        }
-        if ($obj -is [System.Collections.IList] -and $obj -isnot [string]) {
-            return @($obj | ForEach-Object { ConvertTo-OrderedHashtable $_ })
-        }
-        return $obj
-    }
-
-    # -------------------------------------------------------------------------
-    # Helper: strip transient metadata fields
-    # -------------------------------------------------------------------------
-    function Remove-VcfmsTransientMeta {
-        param($obj)
-        if ($obj -is [System.Collections.IDictionary] -and $obj.Contains('metadata')) {
-            foreach ($k in @('managedFields','resourceVersion','uid','creationTimestamp')) {
-                $obj['metadata'].Remove($k) | Out-Null
-            }
-        }
-        return $obj
-    }
-
-    # -------------------------------------------------------------------------
-    # Helper: OpenSSL-compatible AES-256-CBC / PBKDF2 decryption
-    # Replicates: openssl enc -d -aes-256-cbc -pbkdf2 -pass pass:<passphrase>
-    # -------------------------------------------------------------------------
-    function Invoke-OpensslDecrypt {
-        param([string]$InPath, [string]$OutPath, [string]$Passphrase)
-
-        $cipherBytes = [System.IO.File]::ReadAllBytes($InPath)
-
-        # OpenSSL PBKDF2 format: "Salted__" (8 bytes) + salt (8 bytes) + ciphertext
-        $magic = [System.Text.Encoding]::ASCII.GetString($cipherBytes[0..7])
-        if ($magic -ne 'Salted__') {
-            throw "Unexpected OpenSSL header: '$magic' — expected 'Salted__'"
-        }
-        $salt       = $cipherBytes[8..15]
-        $ciphertext = $cipherBytes[16..($cipherBytes.Length - 1)]
-
-        # PBKDF2-SHA256, 10000 iterations, 48 bytes → 32-byte key + 16-byte IV
-        $passBytes = [System.Text.Encoding]::UTF8.GetBytes($Passphrase)
-        $saltBytes = [byte[]]$salt
-        $pbkdf2    = New-Object System.Security.Cryptography.Rfc2898DeriveBytes(
-                         $passBytes, $saltBytes, 10000,
-                         [System.Security.Cryptography.HashAlgorithmName]::SHA256)
-        $key = $pbkdf2.GetBytes(32)
-        $iv  = $pbkdf2.GetBytes(16)
-
-        $aes = [System.Security.Cryptography.Aes]::Create()
-        $aes.Mode    = [System.Security.Cryptography.CipherMode]::CBC
-        $aes.Padding = [System.Security.Cryptography.PaddingMode]::PKCS7
-        $aes.Key     = $key
-        $aes.IV      = $iv
-
-        $decryptor   = $aes.CreateDecryptor()
-        $inStream    = [System.IO.MemoryStream]::new($ciphertext)
-        $cryptoStream = New-Object System.Security.Cryptography.CryptoStream(
-                            $inStream, $decryptor,
-                            [System.Security.Cryptography.CryptoStreamMode]::Read)
-        $outStream   = [System.IO.File]::OpenWrite($OutPath)
-        try { $cryptoStream.CopyTo($outStream) }
-        finally { $cryptoStream.Close(); $outStream.Close(); $aes.Dispose() }
-    }
-
-    # -------------------------------------------------------------------------
-    # Helper: extract a .tar.gz to a directory using SharpCompress via
-    # System.IO.Compression for gzip + a pure-.NET tar reader
-    # -------------------------------------------------------------------------
-    function Expand-TarGz {
-        param([string]$ArchivePath, [string]$DestDir)
-
-        [System.IO.Directory]::CreateDirectory($DestDir) | Out-Null
-        $fs  = [System.IO.File]::OpenRead($ArchivePath)
-        $gz  = New-Object System.IO.Compression.GZipStream($fs, [System.IO.Compression.CompressionMode]::Decompress)
-        $buf = New-Object byte[] 512
-
-        try {
-            while ($true) {
-                # Read 512-byte tar header block
-                $read = 0
-                while ($read -lt 512) {
-                    $n = $gz.Read($buf, $read, 512 - $read)
-                    if ($n -eq 0) { return }
-                    $read += $n
-                }
-
-                # All-zero block = end of archive
-                $allZero = $true
-                foreach ($b in $buf) { if ($b -ne 0) { $allZero = $false; break } }
-                if ($allZero) { return }
-
-                # Parse header fields (POSIX ustar)
-                $nameRaw  = [System.Text.Encoding]::ASCII.GetString($buf, 0,   100).TrimEnd([char]0)
-                $sizeOctal = [System.Text.Encoding]::ASCII.GetString($buf, 124, 12).Trim().TrimEnd([char]0)
-                $typeFlag  = [char]$buf[156]
-                $prefixRaw = [System.Text.Encoding]::ASCII.GetString($buf, 345, 155).TrimEnd([char]0)
-
-                $entryName = if ($prefixRaw) { "$prefixRaw/$nameRaw" } else { $nameRaw }
-                $entrySize = if ($sizeOctal) { [Convert]::ToInt64($sizeOctal.Trim(), 8) } else { 0 }
-
-                # Read data blocks
-                $blocks    = [int][Math]::Ceiling($entrySize / 512)
-                $dataBytes = New-Object byte[] ($blocks * 512)
-                $dataRead  = 0
-                while ($dataRead -lt $dataBytes.Length) {
-                    $n = $gz.Read($dataBytes, $dataRead, $dataBytes.Length - $dataRead)
-                    if ($n -eq 0) { break }
-                    $dataRead += $n
-                }
-
-                # Write regular files (type '0' or NUL, i.e. not directories/symlinks)
-                if ($typeFlag -eq '0' -or $typeFlag -eq [char]0) {
-                    $destPath = Join-Path $DestDir ($entryName -replace '/', [System.IO.Path]::DirectorySeparatorChar)
-                    $destParent = [System.IO.Path]::GetDirectoryName($destPath)
-                    [System.IO.Directory]::CreateDirectory($destParent) | Out-Null
-                    [System.IO.File]::WriteAllBytes($destPath, $dataBytes[0..([int]$entrySize - 1)])
-                }
-            }
-        } finally {
-            $gz.Close(); $fs.Close()
-        }
-    }
-
-    # -------------------------------------------------------------------------
-    # Helper: find a JSON file under two possible Velero path layouts
-    # -------------------------------------------------------------------------
-    function Resolve-VeleroJson {
-        param([string]$VeleroBase, [string]$ResourceKind, [string]$Namespace, [string]$Stem)
-        foreach ($layout in @(
-            (Join-Path $VeleroBase "resources\$ResourceKind\namespaces\$Namespace\$Stem.json"),
-            (Join-Path $VeleroBase "resources\$ResourceKind\v1-preferredversion\namespaces\$Namespace\$Stem.json")
-        )) {
-            if (Test-Path $layout) { return $layout }
-        }
-        return $null
-    }
-
-    # -------------------------------------------------------------------------
-    # Helper: synthesize a kubernetes.io/tls Secret from an NDC Opaque secret
-    # -------------------------------------------------------------------------
-    function New-TlsSecretFromNdc {
-        param([string]$NdcJsonPath, [string]$PlainStem)
-        $ndc  = Get-Content $NdcJsonPath -Raw | ConvertFrom-Json
-        $data = $ndc.data
-        $certB64 = if ($data.cert)    { $data.cert }    elseif ($data.'tls.crt') { $data.'tls.crt' } else { $null }
-        $keyB64  = if ($data.key)     { $data.key }     elseif ($data.'tls.key') { $data.'tls.key' } else { $null }
-        if (-not $certB64 -or -not $keyB64) {
-            throw "NDC secret $NdcJsonPath has no cert/key in .data; cannot synthesize $PlainStem"
-        }
-        $ns = if ($ndc.metadata.namespace) { $ndc.metadata.namespace } else { 'vmsp-platform' }
-        $md = [ordered]@{
-            name      = $PlainStem
-            namespace = $ns
-            annotations = [ordered]@{
-                'vmsp.vmware.com/generated-from-backup' = ([System.IO.Path]::GetFileNameWithoutExtension($NdcJsonPath))
-            }
-        }
-        $ndcLabels = @{}
-        if ($ndc.metadata.labels) {
-            $ndc.metadata.labels.PSObject.Properties | ForEach-Object {
-                if ($_.Name -ne 'backup.vmsp.vmware.com/skip-restore') { $ndcLabels[$_.Name] = $_.Value }
-            }
-        }
-        if ($ndcLabels.Count -gt 0) { $md['labels'] = $ndcLabels }
-        return [ordered]@{
-            apiVersion = 'v1'
-            kind       = 'Secret'
-            metadata   = $md
-            type       = 'kubernetes.io/tls'
-            data       = [ordered]@{ 'tls.crt' = $certB64; 'tls.key' = $keyB64 }
-        }
-    }
-
-    # =========================================================================
-    # Main logic
-    # =========================================================================
 
     # Validate inputs
     $resolvedArchive = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($LocalArchivePath)
@@ -9064,17 +9086,17 @@ Function New-ExtractVcfmsBackup {
     # for the caller's convenience)
     $resolvedKubeconfig = $KubeconfigPath
     if (-not $resolvedKubeconfig) {
-        if ($ServicesRuntimeNodeFqdn -and $ServicesRuntimePassword -and $ClusterName) {
-            LogMessage -type INFO -message "[$jumpboxName] Retrieving kubeconfig from $ServicesRuntimeNodeFqdn"
-            $resolvedKubeconfig = Get-VcfmsServicesRuntimeKubeconfig `
-                -NodeFqdn    $ServicesRuntimeNodeFqdn `
-                -Password    $ServicesRuntimePassword `
-                -ClusterName $ClusterName `
-                -OutputDir   $resolvedOutputDir
-            if (-not $resolvedKubeconfig) {
+        if ($ServicesRuntimeFqdn -and $ServicesRuntimePassword) {
+            LogMessage -type INFO -message "[$jumpboxName] Retrieving kubeconfig from $ServicesRuntimeFqdn"
+            $kubeconfigResult = Get-VcfmsServicesRuntimeKubeconfig `
+                -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
+                -Password            $ServicesRuntimePassword `
+                -OutputDir           $resolvedOutputDir
+            if (-not $kubeconfigResult) {
                 LogMessage -type ERROR -message "[$jumpboxName] Failed to retrieve kubeconfig. Aborting."
                 $StopWatch.Stop(); return
             }
+            $resolvedKubeconfig = $kubeconfigResult.KubeconfigPath
         }
     }
 
@@ -9091,7 +9113,7 @@ Function New-ExtractVcfmsBackup {
         $outerTgz  = Join-Path $workDir "decoded.tgz"
         LogMessage -type INFO -message "[$jumpboxName] Decrypting archive"
         try {
-            Invoke-OpensslDecrypt -InPath $resolvedArchive -OutPath $outerTgz -Passphrase $EncryptionPassphrase
+            Invoke-VcfmsOpensslDecrypt -InPath $resolvedArchive -OutPath $outerTgz -Passphrase $EncryptionPassphrase
         } catch {
             LogMessage -type ERROR -message "[$jumpboxName] Decryption failed: $($_.Exception.Message)"
             $StopWatch.Stop(); return
@@ -9101,7 +9123,7 @@ Function New-ExtractVcfmsBackup {
         $outerRoot = Join-Path $workDir "outer"
         LogMessage -type INFO -message "[$jumpboxName] Extracting outer archive"
         try {
-            Expand-TarGz -ArchivePath $outerTgz -DestDir $outerRoot
+            Expand-VcfmsTarGz -ArchivePath $outerTgz -DestDir $outerRoot
         } catch {
             LogMessage -type ERROR -message "[$jumpboxName] Outer archive extraction failed: $($_.Exception.Message)"
             $StopWatch.Stop(); return
@@ -9118,7 +9140,7 @@ Function New-ExtractVcfmsBackup {
         $veleroRoot = Join-Path $workDir "velero"
         LogMessage -type INFO -message "[$jumpboxName] Extracting inner Velero archive"
         try {
-            Expand-TarGz -ArchivePath $innerTgz -DestDir $veleroRoot
+            Expand-VcfmsTarGz -ArchivePath $innerTgz -DestDir $veleroRoot
         } catch {
             LogMessage -type ERROR -message "[$jumpboxName] Inner archive extraction failed: $($_.Exception.Message)"
             $StopWatch.Stop(); return
@@ -9131,9 +9153,9 @@ Function New-ExtractVcfmsBackup {
 
         # ingress-fleet-tls-ndc.yaml
         $ndcStem  = 'ingress-fleet-tls-ndc'
-        $ndcJson  = Resolve-VeleroJson -VeleroBase $veleroRoot -ResourceKind $secretKind -Namespace $ns -Stem $ndcStem
+        $ndcJson  = Resolve-VcfmsVeleroJson -VeleroBase $veleroRoot -ResourceKind $secretKind -Namespace $ns -Stem $ndcStem
         if ($ndcJson) {
-            $obj  = ConvertTo-OrderedHashtable (Get-Content $ndcJson -Raw | ConvertFrom-Json)
+            $obj  = ConvertTo-VcfmsOrderedHashtable (Get-Content $ndcJson -Raw | ConvertFrom-Json)
             $obj  = Remove-VcfmsTransientMeta $obj
             $yaml = ConvertTo-VcfmsYaml $obj
             $dest = Join-Path $resolvedOutputDir "$ndcStem.yaml"
@@ -9147,9 +9169,9 @@ Function New-ExtractVcfmsBackup {
         # ingress-fleet-tls.yaml — from backup directly, or synthesized from NDC
         $plainStem = 'ingress-fleet-tls'
         $dest      = Join-Path $resolvedOutputDir "$plainStem.yaml"
-        $plainJson = Resolve-VeleroJson -VeleroBase $veleroRoot -ResourceKind $secretKind -Namespace $ns -Stem $plainStem
+        $plainJson = Resolve-VcfmsVeleroJson -VeleroBase $veleroRoot -ResourceKind $secretKind -Namespace $ns -Stem $plainStem
         if ($plainJson) {
-            $obj  = ConvertTo-OrderedHashtable (Get-Content $plainJson -Raw | ConvertFrom-Json)
+            $obj  = ConvertTo-VcfmsOrderedHashtable (Get-Content $plainJson -Raw | ConvertFrom-Json)
             $obj  = Remove-VcfmsTransientMeta $obj
             $yaml = ConvertTo-VcfmsYaml $obj
             [System.IO.File]::WriteAllText($dest, $yaml + "`n", (New-Object System.Text.UTF8Encoding $false))
@@ -9157,7 +9179,7 @@ Function New-ExtractVcfmsBackup {
             $writtenFiles += $dest
         } elseif ($ndcJson) {
             try {
-                $obj  = New-TlsSecretFromNdc -NdcJsonPath $ndcJson -PlainStem $plainStem
+                $obj  = New-VcfmsTlsSecretFromNdc -NdcJsonPath $ndcJson -PlainStem $plainStem
                 $obj  = Remove-VcfmsTransientMeta $obj
                 $yaml = ConvertTo-VcfmsYaml $obj
                 [System.IO.File]::WriteAllText($dest, $yaml + "`n", (New-Object System.Text.UTF8Encoding $false))
