@@ -6423,7 +6423,7 @@ Function Wait-NSXTEdgeDeployment {
         Try {
             $upCount = 0
             $foundCount = 0
-            
+
             # Get edges from Management API
             $edgeUri = "https://$nsxtManagerFqdn/api/v1/transport-nodes?node_types=EdgeNode"
             $edgeResponse = Invoke-WebRequest -Method GET -URI $edgeUri -ContentType "application/json" -Headers $headers
@@ -6433,16 +6433,16 @@ Function Wait-NSXTEdgeDeployment {
 
             If ($targetEdges) {
                 $foundCount = $targetEdges.Count
-                
+
                 ForEach ($edge in $targetEdges) {
                     Try {
                         $statusUri = "https://$nsxtManagerFqdn/api/v1/transport-nodes/$($edge.id)/status"
                         $statusResponse = Invoke-WebRequest -Method GET -URI $statusUri -ContentType "application/json" -Headers $headers
                         $status = $statusResponse.Content | ConvertFrom-Json
-                        
+
                         $nodeStatus = $status.status
                         $controlStatus = $status.control_connection_status.status
-                        
+
                         If ($nodeStatus -eq "UP" -and $controlStatus -eq "UP") {
                             $upCount++
                         }
@@ -7117,6 +7117,7 @@ Function Add-VcfmsTrustedCertificate {
         LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain Services Runtime token. Aborting."
         return
     }
+    $tokenFetchedAt = [DateTime]::UtcNow
 
     $headers = @{
         "Authorization" = "Bearer $srToken"
@@ -7163,15 +7164,22 @@ Function Add-VcfmsTrustedCertificate {
         Start-Sleep -Seconds $PollIntervalSeconds
 
         try {
+            if (([DateTime]::UtcNow - $tokenFetchedAt).TotalMinutes -ge 60) {
+                LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Token age >= 60 minutes; refreshing"
+                $newToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
+                if ($newToken) {
+                    $srToken = $newToken
+                    $headers["Authorization"] = "Bearer $srToken"
+                    $tokenFetchedAt = [DateTime]::UtcNow
+                } else {
+                    LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Token refresh failed; continuing with existing token"
+                }
+            }
             $taskResponse = Invoke-RestMethod -Uri $taskUri -Method GET -Headers $headers -SkipCertificateCheck
             $taskStatus = $taskResponse.status
             LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Status: $taskStatus"
         } catch {
             LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Error polling task (will retry): $($_.Exception.Message)"
-            $newToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
-            if ($newToken) {
-                $headers["Authorization"] = "Bearer $newToken"
-            }
         }
     } While ($taskStatus -in @("IN_PROGRESS", "IN PROGRESS", "PENDING", "RUNNING"))
 
@@ -7296,6 +7304,7 @@ Function Set-VcfmsSftpBackupSettings {
         LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain Services Runtime token. Aborting."
         return
     }
+    $tokenFetchedAt = [DateTime]::UtcNow
 
     $headers = @{
         "Authorization" = "Bearer $srToken"
@@ -7368,15 +7377,22 @@ Function Set-VcfmsSftpBackupSettings {
         Start-Sleep -Seconds $PollIntervalSeconds
 
         try {
+            if (([DateTime]::UtcNow - $tokenFetchedAt).TotalMinutes -ge 60) {
+                LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Token age >= 60 minutes; refreshing"
+                $newToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
+                if ($newToken) {
+                    $srToken = $newToken
+                    $headers["Authorization"] = "Bearer $srToken"
+                    $tokenFetchedAt = [DateTime]::UtcNow
+                } else {
+                    LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Token refresh failed; continuing with existing token"
+                }
+            }
             $taskResponse = Invoke-RestMethod -Uri $taskUri -Method GET -Headers $headers -SkipCertificateCheck
             $taskStatus = $taskResponse.status
             LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Status: $taskStatus"
         } catch {
             LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Error polling task (will retry): $($_.Exception.Message)"
-            $newToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
-            if ($newToken) {
-                $headers["Authorization"] = "Bearer $newToken"
-            }
         }
     } While ($taskStatus -in @("IN_PROGRESS", "IN PROGRESS", "PENDING", "RUNNING"))
 
@@ -7674,11 +7690,23 @@ Function Restore-VcfmsBackup {
         LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain Services Runtime token. Aborting."
         return
     }
+    $tokenFetchedAt = [DateTime]::UtcNow
 
     $headers = @{
         "Authorization" = "Bearer $srToken"
         "Content-Type"  = "application/json"
         "Accept"        = "application/json"
+    }
+
+    # Build a componentId -> type name lookup for friendlier status reporting
+    $componentNameById = @{}
+    try {
+        $componentsResp = Invoke-RestMethod -Uri "https://$ServicesRuntimeFqdn/api/v1/components" -Method GET -Headers $headers -SkipCertificateCheck
+        foreach ($c in $componentsResp.components) {
+            if ($c.id -and $c.type) { $componentNameById[$c.id] = $c.type }
+        }
+    } catch {
+        LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Could not pre-fetch component names; UUIDs will be used in status output"
     }
 
     $restoreUri = "https://$ServicesRuntimeFqdn/api/v1/system/backups?action=restore"
@@ -7736,10 +7764,22 @@ Function Restore-VcfmsBackup {
     $taskUri = "https://$ServicesRuntimeFqdn/api/v1/tasks/$taskId"
     $taskStatus = "Running"
     $reportedComponentStatuses = @{}
+    $componentFirstSeenAt = @{}
     Do {
         Start-Sleep -Seconds $PollIntervalSeconds
 
         try {
+            if (([DateTime]::UtcNow - $tokenFetchedAt).TotalMinutes -ge 60) {
+                LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Token age >= 60 minutes; refreshing"
+                $newToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
+                if ($newToken) {
+                    $srToken = $newToken
+                    $headers["Authorization"] = "Bearer $srToken"
+                    $tokenFetchedAt = [DateTime]::UtcNow
+                } else {
+                    LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Token refresh failed; continuing with existing token"
+                }
+            }
             $taskResponse = Invoke-RestMethod -Uri $taskUri -Method GET -Headers $headers -SkipCertificateCheck
             $taskStatus = $taskResponse.status
             $elapsed = ""
@@ -7753,13 +7793,32 @@ Function Restore-VcfmsBackup {
 
             # Report any new or changed restoreResults entries
             if ($taskResponse.result -and $taskResponse.result.restoreResults) {
+                $terminalComponentStates = @("Succeeded","Failed","Cancelled","COMPLETED","FAILED","CANCELLED","SUCCESS","SUCCESSFUL","ERROR")
                 foreach ($entry in $taskResponse.result.restoreResults) {
                     $cid = $entry.componentId
                     $cStatus = $entry.status
                     if ($cid -and $cStatus) {
+                        if (-not $componentFirstSeenAt.ContainsKey($cid)) {
+                            $componentFirstSeenAt[$cid] = [DateTime]::UtcNow
+                        }
                         $prev = $reportedComponentStatuses[$cid]
                         if ($prev -ne $cStatus) {
-                            LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Component $cid status: $cStatus"
+                            $cName = if ($componentNameById.ContainsKey($cid)) { $componentNameById[$cid] } else { $cid }
+                            $elapsedMsg = ""
+                            if ($cStatus -in $terminalComponentStates) {
+                                $span = $null
+                                if ($entry.startTime -and $entry.endTime) {
+                                    $cStart = ConvertFrom-VcfmsTaskTimestampToUtc -Timestamp $entry.startTime
+                                    $cEnd   = ConvertFrom-VcfmsTaskTimestampToUtc -Timestamp $entry.endTime
+                                    if ($cStart -and $cEnd) { $span = $cEnd - $cStart }
+                                }
+                                if (-not $span) {
+                                    $span = [DateTime]::UtcNow - $componentFirstSeenAt[$cid]
+                                }
+                                $totalMinutes = ($span.Hours * 60) + $span.Minutes
+                                $elapsedMsg = " in $totalMinutes minutes and $($span.Seconds) seconds"
+                            }
+                            LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Component $cName status: $cStatus$elapsedMsg"
                             $reportedComponentStatuses[$cid] = $cStatus
                         }
                     }
@@ -7767,10 +7826,6 @@ Function Restore-VcfmsBackup {
             }
         } catch {
             LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Error polling task (will retry): $($_.Exception.Message)"
-            $newToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
-            if ($newToken) {
-                $headers["Authorization"] = "Bearer $newToken"
-            }
         }
     } While ($taskStatus -in @("IN_PROGRESS", "IN PROGRESS", "PENDING", "RUNNING", "RESTORING", "Running", "Pending", "Queued"))
 
@@ -8012,6 +8067,7 @@ Function Watch-VcfmsTask {
         LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain Services Runtime token. Aborting."
         return
     }
+    $tokenFetchedAt = [DateTime]::UtcNow
 
     $headers = @{
         "Authorization" = "Bearer $srToken"
@@ -8078,6 +8134,17 @@ Function Watch-VcfmsTask {
     Do {
         Start-Sleep -Seconds $PollIntervalSeconds
         try {
+            if (([DateTime]::UtcNow - $tokenFetchedAt).TotalMinutes -ge 60) {
+                LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Token age >= 60 minutes; refreshing"
+                $newToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
+                if ($newToken) {
+                    $srToken = $newToken
+                    $headers["Authorization"] = "Bearer $srToken"
+                    $tokenFetchedAt = [DateTime]::UtcNow
+                } else {
+                    LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Token refresh failed; continuing with existing token"
+                }
+            }
             $taskResponse = Invoke-RestMethod -Uri $taskUri -Method GET -Headers $headers -SkipCertificateCheck
             $taskStatus = $taskResponse.status
             $elapsed = ""
@@ -8096,10 +8163,6 @@ Function Watch-VcfmsTask {
             LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Status: $taskStatus$elapsed"
         } catch {
             LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Error polling task (will retry): $($_.Exception.Message)"
-            $newToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
-            if ($newToken) {
-                $headers["Authorization"] = "Bearer $newToken"
-            }
             $taskStatus = "POLLING_ERROR"
         }
     } While ($taskStatus -notin $terminalStates)
@@ -8161,6 +8224,7 @@ Function Stop-VcfmsTask {
         LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain Services Runtime token. Aborting."
         return
     }
+    $tokenFetchedAt = [DateTime]::UtcNow
 
     $headers = @{
         "Authorization" = "Bearer $srToken"
@@ -8193,15 +8257,22 @@ Function Stop-VcfmsTask {
     Do {
         Start-Sleep -Seconds $PollIntervalSeconds
         try {
+            if (([DateTime]::UtcNow - $tokenFetchedAt).TotalMinutes -ge 60) {
+                LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Token age >= 60 minutes; refreshing"
+                $newToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
+                if ($newToken) {
+                    $srToken = $newToken
+                    $headers["Authorization"] = "Bearer $srToken"
+                    $tokenFetchedAt = [DateTime]::UtcNow
+                } else {
+                    LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Token refresh failed; continuing with existing token"
+                }
+            }
             $taskResponse = Invoke-RestMethod -Uri $taskUri -Method GET -Headers $headers -SkipCertificateCheck
             $taskStatus = $taskResponse.status
             LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Status: $taskStatus"
         } catch {
             LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Error polling task (will retry): $($_.Exception.Message)"
-            $newToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
-            if ($newToken) {
-                $headers["Authorization"] = "Bearer $newToken"
-            }
         }
     } While ($taskStatus -notin $terminalStates)
 
@@ -8604,6 +8675,7 @@ Function Set-VcfmsComponentVips {
         LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Unable to refresh Services Runtime token. Aborting."
         return
     }
+    $tokenFetchedAt = [DateTime]::UtcNow
     $headers["Authorization"] = "Bearer $srToken"
 
     $applyUri = "https://$ServicesRuntimeFqdn/api/v1/components/$componentId`?action=apply"
@@ -8640,8 +8712,17 @@ Function Set-VcfmsComponentVips {
         Start-Sleep -Seconds $PollIntervalSeconds
         $elapsed += $PollIntervalSeconds
         try {
-            $srToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
-            if ($srToken) { $headers["Authorization"] = "Bearer $srToken" }
+            if (([DateTime]::UtcNow - $tokenFetchedAt).TotalMinutes -ge 60) {
+                LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Token age >= 60 minutes; refreshing"
+                $newToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
+                if ($newToken) {
+                    $srToken = $newToken
+                    $headers["Authorization"] = "Bearer $srToken"
+                    $tokenFetchedAt = [DateTime]::UtcNow
+                } else {
+                    LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Token refresh failed; continuing with existing token"
+                }
+            }
             $taskResponse = Invoke-RestMethod -Uri "https://$ServicesRuntimeFqdn/api/v1/tasks/$taskId" -Method GET -Headers $headers -SkipCertificateCheck
             $rawSt = $taskResponse.status
             $rawPh = $taskResponse.phase
@@ -8668,8 +8749,17 @@ Function Set-VcfmsComponentVips {
 
         LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Verifying desired VIPs in GET /api/v1/components/$componentId"
         try {
-            $srToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
-            if ($srToken) { $headers["Authorization"] = "Bearer $srToken" }
+            if (([DateTime]::UtcNow - $tokenFetchedAt).TotalMinutes -ge 60) {
+                LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Token age >= 60 minutes; refreshing"
+                $newToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
+                if ($newToken) {
+                    $srToken = $newToken
+                    $headers["Authorization"] = "Bearer $srToken"
+                    $tokenFetchedAt = [DateTime]::UtcNow
+                } else {
+                    LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Token refresh failed; continuing with existing token"
+                }
+            }
             $afterDetail = Invoke-RestMethod -Uri "https://$ServicesRuntimeFqdn/api/v1/components/$componentId" -Method GET -Headers $headers -SkipCertificateCheck
             $ig = $afterDetail.spec.configuration.ingress
             $afterBlock = $ig.$resolvedIngressKey
@@ -9354,6 +9444,7 @@ Function Disable-VcfmsClusterLogging {
         LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Unable to obtain Services Runtime token. Aborting."
         $StopWatch.Stop(); return
     }
+    $tokenFetchedAt = [DateTime]::UtcNow
     $headers = @{
         "Authorization" = "Bearer $srToken"
         "Accept"        = "application/json"
@@ -9419,8 +9510,17 @@ Function Disable-VcfmsClusterLogging {
         Start-Sleep -Seconds $PollIntervalSeconds
         $elapsed += $PollIntervalSeconds
         try {
-            $srToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
-            if ($srToken) { $headers["Authorization"] = "Bearer $srToken" }
+            if (([DateTime]::UtcNow - $tokenFetchedAt).TotalMinutes -ge 60) {
+                LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Token age >= 60 minutes; refreshing"
+                $newToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
+                if ($newToken) {
+                    $srToken = $newToken
+                    $headers["Authorization"] = "Bearer $srToken"
+                    $tokenFetchedAt = [DateTime]::UtcNow
+                } else {
+                    LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Token refresh failed; continuing with existing token"
+                }
+            }
             $taskResponse = Invoke-RestMethod -Uri "https://$ServicesRuntimeFqdn/api/v1/tasks/$taskId" -Method GET -Headers $headers -SkipCertificateCheck
             $rawSt = $taskResponse.status
             $rawPh = $taskResponse.phase
@@ -9848,6 +9948,7 @@ Function Set-VcfmsFleetIdentity {
         LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Unable to obtain Services Runtime token. Aborting."
         $StopWatch.Stop(); return
     }
+    $tokenFetchedAt = [DateTime]::UtcNow
     $headers = @{
         "Authorization" = "Bearer $srToken"
         "Accept"        = "application/json"
@@ -9894,8 +9995,17 @@ Function Set-VcfmsFleetIdentity {
         Start-Sleep -Seconds $PollIntervalSeconds
         $elapsed += $PollIntervalSeconds
         try {
-            $srToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
-            if ($srToken) { $headers["Authorization"] = "Bearer $srToken" }
+            if (([DateTime]::UtcNow - $tokenFetchedAt).TotalMinutes -ge 60) {
+                LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Token age >= 60 minutes; refreshing"
+                $newToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
+                if ($newToken) {
+                    $srToken = $newToken
+                    $headers["Authorization"] = "Bearer $srToken"
+                    $tokenFetchedAt = [DateTime]::UtcNow
+                } else {
+                    LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Token refresh failed; continuing with existing token"
+                }
+            }
             $taskResponse = Invoke-RestMethod -Uri "https://$ServicesRuntimeFqdn/api/v1/tasks/$taskId" -Method GET -Headers $headers -SkipCertificateCheck
             $rawSt = $taskResponse.status
             $rawPh = $taskResponse.phase
@@ -9951,22 +10061,38 @@ Function Invoke-VcfmsFleetComponentRegistration {
       4. Streams script output to the console in real time.
       5. Removes the temporary script from the remote node on completion.
 
-    The script targets the Fleet LCM component registrations by VCF instance name
-    (--target-vcf) and optionally performs a dry run.
+    The script targets the Fleet LCM component registrations using one of three modes:
+    --target-vcf (short VCF name), --target-fqdn (FQDN substring), or --target-sddc-id
+    (exact UUID). Exactly one of -TargetVcfInstance, -TargetFqdn, or -TargetSddcId must
+    be supplied.
 
     .EXAMPLE
-    # Update component registrations for VCF instance vcf02
+    # Target by short VCF instance name
     Invoke-VcfmsFleetComponentRegistration `
         -ServicesRuntimeFqdn     "sfo-sr01.sfo.rainpole.io" `
         -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
         -TargetVcfInstance       "vcf02"
 
     .EXAMPLE
+    # Target by FQDN substring — useful when friendly names like "Los Angeles" are used
+    Invoke-VcfmsFleetComponentRegistration `
+        -ServicesRuntimeFqdn     "lax-sr01.lax.rainpole.io" `
+        -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
+        -TargetFqdn              "lax"
+
+    .EXAMPLE
+    # Target by exact SDDC LCM UUID
+    Invoke-VcfmsFleetComponentRegistration `
+        -ServicesRuntimeFqdn     "lax-sr01.lax.rainpole.io" `
+        -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
+        -TargetSddcId            "7a07f2c3-be5b-420a-8ce3-64b20f4ec52a"
+
+    .EXAMPLE
     # Dry run — show what would be changed without writing anything
     Invoke-VcfmsFleetComponentRegistration `
-        -ServicesRuntimeFqdn     "sfo-sr01.sfo.rainpole.io" `
+        -ServicesRuntimeFqdn     "lax-sr01.lax.rainpole.io" `
         -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
-        -TargetVcfInstance       "vcf02" `
+        -TargetFqdn              "lax" `
         -DryRun
 
     .PARAMETER ServicesRuntimeFqdn
@@ -9977,8 +10103,18 @@ Function Invoke-VcfmsFleetComponentRegistration {
     Password for vmware-system-user (SSH login and sudo elevation).
 
     .PARAMETER TargetVcfInstance
-    VCF instance name to target, e.g. "vcf01" or "vcf02". Passed as --target-vcf to
-    the script.
+    VCF instance name to target using the script's --target-vcf mode, e.g. "vcf01" or
+    "vcf02". Use this when the instance is identified by a short VCF name in the Fleet LCM
+    registry. Mutually exclusive with -TargetFqdn and -TargetSddcId.
+
+    .PARAMETER TargetFqdn
+    FQDN substring pattern to match against the sddc_lcm.fqdn column, e.g. "lax" to match
+    "lax-ic01.lax.rainpole.io". Passed as --target-fqdn to the script.
+    Mutually exclusive with -TargetVcfInstance and -TargetSddcId.
+
+    .PARAMETER TargetSddcId
+    Exact UUID of the SDDC LCM entry in the Fleet LCM registry. Passed as --target-sddc-id
+    to the script. Mutually exclusive with -TargetVcfInstance and -TargetFqdn.
 
     .PARAMETER DryRun
     When specified, passes --dry-run to the script. No database changes are made;
@@ -9991,7 +10127,9 @@ Function Invoke-VcfmsFleetComponentRegistration {
     Param(
         [Parameter(Mandatory = $true)][String] $ServicesRuntimeFqdn,
         [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
-        [Parameter(Mandatory = $true)][String] $TargetVcfInstance,
+        [Parameter(Mandatory = $true,  ParameterSetName = "ByVcfInstance")][String] $TargetVcfInstance,
+        [Parameter(Mandatory = $true,  ParameterSetName = "ByFqdn")][String]        $TargetFqdn,
+        [Parameter(Mandatory = $true,  ParameterSetName = "BySddcId")][String]      $TargetSddcId,
         [Parameter(Mandatory = $false)][Switch] $DryRun,
         [Parameter(Mandatory = $false)][Int] $RemoteScriptTimeout = 300
     )
@@ -10026,7 +10164,11 @@ Function Invoke-VcfmsFleetComponentRegistration {
     }
     $controlPlaneHost = $kubeconfigResult.ControlPlaneHost
     LogMessage -type INFO -message "[$jumpboxName] Control plane node  : $controlPlaneHost"
-    LogMessage -type INFO -message "[$jumpboxName] Target VCF instance : $TargetVcfInstance"
+    switch ($PSCmdlet.ParameterSetName) {
+        "ByVcfInstance" { LogMessage -type INFO -message "[$jumpboxName] Target VCF instance : $TargetVcfInstance" }
+        "ByFqdn"        { LogMessage -type INFO -message "[$jumpboxName] Target FQDN pattern : $TargetFqdn" }
+        "BySddcId"      { LogMessage -type INFO -message "[$jumpboxName] Target SDDC LCM ID  : $TargetSddcId" }
+    }
     if ($DryRun) {
         LogMessage -type INFO -message "[$jumpboxName] Mode               : DRY RUN (no changes will be written)"
     }
@@ -10047,6 +10189,9 @@ Function Invoke-VcfmsFleetComponentRegistration {
         # -------------------------------------------------------------------------
         LogMessage -type INFO -message "[$controlPlaneHost] Uploading script to $remotePath"
         $scriptBytes = [System.IO.File]::ReadAllBytes($localScript)
+        # Strip CR bytes so the file always has Unix line endings on the remote node,
+        # regardless of how git checked it out on the local machine (Windows autocrlf etc.)
+        $scriptBytes = [byte[]]($scriptBytes | Where-Object { $_ -ne 0x0D })
         $b64         = [System.Convert]::ToBase64String($scriptBytes)
 
         # printf is used instead of echo to avoid an appended newline corrupting the decode
@@ -10063,10 +10208,14 @@ Function Invoke-VcfmsFleetComponentRegistration {
         # sudo -S reads the password from stdin; env preserves KUBECONFIG across the
         # sudo boundary so every kubectl call inside the script uses admin.conf
         # -------------------------------------------------------------------------
-        $scriptArgs = "--target-vcf '$TargetVcfInstance'"
+        $scriptArgs = switch ($PSCmdlet.ParameterSetName) {
+            "ByVcfInstance" { "--target-vcf '$TargetVcfInstance'" }
+            "ByFqdn"        { "--target-fqdn '$TargetFqdn'" }
+            "BySddcId"      { "--target-sddc-id '$TargetSddcId'" }
+        }
         if ($DryRun) { $scriptArgs += " --dry-run" }
 
-        $execCmd = "echo '$ServicesRuntimePassword' | sudo -S env KUBECONFIG=/etc/kubernetes/admin.conf bash $remotePath $scriptArgs"
+        $execCmd = "echo '$ServicesRuntimePassword' | sudo -S env KUBECONFIG=/etc/kubernetes/admin.conf bash $remotePath $scriptArgs 2>&1"
 
         LogMessage -type INFO -message "[$controlPlaneHost] Executing script (timeout: ${RemoteScriptTimeout}s)"
         Write-Host ""
@@ -10074,13 +10223,16 @@ Function Invoke-VcfmsFleetComponentRegistration {
 
         $execResult = Invoke-SSHCommand -SessionId $session.SessionId -Command $execCmd -TimeOut $RemoteScriptTimeout
 
-        # Print stdout
-        $execResult.Output | ForEach-Object { Write-Host "  $_" }
+        # Print all output (stdout + stderr merged via 2>&1); filter sudo prompt noise
+        $execResult.Output |
+            Where-Object { $_ -notmatch '^\[sudo\]' } |
+            ForEach-Object { Write-Host "  $_" }
 
-        # Print stderr as warnings (includes sudo password prompt noise, which is harmless)
+        # Belt-and-suspenders: if Posh-SSH still delivers anything on the Error channel
+        # split on newlines first so a single multi-line string is handled correctly
         if ($execResult.Error) {
-            $execResult.Error |
-                Where-Object { $_ -notmatch '^\[sudo\]' } |
+            (($execResult.Error -join "`n") -split "`r?`n") |
+                Where-Object { $_ -notmatch '^\[sudo\]' -and $_ -ne '' } |
                 ForEach-Object { Write-Host "  $_" -ForegroundColor Yellow }
         }
 
