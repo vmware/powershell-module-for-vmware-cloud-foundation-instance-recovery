@@ -10212,10 +10212,14 @@ Function Set-ContentLibraryDatastoreMapping
     $stream.Read() | Out-Null
 
     # Verify the update by reading back the new storageuri
-    $stream.WriteLine("echo `"SELECT storageuri FROM cl_storage WHERE id='$storageId';`" | $psql")
+    # COLUMNS=500 prevents psql/terminal from wrapping the URI across multiple lines
+    $stream.WriteLine("COLUMNS=500 echo `"SELECT storageuri FROM cl_storage WHERE id='$storageId';`" | $psql")
     Start-Sleep 3
-    $verifyOutput = & $cleanSshOutput $stream.Read()
-    $verifiedUri = ($verifyOutput -split "`n" | Where-Object { $_ -match 'Datastore:' } | Select-Object -First 1).Trim()
+    $verifyRaw = $stream.Read()
+    $verifyOutput = & $cleanSshOutput $verifyRaw
+    # Use a direct regex match against the full output to avoid line-split/wrap sensitivity
+    $uriPattern = 'Datastore:[^\s\r\n]+'
+    $verifiedUri = ([regex]::Match($verifyOutput, $uriPattern)).Value.Trim().Replace("`r", "")
     if ($verifiedUri -eq $newStorageUri) {
         LogMessage -type INFO -message "[$vCenterFQDN] cl_storage UPDATE verified: $verifiedUri"
     } else {
