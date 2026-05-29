@@ -4463,39 +4463,53 @@ Function Watch-NsxHostTransportNodeInstallation {
     The Watch-NsxHostTransportNodeInstallation cmdlet polls the NSX Manager API for every host transport node belonging to the specified vSphere cluster and waits until the top-level state for each node reports 'success' and the node status reports 'UP'. Progress is logged for each host on every poll cycle and the function exits cleanly once all nodes have satisfied both conditions or the optional timeout is reached.
 
     .EXAMPLE
-    Watch-NsxHostTransportNodeInstallation -nsxManagerFqdn "sfo-m01-nsx01.sfo.rainpole.io" -nsxManagerAdmin "admin" -nsxManagerAdminPassword "VMw@re1!VMw@re1!" -clusterName "sfo-m01-cl01"
-
-    .PARAMETER nsxManagerFqdn
-    FQDN of the NSX Manager that manages the host transport nodes
-
-    .PARAMETER nsxManagerAdmin
-    Admin user of the NSX Manager
-
-    .PARAMETER nsxManagerAdminPassword
-    Admin password of the NSX Manager
+    Watch-NsxHostTransportNodeInstallation -clusterName "sfo-m01-cl01" -extractedSDDCDataFile ".\extracted-sddc-data.json"
 
     .PARAMETER clusterName
     Name of the vSphere cluster whose host transport nodes will be monitored
 
-    .PARAMETER pollIntervalSeconds
-    Number of seconds to wait between each poll cycle. Defaults to 30.
+    .PARAMETER extractedSDDCDataFile
+    Relative or absolute to the extracted-sddc-data.json file (the output of Export-VCFRecoveryRunbook) on the local filesystem
 
-    .PARAMETER timeoutMinutes
-    Maximum number of minutes to wait before abandoning the poll loop. Defaults to 60.
     #>
 
     Param(
-        [Parameter (Mandatory = $true)][String] $nsxManagerFqdn,
-        [Parameter (Mandatory = $true)][String] $nsxManagerAdmin,
-        [Parameter (Mandatory = $true)][String] $nsxManagerAdminPassword,
         [Parameter (Mandatory = $true)][String] $clusterName,
-        [Parameter (Mandatory = $false)][Int] $pollIntervalSeconds = 30,
-        [Parameter (Mandatory = $false)][Int] $timeoutMinutes = 60
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile
     )
+    $timeoutMinutes    = 60
+    $pollIntervalSeconds = 30
+    $reportEveryNCycles  = 2
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+
+    LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
+    $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
+    $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
+
+    #Determine the expected number of host transport nodes from the extracted data
+    $expectedClusterDetails = $extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }
+    $expectedNodeCount = @($expectedClusterDetails.hosts).Count
+    If ($expectedNodeCount -eq 0) {
+        LogMessage -type WARNING -message "[$jumpboxName] No hosts found for cluster '$clusterName' in the extracted SDDC data. Verify the cluster name is correct."
+    } Else {
+        LogMessage -type INFO -message "[$jumpboxName] Extracted SDDC data indicates cluster '$clusterName' should contain $expectedNodeCount host transport node(s)"
+    }
+
+    #Resolve the workload domain and NSX Manager details from the extracted data
+    $workloadDomain = ($extractedSddcData.workloadDomains | Where-Object { $_.vsphereClusterDetails.name -contains $clusterName })
+    If (!$workloadDomain) {
+        LogMessage -type WARNING -message "[$jumpboxName] Could not find a workload domain containing cluster '$clusterName' in the extracted SDDC data."
+        $StopWatch.Stop()
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+        Return
+    }
+    $nsxManagerFqdn = ($workloadDomain.nsxNodeDetails | Select-Object -First 1).hostname
+    $nsxManagerAdmin = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain.domainName) -and ($_.username -eq "admin") }).username
+    $nsxManagerAdminPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain.domainName) -and ($_.username -eq "admin") }).password
+    LogMessage -type INFO -message "[$jumpboxName] Using NSX Manager '$nsxManagerFqdn' for workload domain '$($workloadDomain.domainName)'"
 
     $headers = VCFIRCreateHeader -username $nsxManagerAdmin -password $nsxManagerAdminPassword
 
@@ -4514,15 +4528,39 @@ Function Watch-NsxHostTransportNodeInstallation {
 
     $clusterComputeCollectionId = $clusterComputeCollection.external_id
 
+    $startTime    = Get-Date
+    $timeout      = New-TimeSpan -Minutes $timeoutMinutes
+
     #Get all ESXi host transport nodes and filter to those belonging to the resolved cluster
+    #Wait until every expected host transport node has been registered before monitoring installation
     LogMessage -type INFO -message "[$nsxManagerFqdn] Retrieving host transport nodes for cluster '$clusterName'"
-    $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/"
-    $allTransportNodes = ((Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json).results
-    $clusterTransportNodes = @($allTransportNodes | Where-Object {
-        ($_.resource_type -eq "TransportNode") -and
-        ($_.node_deployment_info.os_type -eq "ESXI") -and
-        ($_.node_deployment_info.compute_collection_id -eq $clusterComputeCollectionId)
-    })
+    $registrationCycle = 0
+    Do {
+        $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/"
+        $allTransportNodes = ((Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json).results
+        $clusterTransportNodes = @($allTransportNodes | Where-Object {
+            ($_.resource_type -eq "TransportNode") -and
+            ($_.node_deployment_info.os_type -eq "ESXI") -and
+            ($_.node_deployment_info.compute_collection_id -eq $clusterComputeCollectionId)
+        } | Sort-Object)
+
+        If ($expectedNodeCount -gt 0 -and $clusterTransportNodes.Count -lt $expectedNodeCount) {
+            $elapsed = (Get-Date) - $startTime
+            If ($elapsed -ge $timeout) {
+                LogMessage -type ERROR -message "[$nsxManagerFqdn] Timeout of $timeoutMinutes minutes reached while waiting for host transport nodes to register. Found $($clusterTransportNodes.Count) of $expectedNodeCount expected node(s) in cluster '$clusterName'"
+                $StopWatch.Stop()
+                LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+                Return
+            }
+            $registrationCycle++
+            If ($registrationCycle % $reportEveryNCycles -eq 0) {
+                LogMessage -type WAIT -message "[$nsxManagerFqdn] Found $($clusterTransportNodes.Count) of $expectedNodeCount expected host transport node(s) in cluster '$clusterName'. Waiting..."
+            }
+            Start-Sleep -Seconds $pollIntervalSeconds
+        } Else {
+            Break
+        }
+    } While ($true)
 
     If ($clusterTransportNodes.Count -eq 0) {
         LogMessage -type WARNING -message "[$nsxManagerFqdn] No host transport nodes found for cluster '$clusterName'. Verify that the transport node collection has been applied."
@@ -4533,11 +4571,11 @@ Function Watch-NsxHostTransportNodeInstallation {
 
     LogMessage -type INFO -message "[$nsxManagerFqdn] Monitoring NSX installation on $($clusterTransportNodes.Count) host transport node(s) in cluster '$clusterName'"
 
-    $startTime    = Get-Date
-    $timeout      = New-TimeSpan -Minutes $timeoutMinutes
-    $completedIds = @()
+    $completedIds  = @()
+    $monitorCycle  = 0
 
     Do {
+        $monitorCycle++
         $pendingNodes = @()
 
         Foreach ($transportNode in $clusterTransportNodes) {
@@ -4555,9 +4593,10 @@ Function Watch-NsxHostTransportNodeInstallation {
                 If (($configState -eq "success") -and ($connectivity -eq "UP")) {
                     LogMessage -type INFO -message "[$($transportNode.display_name)] NSX Configuration State: $configState | Status: $connectivity"
                     $completedIds += $transportNode.id
+                } ElseIf ($monitorCycle % $reportEveryNCycles -eq 0) {
+                    LogMessage -type WAIT -message "[$($transportNode.display_name)] NSX Configuration State: $configState | Status: $connectivity"
+                    $pendingNodes += $transportNode.display_name
                 } Else {
-                    $stateMessage = "[$($transportNode.display_name)] NSX Configuration State: $configState | Status: $connectivity"
-                    LogMessage -type WAIT -message $stateMessage
                     $pendingNodes += $transportNode.display_name
                 }
             } Catch {
@@ -4577,7 +4616,9 @@ Function Watch-NsxHostTransportNodeInstallation {
             Break
         }
 
-        LogMessage -type WAIT -message "[$nsxManagerFqdn] $($pendingNodes.Count) node(s) still pending. Retrying in $pollIntervalSeconds seconds..."
+        If ($monitorCycle % $reportEveryNCycles -eq 0) {
+            LogMessage -type WAIT -message "[$nsxManagerFqdn] $($pendingNodes.Count) node(s) still pending."
+        }
         Start-Sleep -Seconds $pollIntervalSeconds
 
     } While ($true)
