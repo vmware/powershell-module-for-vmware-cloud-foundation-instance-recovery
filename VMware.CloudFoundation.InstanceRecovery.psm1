@@ -4518,13 +4518,13 @@ Function Watch-NsxHostTransportNodeInstallation {
     LogMessage -type INFO -message "[$nsxManagerFqdn] Retrieving host transport nodes for cluster '$clusterName'"
     $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/"
     $allTransportNodes = ((Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json).results
-    $clusterTransportNodes = $allTransportNodes | Where-Object {
+    $clusterTransportNodes = @($allTransportNodes | Where-Object {
         ($_.resource_type -eq "TransportNode") -and
         ($_.node_deployment_info.os_type -eq "ESXI") -and
         ($_.node_deployment_info.compute_collection_id -eq $clusterComputeCollectionId)
-    }
+    })
 
-    If (!$clusterTransportNodes) {
+    If ($clusterTransportNodes.Count -eq 0) {
         LogMessage -type WARNING -message "[$nsxManagerFqdn] No host transport nodes found for cluster '$clusterName'. Verify that the transport node collection has been applied."
         $StopWatch.Stop()
         LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
@@ -4533,13 +4533,16 @@ Function Watch-NsxHostTransportNodeInstallation {
 
     LogMessage -type INFO -message "[$nsxManagerFqdn] Monitoring NSX installation on $($clusterTransportNodes.Count) host transport node(s) in cluster '$clusterName'"
 
-    $startTime = Get-Date
-    $timeout = New-TimeSpan -Minutes $timeoutMinutes
+    $startTime    = Get-Date
+    $timeout      = New-TimeSpan -Minutes $timeoutMinutes
+    $completedIds = @()
 
     Do {
         $pendingNodes = @()
 
         Foreach ($transportNode in $clusterTransportNodes) {
+            If ($transportNode.id -in $completedIds) { Continue }
+
             $stateUri  = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($transportNode.id)/state"
             $statusUri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($transportNode.id)/status"
             Try {
@@ -4551,6 +4554,7 @@ Function Watch-NsxHostTransportNodeInstallation {
 
                 If (($configState -eq "success") -and ($connectivity -eq "UP")) {
                     LogMessage -type INFO -message "[$($transportNode.display_name)] NSX Configuration State: $configState | Status: $connectivity"
+                    $completedIds += $transportNode.id
                 } Else {
                     $stateMessage = "[$($transportNode.display_name)] NSX Configuration State: $configState | Status: $connectivity"
                     LogMessage -type WAIT -message $stateMessage
