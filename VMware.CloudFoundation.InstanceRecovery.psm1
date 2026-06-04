@@ -7245,6 +7245,219 @@ Function Get-VcfmsServicesRuntimeToken {
     }
 }
 
+Function Get-VcfOperationsToken {
+    <#
+    .SYNOPSIS
+    Retrieves an access token from a VCF Operations instance.
+
+    .DESCRIPTION
+    The Get-VcfOperationsToken cmdlet authenticates against the VCF Operations /suite-api/api/auth/token/acquire endpoint and returns the token string for use in subsequent API calls.
+
+    .EXAMPLE
+    $opsToken = Get-VcfOperationsToken -VcfOperationsFqdn "flt-ops01a.rainpole.io" -Password "VMw@re1!VMw@re1!"
+
+    .EXAMPLE
+    $opsToken = Get-VcfOperationsToken -VcfOperationsFqdn "flt-ops01a.rainpole.io" -Username "admin" -Password "VMw@re1!VMw@re1!" -AuthSource "local"
+
+    .PARAMETER VcfOperationsFqdn
+    FQDN of the VCF Operations instance (e.g. flt-ops01a.rainpole.io).
+
+    .PARAMETER Username
+    Username for the token request. Default is "admin".
+
+    .PARAMETER Password
+    Password for the VCF Operations user.
+
+    .PARAMETER AuthSource
+    Authentication source. Default is "local".
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][String] $VcfOperationsFqdn,
+        [Parameter(Mandatory = $false)][String] $Username = "admin",
+        [Parameter(Mandatory = $true)][String] $Password,
+        [Parameter(Mandatory = $false)][String] $AuthSource = "local"
+    )
+
+    $jumpboxName = hostname
+    LogMessage -type INFO -message "[$jumpboxName] Requesting VCF Operations token from $VcfOperationsFqdn"
+
+    $tokenUri = "https://$VcfOperationsFqdn/suite-api/api/auth/token/acquire"
+    $tokenBody = @{
+        username   = $Username
+        password   = $Password
+        authSource = $AuthSource
+    } | ConvertTo-Json
+
+    try {
+        $tokenResponse = Invoke-RestMethod -Uri $tokenUri -Method POST -ContentType "application/json" -Body $tokenBody -SkipCertificateCheck
+        $accessToken = $tokenResponse.token
+        if (-not $accessToken) {
+            LogMessage -type ERROR -message "[$VcfOperationsFqdn] Token response did not contain a token."
+            return $null
+        }
+        LogMessage -type INFO -message "[$VcfOperationsFqdn] VCF Operations token retrieved successfully"
+        return $accessToken
+    } catch {
+        LogMessage -type ERROR -message "[$VcfOperationsFqdn] Failed to retrieve VCF Operations token: $($_.Exception.Message)"
+        return $null
+    }
+}
+
+Function Get-RegisteredComponentIds {
+    <#
+    .SYNOPSIS
+    Retrieves registered component IDs and related details from a VCF Operations instance.
+
+    .DESCRIPTION
+    The Get-RegisteredComponentIds cmdlet queries the VCF Operations internal /suite-api/internal/components endpoint and returns a structured object containing:
+    - components: Filtered component summaries for types FLEET_LCM, SALT_RAAS, VIDB, and LI.
+    - vsp: VSP component details referenced by the filtered components (null, a single object, or an array when multiple are present).
+    - vcfa: VCFA component details if one is registered, otherwise null.
+
+    A VCF Operations token is obtained automatically via Get-VcfOperationsToken.
+
+    .EXAMPLE
+    $result = Get-RegisteredComponentIds -VcfOperationsFqdn "flt-ops01a.rainpole.io" -Password "VMw@re1!VMw@re1!"
+
+    .EXAMPLE
+    $result = Get-RegisteredComponentIds -VcfOperationsFqdn "flt-ops01a.rainpole.io" -Username "admin" -Password "VMw@re1!VMw@re1!" -AuthSource "local"
+
+    .PARAMETER VcfOperationsFqdn
+    FQDN of the VCF Operations instance (e.g. flt-ops01a.rainpole.io).
+
+    .PARAMETER Username
+    Username for the VCF Operations API. Default is "admin".
+
+    .PARAMETER Password
+    Password for the VCF Operations user.
+
+    .PARAMETER AuthSource
+    Authentication source for the VCF Operations API. Default is "local".
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][String] $VcfOperationsFqdn,
+        [Parameter(Mandatory = $false)][String] $Username = "admin",
+        [Parameter(Mandatory = $true)][String] $Password,
+        [Parameter(Mandatory = $false)][String] $AuthSource = "local"
+    )
+
+    $jumpboxName = hostname
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    $opsToken = Get-VcfOperationsToken -VcfOperationsFqdn $VcfOperationsFqdn -Username $Username -Password $Password -AuthSource $AuthSource
+    if (-not $opsToken) {
+        LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain VCF Operations token. Aborting."
+        return $null
+    }
+
+    $headers = @{
+        "Accept"                    = "application/json"
+        "X-Ops-API-use-unsupported" = "true"
+        "Authorization"             = "OpsToken $opsToken"
+    }
+
+    $componentsUri = "https://$VcfOperationsFqdn/suite-api/internal/components?_no_links=true"
+    LogMessage -type INFO -message "[$VcfOperationsFqdn] Retrieving registered components"
+
+    try {
+        $response = Invoke-RestMethod -Uri $componentsUri -Method GET -Headers $headers -SkipCertificateCheck
+    } catch {
+        LogMessage -type ERROR -message "[$VcfOperationsFqdn] Failed to retrieve components: $($_.Exception.Message)"
+        return $null
+    }
+
+    $allComponents = $response.components
+    if (-not $allComponents -or ($allComponents | Measure-Object).Count -eq 0) {
+        LogMessage -type WARNING -message "[$VcfOperationsFqdn] No components returned."
+        return $null
+    }
+
+    # Filter to the component types of interest
+    $targetTypes = @('FLEET_LCM', 'SALT_RAAS', 'VIDB', 'LI')
+    $filtered = @($allComponents | Where-Object { $targetTypes -contains ($_.componentType).ToUpper() })
+
+    # Collect unique VSP component UUIDs referenced by the filtered components
+    $vspUuids = @(
+        $filtered | ForEach-Object {
+            if ($_.references) {
+                $_.references |
+                    Where-Object { ($_.componentType).ToUpper() -eq 'VSP' } |
+                    Select-Object -ExpandProperty componentUuid
+            }
+        } | Sort-Object -Unique
+    )
+
+    # Resolve full component objects for each VSP UUID
+    $vspComponents = @()
+    foreach ($uuid in $vspUuids) {
+        $comp = $allComponents | Where-Object { $_.componentUuid -eq $uuid } | Select-Object -First 1
+        if ($comp) {
+            $ip = if ($comp.properties.ip) { $comp.properties.ip } else { $comp.vcfInstance.ip }
+            $vspComponents += [PSCustomObject]@{
+                id              = $comp.componentUuid
+                fqdn            = $comp.properties.fqdn
+                fleetFqdn       = $comp.properties.fleetFqdn
+                ip              = $ip
+                instanceName    = $comp.vcfInstance.instanceName
+                vcfInstanceFqdn = $comp.vcfInstance.fqdn
+            }
+        }
+    }
+
+    # Normalize VSP result: null / single object / array
+    $vsp = if ($vspComponents.Count -eq 0) {
+        $null
+    } elseif ($vspComponents.Count -eq 1) {
+        $vspComponents[0]
+    } else {
+        $vspComponents
+    }
+
+    # Extract the first VCFA component if present
+    $vcfaComp = $allComponents | Where-Object { ($_.componentType).ToUpper() -eq 'VCFA' } | Select-Object -First 1
+    $vcfa = if ($vcfaComp) {
+        [PSCustomObject]@{
+            fqdn             = $vcfaComp.properties.fqdn
+            platformFqdn     = $vcfaComp.properties.platformFqdn
+            vspComponentUuid = $vcfaComp.properties.vspComponentUuid
+        }
+    } else {
+        $null
+    }
+
+    # Build filtered component summaries
+    $componentSummaries = @(
+        $filtered | ForEach-Object {
+            [PSCustomObject]@{
+                componentType = $_.componentType
+                id            = $_.componentUuid
+                fqdn          = $_.properties.fqdn
+            }
+        }
+    )
+
+    $result = [PSCustomObject]@{
+        components = $componentSummaries
+        vsp        = $vsp
+        vcfa       = $vcfa
+    }
+
+    LogMessage -type INFO -message "[$VcfOperationsFqdn] Found $($filtered.Count) filtered component(s) of types: $($targetTypes -join ', ')"
+
+    $json = $result | ConvertTo-Json -Depth 10
+    Write-Host ""
+    Write-Host $json
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+Export-ModuleMember -Function Get-RegisteredComponentIds
+
 Function Add-VcfmsTrustedCertificate {
     <#
     .SYNOPSIS
