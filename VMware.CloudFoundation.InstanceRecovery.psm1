@@ -6423,7 +6423,7 @@ Function Wait-NSXTEdgeDeployment {
         Try {
             $upCount = 0
             $foundCount = 0
-
+            
             # Get edges from Management API
             $edgeUri = "https://$nsxtManagerFqdn/api/v1/transport-nodes?node_types=EdgeNode"
             $edgeResponse = Invoke-WebRequest -Method GET -URI $edgeUri -ContentType "application/json" -Headers $headers
@@ -6433,16 +6433,16 @@ Function Wait-NSXTEdgeDeployment {
 
             If ($targetEdges) {
                 $foundCount = $targetEdges.Count
-
+                
                 ForEach ($edge in $targetEdges) {
                     Try {
                         $statusUri = "https://$nsxtManagerFqdn/api/v1/transport-nodes/$($edge.id)/status"
                         $statusResponse = Invoke-WebRequest -Method GET -URI $statusUri -ContentType "application/json" -Headers $headers
                         $status = $statusResponse.Content | ConvertFrom-Json
-
+                        
                         $nodeStatus = $status.status
                         $controlStatus = $status.control_connection_status.status
-
+                        
                         If ($nodeStatus -eq "UP" -and $controlStatus -eq "UP") {
                             $upCount++
                         }
@@ -6742,10 +6742,10 @@ Function New-ServicesRuntime {
     (ByParameter) Platform FQDN for the VCFMS runtime. Must match the original.
 
     .PARAMETER InstanceFqdn
-    (ByParameter) Instance FQDN for the VCFMS runtime. Must match the original.
+    (ByParameter) Instance FQDN for the VCFMS runtime. Required when -Type is MANAGEMENT.
 
     .PARAMETER FleetFqdn
-    (ByParameter) Fleet FQDN for the VCFMS runtime. Must match the original.
+    (ByParameter) Fleet FQDN for the VCFMS runtime. Required when -Type is MANAGEMENT.
 
     .PARAMETER SystemUserPassword
     (ByParameter) System user password for the VCFMS runtime.
@@ -6796,10 +6796,10 @@ Function New-ServicesRuntime {
         [Parameter(Mandatory = $true, ParameterSetName = "ByParameter")]
         [String] $PlatformFqdn,
 
-        [Parameter(Mandatory = $true, ParameterSetName = "ByParameter")]
+        [Parameter(Mandatory = $false, ParameterSetName = "ByParameter")]
         [String] $InstanceFqdn,
 
-        [Parameter(Mandatory = $true, ParameterSetName = "ByParameter")]
+        [Parameter(Mandatory = $false, ParameterSetName = "ByParameter")]
         [String] $FleetFqdn,
 
         [Parameter(Mandatory = $true, ParameterSetName = "ByParameter")]
@@ -6870,6 +6870,17 @@ Function New-ServicesRuntime {
         }
     } else {
         # --- ByParameter: retrieve the management domain ID and build the payload ---
+        if ($Type -eq 'MANAGEMENT') {
+            if ([string]::IsNullOrWhiteSpace($InstanceFqdn)) {
+                LogMessage -type ERROR -message "[$jumpboxName] -InstanceFqdn is required when -Type is MANAGEMENT"
+                return
+            }
+            if ([string]::IsNullOrWhiteSpace($FleetFqdn)) {
+                LogMessage -type ERROR -message "[$jumpboxName] -FleetFqdn is required when -Type is MANAGEMENT"
+                return
+            }
+        }
+
         LogMessage -type INFO -message "[$SddcManagerFqdn] Retrieving management domain ID from /v1/domains"
         try {
             $domainsUri = "https://$SddcManagerFqdn/v1/domains"
@@ -6886,11 +6897,9 @@ Function New-ServicesRuntime {
             return
         }
 
-        $requestBody = @{
+        $payloadHash = @{
             domainId                = $domainId
             platformFqdn            = $PlatformFqdn
-            instanceFqdn            = $InstanceFqdn
-            fleetFqdn               = $FleetFqdn
             systemUserPassword      = $SystemUserPassword
             type                    = $Type
             ipv4Pool                = @{ addresses = $Ipv4Addresses }
@@ -6899,7 +6908,10 @@ Function New-ServicesRuntime {
             gatewayCidrIpv4         = $GatewayCidrIpv4
             clusterId               = $ClusterId
             internalClusterCidrIpv4 = $InternalClusterCidrIpv4
-        } | ConvertTo-Json -Depth 5
+        }
+        if (-not [string]::IsNullOrWhiteSpace($InstanceFqdn)) { $payloadHash['instanceFqdn'] = $InstanceFqdn }
+        if (-not [string]::IsNullOrWhiteSpace($FleetFqdn))    { $payloadHash['fleetFqdn']    = $FleetFqdn }
+        $requestBody = $payloadHash | ConvertTo-Json -Depth 5
     }
 
     # Display the payload for verification (password redacted)
@@ -10262,6 +10274,143 @@ Function Invoke-VcfmsFleetComponentRegistration {
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
 }
 Export-ModuleMember -Function Invoke-VcfmsFleetComponentRegistration
+
+Function Get-VcfmsFleetComponentRegistration {
+    <#
+    .SYNOPSIS
+    Displays the current Fleet LCM routing for all fleet-scoped components.
+
+    .DESCRIPTION
+    The Get-VcfmsFleetComponentRegistration cmdlet resolves the Services Runtime control
+    plane node, uploads a small inline query script, and executes it under sudo with
+    KUBECONFIG=/etc/kubernetes/admin.conf so that kubectl can reach the Fleet LCM DB pods.
+    It displays two psql-formatted tables:
+      1. Registered SDDC LCM instances
+      2. Fleet-scoped component registrations (VIDB, SALT_RAAS, VCF_FLEET_LCM,
+         VCF_FLEET_DEPOT, OPS_LOGS) with their current SDDC LCM routing
+
+    Use this to verify the result of Invoke-VcfmsFleetComponentRegistration.
+
+    .EXAMPLE
+    Get-VcfmsFleetComponentRegistration -ServicesRuntimeFqdn "lax-sr01.lax.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!"
+
+    .PARAMETER ServicesRuntimeFqdn
+    FQDN or IP of any Services Runtime cluster node. The function resolves the control
+    plane automatically.
+
+    .PARAMETER ServicesRuntimePassword
+    Password for vmware-system-user (SSH login and sudo elevation).
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][String] $ServicesRuntimeFqdn,
+        [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword
+    )
+
+    $jumpboxName = hostname
+    $StopWatch   = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    # Resolve control plane node
+    LogMessage -type INFO -message "[$jumpboxName] Resolving control plane node from $ServicesRuntimeFqdn"
+    $kubeconfigResult = Get-VcfmsServicesRuntimeKubeconfig `
+        -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
+        -Password            $ServicesRuntimePassword `
+        -OutputDir           "."
+    if (-not $kubeconfigResult) {
+        LogMessage -type ERROR -message "[$jumpboxName] Could not resolve control plane node. Aborting."
+        $StopWatch.Stop(); return
+    }
+    $controlPlaneHost = $kubeconfigResult.ControlPlaneHost
+    LogMessage -type INFO -message "[$jumpboxName] Control plane node: $controlPlaneHost"
+
+    $SecurePassword = ConvertTo-SecureString -String $ServicesRuntimePassword -AsPlainText -Force
+    $creds          = New-Object System.Management.Automation.PSCredential ('vmware-system-user', $SecurePassword)
+    $session        = $null
+    $remotePath     = "/tmp/get_fleet_component_registration.sh"
+
+    # Build the query script using a single-quoted here-string so that bash variables
+    # ($pod, $FLEET_DB_POD) and SQL single-quotes are preserved literally.
+    # Newlines will be CRLF on Windows; the \r bytes are stripped before encoding below.
+    $scriptContent = @'
+#!/bin/bash
+set -euo pipefail
+
+FLEET_DB_POD=""
+for pod in vcf-fleet-lcm-db-0 vcf-fleet-lcm-db-1 vcf-fleet-lcm-db-2; do
+  if kubectl exec -n vcf-fleet-lcm "$pod" -c postgres -- \
+      psql -U postgres -t -c "SELECT pg_is_in_recovery();" 2>/dev/null | grep -q f; then
+    FLEET_DB_POD="$pod"
+    break
+  fi
+done
+
+if [[ -z "$FLEET_DB_POD" ]]; then
+  echo "ERROR: No primary Fleet LCM DB pod found" >&2
+  exit 1
+fi
+echo "Fleet LCM primary DB pod: $FLEET_DB_POD"
+
+echo ""
+echo "Registered SDDC LCM Instances:"
+kubectl exec -n vcf-fleet-lcm "$FLEET_DB_POD" -c postgres -- \
+  psql -U postgres -d vcffleetlcmdb -c \
+  "SELECT id, fqdn, is_primary, status FROM sddc_lcm ORDER BY is_primary DESC, fqdn;"
+
+echo ""
+echo "Fleet-Scoped Component Registrations:"
+kubectl exec -n vcf-fleet-lcm "$FLEET_DB_POD" -c postgres -- \
+  psql -U postgres -d vcffleetlcmdb -c \
+  "SELECT c.component_type AS type, c.fqdn AS component_fqdn, c.version, COALESCE(s.fqdn,'(none)') AS sddc_lcm_fqdn FROM component c LEFT JOIN sddc_lcm s ON c.sddc_lcm_id = s.id WHERE c.component_type IN ('VIDB','SALT_RAAS','VCF_FLEET_LCM','VCF_FLEET_DEPOT','OPS_LOGS') ORDER BY c.component_type;"
+'@
+
+    try {
+        $session = Open-VcfmsSshSession -Fqdn $controlPlaneHost -Creds $creds
+
+        # Upload — strip \r so Windows CRLF does not break bash (same fix as Invoke-VcfmsFleetComponentRegistration)
+        LogMessage -type INFO -message "[$controlPlaneHost] Uploading query script"
+        $scriptBytes = [System.Text.Encoding]::UTF8.GetBytes($scriptContent)
+        $scriptBytes = [byte[]]($scriptBytes | Where-Object { $_ -ne 0x0D })
+        $b64         = [System.Convert]::ToBase64String($scriptBytes)
+        $uploadCmd   = "printf '%s' '$b64' | base64 -d > $remotePath && chmod +x $remotePath"
+        $uploadResult = Invoke-SSHCommand -SessionId $session.SessionId -Command $uploadCmd -TimeOut 60
+        if ($uploadResult.ExitStatus -ne 0) {
+            LogMessage -type ERROR -message "[$controlPlaneHost] Script upload failed (exit $($uploadResult.ExitStatus))"
+            return
+        }
+
+        # Execute under sudo with KUBECONFIG; merge stderr so nothing is silently lost
+        $execCmd    = "echo '$ServicesRuntimePassword' | sudo -S env KUBECONFIG=/etc/kubernetes/admin.conf bash $remotePath 2>&1"
+        $execResult = Invoke-SSHCommand -SessionId $session.SessionId -Command $execCmd -TimeOut 60
+
+        Write-Host ""
+        Write-Host " Fleet Component Registration Status" -ForegroundColor Cyan
+        Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+        $execResult.Output |
+            Where-Object { $_ -notmatch '^\[sudo\]' } |
+            ForEach-Object { Write-Host "  $_" }
+        Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+        Write-Host ""
+
+        if ($execResult.ExitStatus -ne 0) {
+            LogMessage -type ERROR -message "[$controlPlaneHost] Query script exited with code $($execResult.ExitStatus)"
+        }
+
+    } catch {
+        LogMessage -type ERROR -message "[$jumpboxName] $($_.Exception.Message)"
+    } finally {
+        if ($session) {
+            Invoke-SSHCommand -SessionId $session.SessionId -Command "rm -f $remotePath" -TimeOut 15 | Out-Null
+            Remove-SSHSession -SSHSession $session | Out-Null
+        }
+    }
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+Export-ModuleMember -Function Get-VcfmsFleetComponentRegistration
 
 #EndRegion Services Runtime
 
