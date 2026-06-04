@@ -3794,7 +3794,7 @@ Function Add-DiskgroupsToManagementHosts {
     Write-Host ""
 
     # --- Scan all hosts and build the proposed config table ---
-    LogMessage -type INFO -message "[$clusterName] Querying all hosts for disk configuration"
+    LogMessage -type INFO -message "[$clusterName] Querying remaining hosts for disk configuration"
     $hostsNeedingDiskGroups = @()
     $proposedDisplayRows = @()
     $proposedDisplayRows += [pscustomobject]@{ 'Host' = "Host"; 'Status' = "Status"; 'DG' = "DiskGroup"; 'Role' = "Role"; 'CTL' = "SCSI Address"; 'Type' = "Type"; 'CapacityGB' = "GB" }
