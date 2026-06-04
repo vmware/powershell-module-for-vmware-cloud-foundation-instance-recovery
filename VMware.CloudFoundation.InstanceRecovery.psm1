@@ -3720,9 +3720,10 @@ Function Add-DiskgroupsToManagementHosts {
     $referenceHost = $vmHosts[0]
     LogMessage -type INFO -message "[$($referenceHost.Name)] Using as reference host for disk group configuration"
 
-    # Read existing disk group configuration from the reference host
-    $referenceEsxcli = Get-EsxCli -VMHost $referenceHost -V2
-    $referenceDiskGroups = $referenceEsxcli.vsan.storage.list.Invoke() | Where-Object { $_.IsCacheDisk -eq $true }
+    # Read existing disk group configuration from the reference host using Get-VsanDiskGroup,
+    # which provides strongly-typed SSDDisk (cache) and DataDisk (capacity) properties and is
+    # available via the vCenter connection — avoiding esxcli field name variance across ESXi versions.
+    $referenceDiskGroups = Get-VsanDiskGroup -VMHost $referenceHost -ErrorAction SilentlyContinue
 
     If (-not $referenceDiskGroups) {
         LogMessage -type ERROR -message "[$($referenceHost.Name)] No existing vSAN OSA disk groups found on reference host. Ensure New-SingleHostVsanDatastore has been run successfully."
@@ -3730,38 +3731,37 @@ Function Add-DiskgroupsToManagementHosts {
         return
     }
 
-    # Build a structured reference configuration: each entry is a cache disk runtime name and its associated capacity disk runtime names
-    $allReferenceDisks = $referenceEsxcli.vsan.storage.list.Invoke()
+    # Build a structured reference configuration using canonical names, sorted by runtime name
+    # so positional matching works consistently across hosts with identical disk layouts.
     $referenceConfig = @()
-    Foreach ($cacheEntry in $referenceDiskGroups) {
-        $capacityEntries = $allReferenceDisks | Where-Object { ($_.IsCacheDisk -eq $false) -and ($_.DiskGroupUUID -eq $cacheEntry.DiskGroupUUID) }
+    Foreach ($diskGroup in $referenceDiskGroups) {
         $referenceConfig += [PSCustomObject]@{
-            'cacheDiskRuntimeName'    = $cacheEntry.RuntimeName
-            'capacityDiskRuntimeNames' = @($capacityEntries.RuntimeName)
+            'cacheDiskCanonicalName'    = $diskGroup.ExtensionData.SSDDisk.CanonicalName
+            'capacityDiskCanonicalNames' = @($diskGroup.DataDisk | Sort-Object -Property RuntimeName | ForEach-Object { $_.CanonicalName })
         }
     }
 
     # Display the reference configuration to the user for confirmation
     $referenceDisplayObject = @()
     $referenceDisplayObject += [pscustomobject]@{
-        'diskGroup'        = "Disk Group"
-        'cacheDisk'        = "Cache Disk (Runtime Name)"
+        'diskGroup'         = "Disk Group"
+        'cacheDisk'         = "Cache Disk (Canonical Name)"
         'capacityDiskCount' = "Capacity Disks"
-        'capacityDisks'    = "Capacity Disk Runtime Names"
+        'capacityDisks'     = "Capacity Disk Canonical Names"
     }
     $referenceDisplayObject += [pscustomobject]@{
-        'diskGroup'        = "----------"
-        'cacheDisk'        = "------------------------"
+        'diskGroup'         = "----------"
+        'cacheDisk'         = "--------------------------"
         'capacityDiskCount' = "--------------"
-        'capacityDisks'    = "--------------------------"
+        'capacityDisks'     = "----------------------------"
     }
     $configIndex = 1
     Foreach ($config in $referenceConfig) {
         $referenceDisplayObject += [pscustomobject]@{
-            'diskGroup'        = $configIndex
-            'cacheDisk'        = $config.cacheDiskRuntimeName
-            'capacityDiskCount' = $config.capacityDiskRuntimeNames.Count
-            'capacityDisks'    = $config.capacityDiskRuntimeNames -join ", "
+            'diskGroup'         = $configIndex
+            'cacheDisk'         = $config.cacheDiskCanonicalName
+            'capacityDiskCount' = $config.capacityDiskCanonicalNames.Count
+            'capacityDisks'     = $config.capacityDiskCanonicalNames -join ", "
         }
         $configIndex++
     }
@@ -3770,10 +3770,11 @@ Function Add-DiskgroupsToManagementHosts {
     Write-Host ""
     $referenceDisplayObject | Format-Table -Property @{Expression = " " }, diskGroup, cacheDisk, capacityDiskCount, capacityDisks -AutoSize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
 
-    # Identify hosts that need disk groups created (those with no InUse vSAN disks)
+    # Identify hosts that need disk groups created using Get-VsanDiskGroup — consistent with how
+    # the reference config was read, and avoids esxcli field name variance.
     $hostsNeedingDiskGroups = @()
     Foreach ($vmHost in $vmHosts) {
-        $hostDiskGroups = (Get-EsxCli -VMHost $vmHost -V2).vsan.storage.list.Invoke() | Where-Object { $_.IsCacheDisk -eq $true }
+        $hostDiskGroups = Get-VsanDiskGroup -VMHost $vmHost -ErrorAction SilentlyContinue
         If (-not $hostDiskGroups) {
             $hostsNeedingDiskGroups += $vmHost
             LogMessage -type INFO -message "[$($vmHost.Name)] No existing disk groups found — will be configured"
@@ -3816,40 +3817,27 @@ Function Add-DiskgroupsToManagementHosts {
             $moduleFunctions = Import-Module VMware.CloudFoundation.InstanceRecovery -PassThru
             $restoredvCenterConnection = Connect-ViServer $using:targetFQDN -user $using:targetAdmin -password $using:targetAdminPassword
             $vmhost = Get-VMHost -Name $using:vmHost.Name
-            $esxcli = Get-EsxCli -VMHost $vmhost -V2
 
-            # Get this host's eligible disks sorted by runtime name for positional matching
-            $hostDisks = $esxcli.vsan.storage.list.Invoke() | Where-Object { $_.IsInUse -eq $false } | Sort-Object -Property RuntimeName
-            $hostDisksDisplayObject = @()
-            $hostDisksIndex = 1
-            $hostDisksDisplayObject += [pscustomobject]@{ 'ID' = "ID"; 'canonicalName' = "Canonical Name"; 'runtimeName' = "Runtime Name"; 'ssd' = "SSD" }
-            $hostDisksDisplayObject += [pscustomobject]@{ 'ID' = "--"; 'canonicalName' = "--------------------"; 'runtimeName' = "--------------------"; 'ssd' = "------" }
-            Foreach ($disk in $hostDisks) {
-                $hostDisksDisplayObject += [pscustomobject]@{
-                    'ID'            = $hostDisksIndex
-                    'canonicalName' = $disk.Name
-                    'runtimeName'   = $disk.RuntimeName
-                    'ssd'           = $disk.IsSSD
-                }
-                $hostDisksIndex++
-            }
+            # Get this host's eligible disks (VsanStatus = Eligible) sorted by runtime name.
+            # Canonical names are matched positionally against the reference config, which was
+            # also sorted by runtime name — so disk layout must be standardized across all hosts.
+            $hostEligibleDisks = $vmhost | Get-VMHostDisk | Where-Object { $_.ScsiLun.VsanStatus -eq 'Eligible' } | Sort-Object -Property @{e = { $_.ScsiLun.RuntimeName }}
 
-            # Build positional map: reference runtime name position -> this host's disk at the same position
             $referenceConfig = $using:referenceConfig
             For ($i = 1; $i -le $using:diskGroupNumber; $i++) {
                 $diskGroupConfigurationIndex = ($i - 1)
-                $refCacheRuntimeName = $referenceConfig[$diskGroupConfigurationIndex].cacheDiskRuntimeName
-                $refCapacityRuntimeNames = $referenceConfig[$diskGroupConfigurationIndex].capacityDiskRuntimeNames
+                $config = $referenceConfig[$diskGroupConfigurationIndex]
 
-                # Positional index of cache disk in reference host's sorted disk list
-                $allReferenceRuntimeNames = ($using:referenceConfig | ForEach-Object { @($_.cacheDiskRuntimeName) + @($_.capacityDiskRuntimeNames) }) | Sort-Object
-                $cachePositionIndex = [Array]::IndexOf($allReferenceRuntimeNames, $refCacheRuntimeName)
-                $cacheDiskCanonicalName = ($hostDisksDisplayObject | Where-Object { $_.ID -eq ($cachePositionIndex + 1) }).canonicalName
+                # The reference config stores canonical names from the reference host sorted by
+                # runtime name. We use the same positional index to pick disks on this host.
+                $allRefCanonicalNames = ($referenceConfig | ForEach-Object { @($_.cacheDiskCanonicalName) + @($_.capacityDiskCanonicalNames) })
+                $cachePositionIndex = [Array]::IndexOf($allRefCanonicalNames, $config.cacheDiskCanonicalName)
+                $cacheDiskCanonicalName = ($hostEligibleDisks[$cachePositionIndex]).ScsiLun.CanonicalName
 
                 $capacityDiskCanonicalNames = @()
-                Foreach ($refCapacityRuntimeName in $refCapacityRuntimeNames) {
-                    $capacityPositionIndex = [Array]::IndexOf($allReferenceRuntimeNames, $refCapacityRuntimeName)
-                    $capacityDiskCanonicalNames += ($hostDisksDisplayObject | Where-Object { $_.ID -eq ($capacityPositionIndex + 1) }).canonicalName
+                Foreach ($refCapacityCanonicalName in $config.capacityDiskCanonicalNames) {
+                    $capacityPositionIndex = [Array]::IndexOf($allRefCanonicalNames, $refCapacityCanonicalName)
+                    $capacityDiskCanonicalNames += ($hostEligibleDisks[$capacityPositionIndex]).ScsiLun.CanonicalName
                 }
 
                 & $moduleFunctions { LogMessage -type INFO -message "[$($vmhost.Name)] Creating vSAN OSA Disk Group $i (cache: $cacheDiskCanonicalName)" }
