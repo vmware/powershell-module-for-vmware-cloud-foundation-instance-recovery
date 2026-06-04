@@ -3986,26 +3986,26 @@ Function New-SingleHostVsanDatastore {
                 }
             }
 
-            # Create a temporary FTT=0 (no redundancy) vSAN storage policy so that files can be
-            # written to the single-host OSA datastore during the bootstrap phase. Without this,
-            # vSAN rejects all object creation because the default policy (FTT=1, RAID-1) requires
-            # a minimum of 3 fault domains / hosts.
-            $tempPolicyName = "vSAN-Temp-NoRedundancy"
-            $existingTempPolicy = Get-SpbmStoragePolicy -Name $tempPolicyName -ErrorAction SilentlyContinue
-            If (-not $existingTempPolicy) {
-                LogMessage -type INFO -message "[$esxHostFqdn] Creating temporary FTT=0 vSAN storage policy '$tempPolicyName' for single-host bootstrap"
-                $fttCapability = Get-SpbmCapability -Name "VSAN.hostFailuresToTolerate" -ErrorAction SilentlyContinue
-                If ($fttCapability) {
-                    $tempRule = New-SpbmRule -Capability $fttCapability -Value 0
-                    $tempRuleSet = New-SpbmRuleSet -AllOfRules $tempRule
-                    New-SpbmStoragePolicy -Name $tempPolicyName -Description "Temporary FTT=0 policy for single-host OSA bootstrap. Remove after cluster expansion and original policy is restored." -AnyOfRuleSets $tempRuleSet | Out-Null
-                    LogMessage -type INFO -message "[$esxHostFqdn] Temporary storage policy '$tempPolicyName' created. Apply this policy to VMs deployed during bootstrap. Remove it after the cluster is expanded and the original policy is restored."
-                } Else {
-                    LogMessage -type WARNING -message "[$esxHostFqdn] Could not find VSAN.hostFailuresToTolerate capability — skipping temporary policy creation. You may need to create an FTT=0 policy manually before deploying VMs."
+            # Set the vSAN default policy to FTT=0 (no redundancy) so that files can be written
+            # to the single-host OSA datastore during the bootstrap phase. Without this, vSAN
+            # rejects all object creation because the default policy (FTT=1, RAID-1) requires a
+            # minimum of 3 fault domains / hosts.
+            # SPBM is a vCenter service and is not available on a direct ESXi connection, so the
+            # policy is applied via esxcli instead. After vCenter is restored and the cluster is
+            # expanded, run Set-ManagementDatastorePolicy to restore the original policy.
+            LogMessage -type INFO -message "[$esxHostFqdn] Setting vSAN default policy to FTT=0 across all policy classes for single-host OSA bootstrap via esxcli"
+            foreach ($policyClass in @("cluster", "vdisk", "vmnamespace", "vmswap", "vmem")) {
+                try {
+                    $policyArgs = $esxcli.vsan.policy.setdefault.CreateArgs()
+                    $policyArgs.policy = '(("hostFailuresToTolerate" i0))'
+                    $policyArgs.policyclass = $policyClass
+                    $esxcli.vsan.policy.setdefault.Invoke($policyArgs) *>$null
+                    LogMessage -type INFO -message "[$esxHostFqdn] vSAN default policy set to FTT=0 for class: $policyClass"
+                } catch {
+                    LogMessage -type WARNING -message "[$esxHostFqdn] Failed to set vSAN default policy for class '$policyClass': $($_.Exception.Message)"
                 }
-            } Else {
-                LogMessage -type INFO -message "[$esxHostFqdn] Temporary storage policy '$tempPolicyName' already exists. Skipping creation."
             }
+            LogMessage -type INFO -message "[$esxHostFqdn] All vSAN policy classes set to FTT=0. Remember to run Set-ManagementDatastorePolicy after the cluster is expanded to restore the original policy."
         }
     } else {
         $clusterArgs = $esxcli.vsan.cluster.new.CreateArgs()
