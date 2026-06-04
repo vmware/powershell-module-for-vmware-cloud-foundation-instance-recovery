@@ -3733,11 +3733,13 @@ Function Add-DiskgroupsToManagementHosts {
 
     # Build a structured reference configuration using canonical names, sorted by runtime name
     # so positional matching works consistently across hosts with identical disk layouts.
+    # ExtensionData exposes .Ssd (HostScsiDisk) for the cache disk and .NonSsd (HostScsiDisk[])
+    # for the capacity disks — both carry a .CanonicalName and .RuntimeName property.
     $referenceConfig = @()
     Foreach ($diskGroup in $referenceDiskGroups) {
         $referenceConfig += [PSCustomObject]@{
-            'cacheDiskCanonicalName'    = $diskGroup.ExtensionData.SSDDisk.CanonicalName
-            'capacityDiskCanonicalNames' = @($diskGroup.DataDisk | Sort-Object -Property RuntimeName | ForEach-Object { $_.CanonicalName })
+            'cacheDiskCanonicalName'     = $diskGroup.ExtensionData.Ssd.CanonicalName
+            'capacityDiskCanonicalNames' = @($diskGroup.ExtensionData.NonSsd | Sort-Object -Property RuntimeName | ForEach-Object { $_.CanonicalName })
         }
     }
 
