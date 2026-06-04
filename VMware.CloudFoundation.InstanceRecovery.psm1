@@ -3759,25 +3759,30 @@ Function Add-DiskgroupsToManagementHosts {
     }
 
     # --- Reference host disk group table ---
+    # Use Get-VMHostDisk (InUse disks) for the reference host to get the same RuntimeName format
+    # (vmhbaX:CY:TZ:LW) as the proposed hosts — ExtensionData.Ssd.RuntimeName uses a different format.
+    $referenceHostAllDisks = $referenceHost | Get-VMHostDisk | Sort-Object -Property @{e = { $_.ScsiLun.RuntimeName }}
     $referenceDisplayRows = @()
     $referenceDisplayRows += [pscustomobject]@{ 'DG' = "DG"; 'Role' = "Role"; 'CTL' = "Controller:Target:LUN"; 'Type' = "Type"; 'CapacityGB' = "GB" }
     $referenceDisplayRows += [pscustomobject]@{ 'DG' = "--"; 'Role' = "-------"; 'CTL' = "---------------------"; 'Type' = "----"; 'CapacityGB' = "----" }
     $configIndex = 1
     Foreach ($config in $referenceConfig) {
+        $cacheLun = ($referenceHostAllDisks | Where-Object { $_.ScsiLun.CanonicalName -eq $config.cacheDiskCanonicalName }).ScsiLun
         $referenceDisplayRows += [pscustomobject]@{
             'DG'         = $configIndex
             'Role'       = "Cache"
-            'CTL'        = (Format-CTL $config.cacheDiskRuntimeName)
-            'Type'       = $config.cacheDiskType
-            'CapacityGB' = $config.cacheDiskCapacityGB
+            'CTL'        = (Format-CTL $cacheLun.RuntimeName)
+            'Type'       = If ($cacheLun.IsSsd) { "SSD" } Else { "HDD" }
+            'CapacityGB' = [math]::Round($cacheLun.CapacityGB, 0)
         }
-        For ($d = 0; $d -lt $config.capacityDiskCanonicalNames.Count; $d++) {
+        Foreach ($capCN in $config.capacityDiskCanonicalNames) {
+            $capLun = ($referenceHostAllDisks | Where-Object { $_.ScsiLun.CanonicalName -eq $capCN }).ScsiLun
             $referenceDisplayRows += [pscustomobject]@{
                 'DG'         = ""
                 'Role'       = "Capacity"
-                'CTL'        = (Format-CTL $config.capacityDiskRuntimeNames[$d])
-                'Type'       = $config.capacityDiskTypes[$d]
-                'CapacityGB' = $config.capacityDiskCapacitiesGB[$d]
+                'CTL'        = (Format-CTL $capLun.RuntimeName)
+                'Type'       = If ($capLun.IsSsd) { "SSD" } Else { "HDD" }
+                'CapacityGB' = [math]::Round($capLun.CapacityGB, 0)
             }
         }
         $configIndex++
@@ -3786,10 +3791,10 @@ Function Add-DiskgroupsToManagementHosts {
     Write-Host " Reference Disk Group Configuration — $($referenceHost.Name)" -ForegroundColor Yellow
     Write-Host ""
     $referenceDisplayRows | Format-Table -Property @{Expression = " " }, DG, Role, CTL, Type, CapacityGB -AutoSize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
+    Write-Host ""
 
     # --- Scan all hosts and build the proposed config table ---
-    # For each host, get eligible disks sorted by runtime name and map them positionally to the
-    # reference config. The reference host shows 'Existing'; all others show 'Proposed'.
+    LogMessage -type INFO -message "[$clusterName] Querying all hosts for disk configuration"
     $hostsNeedingDiskGroups = @()
     $proposedDisplayRows = @()
     $proposedDisplayRows += [pscustomobject]@{ 'Host' = "Host"; 'Status' = "Status"; 'DG' = "DG"; 'Role' = "Role"; 'CTL' = "Controller:Target:LUN"; 'Type' = "Type"; 'CapacityGB' = "GB" }
@@ -3798,40 +3803,38 @@ Function Add-DiskgroupsToManagementHosts {
     Foreach ($vmHost in $vmHosts) {
         $hostDiskGroups = Get-VsanDiskGroup -VMHost $vmHost -ErrorAction SilentlyContinue
         If ($hostDiskGroups) {
-            $status = "Existing"
-            LogMessage -type INFO -message "[$($vmHost.Name)] Existing disk groups found — skipping"
-            # Show existing disk groups in the proposed table using actual data
+            # Show existing disk groups using Get-VMHostDisk for consistent RuntimeName format
+            $hostAllDisks = $vmHost | Get-VMHostDisk | Sort-Object -Property @{e = { $_.ScsiLun.RuntimeName }}
             $dgIndex = 1
             Foreach ($dg in $hostDiskGroups) {
-                $existingSsd = $dg.ExtensionData.Ssd
-                $existingNonSsds = @($dg.ExtensionData.NonSsd | Sort-Object -Property RuntimeName)
+                $existingSsdCN = $dg.ExtensionData.Ssd.CanonicalName
+                $existingNonSsdCNs = @($dg.ExtensionData.NonSsd | Sort-Object -Property RuntimeName | ForEach-Object { $_.CanonicalName })
+                $existingSsdLun = ($hostAllDisks | Where-Object { $_.ScsiLun.CanonicalName -eq $existingSsdCN }).ScsiLun
                 $proposedDisplayRows += [pscustomobject]@{
                     'Host'       = $vmHost.Name
-                    'Status'     = $status
+                    'Status'     = "Existing"
                     'DG'         = $dgIndex
                     'Role'       = "Cache"
-                    'CTL'        = (Format-CTL $existingSsd.RuntimeName)
-                    'Type'       = If ($existingSsd.Ssd) { "SSD" } Else { "HDD" }
-                    'CapacityGB' = [math]::Round(($existingSsd.Capacity.Block * $existingSsd.Capacity.BlockSize) / 1GB, 0)
+                    'CTL'        = (Format-CTL $existingSsdLun.RuntimeName)
+                    'Type'       = If ($existingSsdLun.IsSsd) { "SSD" } Else { "HDD" }
+                    'CapacityGB' = [math]::Round($existingSsdLun.CapacityGB, 0)
                 }
-                Foreach ($nonSsd in $existingNonSsds) {
+                Foreach ($nonSsdCN in $existingNonSsdCNs) {
+                    $nonSsdLun = ($hostAllDisks | Where-Object { $_.ScsiLun.CanonicalName -eq $nonSsdCN }).ScsiLun
                     $proposedDisplayRows += [pscustomobject]@{
                         'Host'       = ""
                         'Status'     = ""
                         'DG'         = ""
                         'Role'       = "Capacity"
-                        'CTL'        = (Format-CTL $nonSsd.RuntimeName)
-                        'Type'       = If ($nonSsd.Ssd) { "SSD" } Else { "HDD" }
-                        'CapacityGB' = [math]::Round(($nonSsd.Capacity.Block * $nonSsd.Capacity.BlockSize) / 1GB, 0)
+                        'CTL'        = (Format-CTL $nonSsdLun.RuntimeName)
+                        'Type'       = If ($nonSsdLun.IsSsd) { "SSD" } Else { "HDD" }
+                        'CapacityGB' = [math]::Round($nonSsdLun.CapacityGB, 0)
                     }
                 }
                 $dgIndex++
             }
         } Else {
             $hostsNeedingDiskGroups += $vmHost
-            $status = "Proposed"
-            LogMessage -type INFO -message "[$($vmHost.Name)] No existing disk groups found — will be configured"
-            # Show proposed disk groups by positionally matching eligible disks to the reference config
             $hostEligibleDisks = $vmHost | Get-VMHostDisk | Where-Object { $_.ScsiLun.VsanStatus -eq 'Eligible' } | Sort-Object -Property @{e = { $_.ScsiLun.RuntimeName }}
             $allRefCanonicalNames = ($referenceConfig | ForEach-Object { @($_.cacheDiskCanonicalName) + @($_.capacityDiskCanonicalNames) })
             $dgIndex = 1
@@ -3840,7 +3843,7 @@ Function Add-DiskgroupsToManagementHosts {
                 $cacheLun = $hostEligibleDisks[$cachePositionIndex].ScsiLun
                 $proposedDisplayRows += [pscustomobject]@{
                     'Host'       = $vmHost.Name
-                    'Status'     = $status
+                    'Status'     = "Proposed"
                     'DG'         = $dgIndex
                     'Role'       = "Cache"
                     'CTL'        = (Format-CTL $cacheLun.RuntimeName)
@@ -3877,8 +3880,6 @@ Function Add-DiskgroupsToManagementHosts {
     Write-Host " Proposed Disk Group Configuration — All Hosts" -ForegroundColor Yellow
     Write-Host ""
     $proposedDisplayRows | Format-Table -Property @{Expression = " " }, Host, Status, DG, Role, CTL, Type, CapacityGB -AutoSize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
-    Write-Host ""
-    Write-Host " Disk matching is done positionally by runtime name sort order. All hosts must have a standardized disk layout." -ForegroundColor Yellow
     Write-Host ""
     Write-Host " Do you wish to proceed? (Y/N): " -ForegroundColor Yellow -nonewline
     Do {
