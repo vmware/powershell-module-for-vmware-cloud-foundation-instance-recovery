@@ -3750,7 +3750,7 @@ Function Add-DiskgroupsToManagementHosts {
         }
     }
 
-    # Helper function to format a HostScsiDisk runtime name into Controller:Target:LUN notation
+    # Helper function to format a HostScsiDisk runtime name into SCSI Address notation
     Function Format-CTL ($runtimeName) {
         If ($runtimeName -match '(\w+):C(\d+):T(\d+):L(\d+)') {
             return "$($Matches[1]) C$($Matches[2]):T$($Matches[3]):L$($Matches[4])"
@@ -3763,8 +3763,8 @@ Function Add-DiskgroupsToManagementHosts {
     # (vmhbaX:CY:TZ:LW) as the proposed hosts — ExtensionData.Ssd.RuntimeName uses a different format.
     $referenceHostAllDisks = $referenceHost | Get-VMHostDisk | Sort-Object -Property @{e = { $_.ScsiLun.RuntimeName }}
     $referenceDisplayRows = @()
-    $referenceDisplayRows += [pscustomobject]@{ 'DG' = "DG"; 'Role' = "Role"; 'CTL' = "Controller:Target:LUN"; 'Type' = "Type"; 'CapacityGB' = "GB" }
-    $referenceDisplayRows += [pscustomobject]@{ 'DG' = "--"; 'Role' = "-------"; 'CTL' = "---------------------"; 'Type' = "----"; 'CapacityGB' = "----" }
+    $referenceDisplayRows += [pscustomobject]@{ 'DG' = "DiskGroup"; 'Role' = "Role"; 'CTL' = "SCSI Address"; 'Type' = "Type"; 'CapacityGB' = "GB" }
+    $referenceDisplayRows += [pscustomobject]@{ 'DG' = "---------"; 'Role' = "-------"; 'CTL' = "------------"; 'Type' = "----"; 'CapacityGB' = "----" }
     $configIndex = 1
     Foreach ($config in $referenceConfig) {
         $cacheLun = ($referenceHostAllDisks | Where-Object { $_.ScsiLun.CanonicalName -eq $config.cacheDiskCanonicalName }).ScsiLun
@@ -3797,8 +3797,8 @@ Function Add-DiskgroupsToManagementHosts {
     LogMessage -type INFO -message "[$clusterName] Querying all hosts for disk configuration"
     $hostsNeedingDiskGroups = @()
     $proposedDisplayRows = @()
-    $proposedDisplayRows += [pscustomobject]@{ 'Host' = "Host"; 'Status' = "Status"; 'DG' = "DG"; 'Role' = "Role"; 'CTL' = "Controller:Target:LUN"; 'Type' = "Type"; 'CapacityGB' = "GB" }
-    $proposedDisplayRows += [pscustomobject]@{ 'Host' = "----"; 'Status' = "------"; 'DG' = "--"; 'Role' = "-------"; 'CTL' = "---------------------"; 'Type' = "----"; 'CapacityGB' = "----" }
+    $proposedDisplayRows += [pscustomobject]@{ 'Host' = "Host"; 'Status' = "Status"; 'DG' = "DiskGroup"; 'Role' = "Role"; 'CTL' = "SCSI Address"; 'Type' = "Type"; 'CapacityGB' = "GB" }
+    $proposedDisplayRows += [pscustomobject]@{ 'Host' = "----"; 'Status' = "------"; 'DG' = "---------"; 'Role' = "-------"; 'CTL' = "------------"; 'Type' = "----"; 'CapacityGB' = "----" }
 
     Foreach ($vmHost in $vmHosts) {
         $hostDiskGroups = Get-VsanDiskGroup -VMHost $vmHost -ErrorAction SilentlyContinue
