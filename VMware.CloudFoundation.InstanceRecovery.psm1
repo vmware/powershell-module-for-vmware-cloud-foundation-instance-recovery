@@ -3813,7 +3813,7 @@ Function Add-DiskgroupsToManagementHosts {
                 $proposedDisplayRows += [pscustomobject]@{
                     'Host'       = $vmHost.Name
                     'Status'     = "Existing"
-                    'DG'         = $dgIndex
+                    'DG'         = "  $dgIndex"
                     'Role'       = "Cache"
                     'CTL'        = (Format-CTL $existingSsdLun.RuntimeName)
                     'Type'       = If ($existingSsdLun.IsSsd) { "SSD" } Else { "HDD" }
@@ -3844,7 +3844,7 @@ Function Add-DiskgroupsToManagementHosts {
                 $proposedDisplayRows += [pscustomobject]@{
                     'Host'       = $vmHost.Name
                     'Status'     = "Proposed"
-                    'DG'         = $dgIndex
+                    'DG'         = "  $dgIndex"
                     'Role'       = "Cache"
                     'CTL'        = (Format-CTL $cacheLun.RuntimeName)
                     'Type'       = If ($cacheLun.IsSsd) { "SSD" } Else { "HDD" }
