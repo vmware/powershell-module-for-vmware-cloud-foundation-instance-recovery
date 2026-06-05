@@ -10377,16 +10377,17 @@ Function Set-VcfmsFleetIdentity {
 
     # Step 2c: Submit apply task with fleet ingress spec
     $body = @{
-        spec = @{
+        spec    = @{
             configuration = @{
                 ingress = @{
                     fleet = @{
                         fqdn = $FleetFqdn
-                        vips = @{ ipv4 = $FleetVip }
+                        vips = @{ ipv4 = @($FleetVip) }
                     }
                 }
             }
         }
+        options = @{ timeout = "30m" }
     } | ConvertTo-Json -Depth 8
 
     LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Submitting fleet ingress apply for component $componentId"
