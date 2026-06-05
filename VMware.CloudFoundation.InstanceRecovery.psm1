@@ -3665,6 +3665,280 @@ Function New-RebuiltVsanDatastore {
 }
 Export-ModuleMember -Function New-RebuiltVsanDatastore
 
+Function Add-DiskgroupsToManagementHosts {
+    <#
+    .SYNOPSIS
+    Expands a single-host vSAN OSA datastore to the remaining hosts in the cluster by replicating the disk group configuration from the first host.
+
+    .DESCRIPTION
+    The Add-DiskgroupsToManagementHosts cmdlet reads the existing vSAN OSA disk group configuration from the first host in the cluster (which was previously configured by New-SingleHostVsanDatastore) and uses it as a reference to create matching disk groups on all remaining hosts that do not yet have disk groups. Disk matching across hosts is done positionally by runtime name sort order, which assumes a standardized disk layout across all hosts.
+
+    .EXAMPLE
+    Add-DiskgroupsToManagementHosts -targetFQDN "sfo-m01-vc01.sfo.rainpole.io" -targetAdmin "administrator@vsphere.local" -targetAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01" -extractedSDDCDataFile ".\extracted-sddc-data.json"
+
+    .PARAMETER targetFQDN
+    FQDN of the vCenter instance hosting the cluster where the vSAN datastore will be expanded
+
+    .PARAMETER targetAdmin
+    Admin user of the vCenter instance hosting the cluster where the vSAN datastore will be expanded
+
+    .PARAMETER targetAdminPassword
+    Admin password for the vCenter instance hosting the cluster where the vSAN datastore will be expanded
+
+    .PARAMETER clusterName
+    Name of the vSphere cluster instance where the vSAN datastore will be expanded
+
+    .PARAMETER extractedSDDCDataFile
+    Relative or absolute path to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup) somewhere on the local filesystem
+    #>
+
+    Param(
+        [Parameter (Mandatory = $true)][String] $targetFQDN,
+        [Parameter (Mandatory = $true)][String] $targetAdmin,
+        [Parameter (Mandatory = $true)][String] $targetAdminPassword,
+        [Parameter (Mandatory = $true)][String] $clusterName,
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile
+    )
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+    LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
+    $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
+    $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
+    $datastoreType = ($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).primaryDatastoreType
+
+    If ($datastoreType -eq "VSAN_ESA") {
+        LogMessage -type ERROR -message "[$clusterName] This function is for vSAN OSA clusters only. Use the appropriate ESA expansion function for VSAN_ESA clusters."
+        return
+    }
+
+    LogMessage -type INFO -message "[$jumpboxName] Connecting to vCenter: $targetFQDN"
+    $vCenterConnection = Connect-ViServer $targetFQDN -user $targetAdmin -password $targetAdminPassword
+
+    $vmHosts = Get-Cluster -Name $clusterName | Get-VMHost | Sort-Object -Property Name
+    $referenceHost = $vmHosts[0]
+    LogMessage -type INFO -message "[$($referenceHost.Name)] Using as reference host for disk group configuration"
+
+    # Read existing disk group configuration from the reference host using Get-VsanDiskGroup,
+    # which provides strongly-typed SSDDisk (cache) and DataDisk (capacity) properties and is
+    # available via the vCenter connection — avoiding esxcli field name variance across ESXi versions.
+    $referenceDiskGroups = Get-VsanDiskGroup -VMHost $referenceHost -ErrorAction SilentlyContinue
+
+    If (-not $referenceDiskGroups) {
+        LogMessage -type ERROR -message "[$($referenceHost.Name)] No existing vSAN OSA disk groups found on reference host. Ensure New-SingleHostVsanDatastore has been run successfully."
+        Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+        return
+    }
+
+    # Build a structured reference configuration. ExtensionData exposes .Ssd (HostScsiDisk) for
+    # the cache disk and .NonSsd (HostScsiDisk[]) for capacity disks. Capacity in bytes is derived
+    # from Block * BlockSize. RuntimeName (e.g. vmhba1:C0:T1:L0) is parsed for CTL display.
+    $referenceConfig = @()
+    Foreach ($diskGroup in $referenceDiskGroups) {
+        $ssd = $diskGroup.ExtensionData.Ssd
+        $nonSsds = @($diskGroup.ExtensionData.NonSsd | Sort-Object -Property RuntimeName)
+        $referenceConfig += [PSCustomObject]@{
+            'cacheDiskCanonicalName'     = $ssd.CanonicalName
+            'cacheDiskRuntimeName'       = $ssd.RuntimeName
+            'cacheDiskType'              = If ($ssd.Ssd) { "SSD" } Else { "HDD" }
+            'cacheDiskCapacityGB'        = [math]::Round(($ssd.Capacity.Block * $ssd.Capacity.BlockSize) / 1GB, 0)
+            'capacityDiskCanonicalNames' = @($nonSsds.CanonicalName)
+            'capacityDiskRuntimeNames'   = @($nonSsds.RuntimeName)
+            'capacityDiskTypes'          = @($nonSsds | ForEach-Object { If ($_.Ssd) { "SSD" } Else { "HDD" } })
+            'capacityDiskCapacitiesGB'   = @($nonSsds | ForEach-Object { [math]::Round(($_.Capacity.Block * $_.Capacity.BlockSize) / 1GB, 0) })
+        }
+    }
+
+    # Helper function to format a HostScsiDisk runtime name into SCSI Address notation
+    Function Format-CTL ($runtimeName) {
+        If ($runtimeName -match '(\w+):C(\d+):T(\d+):L(\d+)') {
+            return "$($Matches[1]) C$($Matches[2]):T$($Matches[3]):L$($Matches[4])"
+        }
+        return $runtimeName
+    }
+
+    # --- Reference host disk group table ---
+    # Use Get-VMHostDisk (InUse disks) for the reference host to get the same RuntimeName format
+    # (vmhbaX:CY:TZ:LW) as the proposed hosts — ExtensionData.Ssd.RuntimeName uses a different format.
+    $referenceHostAllDisks = $referenceHost | Get-VMHostDisk | Sort-Object -Property @{e = { $_.ScsiLun.RuntimeName }}
+    $referenceDisplayRows = @()
+    $referenceDisplayRows += [pscustomobject]@{ 'DG' = "DiskGroup"; 'Role' = "Role"; 'CTL' = "SCSI Address"; 'Type' = "Type"; 'CapacityGB' = "GB" }
+    $referenceDisplayRows += [pscustomobject]@{ 'DG' = "---------"; 'Role' = "-------"; 'CTL' = "------------"; 'Type' = "----"; 'CapacityGB' = "----" }
+    $configIndex = 1
+    Foreach ($config in $referenceConfig) {
+        $cacheLun = ($referenceHostAllDisks | Where-Object { $_.ScsiLun.CanonicalName -eq $config.cacheDiskCanonicalName }).ScsiLun
+        $referenceDisplayRows += [pscustomobject]@{
+            'DG'         = $configIndex
+            'Role'       = "Cache"
+            'CTL'        = (Format-CTL $cacheLun.RuntimeName)
+            'Type'       = If ($cacheLun.IsSsd) { "SSD" } Else { "HDD" }
+            'CapacityGB' = [math]::Round($cacheLun.CapacityGB, 0)
+        }
+        Foreach ($capCN in $config.capacityDiskCanonicalNames) {
+            $capLun = ($referenceHostAllDisks | Where-Object { $_.ScsiLun.CanonicalName -eq $capCN }).ScsiLun
+            $referenceDisplayRows += [pscustomobject]@{
+                'DG'         = ""
+                'Role'       = "Capacity"
+                'CTL'        = (Format-CTL $capLun.RuntimeName)
+                'Type'       = If ($capLun.IsSsd) { "SSD" } Else { "HDD" }
+                'CapacityGB' = [math]::Round($capLun.CapacityGB, 0)
+            }
+        }
+        $configIndex++
+    }
+    Write-Host ""
+    Write-Host " Reference Disk Group Configuration — $($referenceHost.Name)" -ForegroundColor Yellow
+    Write-Host ""
+    $referenceDisplayRows | Format-Table -Property @{Expression = " " }, DG, Role, CTL, Type, CapacityGB -AutoSize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
+    Write-Host ""
+
+    # --- Scan all hosts and build the proposed config table ---
+    LogMessage -type INFO -message "[$clusterName] Querying remaining hosts for disk configuration"
+    $hostsNeedingDiskGroups = @()
+    $proposedDisplayRows = @()
+    $proposedDisplayRows += [pscustomobject]@{ 'Host' = "Host"; 'Status' = "Status"; 'DG' = "DiskGroup"; 'Role' = "Role"; 'CTL' = "SCSI Address"; 'Type' = "Type"; 'CapacityGB' = "GB" }
+    $proposedDisplayRows += [pscustomobject]@{ 'Host' = "----"; 'Status' = "------"; 'DG' = "---------"; 'Role' = "-------"; 'CTL' = "------------"; 'Type' = "----"; 'CapacityGB' = "----" }
+
+    Foreach ($vmHost in $vmHosts) {
+        $hostDiskGroups = Get-VsanDiskGroup -VMHost $vmHost -ErrorAction SilentlyContinue
+        If ($hostDiskGroups) {
+            # Show existing disk groups using Get-VMHostDisk for consistent RuntimeName format
+            $hostAllDisks = $vmHost | Get-VMHostDisk | Sort-Object -Property @{e = { $_.ScsiLun.RuntimeName }}
+            $dgIndex = 1
+            Foreach ($dg in $hostDiskGroups) {
+                $existingSsdCN = $dg.ExtensionData.Ssd.CanonicalName
+                $existingNonSsdCNs = @($dg.ExtensionData.NonSsd | Sort-Object -Property RuntimeName | ForEach-Object { $_.CanonicalName })
+                $existingSsdLun = ($hostAllDisks | Where-Object { $_.ScsiLun.CanonicalName -eq $existingSsdCN }).ScsiLun
+                $proposedDisplayRows += [pscustomobject]@{
+                    'Host'       = $vmHost.Name
+                    'Status'     = "Existing"
+                    'DG'         = $dgIndex
+                    'Role'       = "Cache"
+                    'CTL'        = (Format-CTL $existingSsdLun.RuntimeName)
+                    'Type'       = If ($existingSsdLun.IsSsd) { "SSD" } Else { "HDD" }
+                    'CapacityGB' = [math]::Round($existingSsdLun.CapacityGB, 0)
+                }
+                Foreach ($nonSsdCN in $existingNonSsdCNs) {
+                    $nonSsdLun = ($hostAllDisks | Where-Object { $_.ScsiLun.CanonicalName -eq $nonSsdCN }).ScsiLun
+                    $proposedDisplayRows += [pscustomobject]@{
+                        'Host'       = ""
+                        'Status'     = ""
+                        'DG'         = ""
+                        'Role'       = "Capacity"
+                        'CTL'        = (Format-CTL $nonSsdLun.RuntimeName)
+                        'Type'       = If ($nonSsdLun.IsSsd) { "SSD" } Else { "HDD" }
+                        'CapacityGB' = [math]::Round($nonSsdLun.CapacityGB, 0)
+                    }
+                }
+                $dgIndex++
+            }
+        } Else {
+            $hostsNeedingDiskGroups += $vmHost
+            $hostEligibleDisks = $vmHost | Get-VMHostDisk | Where-Object { $_.ScsiLun.VsanStatus -eq 'Eligible' } | Sort-Object -Property @{e = { $_.ScsiLun.RuntimeName }}
+            $allRefCanonicalNames = ($referenceConfig | ForEach-Object { @($_.cacheDiskCanonicalName) + @($_.capacityDiskCanonicalNames) })
+            $dgIndex = 1
+            Foreach ($config in $referenceConfig) {
+                $cachePositionIndex = [Array]::IndexOf($allRefCanonicalNames, $config.cacheDiskCanonicalName)
+                $cacheLun = $hostEligibleDisks[$cachePositionIndex].ScsiLun
+                $proposedDisplayRows += [pscustomobject]@{
+                    'Host'       = $vmHost.Name
+                    'Status'     = "Proposed"
+                    'DG'         = $dgIndex
+                    'Role'       = "Cache"
+                    'CTL'        = (Format-CTL $cacheLun.RuntimeName)
+                    'Type'       = If ($cacheLun.IsSsd) { "SSD" } Else { "HDD" }
+                    'CapacityGB' = [math]::Round($cacheLun.CapacityGB, 0)
+                }
+                Foreach ($refCapCN in $config.capacityDiskCanonicalNames) {
+                    $capPositionIndex = [Array]::IndexOf($allRefCanonicalNames, $refCapCN)
+                    $capLun = $hostEligibleDisks[$capPositionIndex].ScsiLun
+                    $proposedDisplayRows += [pscustomobject]@{
+                        'Host'       = ""
+                        'Status'     = ""
+                        'DG'         = ""
+                        'Role'       = "Capacity"
+                        'CTL'        = (Format-CTL $capLun.RuntimeName)
+                        'Type'       = If ($capLun.IsSsd) { "SSD" } Else { "HDD" }
+                        'CapacityGB' = [math]::Round($capLun.CapacityGB, 0)
+                    }
+                }
+                $dgIndex++
+            }
+        }
+    }
+
+    If ($hostsNeedingDiskGroups.Count -eq 0) {
+        LogMessage -type INFO -message "[$clusterName] All hosts already have disk groups configured. Nothing to do."
+        Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+        $StopWatch.Stop()
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+        return
+    }
+
+    Write-Host ""
+    Write-Host " Proposed Disk Group Configuration — All Hosts" -ForegroundColor Yellow
+    Write-Host ""
+    $proposedDisplayRows | Format-Table -Property @{Expression = " " }, Host, Status, DG, Role, CTL, Type, CapacityGB -AutoSize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
+    Write-Host ""
+    Write-Host " Do you wish to proceed? (Y/N): " -ForegroundColor Yellow -nonewline
+    Do {
+        $proceedAccepted = Read-Host
+    } Until ($proceedAccepted -in "Y", "N")
+
+    If ($proceedAccepted -eq "N") {
+        LogMessage -type INFO -message "[$clusterName] User cancelled. No changes made."
+        Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+        $StopWatch.Stop()
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+        return
+    }
+
+    LogMessage -type INFO -message "[$clusterName] Starting parallel disk group creation across hosts requiring configuration"
+    $diskGroupNumber = $referenceConfig.Count
+    Foreach ($vmHost in $hostsNeedingDiskGroups) {
+        $scriptBlock = {
+            $moduleFunctions = Import-Module VMware.CloudFoundation.InstanceRecovery -PassThru
+            $restoredvCenterConnection = Connect-ViServer $using:targetFQDN -user $using:targetAdmin -password $using:targetAdminPassword
+            $vmhost = Get-VMHost -Name $using:vmHost.Name
+
+            # Get this host's eligible disks (VsanStatus = Eligible) sorted by runtime name.
+            # Canonical names are matched positionally against the reference config, which was
+            # also sorted by runtime name — so disk layout must be standardized across all hosts.
+            $hostEligibleDisks = $vmhost | Get-VMHostDisk | Where-Object { $_.ScsiLun.VsanStatus -eq 'Eligible' } | Sort-Object -Property @{e = { $_.ScsiLun.RuntimeName }}
+
+            $referenceConfig = $using:referenceConfig
+            For ($i = 1; $i -le $using:diskGroupNumber; $i++) {
+                $diskGroupConfigurationIndex = ($i - 1)
+                $config = $referenceConfig[$diskGroupConfigurationIndex]
+
+                # The reference config stores canonical names from the reference host sorted by
+                # runtime name. We use the same positional index to pick disks on this host.
+                $allRefCanonicalNames = ($referenceConfig | ForEach-Object { @($_.cacheDiskCanonicalName) + @($_.capacityDiskCanonicalNames) })
+                $cachePositionIndex = [Array]::IndexOf($allRefCanonicalNames, $config.cacheDiskCanonicalName)
+                $cacheDiskCanonicalName = ($hostEligibleDisks[$cachePositionIndex]).ScsiLun.CanonicalName
+
+                $capacityDiskCanonicalNames = @()
+                Foreach ($refCapacityCanonicalName in $config.capacityDiskCanonicalNames) {
+                    $capacityPositionIndex = [Array]::IndexOf($allRefCanonicalNames, $refCapacityCanonicalName)
+                    $capacityDiskCanonicalNames += ($hostEligibleDisks[$capacityPositionIndex]).ScsiLun.CanonicalName
+                }
+
+                & $moduleFunctions { LogMessage -type INFO -message "[$($vmhost.Name)] Creating vSAN OSA Disk Group $i (cache: $cacheDiskCanonicalName)" }
+                New-VsanDiskGroup -VMHost $vmhost -SsdCanonicalName $cacheDiskCanonicalName -DataDiskCanonicalName $capacityDiskCanonicalNames | Out-Null
+            }
+            Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+        }
+        Start-Job -ScriptBlock $scriptBlock -ArgumentList ($diskGroupNumber, $referenceConfig, $vmHost, $targetFQDN, $targetAdmin, $targetAdminPassword) | Out-Null
+    }
+    Get-Job | Receive-Job -Wait -AutoRemoveJob
+
+    Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+    $StopWatch.Stop()
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+}
+Export-ModuleMember -Function Add-DiskgroupsToManagementHosts
+
 Function Set-ManagementDatastorePolicy {
     <#
     .SYNOPSIS
@@ -3986,26 +4260,26 @@ Function New-SingleHostVsanDatastore {
                 }
             }
 
-            # Create a temporary FTT=0 (no redundancy) vSAN storage policy so that files can be
-            # written to the single-host OSA datastore during the bootstrap phase. Without this,
-            # vSAN rejects all object creation because the default policy (FTT=1, RAID-1) requires
-            # a minimum of 3 fault domains / hosts.
-            $tempPolicyName = "vSAN-Temp-NoRedundancy"
-            $existingTempPolicy = Get-SpbmStoragePolicy -Name $tempPolicyName -ErrorAction SilentlyContinue
-            If (-not $existingTempPolicy) {
-                LogMessage -type INFO -message "[$esxHostFqdn] Creating temporary FTT=0 vSAN storage policy '$tempPolicyName' for single-host bootstrap"
-                $fttCapability = Get-SpbmCapability -Name "VSAN.hostFailuresToTolerate" -ErrorAction SilentlyContinue
-                If ($fttCapability) {
-                    $tempRule = New-SpbmRule -Capability $fttCapability -Value 0
-                    $tempRuleSet = New-SpbmRuleSet -AllOfRules $tempRule
-                    New-SpbmStoragePolicy -Name $tempPolicyName -Description "Temporary FTT=0 policy for single-host OSA bootstrap. Remove after cluster expansion and original policy is restored." -AnyOfRuleSets $tempRuleSet | Out-Null
-                    LogMessage -type INFO -message "[$esxHostFqdn] Temporary storage policy '$tempPolicyName' created. Apply this policy to VMs deployed during bootstrap. Remove it after the cluster is expanded and the original policy is restored."
-                } Else {
-                    LogMessage -type WARNING -message "[$esxHostFqdn] Could not find VSAN.hostFailuresToTolerate capability — skipping temporary policy creation. You may need to create an FTT=0 policy manually before deploying VMs."
+            # Set the vSAN default policy to FTT=0 (no redundancy) so that files can be written
+            # to the single-host OSA datastore during the bootstrap phase. Without this, vSAN
+            # rejects all object creation because the default policy (FTT=1, RAID-1) requires a
+            # minimum of 3 fault domains / hosts.
+            # SPBM is a vCenter service and is not available on a direct ESXi connection, so the
+            # policy is applied via esxcli instead. After vCenter is restored and the cluster is
+            # expanded, run Set-ManagementDatastorePolicy to restore the original policy.
+            LogMessage -type INFO -message "[$esxHostFqdn] Setting vSAN default policy to FTT=0 across all policy classes for single-host OSA bootstrap via esxcli"
+            foreach ($policyClass in @("cluster", "vdisk", "vmnamespace", "vmswap", "vmem")) {
+                try {
+                    $policyArgs = $esxcli.vsan.policy.setdefault.CreateArgs()
+                    $policyArgs.policy = '(("hostFailuresToTolerate" i0))'
+                    $policyArgs.policyclass = $policyClass
+                    $esxcli.vsan.policy.setdefault.Invoke($policyArgs) *>$null
+                    LogMessage -type INFO -message "[$esxHostFqdn] vSAN default policy set to FTT=0 for class: $policyClass"
+                } catch {
+                    LogMessage -type WARNING -message "[$esxHostFqdn] Failed to set vSAN default policy for class '$policyClass': $($_.Exception.Message)"
                 }
-            } Else {
-                LogMessage -type INFO -message "[$esxHostFqdn] Temporary storage policy '$tempPolicyName' already exists. Skipping creation."
             }
+            LogMessage -type INFO -message "[$esxHostFqdn] All vSAN policy classes set to FTT=0. Remember to run Set-ManagementDatastorePolicy after the cluster is expanded to restore the original policy."
         }
     } else {
         $clusterArgs = $esxcli.vsan.cluster.new.CreateArgs()
