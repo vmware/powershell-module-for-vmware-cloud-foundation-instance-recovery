@@ -3763,8 +3763,8 @@ Function Add-DiskgroupsToManagementHosts {
     # (vmhbaX:CY:TZ:LW) as the proposed hosts — ExtensionData.Ssd.RuntimeName uses a different format.
     $referenceHostAllDisks = $referenceHost | Get-VMHostDisk | Sort-Object -Property @{e = { $_.ScsiLun.RuntimeName }}
     $referenceDisplayRows = @()
-    $referenceDisplayRows += [pscustomobject]@{ 'DG' = "DiskGroup"; 'Role' = "Role"; 'CTL' = "SCSI Address"; 'Type' = "Type"; 'CapacityGB' = "GB" }
-    $referenceDisplayRows += [pscustomobject]@{ 'DG' = "---------"; 'Role' = "-------"; 'CTL' = "------------"; 'Type' = "----"; 'CapacityGB' = "----" }
+    $referenceDisplayRows += [pscustomobject]@{ 'DG' = "DiskGroup"; 'CTL' = "SCSI Address"; 'Type' = "Type"; 'Role' = "Role"; 'CapacityGB' = "Capacity (GB)" }
+    $referenceDisplayRows += [pscustomobject]@{ 'DG' = "---------"; 'CTL' = "------------"; 'Type' = "----"; 'Role' = "-------"; 'CapacityGB' = "------------" }
     $configIndex = 1
     Foreach ($config in $referenceConfig) {
         $cacheLun = ($referenceHostAllDisks | Where-Object { $_.ScsiLun.CanonicalName -eq $config.cacheDiskCanonicalName }).ScsiLun
@@ -3790,15 +3790,15 @@ Function Add-DiskgroupsToManagementHosts {
     Write-Host ""
     Write-Host " Reference Disk Group Configuration — $($referenceHost.Name)" -ForegroundColor Yellow
     Write-Host ""
-    $referenceDisplayRows | Format-Table -Property @{Expression = " " }, DG, Role, CTL, Type, CapacityGB -AutoSize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
+    $referenceDisplayRows | Format-Table -Property @{Expression = " " }, DG, CTL, Type, Role, CapacityGB -AutoSize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
     Write-Host ""
 
     # --- Scan all hosts and build the proposed config table ---
     LogMessage -type INFO -message "[$clusterName] Querying remaining hosts for disk configuration"
     $hostsNeedingDiskGroups = @()
     $proposedDisplayRows = @()
-    $proposedDisplayRows += [pscustomobject]@{ 'Host' = "Host"; 'Status' = "Status"; 'DG' = "DiskGroup"; 'Role' = "Role"; 'CTL' = "SCSI Address"; 'Type' = "Type"; 'CapacityGB' = "GB" }
-    $proposedDisplayRows += [pscustomobject]@{ 'Host' = "----"; 'Status' = "------"; 'DG' = "---------"; 'Role' = "-------"; 'CTL' = "------------"; 'Type' = "----"; 'CapacityGB' = "----" }
+    $proposedDisplayRows += [pscustomobject]@{ 'Host' = "Host"; 'DG' = "DiskGroup"; 'Status' = "Status"; 'CTL' = "SCSI Address"; 'Type' = "Type"; 'Role' = "Role"; 'CapacityGB' = "Capacity (GB)" }
+    $proposedDisplayRows += [pscustomobject]@{ 'Host' = "----"; 'DG' = "---------"; 'Status' = "------"; 'CTL' = "------------"; 'Type' = "----"; 'Role' = "-------"; 'CapacityGB' = "------------" }
 
     Foreach ($vmHost in $vmHosts) {
         $hostDiskGroups = Get-VsanDiskGroup -VMHost $vmHost -ErrorAction SilentlyContinue
@@ -3879,7 +3879,7 @@ Function Add-DiskgroupsToManagementHosts {
     Write-Host ""
     Write-Host " Proposed Disk Group Configuration — All Hosts" -ForegroundColor Yellow
     Write-Host ""
-    $proposedDisplayRows | Format-Table -Property @{Expression = " " }, Host, Status, DG, Role, CTL, Type, CapacityGB -AutoSize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
+    $proposedDisplayRows | Format-Table -Property @{Expression = " " }, Host, DG, Status, CTL, Type, Role, CapacityGB -AutoSize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
     Write-Host ""
     Write-Host " Do you wish to proceed? (Y/N): " -ForegroundColor Yellow -nonewline
     Do {
