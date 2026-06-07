@@ -6882,7 +6882,7 @@ Function Wait-NSXTEdgeDeployment {
         [Parameter (Mandatory = $false)][Int]$timeoutMinutes = 30
     )
 
-    $headers = createHeader -username $nsxtUsername -password $nsxtPassword
+    $headers = VCFIRCreateHeader -username $nsxtUsername -password $nsxtPassword
     $startTime = Get-Date
     $timeout = New-TimeSpan -Minutes $timeoutMinutes
 
