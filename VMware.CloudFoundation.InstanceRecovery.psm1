@@ -10260,6 +10260,255 @@ Function Disable-VcfmsClusterLogging {
 }
 Export-ModuleMember -Function Disable-VcfmsClusterLogging
 
+Function Enable-VcfmsClusterLogging {
+    <#
+    .SYNOPSIS
+    Enables logging on a VCFMS Services Runtime cluster by configuring a VCF Operations
+    (Aria Log Insight) log management target.
+
+    .DESCRIPTION
+    The Enable-VcfmsClusterLogging cmdlet enables logging on the VCFMS Services Runtime
+    cluster on the recovery site after a successful log management restore.
+
+    The cmdlet:
+      1. Acquires an access token from the Services Runtime API.
+      2. Resolves the VSP component ID from GET /api/v1/components (unless -ComponentId is supplied).
+      3. Posts a component apply task to POST /api/v1/components/{id}?action=apply with:
+           spec.configuration.logs.type = "ops"
+           spec.configuration.logs.ops.host   = LogManagementVip
+           spec.configuration.logs.ops.scheme = "https"
+           spec.configuration.logs.ops.port   = LogManagementPort
+      4. Polls GET /api/v1/tasks/{taskId} until the task reaches a terminal state.
+      5. Validates the logging-operator-fluentd StatefulSet health in the vmsp-platform
+         namespace via kubectl (using Confirm-VcfmsFluentdOperatorState).
+
+    .EXAMPLE
+    # Enable logging — component ID and kubeconfig resolved automatically
+    Enable-VcfmsClusterLogging `
+        -ServicesRuntimeFqdn     "lax-sr01.lax.rainpole.io" `
+        -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
+        -LogManagementVip        "flt-logs01.rainpole.io"
+
+    .EXAMPLE
+    # Supply a specific VSP component ID and an existing kubeconfig
+    Enable-VcfmsClusterLogging `
+        -ServicesRuntimeFqdn     "lax-sr01.lax.rainpole.io" `
+        -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
+        -LogManagementVip        "flt-logs01.rainpole.io" `
+        -ComponentId             "e319236e-867e-4779-9270-4921bddf4f1f" `
+        -KubeconfigPath          "C:\kubeconfigs\lax-sr01.kubeconfig"
+
+    .PARAMETER ServicesRuntimeFqdn
+    FQDN of the VCFMS Services Runtime instance on the recovery site,
+    e.g. "lax-sr01.lax.rainpole.io".
+
+    .PARAMETER ServicesRuntimePassword
+    Password for the Services Runtime admin user. Used to obtain the API token and,
+    when -KubeconfigPath is not supplied, to retrieve the kubeconfig for post-apply
+    validation.
+
+    .PARAMETER ServicesRuntimeUsername
+    Username for the Services Runtime token request. Default is "admin@vsp.local".
+
+    .PARAMETER LogManagementVip
+    FQDN or IP of the Log Management VIP that the Services Runtime should forward
+    logs to, e.g. "flt-logs01.rainpole.io".
+
+    .PARAMETER LogManagementPort
+    Port used for the log management endpoint. Default is "9543".
+
+    .PARAMETER ComponentId
+    Optional. VSP component ID to target. When omitted the cmdlet resolves the first
+    component of type "vsp" from GET /api/v1/components.
+
+    .PARAMETER PollIntervalSeconds
+    Interval in seconds between task status polls. Default is 30.
+
+    .PARAMETER KubeconfigPath
+    Optional. Path to an existing kubeconfig for the Services Runtime cluster, used for
+    post-apply validation of the fluentd operator. When omitted the kubeconfig is retrieved
+    automatically from the Services Runtime node.
+
+    .PARAMETER KubeconfigOutputDir
+    Directory where the auto-retrieved kubeconfig is written. Defaults to the current directory.
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][String]  $ServicesRuntimeFqdn,
+        [Parameter(Mandatory = $true)][String]  $ServicesRuntimePassword,
+        [Parameter(Mandatory = $false)][String] $ServicesRuntimeUsername = "admin@vsp.local",
+        [Parameter(Mandatory = $true)][String]  $LogManagementVip,
+        [Parameter(Mandatory = $false)][String] $LogManagementPort = "9543",
+        [Parameter(Mandatory = $false)][String] $ComponentId,
+        [Parameter(Mandatory = $false)][Int]    $PollIntervalSeconds = 30,
+        [Parameter(Mandatory = $false)][String] $KubeconfigPath,
+        [Parameter(Mandatory = $false)][String] $KubeconfigOutputDir = "."
+    )
+
+    $jumpboxName    = hostname
+    $StopWatch      = New-Object -TypeName System.Diagnostics.Stopwatch
+    $terminalStates = @("COMPLETED","Completed","COMPLETE","FAILED","CANCELLED","ERROR","SUCCESS","SUCCESSFUL","Succeeded","Failed")
+    $StopWatch.Start()
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    LogMessage -type INFO -message "[$jumpboxName] Services Runtime : $ServicesRuntimeFqdn"
+    LogMessage -type INFO -message "[$jumpboxName] Log Management   : $LogManagementVip port $LogManagementPort"
+
+    # -------------------------------------------------------------------------
+    # Step 1: Acquire Services Runtime token
+    # -------------------------------------------------------------------------
+    $srToken = Get-VcfmsServicesRuntimeToken `
+        -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
+        -Username            $ServicesRuntimeUsername `
+        -Password            $ServicesRuntimePassword
+    if (-not $srToken) {
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Unable to obtain Services Runtime token. Aborting."
+        $StopWatch.Stop(); return
+    }
+    $tokenFetchedAt = [DateTime]::UtcNow
+    $headers = @{
+        "Authorization" = "Bearer $srToken"
+        "Accept"        = "application/json"
+        "Content-Type"  = "application/json"
+    }
+
+    # -------------------------------------------------------------------------
+    # Step 2: Resolve VSP component ID
+    # -------------------------------------------------------------------------
+    if ($ComponentId) {
+        $componentId = $ComponentId.Trim()
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Using supplied component ID: $componentId"
+    } else {
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Resolving VSP component ID from GET /api/v1/components"
+        try {
+            $componentsResponse = Invoke-RestMethod -Uri "https://$ServicesRuntimeFqdn/api/v1/components" `
+                -Method GET -Headers $headers -SkipCertificateCheck
+        } catch {
+            LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Failed to retrieve components: $($_.Exception.Message)"
+            $StopWatch.Stop(); return
+        }
+        $vspComponent = @($componentsResponse.components | Where-Object { $_.type -eq "vsp" }) | Select-Object -First 1
+        if (-not $vspComponent) {
+            LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] No component of type 'vsp' found. Pass -ComponentId to specify manually."
+            $StopWatch.Stop(); return
+        }
+        $componentId = $vspComponent.id
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Resolved VSP component ID : $componentId  (status: $($vspComponent.status))"
+    }
+
+    # -------------------------------------------------------------------------
+    # Step 3: Submit apply task to enable logging
+    # -------------------------------------------------------------------------
+    $body = @{
+        spec    = @{
+            configuration = @{
+                logs = @{
+                    type = "ops"
+                    ops  = @{
+                        host   = $LogManagementVip
+                        scheme = "https"
+                        port   = $LogManagementPort
+                    }
+                }
+            }
+        }
+        options = @{
+            precheckOnly = $false
+            precheck     = $true
+            timeout      = "1h"
+        }
+    } | ConvertTo-Json -Depth 8
+
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Submitting apply task to enable logging on component $componentId"
+    try {
+        $applyResponse = Invoke-RestMethod `
+            -Uri    "https://$ServicesRuntimeFqdn/api/v1/components/$componentId`?action=apply" `
+            -Method POST -Headers $headers -Body $body -SkipCertificateCheck
+    } catch {
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Apply request failed: $($_.Exception.Message)"
+        $StopWatch.Stop(); return
+    }
+
+    $taskId = $applyResponse.id
+    if (-not $taskId) {
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] No task ID returned from apply response."
+        $StopWatch.Stop(); return
+    }
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Apply task created: $taskId"
+
+    # -------------------------------------------------------------------------
+    # Step 4: Poll task to completion
+    # -------------------------------------------------------------------------
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Polling task $taskId every ${PollIntervalSeconds}s"
+    $elapsed      = 0
+    $taskStatus   = "UNKNOWN"
+    $taskResponse = $null
+    Do {
+        Start-Sleep -Seconds $PollIntervalSeconds
+        $elapsed += $PollIntervalSeconds
+        try {
+            if (([DateTime]::UtcNow - $tokenFetchedAt).TotalMinutes -ge 60) {
+                LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Token age >= 60 minutes; refreshing"
+                $newToken = Get-VcfmsServicesRuntimeToken `
+                    -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
+                    -Username            $ServicesRuntimeUsername `
+                    -Password            $ServicesRuntimePassword
+                if ($newToken) {
+                    $srToken                  = $newToken
+                    $headers["Authorization"] = "Bearer $srToken"
+                    $tokenFetchedAt           = [DateTime]::UtcNow
+                } else {
+                    LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Token refresh failed; continuing with existing token"
+                }
+            }
+            $taskResponse = Invoke-RestMethod `
+                -Uri    "https://$ServicesRuntimeFqdn/api/v1/tasks/$taskId" `
+                -Method GET -Headers $headers -SkipCertificateCheck
+            $rawSt = $taskResponse.status
+            $rawPh = $taskResponse.phase
+            if (-not [string]::IsNullOrWhiteSpace([string]$rawSt)) {
+                $taskStatus = [string]$rawSt
+            } elseif (-not [string]::IsNullOrWhiteSpace([string]$rawPh)) {
+                $taskStatus = [string]$rawPh
+            } else {
+                $taskStatus = "UNKNOWN"
+            }
+        } catch {
+            LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Poll error (will retry): $($_.Exception.Message)"
+            $taskStatus = "UNKNOWN"
+        }
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Task $taskId status=$taskStatus (${elapsed}s elapsed)"
+    } While ($taskStatus -notin $terminalStates)
+
+    Write-Host ""
+    $successStates = @("COMPLETED","Completed","COMPLETE","SUCCESS","SUCCESSFUL","Succeeded")
+    if ($taskStatus -notin $successStates) {
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Apply task ended with status: $taskStatus"
+        if ($taskResponse -and $taskResponse.description.localizedMessage) {
+            LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] $($taskResponse.description.localizedMessage)"
+        }
+        $StopWatch.Stop(); return
+    }
+
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Logging enabled successfully on component $componentId"
+
+    # -------------------------------------------------------------------------
+    # Step 5: Post-apply validation — verify logging-operator-fluentd is healthy
+    # -------------------------------------------------------------------------
+    if ($KubeconfigPath) {
+        Confirm-VcfmsFluentdOperatorState -KubeconfigPath $KubeconfigPath
+    } else {
+        Confirm-VcfmsFluentdOperatorState `
+            -ServicesRuntimeFqdn     $ServicesRuntimeFqdn `
+            -ServicesRuntimePassword $ServicesRuntimePassword `
+            -KubeconfigOutputDir     $KubeconfigOutputDir
+    }
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+Export-ModuleMember -Function Enable-VcfmsClusterLogging
+
 Function Confirm-VcfmsFluentdOperatorState {
     <#
     .SYNOPSIS
@@ -11101,8 +11350,8 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
     Re-associates an external Identity Broker (VIDB) with a new VCF instance in VCF Operations after a disaster recovery failover.
 
     .DESCRIPTION
-    The Invoke-VcfOpsVidbVcfInstanceUpdate cmdlet automates the "Update Identity Broker VCF Instance Association" task described in the VCF Fleet Disaster Recovery task library:
-    https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-9-0-and-later/9-1/fleet-management/vcf-fleet-disaster-recovery/fleet-disaster-recovery-task-library/fleet-component-recovery-tasks/update-identity-broker-vcf-instance-association.html
+    The Invoke-VcfOpsVidbVcfInstanceUpdate cmdlet re-associates an external Identity Broker
+    (VIDB) with a new VCF instance in VCF Operations after a disaster recovery failover.
 
     The function performs two interactive discovery steps before executing the remediation script:
 
@@ -11470,6 +11719,274 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
 }
 Export-ModuleMember -Function Invoke-VcfOpsVidbVcfInstanceUpdate
+
+Function Install-VcfaMigrationServiceEngine {
+    <#
+    .SYNOPSIS
+    Stages and installs the Migration Service Engine component on a VCF Automation Services Runtime cluster.
+
+    .DESCRIPTION
+    The Install-VcfaMigrationServiceEngine cmdlet stages and installs the Migration Service Engine
+    on a VCF Automation Services Runtime cluster. The Migration Service Engine is not captured in
+    VCF Automation backups and must be reinstalled after a restore. The cmdlet performs three steps:
+
+      1. Acquires an access token from the VCF Automation Services Runtime API.
+      2. Stages the migration-service binary via POST /api/v1/components?action=stage, then
+         polls GET /api/v1/tasks/{taskId} until the stage task reaches a terminal state.
+      3. Installs the migration-service component via POST /api/v1/components?action=install,
+         then polls GET /api/v1/tasks/{taskId} until the install task reaches a terminal state.
+
+    .EXAMPLE
+    # Stage and install using default version
+    Install-VcfaMigrationServiceEngine `
+        -VcfaServiceRuntimeFqdn     "flt-vcfa-sr01.rainpole.io" `
+        -VcfaServiceRuntimePassword "VMw@re1!VMw@re1!" `
+        -RepositoryUrl              "https://depot.rainpole.io/package-pool/depot-manifest-migration-service-9.1.0.0.25370929.yaml"
+
+    .EXAMPLE
+    # Supply a specific version and offline depot manifest URL
+    Install-VcfaMigrationServiceEngine `
+        -VcfaServiceRuntimeFqdn     "flt-vcfa-sr01.rainpole.io" `
+        -VcfaServiceRuntimePassword "VMw@re1!VMw@re1!" `
+        -Version                    "9.1.0.0.25370929" `
+        -RepositoryUrl              "https://depot.rainpole.io/package-pool/depot-manifest-migration-service-9.1.0.0.25370929.yaml"
+
+    .PARAMETER VcfaServiceRuntimeFqdn
+    FQDN of the VCF Automation Services Runtime cluster, e.g. "flt-vcfa-sr01.rainpole.io".
+
+    .PARAMETER VcfaServiceRuntimePassword
+    Password for the VCF Automation Services Runtime admin user.
+
+    .PARAMETER VcfaServiceRuntimeUsername
+    Username for the token request. Default is "admin@vsp.local".
+
+    .PARAMETER Version
+    Version string for the migration-service component to stage and install.
+    Default is "9.1.0.0.25370929".
+
+    .PARAMETER RepositoryUrl
+    URL to the depot manifest YAML for the migration-service version being staged. This must
+    point to an accessible depot — either an offline/air-gapped depot mirror or an
+    internal update repository. No default is provided; this parameter is required.
+
+    .PARAMETER InstallSize
+    Deployment size for the Migration Service Engine. Default is "small".
+
+    .PARAMETER StagePollIntervalSeconds
+    Interval in seconds between task status polls during the stage operation. Default is 30.
+
+    .PARAMETER InstallPollIntervalSeconds
+    Interval in seconds between task status polls during the install operation. Default is 30.
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][String]  $VcfaServiceRuntimeFqdn,
+        [Parameter(Mandatory = $true)][String]  $VcfaServiceRuntimePassword,
+        [Parameter(Mandatory = $false)][String] $VcfaServiceRuntimeUsername = "admin@vsp.local",
+        [Parameter(Mandatory = $false)][String] $Version = "9.1.0.0.25370929",
+        [Parameter(Mandatory = $true)][String]  $RepositoryUrl,
+        [Parameter(Mandatory = $false)][String] $InstallSize = "small",
+        [Parameter(Mandatory = $false)][Int]    $StagePollIntervalSeconds = 30,
+        [Parameter(Mandatory = $false)][Int]    $InstallPollIntervalSeconds = 30
+    )
+
+    $jumpboxName    = hostname
+    $StopWatch      = New-Object -TypeName System.Diagnostics.Stopwatch
+    $terminalStates = @("COMPLETED","Completed","COMPLETE","FAILED","CANCELLED","ERROR","SUCCESS","SUCCESSFUL","Succeeded","Failed")
+    $StopWatch.Start()
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    LogMessage -type INFO -message "[$jumpboxName] VCFA Services Runtime    : $VcfaServiceRuntimeFqdn"
+    LogMessage -type INFO -message "[$jumpboxName] Migration Service version : $Version"
+    LogMessage -type INFO -message "[$jumpboxName] Install size              : $InstallSize"
+
+    # -------------------------------------------------------------------------
+    # Step 1: Acquire VCFA Services Runtime token
+    # The VCFA SR uses the same /api/v1/identity/token endpoint as VCFMS SR.
+    # -------------------------------------------------------------------------
+    $srToken = Get-VcfmsServicesRuntimeToken `
+        -ServicesRuntimeFqdn $VcfaServiceRuntimeFqdn `
+        -Username            $VcfaServiceRuntimeUsername `
+        -Password            $VcfaServiceRuntimePassword
+    if (-not $srToken) {
+        LogMessage -type ERROR -message "[$VcfaServiceRuntimeFqdn] Unable to obtain VCFA Services Runtime token. Aborting."
+        $StopWatch.Stop(); return
+    }
+    $tokenFetchedAt = [DateTime]::UtcNow
+    $headers = @{
+        "Authorization" = "Bearer $srToken"
+        "Accept"        = "application/json"
+        "Content-Type"  = "application/json"
+    }
+
+    # -------------------------------------------------------------------------
+    # Helper: refresh token if approaching the 60-minute expiry
+    # -------------------------------------------------------------------------
+    $refreshToken = {
+        if (([DateTime]::UtcNow - $tokenFetchedAt).TotalMinutes -ge 60) {
+            LogMessage -type INFO -message "[$VcfaServiceRuntimeFqdn] Token age >= 60 minutes; refreshing"
+            $newToken = Get-VcfmsServicesRuntimeToken `
+                -ServicesRuntimeFqdn $VcfaServiceRuntimeFqdn `
+                -Username            $VcfaServiceRuntimeUsername `
+                -Password            $VcfaServiceRuntimePassword
+            if ($newToken) {
+                $script:srToken                  = $newToken
+                $script:headers["Authorization"] = "Bearer $newToken"
+                $script:tokenFetchedAt           = [DateTime]::UtcNow
+            } else {
+                LogMessage -type WARNING -message "[$VcfaServiceRuntimeFqdn] Token refresh failed; continuing with existing token"
+            }
+        }
+    }
+
+    # -------------------------------------------------------------------------
+    # Step 2: Stage the migration-service binary
+    # -------------------------------------------------------------------------
+    LogMessage -type INFO -message "[$VcfaServiceRuntimeFqdn] Staging migration-service $Version"
+
+    $stageBody = @{
+        type       = "migration-service"
+        version    = $Version
+        repository = @{
+            url = $RepositoryUrl
+        }
+        options    = @{
+            timeout = "30m"
+        }
+    } | ConvertTo-Json -Depth 5
+
+    try {
+        $stageResponse = Invoke-RestMethod `
+            -Uri    "https://$VcfaServiceRuntimeFqdn/api/v1/components?action=stage" `
+            -Method POST -Headers $headers -Body $stageBody -SkipCertificateCheck
+    } catch {
+        LogMessage -type ERROR -message "[$VcfaServiceRuntimeFqdn] Stage request failed: $($_.Exception.Message)"
+        $StopWatch.Stop(); return
+    }
+
+    $stageTaskId = $stageResponse.id
+    if (-not $stageTaskId) {
+        LogMessage -type ERROR -message "[$VcfaServiceRuntimeFqdn] No task ID returned from stage response."
+        $StopWatch.Stop(); return
+    }
+    LogMessage -type INFO -message "[$VcfaServiceRuntimeFqdn] Stage task created: $stageTaskId"
+
+    # Poll stage task
+    LogMessage -type INFO -message "[$VcfaServiceRuntimeFqdn] Polling stage task $stageTaskId every ${StagePollIntervalSeconds}s"
+    $elapsed      = 0
+    $taskStatus   = "UNKNOWN"
+    $taskResponse = $null
+    Do {
+        Start-Sleep -Seconds $StagePollIntervalSeconds
+        $elapsed += $StagePollIntervalSeconds
+        & $refreshToken
+        try {
+            $taskResponse = Invoke-RestMethod `
+                -Uri    "https://$VcfaServiceRuntimeFqdn/api/v1/tasks/$stageTaskId" `
+                -Method GET -Headers $headers -SkipCertificateCheck
+            $rawSt = $taskResponse.status
+            $rawPh = $taskResponse.phase
+            if (-not [string]::IsNullOrWhiteSpace([string]$rawSt)) {
+                $taskStatus = [string]$rawSt
+            } elseif (-not [string]::IsNullOrWhiteSpace([string]$rawPh)) {
+                $taskStatus = [string]$rawPh
+            } else {
+                $taskStatus = "UNKNOWN"
+            }
+        } catch {
+            LogMessage -type WARNING -message "[$VcfaServiceRuntimeFqdn] Poll error (will retry): $($_.Exception.Message)"
+            $taskStatus = "UNKNOWN"
+        }
+        LogMessage -type INFO -message "[$VcfaServiceRuntimeFqdn] Stage task $stageTaskId status=$taskStatus (${elapsed}s elapsed)"
+    } While ($taskStatus -notin $terminalStates)
+
+    $successStates = @("COMPLETED","Completed","COMPLETE","SUCCESS","SUCCESSFUL","Succeeded")
+    if ($taskStatus -notin $successStates) {
+        LogMessage -type ERROR -message "[$VcfaServiceRuntimeFqdn] Stage task ended with status: $taskStatus"
+        if ($taskResponse -and $taskResponse.description.localizedMessage) {
+            LogMessage -type ERROR -message "[$VcfaServiceRuntimeFqdn] $($taskResponse.description.localizedMessage)"
+        }
+        $StopWatch.Stop(); return
+    }
+    LogMessage -type INFO -message "[$VcfaServiceRuntimeFqdn] Migration Service Engine staged successfully"
+
+    # -------------------------------------------------------------------------
+    # Step 3: Install the migration-service component
+    # -------------------------------------------------------------------------
+    LogMessage -type INFO -message "[$VcfaServiceRuntimeFqdn] Installing migration-service $Version (size: $InstallSize)"
+
+    $installBody = @{
+        type    = "migration-service"
+        version = $Version
+        spec    = @{
+            configuration = @{
+                size = $InstallSize
+            }
+        }
+        options = @{
+            timeout       = "60m"
+            prechecksOnly = $false
+        }
+    } | ConvertTo-Json -Depth 5
+
+    try {
+        $installResponse = Invoke-RestMethod `
+            -Uri    "https://$VcfaServiceRuntimeFqdn/api/v1/components?action=install" `
+            -Method POST -Headers $headers -Body $installBody -SkipCertificateCheck
+    } catch {
+        LogMessage -type ERROR -message "[$VcfaServiceRuntimeFqdn] Install request failed: $($_.Exception.Message)"
+        $StopWatch.Stop(); return
+    }
+
+    $installTaskId = $installResponse.id
+    if (-not $installTaskId) {
+        LogMessage -type ERROR -message "[$VcfaServiceRuntimeFqdn] No task ID returned from install response."
+        $StopWatch.Stop(); return
+    }
+    LogMessage -type INFO -message "[$VcfaServiceRuntimeFqdn] Install task created: $installTaskId"
+
+    # Poll install task
+    LogMessage -type INFO -message "[$VcfaServiceRuntimeFqdn] Polling install task $installTaskId every ${InstallPollIntervalSeconds}s"
+    $elapsed      = 0
+    $taskStatus   = "UNKNOWN"
+    $taskResponse = $null
+    Do {
+        Start-Sleep -Seconds $InstallPollIntervalSeconds
+        $elapsed += $InstallPollIntervalSeconds
+        & $refreshToken
+        try {
+            $taskResponse = Invoke-RestMethod `
+                -Uri    "https://$VcfaServiceRuntimeFqdn/api/v1/tasks/$installTaskId" `
+                -Method GET -Headers $headers -SkipCertificateCheck
+            $rawSt = $taskResponse.status
+            $rawPh = $taskResponse.phase
+            if (-not [string]::IsNullOrWhiteSpace([string]$rawSt)) {
+                $taskStatus = [string]$rawSt
+            } elseif (-not [string]::IsNullOrWhiteSpace([string]$rawPh)) {
+                $taskStatus = [string]$rawPh
+            } else {
+                $taskStatus = "UNKNOWN"
+            }
+        } catch {
+            LogMessage -type WARNING -message "[$VcfaServiceRuntimeFqdn] Poll error (will retry): $($_.Exception.Message)"
+            $taskStatus = "UNKNOWN"
+        }
+        LogMessage -type INFO -message "[$VcfaServiceRuntimeFqdn] Install task $installTaskId status=$taskStatus (${elapsed}s elapsed)"
+    } While ($taskStatus -notin $terminalStates)
+
+    if ($taskStatus -notin $successStates) {
+        LogMessage -type ERROR -message "[$VcfaServiceRuntimeFqdn] Install task ended with status: $taskStatus"
+        if ($taskResponse -and $taskResponse.description.localizedMessage) {
+            LogMessage -type ERROR -message "[$VcfaServiceRuntimeFqdn] $($taskResponse.description.localizedMessage)"
+        }
+        $StopWatch.Stop(); return
+    }
+    LogMessage -type INFO -message "[$VcfaServiceRuntimeFqdn] Migration Service Engine installed successfully"
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+Export-ModuleMember -Function Install-VcfaMigrationServiceEngine
 
 #EndRegion Services Runtime
 
