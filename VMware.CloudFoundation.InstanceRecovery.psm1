@@ -11098,6 +11098,104 @@ Export-ModuleMember -Function Get-VcfmsFleetComponentRegistration
 #EndRegion Services Runtime
 
 #Region Supervisor
+Function Confirm-ContentLibraryDatastoreFolder
+{
+    <#
+    .SYNOPSIS
+    Checks for the presence of a content library folder on the target datastore and creates it if absent.
+
+    .DESCRIPTION
+    The Confirm-ContentLibraryDatastoreFolder cmdlet connects to the specified vCenter, locates the named
+    datastore, and verifies that a folder in the format 'contentlib-<libraryId>' exists at the root of that
+    datastore. If the folder is not found it is created.
+
+    For vSAN datastores (both OSA and ESA), the function uses the PowerCLI VimDatastore PSDrive provider,
+    which wraps vSphere's Datastore Browser API (MakeDirectory). vCenter exposes this API uniformly for all
+    datastore types it manages, so the same code path also handles VMFS and NFS datastores that are
+    registered as named datastores in vCenter.
+
+    Note: this function is not applicable to content libraries backed by a raw NFS mount point (storage
+    backing type 'OTHER'). In that case the folder is managed by the NFS server itself and no vSphere
+    datastore object exists to operate against.
+
+    .EXAMPLE
+    Confirm-ContentLibraryDatastoreFolder -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMware1!" -datastoreName "sfo-m01-cl01-ds-vsan01" -libraryId "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+
+    .PARAMETER vCenterFQDN
+    FQDN of the vCenter instance that owns the target datastore.
+
+    .PARAMETER vCenterAdmin
+    Admin user for the vCenter instance.
+
+    .PARAMETER vCenterAdminPassword
+    Admin password for the vCenter instance.
+
+    .PARAMETER datastoreName
+    Name of the datastore on which to confirm the content library folder.
+
+    .PARAMETER libraryId
+    GUID of the content library. The folder name will be constructed as 'contentlib-<libraryId>'.
+    #>
+
+    Param(
+        [Parameter (Mandatory = $true)][String] $vCenterFQDN,
+        [Parameter (Mandatory = $true)][String] $vCenterAdmin,
+        [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
+        [Parameter (Mandatory = $true)][String] $datastoreName,
+        [Parameter (Mandatory = $true)][String] $libraryId
+    )
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+
+    $folderName = "contentlib-$libraryId"
+    $driveName  = "clDSCheck_$(Get-Random)"
+
+    Try {
+        LogMessage -type INFO -message "[$vCenterFQDN] Connecting to vCenter"
+        $viConnection = Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop
+
+        # Resolve the datastore object — works for vSAN, VMFS, and NFS
+        LogMessage -type INFO -message "[$vCenterFQDN] Resolving datastore '$datastoreName'"
+        $datastore = Get-Datastore -Name $datastoreName -ErrorAction Stop | Select-Object -First 1
+        if (-not $datastore) {
+            LogMessage -type ERROR -message "[$vCenterFQDN] Datastore '$datastoreName' not found"
+            Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+            return
+        }
+        LogMessage -type INFO -message "[$vCenterFQDN] Datastore '$datastoreName' resolved (Type: $($datastore.Type))"
+
+        # Mount the datastore as a PSDrive using the VimDatastore provider.
+        # This approach is uniform across vSAN, VMFS, and NFS datastores.
+        LogMessage -type INFO -message "[$vCenterFQDN] Mounting datastore '$datastoreName' as PSDrive '$driveName'"
+        New-PSDrive -Location $datastore -Name $driveName -PSProvider VimDatastore -Root "\" -ErrorAction Stop | Out-Null
+
+        $folderPath = "${driveName}:\$folderName"
+
+        if (Test-Path -Path $folderPath) {
+            LogMessage -type INFO -message "[$vCenterFQDN] Folder '$folderName' already exists on datastore '$datastoreName' — no action required"
+        } else {
+            LogMessage -type INFO -message "[$vCenterFQDN] Folder '$folderName' not found on datastore '$datastoreName' — creating"
+            New-Item -ItemType Directory -Path $folderPath -ErrorAction Stop | Out-Null
+            LogMessage -type INFO -message "[$vCenterFQDN] Folder '$folderName' created successfully on datastore '$datastoreName'"
+        }
+    } Catch {
+        LogMessage -type ERROR -message "[$vCenterFQDN] $($_.Exception.Message)"
+    } Finally {
+        # Always remove the PSDrive and disconnect, even on error
+        if (Get-PSDrive -Name $driveName -ErrorAction SilentlyContinue) {
+            Remove-PSDrive -Name $driveName -ErrorAction SilentlyContinue | Out-Null
+        }
+        Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+    }
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+Export-ModuleMember -Function Confirm-ContentLibraryDatastoreFolder
+
 Function Set-ContentLibraryDatastoreMapping
 {
     Param(
