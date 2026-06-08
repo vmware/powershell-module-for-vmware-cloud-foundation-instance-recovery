@@ -10986,6 +10986,231 @@ Function Set-VcfmsFleetIdentity {
 }
 Export-ModuleMember -Function Set-VcfmsFleetIdentity
 
+Function Clear-VcfmsFleetIdentity {
+    <#
+    .SYNOPSIS
+    Removes the fleet ingress VIP configuration from a VCFMS Services Runtime cluster.
+
+    .DESCRIPTION
+    The Clear-VcfmsFleetIdentity cmdlet clears the fleet ingress configuration that was
+    previously applied by Set-VcfmsFleetIdentity. It submits the same apply payload shape
+    to POST /api/v1/components/{id}?action=apply but with blank values for the fleet FQDN
+    and an empty VIP array, effectively removing the fleet VIP from the ingress spec:
+
+      spec.configuration.ingress.fleet.fqdn = ""
+      spec.configuration.ingress.fleet.vips = { ipv4: [] }
+
+    The VSP component ID is read from the vmsp-platform namespace label
+    (component.vmsp.vmware.com/id) using the resolved kubeconfig, and the resulting
+    task is polled to completion.
+
+    The kubeconfig is resolved in this order:
+      1. -KubeconfigPath if supplied
+      2. Auto-retrieved from the Services Runtime node via Get-VcfmsServicesRuntimeKubeconfig
+         when -ServicesRuntimeFqdn and -ServicesRuntimePassword are supplied
+
+    .EXAMPLE
+    # Auto-retrieve kubeconfig
+    Clear-VcfmsFleetIdentity `
+        -ServicesRuntimeFqdn     "sfo-sr01.sfo.rainpole.io" `
+        -ServicesRuntimePassword "VMw@re1!VMw@re1!"
+
+    .EXAMPLE
+    # Use an existing kubeconfig
+    Clear-VcfmsFleetIdentity `
+        -ServicesRuntimeFqdn     "sfo-sr01.sfo.rainpole.io" `
+        -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
+        -KubeconfigPath          "C:\kubeconfigs\sfo-sr01.kubeconfig"
+
+    .PARAMETER ServicesRuntimeFqdn
+    FQDN of the Services Runtime cluster. Required for the API apply call and for automatic
+    kubeconfig retrieval when KubeconfigPath is not supplied.
+
+    .PARAMETER ServicesRuntimePassword
+    Password for the Services Runtime admin user and vmware-system-user SSH access.
+
+    .PARAMETER ServicesRuntimeUsername
+    Username for the Services Runtime API token. Default is "admin@vsp.local".
+
+    .PARAMETER KubeconfigPath
+    Path to an existing kubeconfig for the Services Runtime cluster. Takes precedence
+    over automatic retrieval.
+
+    .PARAMETER KubeconfigOutputDir
+    Directory where the auto-retrieved kubeconfig is written. Defaults to the current directory.
+
+    .PARAMETER PollIntervalSeconds
+    Interval in seconds between task status polls. Default is 60.
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][String]  $ServicesRuntimeFqdn,
+        [Parameter(Mandatory = $true)][String]  $ServicesRuntimePassword,
+        [Parameter(Mandatory = $false)][String] $ServicesRuntimeUsername = "admin@vsp.local",
+        [Parameter(Mandatory = $false)][String] $KubeconfigPath,
+        [Parameter(Mandatory = $false)][String] $KubeconfigOutputDir = ".",
+        [Parameter(Mandatory = $false)][Int]    $PollIntervalSeconds = 60
+    )
+
+    $jumpboxName    = hostname
+    $StopWatch      = New-Object -TypeName System.Diagnostics.Stopwatch
+    $terminalStates = @("COMPLETED","Completed","COMPLETE","FAILED","CANCELLED","ERROR","SUCCESS","SUCCESSFUL","Succeeded","Failed")
+    $StopWatch.Start()
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    LogMessage -type INFO -message "[$jumpboxName] Services Runtime : $ServicesRuntimeFqdn"
+
+    # -------------------------------------------------------------------------
+    # Resolve kubeconfig
+    # -------------------------------------------------------------------------
+    $resolvedKubeconfig = $KubeconfigPath
+    if (-not $resolvedKubeconfig) {
+        LogMessage -type INFO -message "[$jumpboxName] Retrieving kubeconfig from $ServicesRuntimeFqdn"
+        $kubeconfigResult = Get-VcfmsServicesRuntimeKubeconfig `
+            -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
+            -Password            $ServicesRuntimePassword `
+            -OutputDir           $KubeconfigOutputDir
+        if (-not $kubeconfigResult) {
+            LogMessage -type ERROR -message "[$jumpboxName] Failed to retrieve kubeconfig. Aborting."
+            $StopWatch.Stop(); return
+        }
+        $resolvedKubeconfig = $kubeconfigResult.KubeconfigPath
+    }
+
+    if (-not (Test-Path $resolvedKubeconfig)) {
+        LogMessage -type ERROR -message "[$jumpboxName] Kubeconfig not found: $resolvedKubeconfig"
+        $StopWatch.Stop(); return
+    }
+    LogMessage -type INFO -message "[$jumpboxName] Kubeconfig : $resolvedKubeconfig"
+
+    # -------------------------------------------------------------------------
+    # Step 1: Read VSP component ID from the vmsp-platform namespace label
+    # -------------------------------------------------------------------------
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Reading VSP component ID from vmsp-platform namespace"
+    $nsLabelOutput = & kubectl --kubeconfig $resolvedKubeconfig get ns vmsp-platform `
+        -o "jsonpath={.metadata.labels.component\.vmsp\.vmware\.com/id}" 2>&1
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -ne 0 -or [string]::IsNullOrWhiteSpace($nsLabelOutput)) {
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Failed to read VSP component ID from namespace label (exit $exitCode): $nsLabelOutput"
+        $StopWatch.Stop(); return
+    }
+    $componentId = $nsLabelOutput.Trim()
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] VSP component ID : $componentId"
+
+    # -------------------------------------------------------------------------
+    # Step 2: Acquire Services Runtime token
+    # -------------------------------------------------------------------------
+    $srToken = Get-VcfmsServicesRuntimeToken `
+        -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
+        -Username            $ServicesRuntimeUsername `
+        -Password            $ServicesRuntimePassword
+    if (-not $srToken) {
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Unable to obtain Services Runtime token. Aborting."
+        $StopWatch.Stop(); return
+    }
+    $tokenFetchedAt = [DateTime]::UtcNow
+    $headers = @{
+        "Authorization" = "Bearer $srToken"
+        "Accept"        = "application/json"
+        "Content-Type"  = "application/json"
+    }
+
+    # -------------------------------------------------------------------------
+    # Step 3: Submit apply task with blank fleet ingress values
+    # Same payload shape as Set-VcfmsFleetIdentity — fqdn cleared to empty
+    # string and vips.ipv4 set to an empty array.
+    # -------------------------------------------------------------------------
+    $body = @{
+        spec    = @{
+            configuration = @{
+                ingress = @{
+                    fleet = @{
+                        fqdn = ""
+                        vips = @{ ipv4 = @() }
+                    }
+                }
+            }
+        }
+        options = @{ timeout = "30m" }
+    } | ConvertTo-Json -Depth 8
+
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Submitting apply task to clear fleet ingress on component $componentId"
+    try {
+        $applyResponse = Invoke-RestMethod `
+            -Uri    "https://$ServicesRuntimeFqdn/api/v1/components/$componentId`?action=apply" `
+            -Method POST -Headers $headers -Body $body -SkipCertificateCheck
+    } catch {
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Apply request failed: $($_.Exception.Message)"
+        $StopWatch.Stop(); return
+    }
+
+    $taskId = $applyResponse.id
+    if (-not $taskId) {
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] No task ID returned from apply response."
+        $StopWatch.Stop(); return
+    }
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Apply task created: $taskId"
+
+    # -------------------------------------------------------------------------
+    # Step 4: Poll task to completion
+    # -------------------------------------------------------------------------
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Polling task $taskId every ${PollIntervalSeconds}s"
+    $elapsed      = 0
+    $taskStatus   = "UNKNOWN"
+    $taskResponse = $null
+    Do {
+        Start-Sleep -Seconds $PollIntervalSeconds
+        $elapsed += $PollIntervalSeconds
+        try {
+            if (([DateTime]::UtcNow - $tokenFetchedAt).TotalMinutes -ge 60) {
+                LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Token age >= 60 minutes; refreshing"
+                $newToken = Get-VcfmsServicesRuntimeToken `
+                    -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
+                    -Username            $ServicesRuntimeUsername `
+                    -Password            $ServicesRuntimePassword
+                if ($newToken) {
+                    $srToken                  = $newToken
+                    $headers["Authorization"] = "Bearer $srToken"
+                    $tokenFetchedAt           = [DateTime]::UtcNow
+                } else {
+                    LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Token refresh failed; continuing with existing token"
+                }
+            }
+            $taskResponse = Invoke-RestMethod `
+                -Uri    "https://$ServicesRuntimeFqdn/api/v1/tasks/$taskId" `
+                -Method GET -Headers $headers -SkipCertificateCheck
+            $rawSt = $taskResponse.status
+            $rawPh = $taskResponse.phase
+            if (-not [string]::IsNullOrWhiteSpace([string]$rawSt)) {
+                $taskStatus = [string]$rawSt
+            } elseif (-not [string]::IsNullOrWhiteSpace([string]$rawPh)) {
+                $taskStatus = [string]$rawPh
+            } else {
+                $taskStatus = "UNKNOWN"
+            }
+        } catch {
+            LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Poll error (will retry): $($_.Exception.Message)"
+            $taskStatus = "UNKNOWN"
+        }
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Task $taskId status=$taskStatus (${elapsed}s elapsed)"
+    } While ($taskStatus -notin $terminalStates)
+
+    Write-Host ""
+    $successStates = @("COMPLETED","Completed","COMPLETE","SUCCESS","SUCCESSFUL","Succeeded")
+    if ($taskStatus -in $successStates) {
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Fleet ingress VIP cleared successfully on component $componentId"
+    } else {
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Apply task ended with status: $taskStatus"
+        if ($taskResponse -and $taskResponse.description.localizedMessage) {
+            LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] $($taskResponse.description.localizedMessage)"
+        }
+    }
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+Export-ModuleMember -Function Clear-VcfmsFleetIdentity
+
 Function Invoke-VcfmsFleetComponentRegistration {
     <#
     .SYNOPSIS
@@ -11915,7 +12140,7 @@ Function Install-VcfaMigrationServiceEngine {
     LogMessage -type INFO -message "[$VcfaServiceRuntimeFqdn] Installing migration-service $Version (size: $InstallSize)"
 
     $installBody = @{
-        type    = "migration-service"
+        type    = "vcd-migrator"
         version = $Version
         spec    = @{
             configuration = @{
@@ -11987,6 +12212,148 @@ Function Install-VcfaMigrationServiceEngine {
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
 }
 Export-ModuleMember -Function Install-VcfaMigrationServiceEngine
+
+Function Remove-VcfmsRecoveredComponents {
+    <#
+    .SYNOPSIS
+    Cleans up recovered fleet components from a VCF Management Services instance on the recovery site.
+
+    .DESCRIPTION
+    The Remove-VcfmsRecoveredComponents cmdlet performs the cleanup of recovered fleet components
+    from a VCFMS Services Runtime cluster as part of the failback preparation process. It connects
+    to the control plane node via SSH and runs two cleanup operations:
+
+      Step 1a — Delete component resources from Kubernetes:
+        kubectl delete component ops-logs salt-raas vidb vcf-fleet-depot vcf-fleet-lcm
+
+      Step 1b — Remove matching rows from the vcf-sddc-lcm postgres database:
+        kubectl exec vcf-sddc-lcm-db-0 ... psql DELETE FROM component WHERE component_type IN (...)
+        kubectl exec vcf-sddc-lcm-db-1 ... psql DELETE FROM component WHERE component_type IN (...)
+
+        Only one of the two database pods (db-0, db-1) is active at any given time — the command
+        against the standby pod will fail. Both are attempted and the failure of either is treated
+        as expected; the cmdlet reports which succeeded and which failed without aborting.
+
+    The kubeconfig is resolved in this order:
+      1. -KubeconfigPath if supplied
+      2. Auto-retrieved from the Services Runtime node via Get-VcfmsServicesRuntimeKubeconfig
+         when -ServicesRuntimeFqdn and -ServicesRuntimePassword are supplied
+
+    .EXAMPLE
+    # Auto-retrieve kubeconfig
+    Remove-VcfmsRecoveredComponents `
+        -ServicesRuntimeFqdn     "lax-sr01.lax.rainpole.io" `
+        -ServicesRuntimePassword "VMw@re1!VMw@re1!"
+
+    .EXAMPLE
+    # Use an existing kubeconfig
+    Remove-VcfmsRecoveredComponents `
+        -ServicesRuntimeFqdn     "lax-sr01.lax.rainpole.io" `
+        -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
+        -KubeconfigPath          "C:\kubeconfigs\lax-sr01.kubeconfig"
+
+    .PARAMETER ServicesRuntimeFqdn
+    FQDN or IP of any Services Runtime cluster node. If a worker node is supplied the function
+    automatically resolves and connects to the control plane.
+
+    .PARAMETER ServicesRuntimePassword
+    Password for vmware-system-user (SSH login and sudo elevation).
+
+    .PARAMETER KubeconfigPath
+    Optional. Path to an existing kubeconfig for the Services Runtime cluster. Takes precedence
+    over automatic retrieval.
+
+    .PARAMETER KubeconfigOutputDir
+    Directory where the auto-retrieved kubeconfig is written. Defaults to the current directory.
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][String]  $ServicesRuntimeFqdn,
+        [Parameter(Mandatory = $true)][String]  $ServicesRuntimePassword,
+        [Parameter(Mandatory = $false)][String] $KubeconfigPath,
+        [Parameter(Mandatory = $false)][String] $KubeconfigOutputDir = "."
+    )
+
+    $jumpboxName = hostname
+    $StopWatch   = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    LogMessage -type INFO -message "[$jumpboxName] Services Runtime : $ServicesRuntimeFqdn"
+
+    # -------------------------------------------------------------------------
+    # Resolve kubeconfig
+    # -------------------------------------------------------------------------
+    $resolvedKubeconfig = $KubeconfigPath
+    if (-not $resolvedKubeconfig) {
+        LogMessage -type INFO -message "[$jumpboxName] Retrieving kubeconfig from $ServicesRuntimeFqdn"
+        $kubeconfigResult = Get-VcfmsServicesRuntimeKubeconfig `
+            -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
+            -Password            $ServicesRuntimePassword `
+            -OutputDir           $KubeconfigOutputDir
+        if (-not $kubeconfigResult) {
+            LogMessage -type ERROR -message "[$jumpboxName] Could not retrieve kubeconfig. Aborting."
+            $StopWatch.Stop(); return
+        }
+        $resolvedKubeconfig = $kubeconfigResult.KubeconfigPath
+        $controlPlaneHost   = $kubeconfigResult.ControlPlaneHost
+    } else {
+        LogMessage -type INFO -message "[$jumpboxName] Using supplied kubeconfig: $resolvedKubeconfig"
+        $controlPlaneHost = $ServicesRuntimeFqdn
+    }
+    LogMessage -type INFO -message "[$jumpboxName] Control plane node : $controlPlaneHost"
+    LogMessage -type INFO -message "[$jumpboxName] Kubeconfig         : $resolvedKubeconfig"
+
+    # -------------------------------------------------------------------------
+    # Step 1a: Delete the recovered component resources from Kubernetes
+    # -------------------------------------------------------------------------
+    $components = "ops-logs", "salt-raas", "vidb", "vcf-fleet-depot", "vcf-fleet-lcm"
+    $componentList = $components -join " "
+    LogMessage -type INFO -message "[$controlPlaneHost] Step 1a: Deleting component resources: $componentList"
+
+    $deleteOutput = & kubectl --kubeconfig $resolvedKubeconfig delete component @components 2>&1
+    $deleteExit   = $LASTEXITCODE
+
+    $deleteOutput | ForEach-Object { Write-Host "   $_" }
+
+    if ($deleteExit -eq 0) {
+        LogMessage -type INFO -message "[$controlPlaneHost] Component resources deleted successfully"
+    } else {
+        LogMessage -type WARNING -message "[$controlPlaneHost] kubectl delete exited with code $deleteExit — resources may have already been removed"
+    }
+
+    # -------------------------------------------------------------------------
+    # Step 1b: Remove rows from the vcf-sddc-lcm postgres database
+    # Both db-0 and db-1 are attempted. Only one pod will be active; the
+    # command against the standby is expected to fail and is handled gracefully.
+    # -------------------------------------------------------------------------
+    $deleteTypes = "DELETE FROM component WHERE component_type IN ('VIDB', 'OPS_LOGS', 'SALT_RAAS', 'VCF_FLEET_LCM', 'VCF_FLEET_DEPOT');"
+    $dbPods      = @("vcf-sddc-lcm-db-0", "vcf-sddc-lcm-db-1")
+
+    foreach ($dbPod in $dbPods) {
+        LogMessage -type INFO -message "[$controlPlaneHost] Step 1b: Running DELETE on $dbPod"
+        try {
+            # -i (no -t): non-interactive stdin; -- separates kubectl args from container command
+            $dbOutput = & kubectl --kubeconfig $resolvedKubeconfig exec $dbPod `
+                -n vcf-sddc-lcm -i -- psql -U postgres -d vcfsddclcmdb -c $deleteTypes 2>&1
+            $dbExit = $LASTEXITCODE
+
+            if ($dbOutput) { $dbOutput | ForEach-Object { Write-Host "   $_" } }
+
+            if ($dbExit -eq 0) {
+                LogMessage -type INFO -message "[$controlPlaneHost] DELETE succeeded on $dbPod (active pod)"
+            } else {
+                LogMessage -type WARNING -message "[$controlPlaneHost] DELETE on $dbPod exited with code $dbExit — this pod is likely the standby (expected)"
+            }
+        } catch {
+            LogMessage -type WARNING -message "[$controlPlaneHost] DELETE on $dbPod failed (likely standby pod): $($_.Exception.Message)"
+        }
+    }
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+Export-ModuleMember -Function Remove-VcfmsRecoveredComponents
 
 #EndRegion Services Runtime
 
