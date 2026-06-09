@@ -6,23 +6,6 @@
 # COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
 # OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-# Deprecation Warning
-Write-Warning @"
-
-================================================================================
-DEPRECATION NOTICE
-================================================================================
-The 'VMware.CloudFoundation.InstanceRecovery' module has been renamed to
-'VMware.CloudFoundation.Restore'.
-
-This module will no longer receive updates. Please migrate to the new module:
-
-    Uninstall-Module VMware.CloudFoundation.InstanceRecovery -AllVersions
-    Install-Module VMware.CloudFoundation.Restore
-
-================================================================================
-
-"@
 
 If ($PSEdition -eq 'Core') {
     $Script:PSDefaultParameterValues = @{
@@ -6256,7 +6239,3 @@ Function New-VVFBasedPartialBringup {
 Export-ModuleMember -Function New-VVFBasedPartialBringup
 
 #EndRegion VVF Functions
-
-#Region Marked for Deprecation
-
-#EndRegion Marked for Deprecation
