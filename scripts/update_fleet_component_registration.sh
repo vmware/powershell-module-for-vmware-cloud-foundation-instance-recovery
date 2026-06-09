@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# DR Fix: Move Fleet Component Registrations (V2.1)
+# DR Fix: Move Fleet Component Registrations (V2.2)
 # =============================================================================
 #
 # Updates BOTH Fleet LCM and SDDC LCM databases when moving fleet-scoped
@@ -64,14 +64,19 @@ fi
 readonly FLEET_COMPONENT_TYPES="VIDB SALT_RAAS VCF_FLEET_LCM VCF_FLEET_DEPOT OPS_LOGS"
 TYPES_SQL=$(echo "$FLEET_COMPONENT_TYPES" | tr ' ' '\n' | sed "s/.*/'&'/" | tr '\n' ',' | sed 's/,$//')
 
-# Mapping from Component CR label to DB type (CR labels are lowercase-hyphenated)
-declare -A CR_TYPE_MAP=(
-  [vidb]=VIDB
-  [salt-raas]=SALT_RAAS
-  [vcf-fleet-lcm]=VCF_FLEET_LCM
-  [vcf-fleet-depot]=VCF_FLEET_DEPOT
-  [ops-logs]=OPS_LOGS
-)
+# Maps Component CR label (lowercase-hyphenated) to DB component_type.
+# Implemented as a function rather than an associative array for bash 3.2
+# compatibility (macOS ships with bash 3.2 which lacks declare -A).
+cr_type_to_db_type() {
+  case "$1" in
+    vidb)            echo "VIDB" ;;
+    salt-raas)       echo "SALT_RAAS" ;;
+    vcf-fleet-lcm)   echo "VCF_FLEET_LCM" ;;
+    vcf-fleet-depot) echo "VCF_FLEET_DEPOT" ;;
+    ops-logs)        echo "OPS_LOGS" ;;
+    *)               echo "" ;;
+  esac
+}
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -113,7 +118,7 @@ run_psql() {
 
 # ── Banner ────────────────────────────────────────────────────────────────────
 echo "======================================================================"
-echo " DR Fix: Fleet Component Registration (V2.1)"
+echo " DR Fix: Fleet Component Registration (V2.2)"
 $DRY_RUN && echo " *** DRY-RUN MODE — no changes will be written ***"
 $UPDATE_PRIMARY && echo " Primary SDDC LCM designation will be updated"
 echo "======================================================================"
@@ -166,18 +171,21 @@ if kubectl get component -o json >/dev/null 2>&1; then
 fi
 
 # Method 2: Fleet LCM database (always available on fleet cluster)
+# DISTINCT ON (component_id) collapses the multiple rows that exist per component
+# (one per sddc_lcm_id after failover/failback) into a single canonical row so
+# each component is processed exactly once in Steps 4 and 5.
 echo "  Checking Fleet LCM database..."
 DB_COMPONENTS=$(psql_rows "vcf-fleet-lcm" "$FLEET_DB_POD" "vcffleetlcmdb" \
-  "SELECT component_type, component_id, fqdn, version, deployment_type, size
+  "SELECT DISTINCT ON (component_id) component_type, component_id, fqdn, version, deployment_type, size
    FROM component
    WHERE component_type IN (${TYPES_SQL})
-   ORDER BY component_type;")
+   ORDER BY component_id;")
 
 # If DB query returned nothing but we have CRs, build DB_COMPONENTS from CRs
 if [[ -z "$DB_COMPONENTS" && -n "$KUBECTL_COMPONENTS" ]]; then
   echo "  Fleet LCM DB has no fleet components yet; using Component CRs as source"
   while IFS=$'\t' read -r cr_type cr_id; do
-    db_type="${CR_TYPE_MAP[$cr_type]:-}"
+    db_type=$(cr_type_to_db_type "$cr_type")
     if [[ -n "$db_type" ]]; then
       # Get additional details from the CR
       cr_fqdn=$(kubectl get component -o json | jq -r --arg id "$cr_id" '.items[] | select(.spec.id == $id) | .spec.configuration.ingress // empty | to_entries[0].value.fqdn // ""' 2>/dev/null || echo "")
@@ -199,45 +207,25 @@ echo "$DB_COMPONENTS" | while IFS='|' read -r comp_type comp_id comp_fqdn comp_v
 done
 echo
 
-# ── Step 4: Update Fleet LCM routing ─────────────────────────────────────────
-echo "Step 4: Updating Fleet LCM DB — re-pointing components to target SDDC LCM..."
-
-FLEET_UPDATES=0
-echo "$DB_COMPONENTS" | while IFS='|' read -r comp_type comp_id comp_fqdn comp_version comp_deploy comp_size; do
-  CURRENT_SDDC=$(psql_one "vcf-fleet-lcm" "$FLEET_DB_POD" "vcffleetlcmdb" \
-    "SELECT sddc_lcm_id FROM component WHERE component_id = '${comp_id}';")
-
-  if [[ "$CURRENT_SDDC" == "$NEW_SDDC_LCM_ID" ]]; then
-    echo "  OK   $comp_type — already points to target"
-    continue
-  fi
-
-  run_psql "vcf-fleet-lcm" "$FLEET_DB_POD" "vcffleetlcmdb" \
-    "UPDATE component SET sddc_lcm_id = '${NEW_SDDC_LCM_ID}' WHERE component_id = '${comp_id}';" \
-    "Fleet LCM: $comp_type routing → $NEW_SDDC_LCM_ID"
-done
-echo
-
-# ── Step 5: Update SDDC LCM local component inventory ────────────────────────
-echo "Step 5: Ensuring fleet components exist in SDDC LCM local inventory..."
-echo "  (SDDC LCM's ResolveComponentAction looks here — missing entries cause 'Component not found')"
+# ── Step 4: Ensure fleet components exist in SDDC LCM local inventory ─────────
+# Must happen BEFORE Fleet LCM routing is updated so that ResolveComponentAction
+# never sees the component pointing to the target before the target can resolve it.
+echo "Step 4: Ensuring fleet components exist in SDDC LCM local inventory..."
 
 echo "$DB_COMPONENTS" | while IFS='|' read -r comp_type comp_id comp_fqdn comp_version comp_deploy comp_size; do
-  # Check if component already exists in SDDC LCM's local DB
   EXISTS=$(psql_one "vcf-sddc-lcm" "$SDDC_DB_POD" "vcfsddclcmdb" \
     "SELECT COUNT(*) FROM component WHERE component_id = '${comp_id}';")
 
   if [[ "$EXISTS" -ge "1" ]]; then
-    # Update fqdn/version in case they changed
     run_psql "vcf-sddc-lcm" "$SDDC_DB_POD" "vcfsddclcmdb" \
       "UPDATE component SET fqdn = '${comp_fqdn}', version = '${comp_version}' WHERE component_id = '${comp_id}';" \
-      "SDDC LCM: UPDATE $comp_type (already present, refreshing metadata)"
+      "SDDC LCM: UPDATE $comp_type (refreshing metadata)"
     continue
   fi
 
-  # Get the Fleet LCM internal row ID to use as primary key
+  # Use Fleet LCM's internal row ID as primary key for consistency
   FLEET_INTERNAL_ID=$(psql_one "vcf-fleet-lcm" "$FLEET_DB_POD" "vcffleetlcmdb" \
-    "SELECT id FROM component WHERE component_id = '${comp_id}';")
+    "SELECT id FROM component WHERE component_id = '${comp_id}' LIMIT 1;")
 
   comp_deploy=${comp_deploy:-VSP}
   comp_size=${comp_size:-small}
@@ -246,6 +234,50 @@ echo "$DB_COMPONENTS" | while IFS='|' read -r comp_type comp_id comp_fqdn comp_v
     "INSERT INTO component (id, component_id, component_type, deployment_type, fqdn, size, version)
      VALUES ('${FLEET_INTERNAL_ID}', '${comp_id}', '${comp_type}', '${comp_deploy}', '${comp_fqdn}', '${comp_size}', '${comp_version}');" \
     "SDDC LCM: INSERT $comp_type ($comp_id)"
+done
+echo
+
+# ── Step 5: Update Fleet LCM routing ─────────────────────────────────────────
+# SDDC LCM inventory is ready — now safe to reroute Fleet LCM to the target.
+# Uses INSERT-then-DELETE rather than UPDATE to avoid leaving stale rows that
+# cause duplicates when PushCapabilities later re-registers from the old SDDC LCM.
+echo "Step 5: Updating Fleet LCM DB — re-pointing components to target SDDC LCM..."
+
+echo "$DB_COMPONENTS" | while IFS='|' read -r comp_type comp_id comp_fqdn comp_version comp_deploy comp_size; do
+  # Ensure a row exists for (component_id, target_sddc_lcm_id)
+  TARGET_EXISTS=$(psql_one "vcf-fleet-lcm" "$FLEET_DB_POD" "vcffleetlcmdb" \
+    "SELECT COUNT(*) FROM component WHERE component_id = '${comp_id}' AND sddc_lcm_id = '${NEW_SDDC_LCM_ID}';")
+
+  if [[ "$TARGET_EXISTS" -ge "1" ]]; then
+    echo "  OK   $comp_type — target row already exists"
+  else
+    FLEET_INTERNAL_ID=$(psql_one "vcf-fleet-lcm" "$FLEET_DB_POD" "vcffleetlcmdb" \
+      "SELECT id FROM component WHERE component_id = '${comp_id}' LIMIT 1;")
+    comp_deploy=${comp_deploy:-VSP}
+    comp_size=${comp_size:-small}
+    run_psql "vcf-fleet-lcm" "$FLEET_DB_POD" "vcffleetlcmdb" \
+      "INSERT INTO component (id, component_id, component_type, deployment_type, fqdn, size, version, sddc_lcm_id)
+       SELECT gen_random_uuid(), '${comp_id}', component_type, deployment_type, fqdn, size, version, '${NEW_SDDC_LCM_ID}'
+       FROM component WHERE component_id = '${comp_id}' LIMIT 1;" \
+      "Fleet LCM: INSERT $comp_type row for target SDDC LCM"
+  fi
+
+  # Delete component_config rows that reference stale component rows first,
+  # then delete the stale component rows themselves.  The FK constraint
+  # fk_component_config_component prevents deleting a component row while
+  # component_config still references it (e.g. the original pre-failover row
+  # whose sddc_lcm_id was changed to the old site during failover and which
+  # carries component_config data from original registration).
+  run_psql "vcf-fleet-lcm" "$FLEET_DB_POD" "vcffleetlcmdb" \
+    "DELETE FROM component_config
+     WHERE component_id IN (
+       SELECT id FROM component
+       WHERE component_id = '${comp_id}' AND sddc_lcm_id != '${NEW_SDDC_LCM_ID}'
+     );" \
+    "Fleet LCM: DELETE $comp_type stale component_config rows"
+  run_psql "vcf-fleet-lcm" "$FLEET_DB_POD" "vcffleetlcmdb" \
+    "DELETE FROM component WHERE component_id = '${comp_id}' AND sddc_lcm_id != '${NEW_SDDC_LCM_ID}';" \
+    "Fleet LCM: DELETE $comp_type stale rows (non-target SDDC LCMs)"
 done
 echo
 
@@ -274,6 +306,7 @@ fi
 
 # ── Step 7: Verify final state ────────────────────────────────────────────────
 echo "Step 7: Final state verification..."
+echo "  (Each fleet component should have exactly one row pointing to the target)"
 echo "  Fleet LCM component routing:"
 kubectl exec -n vcf-fleet-lcm "$FLEET_DB_POD" -c postgres -- \
   psql -U postgres -d vcffleetlcmdb -c \
