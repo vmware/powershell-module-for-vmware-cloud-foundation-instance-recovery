@@ -10260,6 +10260,255 @@ Function Disable-VcfmsClusterLogging {
 }
 Export-ModuleMember -Function Disable-VcfmsClusterLogging
 
+Function Enable-VcfmsClusterLogging {
+    <#
+    .SYNOPSIS
+    Enables logging on a VCFMS Services Runtime cluster by configuring a VCF Operations
+    (Aria Log Insight) log management target.
+
+    .DESCRIPTION
+    The Enable-VcfmsClusterLogging cmdlet enables logging on the VCFMS Services Runtime
+    cluster on the recovery site after a successful log management restore.
+
+    The cmdlet:
+      1. Acquires an access token from the Services Runtime API.
+      2. Resolves the VSP component ID from GET /api/v1/components (unless -ComponentId is supplied).
+      3. Posts a component apply task to POST /api/v1/components/{id}?action=apply with:
+           spec.configuration.logs.type = "ops"
+           spec.configuration.logs.ops.host   = LogManagementVip
+           spec.configuration.logs.ops.scheme = "https"
+           spec.configuration.logs.ops.port   = LogManagementPort
+      4. Polls GET /api/v1/tasks/{taskId} until the task reaches a terminal state.
+      5. Validates the logging-operator-fluentd StatefulSet health in the vmsp-platform
+         namespace via kubectl (using Confirm-VcfmsFluentdOperatorState).
+
+    .EXAMPLE
+    # Enable logging — component ID and kubeconfig resolved automatically
+    Enable-VcfmsClusterLogging `
+        -ServicesRuntimeFqdn     "lax-sr01.lax.rainpole.io" `
+        -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
+        -LogManagementVip        "flt-logs01.rainpole.io"
+
+    .EXAMPLE
+    # Supply a specific VSP component ID and an existing kubeconfig
+    Enable-VcfmsClusterLogging `
+        -ServicesRuntimeFqdn     "lax-sr01.lax.rainpole.io" `
+        -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
+        -LogManagementVip        "flt-logs01.rainpole.io" `
+        -ComponentId             "e319236e-867e-4779-9270-4921bddf4f1f" `
+        -KubeconfigPath          "C:\kubeconfigs\lax-sr01.kubeconfig"
+
+    .PARAMETER ServicesRuntimeFqdn
+    FQDN of the VCFMS Services Runtime instance on the recovery site,
+    e.g. "lax-sr01.lax.rainpole.io".
+
+    .PARAMETER ServicesRuntimePassword
+    Password for the Services Runtime admin user. Used to obtain the API token and,
+    when -KubeconfigPath is not supplied, to retrieve the kubeconfig for post-apply
+    validation.
+
+    .PARAMETER ServicesRuntimeUsername
+    Username for the Services Runtime token request. Default is "admin@vsp.local".
+
+    .PARAMETER LogManagementVip
+    FQDN or IP of the Log Management VIP that the Services Runtime should forward
+    logs to, e.g. "flt-logs01.rainpole.io".
+
+    .PARAMETER LogManagementPort
+    Port used for the log management endpoint. Default is "9543".
+
+    .PARAMETER ComponentId
+    Optional. VSP component ID to target. When omitted the cmdlet resolves the first
+    component of type "vsp" from GET /api/v1/components.
+
+    .PARAMETER PollIntervalSeconds
+    Interval in seconds between task status polls. Default is 30.
+
+    .PARAMETER KubeconfigPath
+    Optional. Path to an existing kubeconfig for the Services Runtime cluster, used for
+    post-apply validation of the fluentd operator. When omitted the kubeconfig is retrieved
+    automatically from the Services Runtime node.
+
+    .PARAMETER KubeconfigOutputDir
+    Directory where the auto-retrieved kubeconfig is written. Defaults to the current directory.
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][String]  $ServicesRuntimeFqdn,
+        [Parameter(Mandatory = $true)][String]  $ServicesRuntimePassword,
+        [Parameter(Mandatory = $false)][String] $ServicesRuntimeUsername = "admin@vsp.local",
+        [Parameter(Mandatory = $true)][String]  $LogManagementVip,
+        [Parameter(Mandatory = $false)][String] $LogManagementPort = "9543",
+        [Parameter(Mandatory = $false)][String] $ComponentId,
+        [Parameter(Mandatory = $false)][Int]    $PollIntervalSeconds = 30,
+        [Parameter(Mandatory = $false)][String] $KubeconfigPath,
+        [Parameter(Mandatory = $false)][String] $KubeconfigOutputDir = "."
+    )
+
+    $jumpboxName    = hostname
+    $StopWatch      = New-Object -TypeName System.Diagnostics.Stopwatch
+    $terminalStates = @("COMPLETED","Completed","COMPLETE","FAILED","CANCELLED","ERROR","SUCCESS","SUCCESSFUL","Succeeded","Failed")
+    $StopWatch.Start()
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    LogMessage -type INFO -message "[$jumpboxName] Services Runtime : $ServicesRuntimeFqdn"
+    LogMessage -type INFO -message "[$jumpboxName] Log Management   : $LogManagementVip port $LogManagementPort"
+
+    # -------------------------------------------------------------------------
+    # Step 1: Acquire Services Runtime token
+    # -------------------------------------------------------------------------
+    $srToken = Get-VcfmsServicesRuntimeToken `
+        -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
+        -Username            $ServicesRuntimeUsername `
+        -Password            $ServicesRuntimePassword
+    if (-not $srToken) {
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Unable to obtain Services Runtime token. Aborting."
+        $StopWatch.Stop(); return
+    }
+    $tokenFetchedAt = [DateTime]::UtcNow
+    $headers = @{
+        "Authorization" = "Bearer $srToken"
+        "Accept"        = "application/json"
+        "Content-Type"  = "application/json"
+    }
+
+    # -------------------------------------------------------------------------
+    # Step 2: Resolve VSP component ID
+    # -------------------------------------------------------------------------
+    if ($ComponentId) {
+        $componentId = $ComponentId.Trim()
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Using supplied component ID: $componentId"
+    } else {
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Resolving VSP component ID from GET /api/v1/components"
+        try {
+            $componentsResponse = Invoke-RestMethod -Uri "https://$ServicesRuntimeFqdn/api/v1/components" `
+                -Method GET -Headers $headers -SkipCertificateCheck
+        } catch {
+            LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Failed to retrieve components: $($_.Exception.Message)"
+            $StopWatch.Stop(); return
+        }
+        $vspComponent = @($componentsResponse.components | Where-Object { $_.type -eq "vsp" }) | Select-Object -First 1
+        if (-not $vspComponent) {
+            LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] No component of type 'vsp' found. Pass -ComponentId to specify manually."
+            $StopWatch.Stop(); return
+        }
+        $componentId = $vspComponent.id
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Resolved VSP component ID : $componentId  (status: $($vspComponent.status))"
+    }
+
+    # -------------------------------------------------------------------------
+    # Step 3: Submit apply task to enable logging
+    # -------------------------------------------------------------------------
+    $body = @{
+        spec    = @{
+            configuration = @{
+                logs = @{
+                    type = "ops"
+                    ops  = @{
+                        host   = $LogManagementVip
+                        scheme = "https"
+                        port   = $LogManagementPort
+                    }
+                }
+            }
+        }
+        options = @{
+            precheckOnly = $false
+            precheck     = $true
+            timeout      = "1h"
+        }
+    } | ConvertTo-Json -Depth 8
+
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Submitting apply task to enable logging on component $componentId"
+    try {
+        $applyResponse = Invoke-RestMethod `
+            -Uri    "https://$ServicesRuntimeFqdn/api/v1/components/$componentId`?action=apply" `
+            -Method POST -Headers $headers -Body $body -SkipCertificateCheck
+    } catch {
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Apply request failed: $($_.Exception.Message)"
+        $StopWatch.Stop(); return
+    }
+
+    $taskId = $applyResponse.id
+    if (-not $taskId) {
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] No task ID returned from apply response."
+        $StopWatch.Stop(); return
+    }
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Apply task created: $taskId"
+
+    # -------------------------------------------------------------------------
+    # Step 4: Poll task to completion
+    # -------------------------------------------------------------------------
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Polling task $taskId every ${PollIntervalSeconds}s"
+    $elapsed      = 0
+    $taskStatus   = "UNKNOWN"
+    $taskResponse = $null
+    Do {
+        Start-Sleep -Seconds $PollIntervalSeconds
+        $elapsed += $PollIntervalSeconds
+        try {
+            if (([DateTime]::UtcNow - $tokenFetchedAt).TotalMinutes -ge 60) {
+                LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Token age >= 60 minutes; refreshing"
+                $newToken = Get-VcfmsServicesRuntimeToken `
+                    -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
+                    -Username            $ServicesRuntimeUsername `
+                    -Password            $ServicesRuntimePassword
+                if ($newToken) {
+                    $srToken                  = $newToken
+                    $headers["Authorization"] = "Bearer $srToken"
+                    $tokenFetchedAt           = [DateTime]::UtcNow
+                } else {
+                    LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Token refresh failed; continuing with existing token"
+                }
+            }
+            $taskResponse = Invoke-RestMethod `
+                -Uri    "https://$ServicesRuntimeFqdn/api/v1/tasks/$taskId" `
+                -Method GET -Headers $headers -SkipCertificateCheck
+            $rawSt = $taskResponse.status
+            $rawPh = $taskResponse.phase
+            if (-not [string]::IsNullOrWhiteSpace([string]$rawSt)) {
+                $taskStatus = [string]$rawSt
+            } elseif (-not [string]::IsNullOrWhiteSpace([string]$rawPh)) {
+                $taskStatus = [string]$rawPh
+            } else {
+                $taskStatus = "UNKNOWN"
+            }
+        } catch {
+            LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Poll error (will retry): $($_.Exception.Message)"
+            $taskStatus = "UNKNOWN"
+        }
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Task $taskId status=$taskStatus (${elapsed}s elapsed)"
+    } While ($taskStatus -notin $terminalStates)
+
+    Write-Host ""
+    $successStates = @("COMPLETED","Completed","COMPLETE","SUCCESS","SUCCESSFUL","Succeeded")
+    if ($taskStatus -notin $successStates) {
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Apply task ended with status: $taskStatus"
+        if ($taskResponse -and $taskResponse.description.localizedMessage) {
+            LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] $($taskResponse.description.localizedMessage)"
+        }
+        $StopWatch.Stop(); return
+    }
+
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Logging enabled successfully on component $componentId"
+
+    # -------------------------------------------------------------------------
+    # Step 5: Post-apply validation — verify logging-operator-fluentd is healthy
+    # -------------------------------------------------------------------------
+    if ($KubeconfigPath) {
+        Confirm-VcfmsFluentdOperatorState -KubeconfigPath $KubeconfigPath
+    } else {
+        Confirm-VcfmsFluentdOperatorState `
+            -ServicesRuntimeFqdn     $ServicesRuntimeFqdn `
+            -ServicesRuntimePassword $ServicesRuntimePassword `
+            -KubeconfigOutputDir     $KubeconfigOutputDir
+    }
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+Export-ModuleMember -Function Enable-VcfmsClusterLogging
+
 Function Confirm-VcfmsFluentdOperatorState {
     <#
     .SYNOPSIS
@@ -10737,6 +10986,231 @@ Function Set-VcfmsFleetIdentity {
 }
 Export-ModuleMember -Function Set-VcfmsFleetIdentity
 
+Function Clear-VcfmsFleetIdentity {
+    <#
+    .SYNOPSIS
+    Removes the fleet ingress VIP configuration from a VCFMS Services Runtime cluster.
+
+    .DESCRIPTION
+    The Clear-VcfmsFleetIdentity cmdlet clears the fleet ingress configuration that was
+    previously applied by Set-VcfmsFleetIdentity. It submits the same apply payload shape
+    to POST /api/v1/components/{id}?action=apply but with blank values for the fleet FQDN
+    and an empty VIP array, effectively removing the fleet VIP from the ingress spec:
+
+      spec.configuration.ingress.fleet.fqdn = ""
+      spec.configuration.ingress.fleet.vips = { ipv4: [] }
+
+    The VSP component ID is read from the vmsp-platform namespace label
+    (component.vmsp.vmware.com/id) using the resolved kubeconfig, and the resulting
+    task is polled to completion.
+
+    The kubeconfig is resolved in this order:
+      1. -KubeconfigPath if supplied
+      2. Auto-retrieved from the Services Runtime node via Get-VcfmsServicesRuntimeKubeconfig
+         when -ServicesRuntimeFqdn and -ServicesRuntimePassword are supplied
+
+    .EXAMPLE
+    # Auto-retrieve kubeconfig
+    Clear-VcfmsFleetIdentity `
+        -ServicesRuntimeFqdn     "sfo-sr01.sfo.rainpole.io" `
+        -ServicesRuntimePassword "VMw@re1!VMw@re1!"
+
+    .EXAMPLE
+    # Use an existing kubeconfig
+    Clear-VcfmsFleetIdentity `
+        -ServicesRuntimeFqdn     "sfo-sr01.sfo.rainpole.io" `
+        -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
+        -KubeconfigPath          "C:\kubeconfigs\sfo-sr01.kubeconfig"
+
+    .PARAMETER ServicesRuntimeFqdn
+    FQDN of the Services Runtime cluster. Required for the API apply call and for automatic
+    kubeconfig retrieval when KubeconfigPath is not supplied.
+
+    .PARAMETER ServicesRuntimePassword
+    Password for the Services Runtime admin user and vmware-system-user SSH access.
+
+    .PARAMETER ServicesRuntimeUsername
+    Username for the Services Runtime API token. Default is "admin@vsp.local".
+
+    .PARAMETER KubeconfigPath
+    Path to an existing kubeconfig for the Services Runtime cluster. Takes precedence
+    over automatic retrieval.
+
+    .PARAMETER KubeconfigOutputDir
+    Directory where the auto-retrieved kubeconfig is written. Defaults to the current directory.
+
+    .PARAMETER PollIntervalSeconds
+    Interval in seconds between task status polls. Default is 60.
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][String]  $ServicesRuntimeFqdn,
+        [Parameter(Mandatory = $true)][String]  $ServicesRuntimePassword,
+        [Parameter(Mandatory = $false)][String] $ServicesRuntimeUsername = "admin@vsp.local",
+        [Parameter(Mandatory = $false)][String] $KubeconfigPath,
+        [Parameter(Mandatory = $false)][String] $KubeconfigOutputDir = ".",
+        [Parameter(Mandatory = $false)][Int]    $PollIntervalSeconds = 60
+    )
+
+    $jumpboxName    = hostname
+    $StopWatch      = New-Object -TypeName System.Diagnostics.Stopwatch
+    $terminalStates = @("COMPLETED","Completed","COMPLETE","FAILED","CANCELLED","ERROR","SUCCESS","SUCCESSFUL","Succeeded","Failed")
+    $StopWatch.Start()
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    LogMessage -type INFO -message "[$jumpboxName] Services Runtime : $ServicesRuntimeFqdn"
+
+    # -------------------------------------------------------------------------
+    # Resolve kubeconfig
+    # -------------------------------------------------------------------------
+    $resolvedKubeconfig = $KubeconfigPath
+    if (-not $resolvedKubeconfig) {
+        LogMessage -type INFO -message "[$jumpboxName] Retrieving kubeconfig from $ServicesRuntimeFqdn"
+        $kubeconfigResult = Get-VcfmsServicesRuntimeKubeconfig `
+            -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
+            -Password            $ServicesRuntimePassword `
+            -OutputDir           $KubeconfigOutputDir
+        if (-not $kubeconfigResult) {
+            LogMessage -type ERROR -message "[$jumpboxName] Failed to retrieve kubeconfig. Aborting."
+            $StopWatch.Stop(); return
+        }
+        $resolvedKubeconfig = $kubeconfigResult.KubeconfigPath
+    }
+
+    if (-not (Test-Path $resolvedKubeconfig)) {
+        LogMessage -type ERROR -message "[$jumpboxName] Kubeconfig not found: $resolvedKubeconfig"
+        $StopWatch.Stop(); return
+    }
+    LogMessage -type INFO -message "[$jumpboxName] Kubeconfig : $resolvedKubeconfig"
+
+    # -------------------------------------------------------------------------
+    # Step 1: Read VSP component ID from the vmsp-platform namespace label
+    # -------------------------------------------------------------------------
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Reading VSP component ID from vmsp-platform namespace"
+    $nsLabelOutput = & kubectl --kubeconfig $resolvedKubeconfig get ns vmsp-platform `
+        -o "jsonpath={.metadata.labels.component\.vmsp\.vmware\.com/id}" 2>&1
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -ne 0 -or [string]::IsNullOrWhiteSpace($nsLabelOutput)) {
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Failed to read VSP component ID from namespace label (exit $exitCode): $nsLabelOutput"
+        $StopWatch.Stop(); return
+    }
+    $componentId = $nsLabelOutput.Trim()
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] VSP component ID : $componentId"
+
+    # -------------------------------------------------------------------------
+    # Step 2: Acquire Services Runtime token
+    # -------------------------------------------------------------------------
+    $srToken = Get-VcfmsServicesRuntimeToken `
+        -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
+        -Username            $ServicesRuntimeUsername `
+        -Password            $ServicesRuntimePassword
+    if (-not $srToken) {
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Unable to obtain Services Runtime token. Aborting."
+        $StopWatch.Stop(); return
+    }
+    $tokenFetchedAt = [DateTime]::UtcNow
+    $headers = @{
+        "Authorization" = "Bearer $srToken"
+        "Accept"        = "application/json"
+        "Content-Type"  = "application/json"
+    }
+
+    # -------------------------------------------------------------------------
+    # Step 3: Submit apply task with blank fleet ingress values
+    # Same payload shape as Set-VcfmsFleetIdentity — fqdn cleared to empty
+    # string and vips.ipv4 set to an empty array.
+    # -------------------------------------------------------------------------
+    $body = @{
+        spec    = @{
+            configuration = @{
+                ingress = @{
+                    fleet = @{
+                        fqdn = ""
+                        vips = @{ ipv4 = @() }
+                    }
+                }
+            }
+        }
+        options = @{ timeout = "30m" }
+    } | ConvertTo-Json -Depth 8
+
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Submitting apply task to clear fleet ingress on component $componentId"
+    try {
+        $applyResponse = Invoke-RestMethod `
+            -Uri    "https://$ServicesRuntimeFqdn/api/v1/components/$componentId`?action=apply" `
+            -Method POST -Headers $headers -Body $body -SkipCertificateCheck
+    } catch {
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Apply request failed: $($_.Exception.Message)"
+        $StopWatch.Stop(); return
+    }
+
+    $taskId = $applyResponse.id
+    if (-not $taskId) {
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] No task ID returned from apply response."
+        $StopWatch.Stop(); return
+    }
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Apply task created: $taskId"
+
+    # -------------------------------------------------------------------------
+    # Step 4: Poll task to completion
+    # -------------------------------------------------------------------------
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Polling task $taskId every ${PollIntervalSeconds}s"
+    $elapsed      = 0
+    $taskStatus   = "UNKNOWN"
+    $taskResponse = $null
+    Do {
+        Start-Sleep -Seconds $PollIntervalSeconds
+        $elapsed += $PollIntervalSeconds
+        try {
+            if (([DateTime]::UtcNow - $tokenFetchedAt).TotalMinutes -ge 60) {
+                LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Token age >= 60 minutes; refreshing"
+                $newToken = Get-VcfmsServicesRuntimeToken `
+                    -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
+                    -Username            $ServicesRuntimeUsername `
+                    -Password            $ServicesRuntimePassword
+                if ($newToken) {
+                    $srToken                  = $newToken
+                    $headers["Authorization"] = "Bearer $srToken"
+                    $tokenFetchedAt           = [DateTime]::UtcNow
+                } else {
+                    LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Token refresh failed; continuing with existing token"
+                }
+            }
+            $taskResponse = Invoke-RestMethod `
+                -Uri    "https://$ServicesRuntimeFqdn/api/v1/tasks/$taskId" `
+                -Method GET -Headers $headers -SkipCertificateCheck
+            $rawSt = $taskResponse.status
+            $rawPh = $taskResponse.phase
+            if (-not [string]::IsNullOrWhiteSpace([string]$rawSt)) {
+                $taskStatus = [string]$rawSt
+            } elseif (-not [string]::IsNullOrWhiteSpace([string]$rawPh)) {
+                $taskStatus = [string]$rawPh
+            } else {
+                $taskStatus = "UNKNOWN"
+            }
+        } catch {
+            LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Poll error (will retry): $($_.Exception.Message)"
+            $taskStatus = "UNKNOWN"
+        }
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Task $taskId status=$taskStatus (${elapsed}s elapsed)"
+    } While ($taskStatus -notin $terminalStates)
+
+    Write-Host ""
+    $successStates = @("COMPLETED","Completed","COMPLETE","SUCCESS","SUCCESSFUL","Succeeded")
+    if ($taskStatus -in $successStates) {
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Fleet ingress VIP cleared successfully on component $componentId"
+    } else {
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Apply task ended with status: $taskStatus"
+        if ($taskResponse -and $taskResponse.description.localizedMessage) {
+            LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] $($taskResponse.description.localizedMessage)"
+        }
+    }
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+Export-ModuleMember -Function Clear-VcfmsFleetIdentity
+
 Function Invoke-VcfmsFleetComponentRegistration {
     <#
     .SYNOPSIS
@@ -11094,6 +11568,792 @@ kubectl exec -n vcf-fleet-lcm "$FLEET_DB_POD" -c postgres -- \
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
 }
 Export-ModuleMember -Function Get-VcfmsFleetComponentRegistration
+
+Function Invoke-VcfOpsVidbVcfInstanceUpdate {
+    <#
+    .SYNOPSIS
+    Re-associates an external Identity Broker (VIDB) with a new VCF instance in VCF Operations after a disaster recovery failover.
+
+    .DESCRIPTION
+    The Invoke-VcfOpsVidbVcfInstanceUpdate cmdlet re-associates an external Identity Broker
+    (VIDB) with a new VCF instance in VCF Operations after a disaster recovery failover.
+
+    The function performs two interactive discovery steps before executing the remediation script:
+
+      Step 3 — VCF Instance selection:
+        Queries the VCF Operations API (/suite-api/internal/vidb/vidbs) to retrieve all
+        registered VCF adapter instances. The results are presented as a numbered list and
+        the operator selects which VCF instance the Identity Broker should be re-associated
+        with. If -VcfInstanceId is supplied the selection step is skipped.
+
+      Step 4 — SSO Domain selection:
+        Queries the kv_vidb_sso_domain table in the VCF Operations postgres database to
+        retrieve stale SSO domain entries. The results are presented as a numbered list and
+        the operator selects which domain key to remove, or chooses to skip the cleanup.
+        If -SsoDomainId is supplied the selection step is skipped.
+
+    The function then uploads the bundled update-vidb-vcf-instance.sh script to the VCF
+    Operations primary node via SSH and executes it as root. The script performs:
+
+      1. Acquires an auth token from VCF Operations.
+      2. Resolves the management VC GUID for the target VCF instance ID.
+      3. Finds the external VIDB record by VIDB hostname.
+      4. Fetches and decrypts the VIDB tenant client secret from the local postgres database.
+      5. Issues a PUT to update the external VIDB with the new vcGUID and vcfInstanceId.
+      6. Updates the adapter collector for the external VIDB adapter.
+      7. Polls the eligible VIDB API until the VIDB becomes eligible (20-minute timeout).
+      8. Optionally removes the selected stale SSO domain config row from kv_vidb_sso_domain.
+
+    Prerequisites:
+      - SSH must be enabled on the VCF Operations primary node.
+      - The caller must supply the root password for SSH access.
+      - curl, python3, and jq (auto-installed if absent) must be available on the appliance.
+
+    .EXAMPLE
+    # Interactive — VCF instance and SSO domain are selected from discovered lists
+    Invoke-VcfOpsVidbVcfInstanceUpdate `
+        -VcfOpsFqdn          "flt-ops01a.rainpole.io" `
+        -VcfOpsRootPassword  "VMw@re1!VMw@re1!" `
+        -VcfOpsAdminPassword "VMw@re1!VMw@re1!" `
+        -VidbFqdn            "flt-idb01.rainpole.io"
+
+    .EXAMPLE
+    # Non-interactive — VCF instance and SSO domain ID supplied directly
+    Invoke-VcfOpsVidbVcfInstanceUpdate `
+        -VcfOpsFqdn          "flt-ops01a.rainpole.io" `
+        -VcfOpsRootPassword  "VMw@re1!VMw@re1!" `
+        -VcfOpsAdminPassword "VMw@re1!VMw@re1!" `
+        -VidbFqdn            "flt-idb01.rainpole.io" `
+        -VcfInstanceId       "e1855511-d704-49ea-8caa-a45895dd0137" `
+        -SsoDomainId         "8aa85146-c6ef-4758-9346-4957e4a67dc4"
+
+    .PARAMETER VcfOpsFqdn
+    FQDN of the VCF Operations primary node. SSH is opened to this host as root.
+
+    .PARAMETER VcfOpsRootPassword
+    Root password for SSH access to the VCF Operations primary node.
+
+    .PARAMETER VcfOpsAdminPassword
+    Password for the VCF Operations admin user. Used to acquire an API token for discovery
+    queries and passed to the remote script.
+
+    .PARAMETER VcfOpsAdminUsername
+    Username for the VCF Operations API. Default is "admin".
+
+    .PARAMETER VidbFqdn
+    FQDN of the external Identity Broker (VIDB), e.g. "flt-idb01.rainpole.io".
+
+    .PARAMETER VcfInstanceId
+    Optional. UUID of the new VCF instance to associate with the Identity Broker. When
+    omitted the function queries the VCF Operations API and presents a numbered list for
+    interactive selection.
+
+    .PARAMETER SsoDomainId
+    Optional. UUID key to remove from the kv_vidb_sso_domain table. When omitted the
+    function queries the postgres database and presents a numbered list for interactive
+    selection. Choose "S" at the prompt to skip the SSO domain cleanup entirely.
+
+    .PARAMETER RemoteScriptTimeout
+    Seconds to wait for the remote script to complete. Default is 1500 (25 minutes) to
+    accommodate the built-in 20-minute VIDB eligibility poll.
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][String]  $VcfOpsFqdn,
+        [Parameter(Mandatory = $true)][String]  $VcfOpsRootPassword,
+        [Parameter(Mandatory = $true)][String]  $VcfOpsAdminPassword,
+        [Parameter(Mandatory = $false)][String] $VcfOpsAdminUsername = "admin",
+        [Parameter(Mandatory = $true)][String]  $VidbFqdn,
+        [Parameter(Mandatory = $false)][String] $VcfInstanceId,
+        [Parameter(Mandatory = $false)][String] $SsoDomainId,
+        [Parameter(Mandatory = $false)][Int]    $RemoteScriptTimeout = 1500
+    )
+
+    $jumpboxName = hostname
+    $StopWatch   = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    LogMessage -type INFO -message "[$jumpboxName] VCF Ops Host   : $VcfOpsFqdn"
+    LogMessage -type INFO -message "[$jumpboxName] VIDB Host      : $VidbFqdn"
+
+    # -------------------------------------------------------------------------
+    # Validate the local script exists
+    # -------------------------------------------------------------------------
+    $localScript = Join-Path -Path $PSScriptRoot -ChildPath "scripts/update-vidb-vcf-instance.sh"
+    if (-not (Test-Path $localScript)) {
+        LogMessage -type ERROR -message "[$jumpboxName] Script not found: $localScript"
+        $StopWatch.Stop(); return
+    }
+
+    # -------------------------------------------------------------------------
+    # Verify SSH (TCP/22) is reachable on the VCF Operations node before
+    # attempting to open a session — gives an actionable error message when
+    # SSH has not been enabled on the appliance.
+    # -------------------------------------------------------------------------
+    LogMessage -type INFO -message "[$jumpboxName] Checking SSH reachability on $VcfOpsFqdn port 22"
+    $sshCheck = Test-NetConnection -ComputerName $VcfOpsFqdn -Port 22 -WarningAction SilentlyContinue
+    if (-not $sshCheck.TcpTestSucceeded) {
+        LogMessage -type ERROR -message "[$jumpboxName] SSH (TCP/22) is not reachable on $VcfOpsFqdn"
+        LogMessage -type ERROR -message "[$jumpboxName] Enable SSH on the VCF Operations appliance before retrying:"
+        LogMessage -type ERROR -message "[$jumpboxName]   1. Log in to the VCF Operations management UI at https://$VcfOpsFqdn"
+        LogMessage -type ERROR -message "[$jumpboxName]   2. Navigate to Administration > Support > SSH Service"
+        LogMessage -type ERROR -message "[$jumpboxName]   3. Enable the SSH service, then re-run this function"
+        $StopWatch.Stop(); return
+    }
+    LogMessage -type INFO -message "[$jumpboxName] SSH is reachable on $VcfOpsFqdn"
+
+    # -------------------------------------------------------------------------
+    # Open SSH session to the VCF Operations primary node as root
+    # -------------------------------------------------------------------------
+    $SecurePassword = ConvertTo-SecureString -String $VcfOpsRootPassword -AsPlainText -Force
+    $creds          = New-Object System.Management.Automation.PSCredential ('root', $SecurePassword)
+    $remotePath     = "/tmp/update-vidb-vcf-instance.sh"
+    $session        = $null
+
+    try {
+        $session = Open-VcfmsSshSession -Fqdn $VcfOpsFqdn -Creds $creds
+
+        # =====================================================================
+        # Step 3 — Interactive VCF Instance selection
+        #   Query GET /suite-api/internal/vidb/vidbs for all registered VCF
+        #   adapter instances and present a numbered list. The operator selects
+        #   the VCF instance the Identity Broker should be re-associated with.
+        #   Skipped when -VcfInstanceId is supplied directly.
+        # =====================================================================
+        if (-not $VcfInstanceId) {
+            LogMessage -type INFO -message "[$VcfOpsFqdn] Step 3: Querying VCF adapter instances from VCF Operations API"
+
+            # Acquire a short-lived token for the discovery query
+            $tokenUri  = "https://$VcfOpsFqdn/suite-api/api/auth/token/acquire"
+            $tokenBody = @{ username = $VcfOpsAdminUsername; password = $VcfOpsAdminPassword } | ConvertTo-Json -Compress
+            try {
+                $tokenResp = Invoke-RestMethod -Uri $tokenUri -Method POST -Body $tokenBody `
+                    -ContentType "application/json" -SkipCertificateCheck
+            } catch {
+                LogMessage -type ERROR -message "[$VcfOpsFqdn] Failed to acquire VCF Operations API token: $($_.Exception.Message)"
+                $StopWatch.Stop(); return
+            }
+            $apiToken = $tokenResp.token
+            if (-not $apiToken) {
+                LogMessage -type ERROR -message "[$VcfOpsFqdn] VCF Operations API token was empty. Check credentials."
+                $StopWatch.Stop(); return
+            }
+
+            $vidbsUri  = "https://$VcfOpsFqdn/suite-api/internal/vidb/vidbs"
+            $apiHeaders = @{
+                "Authorization"                  = "vRealizeOpsToken $apiToken"
+                "x-vrealizeops-api-use-unsupported" = "true"
+                "Accept"                         = "application/json"
+            }
+            try {
+                $vidbsResp = Invoke-RestMethod -Uri $vidbsUri -Method GET -Headers $apiHeaders -SkipCertificateCheck
+            } catch {
+                LogMessage -type ERROR -message "[$VcfOpsFqdn] Failed to query VCF adapter instances: $($_.Exception.Message)"
+                $StopWatch.Stop(); return
+            }
+
+            $vcfInstances = @($vidbsResp | Where-Object { $_.vcfInstanceId -and $_.fqdn })
+            if ($vcfInstances.Count -eq 0) {
+                LogMessage -type ERROR -message "[$VcfOpsFqdn] No VCF adapter instances were returned by the API."
+                $StopWatch.Stop(); return
+            }
+
+            # Build and display numbered selection table
+            $vcfInstanceTable = @()
+            $vcfInstanceTable += [pscustomobject]@{ ID = "ID"; VCFInstanceId = "VCF Instance ID"; FQDN = "FQDN"; Type = "Type"; ResourceName = "Resource Name" }
+            $vcfInstanceTable += [pscustomobject]@{ ID = "--"; VCFInstanceId = "------------------------------------"; FQDN = "----"; Type = "--------"; ResourceName = "-------------" }
+            $idx = 1
+            foreach ($inst in $vcfInstances) {
+                $vcfInstanceTable += [pscustomobject]@{
+                    ID           = $idx
+                    VCFInstanceId = $inst.vcfInstanceId
+                    FQDN         = $inst.fqdn
+                    Type         = $inst.deploymentType
+                    ResourceName = $inst.vcfResourceName
+                }
+                $idx++
+            }
+
+            Write-Host ""
+            Write-Host " Step 3: Select the VCF instance to associate with the Identity Broker" -ForegroundColor Cyan
+            Write-Host ""
+            $vcfInstanceTable | Format-Table -Property @{Expression = " "}, ID, VCFInstanceId, FQDN, Type, ResourceName -AutoSize -HideTableHeaders |
+                Out-String | ForEach-Object { $_.Trim("`r", "`n") }
+
+            $validIds = 1..($vcfInstances.Count) | ForEach-Object { "$_" }
+            Do {
+                Write-Host ""
+                Write-Host " Enter the ID of the VCF instance to use, or C to Cancel: " -ForegroundColor Yellow -NoNewline
+                $vcfInstanceSelection = Read-Host
+            } Until (($vcfInstanceSelection -in $validIds) -or ($vcfInstanceSelection -ieq "C"))
+
+            if ($vcfInstanceSelection -ieq "C") {
+                LogMessage -type INFO -message "[$jumpboxName] Operation cancelled by user at VCF instance selection."
+                $StopWatch.Stop(); return
+            }
+
+            $VcfInstanceId = $vcfInstances[$vcfInstanceSelection - 1].vcfInstanceId
+            LogMessage -type INFO -message "[$VcfOpsFqdn] Selected VCF Instance ID : $VcfInstanceId"
+        } else {
+            LogMessage -type INFO -message "[$VcfOpsFqdn] Step 3: Using supplied VCF Instance ID : $VcfInstanceId"
+        }
+
+        # =====================================================================
+        # Step 4 — Interactive SSO Domain selection
+        #   Query kv_vidb_sso_domain in the VCF Operations postgres database via
+        #   SSH and present a numbered list. The operator selects the stale SSO
+        #   domain key to remove, or enters S to skip the cleanup entirely.
+        #   Skipped when -SsoDomainId is supplied directly.
+        # =====================================================================
+        if (-not $SsoDomainId) {
+            LogMessage -type INFO -message "[$VcfOpsFqdn] Step 4: Querying kv_vidb_sso_domain table in VCF Operations database"
+
+            $psql    = '/opt/vmware/vpostgres/current/bin/psql -p 5433 -d vcopsdb -t -A'
+            $ssoSql  = "SELECT key, name, vidb_resource_id, vcf_instance_id FROM kv_vidb_sso_domain;"
+            $ssoCmd  = "su - postgres -c `"$psql -c '$ssoSql'`""
+            $ssoResult = Invoke-SSHCommand -SessionId $session.SessionId -Command $ssoCmd -TimeOut 30
+
+            $ssoDomainRows = @()
+            if ($ssoResult.ExitStatus -eq 0 -and $ssoResult.Output) {
+                foreach ($line in ($ssoResult.Output | Where-Object { $_ -match '\S' })) {
+                    $parts = $line -split '\|'
+                    if ($parts.Count -ge 4) {
+                        $ssoDomainRows += [pscustomobject]@{
+                            Key            = $parts[0].Trim()
+                            Name           = $parts[1].Trim()
+                            VidbResourceId = $parts[2].Trim()
+                            VcfInstanceId  = $parts[3].Trim()
+                        }
+                    }
+                }
+            }
+
+            if ($ssoDomainRows.Count -eq 0) {
+                LogMessage -type INFO -message "[$VcfOpsFqdn] No rows found in kv_vidb_sso_domain — SSO domain cleanup will be skipped."
+            } else {
+                # Build and display numbered selection table
+                $ssoTable = @()
+                $ssoTable += [pscustomobject]@{ ID = "ID"; Key = "Key (SSO Domain ID)"; Name = "Name"; VidbResourceId = "VIDB Resource ID"; VcfInstanceId = "VCF Instance ID" }
+                $ssoTable += [pscustomobject]@{ ID = "--"; Key = "------------------------------------"; Name = "----"; VidbResourceId = "------------------------------------"; VcfInstanceId = "------------------------------------" }
+                $idx = 1
+                foreach ($row in $ssoDomainRows) {
+                    $ssoTable += [pscustomobject]@{
+                        ID            = $idx
+                        Key           = $row.Key
+                        Name          = $row.Name
+                        VidbResourceId = $row.VidbResourceId
+                        VcfInstanceId  = $row.VcfInstanceId
+                    }
+                    $idx++
+                }
+
+                Write-Host ""
+                Write-Host " Step 4: Select the stale SSO domain entry to remove from kv_vidb_sso_domain" -ForegroundColor Cyan
+                Write-Host ""
+                $ssoTable | Format-Table -Property @{Expression = " "}, ID, Key, Name, VidbResourceId, VcfInstanceId -AutoSize -HideTableHeaders |
+                    Out-String | ForEach-Object { $_.Trim("`r", "`n") }
+
+                $validSsoIds = 1..($ssoDomainRows.Count) | ForEach-Object { "$_" }
+                Do {
+                    Write-Host ""
+                    Write-Host " Enter the ID of the SSO domain entry to remove, S to Skip, or C to Cancel: " -ForegroundColor Yellow -NoNewline
+                    $ssoSelection = Read-Host
+                } Until (($ssoSelection -in $validSsoIds) -or ($ssoSelection -ieq "S") -or ($ssoSelection -ieq "C"))
+
+                if ($ssoSelection -ieq "C") {
+                    LogMessage -type INFO -message "[$jumpboxName] Operation cancelled by user at SSO domain selection."
+                    $StopWatch.Stop(); return
+                }
+
+                if ($ssoSelection -ieq "S") {
+                    LogMessage -type INFO -message "[$VcfOpsFqdn] SSO domain cleanup skipped by user."
+                } else {
+                    $SsoDomainId = $ssoDomainRows[$ssoSelection - 1].Key
+                    LogMessage -type INFO -message "[$VcfOpsFqdn] Selected SSO Domain ID : $SsoDomainId"
+                }
+            }
+        } else {
+            LogMessage -type INFO -message "[$VcfOpsFqdn] Step 4: Using supplied SSO Domain ID : $SsoDomainId"
+        }
+
+        # -------------------------------------------------------------------------
+        # Upload the script via base64 pipe — avoids any SCP binary dependency
+        # -------------------------------------------------------------------------
+        LogMessage -type INFO -message "[$VcfOpsFqdn] Uploading script to $remotePath"
+        $scriptBytes = [System.IO.File]::ReadAllBytes($localScript)
+        # Strip CR bytes so the file always has Unix line endings on the remote node
+        $scriptBytes = [byte[]]($scriptBytes | Where-Object { $_ -ne 0x0D })
+        $b64         = [System.Convert]::ToBase64String($scriptBytes)
+
+        $uploadCmd    = "printf '%s' '$b64' | base64 -d > $remotePath && chmod +x $remotePath"
+        $uploadResult = Invoke-SSHCommand -SessionId $session.SessionId -Command $uploadCmd -TimeOut 60
+        if ($uploadResult.ExitStatus -ne 0) {
+            LogMessage -type ERROR -message "[$VcfOpsFqdn] Script upload failed (exit $($uploadResult.ExitStatus)): $($uploadResult.Error -join ' ')"
+            return
+        }
+        LogMessage -type INFO -message "[$VcfOpsFqdn] Script uploaded successfully"
+
+        # -------------------------------------------------------------------------
+        # Build and execute the remote command
+        # The script must run as root (already the SSH user); passwords with special
+        # characters are passed as environment variables to avoid shell quoting issues.
+        # -------------------------------------------------------------------------
+        $scriptArgs = "--ops-host '$VcfOpsFqdn' --username '$VcfOpsAdminUsername' --password `$VCF_OPS_ADMIN_PASSWORD --vcf-id '$VcfInstanceId' --vidb-host '$VidbFqdn'"
+        if ($SsoDomainId) {
+            $scriptArgs += " --sso-domain-id '$SsoDomainId'"
+        }
+
+        $execCmd = "VCF_OPS_ADMIN_PASSWORD='$VcfOpsAdminPassword' bash $remotePath $scriptArgs 2>&1"
+
+        LogMessage -type INFO -message "[$VcfOpsFqdn] Executing update-vidb-vcf-instance.sh (timeout: ${RemoteScriptTimeout}s)"
+        Write-Host ""
+        Write-Host " ── update-vidb-vcf-instance.sh output ──────────────────────────────" -ForegroundColor Cyan
+
+        $execResult = Invoke-SSHCommand -SessionId $session.SessionId -Command $execCmd -TimeOut $RemoteScriptTimeout
+
+        $execResult.Output | ForEach-Object { Write-Host "  $_" }
+
+        if ($execResult.Error) {
+            (($execResult.Error -join "`n") -split "`r?`n") |
+                Where-Object { $_ -ne '' } |
+                ForEach-Object { Write-Host "  $_" -ForegroundColor Yellow }
+        }
+
+        Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+        Write-Host ""
+
+        if ($execResult.ExitStatus -eq 0) {
+            LogMessage -type INFO -message "[$VcfOpsFqdn] Script completed successfully"
+        } else {
+            LogMessage -type ERROR -message "[$VcfOpsFqdn] Script exited with code $($execResult.ExitStatus)"
+        }
+
+    } catch {
+        LogMessage -type ERROR -message "[$jumpboxName] $($_.Exception.Message)"
+    } finally {
+        if ($session) {
+            Invoke-SSHCommand -SessionId $session.SessionId `
+                -Command "rm -f $remotePath" -TimeOut 15 | Out-Null
+            Remove-SSHSession -SSHSession $session | Out-Null
+            LogMessage -type INFO -message "[$VcfOpsFqdn] Temporary script removed"
+        }
+    }
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+Export-ModuleMember -Function Invoke-VcfOpsVidbVcfInstanceUpdate
+
+Function Install-VcfaMigrationServiceEngine {
+    <#
+    .SYNOPSIS
+    Stages and installs the Migration Service Engine component on a VCF Automation Services Runtime cluster.
+
+    .DESCRIPTION
+    The Install-VcfaMigrationServiceEngine cmdlet stages and installs the Migration Service Engine
+    on a VCF Automation Services Runtime cluster. The Migration Service Engine is not captured in
+    VCF Automation backups and must be reinstalled after a restore. The cmdlet performs three steps:
+
+      1. Acquires an access token from the VCF Automation Services Runtime API.
+      2. Stages the migration-service binary via POST /api/v1/components?action=stage, then
+         polls GET /api/v1/tasks/{taskId} until the stage task reaches a terminal state.
+      3. Installs the migration-service component via POST /api/v1/components?action=install,
+         then polls GET /api/v1/tasks/{taskId} until the install task reaches a terminal state.
+
+    .EXAMPLE
+    # Stage and install using default version
+    Install-VcfaMigrationServiceEngine `
+        -VcfaServiceRuntimeFqdn     "flt-vcfa-sr01.rainpole.io" `
+        -VcfaServiceRuntimePassword "VMw@re1!VMw@re1!" `
+        -RepositoryUrl              "https://depot.rainpole.io/package-pool/depot-manifest-migration-service-9.1.0.0.25370929.yaml"
+
+    .EXAMPLE
+    # Supply a specific version and offline depot manifest URL
+    Install-VcfaMigrationServiceEngine `
+        -VcfaServiceRuntimeFqdn     "flt-vcfa-sr01.rainpole.io" `
+        -VcfaServiceRuntimePassword "VMw@re1!VMw@re1!" `
+        -Version                    "9.1.0.0.25370929" `
+        -RepositoryUrl              "https://depot.rainpole.io/package-pool/depot-manifest-migration-service-9.1.0.0.25370929.yaml"
+
+    .PARAMETER VcfaServiceRuntimeFqdn
+    FQDN of the VCF Automation Services Runtime cluster, e.g. "flt-vcfa-sr01.rainpole.io".
+
+    .PARAMETER VcfaServiceRuntimePassword
+    Password for the VCF Automation Services Runtime admin user.
+
+    .PARAMETER VcfaServiceRuntimeUsername
+    Username for the token request. Default is "admin@vsp.local".
+
+    .PARAMETER Version
+    Version string for the migration-service component to stage and install.
+    Default is "9.1.0.0.25370929".
+
+    .PARAMETER RepositoryUrl
+    URL to the depot manifest YAML for the migration-service version being staged. This must
+    point to an accessible depot — either an offline/air-gapped depot mirror or an
+    internal update repository. No default is provided; this parameter is required.
+
+    .PARAMETER InstallSize
+    Deployment size for the Migration Service Engine. Default is "small".
+
+    .PARAMETER StagePollIntervalSeconds
+    Interval in seconds between task status polls during the stage operation. Default is 30.
+
+    .PARAMETER InstallPollIntervalSeconds
+    Interval in seconds between task status polls during the install operation. Default is 30.
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][String]  $VcfaServiceRuntimeFqdn,
+        [Parameter(Mandatory = $true)][String]  $VcfaServiceRuntimePassword,
+        [Parameter(Mandatory = $false)][String] $VcfaServiceRuntimeUsername = "admin@vsp.local",
+        [Parameter(Mandatory = $false)][String] $Version = "9.1.0.0.25370929",
+        [Parameter(Mandatory = $true)][String]  $RepositoryUrl,
+        [Parameter(Mandatory = $false)][String] $InstallSize = "small",
+        [Parameter(Mandatory = $false)][Int]    $StagePollIntervalSeconds = 30,
+        [Parameter(Mandatory = $false)][Int]    $InstallPollIntervalSeconds = 30
+    )
+
+    $jumpboxName    = hostname
+    $StopWatch      = New-Object -TypeName System.Diagnostics.Stopwatch
+    $terminalStates = @("COMPLETED","Completed","COMPLETE","FAILED","CANCELLED","ERROR","SUCCESS","SUCCESSFUL","Succeeded","Failed")
+    $StopWatch.Start()
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    LogMessage -type INFO -message "[$jumpboxName] VCFA Services Runtime    : $VcfaServiceRuntimeFqdn"
+    LogMessage -type INFO -message "[$jumpboxName] Migration Service version : $Version"
+    LogMessage -type INFO -message "[$jumpboxName] Install size              : $InstallSize"
+
+    # -------------------------------------------------------------------------
+    # Step 1: Acquire VCFA Services Runtime token
+    # The VCFA SR uses the same /api/v1/identity/token endpoint as VCFMS SR.
+    # -------------------------------------------------------------------------
+    $srToken = Get-VcfmsServicesRuntimeToken `
+        -ServicesRuntimeFqdn $VcfaServiceRuntimeFqdn `
+        -Username            $VcfaServiceRuntimeUsername `
+        -Password            $VcfaServiceRuntimePassword
+    if (-not $srToken) {
+        LogMessage -type ERROR -message "[$VcfaServiceRuntimeFqdn] Unable to obtain VCFA Services Runtime token. Aborting."
+        $StopWatch.Stop(); return
+    }
+    $tokenFetchedAt = [DateTime]::UtcNow
+    $headers = @{
+        "Authorization" = "Bearer $srToken"
+        "Accept"        = "application/json"
+        "Content-Type"  = "application/json"
+    }
+
+    # -------------------------------------------------------------------------
+    # Helper: refresh token if approaching the 60-minute expiry
+    # -------------------------------------------------------------------------
+    $refreshToken = {
+        if (([DateTime]::UtcNow - $tokenFetchedAt).TotalMinutes -ge 60) {
+            LogMessage -type INFO -message "[$VcfaServiceRuntimeFqdn] Token age >= 60 minutes; refreshing"
+            $newToken = Get-VcfmsServicesRuntimeToken `
+                -ServicesRuntimeFqdn $VcfaServiceRuntimeFqdn `
+                -Username            $VcfaServiceRuntimeUsername `
+                -Password            $VcfaServiceRuntimePassword
+            if ($newToken) {
+                $script:srToken                  = $newToken
+                $script:headers["Authorization"] = "Bearer $newToken"
+                $script:tokenFetchedAt           = [DateTime]::UtcNow
+            } else {
+                LogMessage -type WARNING -message "[$VcfaServiceRuntimeFqdn] Token refresh failed; continuing with existing token"
+            }
+        }
+    }
+
+    # -------------------------------------------------------------------------
+    # Step 2: Stage the migration-service binary
+    # -------------------------------------------------------------------------
+    LogMessage -type INFO -message "[$VcfaServiceRuntimeFqdn] Staging migration-service $Version"
+
+    $stageBody = @{
+        type       = "migration-service"
+        version    = $Version
+        repository = @{
+            url = $RepositoryUrl
+        }
+        options    = @{
+            timeout = "30m"
+        }
+    } | ConvertTo-Json -Depth 5
+
+    try {
+        $stageResponse = Invoke-RestMethod `
+            -Uri    "https://$VcfaServiceRuntimeFqdn/api/v1/components?action=stage" `
+            -Method POST -Headers $headers -Body $stageBody -SkipCertificateCheck
+    } catch {
+        LogMessage -type ERROR -message "[$VcfaServiceRuntimeFqdn] Stage request failed: $($_.Exception.Message)"
+        $StopWatch.Stop(); return
+    }
+
+    $stageTaskId = $stageResponse.id
+    if (-not $stageTaskId) {
+        LogMessage -type ERROR -message "[$VcfaServiceRuntimeFqdn] No task ID returned from stage response."
+        $StopWatch.Stop(); return
+    }
+    LogMessage -type INFO -message "[$VcfaServiceRuntimeFqdn] Stage task created: $stageTaskId"
+
+    # Poll stage task
+    LogMessage -type INFO -message "[$VcfaServiceRuntimeFqdn] Polling stage task $stageTaskId every ${StagePollIntervalSeconds}s"
+    $elapsed      = 0
+    $taskStatus   = "UNKNOWN"
+    $taskResponse = $null
+    Do {
+        Start-Sleep -Seconds $StagePollIntervalSeconds
+        $elapsed += $StagePollIntervalSeconds
+        & $refreshToken
+        try {
+            $taskResponse = Invoke-RestMethod `
+                -Uri    "https://$VcfaServiceRuntimeFqdn/api/v1/tasks/$stageTaskId" `
+                -Method GET -Headers $headers -SkipCertificateCheck
+            $rawSt = $taskResponse.status
+            $rawPh = $taskResponse.phase
+            if (-not [string]::IsNullOrWhiteSpace([string]$rawSt)) {
+                $taskStatus = [string]$rawSt
+            } elseif (-not [string]::IsNullOrWhiteSpace([string]$rawPh)) {
+                $taskStatus = [string]$rawPh
+            } else {
+                $taskStatus = "UNKNOWN"
+            }
+        } catch {
+            LogMessage -type WARNING -message "[$VcfaServiceRuntimeFqdn] Poll error (will retry): $($_.Exception.Message)"
+            $taskStatus = "UNKNOWN"
+        }
+        LogMessage -type INFO -message "[$VcfaServiceRuntimeFqdn] Stage task $stageTaskId status=$taskStatus (${elapsed}s elapsed)"
+    } While ($taskStatus -notin $terminalStates)
+
+    $successStates = @("COMPLETED","Completed","COMPLETE","SUCCESS","SUCCESSFUL","Succeeded")
+    if ($taskStatus -notin $successStates) {
+        LogMessage -type ERROR -message "[$VcfaServiceRuntimeFqdn] Stage task ended with status: $taskStatus"
+        if ($taskResponse -and $taskResponse.description.localizedMessage) {
+            LogMessage -type ERROR -message "[$VcfaServiceRuntimeFqdn] $($taskResponse.description.localizedMessage)"
+        }
+        $StopWatch.Stop(); return
+    }
+    LogMessage -type INFO -message "[$VcfaServiceRuntimeFqdn] Migration Service Engine staged successfully"
+
+    # -------------------------------------------------------------------------
+    # Step 3: Install the migration-service component
+    # -------------------------------------------------------------------------
+    LogMessage -type INFO -message "[$VcfaServiceRuntimeFqdn] Installing migration-service $Version (size: $InstallSize)"
+
+    $installBody = @{
+        type    = "vcd-migrator"
+        version = $Version
+        spec    = @{
+            configuration = @{
+                size = $InstallSize
+            }
+        }
+        options = @{
+            timeout       = "60m"
+            prechecksOnly = $false
+        }
+    } | ConvertTo-Json -Depth 5
+
+    try {
+        $installResponse = Invoke-RestMethod `
+            -Uri    "https://$VcfaServiceRuntimeFqdn/api/v1/components?action=install" `
+            -Method POST -Headers $headers -Body $installBody -SkipCertificateCheck
+    } catch {
+        LogMessage -type ERROR -message "[$VcfaServiceRuntimeFqdn] Install request failed: $($_.Exception.Message)"
+        $StopWatch.Stop(); return
+    }
+
+    $installTaskId = $installResponse.id
+    if (-not $installTaskId) {
+        LogMessage -type ERROR -message "[$VcfaServiceRuntimeFqdn] No task ID returned from install response."
+        $StopWatch.Stop(); return
+    }
+    LogMessage -type INFO -message "[$VcfaServiceRuntimeFqdn] Install task created: $installTaskId"
+
+    # Poll install task
+    LogMessage -type INFO -message "[$VcfaServiceRuntimeFqdn] Polling install task $installTaskId every ${InstallPollIntervalSeconds}s"
+    $elapsed      = 0
+    $taskStatus   = "UNKNOWN"
+    $taskResponse = $null
+    Do {
+        Start-Sleep -Seconds $InstallPollIntervalSeconds
+        $elapsed += $InstallPollIntervalSeconds
+        & $refreshToken
+        try {
+            $taskResponse = Invoke-RestMethod `
+                -Uri    "https://$VcfaServiceRuntimeFqdn/api/v1/tasks/$installTaskId" `
+                -Method GET -Headers $headers -SkipCertificateCheck
+            $rawSt = $taskResponse.status
+            $rawPh = $taskResponse.phase
+            if (-not [string]::IsNullOrWhiteSpace([string]$rawSt)) {
+                $taskStatus = [string]$rawSt
+            } elseif (-not [string]::IsNullOrWhiteSpace([string]$rawPh)) {
+                $taskStatus = [string]$rawPh
+            } else {
+                $taskStatus = "UNKNOWN"
+            }
+        } catch {
+            LogMessage -type WARNING -message "[$VcfaServiceRuntimeFqdn] Poll error (will retry): $($_.Exception.Message)"
+            $taskStatus = "UNKNOWN"
+        }
+        LogMessage -type INFO -message "[$VcfaServiceRuntimeFqdn] Install task $installTaskId status=$taskStatus (${elapsed}s elapsed)"
+    } While ($taskStatus -notin $terminalStates)
+
+    if ($taskStatus -notin $successStates) {
+        LogMessage -type ERROR -message "[$VcfaServiceRuntimeFqdn] Install task ended with status: $taskStatus"
+        if ($taskResponse -and $taskResponse.description.localizedMessage) {
+            LogMessage -type ERROR -message "[$VcfaServiceRuntimeFqdn] $($taskResponse.description.localizedMessage)"
+        }
+        $StopWatch.Stop(); return
+    }
+    LogMessage -type INFO -message "[$VcfaServiceRuntimeFqdn] Migration Service Engine installed successfully"
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+Export-ModuleMember -Function Install-VcfaMigrationServiceEngine
+
+Function Remove-VcfmsRecoveredComponents {
+    <#
+    .SYNOPSIS
+    Cleans up recovered fleet components from a VCF Management Services instance on the recovery site.
+
+    .DESCRIPTION
+    The Remove-VcfmsRecoveredComponents cmdlet performs the cleanup of recovered fleet components
+    from a VCFMS Services Runtime cluster as part of the failback preparation process. It connects
+    to the control plane node via SSH and runs two cleanup operations:
+
+      Step 1a — Delete component resources from Kubernetes:
+        kubectl delete component ops-logs salt-raas vidb vcf-fleet-depot vcf-fleet-lcm
+
+      Step 1b — Remove matching rows from the vcf-sddc-lcm postgres database:
+        kubectl exec vcf-sddc-lcm-db-0 ... psql DELETE FROM component WHERE component_type IN (...)
+        kubectl exec vcf-sddc-lcm-db-1 ... psql DELETE FROM component WHERE component_type IN (...)
+
+        Only one of the two database pods (db-0, db-1) is active at any given time — the command
+        against the standby pod will fail. Both are attempted and the failure of either is treated
+        as expected; the cmdlet reports which succeeded and which failed without aborting.
+
+    The kubeconfig is resolved in this order:
+      1. -KubeconfigPath if supplied
+      2. Auto-retrieved from the Services Runtime node via Get-VcfmsServicesRuntimeKubeconfig
+         when -ServicesRuntimeFqdn and -ServicesRuntimePassword are supplied
+
+    .EXAMPLE
+    # Auto-retrieve kubeconfig
+    Remove-VcfmsRecoveredComponents `
+        -ServicesRuntimeFqdn     "lax-sr01.lax.rainpole.io" `
+        -ServicesRuntimePassword "VMw@re1!VMw@re1!"
+
+    .EXAMPLE
+    # Use an existing kubeconfig
+    Remove-VcfmsRecoveredComponents `
+        -ServicesRuntimeFqdn     "lax-sr01.lax.rainpole.io" `
+        -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
+        -KubeconfigPath          "C:\kubeconfigs\lax-sr01.kubeconfig"
+
+    .PARAMETER ServicesRuntimeFqdn
+    FQDN or IP of any Services Runtime cluster node. If a worker node is supplied the function
+    automatically resolves and connects to the control plane.
+
+    .PARAMETER ServicesRuntimePassword
+    Password for vmware-system-user (SSH login and sudo elevation).
+
+    .PARAMETER KubeconfigPath
+    Optional. Path to an existing kubeconfig for the Services Runtime cluster. Takes precedence
+    over automatic retrieval.
+
+    .PARAMETER KubeconfigOutputDir
+    Directory where the auto-retrieved kubeconfig is written. Defaults to the current directory.
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][String]  $ServicesRuntimeFqdn,
+        [Parameter(Mandatory = $true)][String]  $ServicesRuntimePassword,
+        [Parameter(Mandatory = $false)][String] $KubeconfigPath,
+        [Parameter(Mandatory = $false)][String] $KubeconfigOutputDir = "."
+    )
+
+    $jumpboxName = hostname
+    $StopWatch   = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    LogMessage -type INFO -message "[$jumpboxName] Services Runtime : $ServicesRuntimeFqdn"
+
+    # -------------------------------------------------------------------------
+    # Resolve kubeconfig
+    # -------------------------------------------------------------------------
+    $resolvedKubeconfig = $KubeconfigPath
+    if (-not $resolvedKubeconfig) {
+        LogMessage -type INFO -message "[$jumpboxName] Retrieving kubeconfig from $ServicesRuntimeFqdn"
+        $kubeconfigResult = Get-VcfmsServicesRuntimeKubeconfig `
+            -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
+            -Password            $ServicesRuntimePassword `
+            -OutputDir           $KubeconfigOutputDir
+        if (-not $kubeconfigResult) {
+            LogMessage -type ERROR -message "[$jumpboxName] Could not retrieve kubeconfig. Aborting."
+            $StopWatch.Stop(); return
+        }
+        $resolvedKubeconfig = $kubeconfigResult.KubeconfigPath
+        $controlPlaneHost   = $kubeconfigResult.ControlPlaneHost
+    } else {
+        LogMessage -type INFO -message "[$jumpboxName] Using supplied kubeconfig: $resolvedKubeconfig"
+        $controlPlaneHost = $ServicesRuntimeFqdn
+    }
+    LogMessage -type INFO -message "[$jumpboxName] Control plane node : $controlPlaneHost"
+    LogMessage -type INFO -message "[$jumpboxName] Kubeconfig         : $resolvedKubeconfig"
+
+    # -------------------------------------------------------------------------
+    # Step 1a: Delete the recovered component resources from Kubernetes
+    # -------------------------------------------------------------------------
+    $components = "ops-logs", "salt-raas", "vidb", "vcf-fleet-depot", "vcf-fleet-lcm"
+    $componentList = $components -join " "
+    LogMessage -type INFO -message "[$controlPlaneHost] Step 1a: Deleting component resources: $componentList"
+
+    $deleteOutput = & kubectl --kubeconfig $resolvedKubeconfig delete component @components 2>&1
+    $deleteExit   = $LASTEXITCODE
+
+    $deleteOutput | ForEach-Object { Write-Host "   $_" }
+
+    if ($deleteExit -eq 0) {
+        LogMessage -type INFO -message "[$controlPlaneHost] Component resources deleted successfully"
+    } else {
+        LogMessage -type WARNING -message "[$controlPlaneHost] kubectl delete exited with code $deleteExit — resources may have already been removed"
+    }
+
+    # -------------------------------------------------------------------------
+    # Step 1b: Remove rows from the vcf-sddc-lcm postgres database
+    # Both db-0 and db-1 are attempted. Only one pod will be active; the
+    # command against the standby is expected to fail and is handled gracefully.
+    # -------------------------------------------------------------------------
+    $deleteTypes = "DELETE FROM component WHERE component_type IN ('VIDB', 'OPS_LOGS', 'SALT_RAAS', 'VCF_FLEET_LCM', 'VCF_FLEET_DEPOT');"
+    $dbPods      = @("vcf-sddc-lcm-db-0", "vcf-sddc-lcm-db-1")
+
+    foreach ($dbPod in $dbPods) {
+        LogMessage -type INFO -message "[$controlPlaneHost] Step 1b: Running DELETE on $dbPod"
+        try {
+            # -i (no -t): non-interactive stdin; -- separates kubectl args from container command
+            $dbOutput = & kubectl --kubeconfig $resolvedKubeconfig exec $dbPod `
+                -n vcf-sddc-lcm -i -- psql -U postgres -d vcfsddclcmdb -c $deleteTypes 2>&1
+            $dbExit = $LASTEXITCODE
+
+            if ($dbOutput) { $dbOutput | ForEach-Object { Write-Host "   $_" } }
+
+            if ($dbExit -eq 0) {
+                LogMessage -type INFO -message "[$controlPlaneHost] DELETE succeeded on $dbPod (active pod)"
+            } else {
+                LogMessage -type WARNING -message "[$controlPlaneHost] DELETE on $dbPod exited with code $dbExit — this pod is likely the standby (expected)"
+            }
+        } catch {
+            LogMessage -type WARNING -message "[$controlPlaneHost] DELETE on $dbPod failed (likely standby pod): $($_.Exception.Message)"
+        }
+    }
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+Export-ModuleMember -Function Remove-VcfmsRecoveredComponents
 
 #EndRegion Services Runtime
 
