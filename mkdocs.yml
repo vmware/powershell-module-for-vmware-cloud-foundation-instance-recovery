@@ -135,6 +135,7 @@ nav:
     - documentation/functions/Backup-ClusterVMLocations.md
     - documentation/functions/Backup-ClusterVMOverrides.md
     - documentation/functions/Backup-ClusterVMTags.md
+    - documentation/functions/Confirm-ContentLibraryDatastoreFolder.md
     - documentation/functions/Confirm-VCFInstanceRecoveryPreReqs.md
     - documentation/functions/Invoke-NSXEdgeClusterRecovery.md
     - documentation/functions/Invoke-NSXManagerRestore.md
