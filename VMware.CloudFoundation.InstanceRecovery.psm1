@@ -10132,6 +10132,19 @@ Function Disable-VcfmsClusterLogging {
     $terminalStates = @("COMPLETED","Completed","COMPLETE","FAILED","CANCELLED","ERROR","SUCCESS","SUCCESSFUL","Succeeded","Failed")
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
+    # Pre-requisite: kubectl must be available on the local machine
+    if (-not (Get-Command kubectl -ErrorAction SilentlyContinue)) {
+        LogMessage -type WARNING -message "[$jumpboxName] kubectl not found on PATH. Please install kubectl and ensure it is available before running this cmdlet."
+        $StopWatch.Stop(); return
+    }
+    LogMessage -type INFO -message "[$jumpboxName] kubectl found: $((Get-Command kubectl).Source)"
+
+    # Pre-requisite: if a kubeconfig path was supplied, verify it exists before starting the apply task
+    if ($KubeconfigPath -and -not (Test-Path $KubeconfigPath)) {
+        LogMessage -type WARNING -message "[$jumpboxName] KubeconfigPath not found: $KubeconfigPath — verify the path and re-run."
+        $StopWatch.Stop(); return
+    }
+
     # Step 1: Token
     $srToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
     if (-not $srToken) {
