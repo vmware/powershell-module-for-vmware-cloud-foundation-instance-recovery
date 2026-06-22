@@ -7,13 +7,13 @@ Updates fleet component registrations on a VCFMS Services Runtime cluster by run
 ## Syntax
 
 ```powershell
-# By VCF instance name
+# By VCF instance FQDN or substring
 Invoke-VcfmsFleetComponentRegistration [-ServicesRuntimeFqdn] <String> [-ServicesRuntimePassword] <String> [-TargetVcfInstance] <String> [-DryRun] [[-RemoteScriptTimeout] <Int32>] [<CommonParameters>]
 
 # By FQDN pattern
 Invoke-VcfmsFleetComponentRegistration [-ServicesRuntimeFqdn] <String> [-ServicesRuntimePassword] <String> [-TargetFqdn] <String> [-DryRun] [[-RemoteScriptTimeout] <Int32>] [<CommonParameters>]
 
-# By SDDC LCM ID
+# By SDDC LCM FQDN substring
 Invoke-VcfmsFleetComponentRegistration [-ServicesRuntimeFqdn] <String> [-ServicesRuntimePassword] <String> [-TargetSddcId] <String> [-DryRun] [[-RemoteScriptTimeout] <Int32>] [<CommonParameters>]
 ```
 
@@ -25,13 +25,13 @@ The `Invoke-VcfmsFleetComponentRegistration` cmdlet uploads the bundled `update_
 
 ### Example 1
 
-Update registration by VCF instance name.
+Update registration by VCF instance FQDN.
 
 ```powershell
 Invoke-VcfmsFleetComponentRegistration `
     -ServicesRuntimeFqdn     "lax-sr01.lax.rainpole.io" `
     -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
-    -TargetVcfInstance       "vcf01"
+    -TargetVcfInstance       "lax-ic01.lax.rainpole.io"
 ```
 
 ### Example 2
@@ -48,13 +48,13 @@ Invoke-VcfmsFleetComponentRegistration `
 
 ### Example 3
 
-Update registration by SDDC LCM UUID.
+Update registration by SDDC LCM FQDN substring.
 
 ```powershell
 Invoke-VcfmsFleetComponentRegistration `
     -ServicesRuntimeFqdn     "lax-sr01.lax.rainpole.io" `
     -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
-    -TargetSddcId            "7a07f2c3-be5b-420a-8ce3-64b20f4ec52a"
+    -TargetSddcId            "lax-ic01"
 ```
 
 ## Parameters
@@ -93,7 +93,7 @@ Accept wildcard characters: False
 
 ### -TargetVcfInstance
 
-VCF instance name to target (e.g. `vcf01`). Mutually exclusive with `-TargetFqdn` and `-TargetSddcId`.
+VCF instance FQDN or substring to match against the sddc_lcm.fqdn column (e.g. `lax-ic01.lax.rainpole.io`). Passed as `--target-fqdn` to the script. Mutually exclusive with `-TargetFqdn` and `-TargetSddcId`.
 
 ```yaml
 Type: String
@@ -125,7 +125,7 @@ Accept wildcard characters: False
 
 ### -TargetSddcId
 
-Exact UUID of the SDDC LCM entry. Mutually exclusive with `-TargetVcfInstance` and `-TargetFqdn`.
+FQDN substring to match against the sddc_lcm.fqdn column. Passed as `--target-fqdn` to the script. Note: UUID-based lookup is not currently supported by the script; use `-TargetFqdn` for a reliable substring match. Mutually exclusive with `-TargetVcfInstance` and `-TargetFqdn`.
 
 ```yaml
 Type: String

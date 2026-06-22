@@ -7586,7 +7586,7 @@ Function Get-RegisteredComponentIds {
     .DESCRIPTION
     The Get-RegisteredComponentIds cmdlet queries the VCF Operations internal /suite-api/internal/components endpoint and returns a structured object containing:
     - components: Filtered component summaries for types FLEET_LCM, SALT_RAAS, VIDB, and LI.
-    - vsp: VSP component details referenced by the filtered components (null, a single object, or an array when multiple are present).
+    - vsp: All VSP instances registered in the endpoint, deduplicated by UUID, always returned as an array.
     - vcfa: VCFA component details if one is registered, otherwise null.
 
     A VCF Operations token is obtained automatically via Get-VcfOperationsToken.
@@ -7654,42 +7654,25 @@ Function Get-RegisteredComponentIds {
     $targetTypes = @('FLEET_LCM', 'SALT_RAAS', 'VIDB', 'LI')
     $filtered = @($allComponents | Where-Object { $targetTypes -contains ($_.componentType).ToUpper() })
 
-    # Collect unique VSP component UUIDs referenced by the filtered components
-    $vspUuids = @(
-        $filtered | ForEach-Object {
-            if ($_.references) {
-                $_.references |
-                    Where-Object { ($_.componentType).ToUpper() -eq 'VSP' } |
-                    Select-Object -ExpandProperty componentUuid
-            }
-        } | Sort-Object -Unique
+    # Collect all VSP instances, deduplicated by UUID
+    $vspComponents = @(
+        $allComponents |
+            Where-Object { ($_.componentType).ToUpper() -eq 'VSP' } |
+            ForEach-Object {
+                $ip = if ($_.properties.ip) { $_.properties.ip } else { $_.vcfInstance.ip }
+                [PSCustomObject]@{
+                    id              = $_.componentUuid
+                    fqdn            = $_.properties.fqdn
+                    fleetFqdn       = $_.properties.fleetFqdn
+                    ip              = $ip
+                    instanceName    = $_.vcfInstance.instanceName
+                    vcfInstanceFqdn = $_.vcfInstance.fqdn
+                }
+            } |
+            Sort-Object -Property id -Unique
     )
 
-    # Resolve full component objects for each VSP UUID
-    $vspComponents = @()
-    foreach ($uuid in $vspUuids) {
-        $comp = $allComponents | Where-Object { $_.componentUuid -eq $uuid } | Select-Object -First 1
-        if ($comp) {
-            $ip = if ($comp.properties.ip) { $comp.properties.ip } else { $comp.vcfInstance.ip }
-            $vspComponents += [PSCustomObject]@{
-                id              = $comp.componentUuid
-                fqdn            = $comp.properties.fqdn
-                fleetFqdn       = $comp.properties.fleetFqdn
-                ip              = $ip
-                instanceName    = $comp.vcfInstance.instanceName
-                vcfInstanceFqdn = $comp.vcfInstance.fqdn
-            }
-        }
-    }
-
-    # Normalize VSP result: null / single object / array
-    $vsp = if ($vspComponents.Count -eq 0) {
-        $null
-    } elseif ($vspComponents.Count -eq 1) {
-        $vspComponents[0]
-    } else {
-        $vspComponents
-    }
+    $vsp = $vspComponents
 
     # Extract the first VCFA component if present
     $vcfaComp = $allComponents | Where-Object { ($_.componentType).ToUpper() -eq 'VCFA' } | Select-Object -First 1
@@ -7720,7 +7703,7 @@ Function Get-RegisteredComponentIds {
         vcfa       = $vcfa
     }
 
-    LogMessage -type INFO -message "[$VcfOperationsFqdn] Found $($filtered.Count) filtered component(s) of types: $($targetTypes -join ', ')"
+    LogMessage -type INFO -message "[$VcfOperationsFqdn] Found $($filtered.Count) filtered component(s) of types: $($targetTypes -join ', '); $($vspComponents.Count) VSP instance(s)"
 
     $json = $result | ConvertTo-Json -Depth 10
     Write-Host ""
@@ -11285,9 +11268,9 @@ Function Invoke-VcfmsFleetComponentRegistration {
     Password for vmware-system-user (SSH login and sudo elevation).
 
     .PARAMETER TargetVcfInstance
-    VCF instance name to target using the script's --target-vcf mode, e.g. "vcf01" or
-    "vcf02". Use this when the instance is identified by a short VCF name in the Fleet LCM
-    registry. Mutually exclusive with -TargetFqdn and -TargetSddcId.
+    VCF instance FQDN or substring to match against the sddc_lcm.fqdn column, e.g.
+    "lax-ic01.lax.rainpole.io". Passed as --target-fqdn to the script.
+    Mutually exclusive with -TargetFqdn and -TargetSddcId.
 
     .PARAMETER TargetFqdn
     FQDN substring pattern to match against the sddc_lcm.fqdn column, e.g. "lax" to match
@@ -11295,8 +11278,10 @@ Function Invoke-VcfmsFleetComponentRegistration {
     Mutually exclusive with -TargetVcfInstance and -TargetSddcId.
 
     .PARAMETER TargetSddcId
-    Exact UUID of the SDDC LCM entry in the Fleet LCM registry. Passed as --target-sddc-id
-    to the script. Mutually exclusive with -TargetVcfInstance and -TargetFqdn.
+    FQDN substring pattern to match against the sddc_lcm.fqdn column. Passed as
+    --target-fqdn to the script. Note: UUID-based lookup is not currently supported by
+    the script; use -TargetFqdn for a reliable substring match.
+    Mutually exclusive with -TargetVcfInstance and -TargetFqdn.
 
     .PARAMETER DryRun
     When specified, passes --dry-run to the script. No database changes are made;
@@ -11391,9 +11376,9 @@ Function Invoke-VcfmsFleetComponentRegistration {
         # sudo boundary so every kubectl call inside the script uses admin.conf
         # -------------------------------------------------------------------------
         $scriptArgs = switch ($PSCmdlet.ParameterSetName) {
-            "ByVcfInstance" { "--target-vcf '$TargetVcfInstance'" }
+            "ByVcfInstance" { "--target-fqdn '$TargetVcfInstance'" }
             "ByFqdn"        { "--target-fqdn '$TargetFqdn'" }
-            "BySddcId"      { "--target-sddc-id '$TargetSddcId'" }
+            "BySddcId"      { "--target-fqdn '$TargetSddcId'" }
         }
         if ($DryRun) { $scriptArgs += " --dry-run" }
 
@@ -11916,7 +11901,7 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
             $scriptArgs += " --sso-domain-id '$SsoDomainId'"
         }
 
-        $execCmd = "VCF_OPS_ADMIN_PASSWORD='$VcfOpsAdminPassword' bash $remotePath $scriptArgs 2>&1"
+        $execCmd = "export VCF_OPS_ADMIN_PASSWORD='$VcfOpsAdminPassword'; bash $remotePath $scriptArgs 2>&1"
 
         LogMessage -type INFO -message "[$VcfOpsFqdn] Executing update-vidb-vcf-instance.sh (timeout: ${RemoteScriptTimeout}s)"
         Write-Host ""
