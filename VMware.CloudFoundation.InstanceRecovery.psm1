@@ -7186,12 +7186,11 @@ Function Update-DomainDatastoreID {
         return
     }
 
-    $clusterName = $domainCluster.name
-    $clusterIdFromData = $domainCluster.id
+    $clusterId = $domainCluster.id
     $datastoreName = $domainCluster.primaryDatastoreName
 
     if (-not $datastoreName) {
-        LogMessage -type ERROR -message "[$jumpboxName] No primaryDatastoreName found in extracted data for cluster '$clusterName'. Ensure Update-ExtractedSDDCData has been run."
+        LogMessage -type ERROR -message "[$jumpboxName] No primaryDatastoreName found in extracted data for cluster id '$clusterId'. Ensure Update-ExtractedSDDCData has been run."
         return
     }
 
@@ -7203,7 +7202,7 @@ Function Update-DomainDatastoreID {
         return
     }
 
-    LogMessage -type INFO -message "[$jumpboxName] Domain: $($workloadDomain.domainName) | Cluster: $clusterName (id: $clusterIdFromData)"
+    LogMessage -type INFO -message "[$jumpboxName] Domain: $($workloadDomain.domainName) | Cluster id: $clusterId"
     LogMessage -type INFO -message "[$jumpboxName] Primary datastore name from extracted data: $datastoreName"
 
     # Connect to vCenter and resolve the datastore MoRef
@@ -7254,29 +7253,17 @@ Function Update-DomainDatastoreID {
         }) -join "`n"
     }
 
-    # Query the cluster table to get current state
-    LogMessage -type INFO -message "[$SddcManagerFqdn] Querying cluster table for '$clusterName'"
-    $stream.WriteLine("echo `"SELECT id, primary_datastore_source_id FROM cluster WHERE name='$clusterName';`" | psql -U postgres -h localhost -d platform -t -A")
+    # Query the cluster table by ID to get the current primary_datastore_source_id
+    LogMessage -type INFO -message "[$SddcManagerFqdn] Querying cluster table for id '$clusterId'"
+    $stream.WriteLine("echo `"SELECT primary_datastore_source_id FROM cluster WHERE id='$clusterId';`" | psql -U postgres -h localhost -d platform -t -A")
     Start-Sleep 5
     $rawOutput = $stream.Read()
-
-    # Parse cluster id and current datastore moref from psql -t -A output (columns separated by |)
-    $guidPattern = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
-    $dbClusterId = ($rawOutput | Select-String -Pattern $guidPattern -AllMatches).Matches | Select-Object -First 1 -ExpandProperty Value
     $currentDatastoreMoRef = ($rawOutput | Select-String -Pattern 'datastore-\d+' -AllMatches).Matches | Select-Object -First 1 -ExpandProperty Value
-
-    if (-not $dbClusterId) {
-        LogMessage -type WARNING -message "[$SddcManagerFqdn] Could not find cluster '$clusterName' in platform database. Falling back to cluster ID from extracted data: $clusterIdFromData"
-        $dbClusterId = $clusterIdFromData
-    } else {
-        LogMessage -type INFO -message "[$SddcManagerFqdn] Cluster DB id confirmed: $dbClusterId"
-    }
 
     # Show summary and prompt for confirmation before writing any change
     Write-Host ""
     Write-Host " Summary - the following update will be applied on $SddcManagerFqdn" -ForegroundColor Yellow
-    Write-Host "   Cluster name:              $clusterName"
-    Write-Host "   Cluster id:                $dbClusterId"
+    Write-Host "   Cluster id:                $clusterId"
     Write-Host "   Current datastore MoRef:   $(if ($currentDatastoreMoRef) { $currentDatastoreMoRef } else { '(not set / NULL)' })"
     Write-Host "   New datastore MoRef:       $newDatastoreMoRef"
     Write-Host "   Datastore name:            $datastoreName"
@@ -7293,8 +7280,8 @@ Function Update-DomainDatastoreID {
     }
 
     # Execute the UPDATE
-    LogMessage -type INFO -message "[$SddcManagerFqdn] Updating primary_datastore_source_id for cluster '$clusterName'"
-    $stream.WriteLine("echo `"UPDATE cluster SET primary_datastore_source_id='$newDatastoreMoRef' WHERE id='$dbClusterId';`" | psql -U postgres -h localhost -d platform")
+    LogMessage -type INFO -message "[$SddcManagerFqdn] Updating primary_datastore_source_id for cluster id '$clusterId'"
+    $stream.WriteLine("echo `"UPDATE cluster SET primary_datastore_source_id='$newDatastoreMoRef' WHERE id='$clusterId';`" | psql -U postgres -h localhost -d platform")
     Start-Sleep 5
     $updateOutput = $stream.Read()
     $cleanUpdate = & $cleanSshOutput $updateOutput
@@ -7303,7 +7290,7 @@ Function Update-DomainDatastoreID {
 
     # Verify the update
     LogMessage -type INFO -message "[$SddcManagerFqdn] Verifying update"
-    $stream.WriteLine("echo `"SELECT primary_datastore_source_id FROM cluster WHERE id='$dbClusterId';`" | psql -U postgres -h localhost -d platform -t -A")
+    $stream.WriteLine("echo `"SELECT primary_datastore_source_id FROM cluster WHERE id='$clusterId';`" | psql -U postgres -h localhost -d platform -t -A")
     Start-Sleep 5
     $verifyRaw = $stream.Read()
     $verifiedMoRef = ($verifyRaw | Select-String -Pattern 'datastore-\d+' -AllMatches).Matches | Select-Object -First 1 -ExpandProperty Value
