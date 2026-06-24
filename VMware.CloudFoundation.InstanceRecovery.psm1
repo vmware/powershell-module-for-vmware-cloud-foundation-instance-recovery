@@ -7285,7 +7285,6 @@ Function Update-DomainDatastoreID {
     Start-Sleep 5
     $updateOutput = $stream.Read()
     $cleanUpdate = & $cleanSshOutput $updateOutput
-    Write-Host $cleanUpdate
     LogMessage -type INFO -message "[$SddcManagerFqdn] UPDATE result: $($cleanUpdate.Trim())"
 
     # Verify the update
