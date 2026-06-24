@@ -2362,10 +2362,9 @@ Function Set-SDDCManagerFDSDepot {
     $StopWatch.Start()
 
     LogMessage -type INFO -message "[$sddcManagerFqdn] Retrieving Original Configuration from JSON file"
-    $servicesConfigBody = Get-Content -path $originalConfigurationFile
+    $servicesConfigBody = Get-Content -path $originalConfigurationFile -Raw
 
     LogMessage -type INFO -message "[$sddcManagerFqdn] Getting Authentication Token"
-    # Get SDDC Manager API Token
     $tokenUri = "https://$sddcManagerFqdn/v1/tokens"
     $tokenBody = @{
         username = $sddcManagerUser
@@ -2374,25 +2373,21 @@ Function Set-SDDCManagerFDSDepot {
     $tokenResponse = Invoke-RestMethod -Uri $tokenUri -Method POST -ContentType "application/json" -Body $tokenBody -SkipCertificateCheck
     $accessToken = $tokenResponse.accessToken
 
-    #Create Headers
     $headers = @{
         "Authorization" = "Bearer $accessToken"
         "Content-Type"  = "application/json"
     }
 
-    #Seting Depot URI
-    $depotUri = "https://$sddcManagerFqdn/v1/system/settings/depot"
-
-    LogMessage -type INFO -message "[$sddcManagerFqdn] Deleting Existing Depot Configuration"
-    #Delete Depot Settings
-    Invoke-RestMethod -Uri $depotUri -Method DELETE -Headers $headers -SkipCertificateCheck
-
-    #Set services config URI
     $servicesConfigUri = "https://$sddcManagerFqdn/v1/services-config"
 
+    LogMessage -type INFO -message "[$sddcManagerFqdn] Retrieving Current Depot Services Configuration"
+    $currentDepotServicesConfig = Invoke-RestMethod -Uri $servicesConfigUri -Method GET -Headers $headers -SkipCertificateCheck
+
+    LogMessage -type INFO -message "[$sddcManagerFqdn] Deleting Existing Depot Services Configuration"
+    $deleteServicesConfigURI = "https://$sddcManagerFqdn/v1/services-config/$($currentDepotServicesConfig.services.key)"
+    Invoke-RestMethod -Uri $deleteServicesConfigURI -Method DELETE -Headers $headers -SkipCertificateCheck *>$null
+
     LogMessage -type INFO -message "[$sddcManagerFqdn] Reinstating Fleet Depot Configuration"
-    #Reinstate service config
-    $servicesConfigBody = $currentDepotServicesConfig | ConvertTo-Json -depth 10
     Invoke-RestMethod -Uri $servicesConfigUri -Method PUT -Headers $headers -Body $servicesConfigBody -SkipCertificateCheck
 
     $StopWatch.Stop()
