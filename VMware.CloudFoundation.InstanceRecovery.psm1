@@ -2362,7 +2362,7 @@ Function Set-SDDCManagerFDSDepot {
     $StopWatch.Start()
 
     LogMessage -type INFO -message "[$sddcManagerFqdn] Retrieving Original Configuration from JSON file"
-    $servicesConfigBody = Get-Content -path $originalConfigurationFile
+    $servicesConfigBody = Get-Content -path $originalConfigurationFile -Raw
 
     LogMessage -type INFO -message "[$sddcManagerFqdn] Getting Authentication Token"
     # Get SDDC Manager API Token
@@ -2391,8 +2391,6 @@ Function Set-SDDCManagerFDSDepot {
     $servicesConfigUri = "https://$sddcManagerFqdn/v1/services-config"
 
     LogMessage -type INFO -message "[$sddcManagerFqdn] Reinstating Fleet Depot Configuration"
-    #Reinstate service config
-    $servicesConfigBody = $currentDepotServicesConfig | ConvertTo-Json -depth 10
     Invoke-RestMethod -Uri $servicesConfigUri -Method PUT -Headers $headers -Body $servicesConfigBody -SkipCertificateCheck
 
     $StopWatch.Stop()
