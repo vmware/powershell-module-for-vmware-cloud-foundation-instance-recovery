@@ -2391,7 +2391,7 @@ Function Set-SDDCManagerFDSDepot {
     $servicesConfigUri = "https://$sddcManagerFqdn/v1/services-config"
 
     LogMessage -type INFO -message "[$sddcManagerFqdn] Reinstating Fleet Depot Configuration"
-    Invoke-RestMethod -Uri $servicesConfigUri -Method PUT -Headers $headers -Body $servicesConfigBody -SkipCertificateCheck
+    Invoke-RestMethod -Uri $servicesConfigUri -Method PUT -Headers $headers -Body $servicesConfigBody -SkipCertificateCheck *>$null
 
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
