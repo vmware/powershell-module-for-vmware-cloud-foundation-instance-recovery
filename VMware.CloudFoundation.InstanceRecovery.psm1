@@ -7126,22 +7126,26 @@ Export-ModuleMember -Function Remove-SddcManagerVspClusterEntry
 Function Update-DomainDatastoreID {
     <#
     .SYNOPSIS
-    Updates the primary_datastore_source_id in the SDDC Manager platform database for the cluster associated with the specified vCenter.
+    Updates the primary_datastore_source_id in the SDDC Manager platform database for a specified cluster.
 
     .DESCRIPTION
     The Update-DomainDatastoreID cmdlet locates the workload domain whose vCenter matches the supplied FQDN,
-    reads the primary datastore name for that domain's default cluster from the extracted SDDC data, queries vCenter
-    for the current MoRef of that datastore, then connects to the SDDC Manager appliance via SSH and updates the
-    primary_datastore_source_id column in the cluster table. A confirmation prompt is shown before any change is written.
+    finds the named cluster within that domain, reads its primary datastore name from the extracted SDDC data,
+    queries vCenter for the current MoRef of that datastore, then connects to the SDDC Manager appliance via
+    SSH and updates the primary_datastore_source_id column in the cluster table. If the value is already
+    correct no change is made. A confirmation prompt is shown before any change is written.
 
     .EXAMPLE
-    Update-DomainDatastoreID -extractedSDDCDataFile ".\extracted-sddc-data.json" -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -VcfUserPassword "VMw@re1!VMw@re1!" -RootPassword "VMw@re1!VMw@re1!"
+    Update-DomainDatastoreID -extractedSDDCDataFile ".\extracted-sddc-data.json" -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -clusterName "sfo-m01-cl01" -VcfUserPassword "VMw@re1!VMw@re1!" -RootPassword "VMw@re1!VMw@re1!"
 
     .PARAMETER extractedSDDCDataFile
     Relative or absolute path to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup).
 
     .PARAMETER vCenterFQDN
-    FQDN of the vCenter whose associated domain and cluster should be updated.
+    FQDN of the vCenter whose associated domain contains the target cluster.
+
+    .PARAMETER clusterName
+    Name of the vSphere cluster whose primary_datastore_source_id should be updated.
 
     .PARAMETER VcfUserPassword
     Password for the vcf SSH user on the SDDC Manager appliance.
@@ -7153,6 +7157,7 @@ Function Update-DomainDatastoreID {
     Param(
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
+        [Parameter (Mandatory = $true)][String] $clusterName,
         [Parameter (Mandatory = $true)][String] $VcfUserPassword,
         [Parameter (Mandatory = $true)][String] $RootPassword
     )
@@ -7173,25 +7178,25 @@ Function Update-DomainDatastoreID {
         return
     }
 
-    # Locate the domain and default cluster for the supplied vCenter FQDN
+    # Locate the domain for the supplied vCenter FQDN
     $workloadDomain = $extractedSddcData.workloadDomains | Where-Object { $_.vCenterDetails.fqdn -eq $vCenterFQDN }
     if (-not $workloadDomain) {
         LogMessage -type ERROR -message "[$jumpboxName] No workload domain found with vCenter FQDN '$vCenterFQDN' in extracted SDDC data"
         return
     }
 
-    $domainCluster = $workloadDomain.vsphereClusterDetails | Where-Object { $_.isDefault -eq "t" }
+    # Locate the named cluster within that domain
+    $domainCluster = $workloadDomain.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }
     if (-not $domainCluster) {
-        LogMessage -type ERROR -message "[$jumpboxName] No default cluster found for domain '$($workloadDomain.domainName)'"
+        LogMessage -type ERROR -message "[$jumpboxName] No cluster named '$clusterName' found in domain '$($workloadDomain.domainName)'"
         return
     }
 
-    $clusterName = $domainCluster.name
     $clusterId = $domainCluster.id
     $datastoreName = $domainCluster.primaryDatastoreName
 
     if (-not $datastoreName) {
-        LogMessage -type ERROR -message "[$jumpboxName] No primaryDatastoreName found in extracted data for cluster id '$clusterId'. Ensure Update-ExtractedSDDCData has been run."
+        LogMessage -type ERROR -message "[$jumpboxName] No primaryDatastoreName found in extracted data for cluster '$clusterName'. Ensure Update-ExtractedSDDCData has been run."
         return
     }
 
@@ -7203,7 +7208,7 @@ Function Update-DomainDatastoreID {
         return
     }
 
-    LogMessage -type INFO -message "[$jumpboxName] Domain: $($workloadDomain.domainName) | Cluster id: $clusterId"
+    LogMessage -type INFO -message "[$jumpboxName] Domain: $($workloadDomain.domainName) | Cluster: $clusterName (id: $clusterId)"
     LogMessage -type INFO -message "[$jumpboxName] Primary datastore name from extracted data: $datastoreName"
 
     # Connect to vCenter and resolve the datastore MoRef
@@ -7273,6 +7278,7 @@ Function Update-DomainDatastoreID {
     # Show summary and prompt for confirmation before writing any change
     Write-Host ""
     Write-Host " Summary - the following update will be applied on $SddcManagerFqdn" -ForegroundColor Yellow
+    Write-Host "   Cluster name:              $clusterName"
     Write-Host "   Cluster id:                $clusterId"
     Write-Host "   Current datastore MoRef:   $(if ($currentDatastoreMoRef) { $currentDatastoreMoRef } else { '(not set / NULL)' })"
     Write-Host "   New datastore MoRef:       $newDatastoreMoRef"
