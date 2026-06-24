@@ -6892,7 +6892,7 @@ Function Wait-NSXTEdgeDeployment {
         Try {
             $upCount = 0
             $foundCount = 0
-            
+
             # Get edges from Management API
             $edgeUri = "https://$nsxtManagerFqdn/api/v1/transport-nodes?node_types=EdgeNode"
             $edgeResponse = Invoke-WebRequest -Method GET -URI $edgeUri -ContentType "application/json" -Headers $headers
@@ -6902,16 +6902,16 @@ Function Wait-NSXTEdgeDeployment {
 
             If ($targetEdges) {
                 $foundCount = $targetEdges.Count
-                
+
                 ForEach ($edge in $targetEdges) {
                     Try {
                         $statusUri = "https://$nsxtManagerFqdn/api/v1/transport-nodes/$($edge.id)/status"
                         $statusResponse = Invoke-WebRequest -Method GET -URI $statusUri -ContentType "application/json" -Headers $headers
                         $status = $statusResponse.Content | ConvertFrom-Json
-                        
+
                         $nodeStatus = $status.status
                         $controlStatus = $status.control_connection_status.status
-                        
+
                         If ($nodeStatus -eq "UP" -and $controlStatus -eq "UP") {
                             $upCount++
                         }
@@ -7122,6 +7122,204 @@ Function Remove-SddcManagerVspClusterEntry {
     return $vspClusterId
 }
 Export-ModuleMember -Function Remove-SddcManagerVspClusterEntry
+
+Function Update-DomainDatastoreID {
+    <#
+    .SYNOPSIS
+    Updates the primary_datastore_source_id in the SDDC Manager platform database for the cluster associated with the specified vCenter.
+
+    .DESCRIPTION
+    The Update-DomainDatastoreID cmdlet locates the workload domain whose vCenter matches the supplied FQDN,
+    reads the primary datastore name for that domain's default cluster from the extracted SDDC data, queries vCenter
+    for the current MoRef of that datastore, then connects to the SDDC Manager appliance via SSH and updates the
+    primary_datastore_source_id column in the cluster table. A confirmation prompt is shown before any change is written.
+
+    .EXAMPLE
+    Update-DomainDatastoreID -extractedSDDCDataFile ".\extracted-sddc-data.json" -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -VcfUserPassword "VMw@re1!VMw@re1!" -RootPassword "VMw@re1!VMw@re1!"
+
+    .PARAMETER extractedSDDCDataFile
+    Relative or absolute path to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup).
+
+    .PARAMETER vCenterFQDN
+    FQDN of the vCenter whose associated domain and cluster should be updated.
+
+    .PARAMETER VcfUserPassword
+    Password for the vcf SSH user on the SDDC Manager appliance.
+
+    .PARAMETER RootPassword
+    Root password for the SDDC Manager appliance (used for su elevation).
+    #>
+
+    Param(
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
+        [Parameter (Mandatory = $true)][String] $vCenterFQDN,
+        [Parameter (Mandatory = $true)][String] $VcfUserPassword,
+        [Parameter (Mandatory = $true)][String] $RootPassword
+    )
+
+    $jumpboxName = hostname
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    # Load extracted SDDC data
+    LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
+    $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
+    $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
+
+    $SddcManagerFqdn = $extractedSddcData.sddcManager.fqdn
+    if (-not $SddcManagerFqdn) {
+        LogMessage -type ERROR -message "[$jumpboxName] Could not determine SDDC Manager FQDN from extracted data"
+        return
+    }
+
+    # Locate the domain and default cluster for the supplied vCenter FQDN
+    $workloadDomain = $extractedSddcData.workloadDomains | Where-Object { $_.vCenterDetails.fqdn -eq $vCenterFQDN }
+    if (-not $workloadDomain) {
+        LogMessage -type ERROR -message "[$jumpboxName] No workload domain found with vCenter FQDN '$vCenterFQDN' in extracted SDDC data"
+        return
+    }
+
+    $domainCluster = $workloadDomain.vsphereClusterDetails | Where-Object { $_.isDefault -eq "t" }
+    if (-not $domainCluster) {
+        LogMessage -type ERROR -message "[$jumpboxName] No default cluster found for domain '$($workloadDomain.domainName)'"
+        return
+    }
+
+    $clusterName = $domainCluster.name
+    $clusterIdFromData = $domainCluster.id
+    $datastoreName = $domainCluster.primaryDatastoreName
+
+    if (-not $datastoreName) {
+        LogMessage -type ERROR -message "[$jumpboxName] No primaryDatastoreName found in extracted data for cluster '$clusterName'. Ensure Update-ExtractedSDDCData has been run."
+        return
+    }
+
+    $vCenterAdmin = ($extractedSddcData.passwords | Where-Object { ($_.credentialType -eq "SSO") -and ($_.entityName -eq $vCenterFQDN) -and ($_.entityType -eq "PSC") }).username
+    $vCenterAdminPassword = ($extractedSddcData.passwords | Where-Object { ($_.credentialType -eq "SSO") -and ($_.entityName -eq $vCenterFQDN) -and ($_.entityType -eq "PSC") }).password
+
+    if (-not $vCenterAdmin -or -not $vCenterAdminPassword) {
+        LogMessage -type ERROR -message "[$vCenterFQDN] Could not find SSO credentials for vCenter in extracted data"
+        return
+    }
+
+    LogMessage -type INFO -message "[$jumpboxName] Domain: $($workloadDomain.domainName) | Cluster: $clusterName (id: $clusterIdFromData)"
+    LogMessage -type INFO -message "[$jumpboxName] Primary datastore name from extracted data: $datastoreName"
+
+    # Connect to vCenter and resolve the datastore MoRef
+    LogMessage -type INFO -message "[$vCenterFQDN] Connecting to vCenter"
+    Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop | Out-Null
+
+    $datastore = Get-Datastore -Name $datastoreName -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $datastore) {
+        LogMessage -type ERROR -message "[$vCenterFQDN] Datastore '$datastoreName' not found in vCenter"
+        Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+        return
+    }
+
+    $newDatastoreMoRef = $datastore.ExtensionData.moref.value
+    LogMessage -type INFO -message "[$vCenterFQDN] Datastore '$datastoreName' resolved with MoRef: $newDatastoreMoRef"
+    Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+
+    # Establish SSH connection to SDDC Manager as vcf user
+    LogMessage -type INFO -message "[$SddcManagerFqdn] Establishing SSH connection"
+    $SecurePassword = ConvertTo-SecureString -String $VcfUserPassword -AsPlainText -Force
+    $mycreds = New-Object System.Management.Automation.PSCredential ('vcf', $SecurePassword)
+    $inmem = New-SSHMemoryKnownHost
+    New-SSHTrustedHost -KnownHostStore $inmem -HostName $SddcManagerFqdn -FingerPrint ((Get-SSHHostKey -ComputerName $SddcManagerFqdn).fingerprint) | Out-Null
+    Do {
+        $sshSession = New-SSHSession -ComputerName $SddcManagerFqdn -Credential $mycreds -KnownHost $inmem
+    } Until ($sshSession)
+
+    # Create shell stream with wide terminal to avoid line-wrapping corruption
+    $stream = New-SSHShellStream -SSHSession $sshSession -TerminalName "xterm" -Columns 250
+    Start-Sleep 1
+    $stream.Read() | Out-Null
+
+    # Elevate to root
+    $stream.WriteLine("su -")
+    Start-Sleep 2
+    $stream.WriteLine("$RootPassword")
+    Start-Sleep 2
+    $stream.Read() | Out-Null
+
+    # Filter to strip shell prompts and echo'd commands from SSH output
+    $cleanSshOutput = {
+        param([String]$raw)
+        ($raw -split "`n" | Where-Object {
+            $_ -notmatch 'root@' -and
+            $_ -notmatch 'vcf@' -and
+            $_ -notmatch 'echo\s+"' -and
+            $_ -notmatch '^\s*\$\s*$'
+        }) -join "`n"
+    }
+
+    # Query the cluster table to get current state
+    LogMessage -type INFO -message "[$SddcManagerFqdn] Querying cluster table for '$clusterName'"
+    $stream.WriteLine("echo `"SELECT id, primary_datastore_source_id FROM cluster WHERE name='$clusterName';`" | psql -U postgres -h localhost -d platform -t -A")
+    Start-Sleep 5
+    $rawOutput = $stream.Read()
+
+    # Parse cluster id and current datastore moref from psql -t -A output (columns separated by |)
+    $guidPattern = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
+    $dbClusterId = ($rawOutput | Select-String -Pattern $guidPattern -AllMatches).Matches | Select-Object -First 1 -ExpandProperty Value
+    $currentDatastoreMoRef = ($rawOutput | Select-String -Pattern 'datastore-\d+' -AllMatches).Matches | Select-Object -First 1 -ExpandProperty Value
+
+    if (-not $dbClusterId) {
+        LogMessage -type WARNING -message "[$SddcManagerFqdn] Could not find cluster '$clusterName' in platform database. Falling back to cluster ID from extracted data: $clusterIdFromData"
+        $dbClusterId = $clusterIdFromData
+    } else {
+        LogMessage -type INFO -message "[$SddcManagerFqdn] Cluster DB id confirmed: $dbClusterId"
+    }
+
+    # Show summary and prompt for confirmation before writing any change
+    Write-Host ""
+    Write-Host " Summary - the following update will be applied on $SddcManagerFqdn" -ForegroundColor Yellow
+    Write-Host "   Cluster name:              $clusterName"
+    Write-Host "   Cluster id:                $dbClusterId"
+    Write-Host "   Current datastore MoRef:   $(if ($currentDatastoreMoRef) { $currentDatastoreMoRef } else { '(not set / NULL)' })"
+    Write-Host "   New datastore MoRef:       $newDatastoreMoRef"
+    Write-Host "   Datastore name:            $datastoreName"
+    Write-Host ""
+    Do {
+        Write-Host " Proceed with update? (Y/N): " -ForegroundColor Yellow -NoNewline
+        $confirmation = Read-Host
+    } Until ($confirmation -in @("Y", "y", "N", "n"))
+
+    if ($confirmation -in @("N", "n")) {
+        LogMessage -type INFO -message "[$SddcManagerFqdn] Operation cancelled by user."
+        Remove-SSHSession -SSHSession $sshSession | Out-Null
+        return
+    }
+
+    # Execute the UPDATE
+    LogMessage -type INFO -message "[$SddcManagerFqdn] Updating primary_datastore_source_id for cluster '$clusterName'"
+    $stream.WriteLine("echo `"UPDATE cluster SET primary_datastore_source_id='$newDatastoreMoRef' WHERE id='$dbClusterId';`" | psql -U postgres -h localhost -d platform")
+    Start-Sleep 5
+    $updateOutput = $stream.Read()
+    $cleanUpdate = & $cleanSshOutput $updateOutput
+    Write-Host $cleanUpdate
+    LogMessage -type INFO -message "[$SddcManagerFqdn] UPDATE result: $($cleanUpdate.Trim())"
+
+    # Verify the update
+    LogMessage -type INFO -message "[$SddcManagerFqdn] Verifying update"
+    $stream.WriteLine("echo `"SELECT primary_datastore_source_id FROM cluster WHERE id='$dbClusterId';`" | psql -U postgres -h localhost -d platform -t -A")
+    Start-Sleep 5
+    $verifyRaw = $stream.Read()
+    $verifiedMoRef = ($verifyRaw | Select-String -Pattern 'datastore-\d+' -AllMatches).Matches | Select-Object -First 1 -ExpandProperty Value
+    if ($verifiedMoRef -eq $newDatastoreMoRef) {
+        LogMessage -type INFO -message "[$SddcManagerFqdn] UPDATE verified: primary_datastore_source_id = $verifiedMoRef"
+    } else {
+        LogMessage -type WARNING -message "[$SddcManagerFqdn] UPDATE could not be verified. Expected: $newDatastoreMoRef | Got: $verifiedMoRef"
+    }
+
+    Remove-SSHSession -SSHSession $sshSession | Out-Null
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+Export-ModuleMember -Function Update-DomainDatastoreID
 
 Function Get-SddcManagerToken {
     <#
