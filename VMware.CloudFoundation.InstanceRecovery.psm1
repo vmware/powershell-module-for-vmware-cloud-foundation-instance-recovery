@@ -7186,6 +7186,7 @@ Function Update-DomainDatastoreID {
         return
     }
 
+    $clusterName = $domainCluster.name
     $clusterId = $domainCluster.id
     $datastoreName = $domainCluster.primaryDatastoreName
 
@@ -7280,7 +7281,7 @@ Function Update-DomainDatastoreID {
     }
 
     # Execute the UPDATE
-    LogMessage -type INFO -message "[$SddcManagerFqdn] Updating primary_datastore_source_id for cluster id '$clusterId'"
+    LogMessage -type INFO -message "[$SddcManagerFqdn] Updating primary_datastore_source_id for cluster '$clusterName'"
     $stream.WriteLine("echo `"UPDATE cluster SET primary_datastore_source_id='$newDatastoreMoRef' WHERE id='$clusterId';`" | psql -U postgres -h localhost -d platform")
     Start-Sleep 5
     $updateOutput = $stream.Read()
