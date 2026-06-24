@@ -7261,6 +7261,15 @@ Function Update-DomainDatastoreID {
     $rawOutput = $stream.Read()
     $currentDatastoreMoRef = ($rawOutput | Select-String -Pattern 'datastore-\d+' -AllMatches).Matches | Select-Object -First 1 -ExpandProperty Value
 
+    if ($currentDatastoreMoRef -eq $newDatastoreMoRef) {
+        LogMessage -type INFO -message "[$SddcManagerFqdn] primary_datastore_source_id is already '$newDatastoreMoRef' — nothing to do"
+        Remove-SSHSession -SSHSession $sshSession | Out-Null
+        $StopWatch.Stop()
+        $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+        return
+    }
+
     # Show summary and prompt for confirmation before writing any change
     Write-Host ""
     Write-Host " Summary - the following update will be applied on $SddcManagerFqdn" -ForegroundColor Yellow
