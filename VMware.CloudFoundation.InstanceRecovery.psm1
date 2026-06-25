@@ -2362,7 +2362,7 @@ Function Set-SDDCManagerFDSDepot {
     $StopWatch.Start()
 
     LogMessage -type INFO -message "[$sddcManagerFqdn] Retrieving Original Configuration from JSON file"
-    $servicesConfigBody = Get-Content -path $originalConfigurationFile
+    $servicesConfigBody = Get-Content -path $originalConfigurationFile -Raw
 
     LogMessage -type INFO -message "[$sddcManagerFqdn] Getting Authentication Token"
     # Get SDDC Manager API Token
@@ -2385,15 +2385,13 @@ Function Set-SDDCManagerFDSDepot {
 
     LogMessage -type INFO -message "[$sddcManagerFqdn] Deleting Existing Depot Configuration"
     #Delete Depot Settings
-    Invoke-RestMethod -Uri $depotUri -Method DELETE -Headers $headers -SkipCertificateCheck
+    Invoke-RestMethod -Uri $depotUri -Method DELETE -Headers $headers -SkipCertificateCheck *>$null
 
     #Set services config URI
     $servicesConfigUri = "https://$sddcManagerFqdn/v1/services-config"
 
     LogMessage -type INFO -message "[$sddcManagerFqdn] Reinstating Fleet Depot Configuration"
-    #Reinstate service config
-    $servicesConfigBody = $currentDepotServicesConfig | ConvertTo-Json -depth 10
-    Invoke-RestMethod -Uri $servicesConfigUri -Method PUT -Headers $headers -Body $servicesConfigBody -SkipCertificateCheck
+    Invoke-RestMethod -Uri $servicesConfigUri -Method PUT -Headers $headers -Body $servicesConfigBody -SkipCertificateCheck *>$null
 
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
@@ -7122,6 +7120,206 @@ Function Remove-SddcManagerVspClusterEntry {
     return $vspClusterId
 }
 Export-ModuleMember -Function Remove-SddcManagerVspClusterEntry
+
+Function Update-DomainDatastoreID {
+    <#
+    .SYNOPSIS
+    Updates the primary_datastore_source_id in the SDDC Manager platform database for a specified cluster.
+
+    .DESCRIPTION
+    The Update-DomainDatastoreID cmdlet locates the workload domain whose vCenter matches the supplied FQDN,
+    finds the named cluster within that domain, reads its primary datastore name from the extracted SDDC data,
+    queries vCenter for the current MoRef of that datastore, then connects to the SDDC Manager appliance via
+    SSH and updates the primary_datastore_source_id column in the cluster table. If the value is already
+    correct no change is made. A confirmation prompt is shown before any change is written.
+
+    .EXAMPLE
+    Update-DomainDatastoreID -extractedSDDCDataFile ".\extracted-sddc-data.json" -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -clusterName "sfo-m01-cl01" -VcfUserPassword "VMw@re1!VMw@re1!" -RootPassword "VMw@re1!VMw@re1!"
+
+    .PARAMETER extractedSDDCDataFile
+    Relative or absolute path to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup).
+
+    .PARAMETER vCenterFQDN
+    FQDN of the vCenter whose associated domain contains the target cluster.
+
+    .PARAMETER clusterName
+    Name of the vSphere cluster whose primary_datastore_source_id should be updated.
+
+    .PARAMETER VcfUserPassword
+    Password for the vcf SSH user on the SDDC Manager appliance.
+
+    .PARAMETER RootPassword
+    Root password for the SDDC Manager appliance (used for su elevation).
+    #>
+
+    Param(
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
+        [Parameter (Mandatory = $true)][String] $vCenterFQDN,
+        [Parameter (Mandatory = $true)][String] $clusterName,
+        [Parameter (Mandatory = $true)][String] $VcfUserPassword,
+        [Parameter (Mandatory = $true)][String] $RootPassword
+    )
+
+    $jumpboxName = hostname
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    # Load extracted SDDC data
+    LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
+    $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
+    $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
+
+    $SddcManagerFqdn = $extractedSddcData.sddcManager.fqdn
+    if (-not $SddcManagerFqdn) {
+        LogMessage -type ERROR -message "[$jumpboxName] Could not determine SDDC Manager FQDN from extracted data"
+        return
+    }
+
+    # Locate the domain for the supplied vCenter FQDN
+    $workloadDomain = $extractedSddcData.workloadDomains | Where-Object { $_.vCenterDetails.fqdn -eq $vCenterFQDN }
+    if (-not $workloadDomain) {
+        LogMessage -type ERROR -message "[$jumpboxName] No workload domain found with vCenter FQDN '$vCenterFQDN' in extracted SDDC data"
+        return
+    }
+
+    # Locate the named cluster within that domain
+    $domainCluster = $workloadDomain.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }
+    if (-not $domainCluster) {
+        LogMessage -type ERROR -message "[$jumpboxName] No cluster named '$clusterName' found in domain '$($workloadDomain.domainName)'"
+        return
+    }
+
+    $clusterId = $domainCluster.id
+    $datastoreName = $domainCluster.primaryDatastoreName
+
+    if (-not $datastoreName) {
+        LogMessage -type ERROR -message "[$jumpboxName] No primaryDatastoreName found in extracted data for cluster '$clusterName'. Ensure Update-ExtractedSDDCData has been run."
+        return
+    }
+
+    $vCenterAdmin = ($extractedSddcData.passwords | Where-Object { ($_.credentialType -eq "SSO") -and ($_.entityName -eq $vCenterFQDN) -and ($_.entityType -eq "PSC") }).username
+    $vCenterAdminPassword = ($extractedSddcData.passwords | Where-Object { ($_.credentialType -eq "SSO") -and ($_.entityName -eq $vCenterFQDN) -and ($_.entityType -eq "PSC") }).password
+
+    if (-not $vCenterAdmin -or -not $vCenterAdminPassword) {
+        LogMessage -type ERROR -message "[$vCenterFQDN] Could not find SSO credentials for vCenter in extracted data"
+        return
+    }
+
+    LogMessage -type INFO -message "[$jumpboxName] Domain: $($workloadDomain.domainName) | Cluster: $clusterName (id: $clusterId)"
+    LogMessage -type INFO -message "[$jumpboxName] Primary datastore name from extracted data: $datastoreName"
+
+    # Connect to vCenter and resolve the datastore MoRef
+    LogMessage -type INFO -message "[$vCenterFQDN] Connecting to vCenter"
+    Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop | Out-Null
+
+    $datastore = Get-Datastore -Name $datastoreName -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (-not $datastore) {
+        LogMessage -type ERROR -message "[$vCenterFQDN] Datastore '$datastoreName' not found in vCenter"
+        Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+        return
+    }
+
+    $newDatastoreMoRef = $datastore.ExtensionData.moref.value
+    LogMessage -type INFO -message "[$vCenterFQDN] Datastore '$datastoreName' resolved with MoRef: $newDatastoreMoRef"
+    Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+
+    # Establish SSH connection to SDDC Manager as vcf user
+    LogMessage -type INFO -message "[$SddcManagerFqdn] Establishing SSH connection"
+    $SecurePassword = ConvertTo-SecureString -String $VcfUserPassword -AsPlainText -Force
+    $mycreds = New-Object System.Management.Automation.PSCredential ('vcf', $SecurePassword)
+    $inmem = New-SSHMemoryKnownHost
+    New-SSHTrustedHost -KnownHostStore $inmem -HostName $SddcManagerFqdn -FingerPrint ((Get-SSHHostKey -ComputerName $SddcManagerFqdn).fingerprint) | Out-Null
+    Do {
+        $sshSession = New-SSHSession -ComputerName $SddcManagerFqdn -Credential $mycreds -KnownHost $inmem
+    } Until ($sshSession)
+
+    # Create shell stream with wide terminal to avoid line-wrapping corruption
+    $stream = New-SSHShellStream -SSHSession $sshSession -TerminalName "xterm" -Columns 250
+    Start-Sleep 1
+    $stream.Read() | Out-Null
+
+    # Elevate to root
+    $stream.WriteLine("su -")
+    Start-Sleep 2
+    $stream.WriteLine("$RootPassword")
+    Start-Sleep 2
+    $stream.Read() | Out-Null
+
+    # Filter to strip shell prompts and echo'd commands from SSH output
+    $cleanSshOutput = {
+        param([String]$raw)
+        ($raw -split "`n" | Where-Object {
+            $_ -notmatch 'root@' -and
+            $_ -notmatch 'vcf@' -and
+            $_ -notmatch 'echo\s+"' -and
+            $_ -notmatch '^\s*\$\s*$'
+        }) -join "`n"
+    }
+
+    # Query the cluster table by ID to get the current primary_datastore_source_id
+    LogMessage -type INFO -message "[$SddcManagerFqdn] Querying cluster table for id '$clusterId'"
+    $stream.WriteLine("echo `"SELECT primary_datastore_source_id FROM cluster WHERE id='$clusterId';`" | psql -U postgres -h localhost -d platform -t -A")
+    Start-Sleep 5
+    $rawOutput = $stream.Read()
+    $currentDatastoreMoRef = ($rawOutput | Select-String -Pattern 'datastore-\d+' -AllMatches).Matches | Select-Object -First 1 -ExpandProperty Value
+
+    if ($currentDatastoreMoRef -eq $newDatastoreMoRef) {
+        LogMessage -type INFO -message "[$SddcManagerFqdn] primary_datastore_source_id is already '$newDatastoreMoRef' — nothing to do"
+        Remove-SSHSession -SSHSession $sshSession | Out-Null
+        $StopWatch.Stop()
+        $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+        return
+    }
+
+    # Show summary and prompt for confirmation before writing any change
+    Write-Host ""
+    Write-Host " Summary - the following update will be applied on $SddcManagerFqdn" -ForegroundColor Yellow
+    Write-Host "   Cluster name:              $clusterName"
+    Write-Host "   Cluster id:                $clusterId"
+    Write-Host "   Current datastore MoRef:   $(if ($currentDatastoreMoRef) { $currentDatastoreMoRef } else { '(not set / NULL)' })"
+    Write-Host "   New datastore MoRef:       $newDatastoreMoRef"
+    Write-Host "   Datastore name:            $datastoreName"
+    Write-Host ""
+    Do {
+        Write-Host " Proceed with update? (Y/N): " -ForegroundColor Yellow -NoNewline
+        $confirmation = Read-Host
+    } Until ($confirmation -in @("Y", "y", "N", "n"))
+
+    if ($confirmation -in @("N", "n")) {
+        LogMessage -type INFO -message "[$SddcManagerFqdn] Operation cancelled by user."
+        Remove-SSHSession -SSHSession $sshSession | Out-Null
+        return
+    }
+
+    # Execute the UPDATE
+    LogMessage -type INFO -message "[$SddcManagerFqdn] Updating primary_datastore_source_id for cluster '$clusterName'"
+    $stream.WriteLine("echo `"UPDATE cluster SET primary_datastore_source_id='$newDatastoreMoRef' WHERE id='$clusterId';`" | psql -U postgres -h localhost -d platform")
+    Start-Sleep 5
+    $updateOutput = $stream.Read()
+    $cleanUpdate = & $cleanSshOutput $updateOutput
+    LogMessage -type INFO -message "[$SddcManagerFqdn] UPDATE result: $($cleanUpdate.Trim())"
+
+    # Verify the update
+    LogMessage -type INFO -message "[$SddcManagerFqdn] Verifying update"
+    $stream.WriteLine("echo `"SELECT primary_datastore_source_id FROM cluster WHERE id='$clusterId';`" | psql -U postgres -h localhost -d platform -t -A")
+    Start-Sleep 5
+    $verifyRaw = $stream.Read()
+    $verifiedMoRef = ($verifyRaw | Select-String -Pattern 'datastore-\d+' -AllMatches).Matches | Select-Object -First 1 -ExpandProperty Value
+    if ($verifiedMoRef -eq $newDatastoreMoRef) {
+        LogMessage -type INFO -message "[$SddcManagerFqdn] UPDATE verified: primary_datastore_source_id = $verifiedMoRef"
+    } else {
+        LogMessage -type WARNING -message "[$SddcManagerFqdn] UPDATE could not be verified. Expected: $newDatastoreMoRef | Got: $verifiedMoRef"
+    }
+
+    Remove-SSHSession -SSHSession $sshSession | Out-Null
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+Export-ModuleMember -Function Update-DomainDatastoreID
 
 Function Get-SddcManagerToken {
     <#
