@@ -11430,6 +11430,268 @@ Function Invoke-VcfmsFleetComponentRegistration {
 }
 Export-ModuleMember -Function Invoke-VcfmsFleetComponentRegistration
 
+Function Update-ServicesRuntimePackageDeployment {
+    <#
+    .SYNOPSIS
+    Updates the vSphere placement configuration in the vmsp-platform PackageDeployment on a Services Runtime cluster.
+
+    .DESCRIPTION
+    The Update-VcfmsPlatformPackageDeploymentVsphere cmdlet performs the following steps:
+
+      1. Connects to vCenter via PowerCLI and resolves Managed Object Reference IDs and
+         inventory paths for the target datacenter, cluster, datastore, distributed port
+         group, VM folder, resource pool, and VM template.
+      2. Retrieves the Services Runtime cluster KUBECONFIG using the existing
+         Get-VcfmsServicesRuntimeKubeconfig helper (worker-node redirect handled
+         automatically).
+      3. Patches the vmsp-platform PackageDeployment (pd/vmsp-platform in namespace
+         vmsp-platform) with the resolved vSphere placement values via kubectl patch
+         --type=merge.
+
+    Use -DryRun to display the computed patch JSON without applying it.
+
+    .EXAMPLE
+    Update-VcfmsPlatformPackageDeploymentVsphere `
+        -ServicesRuntimeFqdn     "sfo-sr01.sfo.rainpole.io" `
+        -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
+        -vCenterFqdn             "sfo-m01-vc01.sfo.rainpole.io" `
+        -vCenterUsername         "administrator@vsphere.local" `
+        -vCenterPassword         "VMw@re1!VMw@re1!" `
+        -TargetDatacenter        "sfo-m01-dc01" `
+        -TargetCluster           "sfo-m01-cl02" `
+        -TargetDatastore         "sfo-m01-cl02-vsan01" `
+        -TargetDpG               "sfo-m01-cl02-vds01-pg-vcf-mgmt" `
+        -TargetFolder            "vcf-management-services" `
+        -TargetRP                "Resources" `
+        -TargetTemplate          "vcf-services-runtime-template-9.1.0.0.25370367"
+
+    .EXAMPLE
+    Update-VcfmsPlatformPackageDeploymentVsphere `
+        -ServicesRuntimeFqdn     "sfo-sr01.sfo.rainpole.io" `
+        -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
+        -vCenterFqdn             "sfo-m01-vc01.sfo.rainpole.io" `
+        -vCenterUsername         "administrator@vsphere.local" `
+        -vCenterPassword         "VMw@re1!VMw@re1!" `
+        -TargetDatacenter        "sfo-m01-dc01" `
+        -TargetCluster           "sfo-m01-cl02" `
+        -TargetDatastore         "sfo-m01-cl02-vsan01" `
+        -TargetDpG               "sfo-m01-cl02-vds01-pg-vcf-mgmt" `
+        -TargetFolder            "vcf-management-services" `
+        -TargetRP                "Resources" `
+        -TargetTemplate          "vcf-services-runtime-template-9.1.0.0.25370367" `
+        -DryRun
+
+    .PARAMETER ServicesRuntimeFqdn
+    FQDN or IP of any Services Runtime cluster node. Worker nodes are automatically
+    redirected to the control plane.
+
+    .PARAMETER ServicesRuntimePassword
+    Password for vmware-system-user (SSH login).
+
+    .PARAMETER vCenterFqdn
+    FQDN of the vCenter Server that manages the target vSphere inventory.
+
+    .PARAMETER vCenterUsername
+    Username for vCenter authentication. Defaults to administrator@vsphere.local.
+
+    .PARAMETER vCenterPassword
+    Password for the vCenter user.
+
+    .PARAMETER TargetDatacenter
+    Name of the target vSphere datacenter.
+
+    .PARAMETER TargetCluster
+    Name of the target vSphere cluster.
+
+    .PARAMETER TargetDatastore
+    Name of the target datastore.
+
+    .PARAMETER TargetDpG
+    Name of the target distributed port group.
+
+    .PARAMETER TargetFolder
+    Name of the target VM folder (type VM).
+
+    .PARAMETER TargetRP
+    Name of the target resource pool. Defaults to "Resources" (the cluster root pool).
+
+    .PARAMETER TargetTemplate
+    Name of the target VM template.
+
+    .PARAMETER OutputDir
+    Directory where the retrieved kubeconfig file is written. Defaults to the current
+    directory.
+
+    .PARAMETER DryRun
+    When specified, displays the computed patch JSON without applying it to the cluster.
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][String]  $ServicesRuntimeFqdn,
+        [Parameter(Mandatory = $true)][String]  $ServicesRuntimePassword,
+        [Parameter(Mandatory = $true)][String]  $vCenterFqdn,
+        [Parameter(Mandatory = $false)][String] $vCenterUsername = "administrator@vsphere.local",
+        [Parameter(Mandatory = $true)][String]  $vCenterPassword,
+        [Parameter(Mandatory = $true)][String]  $TargetDatacenter,
+        [Parameter(Mandatory = $true)][String]  $TargetCluster,
+        [Parameter(Mandatory = $true)][String]  $TargetDatastore,
+        [Parameter(Mandatory = $true)][String]  $TargetDpG,
+        [Parameter(Mandatory = $true)][String]  $TargetFolder,
+        [Parameter(Mandatory = $false)][String] $TargetRP = "Resources",
+        [Parameter(Mandatory = $true)][String]  $TargetTemplate,
+        [Parameter(Mandatory = $false)][String] $OutputDir = ".",
+        [Parameter(Mandatory = $false)][Switch] $DryRun
+    )
+
+    $jumpboxName = hostname
+    $StopWatch   = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    # -------------------------------------------------------------------------
+    # Pre-requisite: kubectl must be on PATH
+    # -------------------------------------------------------------------------
+    if (-not (Get-Command kubectl -ErrorAction SilentlyContinue)) {
+        LogMessage -type WARNING -message "[$jumpboxName] kubectl not found on PATH. Install kubectl and re-run."
+        $StopWatch.Stop(); return
+    }
+
+    # =========================================================================
+    # Step 1: Connect to vCenter and resolve vSphere inventory MoRef IDs
+    # =========================================================================
+    LogMessage -type INFO -message "[$jumpboxName] Step 1: Connecting to vCenter $vCenterFqdn"
+    $vcConnection  = $null
+    $vsphereValues = $null
+
+    try {
+        $vcConnection = Connect-VIServer -Server $vCenterFqdn -User $vCenterUsername -Password $vCenterPassword -ErrorAction Stop
+        LogMessage -type INFO -message "[$vCenterFqdn] Connected to vCenter"
+
+        LogMessage -type INFO -message "[$vCenterFqdn] Resolving vSphere inventory objects"
+        $dc       = Get-Datacenter -Name $TargetDatacenter -ErrorAction Stop
+        $cluster  = Get-Cluster    -Name $TargetCluster    -Location $dc      -ErrorAction Stop
+        $hosts    = Get-VMHost     -Location $cluster       -ErrorAction Stop
+        $ds       = Get-Datastore  -Name $TargetDatastore  -VMHost $hosts     -ErrorAction Stop
+        $dvs      = Get-VDSwitch   -VMHost $hosts          -ErrorAction Stop | Select-Object -Unique
+        $dpg      = Get-VDPortgroup -Name $TargetDpG       -VDSwitch $dvs     -ErrorAction Stop | Select-Object -First 1
+        $folder   = Get-Folder     -Name $TargetFolder     -Type VM -Location $dc -ErrorAction Stop
+        $rp       = Get-ResourcePool -Name $TargetRP       -Location $cluster  -ErrorAction Stop
+        $template = Get-Template   -Name $TargetTemplate   -Location $folder   -ErrorAction Stop
+
+        LogMessage -type INFO -message "[$vCenterFqdn] All inventory objects resolved"
+
+        # MoRef IDs (Type:Value format expected by the PD)
+        $dcId      = "$($dc.ExtensionData.MoRef.Type):$($dc.ExtensionData.MoRef.Value)"
+        $clusterId = "$($cluster.ExtensionData.MoRef.Type):$($cluster.ExtensionData.MoRef.Value)"
+        $dsId      = "$($ds.ExtensionData.MoRef.Type):$($ds.ExtensionData.MoRef.Value)"
+        $dpgId     = "$($dpg.ExtensionData.MoRef.Type):$($dpg.ExtensionData.MoRef.Value)"
+        $folderId  = "$($folder.ExtensionData.MoRef.Type):$($folder.ExtensionData.MoRef.Value)"
+        $rpId      = "$($rp.ExtensionData.MoRef.Type):$($rp.ExtensionData.MoRef.Value)"
+        $tmplId    = "$($template.ExtensionData.MoRef.Type):$($template.ExtensionData.MoRef.Value)"
+
+        # Inventory paths
+        $dcPath      = "/$($dc.Name)"
+        $clusterPath = "/$($dc.Name)/host/$($cluster.Name)"
+        $dsPath      = "/$($dc.Name)/datastore/$($ds.Name)"
+        $networkPath = "/$($dc.Name)/network/$($dpg.Name)"
+        $folderPath  = "/$($dc.Name)/vm/$($folder.Name)"
+        $rpPath      = "$clusterPath/Resources/$($rp.Name)".Replace("/Resources/Resources", "/Resources")
+
+        LogMessage -type INFO -message "[$vCenterFqdn] Datacenter   : $dcPath ($dcId)"
+        LogMessage -type INFO -message "[$vCenterFqdn] Cluster      : $clusterPath ($clusterId)"
+        LogMessage -type INFO -message "[$vCenterFqdn] Datastore    : $dsPath ($dsId)"
+        LogMessage -type INFO -message "[$vCenterFqdn] Network      : $networkPath ($dpgId)"
+        LogMessage -type INFO -message "[$vCenterFqdn] Folder       : $folderPath ($folderId)"
+        LogMessage -type INFO -message "[$vCenterFqdn] ResourcePool : $rpPath ($rpId)"
+        LogMessage -type INFO -message "[$vCenterFqdn] Template     : $TargetTemplate ($tmplId)"
+
+        $vsphereValues = [ordered]@{
+            cluster          = $clusterPath
+            clusterId        = $clusterId
+            datacenter       = $dcPath
+            datacenterId     = $dcId
+            datastore        = $dsPath
+            datastoreId      = $dsId
+            datastoreURL     = $ds.ExtensionData.Info.Url
+            enriched         = "true"
+            folder           = $folderPath
+            folderId         = $folderId
+            host             = $vCenterFqdn
+            insecureTLS      = $false
+            network          = $networkPath
+            networkId        = $dpgId
+            port             = "443"
+            resourcePool     = $rpPath
+            resourcePoolId   = $rpId
+            server           = $vCenterFqdn
+            templateFolder   = $folderPath
+            templateFolderId = $folderId
+            templateId       = $tmplId
+        }
+
+    } catch {
+        LogMessage -type ERROR -message "[$vCenterFqdn] Failed to resolve vSphere inventory: $_"
+        $StopWatch.Stop(); return
+    } finally {
+        if ($null -ne $vcConnection -and $vcConnection.IsConnected) {
+            Disconnect-VIServer -Server $vcConnection -Confirm:$false -ErrorAction SilentlyContinue | Out-Null
+            LogMessage -type INFO -message "[$vCenterFqdn] Disconnected from vCenter"
+        }
+    }
+
+    # =========================================================================
+    # Step 2: Retrieve KUBECONFIG from the Services Runtime cluster
+    # =========================================================================
+    LogMessage -type INFO -message "[$jumpboxName] Step 2: Retrieving kubeconfig from $ServicesRuntimeFqdn"
+    $kubeconfigResult = Get-VcfmsServicesRuntimeKubeconfig `
+        -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
+        -Password            $ServicesRuntimePassword `
+        -OutputDir           $OutputDir
+    if (-not $kubeconfigResult) {
+        LogMessage -type ERROR -message "[$jumpboxName] Could not retrieve kubeconfig. Aborting."
+        $StopWatch.Stop(); return
+    }
+    $resolvedKubeconfig = $kubeconfigResult.KubeconfigPath
+    LogMessage -type INFO -message "[$jumpboxName] Kubeconfig written to $resolvedKubeconfig"
+
+    # =========================================================================
+    # Step 3: Build merge patch JSON
+    # =========================================================================
+    $patch = @{ spec = @{ vsphere = $vsphereValues } } | ConvertTo-Json -Depth 5 -Compress
+
+    if ($DryRun) {
+        LogMessage -type INFO -message "[$jumpboxName] DRY RUN — patch that would be applied to pd/vmsp-platform:"
+        Write-Host ""
+        Write-Host ($patch | ConvertFrom-Json | ConvertTo-Json -Depth 5)
+        Write-Host ""
+        $StopWatch.Stop()
+        $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+        return
+    }
+
+    # =========================================================================
+    # Step 4: Patch pd/vmsp-platform in namespace vmsp-platform
+    # =========================================================================
+    LogMessage -type INFO -message "[$jumpboxName] Step 3: Patching pd/vmsp-platform in namespace vmsp-platform"
+    $patchOutput = & kubectl --kubeconfig $resolvedKubeconfig `
+        patch pd vmsp-platform -n vmsp-platform `
+        --type=merge -p $patch 2>&1
+    $exitCode = $LASTEXITCODE
+    $patchOutput | ForEach-Object { Write-Host "  $_" }
+    if ($exitCode -eq 0) {
+        LogMessage -type INFO -message "[$jumpboxName] pd/vmsp-platform patched successfully"
+    } else {
+        LogMessage -type ERROR -message "[$jumpboxName] kubectl patch failed (exit $exitCode)"
+        $StopWatch.Stop(); return
+    }
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+Export-ModuleMember -Function Update-ServicesRuntimePackageDeployment
+
 Function Get-VcfmsFleetComponentRegistration {
     <#
     .SYNOPSIS
