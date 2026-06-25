@@ -8708,9 +8708,47 @@ Function Restore-VcfmsBackup {
         LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Restore completed successfully"
     } else {
         LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Restore ended with status: $taskStatus"
-        if ($taskResponse.messages) {
+
+        # messages array (populated for some failure types)
+        if ($taskResponse.messages -and ($taskResponse.messages | Measure-Object).Count -gt 0) {
             foreach ($msg in $taskResponse.messages) {
                 LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] $msg"
+            }
+        }
+
+        # Failed precheck groups take priority — when present, stage errors are just symptoms
+        $failedGroups = @($taskResponse.precheckGroups | Where-Object { $_.status -eq "FAILED" })
+        if ($failedGroups.Count -gt 0) {
+            Write-Host ""
+            Write-Host " Failed Prechecks" -ForegroundColor Cyan
+            Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+            foreach ($group in $failedGroups) {
+                $groupName = if ($group.name.default) { $group.name.default } else { $group.id }
+                Write-Host "  Group : $groupName" -ForegroundColor Yellow
+                foreach ($check in @($group.prechecks | Where-Object { $_.status -eq "FAILED" })) {
+                    $issueMsg  = if ($check.issue.message.default) { $check.issue.message.default } else { $check.name.default }
+                    $issueType = $check.issue.type
+                    Write-Host "    [$issueType] $issueMsg" -ForegroundColor White
+                }
+            }
+            Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+            Write-Host ""
+        } else {
+            # No precheck failures — surface stage errors as the next diagnostic signal
+            $failedStages = @($taskResponse.stages | Where-Object { $_.status -eq "Failed" })
+            if ($failedStages.Count -gt 0) {
+                Write-Host ""
+                Write-Host " Stage Errors" -ForegroundColor Cyan
+                Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+                foreach ($stage in $failedStages) {
+                    Write-Host "  Stage : $($stage.name) ($($stage.stageType))" -ForegroundColor Yellow
+                    $meaningfulErrors = @($stage.errors | Where-Object { $_ -notmatch 'retryStrategy\.expression' })
+                    foreach ($err in $meaningfulErrors) {
+                        Write-Host "    $err" -ForegroundColor Gray
+                    }
+                }
+                Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+                Write-Host ""
             }
         }
     }
