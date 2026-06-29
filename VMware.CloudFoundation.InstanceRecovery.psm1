@@ -9428,7 +9428,7 @@ Function Set-ServicesRuntimeComponentVips {
     Use -DryRun to display the payload and exit without calling the API.
 
     .EXAMPLE
-    Set-ServicesRuntimeComponentVips -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -ComponentType "vsp" -Vips "10.0.0.5" -ingressKey 'platform'
+    Set-ServicesRuntimeComponentVips -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -ComponentType "vcfa" -Vips "10.0.0.5"
 
     .EXAMPLE
     Set-ServicesRuntimeComponentVips -ServicesRuntimeFqdn "lax-sr01.lax.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -ComponentType "vidb" -Vips "10.21.99.23" -DryRun
@@ -9446,7 +9446,7 @@ Function Set-ServicesRuntimeComponentVips {
     Username for the Services Runtime token. Default is "admin@vsp.local".
 
     .PARAMETER ComponentType
-    The component type to update. Valid values: vsp, vidb, ops-logs.
+    The component type to update. Valid values: vcfa, vidb, ops-logs.
 
     .PARAMETER Vips
     Array of 1-3 IPv4 addresses to set as the new ingress VIPs.
@@ -9473,7 +9473,7 @@ Function Set-ServicesRuntimeComponentVips {
         [Parameter(Mandatory = $true)][String] $ServicesRuntimeFqdn,
         [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
         [Parameter(Mandatory = $false)][String] $ServicesRuntimeUsername = "admin@vsp.local",
-        [Parameter(Mandatory = $true)][ValidateSet("vsp", "vidb", "ops-logs")][String] $ComponentType,
+        [Parameter(Mandatory = $true)][ValidateSet("vcfa", "vidb", "ops-logs")][String] $ComponentType,
         [Parameter(Mandatory = $true)][ValidateCount(1,3)][String[]] $Vips,
         [Parameter(Mandatory = $false)][String] $ComponentId,
         [Parameter(Mandatory = $false)][String] $IngressKey,
