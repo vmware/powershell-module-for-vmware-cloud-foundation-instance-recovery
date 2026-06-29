@@ -1,5 +1,8 @@
 # Release History
 
+## v9.1.0.1003
+> Released: 2026-xx-xx
+
 ## v9.1.0.1002
 > Released: 2026-06-29
 - Initial support for VCF 9.1.0
