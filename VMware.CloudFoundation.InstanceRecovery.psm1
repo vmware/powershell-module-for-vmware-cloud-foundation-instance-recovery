@@ -9400,13 +9400,13 @@ Function Remove-VcfmsComponent {
 }
 Export-ModuleMember -Function Remove-VcfmsComponent
 
-Function Set-VcfmsComponentVips {
+Function Set-ServicesRuntimeComponentVips {
     <#
     .SYNOPSIS
-    Updates the ingress VIPs for a VCFMS component via the Services Runtime apply API.
+    Updates the ingress VIPs for a component via the Services Runtime apply API.
 
     .DESCRIPTION
-    The Set-VcfmsComponentVips cmdlet locates the installed component of the specified type via
+    The Set-ServicesRuntimeComponentVips cmdlet locates the installed component of the specified type via
     GET /api/v1/components (unless -ComponentId is supplied), then GET /api/v1/components/{id} to
     resolve the JSON property name under spec.configuration.ingress (it must match the platform — for
     some stacks this differs from the component type string, e.g. ops_logs vs ops-logs).
@@ -9428,16 +9428,16 @@ Function Set-VcfmsComponentVips {
     Use -DryRun to display the payload and exit without calling the API.
 
     .EXAMPLE
-    Set-VcfmsComponentVips -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -ComponentType "vcfa" -Vips "10.0.0.5","10.0.0.6"
+    Set-ServicesRuntimeComponentVips -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -ComponentType "vcfa" -Vips "10.0.0.5","10.0.0.6"
 
     .EXAMPLE
-    Set-VcfmsComponentVips -ServicesRuntimeFqdn "lax-sr01.lax.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -ComponentType "vidb" -Vips "10.21.99.23" -DryRun
+    Set-ServicesRuntimeComponentVips -ServicesRuntimeFqdn "lax-sr01.lax.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -ComponentType "vidb" -Vips "10.21.99.23" -DryRun
 
     .EXAMPLE
-    Set-VcfmsComponentVips -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -ComponentType "ops-logs" -Vips "10.0.0.8","10.0.0.9" -Force
+    Set-ServicesRuntimeComponentVips -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -ComponentType "ops-logs" -Vips "10.0.0.8","10.0.0.9" -Force
 
     .PARAMETER ServicesRuntimeFqdn
-    FQDN of the VCFMS Services Runtime instance.
+    FQDN of the Services Runtime instance.
 
     .PARAMETER ServicesRuntimePassword
     Password for the Services Runtime admin user.
@@ -9748,7 +9748,7 @@ Function Set-VcfmsComponentVips {
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
 }
-Export-ModuleMember -Function Set-VcfmsComponentVips
+Export-ModuleMember -Function Set-ServicesRuntimeComponentVips
 
 Function Open-VcfmsSshSession {
     # Opens a Posh-SSH session with an auto-trusted host key.
