@@ -8371,81 +8371,137 @@ Function Get-VcfmsBackups {
         LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Filtered to $($allBackups.Count) backup(s) matching VspId '$VspId'"
     }
 
-    # Build ordered results filtered by requested components
-    $results = @()
+    # Parse all backups for the requested component types, normalising the timestamp
+    $parsedBackups = @()
     $now = Get-Date
 
-    foreach ($componentType in $Components) {
-        $componentBackups = $allBackups | Where-Object { $_.component.type -eq $componentType }
-        foreach ($backup in $componentBackups) {
-            $backupName = $backup.name
-            $normalizedName = $backupName -replace 'T(\d{2})-(\d{2})-(\d{2})Z', 'T$1:$2:$3Z'
-            try {
-                $backupDate = [datetime]::Parse($normalizedName, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal)
-                $daysOld = [math]::Floor(($now - $backupDate).TotalDays)
-                $ageDisplay = "$daysOld days ago"
-            } catch {
-                $ageDisplay = "unknown"
-            }
+    foreach ($backup in $allBackups) {
+        if ($backup.component.type -notin $Components) { continue }
+        $backupName     = $backup.name
+        $normalizedName = $backupName -replace 'T(\d{2})-(\d{2})-(\d{2})Z', 'T$1:$2:$3Z'
+        $backupDate     = $null
+        $daysOld        = $null
+        try {
+            $backupDate = [datetime]::Parse($normalizedName, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal)
+            $daysOld    = [math]::Floor(($now - $backupDate).TotalDays)
+        } catch {}
 
-            $results += [PSCustomObject]@{
-                'Component' = $componentType
-                'Version'   = $backup.component.version
-                'Name'      = $backupName
-                'Age'       = $ageDisplay
-                'Path'      = $backup.path
-            }
+        $parsedBackups += [PSCustomObject]@{
+            ComponentType  = $backup.component.type
+            Version        = $backup.component.version
+            Name           = $backupName
+            NormalizedName = $normalizedName
+            BackupDate     = $backupDate
+            DaysOld        = $daysOld
+            Path           = $backup.path
         }
     }
 
-    if ($results.Count -eq 0) {
+    if ($parsedBackups.Count -eq 0) {
         LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] No backups found for components: $($Components -join ', ')"
         return
     }
 
-    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Found $($results.Count) backup(s) for $($Components.Count) component type(s)"
-    Write-Host ""
-    $results | Format-Table -AutoSize -Property Component, Version, Name, Age, Path | Out-String | Write-Host
+    # Build rank-based backup groups: rank 1 = most recent backup of each component,
+    # rank 2 = second most recent, and so on. Components backed up at different times
+    # within the same scheduled window are still placed in the same rank group.
+    $byComponent = @{}
+    foreach ($b in $parsedBackups) {
+        if (-not $byComponent.ContainsKey($b.ComponentType)) {
+            $byComponent[$b.ComponentType] = [System.Collections.Generic.List[PSCustomObject]]::new()
+        }
+        $byComponent[$b.ComponentType].Add($b)
+    }
+    foreach ($key in @($byComponent.Keys)) {
+        $byComponent[$key] = @($byComponent[$key] | Sort-Object BackupDate -Descending)
+    }
 
-    # Offer to construct a restore JSON from the latest backup of each component
+    $maxRank   = ($byComponent.Values | ForEach-Object { $_.Count } | Measure-Object -Maximum).Maximum
+    $groupList = [System.Collections.Generic.List[PSCustomObject]]::new()
+
+    for ($rank = 0; $rank -lt $maxRank; $rank++) {
+        $entries = [System.Collections.Generic.List[PSCustomObject]]::new()
+        foreach ($componentType in ($byComponent.Keys | Sort-Object)) {
+            if ($rank -lt $byComponent[$componentType].Count) {
+                $entries.Add($byComponent[$componentType][$rank])
+            }
+        }
+        if ($entries.Count -gt 0) {
+            $groupList.Add([PSCustomObject]@{ Index = ($rank + 1); Entries = $entries })
+        }
+    }
+
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Found $($parsedBackups.Count) backup(s) across $($groupList.Count) backup group(s)"
+
+    # Display numbered list of backup groups
+    Write-Host ""
+    Write-Host " Available Backup Groups" -ForegroundColor Cyan
+    Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+    Write-Host ("  {0,3}  {1,-25}  {2,-14}  {3}" -f "ID", "Newest Backup (UTC)", "Age", "Components") -ForegroundColor Gray
+    Write-Host ""
+
+    foreach ($group in $groupList) {
+        $newest      = $group.Entries | Sort-Object BackupDate -Descending | Select-Object -First 1
+        $ageStr      = if ($null -ne $newest.DaysOld) { "$($newest.DaysOld) days ago" } else { "unknown" }
+        $uniqueTypes = @($group.Entries | Select-Object -ExpandProperty ComponentType | Sort-Object -Unique)
+        Write-Host ("  {0,3}  {1,-25}  {2,-14}  {3} ({4})" -f $group.Index, $newest.Name, $ageStr, ($uniqueTypes -join ', '), $uniqueTypes.Count) -ForegroundColor White
+    }
+
+    Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+    Write-Host ""
+
+    # User selects a backup group
+    $selectedGroup = $null
     Do {
-        Write-Host " Would you like to construct a restore JSON with the latest backup of each component? (Y/N): " -ForegroundColor Yellow -NoNewline
+        Write-Host " Enter the ID of the backup group to use, or C to Cancel: " -ForegroundColor Yellow -NoNewline
+        $selection = Read-Host
+        if ($selection -in @("C", "c")) {
+            LogMessage -type INFO -message "[$jumpboxName] Cancelled by user."
+            $StopWatch.Stop()
+            $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+            LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+            return
+        }
+        $selNum = 0
+        if ([int]::TryParse($selection, [ref]$selNum) -and $selNum -ge 1 -and $selNum -le $groupList.Count) {
+            $selectedGroup = $groupList | Where-Object { $_.Index -eq $selNum }
+        } else {
+            Write-Host " Invalid selection. Enter a number between 1 and $($groupList.Count), or C to Cancel." -ForegroundColor Yellow
+        }
+    } Until ($null -ne $selectedGroup)
+
+    $groupLabel = ($selectedGroup.Entries | Sort-Object BackupDate -Descending | Select-Object -First 1).Name
+    LogMessage -type INFO -message "[$jumpboxName] Selected backup group $($selectedGroup.Index) ($groupLabel)"
+
+    # Show what is available in the selected backup group
+    Write-Host ""
+    Write-Host " Components in backup group $($selectedGroup.Index) ($groupLabel)" -ForegroundColor Cyan
+    Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+    $selectedGroup.Entries | Sort-Object ComponentType | ForEach-Object {
+        Write-Host ("  {0,-22}  {1,-15}  {2}" -f $_.ComponentType, $_.Version, $_.Path) -ForegroundColor White
+    }
+    Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+    Write-Host ""
+
+    # Offer to construct a restore JSON for the selected backup group
+    Do {
+        Write-Host " Would you like to construct a restore JSON for this backup group? (Y/N): " -ForegroundColor Yellow -NoNewline
         $buildJson = Read-Host
     } Until ($buildJson -in @("Y", "y", "N", "n"))
 
     if ($buildJson -in @("Y", "y")) {
-        $restoreComponents = @()
-        $explicitlyPassed = $PSBoundParameters.ContainsKey("Components")
+        $explicitlyPassed      = $PSBoundParameters.ContainsKey("Components")
         $restoreComponentTypes = if ($explicitlyPassed) { $Components } else { $Components | Where-Object { $_ -notin @("ops-logs", "vcfa") } }
-        foreach ($componentType in $restoreComponentTypes) {
-            $componentBackups = $allBackups | Where-Object { $_.component.type -eq $componentType }
-            if (-not $componentBackups) { continue }
 
-            $latestBackup = $null
-            $latestDate = [datetime]::MinValue
-            foreach ($backup in $componentBackups) {
-                $normalizedName = $backup.name -replace 'T(\d{2})-(\d{2})-(\d{2})Z', 'T$1:$2:$3Z'
-                try {
-                    $backupDate = [datetime]::Parse($normalizedName, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal)
-                    if ($backupDate -gt $latestDate) {
-                        $latestDate = $backupDate
-                        $latestBackup = $backup
-                    }
-                } catch {
-                    if (-not $latestBackup) { $latestBackup = $backup }
-                }
+        $restoreComponents = @(
+            foreach ($componentType in $restoreComponentTypes) {
+                $entry = $selectedGroup.Entries | Where-Object { $_.ComponentType -eq $componentType } | Select-Object -First 1
+                if ($entry) { @{ path = $entry.Path; point = $entry.Name } }
             }
-
-            if ($latestBackup) {
-                $restoreComponents += @{
-                    path  = $latestBackup.path
-                    point = $latestBackup.name
-                }
-            }
-        }
+        )
 
         $restorePayload = @{ components = $restoreComponents } | ConvertTo-Json -Depth 5
-        $outputFile = ".\restore-payload.json"
+        $outputFile     = ".\restore-payload.json"
         $restorePayload | Out-File -FilePath $outputFile -Encoding utf8
         LogMessage -type INFO -message "[$jumpboxName] Restore JSON saved to $outputFile ($($restoreComponents.Count) component(s))"
         Write-Host ""
@@ -8499,16 +8555,13 @@ Function Restore-VcfmsBackup {
     .PARAMETER RestoreJsonFile
     Path to a JSON file containing the restore payload. The file must contain a "components" array with "path" and "point" for each component to restore.
 
-    .PARAMETER PollIntervalSeconds
-    Interval in seconds to poll the restore status. Default is 300 (5 minutes).
     #>
 
     Param(
         [Parameter(Mandatory = $true)][String] $ServicesRuntimeFqdn,
         [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
         [Parameter(Mandatory = $false)][String] $ServicesRuntimeUsername = "admin@vsp.local",
-        [Parameter(Mandatory = $true)][String] $RestoreJsonFile,
-        [Parameter(Mandatory = $false)][Int] $PollIntervalSeconds = 300
+        [Parameter(Mandatory = $true)][String] $RestoreJsonFile
     )
 
     $jumpboxName = hostname
@@ -8634,14 +8687,15 @@ Function Restore-VcfmsBackup {
     }
 
     LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Restore task ID: $taskId"
-    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Polling task status every $PollIntervalSeconds seconds"
 
     $taskUri = "https://$ServicesRuntimeFqdn/api/v1/tasks/$taskId"
     $taskStatus = "Running"
     $reportedComponentStatuses = @{}
     $componentFirstSeenAt = @{}
+    $lastStatusLoggedAt = [DateTime]::MinValue
+    $lastLoggedStatus = ""
     Do {
-        Start-Sleep -Seconds $PollIntervalSeconds
+        Start-Sleep -Seconds 60
 
         try {
             if (([DateTime]::UtcNow - $tokenFetchedAt).TotalMinutes -ge 60) {
@@ -8657,14 +8711,13 @@ Function Restore-VcfmsBackup {
             }
             $taskResponse = Invoke-RestMethod -Uri $taskUri -Method GET -Headers $headers -SkipCertificateCheck
             $taskStatus = $taskResponse.status
-            $elapsed = ""
-            if ($taskResponse.startTime) {
-                $start = ConvertFrom-VcfmsTaskTimestampToUtc -Timestamp $taskResponse.startTime
-                if ($start) {
-                    $elapsed = " (running: $(Format-TimeSpanElapsedColons -Span ([datetime]::UtcNow - $start)))"
-                }
+            $statusChanged = $taskStatus -ne $lastLoggedStatus
+            $quietIntervalElapsed = ([DateTime]::UtcNow - $lastStatusLoggedAt).TotalSeconds -ge 300
+            if ($statusChanged -or $quietIntervalElapsed) {
+                LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Status: $taskStatus"
+                $lastStatusLoggedAt = [DateTime]::UtcNow
+                $lastLoggedStatus = $taskStatus
             }
-            LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Status: $taskStatus$elapsed"
 
             # Report any new or changed restoreResults entries
             if ($taskResponse.result -and $taskResponse.result.restoreResults) {
@@ -8719,20 +8772,13 @@ Function Restore-VcfmsBackup {
         # Failed precheck groups take priority — when present, stage errors are just symptoms
         $failedGroups = @($taskResponse.precheckGroups | Where-Object { $_.status -eq "FAILED" })
         if ($failedGroups.Count -gt 0) {
-            Write-Host ""
-            Write-Host " Failed Prechecks" -ForegroundColor Cyan
-            Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
             foreach ($group in $failedGroups) {
-                $groupName = if ($group.name.default) { $group.name.default } else { $group.id }
-                Write-Host "  Group : $groupName" -ForegroundColor Yellow
                 foreach ($check in @($group.prechecks | Where-Object { $_.status -eq "FAILED" })) {
-                    $issueMsg  = if ($check.issue.message.default) { $check.issue.message.default } else { $check.name.default }
-                    $issueType = $check.issue.type
-                    Write-Host "    [$issueType] $issueMsg" -ForegroundColor White
+                    $issueMsg = if ($check.issue.message.default) { $check.issue.message.default } else { $check.name.default }
+                    $issueMsg = $issueMsg -replace '\s*\[[\w.]+\]\s*$', ''
+                    LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] $issueMsg"
                 }
             }
-            Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
-            Write-Host ""
         } else {
             # No precheck failures — surface stage errors as the next diagnostic signal
             $failedStages = @($taskResponse.stages | Where-Object { $_.status -eq "Failed" })
