@@ -1,4 +1,4 @@
-# Set-VcfmsSftpBackupSettings
+# Set-ServicesRuntimeSftpBackupSettings
 
 ## Synopsis
 
@@ -7,12 +7,12 @@ Configures SFTP backup settings on a VCFMS Services Runtime instance.
 ## Syntax
 
 ```powershell
-Set-VcfmsSftpBackupSettings [-ServicesRuntimeFqdn] <String> [-ServicesRuntimePassword] <String> [-ComponentId] <String> [-SftpHost] <String> [-SftpUsername] <String> [-SftpPassword] <String> [-SftpDirectory] <String> [-EncryptionPassphrase] <String> [[-SftpPort] <String>] [[-SftpFingerprint] <String>] [[-ServicesRuntimeUsername] <String>] [[-PollIntervalSeconds] <Int32>] [<CommonParameters>]
+Set-ServicesRuntimeSftpBackupSettings [-ServicesRuntimeFqdn] <String> [-ServicesRuntimePassword] <String> [-ComponentId] <String> [-SftpHost] <String> [-SftpUsername] <String> [-SftpPassword] <String> [-SftpDirectory] <String> [-EncryptionPassphrase] <String> [[-SftpPort] <String>] [[-SftpFingerprint] <String>] [[-ServicesRuntimeUsername] <String>] [[-PollIntervalSeconds] <Int32>] [<CommonParameters>]
 ```
 
 ## Description
 
-The `Set-VcfmsSftpBackupSettings` cmdlet applies SFTP backup configuration to the specified VCFMS component via `POST /api/v1/components/{ComponentId}?action=apply`. If `-SftpFingerprint` is not supplied, the SSH host key fingerprint is automatically retrieved from the SFTP server using `ssh-keyscan`.
+The `Set-ServicesRuntimeSftpBackupSettings` cmdlet applies SFTP backup configuration to the specified VCFMS component via `POST /api/v1/components/{ComponentId}?action=apply`. If `-SftpFingerprint` is not supplied, the SSH host key fingerprint is automatically retrieved from the SFTP server using `ssh-keyscan`.
 
 ## Examples
 
@@ -21,7 +21,7 @@ The `Set-VcfmsSftpBackupSettings` cmdlet applies SFTP backup configuration to th
 Apply SFTP backup configuration with automatic fingerprint retrieval.
 
 ```powershell
-Set-VcfmsSftpBackupSettings `
+Set-ServicesRuntimeSftpBackupSettings `
     -ServicesRuntimeFqdn     "sfo-sr01.sfo.rainpole.io" `
     -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
     -ComponentId             "1f5c79fe-e3aa-41b1-a5cf-774a6497fa3d" `
@@ -37,7 +37,7 @@ Set-VcfmsSftpBackupSettings `
 Supply the SFTP fingerprint directly.
 
 ```powershell
-Set-VcfmsSftpBackupSettings `
+Set-ServicesRuntimeSftpBackupSettings `
     -ServicesRuntimeFqdn     "sfo-sr01.sfo.rainpole.io" `
     -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
     -ComponentId             "1f5c79fe-e3aa-41b1-a5cf-774a6497fa3d" `

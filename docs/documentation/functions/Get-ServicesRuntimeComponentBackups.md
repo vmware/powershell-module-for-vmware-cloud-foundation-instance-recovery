@@ -1,4 +1,4 @@
-# Get-VcfmsBackups
+# Get-ServicesRuntimeComponentBackups
 
 ## Synopsis
 
@@ -7,14 +7,14 @@ Retrieves and displays available backups from a VCFMS Services Runtime instance,
 ## Syntax
 
 ```powershell
-Get-VcfmsBackups [-ServicesRuntimeFqdn] <String> [-ServicesRuntimePassword] <String> [[-Components] <String[]>] [[-ServicesRuntimeUsername] <String>] [[-VspId] <String>] [<CommonParameters>]
+Get-ServicesRuntimeComponentBackups [-ServicesRuntimeFqdn] <String> [-ServicesRuntimePassword] <String> [[-Components] <String[]>] [[-ServicesRuntimeUsername] <String>] [[-VspId] <String>] [<CommonParameters>]
 ```
 
 ## Description
 
-The `Get-VcfmsBackups` cmdlet queries the VCFMS Services Runtime `GET /api/v1/system/backups` endpoint and returns backup details for the specified component types, sorted by component type and age. Output includes component type, version, backup name, age, and SFTP path.
+The `Get-ServicesRuntimeComponentBackups` cmdlet queries the VCFMS Services Runtime `GET /api/v1/system/backups` endpoint and returns backup details for the specified component types, sorted by component type and age. Output includes component type, version, backup name, age, and SFTP path.
 
-When `-VspId` is supplied, results are filtered to only those backups whose path contains `/vcf/backups/<VspId>/`. After displaying the results, the cmdlet optionally generates a `restore-payload.json` file containing the latest backup of each component ready for use with `Restore-VcfmsBackup`.
+When `-VspId` is supplied, results are filtered to only those backups whose path contains `/vcf/backups/<VspId>/`. After displaying the results, the cmdlet optionally generates a `restore-payload.json` file containing the latest backup of each component ready for use with `Restore-ServicesRuntimeComponentBackup`.
 
 ## Examples
 
@@ -23,7 +23,7 @@ When `-VspId` is supplied, results are filtered to only those backups whose path
 Display all component backups.
 
 ```powershell
-Get-VcfmsBackups `
+Get-ServicesRuntimeComponentBackups `
     -ServicesRuntimeFqdn     "sfo-sr01.sfo.rainpole.io" `
     -ServicesRuntimePassword "VMw@re1!VMw@re1!"
 ```
@@ -33,7 +33,7 @@ Get-VcfmsBackups `
 Filter to specific components.
 
 ```powershell
-Get-VcfmsBackups `
+Get-ServicesRuntimeComponentBackups `
     -ServicesRuntimeFqdn     "sfo-sr01.sfo.rainpole.io" `
     -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
     -Components              "vsp","salt","vidb"
@@ -44,7 +44,7 @@ Get-VcfmsBackups `
 Scope results to a specific VSP instance.
 
 ```powershell
-Get-VcfmsBackups `
+Get-ServicesRuntimeComponentBackups `
     -ServicesRuntimeFqdn     "sfo-sr01.sfo.rainpole.io" `
     -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
     -VspId                   "a1b2c3d4-e5f6-7890-abcd-ef1234567890"

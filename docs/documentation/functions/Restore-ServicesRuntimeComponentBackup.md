@@ -1,4 +1,4 @@
-# Restore-VcfmsBackup
+# Restore-ServicesRuntimeComponentBackup
 
 ## Synopsis
 
@@ -7,12 +7,12 @@ Submits a VCFMS Services Runtime restore operation from a JSON payload file and 
 ## Syntax
 
 ```powershell
-Restore-VcfmsBackup [-ServicesRuntimeFqdn] <String> [-ServicesRuntimePassword] <String> [-RestoreJsonFile] <String> [[-ServicesRuntimeUsername] <String>] [[-PollIntervalSeconds] <Int32>] [<CommonParameters>]
+Restore-ServicesRuntimeComponentBackup [-ServicesRuntimeFqdn] <String> [-ServicesRuntimePassword] <String> [-RestoreJsonFile] <String> [[-ServicesRuntimeUsername] <String>] [[-PollIntervalSeconds] <Int32>] [<CommonParameters>]
 ```
 
 ## Description
 
-The `Restore-VcfmsBackup` cmdlet reads a restore payload from a JSON file and submits it to `POST /api/v1/system/backups?action=restore` on the VCFMS Services Runtime. The JSON file must contain a `components` array where each entry specifies the SFTP `path` and `point` for one component to restore. The cmdlet displays the payload before submitting, then polls the restore task until it reaches a terminal state.
+The `Restore-ServicesRuntimeComponentBackup` cmdlet reads a restore payload from a JSON file and submits it to `POST /api/v1/system/backups?action=restore` on the VCFMS Services Runtime. The JSON file must contain a `components` array where each entry specifies the SFTP `path` and `point` for one component to restore. The cmdlet displays the payload before submitting, then polls the restore task until it reaches a terminal state.
 
 Payload file format:
 
@@ -25,14 +25,14 @@ Payload file format:
 }
 ```
 
-Use `Get-VcfmsBackups` to list available backups and build the payload file.
+Use `Get-ServicesRuntimeComponentBackups` to list available backups and build the payload file.
 
 ## Examples
 
 ### Example 1
 
 ```powershell
-Restore-VcfmsBackup `
+Restore-ServicesRuntimeComponentBackup `
     -ServicesRuntimeFqdn     "sfo-sr01.sfo.rainpole.io" `
     -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
     -RestoreJsonFile         ".\restore-payload.json"
@@ -43,7 +43,7 @@ Restore-VcfmsBackup `
 Restore with a custom poll interval.
 
 ```powershell
-Restore-VcfmsBackup `
+Restore-ServicesRuntimeComponentBackup `
     -ServicesRuntimeFqdn     "sfo-sr01.sfo.rainpole.io" `
     -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
     -RestoreJsonFile         ".\restore-payload.json" `

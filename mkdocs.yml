@@ -129,44 +129,69 @@ nav:
 - Reference:
   - Functions:
     - documentation/functions/Add-AdditionalNSXManagers.md
+    - documentation/functions/Add-DiskgroupsToManagementHosts.md
     - documentation/functions/Add-HostsToCluster.md
     - documentation/functions/Add-VMKernelsToHost.md
+    - documentation/functions/Add-VMKernelsToManagementHosts.md
+    - documentation/functions/Add-VcfmsTrustedCertificate.md
     - documentation/functions/Backup-ClusterDRSGroupsAndRules.md
     - documentation/functions/Backup-ClusterVMLocations.md
     - documentation/functions/Backup-ClusterVMOverrides.md
     - documentation/functions/Backup-ClusterVMTags.md
+    - documentation/functions/Clear-VcfmsFleetIdentity.md
     - documentation/functions/Confirm-ContentLibraryDatastoreFolder.md
     - documentation/functions/Confirm-VCFInstanceRecoveryPreReqs.md
+    - documentation/functions/Confirm-VcfmsFluentdOperatorState.md
+    - documentation/functions/Disable-VcfmsClusterLogging.md
+    - documentation/functions/Enable-VcfmsClusterLogging.md
+    - documentation/functions/Get-RegisteredComponentIds.md
+    - documentation/functions/Get-ServicesRuntimeComponentBackups.md
+    - documentation/functions/Get-VcfmsComponents.md
+    - documentation/functions/Get-VcfmsFleetComponentRegistration.md
+    - documentation/functions/Install-VcfaMigrationServiceEngine.md
     - documentation/functions/Invoke-NSXEdgeClusterRecovery.md
+    - documentation/functions/Invoke-NSXEdgeClusterRecoverySelective.md
     - documentation/functions/Invoke-NSXManagerRestore.md
     - documentation/functions/Invoke-SDDCManagerRestore.md
+    - documentation/functions/Invoke-SddcManagerBundleDownload.md
+    - documentation/functions/Invoke-SupervisorRestore.md
+    - documentation/functions/Invoke-VcfOpsVidbVcfInstanceUpdate.md
+    - documentation/functions/Invoke-VcfmsFleetComponentRegistration.md
     - documentation/functions/Invoke-vCenterRestore.md
-    - documentation/functions/Move-ClusterHostNetworkingToVss.md
-    - documentation/functions/Move-ClusterHostsToRestoredVcenter.md
-    - documentation/functions/Move-ClusterVMsToFirstHost.md
-    - documentation/functions/Move-ClusterVmnicTovSwitch.md
-    - documentation/functions/Move-MgmtVmsToTempPg.md
     - documentation/functions/New-ExtractDataFromSDDCBackup.md
+    - documentation/functions/New-ExtractVcfmsBackup.md
     - documentation/functions/New-NSXManagerOvaDeployment.md
-    - documentation/functions/New-PartialManagementDomainDeployment.md
-    - documentation/functions/New-PrepareforPartialBringup.md
+    - documentation/functions/New-PrepareManagementHostNetworking.md
     - documentation/functions/New-RebuiltVdsConfiguration.md
     - documentation/functions/New-RebuiltVsanDatastore.md
-    - documentation/functions/New-ReconstructedPartialBringupJsonSpec.md
     - documentation/functions/New-SDDCManagerOvaDeployment.md
+    - documentation/functions/New-ServicesRuntime.md
+    - documentation/functions/New-SingleHostVsanDatastore.md
     - documentation/functions/New-UploadAndModifySDDCManagerBackup.md
     - documentation/functions/New-vCenterOvaDeployment.md
-    - documentation/functions/Remove-ClusterHostsFromVds.md
     - documentation/functions/Remove-NonResponsiveHosts.md
-    - documentation/functions/Remove-StandardSwitch.md
+    - documentation/functions/Remove-SddcManagerVspClusterEntry.md
+    - documentation/functions/Remove-VcfmsComponent.md
+    - documentation/functions/Remove-VcfmsRecoveredComponents.md
     - documentation/functions/Resolve-PhysicalHostServiceAccounts.md
-    - documentation/functions/Resolve-PhysicalHostTransportNodes.md
     - documentation/functions/Restore-ClusterDRSGroupsAndRules.md
     - documentation/functions/Restore-ClusterVMLocations.md
     - documentation/functions/Restore-ClusterVMOverrides.md
     - documentation/functions/Restore-ClusterVMTags.md
-    - documentation/functions/Set-ClusterDRSLevel.md
-    - documentation/functions/Set-ClusterHostsvSanIgnoreClusterMemberList.md
+    - documentation/functions/Restore-ServicesRuntimeComponentBackup.md
+    - documentation/functions/Set-ContentLibraryDatastoreMapping.md
+    - documentation/functions/Set-ManagementDatastorePolicy.md
+    - documentation/functions/Set-SDDCManagerFDSDepot.md
+    - documentation/functions/Set-SDDCManagerOfflineDepot.md
+    - documentation/functions/Set-ServicesRuntimeComponentVips.md
+    - documentation/functions/Set-ServicesRuntimeSftpBackupSettings.md
+    - documentation/functions/Set-VcfmsFleetIdentity.md
+    - documentation/functions/Stop-VcfmsTask.md
+    - documentation/functions/Update-ExtractedSDDCData.md
+    - documentation/functions/Update-ExtractedSDDCDataWithSupervisorDetails.md
+    - documentation/functions/Update-ServicesRuntimePackageDeployment.md
+    - documentation/functions/Wait-NSXTEdgeDeployment.md
+    - documentation/functions/Watch-NsxHostTransportNodeInstallation.md
 - Community:
   - community/index.md
   - Contributing: community/contributing.md

@@ -1,4 +1,4 @@
-# Set-VcfmsComponentVips
+# Set-ServicesRuntimeComponentVips
 
 ## Synopsis
 
@@ -7,12 +7,12 @@ Updates the VIP configuration for a VCFMS component on a Services Runtime cluste
 ## Syntax
 
 ```powershell
-Set-VcfmsComponentVips [-ServicesRuntimeFqdn] <String> [-ServicesRuntimePassword] <String> [-ComponentType] <String> [-Vips] <String[]> [[-ServicesRuntimeUsername] <String>] [[-PollIntervalSeconds] <Int32>] [[-ComponentId] <String>] [<CommonParameters>]
+Set-ServicesRuntimeComponentVips [-ServicesRuntimeFqdn] <String> [-ServicesRuntimePassword] <String> [-ComponentType] <String> [-Vips] <String[]> [[-ServicesRuntimeUsername] <String>] [[-PollIntervalSeconds] <Int32>] [[-ComponentId] <String>] [<CommonParameters>]
 ```
 
 ## Description
 
-The `Set-VcfmsComponentVips` cmdlet applies a new VIP configuration to the specified VCFMS component type via `POST /api/v1/components/{componentId}?action=apply`. The component ID is resolved automatically from `GET /api/v1/components` by matching on the component type unless `-ComponentId` is supplied directly. Supported component types are `vcfa`, `vidb`, and `ops-logs`.
+The `Set-ServicesRuntimeComponentVips` cmdlet applies a new VIP configuration to the specified VCFMS component type via `POST /api/v1/components/{componentId}?action=apply`. The component ID is resolved automatically from `GET /api/v1/components` by matching on the component type unless `-ComponentId` is supplied directly. Supported component types are `vcfa`, `vidb`, and `ops-logs`.
 
 ## Examples
 
@@ -21,7 +21,7 @@ The `Set-VcfmsComponentVips` cmdlet applies a new VIP configuration to the speci
 Update the Identity Broker VIP.
 
 ```powershell
-Set-VcfmsComponentVips `
+Set-ServicesRuntimeComponentVips `
     -ServicesRuntimeFqdn     "sfo-sr01.sfo.rainpole.io" `
     -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
     -ComponentType           "vidb" `
@@ -33,7 +33,7 @@ Set-VcfmsComponentVips `
 Update VCF Automation VIPs with multiple addresses.
 
 ```powershell
-Set-VcfmsComponentVips `
+Set-ServicesRuntimeComponentVips `
     -ServicesRuntimeFqdn     "sfo-sr01.sfo.rainpole.io" `
     -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
     -ComponentType           "vcfa" `
