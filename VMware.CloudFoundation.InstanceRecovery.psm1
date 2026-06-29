@@ -8075,16 +8075,16 @@ Function Add-VcfmsTrustedCertificate {
 }
 Export-ModuleMember -Function Add-VcfmsTrustedCertificate
 
-Function Set-VcfmsSftpBackupSettings {
+Function Set-ServicesRuntimeSftpBackupSettings {
     <#
     .SYNOPSIS
     Configures SFTP backup settings on a VCFMS Services Runtime instance.
 
     .DESCRIPTION
-    The Set-VcfmsSftpBackupSettings cmdlet retrieves the SFTP server's SSH host key fingerprint, then applies SFTP backup configuration to the specified VCFMS component via POST /api/v1/components/{componentId}?action=apply.
+    The Set-ServicesRuntimeSftpBackupSettings cmdlet retrieves the SFTP server's SSH host key fingerprint, then applies SFTP backup configuration to the specified VCFMS component via POST /api/v1/components/{componentId}?action=apply.
 
     .EXAMPLE
-    Set-VcfmsSftpBackupSettings -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -ComponentId "1f5c79fe-e3aa-41b1-a5cf-774a6497fa3d" -SftpHost "10.167.173.126" -SftpUsername "svc-vcf-bck" -SftpPassword "VMw@re1!" -SftpDirectory "/media/backups/" -EncryptionPassphrase "VMw@re1!VMw@re1!"
+    Set-ServicesRuntimeSftpBackupSettings -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -ComponentId "1f5c79fe-e3aa-41b1-a5cf-774a6497fa3d" -SftpHost "10.167.173.126" -SftpUsername "svc-vcf-bck" -SftpPassword "VMw@re1!" -SftpDirectory "/media/backups/" -EncryptionPassphrase "VMw@re1!VMw@re1!"
 
     .PARAMETER ServicesRuntimeFqdn
     FQDN of the VCFMS Services Runtime instance.
@@ -8286,27 +8286,27 @@ Function Set-VcfmsSftpBackupSettings {
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
 }
-Export-ModuleMember -Function Set-VcfmsSftpBackupSettings
+Export-ModuleMember -Function Set-ServicesRuntimeSftpBackupSettings
 
-Function Get-VcfmsBackups {
+Function Get-ServicesRuntimeComponentBackups {
     <#
     .SYNOPSIS
-    Retrieves and displays VCFMS backup information for one or more component types.
+    Retrieves and displays ServicesRuntimeComponent backup information for one or more component types.
 
     .DESCRIPTION
-    The Get-VcfmsBackups cmdlet queries the VCFMS Services Runtime GET /api/v1/system/backups endpoint and returns backup details for the specified component types, sorted by component type and age. Output includes component type, version, backup name, age, and path.
+    The Get-ServicesRuntimeComponentBackups cmdlet queries the  Services Runtime GET /api/v1/system/backups endpoint and returns backup details for the specified component types, sorted by component type and age. Output includes component type, version, backup name, age, and path.
 
     .EXAMPLE
-    Get-VcfmsBackups -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!"
+    Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!"
 
     .EXAMPLE
-    Get-VcfmsBackups -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -Components "vsp","salt"
+    Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -Components "vsp","salt"
 
     .EXAMPLE
-    Get-VcfmsBackups -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -VspId "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+    Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -VspId "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
 
     .PARAMETER ServicesRuntimeFqdn
-    FQDN of the VCFMS Services Runtime instance.
+    FQDN of the Services Runtime instance.
 
     .PARAMETER ServicesRuntimePassword
     Password for the Services Runtime admin user (used to obtain a token).
@@ -8514,23 +8514,23 @@ Function Get-VcfmsBackups {
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
 }
-Export-ModuleMember -Function Get-VcfmsBackups
+Export-ModuleMember -Function Get-ServicesRuntimeComponentBackups
 
-Function Restore-VcfmsBackup {
+Function Restore-ServicesRuntimeComponentBackup {
     <#
     .SYNOPSIS
-    Restores VCFMS component backups from a user-provided JSON payload file.
+    Restores Service Runtime component backups from a user-provided JSON payload file.
 
     .DESCRIPTION
-    The Restore-VcfmsBackup cmdlet submits a restore request to the VCFMS Services Runtime POST /api/v1/system/backups?action=restore endpoint.
+    The Restore-ServicesRuntimeComponentBackup cmdlet submits a restore request to the Services Runtime POST /api/v1/system/backups?action=restore endpoint.
 
-    The restore payload is a JSON file containing the "components" array, where each entry specifies the SFTP path and restore point for one component. Use Get-VcfmsBackups to list available backups and their paths, then construct the JSON file with the desired restore points.
+    The restore payload is a JSON file containing the "components" array, where each entry specifies the SFTP path and restore point for one component. Use Get-ServicesRuntimeComponentBackups to list available backups and their paths, then construct the JSON file with the desired restore points.
 
     The function displays the payload for confirmation before submitting, then polls the restore status until completion.
 
     .EXAMPLE
     # Step 1: List available backups to find paths and restore points
-    Get-VcfmsBackups -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!"
+    Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!"
 
     # Step 2: Create a JSON file (restore-payload.json) with the desired components:
     # {
@@ -8541,10 +8541,10 @@ Function Restore-VcfmsBackup {
     # }
 
     # Step 3: Run the restore
-    Restore-VcfmsBackup -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -RestoreJsonFile ".\restore-payload.json"
+    Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -RestoreJsonFile ".\restore-payload.json"
 
     .PARAMETER ServicesRuntimeFqdn
-    FQDN of the VCFMS Services Runtime instance.
+    FQDN of the Services Runtime instance.
 
     .PARAMETER ServicesRuntimePassword
     Password for the Services Runtime admin user (used to obtain a token).
@@ -8803,7 +8803,7 @@ Function Restore-VcfmsBackup {
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
 }
-Export-ModuleMember -Function Restore-VcfmsBackup
+Export-ModuleMember -Function Restore-ServicesRuntimeComponentBackup
 
 Function Get-VcfmsFleetLCMToken {
     <#
@@ -9578,7 +9578,7 @@ Function Set-VcfmsComponentVips {
     $ingressObject = [ordered]@{}
     $ingressObject[$resolvedIngressKey] = $ingressEntry
 
-    # Include options like other apply operations (Set-VcfmsSftpBackupSettings); some stacks ignore partial applies without it.
+    # Include options like other apply operations (Set-ServicesRuntimeSftpBackupSettings); some stacks ignore partial applies without it.
     $payload = [ordered]@{
         spec    = [ordered]@{
             configuration = [ordered]@{
