@@ -7784,7 +7784,7 @@ Function Get-RegisteredComponentIds {
     .DESCRIPTION
     The Get-RegisteredComponentIds cmdlet queries the VCF Operations internal /suite-api/internal/components endpoint and returns a structured object containing:
     - components: Filtered component summaries for types FLEET_LCM, SALT_RAAS, VIDB, and LI.
-    - vsp: VSP component details referenced by the filtered components (null, a single object, or an array when multiple are present).
+    - vsp: All VSP instances registered in the endpoint, deduplicated by UUID, always returned as an array.
     - vcfa: VCFA component details if one is registered, otherwise null.
 
     A VCF Operations token is obtained automatically via Get-VcfOperationsToken.
@@ -7852,42 +7852,25 @@ Function Get-RegisteredComponentIds {
     $targetTypes = @('FLEET_LCM', 'SALT_RAAS', 'VIDB', 'LI')
     $filtered = @($allComponents | Where-Object { $targetTypes -contains ($_.componentType).ToUpper() })
 
-    # Collect unique VSP component UUIDs referenced by the filtered components
-    $vspUuids = @(
-        $filtered | ForEach-Object {
-            if ($_.references) {
-                $_.references |
-                    Where-Object { ($_.componentType).ToUpper() -eq 'VSP' } |
-                    Select-Object -ExpandProperty componentUuid
-            }
-        } | Sort-Object -Unique
+    # Collect all VSP instances, deduplicated by UUID
+    $vspComponents = @(
+        $allComponents |
+            Where-Object { ($_.componentType).ToUpper() -eq 'VSP' } |
+            ForEach-Object {
+                $ip = if ($_.properties.ip) { $_.properties.ip } else { $_.vcfInstance.ip }
+                [PSCustomObject]@{
+                    id              = $_.componentUuid
+                    fqdn            = $_.properties.fqdn
+                    fleetFqdn       = $_.properties.fleetFqdn
+                    ip              = $ip
+                    instanceName    = $_.vcfInstance.instanceName
+                    vcfInstanceFqdn = $_.vcfInstance.fqdn
+                }
+            } |
+            Sort-Object -Property id -Unique
     )
 
-    # Resolve full component objects for each VSP UUID
-    $vspComponents = @()
-    foreach ($uuid in $vspUuids) {
-        $comp = $allComponents | Where-Object { $_.componentUuid -eq $uuid } | Select-Object -First 1
-        if ($comp) {
-            $ip = if ($comp.properties.ip) { $comp.properties.ip } else { $comp.vcfInstance.ip }
-            $vspComponents += [PSCustomObject]@{
-                id              = $comp.componentUuid
-                fqdn            = $comp.properties.fqdn
-                fleetFqdn       = $comp.properties.fleetFqdn
-                ip              = $ip
-                instanceName    = $comp.vcfInstance.instanceName
-                vcfInstanceFqdn = $comp.vcfInstance.fqdn
-            }
-        }
-    }
-
-    # Normalize VSP result: null / single object / array
-    $vsp = if ($vspComponents.Count -eq 0) {
-        $null
-    } elseif ($vspComponents.Count -eq 1) {
-        $vspComponents[0]
-    } else {
-        $vspComponents
-    }
+    $vsp = $vspComponents
 
     # Extract the first VCFA component if present
     $vcfaComp = $allComponents | Where-Object { ($_.componentType).ToUpper() -eq 'VCFA' } | Select-Object -First 1
@@ -7918,7 +7901,7 @@ Function Get-RegisteredComponentIds {
         vcfa       = $vcfa
     }
 
-    LogMessage -type INFO -message "[$VcfOperationsFqdn] Found $($filtered.Count) filtered component(s) of types: $($targetTypes -join ', ')"
+    LogMessage -type INFO -message "[$VcfOperationsFqdn] Found $($filtered.Count) filtered component(s) of types: $($targetTypes -join ', '); $($vspComponents.Count) VSP instance(s)"
 
     $json = $result | ConvertTo-Json -Depth 10
     Write-Host ""
@@ -8388,81 +8371,137 @@ Function Get-VcfmsBackups {
         LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Filtered to $($allBackups.Count) backup(s) matching VspId '$VspId'"
     }
 
-    # Build ordered results filtered by requested components
-    $results = @()
+    # Parse all backups for the requested component types, normalising the timestamp
+    $parsedBackups = @()
     $now = Get-Date
 
-    foreach ($componentType in $Components) {
-        $componentBackups = $allBackups | Where-Object { $_.component.type -eq $componentType }
-        foreach ($backup in $componentBackups) {
-            $backupName = $backup.name
-            $normalizedName = $backupName -replace 'T(\d{2})-(\d{2})-(\d{2})Z', 'T$1:$2:$3Z'
-            try {
-                $backupDate = [datetime]::Parse($normalizedName, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal)
-                $daysOld = [math]::Floor(($now - $backupDate).TotalDays)
-                $ageDisplay = "$daysOld days ago"
-            } catch {
-                $ageDisplay = "unknown"
-            }
+    foreach ($backup in $allBackups) {
+        if ($backup.component.type -notin $Components) { continue }
+        $backupName     = $backup.name
+        $normalizedName = $backupName -replace 'T(\d{2})-(\d{2})-(\d{2})Z', 'T$1:$2:$3Z'
+        $backupDate     = $null
+        $daysOld        = $null
+        try {
+            $backupDate = [datetime]::Parse($normalizedName, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal)
+            $daysOld    = [math]::Floor(($now - $backupDate).TotalDays)
+        } catch {}
 
-            $results += [PSCustomObject]@{
-                'Component' = $componentType
-                'Version'   = $backup.component.version
-                'Name'      = $backupName
-                'Age'       = $ageDisplay
-                'Path'      = $backup.path
-            }
+        $parsedBackups += [PSCustomObject]@{
+            ComponentType  = $backup.component.type
+            Version        = $backup.component.version
+            Name           = $backupName
+            NormalizedName = $normalizedName
+            BackupDate     = $backupDate
+            DaysOld        = $daysOld
+            Path           = $backup.path
         }
     }
 
-    if ($results.Count -eq 0) {
+    if ($parsedBackups.Count -eq 0) {
         LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] No backups found for components: $($Components -join ', ')"
         return
     }
 
-    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Found $($results.Count) backup(s) for $($Components.Count) component type(s)"
-    Write-Host ""
-    $results | Format-Table -AutoSize -Property Component, Version, Name, Age, Path | Out-String | Write-Host
+    # Build rank-based backup groups: rank 1 = most recent backup of each component,
+    # rank 2 = second most recent, and so on. Components backed up at different times
+    # within the same scheduled window are still placed in the same rank group.
+    $byComponent = @{}
+    foreach ($b in $parsedBackups) {
+        if (-not $byComponent.ContainsKey($b.ComponentType)) {
+            $byComponent[$b.ComponentType] = [System.Collections.Generic.List[PSCustomObject]]::new()
+        }
+        $byComponent[$b.ComponentType].Add($b)
+    }
+    foreach ($key in @($byComponent.Keys)) {
+        $byComponent[$key] = @($byComponent[$key] | Sort-Object BackupDate -Descending)
+    }
 
-    # Offer to construct a restore JSON from the latest backup of each component
+    $maxRank   = ($byComponent.Values | ForEach-Object { $_.Count } | Measure-Object -Maximum).Maximum
+    $groupList = [System.Collections.Generic.List[PSCustomObject]]::new()
+
+    for ($rank = 0; $rank -lt $maxRank; $rank++) {
+        $entries = [System.Collections.Generic.List[PSCustomObject]]::new()
+        foreach ($componentType in ($byComponent.Keys | Sort-Object)) {
+            if ($rank -lt $byComponent[$componentType].Count) {
+                $entries.Add($byComponent[$componentType][$rank])
+            }
+        }
+        if ($entries.Count -gt 0) {
+            $groupList.Add([PSCustomObject]@{ Index = ($rank + 1); Entries = $entries })
+        }
+    }
+
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Found $($parsedBackups.Count) backup(s) across $($groupList.Count) backup group(s)"
+
+    # Display numbered list of backup groups
+    Write-Host ""
+    Write-Host " Available Backup Groups" -ForegroundColor Cyan
+    Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+    Write-Host ("  {0,3}  {1,-25}  {2,-14}  {3}" -f "ID", "Newest Backup (UTC)", "Age", "Components") -ForegroundColor Gray
+    Write-Host ""
+
+    foreach ($group in $groupList) {
+        $newest      = $group.Entries | Sort-Object BackupDate -Descending | Select-Object -First 1
+        $ageStr      = if ($null -ne $newest.DaysOld) { "$($newest.DaysOld) days ago" } else { "unknown" }
+        $uniqueTypes = @($group.Entries | Select-Object -ExpandProperty ComponentType | Sort-Object -Unique)
+        Write-Host ("  {0,3}  {1,-25}  {2,-14}  {3} ({4})" -f $group.Index, $newest.Name, $ageStr, ($uniqueTypes -join ', '), $uniqueTypes.Count) -ForegroundColor White
+    }
+
+    Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+    Write-Host ""
+
+    # User selects a backup group
+    $selectedGroup = $null
     Do {
-        Write-Host " Would you like to construct a restore JSON with the latest backup of each component? (Y/N): " -ForegroundColor Yellow -NoNewline
+        Write-Host " Enter the ID of the backup group to use, or C to Cancel: " -ForegroundColor Yellow -NoNewline
+        $selection = Read-Host
+        if ($selection -in @("C", "c")) {
+            LogMessage -type INFO -message "[$jumpboxName] Cancelled by user."
+            $StopWatch.Stop()
+            $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+            LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+            return
+        }
+        $selNum = 0
+        if ([int]::TryParse($selection, [ref]$selNum) -and $selNum -ge 1 -and $selNum -le $groupList.Count) {
+            $selectedGroup = $groupList | Where-Object { $_.Index -eq $selNum }
+        } else {
+            Write-Host " Invalid selection. Enter a number between 1 and $($groupList.Count), or C to Cancel." -ForegroundColor Yellow
+        }
+    } Until ($null -ne $selectedGroup)
+
+    $groupLabel = ($selectedGroup.Entries | Sort-Object BackupDate -Descending | Select-Object -First 1).Name
+    LogMessage -type INFO -message "[$jumpboxName] Selected backup group $($selectedGroup.Index) ($groupLabel)"
+
+    # Show what is available in the selected backup group
+    Write-Host ""
+    Write-Host " Components in backup group $($selectedGroup.Index) ($groupLabel)" -ForegroundColor Cyan
+    Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+    $selectedGroup.Entries | Sort-Object ComponentType | ForEach-Object {
+        Write-Host ("  {0,-22}  {1,-15}  {2}" -f $_.ComponentType, $_.Version, $_.Path) -ForegroundColor White
+    }
+    Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+    Write-Host ""
+
+    # Offer to construct a restore JSON for the selected backup group
+    Do {
+        Write-Host " Would you like to construct a restore JSON for this backup group? (Y/N): " -ForegroundColor Yellow -NoNewline
         $buildJson = Read-Host
     } Until ($buildJson -in @("Y", "y", "N", "n"))
 
     if ($buildJson -in @("Y", "y")) {
-        $restoreComponents = @()
-        $explicitlyPassed = $PSBoundParameters.ContainsKey("Components")
+        $explicitlyPassed      = $PSBoundParameters.ContainsKey("Components")
         $restoreComponentTypes = if ($explicitlyPassed) { $Components } else { $Components | Where-Object { $_ -notin @("ops-logs", "vcfa") } }
-        foreach ($componentType in $restoreComponentTypes) {
-            $componentBackups = $allBackups | Where-Object { $_.component.type -eq $componentType }
-            if (-not $componentBackups) { continue }
 
-            $latestBackup = $null
-            $latestDate = [datetime]::MinValue
-            foreach ($backup in $componentBackups) {
-                $normalizedName = $backup.name -replace 'T(\d{2})-(\d{2})-(\d{2})Z', 'T$1:$2:$3Z'
-                try {
-                    $backupDate = [datetime]::Parse($normalizedName, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal)
-                    if ($backupDate -gt $latestDate) {
-                        $latestDate = $backupDate
-                        $latestBackup = $backup
-                    }
-                } catch {
-                    if (-not $latestBackup) { $latestBackup = $backup }
-                }
+        $restoreComponents = @(
+            foreach ($componentType in $restoreComponentTypes) {
+                $entry = $selectedGroup.Entries | Where-Object { $_.ComponentType -eq $componentType } | Select-Object -First 1
+                if ($entry) { @{ path = $entry.Path; point = $entry.Name } }
             }
-
-            if ($latestBackup) {
-                $restoreComponents += @{
-                    path  = $latestBackup.path
-                    point = $latestBackup.name
-                }
-            }
-        }
+        )
 
         $restorePayload = @{ components = $restoreComponents } | ConvertTo-Json -Depth 5
-        $outputFile = ".\restore-payload.json"
+        $outputFile     = ".\restore-payload.json"
         $restorePayload | Out-File -FilePath $outputFile -Encoding utf8
         LogMessage -type INFO -message "[$jumpboxName] Restore JSON saved to $outputFile ($($restoreComponents.Count) component(s))"
         Write-Host ""
@@ -8516,16 +8555,13 @@ Function Restore-VcfmsBackup {
     .PARAMETER RestoreJsonFile
     Path to a JSON file containing the restore payload. The file must contain a "components" array with "path" and "point" for each component to restore.
 
-    .PARAMETER PollIntervalSeconds
-    Interval in seconds to poll the restore status. Default is 300 (5 minutes).
     #>
 
     Param(
         [Parameter(Mandatory = $true)][String] $ServicesRuntimeFqdn,
         [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
         [Parameter(Mandatory = $false)][String] $ServicesRuntimeUsername = "admin@vsp.local",
-        [Parameter(Mandatory = $true)][String] $RestoreJsonFile,
-        [Parameter(Mandatory = $false)][Int] $PollIntervalSeconds = 300
+        [Parameter(Mandatory = $true)][String] $RestoreJsonFile
     )
 
     $jumpboxName = hostname
@@ -8558,7 +8594,7 @@ Function Restore-VcfmsBackup {
     Write-Host " Restore Payload ($($payloadObject.components.Count) component(s)):" -ForegroundColor Cyan
     Write-Host " ----------------------------------------------------------------" -ForegroundColor Cyan
     foreach ($comp in $payloadObject.components) {
-        $componentName = ($comp.path -split '/') | Where-Object { $_ -in @("vsp", "vcf-fleet-lcm", "vcf-fleet-depot", "vcf-sddc-lcm", "salt", "salt-raas", "vidb", "ops-logs") } | Select-Object -First 1
+        $componentName = ($comp.path -split '/') | Where-Object { $_ -in @("vsp", "vcf-fleet-lcm", "vcf-fleet-depot", "vcf-sddc-lcm", "salt", "salt-raas", "vidb", "ops-logs", "vcfa") } | Select-Object -First 1
         if (-not $componentName) { $componentName = "unknown" }
         Write-Host "   $componentName" -ForegroundColor Yellow -NoNewline
         Write-Host " -> point: $($comp.point)" -ForegroundColor White
@@ -8651,14 +8687,15 @@ Function Restore-VcfmsBackup {
     }
 
     LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Restore task ID: $taskId"
-    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Polling task status every $PollIntervalSeconds seconds"
 
     $taskUri = "https://$ServicesRuntimeFqdn/api/v1/tasks/$taskId"
     $taskStatus = "Running"
     $reportedComponentStatuses = @{}
     $componentFirstSeenAt = @{}
+    $lastStatusLoggedAt = [DateTime]::MinValue
+    $lastLoggedStatus = ""
     Do {
-        Start-Sleep -Seconds $PollIntervalSeconds
+        Start-Sleep -Seconds 60
 
         try {
             if (([DateTime]::UtcNow - $tokenFetchedAt).TotalMinutes -ge 60) {
@@ -8674,14 +8711,13 @@ Function Restore-VcfmsBackup {
             }
             $taskResponse = Invoke-RestMethod -Uri $taskUri -Method GET -Headers $headers -SkipCertificateCheck
             $taskStatus = $taskResponse.status
-            $elapsed = ""
-            if ($taskResponse.startTime) {
-                $start = ConvertFrom-VcfmsTaskTimestampToUtc -Timestamp $taskResponse.startTime
-                if ($start) {
-                    $elapsed = " (running: $(Format-TimeSpanElapsedColons -Span ([datetime]::UtcNow - $start)))"
-                }
+            $statusChanged = $taskStatus -ne $lastLoggedStatus
+            $quietIntervalElapsed = ([DateTime]::UtcNow - $lastStatusLoggedAt).TotalSeconds -ge 300
+            if ($statusChanged -or $quietIntervalElapsed) {
+                LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Status: $taskStatus"
+                $lastStatusLoggedAt = [DateTime]::UtcNow
+                $lastLoggedStatus = $taskStatus
             }
-            LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Status: $taskStatus$elapsed"
 
             # Report any new or changed restoreResults entries
             if ($taskResponse.result -and $taskResponse.result.restoreResults) {
@@ -8725,9 +8761,40 @@ Function Restore-VcfmsBackup {
         LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Restore completed successfully"
     } else {
         LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Restore ended with status: $taskStatus"
-        if ($taskResponse.messages) {
+
+        # messages array (populated for some failure types)
+        if ($taskResponse.messages -and ($taskResponse.messages | Measure-Object).Count -gt 0) {
             foreach ($msg in $taskResponse.messages) {
                 LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] $msg"
+            }
+        }
+
+        # Failed precheck groups take priority — when present, stage errors are just symptoms
+        $failedGroups = @($taskResponse.precheckGroups | Where-Object { $_.status -eq "FAILED" })
+        if ($failedGroups.Count -gt 0) {
+            foreach ($group in $failedGroups) {
+                foreach ($check in @($group.prechecks | Where-Object { $_.status -eq "FAILED" })) {
+                    $issueMsg = if ($check.issue.message.default) { $check.issue.message.default } else { $check.name.default }
+                    $issueMsg = $issueMsg -replace '\s*\[[\w.]+\]\s*$', ''
+                    LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] $issueMsg"
+                }
+            }
+        } else {
+            # No precheck failures — surface stage errors as the next diagnostic signal
+            $failedStages = @($taskResponse.stages | Where-Object { $_.status -eq "Failed" })
+            if ($failedStages.Count -gt 0) {
+                Write-Host ""
+                Write-Host " Stage Errors" -ForegroundColor Cyan
+                Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+                foreach ($stage in $failedStages) {
+                    Write-Host "  Stage : $($stage.name) ($($stage.stageType))" -ForegroundColor Yellow
+                    $meaningfulErrors = @($stage.errors | Where-Object { $_ -notmatch 'retryStrategy\.expression' })
+                    foreach ($err in $meaningfulErrors) {
+                        Write-Host "    $err" -ForegroundColor Gray
+                    }
+                }
+                Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+                Write-Host ""
             }
         }
     }
@@ -10330,6 +10397,19 @@ Function Disable-VcfmsClusterLogging {
     $terminalStates = @("COMPLETED","Completed","COMPLETE","FAILED","CANCELLED","ERROR","SUCCESS","SUCCESSFUL","Succeeded","Failed")
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
+    # Pre-requisite: kubectl must be available on the local machine
+    if (-not (Get-Command kubectl -ErrorAction SilentlyContinue)) {
+        LogMessage -type WARNING -message "[$jumpboxName] kubectl not found on PATH. Please install kubectl and ensure it is available before running this cmdlet."
+        $StopWatch.Stop(); return
+    }
+    LogMessage -type INFO -message "[$jumpboxName] kubectl found: $((Get-Command kubectl).Source)"
+
+    # Pre-requisite: if a kubeconfig path was supplied, verify it exists before starting the apply task
+    if ($KubeconfigPath -and -not (Test-Path $KubeconfigPath)) {
+        LogMessage -type WARNING -message "[$jumpboxName] KubeconfigPath not found: $KubeconfigPath — verify the path and re-run."
+        $StopWatch.Stop(); return
+    }
+
     # Step 1: Token
     $srToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
     if (-not $srToken) {
@@ -11470,9 +11550,9 @@ Function Invoke-VcfmsFleetComponentRegistration {
     Password for vmware-system-user (SSH login and sudo elevation).
 
     .PARAMETER TargetVcfInstance
-    VCF instance name to target using the script's --target-vcf mode, e.g. "vcf01" or
-    "vcf02". Use this when the instance is identified by a short VCF name in the Fleet LCM
-    registry. Mutually exclusive with -TargetFqdn and -TargetSddcId.
+    VCF instance FQDN or substring to match against the sddc_lcm.fqdn column, e.g.
+    "lax-ic01.lax.rainpole.io". Passed as --target-fqdn to the script.
+    Mutually exclusive with -TargetFqdn and -TargetSddcId.
 
     .PARAMETER TargetFqdn
     FQDN substring pattern to match against the sddc_lcm.fqdn column, e.g. "lax" to match
@@ -11480,8 +11560,10 @@ Function Invoke-VcfmsFleetComponentRegistration {
     Mutually exclusive with -TargetVcfInstance and -TargetSddcId.
 
     .PARAMETER TargetSddcId
-    Exact UUID of the SDDC LCM entry in the Fleet LCM registry. Passed as --target-sddc-id
-    to the script. Mutually exclusive with -TargetVcfInstance and -TargetFqdn.
+    FQDN substring pattern to match against the sddc_lcm.fqdn column. Passed as
+    --target-fqdn to the script. Note: UUID-based lookup is not currently supported by
+    the script; use -TargetFqdn for a reliable substring match.
+    Mutually exclusive with -TargetVcfInstance and -TargetFqdn.
 
     .PARAMETER DryRun
     When specified, passes --dry-run to the script. No database changes are made;
@@ -11576,9 +11658,9 @@ Function Invoke-VcfmsFleetComponentRegistration {
         # sudo boundary so every kubectl call inside the script uses admin.conf
         # -------------------------------------------------------------------------
         $scriptArgs = switch ($PSCmdlet.ParameterSetName) {
-            "ByVcfInstance" { "--target-vcf '$TargetVcfInstance'" }
+            "ByVcfInstance" { "--target-fqdn '$TargetVcfInstance'" }
             "ByFqdn"        { "--target-fqdn '$TargetFqdn'" }
-            "BySddcId"      { "--target-sddc-id '$TargetSddcId'" }
+            "BySddcId"      { "--target-fqdn '$TargetSddcId'" }
         }
         if ($DryRun) { $scriptArgs += " --dry-run" }
 
@@ -11629,6 +11711,268 @@ Function Invoke-VcfmsFleetComponentRegistration {
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
 }
 Export-ModuleMember -Function Invoke-VcfmsFleetComponentRegistration
+
+Function Update-ServicesRuntimePackageDeployment {
+    <#
+    .SYNOPSIS
+    Updates the vSphere placement configuration in the vmsp-platform PackageDeployment on a Services Runtime cluster.
+
+    .DESCRIPTION
+    The Update-VcfmsPlatformPackageDeploymentVsphere cmdlet performs the following steps:
+
+      1. Connects to vCenter via PowerCLI and resolves Managed Object Reference IDs and
+         inventory paths for the target datacenter, cluster, datastore, distributed port
+         group, VM folder, resource pool, and VM template.
+      2. Retrieves the Services Runtime cluster KUBECONFIG using the existing
+         Get-VcfmsServicesRuntimeKubeconfig helper (worker-node redirect handled
+         automatically).
+      3. Patches the vmsp-platform PackageDeployment (pd/vmsp-platform in namespace
+         vmsp-platform) with the resolved vSphere placement values via kubectl patch
+         --type=merge.
+
+    Use -DryRun to display the computed patch JSON without applying it.
+
+    .EXAMPLE
+    Update-VcfmsPlatformPackageDeploymentVsphere `
+        -ServicesRuntimeFqdn     "sfo-sr01.sfo.rainpole.io" `
+        -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
+        -vCenterFqdn             "sfo-m01-vc01.sfo.rainpole.io" `
+        -vCenterUsername         "administrator@vsphere.local" `
+        -vCenterPassword         "VMw@re1!VMw@re1!" `
+        -TargetDatacenter        "sfo-m01-dc01" `
+        -TargetCluster           "sfo-m01-cl02" `
+        -TargetDatastore         "sfo-m01-cl02-vsan01" `
+        -TargetDpG               "sfo-m01-cl02-vds01-pg-vcf-mgmt" `
+        -TargetFolder            "vcf-management-services" `
+        -TargetRP                "Resources" `
+        -TargetTemplate          "vcf-services-runtime-template-9.1.0.0.25370367"
+
+    .EXAMPLE
+    Update-VcfmsPlatformPackageDeploymentVsphere `
+        -ServicesRuntimeFqdn     "sfo-sr01.sfo.rainpole.io" `
+        -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
+        -vCenterFqdn             "sfo-m01-vc01.sfo.rainpole.io" `
+        -vCenterUsername         "administrator@vsphere.local" `
+        -vCenterPassword         "VMw@re1!VMw@re1!" `
+        -TargetDatacenter        "sfo-m01-dc01" `
+        -TargetCluster           "sfo-m01-cl02" `
+        -TargetDatastore         "sfo-m01-cl02-vsan01" `
+        -TargetDpG               "sfo-m01-cl02-vds01-pg-vcf-mgmt" `
+        -TargetFolder            "vcf-management-services" `
+        -TargetRP                "Resources" `
+        -TargetTemplate          "vcf-services-runtime-template-9.1.0.0.25370367" `
+        -DryRun
+
+    .PARAMETER ServicesRuntimeFqdn
+    FQDN or IP of any Services Runtime cluster node. Worker nodes are automatically
+    redirected to the control plane.
+
+    .PARAMETER ServicesRuntimePassword
+    Password for vmware-system-user (SSH login).
+
+    .PARAMETER vCenterFqdn
+    FQDN of the vCenter Server that manages the target vSphere inventory.
+
+    .PARAMETER vCenterUsername
+    Username for vCenter authentication. Defaults to administrator@vsphere.local.
+
+    .PARAMETER vCenterPassword
+    Password for the vCenter user.
+
+    .PARAMETER TargetDatacenter
+    Name of the target vSphere datacenter.
+
+    .PARAMETER TargetCluster
+    Name of the target vSphere cluster.
+
+    .PARAMETER TargetDatastore
+    Name of the target datastore.
+
+    .PARAMETER TargetDpG
+    Name of the target distributed port group.
+
+    .PARAMETER TargetFolder
+    Name of the target VM folder (type VM).
+
+    .PARAMETER TargetRP
+    Name of the target resource pool. Defaults to "Resources" (the cluster root pool).
+
+    .PARAMETER TargetTemplate
+    Name of the target VM template.
+
+    .PARAMETER OutputDir
+    Directory where the retrieved kubeconfig file is written. Defaults to the current
+    directory.
+
+    .PARAMETER DryRun
+    When specified, displays the computed patch JSON without applying it to the cluster.
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][String]  $ServicesRuntimeFqdn,
+        [Parameter(Mandatory = $true)][String]  $ServicesRuntimePassword,
+        [Parameter(Mandatory = $true)][String]  $vCenterFqdn,
+        [Parameter(Mandatory = $false)][String] $vCenterUsername = "administrator@vsphere.local",
+        [Parameter(Mandatory = $true)][String]  $vCenterPassword,
+        [Parameter(Mandatory = $true)][String]  $TargetDatacenter,
+        [Parameter(Mandatory = $true)][String]  $TargetCluster,
+        [Parameter(Mandatory = $true)][String]  $TargetDatastore,
+        [Parameter(Mandatory = $true)][String]  $TargetDpG,
+        [Parameter(Mandatory = $true)][String]  $TargetFolder,
+        [Parameter(Mandatory = $false)][String] $TargetRP = "Resources",
+        [Parameter(Mandatory = $true)][String]  $TargetTemplate,
+        [Parameter(Mandatory = $false)][String] $OutputDir = ".",
+        [Parameter(Mandatory = $false)][Switch] $DryRun
+    )
+
+    $jumpboxName = hostname
+    $StopWatch   = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    # -------------------------------------------------------------------------
+    # Pre-requisite: kubectl must be on PATH
+    # -------------------------------------------------------------------------
+    if (-not (Get-Command kubectl -ErrorAction SilentlyContinue)) {
+        LogMessage -type WARNING -message "[$jumpboxName] kubectl not found on PATH. Install kubectl and re-run."
+        $StopWatch.Stop(); return
+    }
+
+    # =========================================================================
+    # Step 1: Connect to vCenter and resolve vSphere inventory MoRef IDs
+    # =========================================================================
+    LogMessage -type INFO -message "[$jumpboxName] Step 1: Connecting to vCenter $vCenterFqdn"
+    $vcConnection  = $null
+    $vsphereValues = $null
+
+    try {
+        $vcConnection = Connect-VIServer -Server $vCenterFqdn -User $vCenterUsername -Password $vCenterPassword -ErrorAction Stop
+        LogMessage -type INFO -message "[$vCenterFqdn] Connected to vCenter"
+
+        LogMessage -type INFO -message "[$vCenterFqdn] Resolving vSphere inventory objects"
+        $dc       = Get-Datacenter -Name $TargetDatacenter -ErrorAction Stop
+        $cluster  = Get-Cluster    -Name $TargetCluster    -Location $dc      -ErrorAction Stop
+        $hosts    = Get-VMHost     -Location $cluster       -ErrorAction Stop
+        $ds       = Get-Datastore  -Name $TargetDatastore  -VMHost $hosts     -ErrorAction Stop
+        $dvs      = Get-VDSwitch   -VMHost $hosts          -ErrorAction Stop | Select-Object -Unique
+        $dpg      = Get-VDPortgroup -Name $TargetDpG       -VDSwitch $dvs     -ErrorAction Stop | Select-Object -First 1
+        $folder   = Get-Folder     -Name $TargetFolder     -Type VM -Location $dc -ErrorAction Stop
+        $rp       = Get-ResourcePool -Name $TargetRP       -Location $cluster  -ErrorAction Stop
+        $template = Get-Template   -Name $TargetTemplate   -Location $folder   -ErrorAction Stop
+
+        LogMessage -type INFO -message "[$vCenterFqdn] All inventory objects resolved"
+
+        # MoRef IDs (Type:Value format expected by the PD)
+        $dcId      = "$($dc.ExtensionData.MoRef.Type):$($dc.ExtensionData.MoRef.Value)"
+        $clusterId = "$($cluster.ExtensionData.MoRef.Type):$($cluster.ExtensionData.MoRef.Value)"
+        $dsId      = "$($ds.ExtensionData.MoRef.Type):$($ds.ExtensionData.MoRef.Value)"
+        $dpgId     = "$($dpg.ExtensionData.MoRef.Type):$($dpg.ExtensionData.MoRef.Value)"
+        $folderId  = "$($folder.ExtensionData.MoRef.Type):$($folder.ExtensionData.MoRef.Value)"
+        $rpId      = "$($rp.ExtensionData.MoRef.Type):$($rp.ExtensionData.MoRef.Value)"
+        $tmplId    = "$($template.ExtensionData.MoRef.Type):$($template.ExtensionData.MoRef.Value)"
+
+        # Inventory paths
+        $dcPath      = "/$($dc.Name)"
+        $clusterPath = "/$($dc.Name)/host/$($cluster.Name)"
+        $dsPath      = "/$($dc.Name)/datastore/$($ds.Name)"
+        $networkPath = "/$($dc.Name)/network/$($dpg.Name)"
+        $folderPath  = "/$($dc.Name)/vm/$($folder.Name)"
+        $rpPath      = "$clusterPath/Resources/$($rp.Name)".Replace("/Resources/Resources", "/Resources")
+
+        LogMessage -type INFO -message "[$vCenterFqdn] Datacenter   : $dcPath ($dcId)"
+        LogMessage -type INFO -message "[$vCenterFqdn] Cluster      : $clusterPath ($clusterId)"
+        LogMessage -type INFO -message "[$vCenterFqdn] Datastore    : $dsPath ($dsId)"
+        LogMessage -type INFO -message "[$vCenterFqdn] Network      : $networkPath ($dpgId)"
+        LogMessage -type INFO -message "[$vCenterFqdn] Folder       : $folderPath ($folderId)"
+        LogMessage -type INFO -message "[$vCenterFqdn] ResourcePool : $rpPath ($rpId)"
+        LogMessage -type INFO -message "[$vCenterFqdn] Template     : $TargetTemplate ($tmplId)"
+
+        $vsphereValues = [ordered]@{
+            cluster          = $clusterPath
+            clusterId        = $clusterId
+            datacenter       = $dcPath
+            datacenterId     = $dcId
+            datastore        = $dsPath
+            datastoreId      = $dsId
+            datastoreURL     = $ds.ExtensionData.Info.Url
+            enriched         = "true"
+            folder           = $folderPath
+            folderId         = $folderId
+            host             = $vCenterFqdn
+            insecureTLS      = $false
+            network          = $networkPath
+            networkId        = $dpgId
+            port             = "443"
+            resourcePool     = $rpPath
+            resourcePoolId   = $rpId
+            server           = $vCenterFqdn
+            templateFolder   = $folderPath
+            templateFolderId = $folderId
+            templateId       = $tmplId
+        }
+
+    } catch {
+        LogMessage -type ERROR -message "[$vCenterFqdn] Failed to resolve vSphere inventory: $_"
+        $StopWatch.Stop(); return
+    } finally {
+        if ($null -ne $vcConnection -and $vcConnection.IsConnected) {
+            Disconnect-VIServer -Server $vcConnection -Confirm:$false -ErrorAction SilentlyContinue | Out-Null
+            LogMessage -type INFO -message "[$vCenterFqdn] Disconnected from vCenter"
+        }
+    }
+
+    # =========================================================================
+    # Step 2: Retrieve KUBECONFIG from the Services Runtime cluster
+    # =========================================================================
+    LogMessage -type INFO -message "[$jumpboxName] Step 2: Retrieving kubeconfig from $ServicesRuntimeFqdn"
+    $kubeconfigResult = Get-VcfmsServicesRuntimeKubeconfig `
+        -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
+        -Password            $ServicesRuntimePassword `
+        -OutputDir           $OutputDir
+    if (-not $kubeconfigResult) {
+        LogMessage -type ERROR -message "[$jumpboxName] Could not retrieve kubeconfig. Aborting."
+        $StopWatch.Stop(); return
+    }
+    $resolvedKubeconfig = $kubeconfigResult.KubeconfigPath
+    LogMessage -type INFO -message "[$jumpboxName] Kubeconfig written to $resolvedKubeconfig"
+
+    # =========================================================================
+    # Step 3: Build merge patch JSON
+    # =========================================================================
+    $patch = @{ spec = @{ vsphere = $vsphereValues } } | ConvertTo-Json -Depth 5 -Compress
+
+    if ($DryRun) {
+        LogMessage -type INFO -message "[$jumpboxName] DRY RUN — patch that would be applied to pd/vmsp-platform:"
+        Write-Host ""
+        Write-Host ($patch | ConvertFrom-Json | ConvertTo-Json -Depth 5)
+        Write-Host ""
+        $StopWatch.Stop()
+        $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+        return
+    }
+
+    # =========================================================================
+    # Step 4: Patch pd/vmsp-platform in namespace vmsp-platform
+    # =========================================================================
+    LogMessage -type INFO -message "[$jumpboxName] Step 3: Patching pd/vmsp-platform in namespace vmsp-platform"
+    $patchOutput = & kubectl --kubeconfig $resolvedKubeconfig `
+        patch pd vmsp-platform -n vmsp-platform `
+        --type=merge -p $patch 2>&1
+    $exitCode = $LASTEXITCODE
+    $patchOutput | ForEach-Object { Write-Host "  $_" }
+    if ($exitCode -eq 0) {
+        LogMessage -type INFO -message "[$jumpboxName] pd/vmsp-platform patched successfully"
+    } else {
+        LogMessage -type ERROR -message "[$jumpboxName] kubectl patch failed (exit $exitCode)"
+        $StopWatch.Stop(); return
+    }
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+Export-ModuleMember -Function Update-ServicesRuntimePackageDeployment
 
 Function Get-VcfmsFleetComponentRegistration {
     <#
@@ -12101,7 +12445,7 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
             $scriptArgs += " --sso-domain-id '$SsoDomainId'"
         }
 
-        $execCmd = "VCF_OPS_ADMIN_PASSWORD='$VcfOpsAdminPassword' bash $remotePath $scriptArgs 2>&1"
+        $execCmd = "export VCF_OPS_ADMIN_PASSWORD='$VcfOpsAdminPassword'; bash $remotePath $scriptArgs 2>&1"
 
         LogMessage -type INFO -message "[$VcfOpsFqdn] Executing update-vidb-vcf-instance.sh (timeout: ${RemoteScriptTimeout}s)"
         Write-Host ""

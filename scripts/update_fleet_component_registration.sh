@@ -61,7 +61,7 @@ if [[ -z "$TARGET_FQDN" ]]; then
 fi
 
 # Fleet-scoped component types (as stored in Fleet LCM database)
-readonly FLEET_COMPONENT_TYPES="VIDB SALT_RAAS VCF_FLEET_LCM VCF_FLEET_DEPOT OPS_LOGS"
+readonly FLEET_COMPONENT_TYPES="VIDB SALT_RAAS VCF_FLEET_LCM VCF_FLEET_DEPOT OPS_LOGS VCFA"
 TYPES_SQL=$(echo "$FLEET_COMPONENT_TYPES" | tr ' ' '\n' | sed "s/.*/'&'/" | tr '\n' ',' | sed 's/,$//')
 
 # Maps Component CR label (lowercase-hyphenated) to DB component_type.
@@ -74,6 +74,7 @@ cr_type_to_db_type() {
     vcf-fleet-lcm)   echo "VCF_FLEET_LCM" ;;
     vcf-fleet-depot) echo "VCF_FLEET_DEPOT" ;;
     ops-logs)        echo "OPS_LOGS" ;;
+    vcfa)            echo "VCFA" ;;
     *)               echo "" ;;
   esac
 }
