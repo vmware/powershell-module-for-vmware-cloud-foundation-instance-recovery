@@ -61,7 +61,7 @@ if [[ -z "$TARGET_FQDN" ]]; then
 fi
 
 # Fleet-scoped component types (as stored in Fleet LCM database)
-readonly FLEET_COMPONENT_TYPES="VIDB SALT_RAAS VCF_FLEET_LCM VCF_FLEET_DEPOT OPS_LOGS VCFA OPS OPS_NETWORKS"
+readonly FLEET_COMPONENT_TYPES="VIDB SALT_RAAS VCF_FLEET_LCM VCF_FLEET_DEPOT OPS_LOGS"
 TYPES_SQL=$(echo "$FLEET_COMPONENT_TYPES" | tr ' ' '\n' | sed "s/.*/'&'/" | tr '\n' ',' | sed 's/,$//')
 
 # Maps Component CR label (lowercase-hyphenated) to DB component_type.
@@ -74,9 +74,6 @@ cr_type_to_db_type() {
     vcf-fleet-lcm)   echo "VCF_FLEET_LCM" ;;
     vcf-fleet-depot) echo "VCF_FLEET_DEPOT" ;;
     ops-logs)        echo "OPS_LOGS" ;;
-    ops)             echo "OPS" ;;
-    ops-networks)    echo "OPS_NETWORKS" ;;
-    vcfa)            echo "VCFA" ;;
     *)               echo "" ;;
   esac
 }
@@ -254,6 +251,10 @@ echo "$DB_COMPONENTS" | while IFS='|' read -r comp_type comp_id comp_fqdn comp_v
   if [[ "$TARGET_EXISTS" -ge "1" ]]; then
     echo "  OK   $comp_type — target row already exists"
   else
+    FLEET_INTERNAL_ID=$(psql_one "vcf-fleet-lcm" "$FLEET_DB_POD" "vcffleetlcmdb" \
+      "SELECT id FROM component WHERE component_id = '${comp_id}' LIMIT 1;")
+    comp_deploy=${comp_deploy:-VSP}
+    comp_size=${comp_size:-small}
     run_psql "vcf-fleet-lcm" "$FLEET_DB_POD" "vcffleetlcmdb" \
       "INSERT INTO component (id, component_id, component_type, deployment_type, fqdn, size, version, sddc_lcm_id)
        SELECT gen_random_uuid(), '${comp_id}', component_type, deployment_type, fqdn, size, version, '${NEW_SDDC_LCM_ID}'
@@ -261,21 +262,12 @@ echo "$DB_COMPONENTS" | while IFS='|' read -r comp_type comp_id comp_fqdn comp_v
       "Fleet LCM: INSERT $comp_type row for target SDDC LCM"
   fi
 
-  # Fetch the actual internal UUID of the target component row we want to keep
-  TARGET_INTERNAL_ID=$(psql_one "vcf-fleet-lcm" "$FLEET_DB_POD" "vcffleetlcmdb" \
-    "SELECT id FROM component WHERE component_id = '${comp_id}' AND sddc_lcm_id = '${NEW_SDDC_LCM_ID}' LIMIT 1;")
-
-  # FIX: Update clustered nodes to point to the new target component row
-  # before we attempt to delete the old component rows.
-  run_psql "vcf-fleet-lcm" "$FLEET_DB_POD" "vcffleetlcmdb" \
-    "UPDATE node SET component_id = '${TARGET_INTERNAL_ID}'
-     WHERE component_id IN (
-       SELECT id FROM component
-       WHERE component_id = '${comp_id}' AND sddc_lcm_id != '${NEW_SDDC_LCM_ID}'
-     );" \
-    "Fleet LCM: re-mapping clustered nodes to new target component UUID"
-
-  # Delete component_config rows that reference stale component rows first
+  # Delete component_config rows that reference stale component rows first,
+  # then delete the stale component rows themselves.  The FK constraint
+  # fk_component_config_component prevents deleting a component row while
+  # component_config still references it (e.g. the original pre-failover row
+  # whose sddc_lcm_id was changed to the old site during failover and which
+  # carries component_config data from original registration).
   run_psql "vcf-fleet-lcm" "$FLEET_DB_POD" "vcffleetlcmdb" \
     "DELETE FROM component_config
      WHERE component_id IN (
@@ -283,8 +275,6 @@ echo "$DB_COMPONENTS" | while IFS='|' read -r comp_type comp_id comp_fqdn comp_v
        WHERE component_id = '${comp_id}' AND sddc_lcm_id != '${NEW_SDDC_LCM_ID}'
      );" \
     "Fleet LCM: DELETE $comp_type stale component_config rows"
-
-  # Now safe to delete the stale component rows without violating fk_node_component
   run_psql "vcf-fleet-lcm" "$FLEET_DB_POD" "vcffleetlcmdb" \
     "DELETE FROM component WHERE component_id = '${comp_id}' AND sddc_lcm_id != '${NEW_SDDC_LCM_ID}';" \
     "Fleet LCM: DELETE $comp_type stale rows (non-target SDDC LCMs)"

@@ -7666,6 +7666,126 @@ Function New-ServicesRuntime {
 }
 Export-ModuleMember -Function New-ServicesRuntime
 
+Function Get-ServicesRuntime {
+    <#
+    .SYNOPSIS
+    Retrieves the list of ServicesRuntime instances registered with SDDC Manager.
+
+    .DESCRIPTION
+    The Get-ServicesRuntime cmdlet calls the SDDC Manager GET /v1/vsp-clusters endpoint and returns the registered VCFMS Services Runtime instances. For each instance, a JSON file is written to the working directory using the short name of the platformFqdn as the filename. The JSON payload is in the format accepted by New-ServicesRuntime; populate systemUserPassword in the file before use.
+
+    .EXAMPLE
+    Get-ServicesRuntime -SddcManagerFqdn "sfo-vcf01.sfo.rainpole.io" -SddcManagerUser "administrator@vsphere.local" -SddcManagerPassword "VMw@re1!VMw@re1!"
+
+    .PARAMETER SddcManagerFqdn
+    FQDN of the SDDC Manager appliance.
+
+    .PARAMETER SddcManagerUser
+    API username for SDDC Manager (e.g. administrator@vsphere.local).
+
+    .PARAMETER SddcManagerPassword
+    Password for the SDDC Manager API user.
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)]
+        [String] $SddcManagerFqdn,
+
+        [Parameter(Mandatory = $true)]
+        [String] $SddcManagerUser,
+
+        [Parameter(Mandatory = $true)]
+        [String] $SddcManagerPassword
+    )
+
+    $jumpboxName = hostname
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    $accessToken = Get-SddcManagerToken -SddcManagerFqdn $SddcManagerFqdn -Username $SddcManagerUser -Password $SddcManagerPassword
+    if (-not $accessToken) {
+        LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain SDDC Manager token. Aborting."
+        return
+    }
+
+    $headers = @{
+        "Authorization" = "Bearer $accessToken"
+        "Accept"        = "application/json"
+    }
+
+    $vspClustersUri = "https://$SddcManagerFqdn/v1/vsp-clusters"
+    LogMessage -type INFO -message "[$SddcManagerFqdn] Retrieving ServicesRuntime instances from GET /v1/vsp-clusters"
+
+    try {
+        $response = Invoke-RestMethod -Uri $vspClustersUri -Method GET -Headers $headers -SkipCertificateCheck
+    } catch {
+        LogMessage -type ERROR -message "[$SddcManagerFqdn] Request failed: $($_.Exception.Message)"
+        if ($_.Exception.Response) {
+            try {
+                $errorStream = $_.Exception.Response.GetResponseStream()
+                $reader = New-Object System.IO.StreamReader($errorStream)
+                $errorBody = $reader.ReadToEnd()
+                LogMessage -type ERROR -message "[$SddcManagerFqdn] Response body: $errorBody"
+            } catch {}
+        }
+        return
+    }
+
+    $clusters = if ($response.elements) { $response.elements } elseif ($response -is [Array]) { $response } else { @($response) }
+
+    if (-not $clusters -or $clusters.Count -eq 0) {
+        LogMessage -type INFO -message "[$SddcManagerFqdn] No ServicesRuntime instances found."
+    } else {
+        LogMessage -type INFO -message "[$SddcManagerFqdn] Found $($clusters.Count) ServicesRuntime instance(s):"
+        foreach ($cluster in $clusters) {
+            $payload = [ordered]@{ domainId = $cluster.domainId; platformFqdn = $cluster.platformFqdn }
+            if ($cluster.type -ne 'CONSUMPTION') {
+                $payload['instanceFqdn'] = $cluster.instanceFqdn
+                $payload['fleetFqdn']    = $cluster.fleetFqdn
+            }
+            $payload['systemUserPassword'] = "<admin@vsp.local password>"
+            $payload['type']               = $cluster.type
+            if ($cluster.type -eq 'MANAGEMENT') {
+                $startIp = $cluster.ipv4Pool.ipRange.startIpAddress
+                $endIp   = $cluster.ipv4Pool.ipRange.endIpAddress
+                if (-not $startIp -and $cluster.ipv4Pool.addresses) {
+                    $addrs   = @($cluster.ipv4Pool.addresses)
+                    $startIp = $addrs | Select-Object -First 1
+                    $endIp   = $addrs | Select-Object -Last 1
+                }
+                $payload['ipv4Pool'] = [ordered]@{
+                    ipRange = [ordered]@{
+                        startIpAddress = $startIp
+                        endIpAddress   = $endIp
+                    }
+                }
+            } else {
+                $addresses = @()
+                if ($cluster.ipv4Pool -and $cluster.ipv4Pool.addresses) {
+                    $addresses = @($cluster.ipv4Pool.addresses)
+                }
+                $payload['ipv4Pool'] = [ordered]@{ addresses = $addresses }
+            }
+            $payload['size']                    = $cluster.size
+            $payload['networkMoId']             = "<vCenter Portgroup UUID>"
+            $payload['gatewayCidrIpv4']         = "<Gateway CIDR for the associated network>"
+            $payload['clusterId']               = $cluster.vspClusterId
+            $payload['internalClusterCidrIpv4'] = $cluster.internalClusterCidrIpv4
+
+            $shortName = ($cluster.platformFqdn -split '\.')[0]
+            $outFile = Join-Path (Get-Location).Path "$shortName.json"
+            $payload | ConvertTo-Json -Depth 5 | Set-Content -Path $outFile -Encoding UTF8
+            LogMessage -type INFO -message "[$SddcManagerFqdn] Written: $outFile"
+        }
+    }
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+Export-ModuleMember -Function Get-ServicesRuntime
+
 Function Get-VcfmsServicesRuntimeToken {
     <#
     .SYNOPSIS
