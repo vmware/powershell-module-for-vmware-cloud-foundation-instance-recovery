@@ -8408,6 +8408,330 @@ Function Set-ServicesRuntimeSftpBackupSettings {
 }
 Export-ModuleMember -Function Set-ServicesRuntimeSftpBackupSettings
 
+Function Set-ServicesRuntimeBackupSchedule {
+    <#
+    .SYNOPSIS
+    Configures the full and incremental backup schedule on a VCFMS Services Runtime instance.
+
+    .DESCRIPTION
+    The Set-ServicesRuntimeBackupSchedule cmdlet applies a scheduled backup configuration to the specified VCFMS component via POST /api/v1/components/{componentId}?action=apply. Full and incremental backups are each independently enabled/disabled and given a cron schedule.
+
+    .EXAMPLE
+    Set-ServicesRuntimeBackupSchedule -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -ComponentId "1f5c79fe-e3aa-41b1-a5cf-774a6497fa3d" -FullBackupEnabled $true -FullBackupSchedule "0 2 * * 0" -IncrementalBackupEnabled $true -IncrementalBackupSchedule "0 2 * * 1-6"
+
+    .EXAMPLE
+    Set-ServicesRuntimeBackupSchedule -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -ComponentId "1f5c79fe-e3aa-41b1-a5cf-774a6497fa3d" -FullBackupEnabled $false -IncrementalBackupEnabled $false
+
+    .PARAMETER ServicesRuntimeFqdn
+    FQDN of the VCFMS Services Runtime instance.
+
+    .PARAMETER ServicesRuntimePassword
+    Password for the Services Runtime admin user (used to obtain a token).
+
+    .PARAMETER ServicesRuntimeUsername
+    Username for the Services Runtime token. Default is "admin@vsp.local".
+
+    .PARAMETER ComponentId
+    Component ID (cluster ID) to apply the backup schedule to. If omitted, the component of type "vsp" is resolved automatically.
+
+    .PARAMETER FullBackupEnabled
+    Whether scheduled full backups are enabled.
+
+    .PARAMETER FullBackupSchedule
+    Cron schedule for full backups. Required when -FullBackupEnabled is $true.
+
+    .PARAMETER IncrementalBackupEnabled
+    Whether scheduled incremental backups are enabled.
+
+    .PARAMETER IncrementalBackupSchedule
+    Cron schedule for incremental backups. Required when -IncrementalBackupEnabled is $true.
+
+    .PARAMETER PollIntervalSeconds
+    Interval in seconds to poll the task status. Default is 60 (one minute).
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][String] $ServicesRuntimeFqdn,
+        [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
+        [Parameter(Mandatory = $false)][String] $ServicesRuntimeUsername = "admin@vsp.local",
+        [Parameter(Mandatory = $false)][String] $ComponentId,
+        [Parameter(Mandatory = $true)][Bool] $FullBackupEnabled,
+        [Parameter(Mandatory = $false)][String] $FullBackupSchedule,
+        [Parameter(Mandatory = $true)][Bool] $IncrementalBackupEnabled,
+        [Parameter(Mandatory = $false)][String] $IncrementalBackupSchedule,
+        [Parameter(Mandatory = $false)][Int] $PollIntervalSeconds = 60
+    )
+
+    $jumpboxName = hostname
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    if ($FullBackupEnabled -and [string]::IsNullOrWhiteSpace($FullBackupSchedule)) {
+        LogMessage -type ERROR -message "[$jumpboxName] -FullBackupSchedule is required when -FullBackupEnabled is `$true"
+        return
+    }
+    if ($IncrementalBackupEnabled -and [string]::IsNullOrWhiteSpace($IncrementalBackupSchedule)) {
+        LogMessage -type ERROR -message "[$jumpboxName] -IncrementalBackupSchedule is required when -IncrementalBackupEnabled is `$true"
+        return
+    }
+
+    # Get Services Runtime token
+    $srToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
+    if (-not $srToken) {
+        LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain Services Runtime token. Aborting."
+        return
+    }
+    $tokenFetchedAt = [DateTime]::UtcNow
+
+    $headers = @{
+        "Authorization" = "Bearer $srToken"
+        "Accept"        = "application/json"
+    }
+
+    # Resolve component ID
+    if ($ComponentId) {
+        $componentId = $ComponentId.Trim()
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Using supplied component ID: $componentId"
+    } else {
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Resolving VSP component ID"
+        try {
+            $componentsResponse = Invoke-RestMethod -Uri "https://$ServicesRuntimeFqdn/api/v1/components" -Method GET -Headers $headers -SkipCertificateCheck
+        } catch {
+            LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Failed to retrieve components: $($_.Exception.Message)"
+            return
+        }
+        $vspComponent = @($componentsResponse.components | Where-Object { $_.type -eq "vsp" }) | Select-Object -First 1
+        if (-not $vspComponent) {
+            LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] No component of type 'vsp' found. Pass -ComponentId to specify manually."
+            return
+        }
+        $componentId = $vspComponent.id
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Resolved VSP component ID: $componentId"
+    }
+
+    # Build the request body
+    $requestBody = @{
+        spec    = @{
+            configuration = @{
+                backups = @{
+                    full        = @{
+                        enable   = $FullBackupEnabled
+                        schedule = $FullBackupSchedule
+                    }
+                    incremental = @{
+                        enable   = $IncrementalBackupEnabled
+                        schedule = $IncrementalBackupSchedule
+                    }
+                }
+            }
+        }
+        options = @{}
+    } | ConvertTo-Json -Depth 10
+
+    Write-Host ""
+    Write-Host " Backup Schedule Payload:" -ForegroundColor Cyan
+    Write-Host $requestBody
+    Write-Host ""
+
+    $applyUri = "https://$ServicesRuntimeFqdn/api/v1/components/${componentId}?action=apply"
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Applying backup schedule to component $componentId"
+
+    try {
+        $response = Invoke-RestMethod -Uri $applyUri -Method POST -Headers $headers -Body $requestBody -SkipCertificateCheck
+    } catch {
+        $statusCode = $null
+        if ($_.Exception.Response) { $statusCode = [int]$_.Exception.Response.StatusCode }
+
+        $errorMessage = $_.Exception.Message
+        $rawErrorDetails = $_.ErrorDetails.Message
+        if ($rawErrorDetails) {
+            try {
+                $errorBody = $rawErrorDetails | ConvertFrom-Json
+                if ($errorBody.message) { $errorMessage = $errorBody.message }
+                elseif ($errorBody.messages) { $errorMessage = ($errorBody.messages | ForEach-Object { if ($_.default) { $_.default } else { $_ } }) -join '; ' }
+                elseif ($errorBody.error) { $errorMessage = $errorBody.error }
+                else { $errorMessage = $rawErrorDetails }
+            } catch {
+                $errorMessage = $rawErrorDetails
+            }
+        }
+
+        if ($statusCode -eq 404) {
+            LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Component $componentId not found (HTTP 404). Verify the component ID with GET /api/v1/components or Get-ServicesRuntimeBackupSchedule."
+        } else {
+            LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Failed to apply backup schedule: $errorMessage"
+        }
+        return
+    }
+
+    # Check for a task ID in the response
+    $taskId = $response.id
+    if (-not $taskId) {
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Backup schedule applied successfully (no task returned)"
+        $StopWatch.Stop()
+        $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+        return
+    }
+
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Backup schedule task submitted: $taskId"
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Polling task status every $PollIntervalSeconds seconds"
+
+    $taskUri = "https://$ServicesRuntimeFqdn/api/v1/tasks/$taskId"
+    $taskStatus = "IN_PROGRESS"
+    Do {
+        Start-Sleep -Seconds $PollIntervalSeconds
+
+        try {
+            if (([DateTime]::UtcNow - $tokenFetchedAt).TotalMinutes -ge 60) {
+                LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Token age >= 60 minutes; refreshing"
+                $newToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
+                if ($newToken) {
+                    $srToken = $newToken
+                    $headers["Authorization"] = "Bearer $srToken"
+                    $tokenFetchedAt = [DateTime]::UtcNow
+                } else {
+                    LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Token refresh failed; continuing with existing token"
+                }
+            }
+            $taskResponse = Invoke-RestMethod -Uri $taskUri -Method GET -Headers $headers -SkipCertificateCheck
+            $taskStatus = $taskResponse.status
+            LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Status: $taskStatus"
+        } catch {
+            LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Error polling task (will retry): $($_.Exception.Message)"
+        }
+    } While ($taskStatus -in @("IN_PROGRESS", "IN PROGRESS", "PENDING", "RUNNING"))
+
+    if ($taskStatus -in @("SUCCESSFUL", "SUCCESS", "COMPLETED", "Succeeded")) {
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Backup schedule applied successfully"
+    } else {
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Backup schedule task ended with status: $taskStatus"
+        if ($taskResponse.errors) {
+            foreach ($err in $taskResponse.errors) {
+                LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Error: $($err.message)"
+            }
+        }
+    }
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+Export-ModuleMember -Function Set-ServicesRuntimeBackupSchedule
+
+Function Get-ServicesRuntimeBackupSchedule {
+    <#
+    .SYNOPSIS
+    Retrieves the existing full and incremental backup schedule from a VCFMS Services Runtime instance.
+
+    .DESCRIPTION
+    The Get-ServicesRuntimeBackupSchedule cmdlet retrieves the specified component's detail via GET /api/v1/components/{ComponentId} and returns the backup schedule found at spec.configuration.backups (full and incremental enable/schedule values). If -ComponentId is not supplied, the component of type "vsp" is resolved automatically from GET /api/v1/components.
+
+    .EXAMPLE
+    Get-ServicesRuntimeBackupSchedule -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!"
+
+    .EXAMPLE
+    Get-ServicesRuntimeBackupSchedule -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -ComponentId "1f5c79fe-e3aa-41b1-a5cf-774a6497fa3d"
+
+    .PARAMETER ServicesRuntimeFqdn
+    FQDN of the VCFMS Services Runtime instance.
+
+    .PARAMETER ServicesRuntimePassword
+    Password for the Services Runtime admin user (used to obtain a token).
+
+    .PARAMETER ServicesRuntimeUsername
+    Username for the Services Runtime token. Default is "admin@vsp.local".
+
+    .PARAMETER ComponentId
+    Component ID (cluster ID) to retrieve the backup schedule from. If omitted, the component of type "vsp" is resolved automatically.
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][String] $ServicesRuntimeFqdn,
+        [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
+        [Parameter(Mandatory = $false)][String] $ServicesRuntimeUsername = "admin@vsp.local",
+        [Parameter(Mandatory = $false)][String] $ComponentId
+    )
+
+    $jumpboxName = hostname
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    # Get Services Runtime token
+    $srToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
+    if (-not $srToken) {
+        LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain Services Runtime token. Aborting."
+        return
+    }
+
+    $headers = @{
+        "Authorization" = "Bearer $srToken"
+        "Accept"        = "application/json"
+    }
+
+    # Resolve component ID
+    if ($ComponentId) {
+        $componentId = $ComponentId.Trim()
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Using supplied component ID: $componentId"
+    } else {
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Resolving VSP component ID"
+        try {
+            $componentsResponse = Invoke-RestMethod -Uri "https://$ServicesRuntimeFqdn/api/v1/components" -Method GET -Headers $headers -SkipCertificateCheck
+        } catch {
+            LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Failed to retrieve components: $($_.Exception.Message)"
+            return
+        }
+        $vspComponent = @($componentsResponse.components | Where-Object { $_.type -eq "vsp" }) | Select-Object -First 1
+        if (-not $vspComponent) {
+            LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] No component of type 'vsp' found. Pass -ComponentId to specify manually."
+            return
+        }
+        $componentId = $vspComponent.id
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Resolved VSP component ID: $componentId"
+    }
+
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Retrieving backup schedule for component $componentId"
+
+    try {
+        $componentDetail = Invoke-RestMethod -Uri "https://$ServicesRuntimeFqdn/api/v1/components/$componentId" -Method GET -Headers $headers -SkipCertificateCheck
+    } catch {
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] GET /api/v1/components/$componentId failed: $($_.Exception.Message)"
+        return
+    }
+
+    $backups = $componentDetail.spec.configuration.backups
+    if (-not $backups -or (-not $backups.full -and -not $backups.incremental)) {
+        LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] No backup schedule configuration found for component $componentId"
+        $StopWatch.Stop()
+        $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+        return
+    }
+
+    $result = [PSCustomObject]@{
+        FullBackupEnabled         = $backups.full.enable
+        FullBackupSchedule        = $backups.full.schedule
+        IncrementalBackupEnabled  = $backups.incremental.enable
+        IncrementalBackupSchedule = $backups.incremental.schedule
+    }
+
+    Write-Host ""
+    Write-Host " Backup Schedule - Component $componentId" -ForegroundColor Cyan
+    Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+    $result | Format-List | Out-String | Write-Host
+    Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+    Write-Host ""
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+
+    return $result
+}
+Export-ModuleMember -Function Get-ServicesRuntimeBackupSchedule
+
 Function Get-ServicesRuntimeComponentBackups {
     <#
     .SYNOPSIS
@@ -9364,6 +9688,291 @@ Function Stop-VcfmsTask {
     return $taskResponse
 }
 Export-ModuleMember -Function Stop-VcfmsTask
+
+Function Start-ServicesRuntimeComponentBackup {
+    <#
+    .SYNOPSIS
+    Takes an on-demand backup of one or more VCFMS components.
+
+    .DESCRIPTION
+    The Start-ServicesRuntimeComponentBackup cmdlet retrieves the list of registered VCFMS components from the Fleet LCM, groups and sorts them by the VCF instance they are associated with, and prompts you to pick a single VCF instance before selecting one, several, or all of that instance's components to back up. It then submits a backup task to the target Services Runtime instance via POST /api/v1/system/backups?action=backup and polls the task until it reaches a terminal state.
+
+    Pass -ComponentIds to skip the interactive selection and back up a known set of components directly. All specified component IDs must belong to the same VCF instance.
+
+    .EXAMPLE
+    Start-ServicesRuntimeComponentBackup -FleetLCMFqdn "flt-fc01.rainpole.io" -FleetLCMPassword "VMw@re1!VMw@re1!" -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!"
+
+    .EXAMPLE
+    Start-ServicesRuntimeComponentBackup -FleetLCMFqdn "flt-fc01.rainpole.io" -FleetLCMPassword "VMw@re1!VMw@re1!" -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -ComponentIds "4e38afb4-ac83-481b-876f-922497eaada7","a669bd76-e75c-4c88-8e9e-a0e6526f4d28"
+
+    .PARAMETER FleetLCMFqdn
+    FQDN of the VCFMS Fleet LCM instance used to enumerate components.
+
+    .PARAMETER FleetLCMPassword
+    Password for the Fleet LCM admin user (used to obtain a token).
+
+    .PARAMETER FleetLCMUsername
+    Username for the Fleet LCM token. Default is "admin@vsp.local".
+
+    .PARAMETER ServicesRuntimeFqdn
+    FQDN of the VCFMS Services Runtime instance that will run the backup task.
+
+    .PARAMETER ServicesRuntimePassword
+    Password for the Services Runtime admin user.
+
+    .PARAMETER ServicesRuntimeUsername
+    Username for the Services Runtime token. Default is "admin@vsp.local".
+
+    .PARAMETER ComponentIds
+    One or more component IDs to back up. If not specified, the cmdlet displays a numbered list of components and prompts for a selection.
+
+    .PARAMETER PollIntervalSeconds
+    Interval in seconds to poll the backup task status. Default is 30.
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][String] $FleetLCMFqdn,
+        [Parameter(Mandatory = $true)][String] $FleetLCMPassword,
+        [Parameter(Mandatory = $false)][String] $FleetLCMUsername = "admin@vsp.local",
+
+        [Parameter(Mandatory = $true)][String] $ServicesRuntimeFqdn,
+        [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
+        [Parameter(Mandatory = $false)][String] $ServicesRuntimeUsername = "admin@vsp.local",
+
+        [Parameter(Mandatory = $false)][String[]] $ComponentIds,
+        [Parameter(Mandatory = $false)][Int] $PollIntervalSeconds = 30
+    )
+
+    $jumpboxName = hostname
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    # Get Fleet LCM token and enumerate components
+    $fcToken = Get-VcfmsFleetLCMToken -FleetLCMFqdn $FleetLCMFqdn -Username $FleetLCMUsername -Password $FleetLCMPassword
+    if (-not $fcToken) {
+        LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain Fleet LCM token. Aborting."
+        return
+    }
+
+    $fcHeaders = @{
+        "Authorization" = "Bearer $fcToken"
+        "Accept"        = "application/json"
+    }
+
+    $componentsUri = "https://$FleetLCMFqdn/fleet-lcm/v1/components?includeConsumptionVsp=true&includeVcdMigrator=true"
+    LogMessage -type INFO -message "[$FleetLCMFqdn] Retrieving VCFMS components"
+
+    try {
+        $componentsResponse = Invoke-RestMethod -Uri $componentsUri -Method GET -Headers $fcHeaders -SkipCertificateCheck
+    } catch {
+        LogMessage -type ERROR -message "[$FleetLCMFqdn] Failed to retrieve components: $($_.Exception.Message)"
+        return
+    }
+
+    $unsupportedComponentTypes = @("VCF Operations", "VCF Operations for networks", "Telemetry", "Real-time metrics store", "Real-time metrics", "Migration service engine")
+    $allComponents = @($componentsResponse.components | Where-Object { $_.componentTypeDescription -notin $unsupportedComponentTypes })
+    if (-not $allComponents -or $allComponents.Count -eq 0) {
+        LogMessage -type WARNING -message "[$FleetLCMFqdn] No components found."
+        return
+    }
+
+    $allComponentsList = [System.Collections.Generic.List[PSCustomObject]]::new()
+    foreach ($comp in $allComponents) {
+        $fqdn            = if ($comp.componentTypeDescription -eq 'VCF services runtime') { $comp.fqdn } else { $null }
+        $vcfInstanceName = if ($comp.vspCluster.fqdn) { $comp.vspCluster.fqdn } else { "Fleet-wide" }
+        $allComponentsList.Add([PSCustomObject]@{
+            Id           = $comp.id
+            Type         = $comp.componentTypeDescription
+            Fqdn         = $fqdn
+            VcfInstance  = $vcfInstanceName
+        })
+    }
+
+    $selectedComponents = @()
+
+    if ($PSBoundParameters.ContainsKey("ComponentIds")) {
+        $selectedComponents = $allComponentsList | Where-Object { $_.Id -in $ComponentIds }
+        $missingIds = $ComponentIds | Where-Object { $_ -notin $allComponentsList.Id }
+        if ($missingIds) {
+            LogMessage -type ERROR -message "[$FleetLCMFqdn] Component ID(s) not found: $($missingIds -join ', ')"
+            return
+        }
+        $distinctInstances = @($selectedComponents.VcfInstance | Sort-Object -Unique)
+        if ($distinctInstances.Count -gt 1) {
+            LogMessage -type ERROR -message "[$FleetLCMFqdn] Component IDs span multiple VCF instances ($($distinctInstances -join ', ')). Select components from a single VCF instance."
+            return
+        }
+    } else {
+        # Group components by VCF instance and present a numbered list of instances
+        $instanceGroups = [System.Collections.Generic.List[PSCustomObject]]::new()
+        $instanceIndex = 1
+        foreach ($vcfInstance in ($allComponentsList.VcfInstance | Sort-Object -Unique)) {
+            $instanceGroups.Add([PSCustomObject]@{
+                Index      = $instanceIndex
+                VcfInstance = $vcfInstance
+                Components  = @($allComponentsList | Where-Object { $_.VcfInstance -eq $vcfInstance } | Sort-Object Type)
+            })
+            $instanceIndex++
+        }
+
+        Write-Host ""
+        Write-Host " Available VCF Instances" -ForegroundColor Cyan
+        Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+        Write-Host ("  {0,3}  {1,-40}  {2}" -f "ID", "VCF Instance", "Components") -ForegroundColor Gray
+        Write-Host ""
+        foreach ($group in $instanceGroups) {
+            Write-Host ("  {0,3}  {1,-40}  {2}" -f $group.Index, $group.VcfInstance, $group.Components.Count) -ForegroundColor White
+        }
+        Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+        Write-Host ""
+
+        $selectedGroup = $null
+        Do {
+            Write-Host " Enter the ID of the VCF instance to back up, or C to Cancel: " -ForegroundColor Yellow -NoNewline
+            $instanceSelection = Read-Host
+            if ($instanceSelection -in @("C", "c")) {
+                LogMessage -type INFO -message "[$jumpboxName] Cancelled by user."
+                $StopWatch.Stop()
+                $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+                LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+                return
+            }
+            $instanceNum = 0
+            if ([int]::TryParse($instanceSelection, [ref]$instanceNum) -and $instanceNum -ge 1 -and $instanceNum -le $instanceGroups.Count) {
+                $selectedGroup = $instanceGroups | Where-Object { $_.Index -eq $instanceNum }
+            } else {
+                Write-Host " Invalid selection. Enter a number between 1 and $($instanceGroups.Count), or C to Cancel." -ForegroundColor Yellow
+            }
+        } Until ($null -ne $selectedGroup)
+
+        $componentList = [System.Collections.Generic.List[PSCustomObject]]::new()
+        $index = 1
+        foreach ($comp in $selectedGroup.Components) {
+            $componentList.Add([PSCustomObject]@{
+                Index = $index
+                Id    = $comp.Id
+                Type  = $comp.Type
+                Fqdn  = $comp.Fqdn
+            })
+            $index++
+        }
+
+        # Display numbered list of components within the selected VCF instance
+        Write-Host ""
+        Write-Host " Available Components - $($selectedGroup.VcfInstance)" -ForegroundColor Cyan
+        Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+        Write-Host ("  {0,3}  {1,-28}  {2}" -f "ID", "Type", "Fqdn") -ForegroundColor Gray
+        Write-Host ""
+        foreach ($comp in $componentList) {
+            Write-Host ("  {0,3}  {1,-28}  {2}" -f $comp.Index, $comp.Type, $comp.Fqdn) -ForegroundColor White
+        }
+        Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+        Write-Host ""
+
+        Do {
+            Write-Host " Enter component ID(s) to back up (comma-separated), 'ALL', or C to Cancel: " -ForegroundColor Yellow -NoNewline
+            $selection = Read-Host
+            if ($selection -in @("C", "c")) {
+                LogMessage -type INFO -message "[$jumpboxName] Cancelled by user."
+                $StopWatch.Stop()
+                $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+                LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+                return
+            }
+            if ($selection -in @("ALL", "all")) {
+                $selectedComponents = $componentList
+            } else {
+                $selectedIndexes = $selection -split ',' | ForEach-Object { $_.Trim() }
+                $selectedComponents = @()
+                $invalidEntries = @()
+                foreach ($entry in $selectedIndexes) {
+                    $num = 0
+                    if ([int]::TryParse($entry, [ref]$num) -and $num -ge 1 -and $num -le $componentList.Count) {
+                        $selectedComponents += ($componentList | Where-Object { $_.Index -eq $num })
+                    } else {
+                        $invalidEntries += $entry
+                    }
+                }
+                if ($invalidEntries.Count -gt 0) {
+                    Write-Host " Invalid selection(s): $($invalidEntries -join ', '). Enter numbers between 1 and $($componentList.Count), 'ALL', or C to Cancel." -ForegroundColor Yellow
+                    $selectedComponents = @()
+                }
+            }
+        } Until ($selectedComponents.Count -gt 0)
+    }
+
+    Write-Host ""
+    Write-Host " Components selected for backup:" -ForegroundColor Cyan
+    foreach ($comp in $selectedComponents) {
+        Write-Host ("  {0}  ({1})" -f $comp.Type, $comp.Id) -ForegroundColor White
+    }
+    Write-Host ""
+
+    Do {
+        Write-Host " Proceed with backup? (Y/N): " -ForegroundColor Yellow -NoNewline
+        $confirmation = Read-Host
+    } Until ($confirmation -in @("Y", "y", "N", "n"))
+
+    if ($confirmation -in @("N", "n")) {
+        LogMessage -type INFO -message "[$jumpboxName] Backup cancelled by user."
+        $StopWatch.Stop()
+        $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+        return
+    }
+
+    # Get Services Runtime token and submit the backup task
+    $srToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
+    if (-not $srToken) {
+        LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain Services Runtime token. Aborting."
+        return
+    }
+
+    $srHeaders = @{
+        "Authorization" = "Bearer $srToken"
+        "Content-Type"  = "application/json"
+        "Accept"        = "application/json"
+    }
+
+    $backupBody = @{ components = @($selectedComponents.Id) } | ConvertTo-Json -Depth 5
+    $backupUri  = "https://$ServicesRuntimeFqdn/api/v1/system/backups?action=backup"
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Submitting backup for $($selectedComponents.Count) component(s)"
+
+    try {
+        $backupResponse = Invoke-RestMethod -Uri $backupUri -Method POST -Headers $srHeaders -Body $backupBody -SkipCertificateCheck
+    } catch {
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Backup request failed: $($_.Exception.Message)"
+        if ($_.Exception.Response) {
+            try {
+                $errorStream = $_.Exception.Response.GetResponseStream()
+                $reader = New-Object System.IO.StreamReader($errorStream)
+                $errorBody = $reader.ReadToEnd()
+                LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Response body: $errorBody"
+            } catch {}
+        }
+        return
+    }
+
+    $taskId = $backupResponse.id
+    if (-not $taskId) {
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] API response:"
+        $backupResponse | ConvertTo-Json -Depth 5 | Write-Host
+        $StopWatch.Stop()
+        $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+        return
+    }
+
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Backup task submitted: $taskId"
+
+    $null = Watch-VcfmsTask -ServicesRuntimeFqdn $ServicesRuntimeFqdn -ServicesRuntimePassword $ServicesRuntimePassword -ServicesRuntimeUsername $ServicesRuntimeUsername -TaskId $taskId -PollIntervalSeconds $PollIntervalSeconds
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+Export-ModuleMember -Function Start-ServicesRuntimeComponentBackup
 
 Function Remove-VcfmsComponent {
     <#
