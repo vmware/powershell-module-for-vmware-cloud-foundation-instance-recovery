@@ -6388,11 +6388,11 @@ Function Invoke-NSXEdgeClusterRecovery {
                 $memoryGB = $vmDeploymentConfig.resource_allocation.memory_allocation_in_mb / 1024
                 $cpuShareLevel = (($vmDeploymentConfig.reservation_info.cpu_reservation.reservation_in_shares -split ("_"))[0]).tolower()
                 $attachedNetworks = $vmDeploymentConfig.data_network_ids
+                $portgroup = (Get-VDPortGroup | Where-Object {$_.ExtensionData.MoRef.Value -eq $vmDeploymentConfig.management_network_id} | Select-Object Name).Name
+                $clusterVdsName = (Get-View -Id (Get-View -Id "DistributedVirtualPortgroup-$($vmDeploymentConfig.management_network_id)").Config.DistributedVirtualSwitch).Name
 
                 #Create Dummy VM
                 LogMessage -type INFO -message "[$($edge.display_name)] Preparing to Update Placement References"
-                $portgroup = (($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).vdsdetails.portgroups | Where-Object { $_.transportType -eq 'VM_MANAGEMENT' }).NAME
-                $clusterVdsName = (($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).vdsdetails | Where-Object { $_.portgroups.transportType -eq 'VM_MANAGEMENT' }).dvsName
                 If (!$portgroup) {
                     $portgroup = (($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).vdsdetails.portgroups | Where-Object { $_.transportType -eq 'MANAGEMENT' }).NAME
                     $clusterVdsName = (($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).vdsdetails | Where-Object { $_.portgroups.transportType -eq 'MANAGEMENT' }).dvsName
@@ -6623,10 +6623,10 @@ Function Invoke-NSXEdgeClusterRecoverySelective {
         $memoryGB = $vmDeploymentConfig.resource_allocation.memory_allocation_in_mb / 1024
         $cpuShareLevel = (($vmDeploymentConfig.reservation_info.cpu_reservation.reservation_in_shares -split ("_"))[0]).tolower()
         $attachedNetworks = $vmDeploymentConfig.data_network_ids
+        $portgroup = (Get-VDPortGroup | Where-Object {$_.ExtensionData.MoRef.Value -eq $vmDeploymentConfig.management_network_id} | Select-Object Name).Name
+        $clusterVdsName = (Get-View -Id (Get-View -Id "DistributedVirtualPortgroup-$($vmDeploymentConfig.management_network_id)").Config.DistributedVirtualSwitch).Name
 
         LogMessage -type INFO -message "[$($edge.display_name)] Preparing to Update Placement References"
-        $portgroup = (($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).vdsdetails.portgroups | Where-Object { $_.transportType -eq 'VM_MANAGEMENT' }).NAME
-        $clusterVdsName = (($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).vdsdetails | Where-Object { $_.portgroups.transportType -eq 'VM_MANAGEMENT' }).dvsName
         If (!$portgroup) {
             $portgroup = (($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).vdsdetails.portgroups | Where-Object { $_.transportType -eq 'MANAGEMENT' }).NAME
             $clusterVdsName = (($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).vdsdetails | Where-Object { $_.portgroups.transportType -eq 'MANAGEMENT' }).dvsName
