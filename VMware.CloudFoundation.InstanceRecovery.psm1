@@ -1563,7 +1563,7 @@ Function New-NSXManagerOvaDeployment {
     $selectedNsxManager = $nsxNodes | Where-Object { $_.vmName -eq ($nsxManagersDisplayObject | Where-Object { $_.id -eq $nsxManagerSelection }).manager }
 
     $vmDatastore = $extractedSDDCData.mgmtDomainInfrastructure.vsan_datastore
-    If (($workloadDomainDetails.domainType -eq "MANAGEMENT") -and ($targetType -eq 'esx')) {
+    If ($targetType -eq 'esx') {
         $vmNetwork = "vm_mgmt"
     } else {
         $vmNetwork = $extractedSDDCData.mgmtDomainInfrastructure.port_group
@@ -1694,7 +1694,7 @@ Function New-vCenterOvaDeployment {
 
     $workloadDomainDetails = ($extractedSDDCData.workloadDomains | Where-Object { $_.domainName -eq $workloadDomain })
     $vmDatastore = $extractedSDDCData.mgmtDomainInfrastructure.vsan_datastore
-    If (($workloadDomainDetails.domainType -eq "MANAGEMENT") -and ($targetType -eq 'esx')) {
+    If ($targetType -eq 'esx') {
         $vmNetwork = "vm_mgmt"
     } else {
         $vmNetwork = $extractedSDDCData.mgmtDomainInfrastructure.port_group
