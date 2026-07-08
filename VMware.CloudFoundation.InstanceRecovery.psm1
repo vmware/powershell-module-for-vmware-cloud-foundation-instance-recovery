@@ -338,18 +338,22 @@ Function New-ExtractDataFromSDDCBackup {
     The New-ExtractDataFromSDDCBackup cmdlet decrypts and extracts the contents of the provided VMware Cloud Foundation SDDC manager backup, parses it for information required for instance recovery and stores the data in a file called extracted-sddc-data.json
 
     .EXAMPLE
-    New-ExtractDataFromSDDCBackup -backupFilePath "F:\backup\vcf-backup-sfo-vcf01-sfo-rainpole-io-2023-09-19-10-53-02.tar.gz" -encryptionPassword "VMw@re1!VMw@re1!"
+    New-ExtractDataFromSDDCBackup -backupFilePath "F:\backup\vcf-backup-sfo-vcf01-sfo-rainpole-io-2023-09-19-10-53-02.tar.gz" -encryptionPassword "VMw@re1!VMw@re1!" -vcfVersion "9.1.1"
 
     .PARAMETER vcfBackupFilePath
     Relative or absolute to the VMware Cloud Foundation SDDC manager backup file somewhere on the local filesystem
 
     .PARAMETER encryptionPassword
     The password that should be used to decrypt the VMware Cloud Foundation SDDC manager backup file ie the password that was used to encrypt it originally.
+
+    .PARAMETER vcfVersion
+    The VMware Cloud Foundation version the backup was taken from (e.g. "9.1.0" or "9.1.1"). Determines which openssl decryption parameters are used: versions prior to 9.1.1 decrypt without a header/pbkdf2, and 9.1.1 or later strip a 4-byte header and decrypt with -pbkdf2 -iter 600000.
     #>
 
     Param(
         [Parameter (Mandatory = $true)][String] $vcfBackupFilePath,
-        [Parameter (Mandatory = $true)][String] $encryptionPassword
+        [Parameter (Mandatory = $true)][String] $encryptionPassword,
+        [Parameter (Mandatory = $true)][String] $vcfVersion
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
@@ -360,16 +364,60 @@ Function New-ExtractDataFromSDDCBackup {
     $parentFolder = Split-Path -Path $backupFileFullPath
     $extractedBackupFolder = ($backupFileName -Split (".tar.gz"))[0]
 
-    #Decrypt Backup
-    LogMessage -type INFO -message "[$jumpboxName] Decrypting Backup"
-    $command = "openssl enc -d -aes-256-cbc -md sha256 -in $backupFileFullPath -pass pass:`"$encryptionPassword`" -out `"$parentFolder\decrypted-sddc-manager-backup.tar.gz`""
-    Invoke-Expression "& $command" *>$null
+    $filesToExtract = @(
+        "$extractedBackupFolder/metadata.json"
+        "$extractedBackupFolder/appliancemanager_dns_configuration.json"
+        "$extractedBackupFolder/appliancemanager_ntp_configuration.json"
+        "$extractedBackupFolder/security_password_vault.json"
+        "$extractedBackupFolder/database/sddc-postgres.bkp"
+    )
+
+    # Determine decrypt/extract method based on the VCF version the backup was taken from
+    $versionParts = $vcfVersion -split '\.'
+    $versionMajor = [int]$versionParts[0]
+    $versionMinor = if ($versionParts.Count -gt 1) { [int]$versionParts[1] } else { 0 }
+    $versionBuild = if ($versionParts.Count -gt 2) { [int]$versionParts[2] } else { 0 }
+    $parsedVcfVersion = New-Object System.Version($versionMajor, $versionMinor, $versionBuild)
+    $minStreamingDecryptVersion = New-Object System.Version(9, 1, 1)
+
+    Push-Location
+    Set-Location "$parentFolder"
+
+    if ($parsedVcfVersion -lt $minStreamingDecryptVersion) {
+        #Decrypt Backup
+        LogMessage -type INFO -message "[$jumpboxName] Decrypting Backup"
+        $command = "openssl enc -d -aes-256-cbc -md sha256 -in $backupFileFullPath -pass pass:`"$encryptionPassword`" -out `"$parentFolder\decrypted-sddc-manager-backup.tar.gz`""
+        Invoke-Expression "& $command" *>$null
+    } else {
+        #Decrypt Backup (VCF 9.1.1+ prepends a 4-byte header before the openssl ciphertext; strip it before decrypting)
+        LogMessage -type INFO -message "[$jumpboxName] Decrypting Backup"
+        $strippedHeaderFile = "$parentFolder\$backupFileName.noheader"
+        $inStream = [System.IO.File]::OpenRead($backupFileFullPath)
+        try {
+            $inStream.Seek(4, [System.IO.SeekOrigin]::Begin) | Out-Null
+            $outStream = [System.IO.File]::Create($strippedHeaderFile)
+            try {
+                $inStream.CopyTo($outStream)
+            } finally {
+                $outStream.Close()
+            }
+        } finally {
+            $inStream.Close()
+        }
+
+        $env:OPENSSL_FIPS = "1"
+        try {
+            $command = "openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -md sha256 -in `"$strippedHeaderFile`" -pass pass:`"$encryptionPassword`" -out `"$parentFolder\decrypted-sddc-manager-backup.tar.gz`""
+            Invoke-Expression "& $command" *>$null
+        } finally {
+            Remove-Item Env:\OPENSSL_FIPS -ErrorAction SilentlyContinue
+            Remove-Item -Path $strippedHeaderFile -Force -ErrorAction SilentlyContinue
+        }
+    }
 
     #Extract Required Files From Backup Leveraging Windows tar.exe
     LogMessage -type INFO -message "[$jumpboxName] Extracting Backup"
-    Push-Location
-    Set-Location "$parentFolder"
-    tar -xzf "$parentFolder\decrypted-sddc-manager-backup.tar.gz" "$extractedBackupFolder/metadata.json" "$extractedBackupFolder/appliancemanager_dns_configuration.json" "$extractedBackupFolder/appliancemanager_ntp_configuration.json" "$extractedBackupFolder/security_password_vault.json" "$extractedBackupFolder/database/sddc-postgres.bkp"
+    tar -xzf "$parentFolder\decrypted-sddc-manager-backup.tar.gz" $filesToExtract
 
 
     #Get Content of Password Vault
