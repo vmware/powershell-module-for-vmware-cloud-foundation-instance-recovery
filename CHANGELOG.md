@@ -1,7 +1,9 @@
 # Release History
 
 ## v9.1.0.1003
-> Released: 2026-xx-xx
+> Released: 2026-07-08
+- Fix for NSX Edge recovery for edges deployed to manually created portgroups
+- Fix for deploying workload domain vCenter & NSX OVA to esx
 
 ## v9.1.0.1002
 > Released: 2026-06-29
