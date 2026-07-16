@@ -7686,10 +7686,38 @@ Function New-ServicesRuntime {
         LogMessage -type INFO -message "[$SddcManagerFqdn] VCFMS runtime deployment completed successfully"
     } else {
         LogMessage -type ERROR -message "[$SddcManagerFqdn] VCFMS runtime deployment ended with status: $taskStatus"
-        if ($taskResponse.errors) {
-            foreach ($err in $taskResponse.errors) {
-                LogMessage -type ERROR -message "[$SddcManagerFqdn] Error: $($err.message)"
+
+        $errorDetailsFound = $false
+
+        foreach ($err in @($taskResponse.errors)) {
+            if (-not $err) { continue }
+            $errMsg = if ($err.message) { $err.message } else { $err }
+            LogMessage -type ERROR -message "[$SddcManagerFqdn] Error: $errMsg"
+            if ($err.remediationMessage) {
+                LogMessage -type ERROR -message "[$SddcManagerFqdn] Remediation: $($err.remediationMessage)"
             }
+            if ($err.nestedErrors) {
+                foreach ($nestedErr in @($err.nestedErrors)) {
+                    LogMessage -type ERROR -message "[$SddcManagerFqdn] Nested Error: $($nestedErr.message)"
+                }
+            }
+            $errorDetailsFound = $true
+        }
+
+        foreach ($resource in @($taskResponse.resources | Where-Object { $_.status -eq "FAILED" })) {
+            LogMessage -type ERROR -message "[$SddcManagerFqdn] Resource '$($resource.name)' ($($resource.type)) failed: $($resource.message)"
+            $errorDetailsFound = $true
+        }
+
+        foreach ($subTask in @($taskResponse.subTasks | Where-Object { $_.status -eq "FAILED" })) {
+            $subTaskMessage = if ($subTask.errors) { (@($subTask.errors) | ForEach-Object { $_.message }) -join '; ' } else { $subTask.name }
+            LogMessage -type ERROR -message "[$SddcManagerFqdn] Sub-task '$($subTask.name)' failed: $subTaskMessage"
+            $errorDetailsFound = $true
+        }
+
+        if (-not $errorDetailsFound) {
+            LogMessage -type ERROR -message "[$SddcManagerFqdn] No structured error details were returned by the task API. Full task response:"
+            $taskResponse | ConvertTo-Json -Depth 10 | Write-Host
         }
     }
 
