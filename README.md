@@ -28,11 +28,10 @@ We encourage community contributions! To get started, please refer to the [contr
 
 ## Support
 
-This module is community-driven and maintained by the project contributors. It is not officially
-supported by Broadcom Support but thrives on collaboration and input from its users.
+This module is supported by Broadcom. Open an SR with Broadcom Support if you encounter issues.
 
-Use the GitHub [issues][gh-issues] to report bugs or suggest features and enhancements. Issues are
-monitored by the maintainers and are prioritized based on criticality and community [reactions][gh-reactions].
+GitHub [issues][gh-issues] may also be used to report bugs or suggest features and enhancements. Issues are
+monitored by the maintainers and are prioritized based on criticality.
 
 Before filing an issue, please search the issues and use the reactions feature to add votes to
 matching issues. Please include as much information as you can. Details like these are incredibly

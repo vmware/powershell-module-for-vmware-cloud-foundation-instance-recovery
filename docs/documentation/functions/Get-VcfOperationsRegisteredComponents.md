@@ -1,4 +1,4 @@
-# Get-RegisteredComponentIds
+# Get-VcfOperationsRegisteredComponents
 
 ## Synopsis
 
@@ -7,16 +7,16 @@ Retrieves registered fleet component IDs and related details from a VCF Operatio
 ## Syntax
 
 ```powershell
-Get-RegisteredComponentIds [-VcfOperationsFqdn] <String> [-Password] <String> [[-Username] <String>] [[-AuthSource] <String>] [<CommonParameters>]
+Get-VcfOperationsRegisteredComponents [-VcfOperationsFqdn] <String> [-Password] <String> [[-Username] <String>] [[-AuthSource] <String>] [<CommonParameters>]
 ```
 
 ## Description
 
-The `Get-RegisteredComponentIds` cmdlet queries the VCF Operations internal `/suite-api/internal/components` endpoint and returns a structured object containing:
+The `Get-VcfOperationsRegisteredComponents` cmdlet queries the VCF Operations internal `/suite-api/internal/components` endpoint and returns a structured object containing:
 
-- `components` — Filtered component summaries for types `FLEET_LCM`, `SALT_RAAS`, `VIDB`, and `LI`.
-- `vsp` — VSP component details referenced by the filtered components (null, a single object, or an array when multiple are present).
-- `vcfa` — VCFA component details if one is registered, otherwise null.
+- `components` — Filtered component summaries (including `componentVersion`) for types `FLEET_LCM`, `SALT_RAAS`, `VIDB`, and `LI`.
+- `vsp` — VSP component details (including `componentVersion`) referenced by the filtered components (null, a single object, or an array when multiple are present).
+- `vcfa` — VCFA component details (including `componentVersion`) if one is registered, otherwise null.
 
 A VCF Operations token is obtained automatically.
 
@@ -25,7 +25,7 @@ A VCF Operations token is obtained automatically.
 ### Example 1
 
 ```powershell
-$result = Get-RegisteredComponentIds `
+$result = Get-VcfOperationsRegisteredComponents `
     -VcfOperationsFqdn "flt-ops01a.rainpole.io" `
     -Password          "VMw@re1!VMw@re1!"
 ```
@@ -33,7 +33,7 @@ $result = Get-RegisteredComponentIds `
 ### Example 2
 
 ```powershell
-$result = Get-RegisteredComponentIds `
+$result = Get-VcfOperationsRegisteredComponents `
     -VcfOperationsFqdn "flt-ops01a.rainpole.io" `
     -Username          "admin" `
     -Password          "VMw@re1!VMw@re1!" `

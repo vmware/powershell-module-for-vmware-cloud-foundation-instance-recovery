@@ -7896,13 +7896,13 @@ Function Get-VcfOperationsToken {
     }
 }
 
-Function Get-RegisteredComponentIds {
+Function Get-VcfOperationsRegisteredComponents {
     <#
     .SYNOPSIS
     Retrieves registered component IDs and related details from a VCF Operations instance.
 
     .DESCRIPTION
-    The Get-RegisteredComponentIds cmdlet queries the VCF Operations internal /suite-api/internal/components endpoint and returns a structured object containing:
+    The Get-VcfOperationsRegisteredComponents cmdlet queries the VCF Operations internal /suite-api/internal/components endpoint and returns a structured object containing:
     - components: Filtered component summaries for types FLEET_LCM, SALT_RAAS, VIDB, and LI.
     - vsp: All VSP instances registered in the endpoint, deduplicated by UUID, always returned as an array.
     - vcfa: VCFA component details if one is registered, otherwise null.
@@ -7910,10 +7910,10 @@ Function Get-RegisteredComponentIds {
     A VCF Operations token is obtained automatically via Get-VcfOperationsToken.
 
     .EXAMPLE
-    $result = Get-RegisteredComponentIds -VcfOperationsFqdn "flt-ops01a.rainpole.io" -Password "VMw@re1!VMw@re1!"
+    $result = Get-VcfOperationsRegisteredComponents -VcfOperationsFqdn "flt-ops01a.rainpole.io" -Password "VMw@re1!VMw@re1!"
 
     .EXAMPLE
-    $result = Get-RegisteredComponentIds -VcfOperationsFqdn "flt-ops01a.rainpole.io" -Username "admin" -Password "VMw@re1!VMw@re1!" -AuthSource "local"
+    $result = Get-VcfOperationsRegisteredComponents -VcfOperationsFqdn "flt-ops01a.rainpole.io" -Username "admin" -Password "VMw@re1!VMw@re1!" -AuthSource "local"
 
     .PARAMETER VcfOperationsFqdn
     FQDN of the VCF Operations instance (e.g. flt-ops01a.rainpole.io).
@@ -7979,12 +7979,13 @@ Function Get-RegisteredComponentIds {
             ForEach-Object {
                 $ip = if ($_.properties.ip) { $_.properties.ip } else { $_.vcfInstance.ip }
                 [PSCustomObject]@{
-                    id              = $_.componentUuid
-                    fqdn            = $_.properties.fqdn
-                    fleetFqdn       = $_.properties.fleetFqdn
-                    ip              = $ip
-                    instanceName    = $_.vcfInstance.instanceName
-                    vcfInstanceFqdn = $_.vcfInstance.fqdn
+                    id               = $_.componentUuid
+                    componentVersion = $_.componentVersion
+                    fqdn             = $_.properties.fqdn
+                    fleetFqdn        = $_.properties.fleetFqdn
+                    ip               = $ip
+                    instanceName     = $_.vcfInstance.instanceName
+                    vcfInstanceFqdn  = $_.vcfInstance.fqdn
                 }
             } |
             Sort-Object -Property id -Unique
@@ -7997,6 +7998,7 @@ Function Get-RegisteredComponentIds {
     $vcfa = if ($vcfaComp) {
         [PSCustomObject]@{
             fqdn             = $vcfaComp.properties.fqdn
+            componentVersion = $vcfaComp.componentVersion
             platformFqdn     = $vcfaComp.properties.platformFqdn
             vspComponentUuid = $vcfaComp.properties.vspComponentUuid
         }
@@ -8008,9 +8010,10 @@ Function Get-RegisteredComponentIds {
     $componentSummaries = @(
         $filtered | ForEach-Object {
             [PSCustomObject]@{
-                componentType = $_.componentType
-                id            = $_.componentUuid
-                fqdn          = $_.properties.fqdn
+                componentType    = $_.componentType
+                id               = $_.componentUuid
+                componentVersion = $_.componentVersion
+                fqdn             = $_.properties.fqdn
             }
         }
     )
@@ -8031,7 +8034,7 @@ Function Get-RegisteredComponentIds {
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
 }
-Export-ModuleMember -Function Get-RegisteredComponentIds
+Export-ModuleMember -Function Get-VcfOperationsRegisteredComponents
 
 Function Add-VcfmsTrustedCertificate {
     <#

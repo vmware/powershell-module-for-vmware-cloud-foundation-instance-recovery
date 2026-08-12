@@ -144,10 +144,10 @@ nav:
     - documentation/functions/Confirm-VcfmsFluentdOperatorState.md
     - documentation/functions/Disable-VcfmsClusterLogging.md
     - documentation/functions/Enable-VcfmsClusterLogging.md
-    - documentation/functions/Get-RegisteredComponentIds.md
     - documentation/functions/Get-ServicesRuntimeComponentBackups.md
     - documentation/functions/Get-VcfmsComponents.md
     - documentation/functions/Get-VcfmsFleetComponentRegistration.md
+    - documentation/functions/Get-VcfOperationsRegisteredComponents.md
     - documentation/functions/Install-VcfaMigrationServiceEngine.md
     - documentation/functions/Invoke-NSXEdgeClusterRecovery.md
     - documentation/functions/Invoke-NSXEdgeClusterRecoverySelective.md
