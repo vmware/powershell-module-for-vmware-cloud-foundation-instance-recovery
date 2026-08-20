@@ -1339,17 +1339,17 @@ Function Update-ExtractedSDDCData {
                         $portGroup | Add-Member -NotePropertyName "Name" -NotePropertyValue $vmManagementPGName -Force
                     }
                     if (($portGroup.TransportType -eq "MANAGEMENT") -AND ($portGroup.faultLevel -eq "PRIMARY")) {
-                        $managementPGName = ((Invoke-VcfGetVdses -ClusterId $cluster.id).PortGroups | Where-Object { ($_.TransportType -eq "MANAGEMENT") -AND ($_.faultLevel -eq "PRIMARY")}).Name
+                        $managementPGName = ((Invoke-VcfGetVdses -ClusterId $cluster.id).PortGroups | Where-Object { ($_.TransportType -eq "MANAGEMENT") -AND ($_.name -notlike "az2_*") }).Name
                         LogMessage -type INFO -message "Injecting portgroup name $managementPGName on $($vds.dvsName)"
                         $portGroup | Add-Member -NotePropertyName "Name" -NotePropertyValue $managementPGName -Force
                     }
                     if (($portGroup.TransportType -eq "VMOTION") -AND ($portGroup.faultLevel -eq "PRIMARY")) {
-                        $vMotionPGName = ((Invoke-VcfGetVdses -ClusterId $cluster.id).PortGroups | Where-Object { ($_.TransportType -eq "VMOTION") -AND ($_.faultLevel -eq "PRIMARY")}).Name
+                        $vMotionPGName = ((Invoke-VcfGetVdses -ClusterId $cluster.id).PortGroups | Where-Object { ($_.TransportType -eq "VMOTION") -AND ($_.name -notlike "az2_*") }).Name
                         LogMessage -type INFO -message "Injecting portgroup name $vMotionPGName on $($vds.dvsName)"
                         $portGroup | Add-Member -NotePropertyName "Name" -NotePropertyValue $vMotionPGName -Force
                     }
                     if (($portGroup.TransportType -eq "VSAN") -AND ($portGroup.faultLevel -eq "PRIMARY")) {
-                        $vSanPGName = ((Invoke-VcfGetVdses -ClusterId $cluster.id).PortGroups | Where-Object { ($_.TransportType -eq "VSAN") -AND ($_.faultLevel -eq "PRIMARY") }).Name
+                        $vSanPGName = ((Invoke-VcfGetVdses -ClusterId $cluster.id).PortGroups | Where-Object { ($_.TransportType -eq "VSAN") -AND ($_.name -notlike "az2_*") }).Name
                         LogMessage -type INFO -message "Injecting portgroup name $vSanPGName on $($vds.dvsName)"
                         $portGroup | Add-Member -NotePropertyName "Name" -NotePropertyValue $vSanPGName -Force
                     }
