@@ -532,6 +532,7 @@ Function New-ExtractDataFromSDDCBackup {
     $hostNameColumn = $columns.IndexOf('hostname')
     $hostVersionColumn = $columns.IndexOf('version')
     $hostVmotionIpColumn = $columns.IndexOf('vmotion_ip_address')
+    $hostMoRef = $columns.IndexOf('source_id')
     $hostVsanIpColumn = $columns.IndexOf('vsan_ip_address')
 
     $hostsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.host " | Select-Object Line, LineNumber).LineNumber
@@ -542,7 +543,7 @@ Function New-ExtractDataFromSDDCBackup {
         If ($lineContent -ne '\.') {
             $hostId = $lineContent.split("`t")[$hostIdColumn]
             $hostName = $lineContent.split("`t")[$hostNameColumn]
-            $hostMgmtIp = If (Resolve-DnsName $lineContent.split("`t")[$hostnameColumn] -errorAction SilentlyContinue) {(Resolve-DnsName $lineContent.split("`t")[$hostnameColumn] | Where-Object {$_.section -eq "Answer"}).IPAddress} else {$null}
+            $hostMgmtIp = If (Resolve-DnsName $lineContent.split("`t")[$hostnameColumn] -errorAction SilentlyContinue) { (Resolve-DnsName $lineContent.split("`t")[$hostnameColumn] | Where-Object { $_.section -eq "Answer" }).IPAddress } else { $null }
             $hostVersion = $lineContent.split("`t")[$hostVersionColumn]
             $hostVmotionIp = $lineContent.split("`t")[$hostVmotionIpColumn]
             $hostVsanIP = $lineContent.split("`t")[$hostVsanIpColumn]
@@ -558,6 +559,7 @@ Function New-ExtractDataFromSDDCBackup {
 
             $hostInstance = [pscustomobject]@{
                 'id'        = $hostId
+                'hostMoRef' = $hostMoRef
                 #'gateway'   = $gateway
                 'hostName'  = $hostName
                 'mgmtIp'    = $hostMgmtIp
@@ -646,7 +648,7 @@ Function New-ExtractDataFromSDDCBackup {
             $vCenterID = $lineContent.split("`t")[$vCenterIDColumn]
             $vCenterVersion = $lineContent.split("`t")[$vCenterVersionColumn]
             $vCenterFqdn = $lineContent.split("`t")[$vCenterFqdnColumn]
-            $vCenterIp = If (Resolve-DnsName $vCenterFqdn -errorAction silentlyContinue) {(Resolve-DnsName $vCenterFqdn | Where-Object {$_.section -eq "Answer"}).IPAddress} else {$null}
+            $vCenterIp = If (Resolve-DnsName $vCenterFqdn -errorAction silentlyContinue) { (Resolve-DnsName $vCenterFqdn | Where-Object { $_.section -eq "Answer" }).IPAddress } else { $null }
             $vCenterVMname = $lineContent.split("`t")[$vCenterVMnameColumn]
             $vCenterDomainID = ($hostsAndDomains | Where-Object { $_.hostId -eq (($hostsandVcenters | Where-Object { $_.vCenterID -eq $vCenterID })[0].hostID) }).domainID
             $vCenter = [pscustomobject]@{
@@ -994,15 +996,15 @@ Function New-ExtractDataFromSDDCBackup {
                 $vdsDetails += $vdsObject
             }
             $clusters += [pscustomobject]@{
-                'id'                   = $id
-                'datacenter'           = $null
-                'ftt'                  = $ftt
-                'isDefault'            = $isDefault
-                'isStretched'          = $isStretched
-                'name'                 = $null
-                'vCenterID'            = $vCenterID
-                'primaryDatastoreName' = $null
-                'primaryDatastoreType' = $primaryDatastoreType
+                'id'                     = $id
+                'datacenter'             = $null
+                'ftt'                    = $ftt
+                'isDefault'              = $isDefault
+                'isStretched'            = $isStretched
+                'name'                   = $null
+                'vCenterID'              = $vCenterID
+                'primaryDatastoreName'   = $null
+                'primaryDatastoreType'   = $primaryDatastoreType
                 'primaryDatastorePolicy' = $null
                 'isImageBased'           = $isImagedBased
                 'sourceID'               = $sourceID
@@ -1328,6 +1330,7 @@ Function Update-ExtractedSDDCData {
             $cluster.primaryDatastoreName = $primaryDatastoreName
             LogMessage -type INFO -message "Injecting primary datastore storage policy $primaryDatastorePolicy into $($workloadDomain.domainName)"
             $cluster.primaryDatastorePolicy = $primaryDatastorePolicy
+            $portGroupsToScrapeForHostMembership = @()
             Foreach ($vds in $cluster.vdsDetails) {
                 $vdsName = (Invoke-VcfGetVdses -ClusterId $cluster.id | Where-Object { $_.id -eq $vds.id }).Name
                 $vds.dvsName = $vdsName
@@ -1343,6 +1346,7 @@ Function Update-ExtractedSDDCData {
                         $managementPGName = ((Invoke-VcfGetVdses -ClusterId $cluster.id).PortGroups | Where-Object { ($_.TransportType -eq "MANAGEMENT") -AND ($_.name -notlike "az2_*") }).Name
                         LogMessage -type INFO -message "Injecting portgroup name $managementPGName on $($vds.dvsName)"
                         $portGroup | Add-Member -NotePropertyName "Name" -NotePropertyValue $managementPGName -Force
+                        $portGroupsToScrapeForHostMembership += $managementPGName
                     }
                     if (($portGroup.TransportType -eq "VMOTION") -AND ($portGroup.faultLevel -eq "PRIMARY")) {
                         $vMotionPGName = ((Invoke-VcfGetVdses -ClusterId $cluster.id).PortGroups | Where-Object { ($_.TransportType -eq "VMOTION") -AND ($_.name -notlike "az2_*") }).Name
@@ -1360,6 +1364,7 @@ Function Update-ExtractedSDDCData {
                         $managementPGName = ((Invoke-VcfGetVdses -ClusterId $cluster.id).PortGroups | Where-Object { ($_.TransportType -eq "MANAGEMENT") -AND ($_.name -like "az2_*") }).Name
                         LogMessage -type INFO -message "Injecting portgroup name $managementPGName on $($vds.dvsName)"
                         $portGroup | Add-Member -NotePropertyName "Name" -NotePropertyValue $managementPGName -Force
+                        $portGroupsToScrapeForHostMembership += $managementPGName
                     }
                     if (($portGroup.TransportType -eq "VMOTION") -AND ($portGroup.faultLevel -eq "SECONDARY")) {
                         $vMotionPGName = ((Invoke-VcfGetVdses -ClusterId $cluster.id).PortGroups | Where-Object { ($_.TransportType -eq "VMOTION") -AND ($_.name -like "az2_*") }).Name
@@ -1374,6 +1379,17 @@ Function Update-ExtractedSDDCData {
 
                 }
             }
+            Foreach ($portgroupName in $portGroupsToScrapeForHostMembership) {
+                If ($portgroupName -notlike "az2_*") {
+                    $az1Hosts = (Get-VDPortgroup -name $portgroupName).ExtensionData.Host.value
+                } else {
+                    $az2Hosts = (Get-VDPortgroup -name $portgroupName).ExtensionData.Host.value
+                }
+            }
+            $azHostMappingObject = New-Object -type psobject
+            $azHostMappingObject | Add-Member -NotePropertyName "az1" -NotePropertyValue $az1Hosts
+            $azHostMappingObject | Add-Member -NotePropertyName "az2" -NotePropertyValue $az2Hosts
+            $cluster | Add-Member -NotePropertyName "azHostMapping" -NotePropertyValue $azHostMappingObject
         }
         Disconnect-VIServer * -confirm:$false
     }
