@@ -1383,6 +1383,7 @@ Function Update-ExtractedSDDCData {
 
                 }
             }
+
             Foreach ($portgroupName in $portGroupsToScrapeForHostMembership) {
                 If ($portgroupName -notlike "az2_*") {
                     $az1hosts = (Get-VDPortGroup -Name $portgroupName | Get-VMHostNetworkAdapter -VMKernel).VMHost.ExtensionData.MoRef.value
@@ -1390,7 +1391,7 @@ Function Update-ExtractedSDDCData {
                     $az2hosts = (Get-VDPortGroup -Name $portgroupName | Get-VMHostNetworkAdapter -VMKernel).VMHost.ExtensionData.MoRef.value
                 }
             }
-
+            LogMessage -type INFO -message "Retrieving Host to AZ Mappings for $($workloadDomain.domainName)"
             $azHostMappingObject = New-Object -type psobject
             $azHostMappingObject | Add-Member -NotePropertyName "az1" -NotePropertyValue $az1Hosts
             $azHostMappingObject | Add-Member -NotePropertyName "az2" -NotePropertyValue $az2Hosts
