@@ -1385,8 +1385,7 @@ Function Update-ExtractedSDDCData {
             Foreach ($portgroupName in $portGroupsToScrapeForHostMembership) {
                 If ($portgroupName -notlike "az2_*") {
                     $az1hosts = (Get-VDPortGroup -Name $portgroupName | Get-VMHostNetworkAdapter -VMKernel).VMHost.ExtensionData.MoRef.value
-                }
-                else {
+                } else {
                     $az2hosts = (Get-VDPortGroup -Name $portgroupName | Get-VMHostNetworkAdapter -VMKernel).VMHost.ExtensionData.MoRef.value
                 }
             }
