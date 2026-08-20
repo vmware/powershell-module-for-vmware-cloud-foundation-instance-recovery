@@ -1391,7 +1391,7 @@ Function Update-ExtractedSDDCData {
                     $az2hosts = (Get-VDPortGroup -Name $portgroupName | Get-VDPort).ProxyHost.name | Sort-Object
                 }
             }
-            LogMessage -type INFO -message "Injecting Host to AZ Mappings for $vCenterFQDN"
+            LogMessage -type INFO -message "Injecting Host to AZ Mappings for $clusterName"
             $azHostMappingObject = New-Object -type psobject
             $azHostMappingObject | Add-Member -NotePropertyName "az1" -NotePropertyValue $az1Hosts
             $azHostMappingObject | Add-Member -NotePropertyName "az2" -NotePropertyValue $az2Hosts
