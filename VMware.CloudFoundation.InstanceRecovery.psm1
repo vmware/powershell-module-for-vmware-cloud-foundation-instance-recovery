@@ -1384,17 +1384,28 @@ Function Update-ExtractedSDDCData {
                 }
             }
 
-            Foreach ($portgroupName in $portGroupsToScrapeForHostMembership) {
-                If ($portgroupName -notlike "az2_*") {
-                    $az1hosts = (Get-VDPortGroup -Name $portgroupName | Get-VDPort).ProxyHost.name | Sort-Object
-                } else {
-                    $az2hosts = (Get-VDPortGroup -Name $portgroupName | Get-VDPort).ProxyHost.name | Sort-Object
+            If ($portGroupsToScrapeForHostMembership.count -eq "1")
+            {
+                $az1hosts = (Get-VDPortGroup -Name $portGroupsToScrapeForHostMembership[0] | Get-VDPort).ProxyHost.name | Sort-Object
+                $az2hosts = $null
+            }
+            elseif ($portGroupsToScrapeForHostMembership.count -eq "2") {
+                Foreach ($portgroupName in $portGroupsToScrapeForHostMembership) {
+                    If ($portgroupName -notlike "az2_*") {
+                        $az1hosts = (Get-VDPortGroup -Name $portgroupName | Get-VDPort).ProxyHost.name | Sort-Object
+                    } else {
+                        $az2hosts = (Get-VDPortGroup -Name $portgroupName | Get-VDPort).ProxyHost.name | Sort-Object
+                    }
                 }
             }
+
             LogMessage -type INFO -message "Injecting Host to AZ Mappings for $clusterName"
             $azHostMappingObject = New-Object -type psobject
             $azHostMappingObject | Add-Member -NotePropertyName "az1" -NotePropertyValue $az1Hosts
-            $azHostMappingObject | Add-Member -NotePropertyName "az2" -NotePropertyValue $az2Hosts
+            If ($portGroupsToScrapeForHostMembership.count -eq "2")
+            {
+                $azHostMappingObject | Add-Member -NotePropertyName "az2" -NotePropertyValue $az2Hosts
+            }
             $cluster | Add-Member -NotePropertyName "azHostMapping" -NotePropertyValue $azHostMappingObject
         }
         Disconnect-VIServer * -confirm:$false
