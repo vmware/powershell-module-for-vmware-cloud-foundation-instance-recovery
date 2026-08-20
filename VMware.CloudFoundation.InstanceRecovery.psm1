@@ -3341,7 +3341,8 @@ Function Add-HostsToCluster {
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
 
     $sddcManagerConnection = Connect-VcfSddcManagerServer -server $sddcManagerFQDN -User $sddcManagerAdmin -Password $sddcManagerAdminPassword
-    $newHosts = ((Invoke-VcfGetHosts).Elements | where-object { $_.id -in (((Invoke-VcfGetClusters).Elements | Where-Object { $_.Name -eq $clusterName }).Hosts.Id) }).fqdn | Sort-Object
+    #$newHosts = ((Invoke-VcfGetHosts).Elements | where-object { $_.id -in (((Invoke-VcfGetClusters).Elements | Where-Object { $_.Name -eq $clusterName }).Hosts.Id) }).fqdn | Sort-Object
+    $newHosts = ($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).azhostMapping.az1
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
     foreach ($newHost in $newHosts) {
         $vmHosts = (Get-cluster -name $clusterName | Get-VMHost).Name | Sort-Object
