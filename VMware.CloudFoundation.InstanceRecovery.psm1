@@ -1395,7 +1395,7 @@ Function Update-ExtractedSDDCData {
             $azHostMappingObject = New-Object -type psobject
             $azHostMappingObject | Add-Member -NotePropertyName "az1" -NotePropertyValue $az1Hosts
             $azHostMappingObject | Add-Member -NotePropertyName "az2" -NotePropertyValue $az2Hosts
-            $cluster | Add-Member -NotePropertyName "azHostMapping" -NotePropertyValue $azHostMappingObject -force
+            $cluster | Add-Member -NotePropertyName "azHostMapping" -NotePropertyValue $azHostMappingObject
         }
         Disconnect-VIServer * -confirm:$false
     }
