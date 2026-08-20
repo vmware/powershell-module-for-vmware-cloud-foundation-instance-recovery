@@ -1323,7 +1323,8 @@ Function Update-ExtractedSDDCData {
         $vCenterConnection = Connect-VIServer -server $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
 
         Foreach ($cluster in $workloadDomain.vsphereClusterDetails) {
-            $clusterInfo = Invoke-VcfGetCluster -Id $cluster.id
+            #$clusterInfo = Invoke-VcfGetCluster -Id $cluster.id
+            $clusterInfo = (Invoke-VcfGetClusters).elements | Where-Object { $_.Id -eq $cluster.id } # Replacement for previous line which was failing for unknown cause
             $clusterName = $clusterInfo.Name
             LogMessage -type INFO -message "Injecting cluster name $clusterName into $($workloadDomain.domainName)"
             $cluster.name = $clusterName
