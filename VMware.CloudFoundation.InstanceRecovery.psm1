@@ -532,7 +532,7 @@ Function New-ExtractDataFromSDDCBackup {
     $hostNameColumn = $columns.IndexOf('hostname')
     $hostVersionColumn = $columns.IndexOf('version')
     $hostVmotionIpColumn = $columns.IndexOf('vmotion_ip_address')
-    $hostMoRef = $columns.IndexOf('source_id')
+    $hostMoRefColumn = $columns.IndexOf('source_id')
     $hostVsanIpColumn = $columns.IndexOf('vsan_ip_address')
 
     $hostsLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.host " | Select-Object Line, LineNumber).LineNumber
@@ -547,6 +547,7 @@ Function New-ExtractDataFromSDDCBackup {
             $hostVersion = $lineContent.split("`t")[$hostVersionColumn]
             $hostVmotionIp = $lineContent.split("`t")[$hostVmotionIpColumn]
             $hostVsanIP = $lineContent.split("`t")[$hostVsanIpColumn]
+            $hostMoRef = $lineContent.split("`t")[$hostMoRefColumn]
 
             #Calculate Managment Subnet (Management Domain Hosts Only)
             <#  If (($gateway -ne "\N") -AND ($hostMask -ne "\N")) {
@@ -942,6 +943,7 @@ Function New-ExtractDataFromSDDCBackup {
             $hostsArray = @()
             Foreach ($clusterHost in $clusterHosts) {
                 $hostname = ($hosts | Where-Object { $_.id -eq $clusterHost.hostId }).hostname
+                $hostMoRef = ($hosts | Where-Object { $_.id -eq $clusterHost.hostId }).hostMoRef
                 $gateway = ($hosts | Where-Object { $_.id -eq $clusterHost.hostId }).gateway
                 $mask = ($hosts | Where-Object { $_.id -eq $clusterHost.hostId }).mask
                 $subnet = ($hosts | Where-Object { $_.id -eq $clusterHost.hostId }).subnet
@@ -961,6 +963,7 @@ Function New-ExtractDataFromSDDCBackup {
                 $hostNetworks += $networks | Where-Object { $_.id -in $hostNetworkIds }
                 $hostsArray += [pscustomobject]@{
                     'hostname'       = $hostname
+                    'hostMoRef'      = $hostMoRef
                     'networkPoolID'  = $networkPoolID
                     'hostNetworkIds' = $hostNetworkIds
                     'networks'       = $hostNetworks
