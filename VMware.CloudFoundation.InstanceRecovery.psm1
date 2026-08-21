@@ -4477,7 +4477,8 @@ Function New-RebuiltVdsConfiguration {
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
         [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
         [Parameter (Mandatory = $true)][String] $clusterName,
-        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
+        [Parameter (Mandatory = $false)][String] $az = "az1"
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
@@ -4500,7 +4501,9 @@ Function New-RebuiltVdsConfiguration {
 
     LogMessage -type INFO -message "[$jumpboxName] Connecting to Restored vCenter: $vCenterFQDN"
     $vCenterConnection = Connect-ViServer $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
-    $vmhosts = (Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)
+    $azHosts = $cluster.azHostMapping.$($az)
+    $vmhosts = (Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name | Where-Object { $_.name -in $azHosts })
+    #$vmhosts = (Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)
     LogMessage -type INFO -message "[$($vmhosts[0].name)] Using host as reference for Physical NICs"
 
     #$nics = ((Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)[0] | Get-VMHostNetworkAdapter | Where-Object {$_.name -like "vmnic*"}) | Sort-Object -Property Name
