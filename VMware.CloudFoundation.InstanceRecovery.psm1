@@ -1347,18 +1347,18 @@ Function Update-ExtractedSDDCData {
                     }
                     #Az1 PortGroups
                     if (($portGroup.TransportType -eq "MANAGEMENT") -AND ($portGroup.faultLevel -in "PRIMARY","NONE")) {
-                        $managementPGName = ((Invoke-VcfGetVdses -ClusterId $cluster.id).PortGroups | Where-Object { ($_.TransportType -eq "MANAGEMENT") -AND ($_.name -notlike "az2_*") }).Name
+                        $managementPGName = ((Invoke-VcfGetVdses -ClusterId $cluster.id).PortGroups | Where-Object { ($_.TransportType -eq "MANAGEMENT") -AND ($_.id -eq $portGroup.id) }).Name
                         LogMessage -type INFO -message "Injecting portgroup name $managementPGName on $($vds.dvsName)"
                         $portGroup | Add-Member -NotePropertyName "Name" -NotePropertyValue $managementPGName -Force
-                        $portGroupsToScrapeForHostMembership += $managementPGName
+                        $portGroupsToScrapeForHostMembership += $portGroup
                     }
                     if (($portGroup.TransportType -eq "VMOTION") -AND ($portGroup.faultLevel -in "PRIMARY","NONE")) {
-                        $vMotionPGName = ((Invoke-VcfGetVdses -ClusterId $cluster.id).PortGroups | Where-Object { ($_.TransportType -eq "VMOTION") -AND ($_.name -notlike "az2_*") }).Name
+                        $vMotionPGName = ((Invoke-VcfGetVdses -ClusterId $cluster.id).PortGroups | Where-Object { ($_.TransportType -eq "VMOTION") -AND ($_.id -eq $portGroup.id) }).Name
                         LogMessage -type INFO -message "Injecting portgroup name $vMotionPGName on $($vds.dvsName)"
                         $portGroup | Add-Member -NotePropertyName "Name" -NotePropertyValue $vMotionPGName -Force
                     }
                     if (($portGroup.TransportType -eq "VSAN") -AND ($portGroup.faultLevel -in "PRIMARY", "NONE")) {
-                        $vSanPGName = ((Invoke-VcfGetVdses -ClusterId $cluster.id).PortGroups | Where-Object { ($_.TransportType -eq "VSAN") -AND ($_.name -notlike "az2_*") }).Name
+                        $vSanPGName = ((Invoke-VcfGetVdses -ClusterId $cluster.id).PortGroups | Where-Object { ($_.TransportType -eq "VSAN") -AND ($_.id -eq $portGroup.id) }).Name
                         LogMessage -type INFO -message "Injecting portgroup name $vSanPGName on $($vds.dvsName)"
                         $portGroup | Add-Member -NotePropertyName "Name" -NotePropertyValue $vSanPGName -Force
                     }
@@ -1367,18 +1367,18 @@ Function Update-ExtractedSDDCData {
                     {
                         #Az2 PortGroups
                         if (($portGroup.TransportType -eq "MANAGEMENT") -AND ($portGroup.faultLevel -eq "SECONDARY")) {
-                            $managementPGName = ((Invoke-VcfGetVdses -ClusterId $cluster.id).PortGroups | Where-Object { ($_.TransportType -eq "MANAGEMENT") -AND ($_.name -like "az2_*") }).Name
+                            $managementPGName = ((Invoke-VcfGetVdses -ClusterId $cluster.id).PortGroups | Where-Object { ($_.TransportType -eq "MANAGEMENT") -AND ($_.id -eq $portGroup.id) }).Name
                             LogMessage -type INFO -message "Injecting portgroup name $managementPGName on $($vds.dvsName)"
                             $portGroup | Add-Member -NotePropertyName "Name" -NotePropertyValue $managementPGName -Force
-                            $portGroupsToScrapeForHostMembership += $managementPGName
+                            $portGroupsToScrapeForHostMembership += $portGroup
                         }
                         if (($portGroup.TransportType -eq "VMOTION") -AND ($portGroup.faultLevel -eq "SECONDARY")) {
-                            $vMotionPGName = ((Invoke-VcfGetVdses -ClusterId $cluster.id).PortGroups | Where-Object { ($_.TransportType -eq "VMOTION") -AND ($_.name -like "az2_*") }).Name
+                            $vMotionPGName = ((Invoke-VcfGetVdses -ClusterId $cluster.id).PortGroups | Where-Object { ($_.TransportType -eq "VMOTION") -AND ($_.id -eq $portGroup.id) }).Name
                             LogMessage -type INFO -message "Injecting portgroup name $vMotionPGName on $($vds.dvsName)"
                             $portGroup | Add-Member -NotePropertyName "Name" -NotePropertyValue $vMotionPGName -Force
                         }
                         if (($portGroup.TransportType -eq "VSAN") -AND ($portGroup.faultLevel -eq "SECONDARY")) {
-                            $vSanPGName = ((Invoke-VcfGetVdses -ClusterId $cluster.id).PortGroups | Where-Object { ($_.TransportType -eq "VSAN") -AND ($_.name -like "az2_*") }).Name
+                            $vSanPGName = ((Invoke-VcfGetVdses -ClusterId $cluster.id).PortGroups | Where-Object { ($_.TransportType -eq "VSAN") -AND ($_.id -eq $portGroup.id) }).Name
                             LogMessage -type INFO -message "Injecting portgroup name $vSanPGName on $($vds.dvsName)"
                             $portGroup | Add-Member -NotePropertyName "Name" -NotePropertyValue $vSanPGName -Force
                         }
@@ -1391,7 +1391,7 @@ Function Update-ExtractedSDDCData {
             If ($cluster.isStretched -eq 'f')
             {
                 #Get AZ1 Hosts
-                $az1hosts = (Get-VDPortGroup -Name $portGroupsToScrapeForHostMembership[0] | Get-VDPort).ProxyHost.name | Sort-Object
+                $az1hosts = (Get-VDPortGroup -Name (($portGroupsToScrapeForHostMembership | where-object { $_.faultLevel -eq "PRIMARY" }).name) | Get-VDPort).ProxyHost.name | Sort-Object
                 $azHostMappingObject | Add-Member -NotePropertyName "az1" -NotePropertyValue $az1Hosts
                 LogMessage -type INFO -message "Injecting Host to AZ Mappings for $clusterName"
                 $cluster | Add-Member -NotePropertyName "azHostMapping" -NotePropertyValue $azHostMappingObject
@@ -1399,13 +1399,9 @@ Function Update-ExtractedSDDCData {
             elseif ($cluster.isStretched -eq 't')
             {
                 #Get AZ1 and AZ2 Hosts
-                Foreach ($portgroupName in $portGroupsToScrapeForHostMembership) {
-                    If ($portgroupName -notlike "az2_*") {
-                        $az1hosts = (Get-VDPortGroup -Name $portgroupName | Get-VDPort).ProxyHost.name | Sort-Object
-                    } else {
-                        $az2hosts = (Get-VDPortGroup -Name $portgroupName | Get-VDPort).ProxyHost.name | Sort-Object
-                    }
-                }
+                $az1hosts = (Get-VDPortGroup -Name (($portGroupsToScrapeForHostMembership | where-object {$_.faultLevel -eq "PRIMARY"}).name) | Get-VDPort).ProxyHost.name | Sort-Object
+                $az2hosts = (Get-VDPortGroup -Name (($portGroupsToScrapeForHostMembership | where-object { $_.faultLevel -eq "SECONDARY" }).name) | Get-VDPort).ProxyHost.name | Sort-Object
+
                 $azHostMappingObject | Add-Member -NotePropertyName "az1" -NotePropertyValue $az1Hosts
                 $azHostMappingObject | Add-Member -NotePropertyName "az2" -NotePropertyValue $az2Hosts
                 LogMessage -type INFO -message "Injecting Host to AZ Mappings for $clusterName"
