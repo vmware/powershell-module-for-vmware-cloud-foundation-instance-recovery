@@ -4740,7 +4740,7 @@ Function New-RebuiltVdsConfiguration {
                 }
                 $managementPortGroupName = ($vds.portgroups | Where-Object { ($_.transportType -eq 'MANAGEMENT') -and ($_.faultLevel -in "PRIMARY","NONE") }).name
 
-                If ($vds.portgroups | Where-Object { ($_.transportType -eq 'VM_MANAGEMENT') -and ($_.faultLevel -in "PRIMARY","NONE") }) {
+                If ($vds.portgroups | Where-Object { ($_.transportType -eq 'MANAGEMENT') -and ($_.faultLevel -in "PRIMARY", "NONE") }) {
                     $portgroupArray += $managementPortGroupName
                     $vmk0 = Get-VMHostNetworkAdapter -VMHost $vmHost -Name "vmk0"
                     $vmNicArray += $vmk0
