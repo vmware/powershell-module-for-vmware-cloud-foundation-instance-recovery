@@ -4874,8 +4874,10 @@ Function Watch-NsxHostTransportNodeInstallation {
 
     Param(
         [Parameter (Mandatory = $true)][String] $clusterName,
-        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
+        [Parameter (Mandatory = $false)][String] $az = "az1"
     )
+
     $timeoutMinutes    = 60
     $pollIntervalSeconds = 30
     $reportEveryNCycles  = 2
@@ -4890,7 +4892,15 @@ Function Watch-NsxHostTransportNodeInstallation {
 
     #Determine the expected number of host transport nodes from the extracted data
     $expectedClusterDetails = $extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }
-    $expectedNodeCount = @($expectedClusterDetails.hosts).Count
+    If ($az -eq "az1")
+    {
+        $expectedNodeCount = @($expectedClusterDetails.azHostMapping.az1).Count
+    }
+    else
+    {
+        $expectedNodeCount = @($expectedClusterDetails.hosts).Count
+    }
+
     If ($expectedNodeCount -eq 0) {
         LogMessage -type WARNING -message "[$jumpboxName] No hosts found for cluster '$clusterName' in the extracted SDDC data. Verify the cluster name is correct."
     } Else {
