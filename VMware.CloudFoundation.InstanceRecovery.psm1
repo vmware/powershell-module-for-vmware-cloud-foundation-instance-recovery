@@ -2044,7 +2044,7 @@ Function New-UploadAndModifySDDCManagerBackup {
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
-    $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
+    $extractedDataFilePath = (Resolve-Path -Path $  ).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
 
     $mgmtWorkloadDomain = $extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }
@@ -2061,7 +2061,7 @@ Function New-UploadAndModifySDDCManagerBackup {
     LogMessage -type INFO -message "[$jumpboxName] Uploading Backup File to SDDC Manager Appliance"
     $copyFile = Copy-VMGuestFile -Source $backupFileFullPath -Destination "/tmp/$backupFileName" -LocalToGuest -VM $sddcManagerVmName -GuestUser "root" -GuestPassword $rootUserPassword -Force -WarningAction SilentlyContinue -WarningVariable WarnMsg
 
-    If (($vcfVersion -notlike "9.0*") -and ($vcfVersion -notlike "9.1.0*"))
+    If (($vcfVersion -like "9.0*") -or ($vcfVersion -like "9.1.0*"))
     {
         #Establish SSH Connection to SDDC Manager
         LogMessage -type INFO -message "[$jumpboxName] Establishing Connection to $sddcManagerFQDN"
@@ -3461,16 +3461,17 @@ Function Add-VMKernelsToHost {
         $faultLevelArray = @("SECONDARY")
     }
     foreach ($vmhost in $vmHosts) {
-        $vmotionPG = ((Invoke-VcfGetVdses -ClusterId ((Invoke-VcfGetClusters).Elements | ? { $_.Name -eq $clusterName }).Id).PortGroups | ? { ($_.TransportType -eq "VMOTION") -AND ($_.faultLevel -in $faultLevelArray) }).Name
-        $vmotionVDSName = ((Invoke-VcfGetVdses -ClusterId ((Invoke-VcfGetClusters).Elements | ? { $_.Name -eq $clusterName }).Id) | ? { $_.Portgroups.TransportType -contains "VMOTION" }).Name
-        $vmotionIP = (((Invoke-VcfGetHosts).Elements | ? { $_.fqdn -eq $vmhost }).ipaddresses | ? { $_.type -eq "VMOTION" })._IpAddress
+        $vmotionPG = ($clusterDetails.vdsDetails.portgroups | Where-Object { ($_.TransportType -eq "VMOTION") -AND ($_.faultLevel -in $faultLevelArray) }).Name
+        $vmotionVDSName = ($clusterDetails.vdsDetails | Where-Object {$_.portgroups.name -eq $vmotionPG}).dvsName
+        $vmotionIP = ($clusterDetails.hosts | Where-Object {$_.hostname -eq $vmhost}).vmotionIp
         $networkPoolId = ($workloadDomain.vsphereClusterDetails.hosts | Where-Object { $_.hostname -eq $vmhost }).networkPoolID
         $vmotionMask = ((Invoke-VcfGetNetworksOfNetworkPool -id $networkPoolID).elements | ? { $_.type -eq "VMOTION" }).Mask
         $vmotionMTU = ((Invoke-VcfGetNetworksOfNetworkPool -id $networkPoolID).elements | ? { $_.type -eq "VMOTION" }).mtu
         $vmotionGW = ((Invoke-VcfGetNetworksOfNetworkPool -id $networkPoolID).elements | ? { $_.type -eq "VMOTION" }).gateway
-        $vsanPG = ((Invoke-VcfGetVdses -ClusterId ((Invoke-VcfGetClusters).Elements | ? { $_.Name -eq $clusterName }).Id).PortGroups | ? { ($_.transportType -eq "VSAN") -AND ($_.faultLevel -in $faultLevelArray) }).Name
-        $vsanVDSName = ((Invoke-VcfGetVdses -ClusterId ((Invoke-VcfGetClusters).Elements | ? { $_.Name -eq $clusterName }).Id) | ? { $_.Portgroups.TransportType -contains "VSAN" }).Name
-        $vsanIP = (((Invoke-VcfGetHosts).Elements | ? { $_.fqdn -eq $vmhost }).ipaddresses | ? { $_.type -eq "VSAN" })._IpAddress
+
+        $vsanPG = ($clusterDetails.vdsDetails.portgroups | Where-Object { ($_.TransportType -eq "VSAN") -AND ($_.faultLevel -in $faultLevelArray) }).Name
+        $vsanVDSName = ($clusterDetails.vdsDetails | Where-Object {$_.portgroups.name -eq $vsanPG}).dvsName
+        $vsanIP = ($clusterDetails.hosts | Where-Object {$_.hostname -eq $vmhost}).vsanIp
         $vsanMask = ((Invoke-VcfGetNetworksOfNetworkPool -id $networkPoolID).elements | ? { $_.type -eq "VSAN" }).Mask
         $vsanMTU = ((Invoke-VcfGetNetworksOfNetworkPool -id $networkPoolID).elements | ? { $_.type -eq "VSAN" }).mtu
         $vsanGW = ((Invoke-VcfGetNetworksOfNetworkPool -id $networkPoolID).elements | ? { $_.type -eq "VSAN" }).gateway
