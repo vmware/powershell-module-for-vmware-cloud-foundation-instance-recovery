@@ -1417,14 +1417,16 @@ Function Update-ExtractedSDDCData {
                 $witnessInfo = $stretchedClusterSystem.VSANVcGetWitnessHosts($clusterObject.ExtensionData.MoRef)
                 $witnessFqdn = (Get-View -Id $witnessInfo.Host).Name
 
-                #Get Witness vmkernel details
+                #Get Witness deployment details
                 $witnessHost = Get-VMHost -Name $witnessFqdn
-                $witnessVmkernels = $witnessHost.ExtensionData.Config.Network.Vnic | Select-Object Device, Portgroup, @{n="IpAddress";e={$_.Spec.Ip.IpAddress}}, @{n="SubnetMask";e={$_.Spec.Ip.SubnetMask}}
+                $witnessVmkernels = $witnessHost.ExtensionData.Config.Network.Vnic | Select-Object Device, Portgroup, @{n = "IpAddress"; e = { $_.Spec.Ip.IpAddress } }, @{n = "SubnetMask"; e = { $_.Spec.Ip.SubnetMask } }
+                $witnessVersion = $witnessHost | Select-Object Version, Build
 
                 #Record Witness Details
                 $witnessObject = New-Object -type psobject
                 $witnessObject | Add-Member -NotePropertyName "fqdn" -NotePropertyValue $witnessFqdn
                 $witnessObject | Add-Member -NotePropertyName "addresses" -NotePropertyValue $witnessVmkernels
+                $witnessObject | Add-Member -NotePropertyName "version" -NotePropertyValue $witnessVersion
                 $cluster | Add-Member -NotePropertyName "witness" -NotePropertyValue $witnessObject
             }
         }
