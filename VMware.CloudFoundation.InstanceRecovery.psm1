@@ -1391,7 +1391,7 @@ Function Update-ExtractedSDDCData {
             If ($cluster.isStretched -eq 'f')
             {
                 #Get AZ1 Hosts
-                $az1hosts = (Get-VDPortGroup -Name (($portGroupsToScrapeForHostMembership | where-object { $_.faultLevel -eq "PRIMARY" }).name) | Get-VDPort).ProxyHost.name | Sort-Object
+                $az1hosts = (Get-VDPortGroup -Name (($portGroupsToScrapeForHostMembership | where-object { $_.faultLevel -eq "NONE" }).name) | Get-VDPort).ProxyHost.name | Sort-Object
                 $azHostMappingObject | Add-Member -NotePropertyName "az1" -NotePropertyValue $az1Hosts
                 LogMessage -type INFO -message "Injecting Host to AZ Mappings for $clusterName"
                 $cluster | Add-Member -NotePropertyName "azHostMapping" -NotePropertyValue $azHostMappingObject
@@ -1423,6 +1423,7 @@ Function Update-ExtractedSDDCData {
                 $witnessObject | Add-Member -NotePropertyName "fqdn" -NotePropertyValue $witnessFqdn
                 $witnessObject | Add-Member -NotePropertyName "addresses" -NotePropertyValue $witnessVmkernels
                 $witnessObject | Add-Member -NotePropertyName "version" -NotePropertyValue $witnessVersion
+                LogMessage -type INFO -message "Injecting Witness Details for $clusterName"
                 $cluster | Add-Member -NotePropertyName "witness" -NotePropertyValue $witnessObject
             }
         }
