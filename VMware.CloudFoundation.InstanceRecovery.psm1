@@ -3430,7 +3430,8 @@ Function Add-VMKernelsToHost {
         [Parameter (Mandatory = $true)][String] $sddcManagerFQDN,
         [Parameter (Mandatory = $true)][String] $sddcManagerAdmin,
         [Parameter (Mandatory = $true)][String] $sddcManagerAdminPassword,
-        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
+        [Parameter (Mandatory = $false)][String] $az = "az1"
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
@@ -3442,17 +3443,28 @@ Function Add-VMKernelsToHost {
     $sddcManagerConnection = Connect-VcfSddcManagerServer -server $sddcManagerFQDN -User $sddcManagerAdmin -Password $sddcManagerAdminPassword
 
     $vCenterConnection = connect-viserver $targetFQDN -user $targetAdmin -password $targetAdminPassword
+    #$vmHosts = (Get-cluster -name $clusterName | Get-VMHost).Name | Sort-Object
     $workloadDomain = $extractedSDDCData.workloadDomains | where-object { $_.vCenterDetails.fqdn -eq $targetFQDN }
-    $vmHosts = (Get-cluster -name $clusterName | Get-VMHost).Name | Sort-Object
+    $clusterDetails = $workloadDomain.vsphereClusterDetails | Where-Object {$_.name -eq $clusterName}
+    $vmHosts = $clusterDetails.azHostMapping.$($az)
+
+    If ($az -eq "az1")
+    {
+        $faultLevelArray = @("PRIMARY","NONE")
+    }
+    else
+    {
+        $faultLevelArray = @("SECONDARY")
+    }
     foreach ($vmhost in $vmHosts) {
-        $vmotionPG = ((Invoke-VcfGetVdses -ClusterId ((Invoke-VcfGetClusters).Elements | ? { $_.Name -eq $clusterName }).Id).PortGroups | ? { $_.TransportType -eq "VMOTION" }).Name
+        $vmotionPG = ((Invoke-VcfGetVdses -ClusterId ((Invoke-VcfGetClusters).Elements | ? { $_.Name -eq $clusterName }).Id).PortGroups | ? { ($_.TransportType -eq "VMOTION") -AND ($_.faultLeve -in $faultLevelArray) }).Name
         $vmotionVDSName = ((Invoke-VcfGetVdses -ClusterId ((Invoke-VcfGetClusters).Elements | ? { $_.Name -eq $clusterName }).Id) | ? { $_.Portgroups.TransportType -contains "VMOTION" }).Name
         $vmotionIP = (((Invoke-VcfGetHosts).Elements | ? { $_.fqdn -eq $vmhost }).ipaddresses | ? { $_.type -eq "VMOTION" })._IpAddress
         $networkPoolId = ($workloadDomain.vsphereClusterDetails.hosts | Where-Object { $_.hostname -eq $vmhost }).networkPoolID
         $vmotionMask = ((Invoke-VcfGetNetworksOfNetworkPool -id $networkPoolID).elements | ? { $_.type -eq "VMOTION" }).Mask
         $vmotionMTU = ((Invoke-VcfGetNetworksOfNetworkPool -id $networkPoolID).elements | ? { $_.type -eq "VMOTION" }).mtu
         $vmotionGW = ((Invoke-VcfGetNetworksOfNetworkPool -id $networkPoolID).elements | ? { $_.type -eq "VMOTION" }).gateway
-        $vsanPG = ((Invoke-VcfGetVdses -ClusterId ((Invoke-VcfGetClusters).Elements | ? { $_.Name -eq $clusterName }).Id).PortGroups | ? { $_.transportType -eq "VSAN" }).Name
+        $vsanPG = ((Invoke-VcfGetVdses -ClusterId ((Invoke-VcfGetClusters).Elements | ? { $_.Name -eq $clusterName }).Id).PortGroups | ? { ($_.transportType -eq "VSAN") -AND ($_.faultLeve -in $faultLevelArray) }).Name
         $vsanVDSName = ((Invoke-VcfGetVdses -ClusterId ((Invoke-VcfGetClusters).Elements | ? { $_.Name -eq $clusterName }).Id) | ? { $_.Portgroups.TransportType -contains "VSAN" }).Name
         $vsanIP = (((Invoke-VcfGetHosts).Elements | ? { $_.fqdn -eq $vmhost }).ipaddresses | ? { $_.type -eq "VSAN" })._IpAddress
         $vsanMask = ((Invoke-VcfGetNetworksOfNetworkPool -id $networkPoolID).elements | ? { $_.type -eq "VSAN" }).Mask
