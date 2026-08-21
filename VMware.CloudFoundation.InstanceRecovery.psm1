@@ -4734,26 +4734,26 @@ Function New-RebuiltVdsConfiguration {
                 $portgroupArray = @()
                 $vmnicMinusOne = $vmhost | Get-VMHostNetworkAdapter | Where-Object { $_.deviceName -eq $vds.nicNames[0] }
                 If (($vds.portgroups | Where-Object { $_.transportType -eq 'VM_MANAGEMENT' }).name) {
-                    $managementVmPortGroupName = ($vds.portgroups | Where-Object { $_.transportType -eq 'VM_MANAGEMENT' }).name
+                    $managementVmPortGroupName = ($vds.portgroups | Where-Object { ($_.transportType -eq 'VM_MANAGEMENT' -and ($_.faultLevel -in "PRIMARY","NONE")) }).name
                 } else {
-                    $managementVmPortGroupName = ($vds.portgroups | Where-Object { $_.transportType -eq 'MANAGEMENT' }).name
+                    $managementVmPortGroupName = ($vds.portgroups | Where-Object { ($_.transportType -eq 'MANAGEMENT') -and ($_.faultLevel -in "PRIMARY","NONE") }).name
                 }
-                $managementPortGroupName = ($vds.portgroups | Where-Object { $_.transportType -eq 'MANAGEMENT' }).name
+                $managementPortGroupName = ($vds.portgroups | Where-Object { ($_.transportType -eq 'MANAGEMENT') -and ($_.faultLevel -in "PRIMARY","NONE") }).name
 
-                If ($vds.portgroups | Where-Object { $_.transportType -eq 'MANAGEMENT' }) {
+                If ($vds.portgroups | Where-Object { ($_.transportType -eq 'VM_MANAGEMENT') -and ($_.faultLevel -in "PRIMARY","NONE") }) {
                     $portgroupArray += $managementPortGroupName
                     $vmk0 = Get-VMHostNetworkAdapter -VMHost $vmHost -Name "vmk0"
                     $vmNicArray += $vmk0
                 }
                 If ($isPrimaryManagementCluster) {
-                    If ($vds.portgroups | Where-Object { $_.transportType -eq 'VMOTION' }) {
-                        $vmotionPortgroupName = ($vds.portgroups | Where-Object { $_.transportType -eq 'VMOTION' }).name
+                    If ($vds.portgroups | Where-Object { ($_.transportType -eq 'VMOTION') -and ($_.faultLevel -in "PRIMARY","NONE") }) {
+                        $vmotionPortgroupName = ($vds.portgroups | Where-Object { ($_.transportType -eq 'VMOTION') -and ($_.faultLevel -in "PRIMARY","NONE") }).name
                         $portgroupArray += $vmotionPortgroupName
                         $vmk1 = Get-VMHostNetworkAdapter -VMHost $vmHost -Name "vmk1"
                         $vmNicArray += $vmk1
                     }
-                    If ($vds.portgroups | Where-Object { $_.transportType -eq 'VSAN' }) {
-                        $vsanPortgroupName = ($vds.portgroups | Where-Object { $_.transportType -eq 'VSAN' }).name
+                        If ($vds.portgroups | Where-Object { ($_.transportType -eq 'VSAN') -and ($_.faultLevel -in "PRIMARY", "NONE") }) {
+                        $vsanPortgroupName = ($vds.portgroups | Where-Object { ($_.transportType -eq 'VSAN') -and ($_.faultLevel -in "PRIMARY","NONE") }).name
                         $portgroupArray += $vsanPortgroupName
                         $vmk2 = Get-VMHostNetworkAdapter -VMHost $vmHost -Name "vmk2"
                         $vmNicArray += $vmk2
@@ -4781,7 +4781,7 @@ Function New-RebuiltVdsConfiguration {
                 }
 
             }
-            If (($vds.portgroups | Where-Object { $_.transportType -eq 'VM_MANAGEMENT' }) -OR ((!($vds.portgroups | Where-Object { $_.transportType -eq 'VM_MANAGEMENT' })) -and ($vds.portgroups | Where-Object { $_.transportType -eq 'MANAGEMENT' }))) {
+            If (($vds.portgroups | Where-Object { ($_.transportType -eq 'VM_MANAGEMENT') -and ($_.faultLevel -in "PRIMARY","NONE") }) -OR ((!($vds.portgroups | Where-Object { ($_.transportType -eq 'VM_MANAGEMENT') -and ($_.faultLevel -in "PRIMARY","NONE") })) -and ($vds.portgroups | Where-Object { ($_.transportType -eq 'MANAGEMENT') -and ($_.faultLevel -in "PRIMARY","NONE") }))) {
 
                 #Move Mgmt VMs to Management Portgroup
                 If ($isPrimaryManagementCluster) {
