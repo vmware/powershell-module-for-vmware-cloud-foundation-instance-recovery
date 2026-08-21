@@ -3608,8 +3608,8 @@ Function New-RebuiltVsanDatastore {
     LogMessage -type INFO -message "[$jumpboxName] Connecting to Restored vCenter: $targetFQDN"
     $restoredvCenterConnection = Connect-ViServer $targetFQDN -user $targetAdmin -password $targetAdminPassword
     If ($datastoreType -ne "VSAN_ESA") {
-        #$vmhosts = (Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)
-        $vmHosts = $clusterDetails.azHostMapping.$($az)
+        $azHosts = $clusterDetails.azHostMapping.$($az)
+        $vmhosts = (Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name | Where-Object { $_.name -in $azHosts })
         LogMessage -type INFO -message "[$($vmhosts[0].name)] Using host as reference for Eligible Physical Disks"
 
         $disks = ((Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)[0] | Get-VMHostDisk) | Where-Object { $_.ScsiLun.VsanStatus -eq 'Eligible' } | Sort-Object -Property @{e = { $_.scsilun.runtimename } }
