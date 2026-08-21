@@ -2044,7 +2044,7 @@ Function New-UploadAndModifySDDCManagerBackup {
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
-    $extractedDataFilePath = (Resolve-Path -Path $  ).path
+    $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
 
     $mgmtWorkloadDomain = $extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }
