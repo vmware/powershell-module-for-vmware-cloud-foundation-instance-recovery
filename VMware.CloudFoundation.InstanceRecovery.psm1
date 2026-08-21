@@ -3588,7 +3588,8 @@ Function New-RebuiltVsanDatastore {
         [Parameter (Mandatory = $true)][String] $targetAdmin,
         [Parameter (Mandatory = $true)][String] $targetAdminPassword,
         [Parameter (Mandatory = $true)][String] $clusterName,
-        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
+        [Parameter (Mandatory = $false)][String] $az = "az1"
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
@@ -3597,13 +3598,18 @@ Function New-RebuiltVsanDatastore {
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
+
+    $workloadDomain = $extractedSDDCData.workloadDomains | where-object { $_.vCenterDetails.fqdn -eq $targetFQDN }
+    $clusterDetails = $workloadDomain.vsphereClusterDetails | Where-Object {$_.name -eq $clusterName}
+
     $datastoreName = ($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).primaryDatastoreName
     $datastoreType = ($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).primaryDatastoreType
 
     LogMessage -type INFO -message "[$jumpboxName] Connecting to Restored vCenter: $targetFQDN"
     $restoredvCenterConnection = Connect-ViServer $targetFQDN -user $targetAdmin -password $targetAdminPassword
     If ($datastoreType -ne "VSAN_ESA") {
-        $vmhosts = (Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)
+        #$vmhosts = (Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)
+        $vmHosts = $clusterDetails.azHostMapping.$($az)
         LogMessage -type INFO -message "[$($vmhosts[0].name)] Using host as reference for Eligible Physical Disks"
 
         $disks = ((Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)[0] | Get-VMHostDisk) | Where-Object { $_.ScsiLun.VsanStatus -eq 'Eligible' } | Sort-Object -Property @{e = { $_.scsilun.runtimename } }
