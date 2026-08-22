@@ -3353,8 +3353,7 @@ Function Add-HostsToCluster {
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
         [Parameter (Mandatory = $true)][String] $sddcManagerFQDN,
         [Parameter (Mandatory = $true)][String] $sddcManagerAdmin,
-        [Parameter (Mandatory = $true)][String] $sddcManagerAdminPassword,
-        [Parameter (Mandatory = $false)][String] $az = "az1"
+        [Parameter (Mandatory = $true)][String] $sddcManagerAdminPassword
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
@@ -3363,13 +3362,16 @@ Function Add-HostsToCluster {
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
-
+    $workloadDomain = $extractedSDDCData.workloadDomains | where-object { $_.vCenterDetails.fqdn -eq $vCenterFQDN }
+    $clusterDetails = $workloadDomain.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }
     $sddcManagerConnection = Connect-VcfSddcManagerServer -server $sddcManagerFQDN -User $sddcManagerAdmin -Password $sddcManagerAdminPassword
-    #Review
-    #$newHosts = ((Invoke-VcfGetHosts).Elements | where-object { $_.id -in (((Invoke-VcfGetClusters).Elements | Where-Object { $_.Name -eq $clusterName }).Hosts.Id) }).fqdn | Sort-Object
-    $newHosts = ($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).azhostMapping.$($az)
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
-    foreach ($newHost in $newHosts) {
+    $clusterObj = Get-Cluster -Name $ClusterName
+    $dcObj      = Get-Datacenter -Location $clusterObj
+
+    # Add Az1 Hosts
+    $az1Hosts = $clusterDetails.azHostMapping.az1
+    foreach ($newHost in $az1Hosts) {
         $vmHosts = (Get-cluster -name $clusterName | Get-VMHost).Name | Sort-Object
         if ($newHost -notin $vmHosts) {
             $esxiRootPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $newHost) -and ($_.username -eq "root") }).password
@@ -3384,12 +3386,140 @@ Function Add-HostsToCluster {
             LogMessage -type INFO -message "[$newHost] Already part of $clusterName. Skipping"
         }
     }
+    # Add AZ2 Hosts
+    If ($clusterDetails.isStretched -eq 't') {
+        $az2Hosts = $clusterDetails.azHostMapping.az2
+
+
+            LogMessage -type INFO -message  "Resolving NSX Sub-Cluster Configuration"
+            $subClusterMeta = Get-NSXSubClustersAndSubTNP -NSXManager $NSXManager -ClusterName $ClusterName -username 'admin' -password 'VMw@re1!VMw@re1!'
+
+            if (-not $subClusterMeta) {
+                Throw "Failed to resolve Sub-Cluster metadata via Get-NSXSubClustersAndSubTNP for cluster '$ClusterName'."
+            }
+
+            # If multiple sub-clusters return, select the first valid match
+            $targetSubCluster = $subClusterMeta | Select-Object -First 1
+            $subClusterId     = $targetSubCluster.SubClusterId
+
+            # Extract origin GUID from ComputeCollectionId ("37681f70-6760-40a6-b173-7baa522c301c:domain-c40" -> "37681f70-6760-40a6-b173-7baa522c301c")
+            $clusterOriginId  = $targetSubCluster.ComputeCollectionId.Split(':')[0]
+
+            Write-Host "[Sub-TNP] Resolved Sub-Cluster: $($targetSubCluster.SubClusterName) ($subClusterId)" -ForegroundColor Green
+            Write-Host "[Sub-TNP] Cluster Origin GUID: $clusterOriginId" -ForegroundColor Green
+
+            # 2. Process Sub-TNP Hosts via Staging Flow
+            Write-Host "`n--- Processing Stretched Sub-TNP Hosts ---" -ForegroundColor Yellow
+            foreach ($hostFqdn in $az2Hosts) {
+                # Step A: Add to Datacenter root (bypasses auto-prep)
+                Write-Host "[Sub-TNP] Step 1/3: Adding $hostFqdn to Datacenter root..." -ForegroundColor Yellow
+                $vmhost = Add-VMHost -Name $hostFqdn -Location $dcObj `
+                                     -User $HostCredential.UserName -Password $HostCredential.GetNetworkCredential().Password `
+                                     -Force -Confirm:$false
+
+                # Step B: Resolve MoRef and Pre-register with NSX Sub-Cluster DB
+                $hostMoRef = $vmhost.ExtensionData.MoRef.Value
+                $discId    = "${clusterOriginId}:${hostMoRef}"
+
+                Write-Host "[Sub-TNP] Step 2/3: Registering $discId to NSX Sub-Cluster Policy DB..." -ForegroundColor Yellow
+                $scSingleUrl   = "https://$NSXManager/policy/api/v1/infra/sites/default/enforcement-points/default/sub-clusters/$subClusterId"
+                $subClusterObj = Invoke-RestMethod -Uri $scSingleUrl -Headers $headers -Method Get -SkipCertificateCheck
+
+                if ($discId -notin $subClusterObj.sub_cluster_info.discovered_node_ids) {
+                    $subClusterObj.sub_cluster_info.discovered_node_ids += $discId
+                    $jsonSC = $subClusterObj | ConvertTo-Json -Depth 10
+                    Invoke-RestMethod -Uri $scSingleUrl -Headers $headers -Method Put -Body $jsonSC -SkipCertificateCheck
+                    Write-Host "[Sub-TNP] Registered MoRef $discId in NSX DB." -ForegroundColor Green
+                }
+
+                # Step C: Move host into cluster to trigger 1-pass Sub-TNP prep
+                Write-Host "[Sub-TNP] Step 3/3: Moving $hostFqdn into $ClusterName..." -ForegroundColor Yellow
+                Move-VMHost -VMHost $vmhost -Destination $clusterObj -Confirm:$false | Out-Null
+                Write-Host "[Sub-TNP] Host $hostFqdn moved into cluster. NSX will apply Sub-TNP on Pass 1." -ForegroundColor Green
+            }
+    }
+
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
     Disconnect-VcfSddcManagerServer *
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
 Export-ModuleMember -Function Add-HostsToCluster
+
+Function Get-NSXSubClustersAndSubTNP {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory = $true, ValueFromPipeline = $true)][string]$NSXManager,
+        [Parameter(Mandatory = $true)][string]$username,
+        [Parameter(Mandatory = $true)][string]$password,
+        [Parameter(Mandatory = $true)][string]$ClusterName
+    )
+
+    process {
+        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+        $skipCert = @{ SkipCertificateCheck = $true }
+
+        $authHeader = "Basic " + [Convert]::ToBase64String(
+            [Text.Encoding]::ASCII.GetBytes("$($UserName):$($Password)")
+        )
+        $headers = @{
+            "Authorization" = $authHeader
+            "Content-Type"  = "application/json"
+        }
+
+        try {
+            # 1. Resolve vSphere Cluster Name to Compute Collection External ID
+            $ccUrl = "https://$NSXManager/api/v1/fabric/compute-collections"
+            $ccResponse = Invoke-RestMethod -Uri $ccUrl -Headers $headers -Method Get @skipCert
+
+            $targetCluster = $ccResponse.results | Where-Object { $_.display_name -eq $ClusterName }
+
+            if (-not $targetCluster) {
+                Write-Error "Cluster '$ClusterName' not found in NSX Compute Collections."
+                return
+            }
+
+            $clusterExternalId = $targetCluster.external_id
+
+            # 2. Query Enforcement Point Sub-Clusters
+            $subClustersUrl = "https://$NSXManager/policy/api/v1/infra/sites/default/enforcement-points/default/sub-clusters"
+            $subClusterResponse = Invoke-RestMethod -Uri $subClustersUrl -Headers $headers -Method Get @skipCert
+
+            $matchedSubClusters = $subClusterResponse.results | Where-Object {
+                $_.compute_collection_id -eq $clusterExternalId -or $_.display_name -like "*$ClusterName*"
+            }
+
+            if (-not $matchedSubClusters) {
+                Write-Warning "No sub-clusters found under compute collection '$ClusterName' ($clusterExternalId)."
+                return
+            }
+
+            # 3. Retrieve Transport Node Profiles for mapping
+            $tnpUrl = "https://$NSXManager/policy/api/v1/infra/host-transport-node-profiles"
+            $allTNPs = Invoke-RestMethod -Uri $tnpUrl -Headers $headers -Method Get @skipCert -ErrorAction SilentlyContinue
+
+            # 4. Return Output
+            $results = foreach ($sc in $matchedSubClusters) {
+                $parentTnp = $allTNPs.results | Where-Object { $_.display_name -like "*$ClusterName*" }
+
+                [PSCustomObject]@{
+                    ClusterName         = $ClusterName
+                    SubClusterName      = $sc.display_name
+                    SubClusterId        = $sc.id
+                    SubClusterType      = $sc.sub_cluster_info.sub_cluster_type
+                    NodeCount           = if ($sc.sub_cluster_info.discovered_node_ids) { $sc.sub_cluster_info.discovered_node_ids.Count } else { 0 }
+                    ParentTNP           = if ($parentTnp) { $parentTnp.display_name } else { "N/A" }
+                    ComputeCollectionId = $sc.compute_collection_id
+                    Path                = $sc.path
+                }
+            }
+
+            return $results
+        } catch {
+            Write-Error "API Query Failed: $_"
+        }
+    }
+}
 
 Function Add-VMKernelsToHost {
     <#
@@ -3450,29 +3580,26 @@ Function Add-VMKernelsToHost {
     $vCenterConnection = connect-viserver $targetFQDN -user $targetAdmin -password $targetAdminPassword
     #$vmHosts = (Get-cluster -name $clusterName | Get-VMHost).Name | Sort-Object
     $workloadDomain = $extractedSDDCData.workloadDomains | where-object { $_.vCenterDetails.fqdn -eq $targetFQDN }
-    $clusterDetails = $workloadDomain.vsphereClusterDetails | Where-Object {$_.name -eq $clusterName}
+    $clusterDetails = $workloadDomain.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }
     $vmHosts = $clusterDetails.azHostMapping.$($az)
 
-    If ($az -eq "az1")
-    {
-        $faultLevelArray = @("PRIMARY","NONE")
-    }
-    else
-    {
+    If ($az -eq "az1") {
+        $faultLevelArray = @("PRIMARY", "NONE")
+    } else {
         $faultLevelArray = @("SECONDARY")
     }
     foreach ($vmhost in $vmHosts) {
         $vmotionPG = ($clusterDetails.vdsDetails.portgroups | Where-Object { ($_.TransportType -eq "VMOTION") -AND ($_.faultLevel -in $faultLevelArray) }).Name
-        $vmotionVDSName = ($clusterDetails.vdsDetails | Where-Object {$_.portgroups.name -eq $vmotionPG}).dvsName
-        $vmotionIP = ($clusterDetails.hosts | Where-Object {$_.hostname -eq $vmhost}).vmotionIp
+        $vmotionVDSName = ($clusterDetails.vdsDetails | Where-Object { $_.portgroups.name -eq $vmotionPG }).dvsName
+        $vmotionIP = ($clusterDetails.hosts | Where-Object { $_.hostname -eq $vmhost }).vmotionIp
         $networkPoolId = ($workloadDomain.vsphereClusterDetails.hosts | Where-Object { $_.hostname -eq $vmhost }).networkPoolID
         $vmotionMask = ((Invoke-VcfGetNetworksOfNetworkPool -id $networkPoolID).elements | ? { $_.type -eq "VMOTION" }).Mask
         $vmotionMTU = ((Invoke-VcfGetNetworksOfNetworkPool -id $networkPoolID).elements | ? { $_.type -eq "VMOTION" }).mtu
         $vmotionGW = ((Invoke-VcfGetNetworksOfNetworkPool -id $networkPoolID).elements | ? { $_.type -eq "VMOTION" }).gateway
 
         $vsanPG = ($clusterDetails.vdsDetails.portgroups | Where-Object { ($_.TransportType -eq "VSAN") -AND ($_.faultLevel -in $faultLevelArray) }).Name
-        $vsanVDSName = ($clusterDetails.vdsDetails | Where-Object {$_.portgroups.name -eq $vsanPG}).dvsName
-        $vsanIP = ($clusterDetails.hosts | Where-Object {$_.hostname -eq $vmhost}).vsanIp
+        $vsanVDSName = ($clusterDetails.vdsDetails | Where-Object { $_.portgroups.name -eq $vsanPG }).dvsName
+        $vsanIP = ($clusterDetails.hosts | Where-Object { $_.hostname -eq $vmhost }).vsanIp
         $vsanMask = ((Invoke-VcfGetNetworksOfNetworkPool -id $networkPoolID).elements | ? { $_.type -eq "VSAN" }).Mask
         $vsanMTU = ((Invoke-VcfGetNetworksOfNetworkPool -id $networkPoolID).elements | ? { $_.type -eq "VSAN" }).mtu
         $vsanGW = ((Invoke-VcfGetNetworksOfNetworkPool -id $networkPoolID).elements | ? { $_.type -eq "VSAN" }).gateway
@@ -3495,7 +3622,7 @@ Function Add-VMKernelsToHost {
 
         #create vmk1 if necessary
         $dvportgroup = Get-VDPortgroup -name $vmotionPG -VDSwitch $vmotionVDSName
-        $vmk1Exists = $hostVmkernelInfo | Where-Object {$_.device -eq "vmk1"}
+        $vmk1Exists = $hostVmkernelInfo | Where-Object { $_.device -eq "vmk1" }
         If (!$vmk1Exists) {
             LogMessage -type INFO -message "[$vmhost] Creating vMotion vMK"
             $vmk = New-VMHostNetworkAdapter -VMHost $esx -VirtualSwitch $vmotionVDSName -mtu $vmotionMTU -PortGroup $dvportgroup -ip $vmotionIP -SubnetMask $vmotionMask -NetworkStack (Get-VMHostNetworkStack -vmhost $esx | Where-Object { $_.id -eq "vmotion" })
@@ -3523,7 +3650,7 @@ Function Add-VMKernelsToHost {
 
         #create vmk2 if necessary
         $dvportgroup = Get-VDPortgroup -name $vsanPG -VDSwitch $vsanVDSName
-        $vmk2Exists = $hostVmkernelInfo | Where-Object {$_.device -eq "vmk2"}
+        $vmk2Exists = $hostVmkernelInfo | Where-Object { $_.device -eq "vmk2" }
         If (!$vmk2Exists) {
             LogMessage -type INFO -message "[$vmhost] Creating vSAN vMK"
             $vmk = New-VMHostNetworkAdapter -VMHost $esx -VirtualSwitch $vsanVDSName -mtu $vsanMTU -PortGroup $dvportgroup -ip $vsanIP -SubnetMask $vsanMask -VsanTrafficEnabled:$true
@@ -3601,7 +3728,7 @@ Function New-RebuiltVsanDatastore {
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
 
     $workloadDomain = $extractedSDDCData.workloadDomains | where-object { $_.vCenterDetails.fqdn -eq $targetFQDN }
-    $clusterDetails = $workloadDomain.vsphereClusterDetails | Where-Object {$_.name -eq $clusterName}
+    $clusterDetails = $workloadDomain.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }
 
     $datastoreName = ($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).primaryDatastoreName
     $datastoreType = ($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).primaryDatastoreType
@@ -3889,7 +4016,7 @@ Function Add-DiskgroupsToManagementHosts {
     # --- Reference host disk group table ---
     # Use Get-VMHostDisk (InUse disks) for the reference host to get the same RuntimeName format
     # (vmhbaX:CY:TZ:LW) as the proposed hosts — ExtensionData.Ssd.RuntimeName uses a different format.
-    $referenceHostAllDisks = $referenceHost | Get-VMHostDisk | Sort-Object -Property @{e = { $_.ScsiLun.RuntimeName }}
+    $referenceHostAllDisks = $referenceHost | Get-VMHostDisk | Sort-Object -Property @{e = { $_.ScsiLun.RuntimeName } }
     $referenceDisplayRows = @()
     $referenceDisplayRows += [pscustomobject]@{ 'DG' = "DiskGroup"; 'CTL' = "SCSI Address"; 'Type' = "Type"; 'Role' = "Role"; 'CapacityGB' = "Capacity (GB)" }
     $referenceDisplayRows += [pscustomobject]@{ 'DG' = "---------"; 'CTL' = "------------"; 'Type' = "----"; 'Role' = "-------"; 'CapacityGB' = "------------" }
@@ -3932,7 +4059,7 @@ Function Add-DiskgroupsToManagementHosts {
         $hostDiskGroups = Get-VsanDiskGroup -VMHost $vmHost -ErrorAction SilentlyContinue
         If ($hostDiskGroups) {
             # Show existing disk groups using Get-VMHostDisk for consistent RuntimeName format
-            $hostAllDisks = $vmHost | Get-VMHostDisk | Sort-Object -Property @{e = { $_.ScsiLun.RuntimeName }}
+            $hostAllDisks = $vmHost | Get-VMHostDisk | Sort-Object -Property @{e = { $_.ScsiLun.RuntimeName } }
             $dgIndex = 1
             Foreach ($dg in $hostDiskGroups) {
                 $existingSsdCN = $dg.ExtensionData.Ssd.CanonicalName
@@ -3963,7 +4090,7 @@ Function Add-DiskgroupsToManagementHosts {
             }
         } Else {
             $hostsNeedingDiskGroups += $vmHost
-            $hostEligibleDisks = $vmHost | Get-VMHostDisk | Where-Object { $_.ScsiLun.VsanStatus -eq 'Eligible' } | Sort-Object -Property @{e = { $_.ScsiLun.RuntimeName }}
+            $hostEligibleDisks = $vmHost | Get-VMHostDisk | Where-Object { $_.ScsiLun.VsanStatus -eq 'Eligible' } | Sort-Object -Property @{e = { $_.ScsiLun.RuntimeName } }
             $allRefCanonicalNames = ($referenceConfig | ForEach-Object { @($_.cacheDiskCanonicalName) + @($_.capacityDiskCanonicalNames) })
             $dgIndex = 1
             Foreach ($config in $referenceConfig) {
@@ -4033,7 +4160,7 @@ Function Add-DiskgroupsToManagementHosts {
             # Get this host's eligible disks (VsanStatus = Eligible) sorted by runtime name.
             # Canonical names are matched positionally against the reference config, which was
             # also sorted by runtime name — so disk layout must be standardized across all hosts.
-            $hostEligibleDisks = $vmhost | Get-VMHostDisk | Where-Object { $_.ScsiLun.VsanStatus -eq 'Eligible' } | Sort-Object -Property @{e = { $_.ScsiLun.RuntimeName }}
+            $hostEligibleDisks = $vmhost | Get-VMHostDisk | Where-Object { $_.ScsiLun.VsanStatus -eq 'Eligible' } | Sort-Object -Property @{e = { $_.ScsiLun.RuntimeName } }
 
             $referenceConfig = $using:referenceConfig
             For ($i = 1; $i -le $using:diskGroupNumber; $i++) {
@@ -4754,12 +4881,9 @@ Function New-RebuiltVdsConfiguration {
     }
 
     If ($proposedConfigAccepted -eq "Y") {
-        If ($az -eq "az1")
-        {
-            $faultLevelArray = @("PRIMARY","NONE")
-        }
-        else
-        {
+        If ($az -eq "az1") {
+            $faultLevelArray = @("PRIMARY", "NONE")
+        } else {
             $faultLevelArray = @("SECONDARY")
         }
         Foreach ($vds in $vdsConfiguration) {
@@ -4787,7 +4911,7 @@ Function New-RebuiltVdsConfiguration {
                         $vmk1 = Get-VMHostNetworkAdapter -VMHost $vmHost -Name "vmk1"
                         $vmNicArray += $vmk1
                     }
-                        If ($vds.portgroups | Where-Object { ($_.transportType -eq 'VSAN') -and ($_.faultLevel -in $faultLevelArray) }) {
+                    If ($vds.portgroups | Where-Object { ($_.transportType -eq 'VSAN') -and ($_.faultLevel -in $faultLevelArray) }) {
                         $vsanPortgroupName = ($vds.portgroups | Where-Object { ($_.transportType -eq 'VSAN') -and ($_.faultLevel -in $faultLevelArray) }).name
                         $portgroupArray += $vsanPortgroupName
                         $vmk2 = Get-VMHostNetworkAdapter -VMHost $vmHost -Name "vmk2"
@@ -4816,7 +4940,7 @@ Function New-RebuiltVdsConfiguration {
                 }
 
             }
-            If (($vds.portgroups | Where-Object { ($_.transportType -eq 'VM_MANAGEMENT') -and ($_.faultLevel -in "PRIMARY","NONE") }) -OR ((!($vds.portgroups | Where-Object { ($_.transportType -eq 'VM_MANAGEMENT') -and ($_.faultLevel -in "PRIMARY","NONE") })) -and ($vds.portgroups | Where-Object { ($_.transportType -eq 'MANAGEMENT') -and ($_.faultLevel -in "PRIMARY","NONE") }))) {
+            If (($vds.portgroups | Where-Object { ($_.transportType -eq 'VM_MANAGEMENT') -and ($_.faultLevel -in "PRIMARY", "NONE") }) -OR ((!($vds.portgroups | Where-Object { ($_.transportType -eq 'VM_MANAGEMENT') -and ($_.faultLevel -in "PRIMARY", "NONE") })) -and ($vds.portgroups | Where-Object { ($_.transportType -eq 'MANAGEMENT') -and ($_.faultLevel -in "PRIMARY", "NONE") }))) {
 
                 #Move Mgmt VMs to Management Portgroup
                 If ($isPrimaryManagementCluster) {
@@ -4913,9 +5037,9 @@ Function Watch-NsxHostTransportNodeInstallation {
         [Parameter (Mandatory = $false)][String] $az = "az1"
     )
 
-    $timeoutMinutes    = 60
+    $timeoutMinutes = 60
     $pollIntervalSeconds = 30
-    $reportEveryNCycles  = 2
+    $reportEveryNCycles = 2
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
@@ -4927,12 +5051,9 @@ Function Watch-NsxHostTransportNodeInstallation {
 
     #Determine the expected number of host transport nodes from the extracted data
     $expectedClusterDetails = $extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }
-    If ($az -eq "az1")
-    {
+    If ($az -eq "az1") {
         $expectedNodeCount = @($expectedClusterDetails.azHostMapping.az1).Count
-    }
-    else
-    {
+    } else {
         $expectedNodeCount = @($expectedClusterDetails.hosts).Count
     }
 
@@ -4972,8 +5093,8 @@ Function Watch-NsxHostTransportNodeInstallation {
 
     $clusterComputeCollectionId = $clusterComputeCollection.external_id
 
-    $startTime    = Get-Date
-    $timeout      = New-TimeSpan -Minutes $timeoutMinutes
+    $startTime = Get-Date
+    $timeout = New-TimeSpan -Minutes $timeoutMinutes
 
     #Get all ESXi host transport nodes and filter to those belonging to the resolved cluster
     #Wait until every expected host transport node has been registered before monitoring installation
@@ -4983,10 +5104,10 @@ Function Watch-NsxHostTransportNodeInstallation {
         $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/"
         $allTransportNodes = ((Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json).results
         $clusterTransportNodes = @($allTransportNodes | Where-Object {
-            ($_.resource_type -eq "TransportNode") -and
-            ($_.node_deployment_info.os_type -eq "ESXI") -and
-            ($_.node_deployment_info.compute_collection_id -eq $clusterComputeCollectionId)
-        } | Sort-Object)
+                ($_.resource_type -eq "TransportNode") -and
+                ($_.node_deployment_info.os_type -eq "ESXI") -and
+                ($_.node_deployment_info.compute_collection_id -eq $clusterComputeCollectionId)
+            } | Sort-Object)
 
         If ($expectedNodeCount -gt 0 -and $clusterTransportNodes.Count -lt $expectedNodeCount) {
             $elapsed = (Get-Date) - $startTime
@@ -5015,8 +5136,8 @@ Function Watch-NsxHostTransportNodeInstallation {
 
     LogMessage -type INFO -message "[$nsxManagerFqdn] Monitoring NSX installation on $($clusterTransportNodes.Count) host transport node(s) in cluster '$clusterName'"
 
-    $completedIds  = @()
-    $monitorCycle  = 0
+    $completedIds = @()
+    $monitorCycle = 0
 
     Do {
         $monitorCycle++
@@ -5025,13 +5146,13 @@ Function Watch-NsxHostTransportNodeInstallation {
         Foreach ($transportNode in $clusterTransportNodes) {
             If ($transportNode.id -in $completedIds) { Continue }
 
-            $stateUri  = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($transportNode.id)/state"
+            $stateUri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($transportNode.id)/state"
             $statusUri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($transportNode.id)/status"
             Try {
-                $nodeState  = (Invoke-WebRequest -Method GET -URI $stateUri  -ContentType application/json -headers $headers).content | ConvertFrom-Json
+                $nodeState = (Invoke-WebRequest -Method GET -URI $stateUri -ContentType application/json -headers $headers).content | ConvertFrom-Json
                 $nodeStatus = (Invoke-WebRequest -Method GET -URI $statusUri -ContentType application/json -headers $headers).content | ConvertFrom-Json
 
-                $configState  = $nodeState.state
+                $configState = $nodeState.state
                 $connectivity = $nodeStatus.status
 
                 If (($configState -eq "success") -and ($connectivity -eq "UP")) {
@@ -5612,6 +5733,31 @@ Function Add-VMKernelsToManagementHosts {
 }
 Export-ModuleMember -Function Add-VMKernelsToManagementHosts
 
+Function New-ReconfiguredStretchCluster {
+
+    $targetfFqdn = $restoredvCenterFqdn
+    $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
+    $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
+    $clusterName = "sfo-w02-cl02"
+    $workloadDomain = $extractedSDDCData.workloadDomains | where-object { $_.vCenterDetails.fqdn -eq $targetFQDN }
+    $clusterDetails = $workloadDomain.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }
+    $az1Hosts = $clusterDetails.azHostMapping.az1
+    $az2Hosts = $clusterDetails.azHostMapping.az2
+
+    #3. Create the Primary (Preferred) Fault Domain
+    # Assign your physical data hosts located at Site A
+    $SiteA_Hosts = @("esxi-01.domain.local", "esxi-02.domain.local")
+    $primaryFd = New-VsanFaultDomain -Name "Preferred-Site" -VMHost $SiteA_Hosts
+
+    # 4. Create the Secondary Fault Domain
+    # Assign your physical data hosts located at Site B
+    $SiteB_Hosts = @("esxi-03.domain.local", "esxi-04.domain.local")
+    $secondaryFd = New-VsanFaultDomain -Name "Secondary-Site" -VMHost $SiteB_Hosts
+
+    # 5. Enable the Stretched Cluster configuration
+    # This links the sites together and assigns the designated witness host
+    Set-VsanClusterConfiguration -Configuration $vsanCluster -StretchedClusterEnabled $true -PreferredFaultDomain $primaryFd -WitnessHost $WitnessIP
+}
 Function Backup-ClusterVMOverrides {
     <#
     .SYNOPSIS
