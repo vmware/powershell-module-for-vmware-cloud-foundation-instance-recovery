@@ -3367,7 +3367,6 @@ Function Add-HostsToCluster {
     $sddcManagerConnection = Connect-VcfSddcManagerServer -server $sddcManagerFQDN -User $sddcManagerAdmin -Password $sddcManagerAdminPassword
     $vCenterConnection = connect-viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
     $clusterObj = Get-Cluster -Name $ClusterName
-    $dcObj      = Get-Datacenter -Location $clusterObj
 
     # Add Az1 Hosts
     $az1Hosts = $clusterDetails.azHostMapping.az1
@@ -3380,7 +3379,7 @@ Function Add-HostsToCluster {
                 LogMessage -type INFO -message "[$newHost] Adding to cluster $clusterName"
                 Add-VMHost $newHost -username root -password $esxiRootPassword -Location $clusterName -Force -Confirm:$false | Out-Null
             } else {
-                Write-Error "[$newHost] Unable to connect. Host will not be added to the cluster"
+                LogMessage -type ERROR -message "[$newHost] Unable to connect. Host will not be added to the cluster"
             }
         } else {
             LogMessage -type INFO -message "[$newHost] Already part of $clusterName. Skipping"
@@ -3390,53 +3389,149 @@ Function Add-HostsToCluster {
     If ($clusterDetails.isStretched -eq 't') {
         $az2Hosts = $clusterDetails.azHostMapping.az2
 
+        LogMessage -type INFO -message "Resolving NSX Sub-Cluster Configuration"
+        $nsxManagerFqdn = ($workloadDomain.nsxNodeDetails | Select-Object -First 1).hostname
+        $nsxManagerAdmin = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain.domainName) -and ($_.username -eq "admin") }).username
+        $nsxManagerAdminPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain.domainName) -and ($_.username -eq "admin") }).password
+        LogMessage -type INFO -message "[$nsxManagerFqdn] Using NSX Manager for workload domain '$($workloadDomain.domainName)'"
+        $headers = VCFIRCreateHeader -username $nsxManagerAdmin -password $nsxManagerAdminPassword
+        $subClusterMeta = Get-NSXSubClustersAndSubTNP -NSXManager $nsxManagerFqdn -ClusterName $ClusterName -username $nsxManagerAdmin -password $nsxManagerAdminPassword
 
-            LogMessage -type INFO -message  "Resolving NSX Sub-Cluster Configuration"
-            $subClusterMeta = Get-NSXSubClustersAndSubTNP -NSXManager $NSXManager -ClusterName $ClusterName -username 'admin' -password 'VMw@re1!VMw@re1!'
+        if (-not $subClusterMeta) {
+            Throw "Failed to resolve Sub-Cluster metadata via Get-NSXSubClustersAndSubTNP for cluster '$ClusterName'."
+        }
 
-            if (-not $subClusterMeta) {
-                Throw "Failed to resolve Sub-Cluster metadata via Get-NSXSubClustersAndSubTNP for cluster '$ClusterName'."
+        $targetSubCluster = $subClusterMeta | Select-Object -First 1
+        $subClusterId     = $targetSubCluster.SubClusterId
+
+        # Extract origin GUID from ComputeCollectionId ("37681f70-6760-40a6-b173-7baa522c301c:domain-c40" -> "37681f70-6760-40a6-b173-7baa522c301c")
+        $clusterOriginId  = $targetSubCluster.ComputeCollectionId.Split(':')[0]
+
+        LogMessage -type INFO -message "[$clusterName] Resolved Sub-Cluster: $($targetSubCluster.SubClusterName) ($subClusterId)"
+
+        $maxAttempts = 10
+        $az2HostState = foreach ($hostFqdn in $az2Hosts) {
+            [pscustomobject]@{
+                hostFqdn         = $hostFqdn
+                esxiRootPassword = $null
+                vmhost           = $null
+                discId           = $null
+                failed           = $false
+                failureReason    = $null
+            }
+        }
+
+        foreach ($hostState in $az2HostState) {
+            $hostFqdn = $hostState.hostFqdn
+            $hostState.esxiRootPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $hostFqdn) -and ($_.username -eq "root") }).password
+            $vmhost = Get-VMHost -Name $hostFqdn -ErrorAction SilentlyContinue
+            if ($vmhost) {
+                LogMessage -type INFO -message "[$hostFqdn] Already managed by this vCenter. Reusing existing host object."
+            } else {
+                LogMessage -type INFO -message "[$hostFqdn] Adding to $ClusterName"
+                $vmhost = Add-VMHost -Name $hostFqdn -Location $clusterObj `
+                                     -User 'root' -Password $hostState.esxiRootPassword `
+                                     -Force -Confirm:$false
+            }
+            $hostState.vmhost = $vmhost
+        }
+
+        foreach ($hostState in ($az2HostState | Where-Object { -not $_.failed })) {
+            $hostMoRef = $hostState.vmhost.ExtensionData.MoRef.Value
+            $hostState.discId = "${clusterOriginId}:${hostMoRef}"
+        }
+
+        $pendingHostStates = $az2HostState | Where-Object { -not $_.failed }
+        if ($pendingHostStates) {
+            $pendingDiscIds = $pendingHostStates.discId
+            $scSingleUrl = "https://$nsxManagerFqdn/policy/api/v1/infra/sites/default/enforcement-points/default/sub-clusters/$subClusterId"
+
+            $registered = $false
+            for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+                try {
+                    $subClusterObj = Invoke-RestMethod -Uri $scSingleUrl -Headers $headers -Method Get -SkipCertificateCheck -ErrorAction Stop
+
+                    $newDiscIds = $pendingDiscIds | Where-Object { $_ -notin $subClusterObj.sub_cluster_info.discovered_node_ids }
+                    if ($newDiscIds) {
+                        $subClusterObj.sub_cluster_info.discovered_node_ids += $newDiscIds
+                        $jsonSC = $subClusterObj | ConvertTo-Json -Depth 10
+                        Invoke-RestMethod -Uri $scSingleUrl -Headers $headers -Method Put -Body $jsonSC -ContentType "application/json" -SkipCertificateCheck -ErrorAction Stop
+                        LogMessage -type INFO -message "[$clusterName] Registered $($newDiscIds.Count) MoRef(s) in NSX DB: $($newDiscIds -join ', ')"
+                    } else {
+                        LogMessage -type INFO -message "[$clusterName] All MoRefs already present in NSX DB"
+                    }
+                    $registered = $true
+                    break
+                } catch {
+                    $errorDetail = $_.ErrorDetails.Message
+                    if (-not $errorDetail) { $errorDetail = $_.Exception.Message }
+                    LogMessage -type ERROR -message "[$clusterName] Attempt $attempt/$maxAttempts to register Sub-Cluster MoRefs failed: $errorDetail"
+                    if ($attempt -lt $maxAttempts) {
+                        Start-Sleep -Seconds 1
+                    }
+                }
             }
 
-            # If multiple sub-clusters return, select the first valid match
-            $targetSubCluster = $subClusterMeta | Select-Object -First 1
-            $subClusterId     = $targetSubCluster.SubClusterId
+            if (-not $registered) {
+                foreach ($hostState in $pendingHostStates) {
+                    $hostState.failed = $true
+                    $hostState.failureReason = "Failed to register with NSX Sub-Cluster DB after $maxAttempts attempts."
+                }
+                LogMessage -type ERROR -message "[$clusterName] Failed to register Sub-Cluster MoRefs after $maxAttempts attempts. AZ2 hosts remain in $ClusterName but are not registered to the Sub-Cluster."
+            } else {
+                foreach ($hostState in $pendingHostStates) {
+                    LogMessage -type INFO -message "[$($hostState.hostFqdn)] Registered to Sub-Cluster."
+                }
+            }
+        }
 
-            # Extract origin GUID from ComputeCollectionId ("37681f70-6760-40a6-b173-7baa522c301c:domain-c40" -> "37681f70-6760-40a6-b173-7baa522c301c")
-            $clusterOriginId  = $targetSubCluster.ComputeCollectionId.Split(':')[0]
+        $failedHostStates = $az2HostState | Where-Object { $_.failed }
+        if ($failedHostStates) {
+            $failureSummary = ($failedHostStates | ForEach-Object { "$($_.hostFqdn) ($($_.failureReason))" }) -join '; '
+            LogMessage -type ERROR -message "[Sub-TNP] The following AZ2 hosts require manual follow-up: $failureSummary"
+        }
 
-            Write-Host "[Sub-TNP] Resolved Sub-Cluster: $($targetSubCluster.SubClusterName) ($subClusterId)" -ForegroundColor Green
-            Write-Host "[Sub-TNP] Cluster Origin GUID: $clusterOriginId" -ForegroundColor Green
-
-            # 2. Process Sub-TNP Hosts via Staging Flow
-            Write-Host "`n--- Processing Stretched Sub-TNP Hosts ---" -ForegroundColor Yellow
-            foreach ($hostFqdn in $az2Hosts) {
-                # Step A: Add to Datacenter root (bypasses auto-prep)
-                Write-Host "[Sub-TNP] Step 1/3: Adding $hostFqdn to Datacenter root..." -ForegroundColor Yellow
-                $vmhost = Add-VMHost -Name $hostFqdn -Location $dcObj `
-                                     -User $HostCredential.UserName -Password $HostCredential.GetNetworkCredential().Password `
-                                     -Force -Confirm:$false
-
-                # Step B: Resolve MoRef and Pre-register with NSX Sub-Cluster DB
-                $hostMoRef = $vmhost.ExtensionData.MoRef.Value
-                $discId    = "${clusterOriginId}:${hostMoRef}"
-
-                Write-Host "[Sub-TNP] Step 2/3: Registering $discId to NSX Sub-Cluster Policy DB..." -ForegroundColor Yellow
-                $scSingleUrl   = "https://$NSXManager/policy/api/v1/infra/sites/default/enforcement-points/default/sub-clusters/$subClusterId"
-                $subClusterObj = Invoke-RestMethod -Uri $scSingleUrl -Headers $headers -Method Get -SkipCertificateCheck
-
-                if ($discId -notin $subClusterObj.sub_cluster_info.discovered_node_ids) {
-                    $subClusterObj.sub_cluster_info.discovered_node_ids += $discId
-                    $jsonSC = $subClusterObj | ConvertTo-Json -Depth 10
-                    Invoke-RestMethod -Uri $scSingleUrl -Headers $headers -Method Put -Body $jsonSC -SkipCertificateCheck
-                    Write-Host "[Sub-TNP] Registered MoRef $discId in NSX DB." -ForegroundColor Green
+        $subClusterPath = "/infra/sites/default/enforcement-points/default/sub-clusters/$subClusterId"
+        $tncListUrl = "https://$nsxManagerFqdn/policy/api/v1/infra/sites/default/enforcement-points/default/transport-node-collections"
+        $tnc = ((Invoke-RestMethod -Uri $tncListUrl -Headers $headers -Method Get -SkipCertificateCheck -ErrorAction Stop).results | Where-Object { $_.compute_collection_id -eq $targetSubCluster.ComputeCollectionId } | Select-Object -First 1)
+        if (-not $tnc) {
+            LogMessage -type ERROR -message "[Sub-TNP] Could not resolve a TransportNodeCollection for compute collection '$($targetSubCluster.ComputeCollectionId)'. Skipping Sub-Cluster to TransportNodeCollection mapping."
+        } else {
+            $tncUrl = "https://$nsxManagerFqdn/policy/api/v1/infra/sites/default/enforcement-points/default/transport-node-collections/$($tnc.id)"
+            $tncObj = Invoke-RestMethod -Uri $tncUrl -Headers $headers -Method Get -SkipCertificateCheck -ErrorAction Stop
+            $existingSubClusterConfig = @($tncObj.sub_cluster_config | Where-Object { $_ })
+            if ($existingSubClusterConfig | Where-Object { $_.sub_cluster_id -eq $subClusterPath }) {
+                LogMessage -type INFO -message "[$clusterName] TransportNodeCollection $($tnc.id) already maps Sub-Cluster '$($targetSubCluster.SubClusterName)'. Nothing to do."
+            } else {
+                $tnpUrl = "https://$nsxManagerFqdn/policy/api/v1$($tnc.transport_node_profile_id)"
+                $tnp = Invoke-RestMethod -Uri $tnpUrl -Headers $headers -Method Get -SkipCertificateCheck -ErrorAction Stop
+                $hostSwitchName = $tnp.host_switch_spec.host_switches[0].host_switch_name
+                if ([string]::IsNullOrWhiteSpace($hostSwitchName)) {
+                    Throw "Could not resolve a host_switch_name from TransportNodeProfile $($tnc.transport_node_profile_id)."
                 }
 
-                # Step C: Move host into cluster to trigger 1-pass Sub-TNP prep
-                Write-Host "[Sub-TNP] Step 3/3: Moving $hostFqdn into $ClusterName..." -ForegroundColor Yellow
-                Move-VMHost -VMHost $vmhost -Destination $clusterObj -Confirm:$false | Out-Null
-                Write-Host "[Sub-TNP] Host $hostFqdn moved into cluster. NSX will apply Sub-TNP on Pass 1." -ForegroundColor Green
+                $vdSwitch = Get-VDSwitch -Name $hostSwitchName -ErrorAction Stop
+                $hostSwitchId = $vdSwitch.ExtensionData.Uuid
+                if ([string]::IsNullOrWhiteSpace($hostSwitchId)) {
+                    Throw "Get-VDSwitch -Name '$hostSwitchName' did not return a UUID via .ExtensionData.Uuid."
+                }
+                LogMessage -type INFO -message "[$clusterName] Resolved host_switch_id for '$hostSwitchName': $hostSwitchId"
+
+                $newSubClusterConfigEntry = @{
+                    host_switch_config_sources = @(
+                        @{
+                            host_switch_id                         = $hostSwitchId
+                            transport_node_profile_sub_config_name = $targetSubCluster.SubClusterName
+                        }
+                    )
+                    sub_cluster_id = $subClusterPath
+                }
+                $tncObj | Add-Member -NotePropertyName "sub_cluster_config" -NotePropertyValue (@($existingSubClusterConfig) + $newSubClusterConfigEntry) -Force
+                $tncBody = $tncObj | ConvertTo-Json -Depth 10
+                Invoke-RestMethod -Uri $tncUrl -Headers $headers -Method Put -Body $tncBody -ContentType "application/json" -SkipCertificateCheck -ErrorAction Stop | Out-Null
+                LogMessage -type INFO -message "[$clusterName] Mapped Sub-Cluster '$($targetSubCluster.SubClusterName)' onto TransportNodeCollection $($tnc.id) (host_switch_id $hostSwitchId)."
             }
+        }
     }
 
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
@@ -4604,8 +4699,7 @@ Function New-RebuiltVdsConfiguration {
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
         [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
         [Parameter (Mandatory = $true)][String] $clusterName,
-        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
-        [Parameter (Mandatory = $false)][String] $az = "az1"
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
@@ -4628,7 +4722,7 @@ Function New-RebuiltVdsConfiguration {
 
     LogMessage -type INFO -message "[$jumpboxName] Connecting to Restored vCenter: $vCenterFQDN"
     $vCenterConnection = Connect-ViServer $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
-    $azHosts = $cluster.azHostMapping.$($az)
+    $azHosts = $cluster.azHostMapping.az1
     $vmhosts = (Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name | Where-Object { $_.name -in $azHosts })
     #$vmhosts = (Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)
     LogMessage -type INFO -message "[$($vmhosts[0].name)] Using host as reference for Physical NICs"
@@ -4881,130 +4975,144 @@ Function New-RebuiltVdsConfiguration {
     }
 
     If ($proposedConfigAccepted -eq "Y") {
-        If ($az -eq "az1") {
-            $faultLevelArray = @("PRIMARY", "NONE")
-        } else {
-            $faultLevelArray = @("SECONDARY")
+        If ($cluster.isStretched -eq "t")
+        {
+            $azs = @("az1","az2")
         }
-        Foreach ($vds in $vdsConfiguration) {
-            $vdsHosts = (Get-VDSwitch -name $vds.vdsName).extensionData.summary.hostmember.value
-            Foreach ($vmHost in $vmHosts) {
-                $vmNicArray = @()
-                $portgroupArray = @()
-                $vmnicMinusOne = $vmhost | Get-VMHostNetworkAdapter | Where-Object { $_.deviceName -eq $vds.nicNames[0] }
-                If (($vds.portgroups | Where-Object { $_.transportType -eq 'VM_MANAGEMENT' }).name) {
-                    $managementVmPortGroupName = ($vds.portgroups | Where-Object { ($_.transportType -eq 'VM_MANAGEMENT' -and ($_.faultLevel -in $faultLevelArray)) }).name
-                } else {
-                    $managementVmPortGroupName = ($vds.portgroups | Where-Object { ($_.transportType -eq 'MANAGEMENT') -and ($_.faultLevel -in $faultLevelArray) }).name
-                }
-                $managementPortGroupName = ($vds.portgroups | Where-Object { ($_.transportType -eq 'MANAGEMENT') -and ($_.faultLevel -in $faultLevelArray) }).name
-
-                If ($vds.portgroups | Where-Object { ($_.transportType -eq 'MANAGEMENT') -and ($_.faultLevel -in $faultLevelArray) }) {
-                    $portgroupArray += $managementPortGroupName
-                    $vmk0 = Get-VMHostNetworkAdapter -VMHost $vmHost -Name "vmk0"
-                    $vmNicArray += $vmk0
-                }
-                If ($isPrimaryManagementCluster) {
-                    If ($vds.portgroups | Where-Object { ($_.transportType -eq 'VMOTION') -and ($_.faultLevel -in $faultLevelArray) }) {
-                        $vmotionPortgroupName = ($vds.portgroups | Where-Object { ($_.transportType -eq 'VMOTION') -and ($_.faultLevel -in $faultLevelArray) }).name
-                        $portgroupArray += $vmotionPortgroupName
-                        $vmk1 = Get-VMHostNetworkAdapter -VMHost $vmHost -Name "vmk1"
-                        $vmNicArray += $vmk1
-                    }
-                    If ($vds.portgroups | Where-Object { ($_.transportType -eq 'VSAN') -and ($_.faultLevel -in $faultLevelArray) }) {
-                        $vsanPortgroupName = ($vds.portgroups | Where-Object { ($_.transportType -eq 'VSAN') -and ($_.faultLevel -in $faultLevelArray) }).name
-                        $portgroupArray += $vsanPortgroupName
-                        $vmk2 = Get-VMHostNetworkAdapter -VMHost $vmHost -Name "vmk2"
-                        $vmNicArray += $vmk2
-                    }
-                }
-
-                $hostMoRef = $vmhost.ExtensionData.moref.value
-                If ($hostMoRef -notin $vdsHosts) {
-                    LogMessage -type INFO -message "[$($vmhost.name)] Adding to $($vds.vdsName)"
-                    Get-VDSwitch -name $vds.vdsName | Add-VDSwitchVMHost -vmhost $vmHost -confirm:$false
-                } else {
-                    LogMessage -type INFO -message "[$($vmhost.name)] Already in $($vds.vdsName). Skipping"
-                }
-
-                $vmnicInVds = Get-VDPort -VDSwitch $vds.vdsName | Where-Object { $_.proxyHost.name -eq $vmhost.name -and $_.connectedEntity.name -eq $vmnicMinusOne }
-                If (!$vmnicInVds) {
-                    If ($portgroupArray.count -ne 0) {
-                        LogMessage -type INFO -message "[$($vmhost.name)] Adding Physical Adapter $($vds.nicNames[0]) to $($vds.vdsName) and migrating $($vmNicArray.name -join(", "))"
-                        Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $vmnicMinusOne -VMHostVirtualNic $vmNicArray -VirtualNicPortgroup $portgroupArray -confirm:$false
+        else
+        {
+            $azs = @("az1")
+        }
+        Foreach ($az in $azs)
+        {
+            $azHosts = $cluster.azHostMapping.$($az)
+            $vmhosts = (Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name | Where-Object { $_.name -in $azHosts })
+            If ($az -eq "az1") {
+                $faultLevelArray = @("PRIMARY", "NONE")
+            } else {
+                $faultLevelArray = @("SECONDARY")
+            }
+            Foreach ($vds in $vdsConfiguration) {
+                $vdsHosts = (Get-VDSwitch -name $vds.vdsName).extensionData.summary.hostmember.value
+                Foreach ($vmHost in $vmHosts) {
+                    $vmNicArray = @()
+                    $portgroupArray = @()
+                    $vmnicMinusOne = $vmhost | Get-VMHostNetworkAdapter | Where-Object { $_.deviceName -eq $vds.nicNames[0] }
+                    If (($vds.portgroups | Where-Object { $_.transportType -eq 'VM_MANAGEMENT' }).name) {
+                        $managementVmPortGroupName = ($vds.portgroups | Where-Object { ($_.transportType -eq 'VM_MANAGEMENT' -and ($_.faultLevel -in $faultLevelArray)) }).name
                     } else {
-                        Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $vmnicMinusOne -confirm:$false
+                        $managementVmPortGroupName = ($vds.portgroups | Where-Object { ($_.transportType -eq 'MANAGEMENT') -and ($_.faultLevel -in $faultLevelArray) }).name
                     }
-                } else {
-                    LogMessage -type INFO -message "[$($vmhost.name)] Physical Adapter $($vds.nicNames[0]) already in $($vds.vdsName). Skipping"
-                }
+                    $managementPortGroupName = ($vds.portgroups | Where-Object { ($_.transportType -eq 'MANAGEMENT') -and ($_.faultLevel -in $faultLevelArray) }).name
 
-            }
-            If (($vds.portgroups | Where-Object { ($_.transportType -eq 'VM_MANAGEMENT') -and ($_.faultLevel -in "PRIMARY", "NONE") }) -OR ((!($vds.portgroups | Where-Object { ($_.transportType -eq 'VM_MANAGEMENT') -and ($_.faultLevel -in "PRIMARY", "NONE") })) -and ($vds.portgroups | Where-Object { ($_.transportType -eq 'MANAGEMENT') -and ($_.faultLevel -in "PRIMARY", "NONE") }))) {
-
-                #Move Mgmt VMs to Management Portgroup
-                If ($isPrimaryManagementCluster) {
-                    Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
-                    Foreach ($vmhost in $vmhosts) {
-                        $vmHostUser = ($extractedSddcData.passwords | where-object { ($_.domainName -eq $domainName) -and ($_.entityType -eq "ESXI") -and ($_.username -eq "root") -and ($_.entityName -eq $vmhost.name) }).username
-                        $vmHostPassword = ($extractedSddcData.passwords | where-object { ($_.domainName -eq $domainName) -and ($_.entityType -eq "ESXI") -and ($_.username -eq "root") -and ($_.entityName -eq $vmhost.name) }).password
-                        $vmHostConnection = Connect-ViServer $vmhost.name -user $vmHostUser -password $vmHostPassword
-                        $vmsTomove = Get-VM | Where-Object { $_.Name -notlike "*vCLS*" }
-                        foreach ($vmToMove in $vmsTomove) {
-
-                            If ((Get-VM -Name $vmToMove | Get-NetworkAdapter).NetworkName -ne $managementVmPortGroupName) {
-                                LogMessage -type INFO -message "[$($vmToMove.name)] Moving to $($managementVmPortGroupName)"
-                                Get-VM -Name $vmToMove | Get-NetworkAdapter | Set-NetworkAdapter -NetworkName $managementVmPortGroupName -confirm:$false | Out-Null
-                            } else {
-                                LogMessage -type INFO -message "[$($vmToMove.name)] Already moved to $($managementVmPortGroupName). Skipping"
-                            }
+                    If ($vds.portgroups | Where-Object { ($_.transportType -eq 'MANAGEMENT') -and ($_.faultLevel -in $faultLevelArray) }) {
+                        $portgroupArray += $managementPortGroupName
+                        $vmk0 = Get-VMHostNetworkAdapter -VMHost $vmHost -Name "vmk0"
+                        $vmNicArray += $vmk0
+                    }
+                    If ($isPrimaryManagementCluster) {
+                        If ($vds.portgroups | Where-Object { ($_.transportType -eq 'VMOTION') -and ($_.faultLevel -in $faultLevelArray) }) {
+                            $vmotionPortgroupName = ($vds.portgroups | Where-Object { ($_.transportType -eq 'VMOTION') -and ($_.faultLevel -in $faultLevelArray) }).name
+                            $portgroupArray += $vmotionPortgroupName
+                            $vmk1 = Get-VMHostNetworkAdapter -VMHost $vmHost -Name "vmk1"
+                            $vmNicArray += $vmk1
                         }
-                        If (($vmsTomove.count -gt 0) -and ($vmhost.Manufacturer -eq "VMware, Inc.")) {
-                            LogMessage -type WAIT -message "Aha! Nested hosts detected. Waiting 5 mins for connection between vCenter and hosts to stabilize after vmk0 / vm_mgmt portgroup migration"
-                            Sleep 300
+                        If ($vds.portgroups | Where-Object { ($_.transportType -eq 'VSAN') -and ($_.faultLevel -in $faultLevelArray) }) {
+                            $vsanPortgroupName = ($vds.portgroups | Where-Object { ($_.transportType -eq 'VSAN') -and ($_.faultLevel -in $faultLevelArray) }).name
+                            $portgroupArray += $vsanPortgroupName
+                            $vmk2 = Get-VMHostNetworkAdapter -VMHost $vmHost -Name "vmk2"
+                            $vmNicArray += $vmk2
                         }
-                        Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
                     }
 
-                    $vCenterConnection = Connect-ViServer $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
-                }
-            }
-        }
-
-        #Remove Virtual Switches
-        Foreach ($vmHost in $vmHosts) {
-            If ($isPrimaryManagementCluster) {
-                LogMessage -type INFO -message "[$($vmhost.name)] Removing vSwitches: $($vssToDelete -join(","))"
-                Foreach ($vssName in $vssToDelete) {
-                    $vssExists = Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name $vssName -ErrorAction SilentlyContinue
-                    If ($vssExists) {
-                        Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name $vssName | Remove-VirtualSwitch -Confirm:$false | Out-Null
+                    $hostMoRef = $vmhost.ExtensionData.moref.value
+                    If ($hostMoRef -notin $vdsHosts) {
+                        LogMessage -type INFO -message "[$($vmhost.name)] Adding to $($vds.vdsName)"
+                        Get-VDSwitch -name $vds.vdsName | Add-VDSwitchVMHost -vmhost $vmHost -confirm:$false
+                    } else {
+                        LogMessage -type INFO -message "[$($vmhost.name)] Already in $($vds.vdsName). Skipping"
                     }
-                }
-            }
-        }
 
-        #Add Remaining NICS to VDS
-        Foreach ($vds in $vdsConfiguration) {
-            Foreach ($vmHost in $vmHosts) {
-                $remainingVmnics = @()
-                Foreach ($nic in $vds.nicNames) {
-                    If ($nic -ne $vds.nicNames[0]) {
-                        $remainingVmnics += $nic
-                    }
-                }
-                Foreach ($nic in $remainingVmnics) {
-                    $vmnicInVds = Get-VDPort -VDSwitch $vds.vdsName | Where-Object { $_.proxyHost.name -eq $vmhost.name -and $_.connectedEntity.name -eq $nic }
+                    $vmnicInVds = Get-VDPort -VDSwitch $vds.vdsName | Where-Object { $_.proxyHost.name -eq $vmhost.name -and $_.connectedEntity.name -eq $vmnicMinusOne }
                     If (!$vmnicInVds) {
-                        LogMessage -type INFO -message "[$($vmhost.name)] Adding Additional NIC $nic to $($vds.vdsName)"
-                        $additionalNic = $vmhost | Get-VMHostNetworkAdapter -Physical -Name $nic
-                        Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $additionalNic -confirm:$false
+                        If ($portgroupArray.count -ne 0) {
+                            LogMessage -type INFO -message "[$($vmhost.name)] Adding Physical Adapter $($vds.nicNames[0]) to $($vds.vdsName) and migrating $($vmNicArray.name -join(", "))"
+                            Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $vmnicMinusOne -VMHostVirtualNic $vmNicArray -VirtualNicPortgroup $portgroupArray -confirm:$false
+                        } else {
+                            Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $vmnicMinusOne -confirm:$false
+                        }
                     } else {
-                        LogMessage -type INFO -message "[$($vmhost.name)] Physical Adapter $nic already in $($vds.vdsName). Skipping"
+                        LogMessage -type INFO -message "[$($vmhost.name)] Physical Adapter $($vds.nicNames[0]) already in $($vds.vdsName). Skipping"
+                    }
+
+                }
+                If (($vds.portgroups | Where-Object { ($_.transportType -eq 'VM_MANAGEMENT') -and ($_.faultLevel -in "PRIMARY", "NONE") }) -OR ((!($vds.portgroups | Where-Object { ($_.transportType -eq 'VM_MANAGEMENT') -and ($_.faultLevel -in "PRIMARY", "NONE") })) -and ($vds.portgroups | Where-Object { ($_.transportType -eq 'MANAGEMENT') -and ($_.faultLevel -in "PRIMARY", "NONE") }))) {
+
+                    #Move Mgmt VMs to Management Portgroup
+                    If ($isPrimaryManagementCluster) {
+                        Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+                        Foreach ($vmhost in $vmhosts) {
+                            $vmHostUser = ($extractedSddcData.passwords | where-object { ($_.domainName -eq $domainName) -and ($_.entityType -eq "ESXI") -and ($_.username -eq "root") -and ($_.entityName -eq $vmhost.name) }).username
+                            $vmHostPassword = ($extractedSddcData.passwords | where-object { ($_.domainName -eq $domainName) -and ($_.entityType -eq "ESXI") -and ($_.username -eq "root") -and ($_.entityName -eq $vmhost.name) }).password
+                            $vmHostConnection = Connect-ViServer $vmhost.name -user $vmHostUser -password $vmHostPassword
+                            $vmsTomove = Get-VM | Where-Object { $_.Name -notlike "*vCLS*" }
+                            foreach ($vmToMove in $vmsTomove) {
+
+                                If ((Get-VM -Name $vmToMove | Get-NetworkAdapter).NetworkName -ne $managementVmPortGroupName) {
+                                    LogMessage -type INFO -message "[$($vmToMove.name)] Moving to $($managementVmPortGroupName)"
+                                    Get-VM -Name $vmToMove | Get-NetworkAdapter | Set-NetworkAdapter -NetworkName $managementVmPortGroupName -confirm:$false | Out-Null
+                                } else {
+                                    LogMessage -type INFO -message "[$($vmToMove.name)] Already moved to $($managementVmPortGroupName). Skipping"
+                                }
+                            }
+                            If (($vmsTomove.count -gt 0) -and ($vmhost.Manufacturer -eq "VMware, Inc.")) {
+                                LogMessage -type WAIT -message "Aha! Nested hosts detected. Waiting 5 mins for connection between vCenter and hosts to stabilize after vmk0 / vm_mgmt portgroup migration"
+                                Sleep 300
+                            }
+                            Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+                        }
+
+                        $vCenterConnection = Connect-ViServer $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
+                    }
+                }
+            }
+
+            #Remove Virtual Switches
+            Foreach ($vmHost in $vmHosts) {
+                If ($isPrimaryManagementCluster) {
+                    LogMessage -type INFO -message "[$($vmhost.name)] Removing vSwitches: $($vssToDelete -join(","))"
+                    Foreach ($vssName in $vssToDelete) {
+                        $vssExists = Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name $vssName -ErrorAction SilentlyContinue
+                        If ($vssExists) {
+                            Get-VMHost -Name $vmhost | Get-VirtualSwitch -Name $vssName | Remove-VirtualSwitch -Confirm:$false | Out-Null
+                        }
+                    }
+                }
+            }
+
+            #Add Remaining NICS to VDS
+            Foreach ($vds in $vdsConfiguration) {
+                Foreach ($vmHost in $vmHosts) {
+                    $remainingVmnics = @()
+                    Foreach ($nic in $vds.nicNames) {
+                        If ($nic -ne $vds.nicNames[0]) {
+                            $remainingVmnics += $nic
+                        }
+                    }
+                    Foreach ($nic in $remainingVmnics) {
+                        $vmnicInVds = Get-VDPort -VDSwitch $vds.vdsName | Where-Object { $_.proxyHost.name -eq $vmhost.name -and $_.connectedEntity.name -eq $nic }
+                        If (!$vmnicInVds) {
+                            LogMessage -type INFO -message "[$($vmhost.name)] Adding Additional NIC $nic to $($vds.vdsName)"
+                            $additionalNic = $vmhost | Get-VMHostNetworkAdapter -Physical -Name $nic
+                            Get-VDSwitch -name $vds.vdsName | Add-VDSwitchPhysicalNetworkAdapter -VMHostPhysicalNic $additionalNic -confirm:$false
+                        } else {
+                            LogMessage -type INFO -message "[$($vmhost.name)] Physical Adapter $nic already in $($vds.vdsName). Skipping"
+                        }
                     }
                 }
             }
         }
+
         Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
         $StopWatch.Stop()
         LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
@@ -5033,8 +5141,7 @@ Function Watch-NsxHostTransportNodeInstallation {
 
     Param(
         [Parameter (Mandatory = $true)][String] $clusterName,
-        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
-        [Parameter (Mandatory = $false)][String] $az = "az1"
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile
     )
 
     $timeoutMinutes = 60
@@ -5051,11 +5158,7 @@ Function Watch-NsxHostTransportNodeInstallation {
 
     #Determine the expected number of host transport nodes from the extracted data
     $expectedClusterDetails = $extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }
-    If ($az -eq "az1") {
-        $expectedNodeCount = @($expectedClusterDetails.azHostMapping.az1).Count
-    } else {
-        $expectedNodeCount = @($expectedClusterDetails.hosts).Count
-    }
+    $expectedNodeCount = @($expectedClusterDetails.hosts).Count
 
     If ($expectedNodeCount -eq 0) {
         LogMessage -type WARNING -message "[$jumpboxName] No hosts found for cluster '$clusterName' in the extracted SDDC data. Verify the cluster name is correct."
