@@ -3660,8 +3660,7 @@ Function Add-VMKernelsToHost {
         [Parameter (Mandatory = $true)][String] $sddcManagerFQDN,
         [Parameter (Mandatory = $true)][String] $sddcManagerAdmin,
         [Parameter (Mandatory = $true)][String] $sddcManagerAdminPassword,
-        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
-        [Parameter (Mandatory = $false)][String] $az = "az1"
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
@@ -3676,101 +3675,114 @@ Function Add-VMKernelsToHost {
     #$vmHosts = (Get-cluster -name $clusterName | Get-VMHost).Name | Sort-Object
     $workloadDomain = $extractedSDDCData.workloadDomains | where-object { $_.vCenterDetails.fqdn -eq $targetFQDN }
     $clusterDetails = $workloadDomain.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }
-    $vmHosts = $clusterDetails.azHostMapping.$($az)
 
-    If ($az -eq "az1") {
-        $faultLevelArray = @("PRIMARY", "NONE")
-    } else {
-        $faultLevelArray = @("SECONDARY")
+    If ($clusterDetails.isStretched -eq "t")
+    {
+        $azs = @("az1","az2")
     }
-    foreach ($vmhost in $vmHosts) {
-        $vmotionPG = ($clusterDetails.vdsDetails.portgroups | Where-Object { ($_.TransportType -eq "VMOTION") -AND ($_.faultLevel -in $faultLevelArray) }).Name
-        $vmotionVDSName = ($clusterDetails.vdsDetails | Where-Object { $_.portgroups.name -eq $vmotionPG }).dvsName
-        $vmotionIP = ($clusterDetails.hosts | Where-Object { $_.hostname -eq $vmhost }).vmotionIp
-        $networkPoolId = ($workloadDomain.vsphereClusterDetails.hosts | Where-Object { $_.hostname -eq $vmhost }).networkPoolID
-        $vmotionMask = ((Invoke-VcfGetNetworksOfNetworkPool -id $networkPoolID).elements | ? { $_.type -eq "VMOTION" }).Mask
-        $vmotionMTU = ((Invoke-VcfGetNetworksOfNetworkPool -id $networkPoolID).elements | ? { $_.type -eq "VMOTION" }).mtu
-        $vmotionGW = ((Invoke-VcfGetNetworksOfNetworkPool -id $networkPoolID).elements | ? { $_.type -eq "VMOTION" }).gateway
+    else
+    {
+        $azs = @("az1")
+    }
+    Foreach ($az in $azs)
+    {
+        $vmHosts = $clusterDetails.azHostMapping.$($az)
+        If ($az -eq "az1") {
+            $faultLevelArray = @("PRIMARY", "NONE")
+        } else {
+            $faultLevelArray = @("SECONDARY")
+        }
+        foreach ($vmhost in $vmHosts) {
+            $vmotionPG = ($clusterDetails.vdsDetails.portgroups | Where-Object { ($_.TransportType -eq "VMOTION") -AND ($_.faultLevel -in $faultLevelArray) }).Name
+            $vmotionVDSName = ($clusterDetails.vdsDetails | Where-Object { $_.portgroups.name -eq $vmotionPG }).dvsName
+            $vmotionIP = ($clusterDetails.hosts | Where-Object { $_.hostname -eq $vmhost }).vmotionIp
+            $networkPoolId = ($workloadDomain.vsphereClusterDetails.hosts | Where-Object { $_.hostname -eq $vmhost }).networkPoolID
+            $vmotionMask = ((Invoke-VcfGetNetworksOfNetworkPool -id $networkPoolID).elements | ? { $_.type -eq "VMOTION" }).Mask
+            $vmotionMTU = ((Invoke-VcfGetNetworksOfNetworkPool -id $networkPoolID).elements | ? { $_.type -eq "VMOTION" }).mtu
+            $vmotionGW = ((Invoke-VcfGetNetworksOfNetworkPool -id $networkPoolID).elements | ? { $_.type -eq "VMOTION" }).gateway
 
-        $vsanPG = ($clusterDetails.vdsDetails.portgroups | Where-Object { ($_.TransportType -eq "VSAN") -AND ($_.faultLevel -in $faultLevelArray) }).Name
-        $vsanVDSName = ($clusterDetails.vdsDetails | Where-Object { $_.portgroups.name -eq $vsanPG }).dvsName
-        $vsanIP = ($clusterDetails.hosts | Where-Object { $_.hostname -eq $vmhost }).vsanIp
-        $vsanMask = ((Invoke-VcfGetNetworksOfNetworkPool -id $networkPoolID).elements | ? { $_.type -eq "VSAN" }).Mask
-        $vsanMTU = ((Invoke-VcfGetNetworksOfNetworkPool -id $networkPoolID).elements | ? { $_.type -eq "VSAN" }).mtu
-        $vsanGW = ((Invoke-VcfGetNetworksOfNetworkPool -id $networkPoolID).elements | ? { $_.type -eq "VSAN" }).gateway
+            $vsanPG = ($clusterDetails.vdsDetails.portgroups | Where-Object { ($_.TransportType -eq "VSAN") -AND ($_.faultLevel -in $faultLevelArray) }).Name
+            $vsanVDSName = ($clusterDetails.vdsDetails | Where-Object { $_.portgroups.name -eq $vsanPG }).dvsName
+            $vsanIP = ($clusterDetails.hosts | Where-Object { $_.hostname -eq $vmhost }).vsanIp
+            $vsanMask = ((Invoke-VcfGetNetworksOfNetworkPool -id $networkPoolID).elements | ? { $_.type -eq "VSAN" }).Mask
+            $vsanMTU = ((Invoke-VcfGetNetworksOfNetworkPool -id $networkPoolID).elements | ? { $_.type -eq "VSAN" }).mtu
+            $vsanGW = ((Invoke-VcfGetNetworksOfNetworkPool -id $networkPoolID).elements | ? { $_.type -eq "VSAN" }).gateway
 
-        #Get Host Details
-        $esx = Get-VMHost -Name $vmHost
-        $hostVmkernelInfo = $esx | Get-View -Property Name, Config.Network.Vnic | ForEach-Object {
-            $HostName = $_.Name
-            foreach ($Vmk in $_.Config.Network.Vnic) {
-                [PSCustomObject]@{
-                    VMHost     = $HostName
-                    Device     = $Vmk.Device
-                    Portgroup  = $Vmk.Portgroup
-                    IPAddress  = $Vmk.Spec.Ip.IpAddress
-                    SubnetMask = $Vmk.Spec.Ip.SubnetMask
-                    MacAddress = $Vmk.Spec.Mac
+            #Get Host Details
+            $esx = Get-VMHost -Name $vmHost
+            $hostVmkernelInfo = $esx | Get-View -Property Name, Config.Network.Vnic | ForEach-Object {
+                $HostName = $_.Name
+                foreach ($Vmk in $_.Config.Network.Vnic) {
+                    [PSCustomObject]@{
+                        VMHost     = $HostName
+                        Device     = $Vmk.Device
+                        Portgroup  = $Vmk.Portgroup
+                        IPAddress  = $Vmk.Spec.Ip.IpAddress
+                        SubnetMask = $Vmk.Spec.Ip.SubnetMask
+                        MacAddress = $Vmk.Spec.Mac
+                    }
                 }
             }
-        }
 
-        #create vmk1 if necessary
-        $dvportgroup = Get-VDPortgroup -name $vmotionPG -VDSwitch $vmotionVDSName
-        $vmk1Exists = $hostVmkernelInfo | Where-Object { $_.device -eq "vmk1" }
-        If (!$vmk1Exists) {
-            LogMessage -type INFO -message "[$vmhost] Creating vMotion vMK"
-            $vmk = New-VMHostNetworkAdapter -VMHost $esx -VirtualSwitch $vmotionVDSName -mtu $vmotionMTU -PortGroup $dvportgroup -ip $vmotionIP -SubnetMask $vmotionMask -NetworkStack (Get-VMHostNetworkStack -vmhost $esx | Where-Object { $_.id -eq "vmotion" })
-        } else {
-            LogMessage -type INFO -message "[$vmhost] vMotion vMK already present"
-        }
-
-        #create vmk1 gateway if necessary
-        $vmkName = 'vmk1'
-        $esxcli = Get-EsxCli -VMHost $esx -V2
-        $interface = $esxcli.network.ip.interface.ipv4.get.Invoke(@{interfacename = $vmkName })
-        If ($interface[0].Gateway -ne $vmotionGW) {
-            LogMessage -type INFO -message "[$vmhost] Setting vMotion Gateway"
-            $interfaceArg = @{
-                netmask       = $interface[0].IPv4Netmask
-                type          = $interface[0].AddressType.ToLower()
-                ipv4          = $interface[0].IPv4Address
-                interfacename = $interface[0].Name
+            #create vmk1 if necessary
+            $dvportgroup = Get-VDPortgroup -name $vmotionPG -VDSwitch $vmotionVDSName
+            $vmk1Exists = $hostVmkernelInfo | Where-Object { $_.device -eq "vmk1" }
+            If (!$vmk1Exists) {
+                LogMessage -type INFO -message "[$vmhost] Creating vMotion vMK"
+                $vmk = New-VMHostNetworkAdapter -VMHost $esx -VirtualSwitch $vmotionVDSName -mtu $vmotionMTU -PortGroup $dvportgroup -ip $vmotionIP -SubnetMask $vmotionMask -NetworkStack (Get-VMHostNetworkStack -vmhost $esx | Where-Object { $_.id -eq "vmotion" })
+            } else {
+                LogMessage -type INFO -message "[$vmhost] vMotion vMK already present"
             }
-            $esxcli.network.ip.interface.ipv4.set.Invoke($interfaceArg) *>$null
-            $esxcli.network.ip.route.ipv4.add.Invoke(@{ netstack = 'vmotion'; network = 'default'; gateway = $vmotionGW }) *>$null
-        } else {
-            LogMessage -type INFO -message "[$vmhost] vMotion Gateway already configured"
-        }
 
-        #create vmk2 if necessary
-        $dvportgroup = Get-VDPortgroup -name $vsanPG -VDSwitch $vsanVDSName
-        $vmk2Exists = $hostVmkernelInfo | Where-Object { $_.device -eq "vmk2" }
-        If (!$vmk2Exists) {
-            LogMessage -type INFO -message "[$vmhost] Creating vSAN vMK"
-            $vmk = New-VMHostNetworkAdapter -VMHost $esx -VirtualSwitch $vsanVDSName -mtu $vsanMTU -PortGroup $dvportgroup -ip $vsanIP -SubnetMask $vsanMask -VsanTrafficEnabled:$true
-        } else {
-            LogMessage -type INFO -message "[$vmhost] vSAN vMK already present"
-        }
-
-        #create vmk2 gateway if necessary
-        $vmkName = 'vmk2'
-        $esxcli = Get-EsxCli -VMHost $esx -V2
-        $interface = $esxcli.network.ip.interface.ipv4.get.Invoke(@{interfacename = $vmkName })
-        If ($interface[0].Gateway -ne $vsanGW) {
-            LogMessage -type INFO -message "[$vmhost] Setting vSAN Gateway"
-            $interfaceArg = @{
-                netmask       = $interface[0].IPv4Netmask
-                type          = $interface[0].AddressType.ToLower()
-                ipv4          = $interface[0].IPv4Address
-                interfacename = $interface[0].Name
-                gateway       = $vsanGW
+            #create vmk1 gateway if necessary
+            $vmkName = 'vmk1'
+            $esxcli = Get-EsxCli -VMHost $esx -V2
+            $interface = $esxcli.network.ip.interface.ipv4.get.Invoke(@{interfacename = $vmkName })
+            If ($interface[0].Gateway -ne $vmotionGW) {
+                LogMessage -type INFO -message "[$vmhost] Setting vMotion Gateway"
+                $interfaceArg = @{
+                    netmask       = $interface[0].IPv4Netmask
+                    type          = $interface[0].AddressType.ToLower()
+                    ipv4          = $interface[0].IPv4Address
+                    interfacename = $interface[0].Name
+                }
+                $esxcli.network.ip.interface.ipv4.set.Invoke($interfaceArg) *>$null
+                $esxcli.network.ip.route.ipv4.add.Invoke(@{ netstack = 'vmotion'; network = 'default'; gateway = $vmotionGW }) *>$null
+            } else {
+                LogMessage -type INFO -message "[$vmhost] vMotion Gateway already configured"
             }
-            $esxcli.network.ip.interface.ipv4.set.Invoke($interfaceArg) *>$null
-        } else {
-            LogMessage -type INFO -message "[$vmhost] vSAN Gateway already configured"
+
+            #create vmk2 if necessary
+            $dvportgroup = Get-VDPortgroup -name $vsanPG -VDSwitch $vsanVDSName
+            $vmk2Exists = $hostVmkernelInfo | Where-Object { $_.device -eq "vmk2" }
+            If (!$vmk2Exists) {
+                LogMessage -type INFO -message "[$vmhost] Creating vSAN vMK"
+                $vmk = New-VMHostNetworkAdapter -VMHost $esx -VirtualSwitch $vsanVDSName -mtu $vsanMTU -PortGroup $dvportgroup -ip $vsanIP -SubnetMask $vsanMask -VsanTrafficEnabled:$true
+            } else {
+                LogMessage -type INFO -message "[$vmhost] vSAN vMK already present"
+            }
+
+            #create vmk2 gateway if necessary
+            $vmkName = 'vmk2'
+            $esxcli = Get-EsxCli -VMHost $esx -V2
+            $interface = $esxcli.network.ip.interface.ipv4.get.Invoke(@{interfacename = $vmkName })
+            If ($interface[0].Gateway -ne $vsanGW) {
+                LogMessage -type INFO -message "[$vmhost] Setting vSAN Gateway"
+                $interfaceArg = @{
+                    netmask       = $interface[0].IPv4Netmask
+                    type          = $interface[0].AddressType.ToLower()
+                    ipv4          = $interface[0].IPv4Address
+                    interfacename = $interface[0].Name
+                    gateway       = $vsanGW
+                }
+                $esxcli.network.ip.interface.ipv4.set.Invoke($interfaceArg) *>$null
+            } else {
+                LogMessage -type INFO -message "[$vmhost] vSAN Gateway already configured"
+            }
         }
     }
+
+
     Disconnect-VcfSddcManagerServer *
     Disconnect-VIServer * -confirm:$false
     $StopWatch.Stop()
