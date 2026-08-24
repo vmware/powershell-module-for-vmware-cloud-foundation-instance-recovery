@@ -144,6 +144,7 @@ nav:
     - documentation/functions/Confirm-VcfmsFluentdOperatorState.md
     - documentation/functions/Disable-VcfmsClusterLogging.md
     - documentation/functions/Enable-VcfmsClusterLogging.md
+    - documentation/functions/Get-BackupsFromSFTPServer.md
     - documentation/functions/Get-RegisteredComponentIds.md
     - documentation/functions/Get-ServicesRuntimeComponentBackups.md
     - documentation/functions/Get-VcfmsComponents.md
