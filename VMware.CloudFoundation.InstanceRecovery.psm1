@@ -4490,8 +4490,8 @@ Function New-SingleHostVsanDatastore {
 
     $workloadDomain = $extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }
     $cluster = $workloadDomain.vsphereClusterDetails | Where-Object { $_.isDefault -eq "t" }
-
-    $esxHostFqdn = $cluster.hosts[0].hostname
+    $azHosts = $cluster.azHostMapping.az1
+    $esxHostFqdn = ($cluster.hosts | where-object {$_.hostname -in $azHosts})[0].hostname
     $esxHostAdmin = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $esxHostFqdn) -and ($_.username -eq "root") }).username
     $esxHostPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $esxHostFqdn) -and ($_.username -eq "root") }).password
 
