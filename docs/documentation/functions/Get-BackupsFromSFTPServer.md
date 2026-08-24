@@ -14,7 +14,7 @@ Get-BackupsFromSFTPServer [-sftpServer] <String> [-sftpUser] <String> [-sftpPass
 
 The `Get-BackupsFromSFTPServer` cmdlet connects to a remote SFTP server and walks the backup folder structure (`<sftpServerBackupPath>/<vspId>/<version>/<component>/<subId>/<version>/<dated backup>`) to find backups for the specified component types, groups them by backup rank (rank 1 = most recent backup of each component, rank 2 = second most recent, and so on), and lets the user interactively select a backup group. Output includes component type, version, backup name, age, and path, mirroring the behavior of `Get-ServicesRuntimeComponentBackups`.
 
-If `-sftpServerBackupPath` does not already end with `/vcf/backups`, it is appended automatically. After displaying the results, the cmdlet optionally generates a `restore-payload.json` file containing the selected backup of each component.
+If `-sftpServerBackupPath` does not already end with `/vcf/backups`, it is appended automatically. After displaying the results, the cmdlet optionally generates a `restore-payload.json` file containing the selected backup of each component, with each path prefixed as `sftp://<sftpUser>@<sftpServer>:22`.
 
 ## Examples
 

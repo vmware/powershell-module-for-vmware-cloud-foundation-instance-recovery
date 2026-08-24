@@ -2313,10 +2313,11 @@ Function Get-BackupsFromSFTPServer {
     } Until ($buildJson -in @("Y", "y", "N", "n"))
 
     if ($buildJson -in @("Y", "y")) {
+        $sftpUriPrefix = "sftp://$sftpUser@${sftpServer}:22"
         $restoreComponents = @(
             foreach ($componentType in $componentNames) {
                 $entry = $selectedGroup.Entries | Where-Object { $_.ComponentType -eq $componentType } | Select-Object -First 1
-                if ($entry) { @{ path = $entry.Path; point = $entry.Name } }
+                if ($entry) { @{ path = "$sftpUriPrefix$($entry.Path)"; point = $entry.Name } }
             }
         )
 
