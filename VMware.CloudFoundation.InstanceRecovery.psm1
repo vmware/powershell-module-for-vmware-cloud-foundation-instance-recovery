@@ -5883,6 +5883,9 @@ Function New-ReconfiguredVsanStretchedCluster {
 
     .PARAMETER extractedSDDCDataFile
     Relative or absolute to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup) somewhere on the local filesystem
+
+    .PARAMETER disableVsanWitnessTrafficSeperation
+    By default, vmk0 on every AZ1 and AZ2 host is tagged for vSAN witness traffic (equivalent to `esxcli vsan network ipv4 set -i vmk0 -T witness`), since the original host-to-vmknic witness traffic separation mapping recorded by the source SDDC Manager cannot be reliably recovered after a full host rebuild. Pass this switch to skip that step entirely (e.g. if witness traffic separation should not be configured, or will be configured some other way).
     #>
 
     Param(
@@ -5890,7 +5893,8 @@ Function New-ReconfiguredVsanStretchedCluster {
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
         [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
         [Parameter (Mandatory = $true)][String] $clusterName,
-        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
+        [Parameter (Mandatory = $false)][Switch] $disableVsanWitnessTrafficSeperation
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
@@ -5938,6 +5942,36 @@ Function New-ReconfiguredVsanStretchedCluster {
     $clusterObj = Get-Cluster -Name $clusterName -ErrorAction Stop
     $az1VMHosts = @(Get-VMHost -Name $az1Hosts -ErrorAction Stop)
     $az2VMHosts = @(Get-VMHost -Name $az2Hosts -ErrorAction Stop)
+
+    if ($disableVsanWitnessTrafficSeperation) {
+        LogMessage -type INFO -message "[$clusterName] -disableVsanWitnessTrafficSeperation specified. Skipping vSAN Witness Traffic Separation configuration on vmk0."
+    } else {
+        # The original host-to-vmknic Witness Traffic Separation mapping recorded by the source
+        # SDDC Manager cannot be reliably recovered once hosts are rebuilt (confirmed empirically --
+        # the FSM engine only persists an unresolved variable-name reference for this mapping in the
+        # SDDC Manager database, never the resolved value), so witness traffic is deterministically
+        # tagged onto vmk0 (the management vmknic) on every AZ1/AZ2 host rather than attempting to
+        # detect/reproduce whatever vmknic was originally used.
+        LogMessage -type INFO -message "[$clusterName] Configuring vSAN Witness Traffic Separation on vmk0 for all AZ1/AZ2 hosts"
+        Foreach ($dataHost in (@($az1VMHosts) + @($az2VMHosts))) {
+            Try {
+                $esxcli = Get-EsxCli -VMHost $dataHost -V2
+                $vmk0VsanNetwork = @($esxcli.vsan.network.list.Invoke() | Where-Object { $_.VmkNicName -eq 'vmk0' }) | Select-Object -First 1
+                $vmk0AlreadyWitnessTagged = $vmk0VsanNetwork -and (($vmk0VsanNetwork.TrafficType -join ',') -match 'witness')
+                if ($vmk0AlreadyWitnessTagged) {
+                    LogMessage -type INFO -message "[$($dataHost.Name)] vmk0 already tagged for vSAN witness traffic. Skipping"
+                } else {
+                    LogMessage -type INFO -message "[$($dataHost.Name)] Tagging vmk0 for vSAN witness traffic"
+                    $witnessTrafficArgs = $esxcli.vsan.network.ipv4.set.CreateArgs()
+                    $witnessTrafficArgs.interfacename = "vmk0"
+                    $witnessTrafficArgs.traffictype = @("witness")
+                    $esxcli.vsan.network.ipv4.set.Invoke($witnessTrafficArgs) | Out-Null
+                }
+            } Catch {
+                LogMessage -type ERROR -message "[$($dataHost.Name)] Failed to configure vSAN Witness Traffic Separation on vmk0: $($_.Exception.Message)"
+            }
+        }
+    }
 
     $witnessVMHost = Get-VMHost -Name $witnessFqdn -ErrorAction SilentlyContinue
     if (!$witnessVMHost) {
