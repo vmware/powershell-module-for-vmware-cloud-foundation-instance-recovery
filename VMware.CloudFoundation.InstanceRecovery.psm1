@@ -5770,141 +5770,163 @@ Function Add-VMKernelsToManagementHosts {
     $cluster = $workloadDomain.vsphereClusterDetails | Where-Object { $_.isDefault -eq "t" }
     $clusterName = $cluster.name
 
-    $vmotionNetwork = $cluster.hosts[0].networks | Where-Object { $_.type -eq "VMOTION" }
-    $vsanNetwork = $cluster.hosts[0].networks | Where-Object { $_.type -eq "VSAN" }
-
-    $vMotionVlanId = $vmotionNetwork.vlanId
-    $vMotionMtu = $vmotionNetwork.mtu
-    $vMotionMask = $vmotionNetwork.subnetMask
-    $vMotionGateway = $vmotionNetwork.gateway
-
-    $vsanVlanId = $vsanNetwork.vlanId
-    $vsanMtu = $vsanNetwork.mtu
-    $vsanMask = $vsanNetwork.subnetMask
-    $vsanGateway = $vsanNetwork.gateway
-
-    LogMessage -type INFO -message "[$jumpboxName] vMotion Network - VLAN: $vMotionVlanId, MTU: $vMotionMtu, Mask: $vMotionMask, Gateway: $vMotionGateway"
-    LogMessage -type INFO -message "[$jumpboxName] vSAN Network - VLAN: $vsanVlanId, MTU: $vsanMtu, Mask: $vsanMask, Gateway: $vsanGateway"
-
-    If ($global:DefaultVIServers) {
-        Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false -ErrorAction SilentlyContinue
+    If ($cluster.isStretched -eq "t") {
+        $azs = @("az1","az2")
+    } else {
+        $azs = @("az1")
     }
 
-    Foreach ($clusterHost in $cluster.hosts) {
-        $currentHostFQDN = $clusterHost.hostname
-        $currentHostAdmin = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $currentHostFQDN) -and ($_.username -eq "root") }).username
-        $currentHostPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $currentHostFQDN) -and ($_.username -eq "root") }).password
-
-        $vmotionIP = $clusterHost.vmotionIP
-        $vsanIP = $clusterHost.vsanIP
-
-        LogMessage -type INFO -message "[$currentHostFQDN] Host IPs - vMotion: $vmotionIP, vSAN: $vsanIP"
-
-        LogMessage -type INFO -message "[$currentHostFQDN] Connecting to host"
-        $hostConnection = Connect-VIServer $currentHostFQDN -user $currentHostAdmin -password $currentHostPassword -ErrorAction Stop
-
-        $allPortgroups = Get-VirtualPortGroup -VMHost $currentHostFQDN
-        $vmotionVssName = $null
-        $vsanVssName = $null
-
-        Foreach ($pg in $allPortgroups) {
-            If ($pg.Name -like "TRAFFIC_TYPES-*") {
-                $trafficTypes = $pg.Name -replace "TRAFFIC_TYPES-", ""
-                $trafficTypesArray = $trafficTypes -split "-"
-                If ("VMOTION" -in $trafficTypesArray) {
-                    $vmotionVssName = $pg.VirtualSwitchName
-                    LogMessage -type INFO -message "[$currentHostFQDN] Found VMOTION traffic type on vSS: $vmotionVssName"
-                }
-                If ("VSAN" -in $trafficTypesArray) {
-                    $vsanVssName = $pg.VirtualSwitchName
-                    LogMessage -type INFO -message "[$currentHostFQDN] Found VSAN traffic type on vSS: $vsanVssName"
-                }
-            }
+    Foreach ($az in $azs) {
+        If ($cluster.isStretched -eq "t"){
+            LogMessage -type NOTE "[$clusterName] Adding VMkernels to $($az.toUpper()) Hosts"
         }
 
-        If (-not $vmotionVssName) {
-            LogMessage -type WARNING -message "[$currentHostFQDN] Could not find vSS with VMOTION in TRAFFIC_TYPES portgroup. Skipping vMotion configuration"
+        If ($az -eq "az1") {
+            $faultLevelArray = @("PRIMARY", "NONE")
         } else {
-            $vmotionPgName = "vmotion"
-            $vssVmotionPortgroupExists = Get-VirtualPortGroup -VMHost $currentHostFQDN -VirtualSwitch $vmotionVssName -Name $vmotionPgName -ErrorAction SilentlyContinue
-            If (-not $vssVmotionPortgroupExists) {
-                LogMessage -type INFO -message "[$currentHostFQDN] Creating vMotion portgroup '$vmotionPgName' on $vmotionVssName with VLAN $vMotionVlanId"
-                New-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $currentHostFQDN -Name $vmotionVssName) -Name $vmotionPgName -VLanId $vMotionVlanId | Out-Null
-            } else {
-                LogMessage -type INFO -message "[$currentHostFQDN] vMotion portgroup '$vmotionPgName' already exists. Skipping creation"
-            }
-
-            $vmk1Exists = Get-VMHostNetworkAdapter -VMHost $currentHostFQDN -Name "vmk1" -ErrorAction SilentlyContinue
-            If (-not $vmk1Exists) {
-                LogMessage -type INFO -message "[$currentHostFQDN] Creating vMotion VMkernel (vmk1) with IP $vmotionIP"
-                $vssVmotionPortgroup = Get-VirtualPortGroup -VMHost $currentHostFQDN -VirtualSwitch $vmotionVssName -Name $vmotionPgName
-                New-VMHostNetworkAdapter -VMHost $currentHostFQDN -VirtualSwitch $vmotionVssName -mtu $vMotionMtu -PortGroup $vssVmotionPortgroup -ip $vmotionIP -SubnetMask $vMotionMask -NetworkStack (Get-VMHostNetworkStack -VMHost $currentHostFQDN | Where-Object { $_.id -eq "vmotion" }) | Out-Null
-            } else {
-                LogMessage -type INFO -message "[$currentHostFQDN] VMkernel vmk1 already exists. Skipping creation"
-            }
-
-            $vmk1Check = Get-VMHostNetworkAdapter -VMHost $currentHostFQDN -Name "vmk1" -ErrorAction SilentlyContinue
-            If ($vmk1Check) {
-                LogMessage -type INFO -message "[$currentHostFQDN] Setting vMotion Gateway to $vMotionGateway"
-                $vmkName = 'vmk1'
-                $esx = Get-VMHost -Name $currentHostFQDN
-                $esxcli = Get-EsxCli -VMHost $esx -V2
-                $interface = $esxcli.network.ip.interface.ipv4.get.Invoke(@{interfacename = $vmkName })
-                If ($interface) {
-                    $interfaceArg = @{
-                        netmask       = $interface[0].IPv4Netmask
-                        type          = $interface[0].AddressType.ToLower()
-                        ipv4          = $interface[0].IPv4Address
-                        interfacename = $interface[0].Name
-                    }
-                    $esxcli.network.ip.interface.ipv4.set.Invoke($interfaceArg) *>$null
-                    $esxcli.network.ip.route.ipv4.add.Invoke(@{ netstack = 'vmotion'; network = 'default'; gateway = $vMotionGateway }) *>$null
-                }
-            }
+            $faultLevelArray = @("SECONDARY")
         }
 
-        If (-not $vsanVssName) {
-            LogMessage -type WARNING -message "[$currentHostFQDN] Could not find vSS with VSAN in TRAFFIC_TYPES portgroup. Skipping vSAN configuration"
-        } else {
-            $vsanPgName = "vsan"
-            $vssVsanPortgroupExists = Get-VirtualPortGroup -VMHost $currentHostFQDN -VirtualSwitch $vsanVssName -Name $vsanPgName -ErrorAction SilentlyContinue
-            If (-not $vssVsanPortgroupExists) {
-                LogMessage -type INFO -message "[$currentHostFQDN] Creating vSAN portgroup '$vsanPgName' on $vsanVssName with VLAN $vsanVlanId"
-                New-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $currentHostFQDN -Name $vsanVssName) -Name $vsanPgName -VLanId $vsanVlanId | Out-Null
-            } else {
-                LogMessage -type INFO -message "[$currentHostFQDN] vSAN portgroup '$vsanPgName' already exists. Skipping creation"
-            }
+        $vmotionNetwork = $cluster.hosts[0].networks | Where-Object { ($_.type -eq "VMOTION" -AND ($_.faultLevel -in $faultLevelArray)) }
+        $vsanNetwork = $cluster.hosts[0].networks | Where-Object { ($_.type -eq "VSAN") -AND ($_.faultLevel -in $faultLevelArray) }
 
-            $vmk2Exists = Get-VMHostNetworkAdapter -VMHost $currentHostFQDN -Name "vmk2" -ErrorAction SilentlyContinue
-            If (-not $vmk2Exists) {
-                LogMessage -type INFO -message "[$currentHostFQDN] Creating vSAN VMkernel (vmk2) with IP $vsanIP"
-                $vssVsanPortgroup = Get-VirtualPortGroup -VMHost $currentHostFQDN -VirtualSwitch $vsanVssName -Name $vsanPgName
-                New-VMHostNetworkAdapter -VMHost $currentHostFQDN -VirtualSwitch $vsanVssName -mtu $vsanMtu -PortGroup $vssVsanPortgroup -ip $vsanIP -SubnetMask $vsanMask -VsanTrafficEnabled $true | Out-Null
-            } else {
-                LogMessage -type INFO -message "[$currentHostFQDN] VMkernel vmk2 already exists. Skipping creation"
-            }
+        $vMotionVlanId = $vmotionNetwork.vlanId
+        $vMotionMtu = $vmotionNetwork.mtu
+        $vMotionMask = $vmotionNetwork.subnetMask
+        $vMotionGateway = $vmotionNetwork.gateway
 
-            $vmk2Check = Get-VMHostNetworkAdapter -VMHost $currentHostFQDN -Name "vmk2" -ErrorAction SilentlyContinue
-            If ($vmk2Check) {
-                LogMessage -type INFO -message "[$currentHostFQDN] Setting vSAN Gateway to $vsanGateway"
-                $vmkName = 'vmk2'
-                $esx = Get-VMHost -Name $currentHostFQDN
-                $esxcli = Get-EsxCli -VMHost $esx -V2
-                $interface = $esxcli.network.ip.interface.ipv4.get.Invoke(@{interfacename = $vmkName })
-                If ($interface) {
-                    $interfaceArg = @{
-                        netmask       = $interface[0].IPv4Netmask
-                        type          = $interface[0].AddressType.ToLower()
-                        ipv4          = $interface[0].IPv4Address
-                        interfacename = $interface[0].Name
-                        gateway       = $vsanGateway
-                    }
-                    $esxcli.network.ip.interface.ipv4.set.Invoke($interfaceArg) *>$null
-                }
-            }
+        $vsanVlanId = $vsanNetwork.vlanId
+        $vsanMtu = $vsanNetwork.mtu
+        $vsanMask = $vsanNetwork.subnetMask
+        $vsanGateway = $vsanNetwork.gateway
+
+        LogMessage -type INFO -message "[$jumpboxName] vMotion Network - VLAN: $vMotionVlanId, MTU: $vMotionMtu, Mask: $vMotionMask, Gateway: $vMotionGateway"
+        LogMessage -type INFO -message "[$jumpboxName] vSAN Network - VLAN: $vsanVlanId, MTU: $vsanMtu, Mask: $vsanMask, Gateway: $vsanGateway"
+
+        If ($global:DefaultVIServers) {
+            Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false -ErrorAction SilentlyContinue
         }
 
-        Disconnect-VIServer -Server $currentHostFQDN -Force -Confirm:$false
+        $azHosts = $cluster.azHostMapping.$($az)
+        $vmHosts = $cluster.hosts | Where-Object {$_.name -in $azHosts}
+
+        Foreach ($clusterHost in $vmHosts) {
+            $currentHostFQDN = $clusterHost.hostname
+            $currentHostAdmin = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $currentHostFQDN) -and ($_.username -eq "root") }).username
+            $currentHostPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $currentHostFQDN) -and ($_.username -eq "root") }).password
+
+            $vmotionIP = $clusterHost.vmotionIP
+            $vsanIP = $clusterHost.vsanIP
+
+            LogMessage -type INFO -message "[$currentHostFQDN] Host IPs - vMotion: $vmotionIP, vSAN: $vsanIP"
+
+            LogMessage -type INFO -message "[$currentHostFQDN] Connecting to host"
+            $hostConnection = Connect-VIServer $currentHostFQDN -user $currentHostAdmin -password $currentHostPassword -ErrorAction Stop
+
+            $allPortgroups = Get-VirtualPortGroup -VMHost $currentHostFQDN
+            $vmotionVssName = $null
+            $vsanVssName = $null
+
+            Foreach ($pg in $allPortgroups) {
+                If ($pg.Name -like "TRAFFIC_TYPES-*") {
+                    $trafficTypes = $pg.Name -replace "TRAFFIC_TYPES-", ""
+                    $trafficTypesArray = $trafficTypes -split "-"
+                    If ("VMOTION" -in $trafficTypesArray) {
+                        $vmotionVssName = $pg.VirtualSwitchName
+                        LogMessage -type INFO -message "[$currentHostFQDN] Found VMOTION traffic type on vSS: $vmotionVssName"
+                    }
+                    If ("VSAN" -in $trafficTypesArray) {
+                        $vsanVssName = $pg.VirtualSwitchName
+                        LogMessage -type INFO -message "[$currentHostFQDN] Found VSAN traffic type on vSS: $vsanVssName"
+                    }
+                }
+            }
+
+            If (-not $vmotionVssName) {
+                LogMessage -type WARNING -message "[$currentHostFQDN] Could not find vSS with VMOTION in TRAFFIC_TYPES portgroup. Skipping vMotion configuration"
+            } else {
+                $vmotionPgName = "vmotion"
+                $vssVmotionPortgroupExists = Get-VirtualPortGroup -VMHost $currentHostFQDN -VirtualSwitch $vmotionVssName -Name $vmotionPgName -ErrorAction SilentlyContinue
+                If (-not $vssVmotionPortgroupExists) {
+                    LogMessage -type INFO -message "[$currentHostFQDN] Creating vMotion portgroup '$vmotionPgName' on $vmotionVssName with VLAN $vMotionVlanId"
+                    New-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $currentHostFQDN -Name $vmotionVssName) -Name $vmotionPgName -VLanId $vMotionVlanId | Out-Null
+                } else {
+                    LogMessage -type INFO -message "[$currentHostFQDN] vMotion portgroup '$vmotionPgName' already exists. Skipping creation"
+                }
+
+                $vmk1Exists = Get-VMHostNetworkAdapter -VMHost $currentHostFQDN -Name "vmk1" -ErrorAction SilentlyContinue
+                If (-not $vmk1Exists) {
+                    LogMessage -type INFO -message "[$currentHostFQDN] Creating vMotion VMkernel (vmk1) with IP $vmotionIP"
+                    $vssVmotionPortgroup = Get-VirtualPortGroup -VMHost $currentHostFQDN -VirtualSwitch $vmotionVssName -Name $vmotionPgName
+                    New-VMHostNetworkAdapter -VMHost $currentHostFQDN -VirtualSwitch $vmotionVssName -mtu $vMotionMtu -PortGroup $vssVmotionPortgroup -ip $vmotionIP -SubnetMask $vMotionMask -NetworkStack (Get-VMHostNetworkStack -VMHost $currentHostFQDN | Where-Object { $_.id -eq "vmotion" }) | Out-Null
+                } else {
+                    LogMessage -type INFO -message "[$currentHostFQDN] VMkernel vmk1 already exists. Skipping creation"
+                }
+
+                $vmk1Check = Get-VMHostNetworkAdapter -VMHost $currentHostFQDN -Name "vmk1" -ErrorAction SilentlyContinue
+                If ($vmk1Check) {
+                    LogMessage -type INFO -message "[$currentHostFQDN] Setting vMotion Gateway to $vMotionGateway"
+                    $vmkName = 'vmk1'
+                    $esx = Get-VMHost -Name $currentHostFQDN
+                    $esxcli = Get-EsxCli -VMHost $esx -V2
+                    $interface = $esxcli.network.ip.interface.ipv4.get.Invoke(@{interfacename = $vmkName })
+                    If ($interface) {
+                        $interfaceArg = @{
+                            netmask       = $interface[0].IPv4Netmask
+                            type          = $interface[0].AddressType.ToLower()
+                            ipv4          = $interface[0].IPv4Address
+                            interfacename = $interface[0].Name
+                        }
+                        $esxcli.network.ip.interface.ipv4.set.Invoke($interfaceArg) *>$null
+                        $esxcli.network.ip.route.ipv4.add.Invoke(@{ netstack = 'vmotion'; network = 'default'; gateway = $vMotionGateway }) *>$null
+                    }
+                }
+            }
+
+            If (-not $vsanVssName) {
+                LogMessage -type WARNING -message "[$currentHostFQDN] Could not find vSS with VSAN in TRAFFIC_TYPES portgroup. Skipping vSAN configuration"
+            } else {
+                $vsanPgName = "vsan"
+                $vssVsanPortgroupExists = Get-VirtualPortGroup -VMHost $currentHostFQDN -VirtualSwitch $vsanVssName -Name $vsanPgName -ErrorAction SilentlyContinue
+                If (-not $vssVsanPortgroupExists) {
+                    LogMessage -type INFO -message "[$currentHostFQDN] Creating vSAN portgroup '$vsanPgName' on $vsanVssName with VLAN $vsanVlanId"
+                    New-VirtualPortGroup -VirtualSwitch (Get-VirtualSwitch -VMHost $currentHostFQDN -Name $vsanVssName) -Name $vsanPgName -VLanId $vsanVlanId | Out-Null
+                } else {
+                    LogMessage -type INFO -message "[$currentHostFQDN] vSAN portgroup '$vsanPgName' already exists. Skipping creation"
+                }
+
+                $vmk2Exists = Get-VMHostNetworkAdapter -VMHost $currentHostFQDN -Name "vmk2" -ErrorAction SilentlyContinue
+                If (-not $vmk2Exists) {
+                    LogMessage -type INFO -message "[$currentHostFQDN] Creating vSAN VMkernel (vmk2) with IP $vsanIP"
+                    $vssVsanPortgroup = Get-VirtualPortGroup -VMHost $currentHostFQDN -VirtualSwitch $vsanVssName -Name $vsanPgName
+                    New-VMHostNetworkAdapter -VMHost $currentHostFQDN -VirtualSwitch $vsanVssName -mtu $vsanMtu -PortGroup $vssVsanPortgroup -ip $vsanIP -SubnetMask $vsanMask -VsanTrafficEnabled $true | Out-Null
+                } else {
+                    LogMessage -type INFO -message "[$currentHostFQDN] VMkernel vmk2 already exists. Skipping creation"
+                }
+
+                $vmk2Check = Get-VMHostNetworkAdapter -VMHost $currentHostFQDN -Name "vmk2" -ErrorAction SilentlyContinue
+                If ($vmk2Check) {
+                    LogMessage -type INFO -message "[$currentHostFQDN] Setting vSAN Gateway to $vsanGateway"
+                    $vmkName = 'vmk2'
+                    $esx = Get-VMHost -Name $currentHostFQDN
+                    $esxcli = Get-EsxCli -VMHost $esx -V2
+                    $interface = $esxcli.network.ip.interface.ipv4.get.Invoke(@{interfacename = $vmkName })
+                    If ($interface) {
+                        $interfaceArg = @{
+                            netmask       = $interface[0].IPv4Netmask
+                            type          = $interface[0].AddressType.ToLower()
+                            ipv4          = $interface[0].IPv4Address
+                            interfacename = $interface[0].Name
+                            gateway       = $vsanGateway
+                        }
+                        $esxcli.network.ip.interface.ipv4.set.Invoke($interfaceArg) *>$null
+                    }
+                }
+            }
+
+            Disconnect-VIServer -Server $currentHostFQDN -Force -Confirm:$false
+        }
+
     }
 
     $StopWatch.Stop()
