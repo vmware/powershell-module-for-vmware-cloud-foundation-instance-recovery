@@ -8327,6 +8327,237 @@ Function Update-DomainHostSourceIDs {
 }
 Export-ModuleMember -Function Update-DomainHostSourceIDs
 
+Function Invoke-SddcManagerSSHKeyRefresh {
+    <#
+    .SYNOPSIS
+    Enables SSH on the specified hosts or appliances, then runs SDDC Manager's refreshsshkeys.py to
+    refresh its stored known_hosts SSH keys for them.
+
+    .DESCRIPTION
+    The Invoke-SddcManagerSSHKeyRefresh cmdlet connects to the supplied vCenter and enables SSH on
+    the target set selected by -targetType/-scope:
+      targetType 'host'      -- ESXi hosts, via PowerCLI (Start-VMHostService on the TSM-SSH service)
+      targetType 'appliance' -- the vCenter appliance (via its VAMI REST API) and the workload
+                                 domain's NSX Manager node(s) (via the NSX Manager API)
+      scope 'cluster'        -- limited to the hosts in -clusterName (targetType 'host' only --
+                                 appliances are always resolved at the domain level)
+      scope 'domain'         -- all hosts across every cluster in the workload domain (targetType
+                                 'host'), or is equivalent to 'cluster' for targetType 'appliance'
+
+    It then uploads scripts\refreshsshkeys.py to /tmp on the SDDC Manager appliance, makes it
+    executable, and runs it as `"yes" | python refreshsshkeys.py`. That script queries SDDC
+    Manager's internal known_hosts API (covering every component SDDC Manager tracks -- all hosts,
+    vCenter(s), NSX Manager(s)), so its raw output is not scoped to the targets above. Each output
+    line is only printed via LogMessage if it contains the hostname/FQDN of one of the enabled
+    targets; every other line (including the generic header/footer/status lines the script prints)
+    is discarded, per the requirement that only output relevant to the selected targets should reach
+    the screen.
+
+    Piping a single "yes" answers only the first mismatched-key confirmation prompt the script emits;
+    this is the exact invocation the script is designed for and matches how it is intended to be run
+    non-interactively -- it is not a limitation this cmdlet works around.
+
+    .EXAMPLE
+    Invoke-SddcManagerSSHKeyRefresh -vCenterFQDN "sfo-w02-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@sfo-w02.local" -vCenterAdminPassword "VMw@re1!VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -clusterName "sfo-w02-cl02" -targetType host -scope cluster -VcfUserPassword "VMw@re1!VMw@re1!" -RootPassword "VMw@re1!VMw@re1!"
+
+    .EXAMPLE
+    Invoke-SddcManagerSSHKeyRefresh -vCenterFQDN "sfo-w02-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@sfo-w02.local" -vCenterAdminPassword "VMw@re1!VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -clusterName "sfo-w02-cl02" -targetType appliance -scope domain -VcfUserPassword "VMw@re1!VMw@re1!" -RootPassword "VMw@re1!VMw@re1!"
+
+    .PARAMETER vCenterFQDN
+    FQDN of the vCenter instance hosting the cluster/domain to target
+
+    .PARAMETER vCenterAdmin
+    SSO admin user of the vCenter instance
+
+    .PARAMETER vCenterAdminPassword
+    SSO admin password for the vCenter instance
+
+    .PARAMETER extractedSDDCDataFile
+    Relative or absolute path to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup)
+
+    .PARAMETER clusterName
+    Name of the vSphere cluster used to resolve the target workload domain, and the target host set when -scope is 'cluster'
+
+    .PARAMETER targetType
+    Whether to target ESXi 'host's or the vCenter/NSX Manager 'appliance's
+
+    .PARAMETER scope
+    Whether to limit the target set to the named 'cluster' or expand it to the whole 'domain'
+
+    .PARAMETER VcfUserPassword
+    Password for the vcf SSH user on the SDDC Manager appliance
+
+    .PARAMETER RootPassword
+    Root password for the SDDC Manager appliance (used for sudo elevation and, when -targetType is 'appliance', for the vCenter VAMI SSH-enable call)
+    #>
+
+    Param(
+        [Parameter (Mandatory = $true)][String] $vCenterFQDN,
+        [Parameter (Mandatory = $true)][String] $vCenterAdmin,
+        [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
+        [Parameter (Mandatory = $true)][String] $clusterName,
+        [Parameter (Mandatory = $true)][ValidateSet("host", "appliance")][String] $targetType,
+        [Parameter (Mandatory = $true)][ValidateSet("cluster", "domain")][String] $scope,
+        [Parameter (Mandatory = $true)][String] $VcfUserPassword,
+        [Parameter (Mandatory = $true)][String] $RootPassword
+    )
+
+    $jumpboxName = hostname
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
+    $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
+    $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
+
+    $SddcManagerFqdn = $extractedSddcData.sddcManager.fqdn
+    if (-not $SddcManagerFqdn) {
+        LogMessage -type ERROR -message "[$jumpboxName] Could not determine SDDC Manager FQDN from extracted data"
+        return
+    }
+
+    $workloadDomain = $extractedSddcData.workloadDomains | Where-Object { $_.vCenterDetails.fqdn -eq $vCenterFQDN }
+    if (-not $workloadDomain) {
+        LogMessage -type ERROR -message "[$jumpboxName] No workload domain found with vCenter FQDN '$vCenterFQDN' in extracted SDDC data"
+        return
+    }
+
+    $domainCluster = $workloadDomain.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }
+    if (-not $domainCluster) {
+        LogMessage -type ERROR -message "[$jumpboxName] No cluster named '$clusterName' found in domain '$($workloadDomain.domainName)'"
+        return
+    }
+
+    LogMessage -type INFO -message "[$vCenterFQDN] Connecting to vCenter"
+    Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop | Out-Null
+
+    # Match tokens accumulate every hostname/FQDN (and short-name label) whose SSH we enable below --
+    # used later to filter refreshsshkeys.py's output down to only these targets.
+    $matchTokens = @()
+
+    if ($targetType -eq "host") {
+        if ($scope -eq "cluster") {
+            $targetClusterNames = @($clusterName)
+        } else {
+            $targetClusterNames = @($workloadDomain.vsphereClusterDetails.name)
+        }
+        LogMessage -type INFO -message "[$vCenterFQDN] Resolving target hosts for scope '$scope': $($targetClusterNames -join ', ')"
+        $targetVMHosts = @()
+        Foreach ($targetClusterName in $targetClusterNames) {
+            $targetVMHosts += @(Get-Cluster -Name $targetClusterName -ErrorAction Stop | Get-VMHost -ErrorAction Stop)
+        }
+        $targetVMHosts = @($targetVMHosts | Sort-Object -Property Name -Unique)
+
+        Foreach ($vmHost in $targetVMHosts) {
+            $sshService = Get-VMHostService -VMHost $vmHost | Where-Object { $_.Key -eq "TSM-SSH" }
+            if ($sshService.Running) {
+                LogMessage -type INFO -message "[$($vmHost.Name)] SSH already running. Skipping"
+            } else {
+                LogMessage -type INFO -message "[$($vmHost.Name)] Starting SSH service"
+                Start-VMHostService -HostService $sshService -Confirm:$false | Out-Null
+            }
+            $matchTokens += $vmHost.Name
+            $matchTokens += ($vmHost.Name -split '\.')[0]
+        }
+    } else {
+        LogMessage -type INFO -message "[$vCenterFQDN] Enabling SSH on the vCenter appliance"
+        $vCenterRootPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "VCENTER") -and ($_.domainName -eq $workloadDomain.domainName) -and ($_.credentialType -eq "SSH") }).password
+        if (-not $vCenterRootPassword) {
+            LogMessage -type ERROR -message "[$vCenterFQDN] Could not find a VCENTER/SSH credential for domain '$($workloadDomain.domainName)' in extracted data"
+            Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+            return
+        }
+        $vamiHeaders = VCFIRCreateHeader -username "root" -password $vCenterRootPassword
+        Invoke-WebRequest -Method PUT -Uri "https://$vCenterFQDN`:5480/rest/appliance/access/ssh" -Headers $vamiHeaders -ContentType "application/json" -Body '{"enabled":true}' -SkipCertificateCheck | Out-Null
+        $matchTokens += $vCenterFQDN
+        $matchTokens += ($vCenterFQDN -split '\.')[0]
+
+        $nsxNodes = @($workloadDomain.nsxNodeDetails)
+        if ($nsxNodes.Count -eq 0) {
+            LogMessage -type WARNING -message "[$($workloadDomain.domainName)] No NSX Manager nodes recorded for this domain in extracted data. Skipping NSX SSH enablement."
+        } else {
+            $nsxManagerAdmin = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain.domainName) -and ($_.username -eq "admin") }).username
+            $nsxManagerAdminPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain.domainName) -and ($_.username -eq "admin") }).password
+            $nsxHeaders = VCFIRCreateHeader -username $nsxManagerAdmin -password $nsxManagerAdminPassword
+            Foreach ($nsxNode in $nsxNodes) {
+                LogMessage -type INFO -message "[$($nsxNode.hostname)] Enabling SSH on NSX Manager node"
+                Invoke-WebRequest -Method POST -Uri "https://$($nsxNode.hostname)/api/v1/node/services/ssh?action=start" -Headers $nsxHeaders -ContentType "application/json" -SkipCertificateCheck | Out-Null
+                $matchTokens += $nsxNode.hostname
+                $matchTokens += ($nsxNode.hostname -split '\.')[0]
+                $matchTokens += $nsxNode.vmName
+            }
+        }
+    }
+
+    Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+
+    $matchTokens = @($matchTokens | Where-Object { $_ } | Sort-Object -Unique)
+    LogMessage -type INFO -message "[$SddcManagerFqdn] Output will be filtered to lines matching: $($matchTokens -join ', ')"
+
+    # Upload refreshsshkeys.py to SDDC Manager via SSH, matching the base64-pipe upload pattern used
+    # elsewhere in this module (e.g. Invoke-VcfmsFleetComponentRegistration) -- avoids any SCP binary
+    # dependency and strips CR bytes so the file has Unix line endings regardless of local checkout.
+    $localScript = Join-Path -Path $PSScriptRoot -ChildPath "scripts/refreshsshkeys.py"
+    if (-not (Test-Path $localScript)) {
+        LogMessage -type ERROR -message "[$jumpboxName] Script not found: $localScript"
+        return
+    }
+
+    LogMessage -type INFO -message "[$SddcManagerFqdn] Establishing SSH connection"
+    $SecurePassword = ConvertTo-SecureString -String $VcfUserPassword -AsPlainText -Force
+    $mycreds = New-Object System.Management.Automation.PSCredential ('vcf', $SecurePassword)
+    $inmem = New-SSHMemoryKnownHost
+    New-SSHTrustedHost -KnownHostStore $inmem -HostName $SddcManagerFqdn -FingerPrint ((Get-SSHHostKey -ComputerName $SddcManagerFqdn).fingerprint) | Out-Null
+    Do {
+        $sshSession = New-SSHSession -ComputerName $SddcManagerFqdn -Credential $mycreds -KnownHost $inmem
+    } Until ($sshSession)
+
+    $remotePath = "/tmp/refreshsshkeys.py"
+    LogMessage -type INFO -message "[$SddcManagerFqdn] Uploading refreshsshkeys.py to $remotePath"
+    $scriptBytes = [System.IO.File]::ReadAllBytes($localScript)
+    $scriptBytes = [byte[]]($scriptBytes | Where-Object { $_ -ne 0x0D })
+    $b64 = [System.Convert]::ToBase64String($scriptBytes)
+    $uploadCmd = "printf '%s' '$b64' | base64 -d > $remotePath && chmod +x $remotePath"
+    $uploadResult = Invoke-SSHCommand -SessionId $sshSession.SessionId -Command $uploadCmd -TimeOut 60
+    if ($uploadResult.ExitStatus -ne 0) {
+        LogMessage -type ERROR -message "[$SddcManagerFqdn] Script upload failed (exit $($uploadResult.ExitStatus)): $($uploadResult.Error -join ' ')"
+        Remove-SSHSession -SSHSession $sshSession | Out-Null
+        return
+    }
+
+    LogMessage -type INFO -message "[$SddcManagerFqdn] Running refreshsshkeys.py"
+    $execCmd = "echo '$RootPassword' | sudo -S bash -c `"cd /tmp && echo yes | python $remotePath`" 2>&1"
+    $execResult = Invoke-SSHCommand -SessionId $sshSession.SessionId -Command $execCmd -TimeOut 300
+
+    # Filter the raw output down to only lines mentioning one of the enabled targets -- the script's
+    # own known_hosts source covers every component SDDC Manager tracks, not just these targets, and
+    # everything else (including the script's generic header/footer/status lines) is discarded.
+    $rawOutputLines = @($execResult.Output) + @(($execResult.Error -join "`n") -split "`r?`n")
+    $rawOutputLines = @($rawOutputLines | Where-Object { $_ -ne '' -and $_ -notmatch '^\[sudo\]' })
+    Foreach ($line in $rawOutputLines) {
+        Foreach ($token in $matchTokens) {
+            if ($line -like "*$token*") {
+                LogMessage -type INFO -message "[$SddcManagerFqdn] $line"
+                break
+            }
+        }
+    }
+
+    Invoke-SSHCommand -SessionId $sshSession.SessionId -Command "rm -f $remotePath" -TimeOut 15 | Out-Null
+    Remove-SSHSession -SSHSession $sshSession | Out-Null
+
+    if ($execResult.ExitStatus -ne 0) {
+        LogMessage -type WARNING -message "[$SddcManagerFqdn] refreshsshkeys.py exited with code $($execResult.ExitStatus)"
+    }
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+Export-ModuleMember -Function Invoke-SddcManagerSSHKeyRefresh
+
 Function Get-SddcManagerToken {
     <#
     .SYNOPSIS
