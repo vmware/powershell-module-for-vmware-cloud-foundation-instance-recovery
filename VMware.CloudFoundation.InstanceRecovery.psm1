@@ -3371,6 +3371,9 @@ Function Add-HostsToCluster {
     # Add Az1 Hosts
     $az1Hosts = $clusterDetails.azHostMapping.az1
     foreach ($newHost in $az1Hosts) {
+        If ($clusterDetails.isStretched -eq 't') {
+            LogMessage -type NOTE -message "[$clusterName] Rebuilding Availability Zone 1"
+        }
         $vmHosts = (Get-cluster -name $clusterName | Get-VMHost).Name | Sort-Object
         if ($newHost -notin $vmHosts) {
             $esxiRootPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $newHost) -and ($_.username -eq "root") }).password
@@ -3387,13 +3390,15 @@ Function Add-HostsToCluster {
     }
     # Add AZ2 Hosts
     If ($clusterDetails.isStretched -eq 't') {
+        If ($clusterDetails.isStretched -eq 't') {
+            LogMessage -type NOTE -message "[$clusterName] Rebuilding Availability Zone 2"
+        }
         $az2Hosts = $clusterDetails.azHostMapping.az2
 
-        LogMessage -type INFO -message "Resolving NSX Sub-Cluster Configuration"
+        LogMessage -type INFO -message "[$clusterName] Discovering NSX Sub-Cluster"
         $nsxManagerFqdn = ($workloadDomain.nsxNodeDetails | Select-Object -First 1).hostname
         $nsxManagerAdmin = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain.domainName) -and ($_.username -eq "admin") }).username
         $nsxManagerAdminPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain.domainName) -and ($_.username -eq "admin") }).password
-        LogMessage -type INFO -message "[$nsxManagerFqdn] Using NSX Manager for workload domain '$($workloadDomain.domainName)'"
         $headers = VCFIRCreateHeader -username $nsxManagerAdmin -password $nsxManagerAdminPassword
         $subClusterMeta = Get-NSXSubClustersAndSubTNP -NSXManager $nsxManagerFqdn -ClusterName $ClusterName -username $nsxManagerAdmin -password $nsxManagerAdminPassword
 
@@ -3407,7 +3412,7 @@ Function Add-HostsToCluster {
         # Extract origin GUID from ComputeCollectionId ("37681f70-6760-40a6-b173-7baa522c301c:domain-c40" -> "37681f70-6760-40a6-b173-7baa522c301c")
         $clusterOriginId  = $targetSubCluster.ComputeCollectionId.Split(':')[0]
 
-        LogMessage -type INFO -message "[$clusterName] Resolved Sub-Cluster: $($targetSubCluster.SubClusterName) ($subClusterId)"
+        LogMessage -type INFO -message "[$clusterName] Discovered Sub-Cluster: $($targetSubCluster.SubClusterName) ($subClusterId)"
 
         $maxAttempts = 10
         $az2HostState = foreach ($hostFqdn in $az2Hosts) {
@@ -3455,10 +3460,7 @@ Function Add-HostsToCluster {
                     if ($newDiscIds) {
                         $subClusterObj.sub_cluster_info.discovered_node_ids += $newDiscIds
                         $jsonSC = $subClusterObj | ConvertTo-Json -Depth 10
-                        Invoke-RestMethod -Uri $scSingleUrl -Headers $headers -Method Put -Body $jsonSC -ContentType "application/json" -SkipCertificateCheck -ErrorAction Stop
-                        LogMessage -type INFO -message "[$clusterName] Registered $($newDiscIds.Count) MoRef(s) in NSX DB: $($newDiscIds -join ', ')"
-                    } else {
-                        LogMessage -type INFO -message "[$clusterName] All MoRefs already present in NSX DB"
+                        Invoke-RestMethod -Uri $scSingleUrl -Headers $headers -Method Put -Body $jsonSC -ContentType "application/json" -SkipCertificateCheck -ErrorAction Stop | Out-Null
                     }
                     $registered = $true
                     break
@@ -3488,14 +3490,14 @@ Function Add-HostsToCluster {
         $failedHostStates = $az2HostState | Where-Object { $_.failed }
         if ($failedHostStates) {
             $failureSummary = ($failedHostStates | ForEach-Object { "$($_.hostFqdn) ($($_.failureReason))" }) -join '; '
-            LogMessage -type ERROR -message "[Sub-TNP] The following AZ2 hosts require manual follow-up: $failureSummary"
+            LogMessage -type ERROR -message "[$clusterName] The following AZ2 hosts require manual follow-up: $failureSummary"
         }
 
         $subClusterPath = "/infra/sites/default/enforcement-points/default/sub-clusters/$subClusterId"
         $tncListUrl = "https://$nsxManagerFqdn/policy/api/v1/infra/sites/default/enforcement-points/default/transport-node-collections"
         $tnc = ((Invoke-RestMethod -Uri $tncListUrl -Headers $headers -Method Get -SkipCertificateCheck -ErrorAction Stop).results | Where-Object { $_.compute_collection_id -eq $targetSubCluster.ComputeCollectionId } | Select-Object -First 1)
         if (-not $tnc) {
-            LogMessage -type ERROR -message "[Sub-TNP] Could not resolve a TransportNodeCollection for compute collection '$($targetSubCluster.ComputeCollectionId)'. Skipping Sub-Cluster to TransportNodeCollection mapping."
+            LogMessage -type ERROR -message "[$clusterName] Could not resolve a TransportNodeCollection for compute collection '$($targetSubCluster.ComputeCollectionId)'. Skipping Sub-Cluster to TransportNodeCollection mapping."
         } else {
             $tncUrl = "https://$nsxManagerFqdn/policy/api/v1/infra/sites/default/enforcement-points/default/transport-node-collections/$($tnc.id)"
             $tncObj = Invoke-RestMethod -Uri $tncUrl -Headers $headers -Method Get -SkipCertificateCheck -ErrorAction Stop
@@ -3529,7 +3531,7 @@ Function Add-HostsToCluster {
                 $tncObj | Add-Member -NotePropertyName "sub_cluster_config" -NotePropertyValue (@($existingSubClusterConfig) + $newSubClusterConfigEntry) -Force
                 $tncBody = $tncObj | ConvertTo-Json -Depth 10
                 Invoke-RestMethod -Uri $tncUrl -Headers $headers -Method Put -Body $tncBody -ContentType "application/json" -SkipCertificateCheck -ErrorAction Stop | Out-Null
-                LogMessage -type INFO -message "[$clusterName] Mapped Sub-Cluster '$($targetSubCluster.SubClusterName)' onto TransportNodeCollection $($tnc.id) (host_switch_id $hostSwitchId)."
+                LogMessage -type INFO -message "[$clusterName] Mapped Sub-Cluster '$($targetSubCluster.SubClusterName)' onto TransportNodeCollection $($tnc.id)"
             }
         }
     }
@@ -3686,6 +3688,9 @@ Function Add-VMKernelsToHost {
     }
     Foreach ($az in $azs)
     {
+        If ($clusterDetails.isStretched -eq "t"){
+            LogMessage -type NOTE "[$clusterName] Adding VMkernels to $($az.toUpper()) Hosts"
+        }
         $vmHosts = $clusterDetails.azHostMapping.$($az)
         If ($az -eq "az1") {
             $faultLevelArray = @("PRIMARY", "NONE")
@@ -4997,6 +5002,9 @@ Function New-RebuiltVdsConfiguration {
         }
         Foreach ($az in $azs)
         {
+            If ($cluster.isStretched -eq "t"){
+                LogMessage -type NOTE "[$clusterName] Adding $($az.toUpper()) Hosts to Cluster Virtual Distributed Switches"
+            }
             $azHosts = $cluster.azHostMapping.$($az)
             $vmhosts = (Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name | Where-Object { $_.name -in $azHosts })
             If ($az -eq "az1") {
@@ -5189,7 +5197,6 @@ Function Watch-NsxHostTransportNodeInstallation {
     $nsxManagerFqdn = ($workloadDomain.nsxNodeDetails | Select-Object -First 1).hostname
     $nsxManagerAdmin = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain.domainName) -and ($_.username -eq "admin") }).username
     $nsxManagerAdminPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain.domainName) -and ($_.username -eq "admin") }).password
-    LogMessage -type INFO -message "[$jumpboxName] Using NSX Manager '$nsxManagerFqdn' for workload domain '$($workloadDomain.domainName)'"
 
     $headers = VCFIRCreateHeader -username $nsxManagerAdmin -password $nsxManagerAdminPassword
 
@@ -5215,6 +5222,7 @@ Function Watch-NsxHostTransportNodeInstallation {
     #Wait until every expected host transport node has been registered before monitoring installation
     LogMessage -type INFO -message "[$nsxManagerFqdn] Retrieving host transport nodes for cluster '$clusterName'"
     $registrationCycle = 0
+    LogMessage -type WAIT -message "[$nsxManagerFqdn] Waiting for the correct number of transport nodes to be present"
     Do {
         $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/"
         $allTransportNodes = ((Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json).results
@@ -5234,7 +5242,7 @@ Function Watch-NsxHostTransportNodeInstallation {
             }
             $registrationCycle++
             If ($registrationCycle % $reportEveryNCycles -eq 0) {
-                LogMessage -type WAIT -message "[$nsxManagerFqdn] Found $($clusterTransportNodes.Count) of $expectedNodeCount expected host transport node(s) in cluster '$clusterName'. Waiting..."
+                LogMessage -type INFO -message "[$nsxManagerFqdn] Found $($clusterTransportNodes.Count) of $expectedNodeCount expected host transport node(s) in cluster '$clusterName'. Waiting..."
             }
             Start-Sleep -Seconds $pollIntervalSeconds
         } Else {
@@ -5271,10 +5279,10 @@ Function Watch-NsxHostTransportNodeInstallation {
                 $connectivity = $nodeStatus.status
 
                 If (($configState -eq "success") -and ($connectivity -eq "UP")) {
-                    LogMessage -type INFO -message "[$($transportNode.display_name)] NSX Configuration State: $configState | Status: $connectivity"
+                    #LogMessage -type INFO -message "[$($transportNode.display_name)] NSX Configuration State: $configState | Status: $connectivity"
                     $completedIds += $transportNode.id
                 } ElseIf ($monitorCycle % $reportEveryNCycles -eq 0) {
-                    LogMessage -type WAIT -message "[$($transportNode.display_name)] NSX Configuration State: $configState | Status: $connectivity"
+                    #LogMessage -type WAIT -message "[$($transportNode.display_name)] NSX Configuration State: $configState | Status: $connectivity"
                     $pendingNodes += $transportNode.display_name
                 } Else {
                     $pendingNodes += $transportNode.display_name
@@ -5848,31 +5856,267 @@ Function Add-VMKernelsToManagementHosts {
 }
 Export-ModuleMember -Function Add-VMKernelsToManagementHosts
 
-Function New-ReconfiguredStretchCluster {
+Function New-ReconfiguredVsanStretchedCluster {
+    <#
+    .SYNOPSIS
+    Creates the AZ1/AZ2 vSAN fault domains and enables stretched cluster configuration on a vSphere cluster using data from the SDDC Manager backup
 
-    $targetfFqdn = $restoredvCenterFqdn
+    .DESCRIPTION
+    The New-ReconfiguredVsanStretchedCluster cmdlet creates a vSAN fault domain for each of the cluster's AZ1 and AZ2 host sets (as recorded in the extracted SDDC data) and enables the vSAN stretched cluster configuration against them, using the cluster's own witness host (also recorded in the extracted SDDC data) as the witness. AZ1 is always configured as the preferred fault domain. If a fault domain already exists with the expected name, it is reused rather than recreated. If the cluster is already configured as a stretched cluster with the expected witness host, no change is made.
+
+    All AZ1, AZ2, and witness hosts must already exist in the vCenter inventory before running this cmdlet (AZ1/AZ2 hosts added via Add-HostsToCluster, the witness host via its own restore/redeploy process).
+
+    .EXAMPLE
+    New-ReconfiguredVsanStretchedCluster -vCenterFQDN "sfo-w02-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-w02-cl02" -extractedSDDCDataFile ".\extracted-sddc-data.json"
+
+    .PARAMETER vCenterFQDN
+    FQDN of the vCenter instance hosting the cluster to be stretched
+
+    .PARAMETER vCenterAdmin
+    Admin user of the vCenter instance hosting the cluster to be stretched
+
+    .PARAMETER vCenterAdminPassword
+    Admin password for the vCenter instance hosting the cluster to be stretched
+
+    .PARAMETER clusterName
+    Name of the stretched vSphere cluster instance to configure
+
+    .PARAMETER extractedSDDCDataFile
+    Relative or absolute to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup) somewhere on the local filesystem
+    #>
+
+    Param(
+        [Parameter (Mandatory = $true)][String] $vCenterFQDN,
+        [Parameter (Mandatory = $true)][String] $vCenterAdmin,
+        [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
+        [Parameter (Mandatory = $true)][String] $clusterName,
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile
+    )
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+
+    LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
-    $clusterName = "sfo-w02-cl02"
-    $workloadDomain = $extractedSDDCData.workloadDomains | where-object { $_.vCenterDetails.fqdn -eq $targetFQDN }
+    $workloadDomain = $extractedSddcData.workloadDomains | Where-Object { $_.vCenterDetails.fqdn -eq $vCenterFQDN }
+    if (!$workloadDomain) {
+        LogMessage -type WARNING -message "[$jumpboxName] Could not find a workload domain with vCenter FQDN '$vCenterFQDN' in the extracted SDDC data."
+        $StopWatch.Stop()
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+        Return
+    }
+
     $clusterDetails = $workloadDomain.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }
+    if (!$clusterDetails) {
+        LogMessage -type WARNING -message "[$jumpboxName] Could not find cluster '$clusterName' in the extracted SDDC data."
+        $StopWatch.Stop()
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+        Return
+    }
+    if ($clusterDetails.isStretched -ne 't') {
+        LogMessage -type WARNING -message "[$jumpboxName] Cluster '$clusterName' is not recorded as stretched in the extracted SDDC data. Nothing to do."
+        $StopWatch.Stop()
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+        Return
+    }
+
     $az1Hosts = $clusterDetails.azHostMapping.az1
     $az2Hosts = $clusterDetails.azHostMapping.az2
+    $witnessFqdn = $clusterDetails.witness.fqdn
+    if (!$witnessFqdn) {
+        LogMessage -type WARNING -message "[$jumpboxName] No witness host recorded for cluster '$clusterName' in the extracted SDDC data. Run Update-ExtractedSDDCData against the source environment first."
+        $StopWatch.Stop()
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+        Return
+    }
 
-    #3. Create the Primary (Preferred) Fault Domain
-    # Assign your physical data hosts located at Site A
-    $SiteA_Hosts = @("esxi-01.domain.local", "esxi-02.domain.local")
-    $primaryFd = New-VsanFaultDomain -Name "Preferred-Site" -VMHost $SiteA_Hosts
+    LogMessage -type INFO -message "[$vCenterFQDN] Connecting to vCenter"
+    Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop | Out-Null
 
-    # 4. Create the Secondary Fault Domain
-    # Assign your physical data hosts located at Site B
-    $SiteB_Hosts = @("esxi-03.domain.local", "esxi-04.domain.local")
-    $secondaryFd = New-VsanFaultDomain -Name "Secondary-Site" -VMHost $SiteB_Hosts
+    $clusterObj = Get-Cluster -Name $clusterName -ErrorAction Stop
+    $az1VMHosts = @(Get-VMHost -Name $az1Hosts -ErrorAction Stop)
+    $az2VMHosts = @(Get-VMHost -Name $az2Hosts -ErrorAction Stop)
 
-    # 5. Enable the Stretched Cluster configuration
-    # This links the sites together and assigns the designated witness host
-    Set-VsanClusterConfiguration -Configuration $vsanCluster -StretchedClusterEnabled $true -PreferredFaultDomain $primaryFd -WitnessHost $WitnessIP
+    $witnessVMHost = Get-VMHost -Name $witnessFqdn -ErrorAction SilentlyContinue
+    if (!$witnessVMHost) {
+        LogMessage -type WARNING -message "[$witnessFqdn] Witness host not found in the vCenter inventory. Ensure the witness has been restored/redeployed and registered with $vCenterFQDN before running this cmdlet."
+        Disconnect-VIServer -Server $vCenterFQDN -Force -Confirm:$false
+        $StopWatch.Stop()
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+        Return
+    }
+
+    $vsanConfig = Get-VsanClusterConfiguration -Cluster $clusterObj
+
+    # Fault domain membership is reconciled unconditionally -- independent of whether the cluster
+    # is already stretched -- so that a stretched cluster missing/misconfigured fault domains (e.g.
+    # after a partial recovery) still gets them created, rather than being skipped entirely just
+    # because StretchedClusterEnabled already reads true.
+    LogMessage -type INFO -message "[$clusterName] Resolving AZ1 fault domain"
+    $az1FaultDomain = Get-VsanFaultDomain -Cluster $clusterObj -Name "$($clustername)_primary-az-faultdomain (preferred)" -ErrorAction SilentlyContinue
+    if (!$az1FaultDomain) {
+        LogMessage -type INFO -message "[$clusterName] Creating AZ1 fault domain with hosts: $($az1Hosts -join ', ')"
+        $az1FaultDomain = New-VsanFaultDomain -Name "$($clustername)_primary-az-faultdomain (preferred)" -VMHost $az1VMHosts
+    } else {
+        LogMessage -type INFO -message "[$clusterName] AZ1 fault domain already exists. Reusing"
+    }
+
+    LogMessage -type INFO -message "[$clusterName] Resolving AZ2 fault domain"
+    $az2FaultDomain = Get-VsanFaultDomain -Cluster $clusterObj -Name "$($clustername)_secondary-az-faultdomain" -ErrorAction SilentlyContinue
+    if (!$az2FaultDomain) {
+        LogMessage -type INFO -message "[$clusterName] Creating AZ2 fault domain with hosts: $($az2Hosts -join ', ')"
+        $az2FaultDomain = New-VsanFaultDomain -Name "$($clustername)_secondary-az-faultdomain" -VMHost $az2VMHosts
+    } else {
+        LogMessage -type INFO -message "[$clusterName] AZ2 fault domain already exists. Reusing"
+    }
+
+    # StretchedClusterEnabled/WitnessHost reflect the cluster's persisted config and can already read
+    # correct after a DR recovery even though the witness's own vSAN disk group doesn't exist yet
+    # (e.g. a freshly redeployed witness appliance) -- so also confirm the witness actually has a
+    # disk group claimed before treating this as fully configured and skipping disk claim.
+    $witnessDiskGroup = Get-VsanDiskGroup -VMHost $witnessVMHost -ErrorAction SilentlyContinue
+    if (($vsanConfig.StretchedClusterEnabled -eq $true) -and ($vsanConfig.WitnessHost.Name -eq $witnessVMHost.Name) -and $witnessDiskGroup) {
+        LogMessage -type INFO -message "[$clusterName] Stretched cluster already configured with witness '$witnessFqdn' and its disk group already claimed. Nothing to do."
+    } else {
+        LogMessage -type INFO -message "[$witnessFqdn] Resolving witness disk group disks"
+        $witnessEligibleDisks = @($witnessVMHost | Get-VMHostDisk | Where-Object { $_.ScsiLun.VsanStatus -eq 'Eligible' } | Sort-Object -Property @{e = { $_.ScsiLun.CapacityGB } })
+        if ($witnessEligibleDisks.Count -lt 1) {
+            Throw "[$witnessFqdn] Expected at least 1 eligible disk on the witness host, found 0."
+        }
+
+        if ($clusterDetails.primaryDatastoreType -eq "VSAN_ESA") {
+            # vSAN ESA uses a single-tier storage pool (no cache/capacity split), claimed via
+            # -WitnessHostStoragePoolDisk rather than -WitnessHostCacheDisk/-WitnessHostCapacityDisk.
+            # All eligible disks on the witness go into the pool; a single disk is valid here.
+            LogMessage -type INFO -message "[$witnessFqdn] Using $(($witnessEligibleDisks.ScsiLun.CanonicalName) -join ', ') as ESA storage pool disk(s)"
+
+            LogMessage -type INFO -message "[$clusterName] Enabling stretched cluster configuration (ESA) with preferred fault domain and witness '$witnessFqdn'"
+            Set-VsanClusterConfiguration -Configuration $clusterObj -StretchedClusterEnabled $true -PreferredFaultDomain $az1FaultDomain -WitnessHost $witnessVMHost -WitnessHostStoragePoolDisk $witnessEligibleDisks -ErrorAction Stop | Out-Null
+        } else {
+            # vSAN OSA requires one cache disk and one or more capacity disks, all reported as
+            # VsanStatus 'Eligible' since the appliance has not yet had a vSAN disk group created
+            # on it. The smallest eligible disk is always the cache disk on the default witness
+            # appliance sizes (tiny/normal/large), so it's used as the deterministic selector
+            # rather than prompting the user for a choice.
+            if ($witnessEligibleDisks.Count -lt 2) {
+                Throw "[$witnessFqdn] Expected at least 2 eligible disks (1 cache, 1+ capacity) on the witness host, found $($witnessEligibleDisks.Count)."
+            }
+            $witnessCacheDisk = $witnessEligibleDisks[0]
+            $witnessCapacityDisks = @($witnessEligibleDisks | Select-Object -Skip 1)
+            LogMessage -type INFO -message "[$witnessFqdn] Using $($witnessCacheDisk.ScsiLun.CanonicalName) as cache disk and $(($witnessCapacityDisks.ScsiLun.CanonicalName) -join ', ') as capacity disk(s)"
+
+            LogMessage -type INFO -message "[$clusterName] Enabling stretched cluster configuration with preferred fault domain and witness '$witnessFqdn'"
+            Set-VsanClusterConfiguration -Configuration $clusterObj -StretchedClusterEnabled $true -PreferredFaultDomain $az1FaultDomain -WitnessHost $witnessVMHost -WitnessHostCacheDisk $witnessCacheDisk -WitnessHostCapacityDisk $witnessCapacityDisks -ErrorAction Stop | Out-Null
+        }
+        LogMessage -type INFO -message "[$clusterName] Stretched cluster configuration enabled"
+    }
+
+    Disconnect-VIServer -Server $vCenterFQDN -Force -Confirm:$false
+    $StopWatch.Stop()
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
+Export-ModuleMember -Function New-ReconfiguredVsanStretchedCluster
+
+Function Remove-VsanStretchedClusterWitness {
+    <#
+    .SYNOPSIS
+    Clears a stale vSAN stretched cluster witness reference from vCenter's persisted cluster configuration.
+
+    .DESCRIPTION
+    The Remove-VsanStretchedClusterWitness cmdlet automates the remediation documented in Broadcom KB 326817
+    (https://knowledge.broadcom.com/external/article/326817) for a stretched cluster whose witness host was
+    removed from vCenter inventory without first disabling stretched cluster mode, leaving a stale witness
+    reference in the cluster's persisted vSAN configuration. That stale reference causes subsequent
+    Set-VsanClusterConfiguration calls to fail with errors such as "Witness host already configured in
+    stretched cluster." even though the cluster no longer appears stretched in the vSphere Client.
+
+    Rather than requiring RVC (vsan.stretchedcluster.witness_info / vsan.stretchedcluster.remove_witness), this
+    cmdlet calls the same underlying vCenter vSAN API directly via PowerCLI's Get-VsanView against the
+    VimClusterVsanVcStretchedClusterSystem managed object: VSANVcGetWitnessHosts to read the stale witness
+    entry (MoRef + unicast agent address), then VSANVcRemoveWitnessHost to clear it.
+
+    .EXAMPLE
+    Remove-VsanStretchedClusterWitness -vCenterFQDN "sfo-w02-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@sfo-w02.local" -vCenterAdminPassword "VMw@re1!VMw@re1!" -clusterName "sfo-w02-cl02"
+
+    .PARAMETER vCenterFQDN
+    FQDN of the vCenter instance hosting the cluster with the stale witness reference
+
+    .PARAMETER vCenterAdmin
+    Admin user of the vCenter instance
+
+    .PARAMETER vCenterAdminPassword
+    Admin password for the vCenter instance
+
+    .PARAMETER clusterName
+    Name of the vSphere cluster instance whose stale witness reference should be cleared
+    #>
+
+    Param(
+        [Parameter (Mandatory = $true)][String] $vCenterFQDN,
+        [Parameter (Mandatory = $true)][String] $vCenterAdmin,
+        [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
+        [Parameter (Mandatory = $true)][String] $clusterName
+    )
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+
+    LogMessage -type INFO -message "[$vCenterFQDN] Connecting to vCenter"
+    Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop | Out-Null
+    $clusterObj = Get-Cluster -Name $clusterName -ErrorAction Stop
+    $clusterMoRef = $clusterObj.ExtensionData.MoRef
+
+    $stretchedClusterSystem = Get-VsanView -Id "VimClusterVsanVcStretchedClusterSystem-vsan-stretched-cluster-system"
+
+    LogMessage -type INFO -message "[$clusterName] Querying persisted vSAN witness host info"
+    $witnessInfo = @($stretchedClusterSystem.VSANVcGetWitnessHosts($clusterMoRef))
+
+    if ($witnessInfo.Count -eq 0) {
+        LogMessage -type INFO -message "[$clusterName] No witness host reference found in the cluster's persisted vSAN configuration. Nothing to clear."
+        Disconnect-VIServer -Server $vCenterFQDN -Force -Confirm:$false
+        $StopWatch.Stop()
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+        Return
+    }
+
+    Foreach ($witness in $witnessInfo) {
+        LogMessage -type INFO -message "[$clusterName] Removing stale witness reference - Host MoRef: $($witness.Host.Value), UnicastAgentAddr: $($witness.UnicastAgentAddr)"
+        $taskMoRef = $stretchedClusterSystem.VSANVcRemoveWitnessHost($clusterMoRef, $witness.Host, $witness.UnicastAgentAddr)
+
+        # VSANVc* mutation calls on this vSAN VC internal API return a ManagedObjectReference to a Task;
+        # confirm the type before waiting on it rather than assuming, since this is an undocumented/private API.
+        if ($taskMoRef.Type -eq 'Task') {
+            $task = Get-View -Id $taskMoRef
+            Do {
+                Start-Sleep -Seconds 2
+                $task.UpdateViewData("Info")
+            } While ($task.Info.State -in "running", "queued")
+            If ($task.Info.State -eq "success") {
+                LogMessage -type INFO -message "[$clusterName] Witness reference removed successfully"
+            } else {
+                LogMessage -type ERROR -message "[$clusterName] Witness removal task ended with state '$($task.Info.State)': $($task.Info.Error.LocalizedMessage)"
+            }
+        } else {
+            LogMessage -type INFO -message "[$clusterName] Witness removal call returned MoRef type '$($taskMoRef.Type)' (not a Task) -- treating as already complete"
+        }
+    }
+
+    $remainingWitnessInfo = @($stretchedClusterSystem.VSANVcGetWitnessHosts($clusterMoRef))
+    If ($remainingWitnessInfo.Count -eq 0) {
+        LogMessage -type INFO -message "[$clusterName] Verified no witness host references remain. Cluster is ready for New-ReconfiguredVsanStretchedCluster to run again."
+    } else {
+        LogMessage -type WARNING -message "[$clusterName] $($remainingWitnessInfo.Count) witness host reference(s) still present after removal attempt."
+    }
+
+    Disconnect-VIServer -Server $vCenterFQDN -Force -Confirm:$false
+    $StopWatch.Stop()
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+}
+Export-ModuleMember -Function Remove-VsanStretchedClusterWitness
+
 Function Backup-ClusterVMOverrides {
     <#
     .SYNOPSIS
