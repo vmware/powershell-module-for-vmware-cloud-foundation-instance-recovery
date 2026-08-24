@@ -3369,11 +3369,11 @@ Function Add-HostsToCluster {
     $clusterObj = Get-Cluster -Name $ClusterName
 
     # Add Az1 Hosts
+    If ($clusterDetails.isStretched -eq 't') {
+        LogMessage -type NOTE -message "[$clusterName] Rebuilding Availability Zone 1"
+    }
     $az1Hosts = $clusterDetails.azHostMapping.az1
     foreach ($newHost in $az1Hosts) {
-        If ($clusterDetails.isStretched -eq 't') {
-            LogMessage -type NOTE -message "[$clusterName] Rebuilding Availability Zone 1"
-        }
         $vmHosts = (Get-cluster -name $clusterName | Get-VMHost).Name | Sort-Object
         if ($newHost -notin $vmHosts) {
             $esxiRootPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $newHost) -and ($_.username -eq "root") }).password
@@ -3435,8 +3435,8 @@ Function Add-HostsToCluster {
             } else {
                 LogMessage -type INFO -message "[$hostFqdn] Adding to $ClusterName"
                 $vmhost = Add-VMHost -Name $hostFqdn -Location $clusterObj `
-                                     -User 'root' -Password $hostState.esxiRootPassword `
-                                     -Force -Confirm:$false
+                    -User 'root' -Password $hostState.esxiRootPassword `
+                    -Force -Confirm:$false
             }
             $hostState.vmhost = $vmhost
         }
@@ -3466,7 +3466,9 @@ Function Add-HostsToCluster {
                     break
                 } catch {
                     $errorDetail = $_.ErrorDetails.Message
-                    if (-not $errorDetail) { $errorDetail = $_.Exception.Message }
+                    if (-not $errorDetail) {
+                        $errorDetail = $_.Exception.Message
+                    }
                     LogMessage -type ERROR -message "[$clusterName] Attempt $attempt/$maxAttempts to register Sub-Cluster MoRefs failed: $errorDetail"
                     if ($attempt -lt $maxAttempts) {
                         Start-Sleep -Seconds 1
@@ -3604,8 +3606,16 @@ Function Get-NSXSubClustersAndSubTNP {
                     SubClusterName      = $sc.display_name
                     SubClusterId        = $sc.id
                     SubClusterType      = $sc.sub_cluster_info.sub_cluster_type
-                    NodeCount           = if ($sc.sub_cluster_info.discovered_node_ids) { $sc.sub_cluster_info.discovered_node_ids.Count } else { 0 }
-                    ParentTNP           = if ($parentTnp) { $parentTnp.display_name } else { "N/A" }
+                    NodeCount           = if ($sc.sub_cluster_info.discovered_node_ids) {
+                        $sc.sub_cluster_info.discovered_node_ids.Count
+                    } else {
+                        0
+                    }
+                    ParentTNP           = if ($parentTnp) {
+                        $parentTnp.display_name
+                    } else {
+                        "N/A"
+                    }
                     ComputeCollectionId = $sc.compute_collection_id
                     Path                = $sc.path
                 }
@@ -3678,16 +3688,12 @@ Function Add-VMKernelsToHost {
     $workloadDomain = $extractedSDDCData.workloadDomains | where-object { $_.vCenterDetails.fqdn -eq $targetFQDN }
     $clusterDetails = $workloadDomain.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }
 
-    If ($clusterDetails.isStretched -eq "t")
-    {
+    If ($clusterDetails.isStretched -eq "t") {
         $azs = @("az1","az2")
-    }
-    else
-    {
+    } else {
         $azs = @("az1")
     }
-    Foreach ($az in $azs)
-    {
+    Foreach ($az in $azs) {
         If ($clusterDetails.isStretched -eq "t"){
             LogMessage -type NOTE "[$clusterName] Adding VMkernels to $($az.toUpper()) Hosts"
         }
@@ -3889,7 +3895,9 @@ Function New-RebuiltVsanDatastore {
             Write-Host ""; Write-Host " Enter the desired number of disk groups to create (between 1 and 5), or C to Cancel: " -ForegroundColor Yellow -nonewline
             $diskGroupNumber = Read-Host
         } Until (($diskGroupNumber -in "1", "2", "3", "4", "5") -or ($diskGroupNumber -eq "C"))
-        If ($diskGroupNumber -eq "C") { Break }
+        If ($diskGroupNumber -eq "C") {
+            Break
+        }
 
         #Loop Through Disk Group Creation
         For ($i = 1; $i -le $diskGroupNumber; $i++) {
@@ -3897,10 +3905,14 @@ Function New-RebuiltVsanDatastore {
                 Write-Host ""; $remainingDisksDisplayObject | format-table -Property @{Expression = " " }, id, canonicalName, size, ssd -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
             }
             Do {
-                If ($i -gt 1) { Write-Host "" }; Write-Host " Enter the ID of disk to use as Cache Disk for Disk Group $i, or C to Cancel: " -ForegroundColor Yellow -nonewline
+                If ($i -gt 1) {
+                    Write-Host ""
+                }; Write-Host " Enter the ID of disk to use as Cache Disk for Disk Group $i, or C to Cancel: " -ForegroundColor Yellow -nonewline
                 $cacheDiskSelection = Read-Host
             } Until (($cacheDiskSelection -in $remainingDisksDisplayObject.id) -OR ($cacheDiskSelection -eq "c"))
-            If ($cacheDiskSelection -eq "c") { Break }
+            If ($cacheDiskSelection -eq "c") {
+                Break
+            }
             $tempRemainingDisksDisplayObject = @()
             Foreach ( $displayDisk in $remainingDisksDisplayObject) {
                 If ($displayDisk.id -ne $cacheDiskSelection) {
@@ -3922,7 +3934,9 @@ Function New-RebuiltVsanDatastore {
                     }
                 }
             } Until (($capacityDiskSelectionInvalid -eq $false) -OR ($capacityDiskSelection -eq "c"))
-            If ($capacityDiskSelection -eq "c") { Break }
+            If ($capacityDiskSelection -eq "c") {
+                Break
+            }
             $diskGroupConfiguration += [PSCustomObject]@{
                 'cacheDiskID'     = $cacheDiskSelection
                 'capacityDiskIDs' = $capacityDiskArray
@@ -3935,7 +3949,9 @@ Function New-RebuiltVsanDatastore {
             }
             $remainingDisksDisplayObject = $tempRemainingDisksDisplayObject
         }
-        If (($cacheDiskSelection -eq "c") -or ($capacityDiskSelection -eq "c")) { Break }
+        If (($cacheDiskSelection -eq "c") -or ($capacityDiskSelection -eq "c")) {
+            Break
+        }
 
         $proposedConfigDisplayObject = @()
         $configIndex = 1
@@ -4108,11 +4124,19 @@ Function Add-DiskgroupsToManagementHosts {
         $referenceConfig += [PSCustomObject]@{
             'cacheDiskCanonicalName'     = $ssd.CanonicalName
             'cacheDiskRuntimeName'       = $ssd.RuntimeName
-            'cacheDiskType'              = If ($ssd.Ssd) { "SSD" } Else { "HDD" }
+            'cacheDiskType'              = If ($ssd.Ssd) {
+                "SSD"
+            } Else {
+                "HDD"
+            }
             'cacheDiskCapacityGB'        = [math]::Round(($ssd.Capacity.Block * $ssd.Capacity.BlockSize) / 1GB, 0)
             'capacityDiskCanonicalNames' = @($nonSsds.CanonicalName)
             'capacityDiskRuntimeNames'   = @($nonSsds.RuntimeName)
-            'capacityDiskTypes'          = @($nonSsds | ForEach-Object { If ($_.Ssd) { "SSD" } Else { "HDD" } })
+            'capacityDiskTypes'          = @($nonSsds | ForEach-Object { If ($_.Ssd) {
+                        "SSD"
+                    } Else {
+                        "HDD"
+                    } })
             'capacityDiskCapacitiesGB'   = @($nonSsds | ForEach-Object { [math]::Round(($_.Capacity.Block * $_.Capacity.BlockSize) / 1GB, 0) })
         }
     }
@@ -4139,7 +4163,11 @@ Function Add-DiskgroupsToManagementHosts {
             'DG'         = $configIndex
             'Role'       = "Cache"
             'CTL'        = (Format-CTL $cacheLun.RuntimeName)
-            'Type'       = If ($cacheLun.IsSsd) { "SSD" } Else { "HDD" }
+            'Type'       = If ($cacheLun.IsSsd) {
+                "SSD"
+            } Else {
+                "HDD"
+            }
             'CapacityGB' = [math]::Round($cacheLun.CapacityGB, 0)
         }
         Foreach ($capCN in $config.capacityDiskCanonicalNames) {
@@ -4148,7 +4176,11 @@ Function Add-DiskgroupsToManagementHosts {
                 'DG'         = ""
                 'Role'       = "Capacity"
                 'CTL'        = (Format-CTL $capLun.RuntimeName)
-                'Type'       = If ($capLun.IsSsd) { "SSD" } Else { "HDD" }
+                'Type'       = If ($capLun.IsSsd) {
+                    "SSD"
+                } Else {
+                    "HDD"
+                }
                 'CapacityGB' = [math]::Round($capLun.CapacityGB, 0)
             }
         }
@@ -4183,7 +4215,11 @@ Function Add-DiskgroupsToManagementHosts {
                     'DG'         = "  $dgIndex"
                     'Role'       = "Cache"
                     'CTL'        = (Format-CTL $existingSsdLun.RuntimeName)
-                    'Type'       = If ($existingSsdLun.IsSsd) { "SSD" } Else { "HDD" }
+                    'Type'       = If ($existingSsdLun.IsSsd) {
+                        "SSD"
+                    } Else {
+                        "HDD"
+                    }
                     'CapacityGB' = [math]::Round($existingSsdLun.CapacityGB, 0)
                 }
                 Foreach ($nonSsdCN in $existingNonSsdCNs) {
@@ -4194,7 +4230,11 @@ Function Add-DiskgroupsToManagementHosts {
                         'DG'         = ""
                         'Role'       = "Capacity"
                         'CTL'        = (Format-CTL $nonSsdLun.RuntimeName)
-                        'Type'       = If ($nonSsdLun.IsSsd) { "SSD" } Else { "HDD" }
+                        'Type'       = If ($nonSsdLun.IsSsd) {
+                            "SSD"
+                        } Else {
+                            "HDD"
+                        }
                         'CapacityGB' = [math]::Round($nonSsdLun.CapacityGB, 0)
                     }
                 }
@@ -4214,7 +4254,11 @@ Function Add-DiskgroupsToManagementHosts {
                     'DG'         = "  $dgIndex"
                     'Role'       = "Cache"
                     'CTL'        = (Format-CTL $cacheLun.RuntimeName)
-                    'Type'       = If ($cacheLun.IsSsd) { "SSD" } Else { "HDD" }
+                    'Type'       = If ($cacheLun.IsSsd) {
+                        "SSD"
+                    } Else {
+                        "HDD"
+                    }
                     'CapacityGB' = [math]::Round($cacheLun.CapacityGB, 0)
                 }
                 Foreach ($refCapCN in $config.capacityDiskCanonicalNames) {
@@ -4226,7 +4270,11 @@ Function Add-DiskgroupsToManagementHosts {
                         'DG'         = ""
                         'Role'       = "Capacity"
                         'CTL'        = (Format-CTL $capLun.RuntimeName)
-                        'Type'       = If ($capLun.IsSsd) { "SSD" } Else { "HDD" }
+                        'Type'       = If ($capLun.IsSsd) {
+                            "SSD"
+                        } Else {
+                            "HDD"
+                        }
                         'CapacityGB' = [math]::Round($capLun.CapacityGB, 0)
                     }
                 }
@@ -4514,10 +4562,14 @@ Function New-SingleHostVsanDatastore {
                 Write-Host ""; $remainingDisksDisplayObject | format-table -Property @{Expression = " " }, id, canonicalName, size, ssd -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
             }
             Do {
-                If ($i -gt 1) { Write-Host "" }; Write-Host " Enter the ID of disk to use as Cache Disk for Disk Group $i, or C to Cancel: " -ForegroundColor Yellow -nonewline
+                If ($i -gt 1) {
+                    Write-Host ""
+                }; Write-Host " Enter the ID of disk to use as Cache Disk for Disk Group $i, or C to Cancel: " -ForegroundColor Yellow -nonewline
                 $cacheDiskSelection = Read-Host
             } Until (($cacheDiskSelection -in $remainingDisksDisplayObject.id) -OR ($cacheDiskSelection -eq "c"))
-            If ($cacheDiskSelection -eq "c") { Break }
+            If ($cacheDiskSelection -eq "c") {
+                Break
+            }
             $tempRemainingDisksDisplayObject = @()
             Foreach ( $displayDisk in $remainingDisksDisplayObject) {
                 If ($displayDisk.id -ne $cacheDiskSelection) {
@@ -4539,7 +4591,9 @@ Function New-SingleHostVsanDatastore {
                     }
                 }
             } Until (($capacityDiskSelectionInvalid -eq $false) -OR ($capacityDiskSelection -eq "c"))
-            If ($capacityDiskSelection -eq "c") { Break }
+            If ($capacityDiskSelection -eq "c") {
+                Break
+            }
             $diskGroupConfiguration += [PSCustomObject]@{
                 'cacheDiskID'     = $cacheDiskSelection
                 'capacityDiskIDs' = $capacityDiskArray
@@ -4552,7 +4606,9 @@ Function New-SingleHostVsanDatastore {
             }
             $remainingDisksDisplayObject = $tempRemainingDisksDisplayObject
         }
-        If (($cacheDiskSelection -eq "c") -or ($capacityDiskSelection -eq "c")) { Break }
+        If (($cacheDiskSelection -eq "c") -or ($capacityDiskSelection -eq "c")) {
+            Break
+        }
 
         $proposedConfigDisplayObject = @()
         $configIndex = 1
@@ -4941,7 +4997,9 @@ Function New-RebuiltVdsConfiguration {
                     }
                 }
             } Until (($nicSelectionInvalid -eq $false) -OR ($nicSelection -eq "c"))
-            If ($nicSelection -eq "c") { Break }
+            If ($nicSelection -eq "c") {
+                Break
+            }
             $individualVds = [PSCustomObject]@{
                 'vdsName'           = $cluster.vdsDetails[$vdsConfigurationIndex].dvsName
                 'nicnames'          = $nicNamesArray
@@ -4958,7 +5016,9 @@ Function New-RebuiltVdsConfiguration {
             }
             $remainingNicsDisplayObject = $tempremainingNicsDisplayObject
         }
-        If (($nicSelection -eq "c") -or ($nicSelection -eq "c")) { Break }
+        If (($nicSelection -eq "c") -or ($nicSelection -eq "c")) {
+            Break
+        }
 
         $proposedConfigDisplayObject = @()
         $configIndex = 1
@@ -4992,18 +5052,14 @@ Function New-RebuiltVdsConfiguration {
     }
 
     If ($proposedConfigAccepted -eq "Y") {
-        If ($cluster.isStretched -eq "t")
-        {
+        If ($cluster.isStretched -eq "t") {
             $azs = @("az1","az2")
-        }
-        else
-        {
+        } else {
             $azs = @("az1")
         }
-        Foreach ($az in $azs)
-        {
+        Foreach ($az in $azs) {
             If ($cluster.isStretched -eq "t"){
-                LogMessage -type NOTE "[$clusterName] Adding $($az.toUpper()) Hosts to Cluster Virtual Distributed Switches"
+                LogMessage -type NOTE "[$clusterName] Adding $($az.toUpper()) Hosts to Virtual Distributed Switches"
             }
             $azHosts = $cluster.azHostMapping.$($az)
             $vmhosts = (Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name | Where-Object { $_.name -in $azHosts })
@@ -5242,7 +5298,7 @@ Function Watch-NsxHostTransportNodeInstallation {
             }
             $registrationCycle++
             If ($registrationCycle % $reportEveryNCycles -eq 0) {
-                LogMessage -type INFO -message "[$nsxManagerFqdn] Found $($clusterTransportNodes.Count) of $expectedNodeCount expected host transport node(s) in cluster '$clusterName'. Waiting..."
+                LogMessage -type INFO -message "[$nsxManagerFqdn] Found $($clusterTransportNodes.Count) of $expectedNodeCount expected host transport node(s)"
             }
             Start-Sleep -Seconds $pollIntervalSeconds
         } Else {
@@ -5940,18 +5996,41 @@ Function New-ReconfiguredVsanStretchedCluster {
     Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop | Out-Null
 
     $clusterObj = Get-Cluster -Name $clusterName -ErrorAction Stop
+
+    $clusterMoRef = $clusterObj.ExtensionData.MoRef
+    $stretchedClusterSystem = Get-VsanView -Id "VimClusterVsanVcStretchedClusterSystem-vsan-stretched-cluster-system"
+    LogMessage -type INFO -message "[$clusterName] Querying persisted vSAN witness host info"
+    $staleWitnessInfo = @($stretchedClusterSystem.VSANVcGetWitnessHosts($clusterMoRef))
+    if ($staleWitnessInfo.Count -eq 0) {
+        LogMessage -type INFO -message "[$clusterName] No stale witness host reference found in the cluster's persisted vSAN configuration."
+    } else {
+        Foreach ($staleWitness in $staleWitnessInfo) {
+            LogMessage -type INFO -message "[$clusterName] Removing stale witness reference - Host MoRef: $($staleWitness.Host.Value), UnicastAgentAddr: $($staleWitness.UnicastAgentAddr)"
+            $witnessRemovalTaskMoRef = $stretchedClusterSystem.VSANVcRemoveWitnessHost($clusterMoRef, $staleWitness.Host, $staleWitness.UnicastAgentAddr)
+
+            if ($witnessRemovalTaskMoRef.Type -eq 'Task') {
+                $witnessRemovalTask = Get-View -Id $witnessRemovalTaskMoRef
+                Do {
+                    Start-Sleep -Seconds 2
+                    $witnessRemovalTask.UpdateViewData("Info")
+                } While ($witnessRemovalTask.Info.State -in "running", "queued")
+                If ($witnessRemovalTask.Info.State -eq "success") {
+                    LogMessage -type INFO -message "[$clusterName] Stale witness reference removed successfully"
+                } else {
+                    LogMessage -type ERROR -message "[$clusterName] Witness removal task ended with state '$($witnessRemovalTask.Info.State)': $($witnessRemovalTask.Info.Error.LocalizedMessage)"
+                }
+            } else {
+                LogMessage -type INFO -message "[$clusterName] Witness removal call returned MoRef type '$($witnessRemovalTaskMoRef.Type)' (not a Task) -- treating as already complete"
+            }
+        }
+    }
+
     $az1VMHosts = @(Get-VMHost -Name $az1Hosts -ErrorAction Stop)
     $az2VMHosts = @(Get-VMHost -Name $az2Hosts -ErrorAction Stop)
 
     if ($disableVsanWitnessTrafficSeperation) {
         LogMessage -type INFO -message "[$clusterName] -disableVsanWitnessTrafficSeperation specified. Skipping vSAN Witness Traffic Separation configuration on vmk0."
     } else {
-        # The original host-to-vmknic Witness Traffic Separation mapping recorded by the source
-        # SDDC Manager cannot be reliably recovered once hosts are rebuilt (confirmed empirically --
-        # the FSM engine only persists an unresolved variable-name reference for this mapping in the
-        # SDDC Manager database, never the resolved value), so witness traffic is deterministically
-        # tagged onto vmk0 (the management vmknic) on every AZ1/AZ2 host rather than attempting to
-        # detect/reproduce whatever vmknic was originally used.
         LogMessage -type INFO -message "[$clusterName] Configuring vSAN Witness Traffic Separation on vmk0 for all AZ1/AZ2 hosts"
         Foreach ($dataHost in (@($az1VMHosts) + @($az2VMHosts))) {
             Try {
@@ -5960,8 +6039,14 @@ Function New-ReconfiguredVsanStretchedCluster {
                 $vmk0AlreadyWitnessTagged = $vmk0VsanNetwork -and (($vmk0VsanNetwork.TrafficType -join ',') -match 'witness')
                 if ($vmk0AlreadyWitnessTagged) {
                     LogMessage -type INFO -message "[$($dataHost.Name)] vmk0 already tagged for vSAN witness traffic. Skipping"
+                } elseif (!$vmk0VsanNetwork) {
+                    LogMessage -type INFO -message "[$($dataHost.Name)] Adding vmk0 to the vSAN network with witness traffic type"
+                    $witnessTrafficArgs = $esxcli.vsan.network.ip.add.CreateArgs()
+                    $witnessTrafficArgs.interfacename = "vmk0"
+                    $witnessTrafficArgs.traffictype = @("witness")
+                    $esxcli.vsan.network.ip.add.Invoke($witnessTrafficArgs) | Out-Null
                 } else {
-                    LogMessage -type INFO -message "[$($dataHost.Name)] Tagging vmk0 for vSAN witness traffic"
+                    LogMessage -type INFO -message "[$($dataHost.Name)] Updating vmk0's existing vSAN network entry to include witness traffic type"
                     $witnessTrafficArgs = $esxcli.vsan.network.ipv4.set.CreateArgs()
                     $witnessTrafficArgs.interfacename = "vmk0"
                     $witnessTrafficArgs.traffictype = @("witness")
@@ -5982,13 +6067,6 @@ Function New-ReconfiguredVsanStretchedCluster {
         Return
     }
 
-    $vsanConfig = Get-VsanClusterConfiguration -Cluster $clusterObj
-
-    # Fault domain membership is reconciled unconditionally -- independent of whether the cluster
-    # is already stretched -- so that a stretched cluster missing/misconfigured fault domains (e.g.
-    # after a partial recovery) still gets them created, rather than being skipped entirely just
-    # because StretchedClusterEnabled already reads true.
-    LogMessage -type INFO -message "[$clusterName] Resolving AZ1 fault domain"
     $az1FaultDomain = Get-VsanFaultDomain -Cluster $clusterObj -Name "$($clustername)_primary-az-faultdomain (preferred)" -ErrorAction SilentlyContinue
     if (!$az1FaultDomain) {
         LogMessage -type INFO -message "[$clusterName] Creating AZ1 fault domain with hosts: $($az1Hosts -join ', ')"
@@ -5997,7 +6075,6 @@ Function New-ReconfiguredVsanStretchedCluster {
         LogMessage -type INFO -message "[$clusterName] AZ1 fault domain already exists. Reusing"
     }
 
-    LogMessage -type INFO -message "[$clusterName] Resolving AZ2 fault domain"
     $az2FaultDomain = Get-VsanFaultDomain -Cluster $clusterObj -Name "$($clustername)_secondary-az-faultdomain" -ErrorAction SilentlyContinue
     if (!$az2FaultDomain) {
         LogMessage -type INFO -message "[$clusterName] Creating AZ2 fault domain with hosts: $($az2Hosts -join ', ')"
@@ -6006,43 +6083,57 @@ Function New-ReconfiguredVsanStretchedCluster {
         LogMessage -type INFO -message "[$clusterName] AZ2 fault domain already exists. Reusing"
     }
 
-    # StretchedClusterEnabled/WitnessHost reflect the cluster's persisted config and can already read
-    # correct after a DR recovery even though the witness's own vSAN disk group doesn't exist yet
-    # (e.g. a freshly redeployed witness appliance) -- so also confirm the witness actually has a
-    # disk group claimed before treating this as fully configured and skipping disk claim.
-    $witnessDiskGroup = Get-VsanDiskGroup -VMHost $witnessVMHost -ErrorAction SilentlyContinue
-    if (($vsanConfig.StretchedClusterEnabled -eq $true) -and ($vsanConfig.WitnessHost.Name -eq $witnessVMHost.Name) -and $witnessDiskGroup) {
-        LogMessage -type INFO -message "[$clusterName] Stretched cluster already configured with witness '$witnessFqdn' and its disk group already claimed. Nothing to do."
+    LogMessage -type INFO -message "[$clusterName] Reconciling AZ1 host membership in DRS group 'sddc-manager_primary-az-hostgroup'"
+    $primaryAzHostGroup = Get-DrsClusterGroup -Cluster $clusterObj -Name "sddc-manager_primary-az-hostgroup"
+    $az1HostsToAddToGroup = @($az1VMHosts | Where-Object { $_.Name -notin $primaryAzHostGroup.Member.Name })
+    if ($az1HostsToAddToGroup.Count -gt 0) {
+        Set-DrsClusterGroup -DrsClusterGroup $primaryAzHostGroup -Add -VMHost $az1HostsToAddToGroup -Confirm:$false | Out-Null
+        LogMessage -type INFO -message "[$clusterName] Added to 'sddc-manager_primary-az-hostgroup': $($az1HostsToAddToGroup.Name -join ', ')"
     } else {
-        LogMessage -type INFO -message "[$witnessFqdn] Resolving witness disk group disks"
-        $witnessEligibleDisks = @($witnessVMHost | Get-VMHostDisk | Where-Object { $_.ScsiLun.VsanStatus -eq 'Eligible' } | Sort-Object -Property @{e = { $_.ScsiLun.CapacityGB } })
-        if ($witnessEligibleDisks.Count -lt 1) {
-            Throw "[$witnessFqdn] Expected at least 1 eligible disk on the witness host, found 0."
-        }
+        LogMessage -type INFO -message "[$clusterName] All AZ1 hosts already members of 'sddc-manager_primary-az-hostgroup'"
+    }
 
-        if ($clusterDetails.primaryDatastoreType -eq "VSAN_ESA") {
-            # vSAN ESA uses a single-tier storage pool (no cache/capacity split), claimed via
-            # -WitnessHostStoragePoolDisk rather than -WitnessHostCacheDisk/-WitnessHostCapacityDisk.
-            # All eligible disks on the witness go into the pool; a single disk is valid here.
-            LogMessage -type INFO -message "[$witnessFqdn] Using $(($witnessEligibleDisks.ScsiLun.CanonicalName) -join ', ') as ESA storage pool disk(s)"
+    LogMessage -type INFO -message "[$clusterName] Reconciling AZ2 host membership in DRS group 'sddc-manager_secondary-az-hostgroup'"
+    $secondaryAzHostGroup = Get-DrsClusterGroup -Cluster $clusterObj -Name "sddc-manager_secondary-az-hostgroup"
+    $az2HostsToAddToGroup = @($az2VMHosts | Where-Object { $_.Name -notin $secondaryAzHostGroup.Member.Name })
+    if ($az2HostsToAddToGroup.Count -gt 0) {
+        Set-DrsClusterGroup -DrsClusterGroup $secondaryAzHostGroup -Add -VMHost $az2HostsToAddToGroup -Confirm:$false | Out-Null
+        LogMessage -type INFO -message "[$clusterName] Added to 'sddc-manager_secondary-az-hostgroup': $($az2HostsToAddToGroup.Name -join ', ')"
+    } else {
+        LogMessage -type INFO -message "[$clusterName] All AZ2 hosts already members of 'sddc-manager_secondary-az-hostgroup'"
+    }
 
-            LogMessage -type INFO -message "[$clusterName] Enabling stretched cluster configuration (ESA) with preferred fault domain and witness '$witnessFqdn'"
-            Set-VsanClusterConfiguration -Configuration $clusterObj -StretchedClusterEnabled $true -PreferredFaultDomain $az1FaultDomain -WitnessHost $witnessVMHost -WitnessHostStoragePoolDisk $witnessEligibleDisks -ErrorAction Stop | Out-Null
+    $vsanConfig = Get-VsanClusterConfiguration -Cluster $clusterObj
+    if (($vsanConfig.StretchedClusterEnabled -eq $true) -and ($vsanConfig.WitnessHost.Name -eq $witnessVMHost.Name)) {
+        LogMessage -type INFO -message "[$clusterName] Stretched cluster already configured with witness '$witnessFqdn'. Nothing to do."
+    } else {
+        $witnessDiskGroup = Get-VsanDiskGroup -VMHost $witnessVMHost -ErrorAction SilentlyContinue
+        if ($witnessDiskGroup) {
+            LogMessage -type INFO -message "[$witnessFqdn] Witness already has a vSAN disk group (shared witness). Enabling stretched cluster configuration without claiming disks"
+            Set-VsanClusterConfiguration -Configuration $clusterObj -StretchedClusterEnabled $true -PreferredFaultDomain $az1FaultDomain -WitnessHost $witnessVMHost -ErrorAction Stop | Out-Null
         } else {
-            # vSAN OSA requires one cache disk and one or more capacity disks, all reported as
-            # VsanStatus 'Eligible' since the appliance has not yet had a vSAN disk group created
-            # on it. The smallest eligible disk is always the cache disk on the default witness
-            # appliance sizes (tiny/normal/large), so it's used as the deterministic selector
-            # rather than prompting the user for a choice.
-            if ($witnessEligibleDisks.Count -lt 2) {
-                Throw "[$witnessFqdn] Expected at least 2 eligible disks (1 cache, 1+ capacity) on the witness host, found $($witnessEligibleDisks.Count)."
+            LogMessage -type INFO -message "[$witnessFqdn] Resolving witness disk group disks"
+            $witnessEligibleDisks = @($witnessVMHost | Get-VMHostDisk | Where-Object { $_.ScsiLun.VsanStatus -eq 'Eligible' } | Sort-Object -Property @{e = { $_.ScsiLun.CapacityGB } })
+            if ($witnessEligibleDisks.Count -lt 1) {
+                Throw "[$witnessFqdn] Expected at least 1 eligible disk on the witness host, found 0."
             }
-            $witnessCacheDisk = $witnessEligibleDisks[0]
-            $witnessCapacityDisks = @($witnessEligibleDisks | Select-Object -Skip 1)
-            LogMessage -type INFO -message "[$witnessFqdn] Using $($witnessCacheDisk.ScsiLun.CanonicalName) as cache disk and $(($witnessCapacityDisks.ScsiLun.CanonicalName) -join ', ') as capacity disk(s)"
 
-            LogMessage -type INFO -message "[$clusterName] Enabling stretched cluster configuration with preferred fault domain and witness '$witnessFqdn'"
-            Set-VsanClusterConfiguration -Configuration $clusterObj -StretchedClusterEnabled $true -PreferredFaultDomain $az1FaultDomain -WitnessHost $witnessVMHost -WitnessHostCacheDisk $witnessCacheDisk -WitnessHostCapacityDisk $witnessCapacityDisks -ErrorAction Stop | Out-Null
+            if ($clusterDetails.primaryDatastoreType -eq "VSAN_ESA") {
+                LogMessage -type INFO -message "[$witnessFqdn] Using $(($witnessEligibleDisks.ScsiLun.CanonicalName) -join ', ') as ESA storage pool disk(s)"
+
+                LogMessage -type INFO -message "[$clusterName] Enabling stretched cluster configuration (ESA) with preferred fault domain and witness '$witnessFqdn'"
+                Set-VsanClusterConfiguration -Configuration $clusterObj -StretchedClusterEnabled $true -PreferredFaultDomain $az1FaultDomain -WitnessHost $witnessVMHost -WitnessHostStoragePoolDisk $witnessEligibleDisks -ErrorAction Stop | Out-Null
+            } else {
+                if ($witnessEligibleDisks.Count -lt 2) {
+                    Throw "[$witnessFqdn] Expected at least 2 eligible disks (1 cache, 1+ capacity) on the witness host, found $($witnessEligibleDisks.Count)."
+                }
+                $witnessCacheDisk = $witnessEligibleDisks[0]
+                $witnessCapacityDisks = @($witnessEligibleDisks | Select-Object -Skip 1)
+                LogMessage -type INFO -message "[$witnessFqdn] Using $($witnessCacheDisk.ScsiLun.CanonicalName) as cache disk and $(($witnessCapacityDisks.ScsiLun.CanonicalName) -join ', ') as capacity disk(s)"
+
+                LogMessage -type INFO -message "[$clusterName] Enabling stretched cluster configuration with preferred fault domain and witness '$witnessFqdn'"
+                Set-VsanClusterConfiguration -Configuration $clusterObj -StretchedClusterEnabled $true -PreferredFaultDomain $az1FaultDomain -WitnessHost $witnessVMHost -WitnessHostCacheDisk $witnessCacheDisk -WitnessHostCapacityDisk $witnessCapacityDisks -ErrorAction Stop | Out-Null
+            }
         }
         LogMessage -type INFO -message "[$clusterName] Stretched cluster configuration enabled"
     }
@@ -6140,7 +6231,7 @@ Function Remove-VsanStretchedClusterWitness {
 
     $remainingWitnessInfo = @($stretchedClusterSystem.VSANVcGetWitnessHosts($clusterMoRef))
     If ($remainingWitnessInfo.Count -eq 0) {
-        LogMessage -type INFO -message "[$clusterName] Verified no witness host references remain. Cluster is ready for New-ReconfiguredVsanStretchedCluster to run again."
+        LogMessage -type INFO -message "[$clusterName] Verified no witness host references remain"
     } else {
         LogMessage -type WARNING -message "[$clusterName] $($remainingWitnessInfo.Count) witness host reference(s) still present after removal attempt."
     }
@@ -8010,6 +8101,231 @@ Function Update-DomainDatastoreID {
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
 }
 Export-ModuleMember -Function Update-DomainDatastoreID
+
+Function Update-DomainHostSourceIDs {
+    <#
+    .SYNOPSIS
+    Updates the source_id (vCenter host MoRef) in the SDDC Manager platform database for each host
+    currently in a specified cluster.
+
+    .DESCRIPTION
+    The Update-DomainHostSourceIDs cmdlet locates the workload domain whose vCenter matches the
+    supplied FQDN, finds the named cluster within that domain, connects to vCenter and enumerates
+    every host currently in that cluster along with its current MoRef, then connects to the SDDC
+    Manager appliance via SSH and compares each host's persisted source_id (in the public.host table,
+    keyed by hostname) against the live MoRef. Hosts already matching are skipped. A summary of all
+    planned changes is shown and confirmed once before any UPDATE is executed, then each change is
+    applied and verified individually.
+
+    This mirrors the same class of problem Update-DomainDatastoreID resolves for
+    cluster.primary_datastore_source_id -- after a cluster's hosts are rebuilt (new vCenter, new
+    MoRefs), SDDC Manager's database still references the pre-disaster MoRefs recorded in
+    public.host.source_id, which is confirmed via the SDDC Manager Postgres backup to be a bare
+    MoRef string (e.g. "host-87"), keyed by the SDDC Manager host UUID in public.host.id, with the
+    full FQDN stored in public.host.hostname.
+
+    .EXAMPLE
+    Update-DomainHostSourceIDs -extractedSDDCDataFile ".\extracted-sddc-data.json" -vCenterFQDN "sfo-w02-vc01.sfo.rainpole.io" -clusterName "sfo-w02-cl02" -VcfUserPassword "VMw@re1!VMw@re1!" -RootPassword "VMw@re1!VMw@re1!"
+
+    .PARAMETER extractedSDDCDataFile
+    Relative or absolute path to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup).
+
+    .PARAMETER vCenterFQDN
+    FQDN of the vCenter whose associated domain contains the target cluster.
+
+    .PARAMETER clusterName
+    Name of the vSphere cluster whose hosts' source_id values should be updated.
+
+    .PARAMETER VcfUserPassword
+    Password for the vcf SSH user on the SDDC Manager appliance.
+
+    .PARAMETER RootPassword
+    Root password for the SDDC Manager appliance (used for su elevation).
+    #>
+
+    Param(
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
+        [Parameter (Mandatory = $true)][String] $vCenterFQDN,
+        [Parameter (Mandatory = $true)][String] $clusterName,
+        [Parameter (Mandatory = $true)][String] $VcfUserPassword,
+        [Parameter (Mandatory = $true)][String] $RootPassword
+    )
+
+    $jumpboxName = hostname
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    # Load extracted SDDC data
+    LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
+    $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
+    $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
+
+    $SddcManagerFqdn = $extractedSddcData.sddcManager.fqdn
+    if (-not $SddcManagerFqdn) {
+        LogMessage -type ERROR -message "[$jumpboxName] Could not determine SDDC Manager FQDN from extracted data"
+        return
+    }
+
+    # Locate the domain for the supplied vCenter FQDN
+    $workloadDomain = $extractedSddcData.workloadDomains | Where-Object { $_.vCenterDetails.fqdn -eq $vCenterFQDN }
+    if (-not $workloadDomain) {
+        LogMessage -type ERROR -message "[$jumpboxName] No workload domain found with vCenter FQDN '$vCenterFQDN' in extracted SDDC data"
+        return
+    }
+
+    # Locate the named cluster within that domain
+    $domainCluster = $workloadDomain.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }
+    if (-not $domainCluster) {
+        LogMessage -type ERROR -message "[$jumpboxName] No cluster named '$clusterName' found in domain '$($workloadDomain.domainName)'"
+        return
+    }
+
+    $vCenterAdmin = ($extractedSddcData.passwords | Where-Object { ($_.credentialType -eq "SSO") -and ($_.entityName -eq $vCenterFQDN) -and ($_.entityType -eq "PSC") }).username
+    $vCenterAdminPassword = ($extractedSddcData.passwords | Where-Object { ($_.credentialType -eq "SSO") -and ($_.entityName -eq $vCenterFQDN) -and ($_.entityType -eq "PSC") }).password
+
+    if (-not $vCenterAdmin -or -not $vCenterAdminPassword) {
+        LogMessage -type ERROR -message "[$vCenterFQDN] Could not find SSO credentials for vCenter in extracted data"
+        return
+    }
+
+    LogMessage -type INFO -message "[$jumpboxName] Domain: $($workloadDomain.domainName) | Cluster: $clusterName"
+
+    # Connect to vCenter and enumerate every host currently in the cluster with its live MoRef
+    LogMessage -type INFO -message "[$vCenterFQDN] Connecting to vCenter"
+    Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop | Out-Null
+
+    $clusterHosts = @(Get-Cluster -Name $clusterName -ErrorAction Stop | Get-VMHost -ErrorAction Stop)
+    if ($clusterHosts.Count -eq 0) {
+        LogMessage -type ERROR -message "[$vCenterFQDN] No hosts found in cluster '$clusterName'"
+        Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+        return
+    }
+
+    $hostMoRefMap = @()
+    Foreach ($vmHost in $clusterHosts) {
+        $hostMoRefMap += [PSCustomObject]@{
+            Hostname   = $vmHost.Name
+            NewMoRef   = $vmHost.ExtensionData.moref.value
+        }
+        LogMessage -type INFO -message "[$vCenterFQDN] $($vmHost.Name) resolved with live MoRef: $($vmHost.ExtensionData.moref.value)"
+    }
+    Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+
+    # Establish SSH connection to SDDC Manager as vcf user
+    LogMessage -type INFO -message "[$SddcManagerFqdn] Establishing SSH connection"
+    $SecurePassword = ConvertTo-SecureString -String $VcfUserPassword -AsPlainText -Force
+    $mycreds = New-Object System.Management.Automation.PSCredential ('vcf', $SecurePassword)
+    $inmem = New-SSHMemoryKnownHost
+    New-SSHTrustedHost -KnownHostStore $inmem -HostName $SddcManagerFqdn -FingerPrint ((Get-SSHHostKey -ComputerName $SddcManagerFqdn).fingerprint) | Out-Null
+    Do {
+        $sshSession = New-SSHSession -ComputerName $SddcManagerFqdn -Credential $mycreds -KnownHost $inmem
+    } Until ($sshSession)
+
+    # Create shell stream with wide terminal to avoid line-wrapping corruption
+    $stream = New-SSHShellStream -SSHSession $sshSession -TerminalName "xterm" -Columns 250
+    Start-Sleep 1
+    $stream.Read() | Out-Null
+
+    # Elevate to root
+    $stream.WriteLine("su -")
+    Start-Sleep 2
+    $stream.WriteLine("$RootPassword")
+    Start-Sleep 2
+    $stream.Read() | Out-Null
+
+    # Filter to strip shell prompts and echo'd commands from SSH output
+    $cleanSshOutput = {
+        param([String]$raw)
+        ($raw -split "`n" | Where-Object {
+            $_ -notmatch 'root@' -and
+            $_ -notmatch 'vcf@' -and
+            $_ -notmatch 'echo\s+"' -and
+            $_ -notmatch '^\s*\$\s*$'
+        }) -join "`n"
+    }
+
+    # Query the host table for each host's current SDDC Manager id and source_id
+    $plannedChanges = @()
+    Foreach ($hostEntry in $hostMoRefMap) {
+        LogMessage -type INFO -message "[$SddcManagerFqdn] Querying host table for '$($hostEntry.Hostname)'"
+        $stream.WriteLine("echo `"SELECT id, source_id FROM host WHERE hostname='$($hostEntry.Hostname)';`" | psql -U postgres -h localhost -d platform -t -A")
+        Start-Sleep 5
+        $rawOutput = $stream.Read()
+
+        $guidPattern = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'
+        $sddcManagerHostId = ($rawOutput | Select-String -Pattern $guidPattern -AllMatches).Matches | Select-Object -First 1 -ExpandProperty Value
+        $currentSourceId = ($rawOutput | Select-String -Pattern 'host-\d+' -AllMatches).Matches | Select-Object -First 1 -ExpandProperty Value
+
+        if (-not $sddcManagerHostId) {
+            LogMessage -type WARNING -message "[$SddcManagerFqdn] No host row found with hostname='$($hostEntry.Hostname)'. Skipping."
+            continue
+        }
+
+        if ($currentSourceId -eq $hostEntry.NewMoRef) {
+            LogMessage -type INFO -message "[$($hostEntry.Hostname)] source_id already '$($hostEntry.NewMoRef)' -- nothing to do"
+            continue
+        }
+
+        $plannedChanges += [PSCustomObject]@{
+            Hostname          = $hostEntry.Hostname
+            SddcManagerHostId = $sddcManagerHostId
+            CurrentSourceId   = if ($currentSourceId) { $currentSourceId } else { '(not set / NULL)' }
+            NewSourceId       = $hostEntry.NewMoRef
+        }
+    }
+
+    if ($plannedChanges.Count -eq 0) {
+        LogMessage -type INFO -message "[$SddcManagerFqdn] All host source_id values already match their live vCenter MoRef -- nothing to do"
+        Remove-SSHSession -SSHSession $sshSession | Out-Null
+        $StopWatch.Stop()
+        $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+        return
+    }
+
+    # Show summary and prompt for confirmation before writing any change
+    Write-Host ""
+    Write-Host " Summary - the following updates will be applied on $SddcManagerFqdn" -ForegroundColor Yellow
+    $plannedChanges | Format-Table -Property Hostname, SddcManagerHostId, CurrentSourceId, NewSourceId -AutoSize | Out-String | Write-Host
+    Do {
+        Write-Host " Proceed with update of $($plannedChanges.Count) host(s)? (Y/N): " -ForegroundColor Yellow -NoNewline
+        $confirmation = Read-Host
+    } Until ($confirmation -in @("Y", "y", "N", "n"))
+
+    if ($confirmation -in @("N", "n")) {
+        LogMessage -type INFO -message "[$SddcManagerFqdn] Operation cancelled by user."
+        Remove-SSHSession -SSHSession $sshSession | Out-Null
+        return
+    }
+
+    # Execute and verify each UPDATE
+    Foreach ($change in $plannedChanges) {
+        LogMessage -type INFO -message "[$($change.Hostname)] Updating source_id to '$($change.NewSourceId)'"
+        $stream.WriteLine("echo `"UPDATE host SET source_id='$($change.NewSourceId)' WHERE id='$($change.SddcManagerHostId)';`" | psql -U postgres -h localhost -d platform")
+        Start-Sleep 5
+        $updateOutput = $stream.Read()
+        $cleanUpdate = & $cleanSshOutput $updateOutput
+        LogMessage -type INFO -message "[$($change.Hostname)] UPDATE result: $($cleanUpdate.Trim())"
+
+        $stream.WriteLine("echo `"SELECT source_id FROM host WHERE id='$($change.SddcManagerHostId)';`" | psql -U postgres -h localhost -d platform -t -A")
+        Start-Sleep 5
+        $verifyRaw = $stream.Read()
+        $verifiedSourceId = ($verifyRaw | Select-String -Pattern 'host-\d+' -AllMatches).Matches | Select-Object -First 1 -ExpandProperty Value
+        if ($verifiedSourceId -eq $change.NewSourceId) {
+            LogMessage -type INFO -message "[$($change.Hostname)] UPDATE verified: source_id = $verifiedSourceId"
+        } else {
+            LogMessage -type WARNING -message "[$($change.Hostname)] UPDATE could not be verified. Expected: $($change.NewSourceId) | Got: $verifiedSourceId"
+        }
+    }
+
+    Remove-SSHSession -SSHSession $sshSession | Out-Null
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+Export-ModuleMember -Function Update-DomainHostSourceIDs
 
 Function Get-SddcManagerToken {
     <#
