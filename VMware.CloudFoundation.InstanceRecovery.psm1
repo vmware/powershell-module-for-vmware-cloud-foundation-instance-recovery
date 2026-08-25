@@ -998,6 +998,43 @@ Function New-ExtractDataFromSDDCBackup {
 
                 $vdsDetails += $vdsObject
             }
+
+            # Determine AZ host membership directly from the backup, with no live vCenter connection
+            # required. Each host's network pool contains its VMOTION/VSAN networks (MANAGEMENT is not
+            # network-pool-scoped), each tagged with a VLAN. The cluster's VDS portgroups carry the same
+            # VLAN per transport type alongside a faultLevel (PRIMARY/SECONDARY for stretched clusters,
+            # NONE for non-stretched). Matching a host's VMOTION network VLAN against the VDS VMOTION
+            # portgroup VLAN yields that portgroup's faultLevel, which identifies the host's AZ. Verified
+            # against a real stretched cluster backup: VMOTION and VSAN VLANs independently agreed, and the
+            # result matched live vCenter portgroup-membership lookups exactly.
+            $allPortgroups = @($vdsDetails.portgroups)
+            $azHostMappingObject = New-Object -type psobject
+            If ($isStretched -eq 't') {
+                $az1Hosts = @()
+                $az2Hosts = @()
+                Foreach ($hostEntry in $hostsArray) {
+                    $hostVmotionNetwork = $hostEntry.networks | Where-Object { $_.type -eq "VMOTION" } | Select-Object -First 1
+                    $matchingPortgroup = $allPortgroups | Where-Object { ($_.transportType -eq "VMOTION") -and ($_.vlanId -eq $hostVmotionNetwork.vlanId) } | Select-Object -First 1
+                    If ($matchingPortgroup.faultLevel -eq "PRIMARY") {
+                        $az1Hosts += $hostEntry.hostname
+                    } ElseIf ($matchingPortgroup.faultLevel -eq "SECONDARY") {
+                        $az2Hosts += $hostEntry.hostname
+                    }
+                }
+                $azHostMappingObject | Add-Member -NotePropertyName "az1" -NotePropertyValue (@($az1Hosts) | Sort-Object)
+                $azHostMappingObject | Add-Member -NotePropertyName "az2" -NotePropertyValue (@($az2Hosts) | Sort-Object)
+            } Else {
+                $az1Hosts = @()
+                Foreach ($hostEntry in $hostsArray) {
+                    $hostVmotionNetwork = $hostEntry.networks | Where-Object { $_.type -eq "VMOTION" } | Select-Object -First 1
+                    $matchingPortgroup = $allPortgroups | Where-Object { ($_.transportType -eq "VMOTION") -and ($_.vlanId -eq $hostVmotionNetwork.vlanId) } | Select-Object -First 1
+                    If ($matchingPortgroup.faultLevel -eq "NONE") {
+                        $az1Hosts += $hostEntry.hostname
+                    }
+                }
+                $azHostMappingObject | Add-Member -NotePropertyName "az1" -NotePropertyValue (@($az1Hosts) | Sort-Object)
+            }
+
             $clusters += [pscustomobject]@{
                 'id'                     = $id
                 'datacenter'             = $null
@@ -1013,6 +1050,7 @@ Function New-ExtractDataFromSDDCBackup {
                 'sourceID'               = $sourceID
                 'vdsDetails'             = $vdsDetails
                 'hosts'                  = @($hostsArray | Sort-Object -Property hostname)
+                'azHostMapping'          = $azHostMappingObject
             }
         }
         $clustersLineIndex++
@@ -1334,7 +1372,6 @@ Function Update-ExtractedSDDCData {
             $cluster.primaryDatastoreName = $primaryDatastoreName
             LogMessage -type INFO -message "Injecting primary datastore storage policy $primaryDatastorePolicy into $($workloadDomain.domainName)"
             $cluster.primaryDatastorePolicy = $primaryDatastorePolicy
-            $portGroupsToScrapeForHostMembership = @()
             Foreach ($vds in $cluster.vdsDetails) {
                 $vdsName = (Invoke-VcfGetVdses -ClusterId $cluster.id | Where-Object { $_.id -eq $vds.id }).Name
                 $vds.dvsName = $vdsName
@@ -1350,7 +1387,6 @@ Function Update-ExtractedSDDCData {
                         $managementPGName = ((Invoke-VcfGetVdses -ClusterId $cluster.id).PortGroups | Where-Object { ($_.TransportType -eq "MANAGEMENT") -AND ($_.id -eq $portGroup.id) }).Name
                         LogMessage -type INFO -message "Injecting portgroup name $managementPGName on $($vds.dvsName)"
                         $portGroup | Add-Member -NotePropertyName "Name" -NotePropertyValue $managementPGName -Force
-                        $portGroupsToScrapeForHostMembership += $portGroup
                     }
                     if (($portGroup.TransportType -eq "VMOTION") -AND ($portGroup.faultLevel -in "PRIMARY","NONE")) {
                         $vMotionPGName = ((Invoke-VcfGetVdses -ClusterId $cluster.id).PortGroups | Where-Object { ($_.TransportType -eq "VMOTION") -AND ($_.id -eq $portGroup.id) }).Name
@@ -1370,7 +1406,6 @@ Function Update-ExtractedSDDCData {
                             $managementPGName = ((Invoke-VcfGetVdses -ClusterId $cluster.id).PortGroups | Where-Object { ($_.TransportType -eq "MANAGEMENT") -AND ($_.id -eq $portGroup.id) }).Name
                             LogMessage -type INFO -message "Injecting portgroup name $managementPGName on $($vds.dvsName)"
                             $portGroup | Add-Member -NotePropertyName "Name" -NotePropertyValue $managementPGName -Force
-                            $portGroupsToScrapeForHostMembership += $portGroup
                         }
                         if (($portGroup.TransportType -eq "VMOTION") -AND ($portGroup.faultLevel -eq "SECONDARY")) {
                             $vMotionPGName = ((Invoke-VcfGetVdses -ClusterId $cluster.id).PortGroups | Where-Object { ($_.TransportType -eq "VMOTION") -AND ($_.id -eq $portGroup.id) }).Name
@@ -1387,26 +1422,8 @@ Function Update-ExtractedSDDCData {
                 }
             }
 
-            $azHostMappingObject = New-Object -type psobject
-            If ($cluster.isStretched -eq 'f')
+            If ($cluster.isStretched -eq 't')
             {
-                #Get AZ1 Hosts
-                $az1hosts = (Get-VDPortGroup -Name (($portGroupsToScrapeForHostMembership | where-object { $_.faultLevel -eq "NONE" }).name) | Get-VDPort).ProxyHost.name | Sort-Object
-                $azHostMappingObject | Add-Member -NotePropertyName "az1" -NotePropertyValue $az1Hosts
-                LogMessage -type INFO -message "Injecting Host to AZ Mappings for $clusterName"
-                $cluster | Add-Member -NotePropertyName "azHostMapping" -NotePropertyValue $azHostMappingObject
-            }
-            elseif ($cluster.isStretched -eq 't')
-            {
-                #Get AZ1 and AZ2 Hosts
-                $az1hosts = (Get-VDPortGroup -Name (($portGroupsToScrapeForHostMembership | where-object {$_.faultLevel -eq "PRIMARY"}).name) | Get-VDPort).ProxyHost.name | Sort-Object
-                $az2hosts = (Get-VDPortGroup -Name (($portGroupsToScrapeForHostMembership | where-object { $_.faultLevel -eq "SECONDARY" }).name) | Get-VDPort).ProxyHost.name | Sort-Object
-
-                $azHostMappingObject | Add-Member -NotePropertyName "az1" -NotePropertyValue $az1Hosts
-                $azHostMappingObject | Add-Member -NotePropertyName "az2" -NotePropertyValue $az2Hosts
-                LogMessage -type INFO -message "Injecting Host to AZ Mappings for $clusterName"
-                $cluster | Add-Member -NotePropertyName "azHostMapping" -NotePropertyValue $azHostMappingObject
-
                 #Get Witness Fqdn
                 $clusterObject = Get-Cluster -Name $clusterName
                 $stretchedClusterSystem = Get-VsanView -Id "VimClusterVsanVcStretchedClusterSystem-vsan-stretched-cluster-system"
@@ -5778,7 +5795,6 @@ Function Add-VMKernelsToManagementHosts {
 
     $workloadDomain = $extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }
     $cluster = $workloadDomain.vsphereClusterDetails | Where-Object { $_.isDefault -eq "t" }
-    $clusterName = $cluster.name
 
     If ($cluster.isStretched -eq "t") {
         $azs = @("az1","az2")
@@ -5788,17 +5804,17 @@ Function Add-VMKernelsToManagementHosts {
 
     Foreach ($az in $azs) {
         If ($cluster.isStretched -eq "t"){
-            LogMessage -type NOTE "[$clusterName] Adding VMkernels to $($az.toUpper()) Hosts"
+            LogMessage -type NOTE "[Managment Cluster] Adding VMkernels to $($az.toUpper()) Hosts"
         }
 
-        If ($az -eq "az1") {
-            $faultLevelArray = @("PRIMARY", "NONE")
-        } else {
-            $faultLevelArray = @("SECONDARY")
-        }
-
-        $vmotionNetwork = $cluster.hosts[0].networks | Where-Object { ($_.type -eq "VMOTION" -AND ($_.faultLevel -in $faultLevelArray)) }
-        $vsanNetwork = $cluster.hosts[0].networks | Where-Object { ($_.type -eq "VSAN") -AND ($_.faultLevel -in $faultLevelArray) }
+        # Host networks (vcf_network rows) carry no faultLevel -- that only exists on VDS portgroup
+        # objects, a separate structure. Network pool assignment is inherently AZ-specific though: an
+        # AZ1 host's pool only contains AZ1's VMOTION/VSAN network, an AZ2 host's only AZ2's -- so any
+        # host from the target AZ's azHostMapping list gives the correct network, no faultLevel needed.
+        $azReferenceHostname = $cluster.azHostMapping.$az | Select-Object -First 1
+        $azReferenceHost = $cluster.hosts | Where-Object { $_.hostname -eq $azReferenceHostname }
+        $vmotionNetwork = $azReferenceHost.networks | Where-Object { $_.type -eq "VMOTION" } | Select-Object -First 1
+        $vsanNetwork = $azReferenceHost.networks | Where-Object { $_.type -eq "VSAN" } | Select-Object -First 1
 
         $vMotionVlanId = $vmotionNetwork.vlanId
         $vMotionMtu = $vmotionNetwork.mtu
@@ -5818,7 +5834,7 @@ Function Add-VMKernelsToManagementHosts {
         }
 
         $azHosts = $cluster.azHostMapping.$($az)
-        $vmHosts = $cluster.hosts | Where-Object {$_.name -in $azHosts}
+        $vmHosts = $cluster.hosts | Where-Object {$_.hostname -in $azHosts}
 
         Foreach ($clusterHost in $vmHosts) {
             $currentHostFQDN = $clusterHost.hostname
