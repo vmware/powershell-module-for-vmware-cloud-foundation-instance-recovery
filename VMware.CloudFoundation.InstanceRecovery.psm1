@@ -11519,8 +11519,24 @@ Function New-ExtractVcfmsBackup {
 
         # Step 4: Walk the Velero tree and write YAML files
         $secretKind   = 'secrets'
+        $pdKind       = 'packagedeployments.releases.vmsp.vmware.com'
         $ns           = 'vmsp-platform'
         $writtenFiles = @()
+
+        # vmsp-platform.yaml (PackageDeployment)
+        $pdStem = 'vmsp-platform'
+        $pdJson = Resolve-VcfmsVeleroJson -VeleroBase $veleroRoot -ResourceKind $pdKind -Namespace $ns -Stem $pdStem
+        if ($pdJson) {
+            $obj  = ConvertTo-VcfmsOrderedHashtable (Get-Content $pdJson -Raw | ConvertFrom-Json)
+            $obj  = Remove-VcfmsTransientMeta $obj
+            $yaml = ConvertTo-VcfmsYaml $obj
+            $dest = Join-Path $resolvedOutputDir "$pdStem.yaml"
+            [System.IO.File]::WriteAllText($dest, $yaml + "`n", (New-Object System.Text.UTF8Encoding $false))
+            LogMessage -type INFO -message "[$jumpboxName] Written: $dest"
+            $writtenFiles += $dest
+        } else {
+            LogMessage -type WARNING -message "[$jumpboxName] $pdStem (PackageDeployment) not found in archive"
+        }
 
         # ingress-fleet-tls-ndc.yaml
         $ndcStem  = 'ingress-fleet-tls-ndc'
@@ -12841,7 +12857,7 @@ Function Invoke-VcfmsFleetComponentRegistration {
     # -------------------------------------------------------------------------
     # Validate the local script exists
     # -------------------------------------------------------------------------
-    $localScript = Join-Path -Path $PSScriptRoot -ChildPath "scripts/update_fleet_component_registration.sh"
+    $localScript = Join-Path -Path $PSScriptRoot -ChildPath "scripts/9.1.0/update_fleet_component_registration.sh"
     if (-not (Test-Path $localScript)) {
         LogMessage -type ERROR -message "[$jumpboxName] Script not found: $localScript"
         $StopWatch.Stop(); return
@@ -13471,7 +13487,7 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
     # -------------------------------------------------------------------------
     # Validate the local script exists
     # -------------------------------------------------------------------------
-    $localScript = Join-Path -Path $PSScriptRoot -ChildPath "scripts/update-vidb-vcf-instance.sh"
+    $localScript = Join-Path -Path $PSScriptRoot -ChildPath "scripts/9.1.0/update-vidb-vcf-instance.sh"
     if (-not (Test-Path $localScript)) {
         LogMessage -type ERROR -message "[$jumpboxName] Script not found: $localScript"
         $StopWatch.Stop(); return
