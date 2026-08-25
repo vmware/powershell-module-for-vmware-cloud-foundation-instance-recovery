@@ -6060,7 +6060,7 @@ Function New-ReconfiguredVsanStretchedCluster {
                 if ($vmk0AlreadyWitnessTagged) {
                     LogMessage -type INFO -message "[$($dataHost.Name)] vmk0 already tagged for vSAN witness traffic. Skipping"
                 } elseif (!$vmk0VsanNetwork) {
-                    LogMessage -type INFO -message "[$($dataHost.Name)] Adding vmk0 to the vSAN network with witness traffic type"
+                    LogMessage -type INFO -message "[$($dataHost.Name)] Enabling vSAN Witness traffic on vmk0"
                     $witnessTrafficArgs = $esxcli.vsan.network.ip.add.CreateArgs()
                     $witnessTrafficArgs.interfacename = "vmk0"
                     $witnessTrafficArgs.traffictype = @("witness")
