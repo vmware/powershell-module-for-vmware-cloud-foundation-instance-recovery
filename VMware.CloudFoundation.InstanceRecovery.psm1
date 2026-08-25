@@ -8425,7 +8425,7 @@ Function Invoke-SddcManagerSSHKeyRefresh {
                                  'host'), or is equivalent to 'cluster' for targetType 'appliance'
 
     It then uploads scripts\refreshsshkeys.py to /tmp on the SDDC Manager appliance, makes it
-    executable, and runs it as `"yes" | python refreshsshkeys.py`. That script queries SDDC
+    executable, and runs it as `yes yes | python refreshsshkeys.py`. That script queries SDDC
     Manager's internal known_hosts API (covering every component SDDC Manager tracks -- all hosts,
     vCenter(s), NSX Manager(s)), so its raw output is not scoped to the targets above. Each output
     line is only printed via LogMessage if it contains the hostname/FQDN of one of the enabled
@@ -8433,9 +8433,12 @@ Function Invoke-SddcManagerSSHKeyRefresh {
     is discarded, per the requirement that only output relevant to the selected targets should reach
     the screen.
 
-    Piping a single "yes" answers only the first mismatched-key confirmation prompt the script emits;
-    this is the exact invocation the script is designed for and matches how it is intended to be run
-    non-interactively -- it is not a limitation this cmdlet works around.
+    The script prompts once per mismatched key with "Are you sure you want to update <key type> key
+    (yes/no)?", not once per run -- a single piped "yes" only answers the first such prompt, and every
+    subsequent one then hits closed stdin and fails with "EOF when reading a line" (confirmed live: a
+    cluster with multiple hosts each needing new keys failed on every prompt after the first). Using
+    the `yes` utility (aliased to repeat the literal string "yes", since the prompt requires that exact
+    word rather than "y") keeps answering every prompt for as long as the script keeps asking.
 
     .EXAMPLE
     Invoke-SddcManagerSSHKeyRefresh -vCenterFQDN "sfo-w02-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@sfo-w02.local" -vCenterAdminPassword "VMw@re1!VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -clusterName "sfo-w02-cl02" -targetType host -scope cluster -VcfUserPassword "VMw@re1!VMw@re1!"
@@ -8617,10 +8620,16 @@ Function Invoke-SddcManagerSSHKeyRefresh {
     }
 
     LogMessage -type INFO -message "[$SddcManagerFqdn] Running refreshsshkeys.py"
-    # Run exactly as specified -- as the vcf user, no root elevation. vcf already owns the uploaded
-    # file (confirmed via the post-upload ls -la above) and the script only needs to reach a localhost
-    # HTTP endpoint and run ssh-keyscan, neither of which requires root.
-    $execCmd = "cd /tmp && echo yes | python $remotePath 2>&1"
+    # Run as the vcf user, no root elevation. vcf already owns the uploaded file (confirmed via the
+    # post-upload ls -la above) and the script only needs to reach a localhost HTTP endpoint and run
+    # ssh-keyscan, neither of which requires root.
+    # The script prompts once per mismatched key ("Are you sure you want to update <type> key
+    # (yes/no)?"), not once per run. A single piped "yes" (via `echo yes |`) only answers the first
+    # such prompt; every subsequent one then hits closed stdin and fails with "EOF when reading a
+    # line" -- confirmed live against a cluster where multiple hosts each needed new keys. `yes yes`
+    # repeats the literal string "yes" (the prompt requires that exact word, not "y") for as long as
+    # the script keeps asking.
+    $execCmd = "cd /tmp && yes yes | python $remotePath 2>&1"
     $execResult = Invoke-SSHCommand -SessionId $sshSession.SessionId -Command $execCmd -TimeOut 300
 
     $rawOutputLines = @($execResult.Output) + @(($execResult.Error -join "`n") -split "`r?`n")
