@@ -5403,12 +5403,12 @@ Function New-PrepareManagementHostNetworking {
 
     $workloadDomain = $extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }
     $cluster = $workloadDomain.vsphereClusterDetails | Where-Object { $_.isDefault -eq "t" }
-    $clusterName = $cluster.name
     $clusterVdsDetails = $cluster.vdsDetails
 
     $vmMgmtVlanId = ($cluster.vdsDetails.portgroups | Where-Object { $_.transportType -eq "VM_MANAGEMENT" }).vlanId
 
-    $hostFQDN = $cluster.hosts[0].hostname
+    $az1Hosts = $cluster.azHostMapping.az1
+    $hostFQDN = $az1Hosts[0]
     $hostAdmin = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $hostFQDN) -and ($_.username -eq "root") }).username
     $hostAdminPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $hostFQDN) -and ($_.username -eq "root") }).password
 
@@ -5641,91 +5641,103 @@ Function New-PrepareManagementHostNetworking {
     If ($proposedConfigAccepted -eq "Y") {
         Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false -ErrorAction SilentlyContinue
 
-        Foreach ($clusterHost in $cluster.hosts) {
-            $currentHostFQDN = $clusterHost.hostname
-            $currentHostAdmin = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $currentHostFQDN) -and ($_.username -eq "root") }).username
-            $currentHostPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $currentHostFQDN) -and ($_.username -eq "root") }).password
+        If ($cluster.isStretched -eq "t") {
+            $azs = @("az1","az2")
+        } else {
+            $azs = @("az1")
+        }
 
-            LogMessage -type INFO -message "[$currentHostFQDN] Connecting to host"
-            $hostConnection = Connect-ViServer $currentHostFQDN -user $currentHostAdmin -password $currentHostPassword -ErrorAction Stop
+        Foreach ($az in $azs) {
+            $azHosts = $cluster.azHostMapping.$($az)
+            $clusterHostDetails = $cluster.hosts | Where-Object {$_.hostname -in $azHosts}
 
-            Foreach ($vss in $vssConfiguration) {
-                If ($vss.isManagementVss -and $vss.existingVssName) {
-                    $vssObject = Get-VirtualSwitch -VMHost $currentHostFQDN -Name $vss.existingVssName -errorAction silentlyContinue
-                    If ($vssObject) {
-                        LogMessage -type INFO -message "[$currentHostFQDN] Using existing vSS $($vss.existingVssName) for MANAGEMENT network"
-                        LogMessage -type INFO -message "[$currentHostFQDN] Updating MTU to $mtu on $($vss.existingVssName)"
-                        Set-VirtualSwitch -VirtualSwitch $vssObject -Mtu $mtu -Confirm:$false | Out-Null
-                    }
-                    Foreach ($nic in $vss.newNicNames) {
+            Foreach ($clusterHost in $clusterHostDetails) {
+                $currentHostFQDN = $clusterHost.hostname
+                $currentHostAdmin = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $currentHostFQDN) -and ($_.username -eq "root") }).username
+                $currentHostPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $currentHostFQDN) -and ($_.username -eq "root") }).password
+
+                LogMessage -type INFO -message "[$currentHostFQDN] Connecting to host"
+                $hostConnection = Connect-ViServer $currentHostFQDN -user $currentHostAdmin -password $currentHostPassword -ErrorAction Stop
+
+                Foreach ($vss in $vssConfiguration) {
+                    If ($vss.isManagementVss -and $vss.existingVssName) {
+                        $vssObject = Get-VirtualSwitch -VMHost $currentHostFQDN -Name $vss.existingVssName -errorAction silentlyContinue
+                        If ($vssObject) {
+                            LogMessage -type INFO -message "[$currentHostFQDN] Using existing vSS $($vss.existingVssName) for MANAGEMENT network"
+                            LogMessage -type INFO -message "[$currentHostFQDN] Updating MTU to $mtu on $($vss.existingVssName)"
+                            Set-VirtualSwitch -VirtualSwitch $vssObject -Mtu $mtu -Confirm:$false | Out-Null
+                        }
+                        Foreach ($nic in $vss.newNicNames) {
+                            $vssObject = Get-VirtualSwitch -VMHost $currentHostFQDN -Name $vss.existingVssName
+                            If ($vssObject.ExtensionData.Pnic -notlike "*$nic") {
+                                LogMessage -type INFO -message "[$currentHostFQDN] Adding $nic to $($vss.existingVssName)"
+                                $vmnicToAdd = Get-VMHostNetworkAdapter -VMHost $currentHostFQDN -Physical -Name $nic
+                                Add-VirtualSwitchPhysicalNetworkAdapter -VirtualSwitch $vssObject -VMHostPhysicalNic $vmnicToAdd -confirm:$false
+                            } else {
+                                LogMessage -type INFO -message "[$currentHostFQDN] $nic already part of $($vss.existingVssName). Skipping"
+                            }
+                        }
+                        $trafficTypesPortgroupName = "TRAFFIC_TYPES-" + ($vss.vdsNetworks -join "-")
                         $vssObject = Get-VirtualSwitch -VMHost $currentHostFQDN -Name $vss.existingVssName
-                        If ($vssObject.ExtensionData.Pnic -notlike "*$nic") {
-                            LogMessage -type INFO -message "[$currentHostFQDN] Adding $nic to $($vss.existingVssName)"
-                            $vmnicToAdd = Get-VMHostNetworkAdapter -VMHost $currentHostFQDN -Physical -Name $nic
-                            Add-VirtualSwitchPhysicalNetworkAdapter -VirtualSwitch $vssObject -VMHostPhysicalNic $vmnicToAdd -confirm:$false
+                        $pgExists = Get-VirtualPortGroup -VirtualSwitch $vssObject -Name $trafficTypesPortgroupName -ErrorAction SilentlyContinue
+                        If (!$pgExists) {
+                            LogMessage -type INFO -message "[$currentHostFQDN] Creating portgroup $trafficTypesPortgroupName on $($vss.existingVssName)"
+                            New-VirtualPortGroup -VirtualSwitch $vssObject -Name $trafficTypesPortgroupName | Out-Null
                         } else {
-                            LogMessage -type INFO -message "[$currentHostFQDN] $nic already part of $($vss.existingVssName). Skipping"
+                            LogMessage -type INFO -message "[$currentHostFQDN] Portgroup $trafficTypesPortgroupName already exists. Skipping"
                         }
-                    }
-                    $trafficTypesPortgroupName = "TRAFFIC_TYPES-" + ($vss.vdsNetworks -join "-")
-                    $vssObject = Get-VirtualSwitch -VMHost $currentHostFQDN -Name $vss.existingVssName
-                    $pgExists = Get-VirtualPortGroup -VirtualSwitch $vssObject -Name $trafficTypesPortgroupName -ErrorAction SilentlyContinue
-                    If (!$pgExists) {
-                        LogMessage -type INFO -message "[$currentHostFQDN] Creating portgroup $trafficTypesPortgroupName on $($vss.existingVssName)"
-                        New-VirtualPortGroup -VirtualSwitch $vssObject -Name $trafficTypesPortgroupName | Out-Null
+                        If ("VM_MANAGEMENT" -in $vss.vdsNetworks) {
+                            $vmMgmtPgExists = Get-VirtualPortGroup -VirtualSwitch $vssObject -Name "vm_mgmt" -ErrorAction SilentlyContinue
+                            If (!$vmMgmtPgExists) {
+                                LogMessage -type INFO -message "[$currentHostFQDN] Creating portgroup vm_mgmt on $($vss.existingVssName) with VLAN $vmMgmtVlanId"
+                                New-VirtualPortGroup -VirtualSwitch $vssObject -Name "vm_mgmt" -VLanId $vmMgmtVlanId | Out-Null
+                            } else {
+                                LogMessage -type INFO -message "[$currentHostFQDN] Portgroup vm_mgmt already exists. Skipping"
+                            }
+                        }
                     } else {
-                        LogMessage -type INFO -message "[$currentHostFQDN] Portgroup $trafficTypesPortgroupName already exists. Skipping"
-                    }
-                    If ("VM_MANAGEMENT" -in $vss.vdsNetworks) {
-                        $vmMgmtPgExists = Get-VirtualPortGroup -VirtualSwitch $vssObject -Name "vm_mgmt" -ErrorAction SilentlyContinue
-                        If (!$vmMgmtPgExists) {
-                            LogMessage -type INFO -message "[$currentHostFQDN] Creating portgroup vm_mgmt on $($vss.existingVssName) with VLAN $vmMgmtVlanId"
-                            New-VirtualPortGroup -VirtualSwitch $vssObject -Name "vm_mgmt" -VLanId $vmMgmtVlanId | Out-Null
+                        $vssExists = Get-VirtualSwitch -VMHost $currentHostFQDN -Name $vss.vssName -errorAction silentlyContinue
+                        If (!($vssExists)) {
+                            LogMessage -type INFO -message "[$currentHostFQDN] Creating new vSS $($vss.vssName) with MTU $mtu"
+                            New-VirtualSwitch -VMHost $currentHostFQDN -Name $vss.vssName -mtu $mtu | Out-Null
                         } else {
-                            LogMessage -type INFO -message "[$currentHostFQDN] Portgroup vm_mgmt already exists. Skipping"
+                            LogMessage -type INFO -message "[$currentHostFQDN] vSS $($vss.vssName) already exists. Skipping creation"
                         }
-                    }
-                } else {
-                    $vssExists = Get-VirtualSwitch -VMHost $currentHostFQDN -Name $vss.vssName -errorAction silentlyContinue
-                    If (!($vssExists)) {
-                        LogMessage -type INFO -message "[$currentHostFQDN] Creating new vSS $($vss.vssName) with MTU $mtu"
-                        New-VirtualSwitch -VMHost $currentHostFQDN -Name $vss.vssName -mtu $mtu | Out-Null
-                    } else {
-                        LogMessage -type INFO -message "[$currentHostFQDN] vSS $($vss.vssName) already exists. Skipping creation"
-                    }
 
-                    $vssObject = Get-VirtualSwitch -VMHost $currentHostFQDN -Name $vss.vssName
-                    Foreach ($nic in $vss.nicNames) {
-                        If ($vssObject.ExtensionData.Pnic -notlike "*$nic") {
-                            LogMessage -type INFO -message "[$currentHostFQDN] Adding $nic to $($vss.vssName)"
-                            $vmnicToAdd = Get-VMHostNetworkAdapter -VMHost $currentHostFQDN -Physical -Name $nic
-                            Add-VirtualSwitchPhysicalNetworkAdapter -VirtualSwitch $vssObject -VMHostPhysicalNic $vmnicToAdd -confirm:$false
-                        } else {
-                            LogMessage -type INFO -message "[$currentHostFQDN] $nic already part of $($vss.vssName). Skipping"
+                        $vssObject = Get-VirtualSwitch -VMHost $currentHostFQDN -Name $vss.vssName
+                        Foreach ($nic in $vss.nicNames) {
+                            If ($vssObject.ExtensionData.Pnic -notlike "*$nic") {
+                                LogMessage -type INFO -message "[$currentHostFQDN] Adding $nic to $($vss.vssName)"
+                                $vmnicToAdd = Get-VMHostNetworkAdapter -VMHost $currentHostFQDN -Physical -Name $nic
+                                Add-VirtualSwitchPhysicalNetworkAdapter -VirtualSwitch $vssObject -VMHostPhysicalNic $vmnicToAdd -confirm:$false
+                            } else {
+                                LogMessage -type INFO -message "[$currentHostFQDN] $nic already part of $($vss.vssName). Skipping"
+                            }
                         }
-                    }
-                    $trafficTypesPortgroupName = "TRAFFIC_TYPES-" + ($vss.vdsNetworks -join "-")
-                    $vssObject = Get-VirtualSwitch -VMHost $currentHostFQDN -Name $vss.vssName
-                    $pgExists = Get-VirtualPortGroup -VirtualSwitch $vssObject -Name $trafficTypesPortgroupName -ErrorAction SilentlyContinue
-                    If (!$pgExists) {
-                        LogMessage -type INFO -message "[$currentHostFQDN] Creating portgroup $trafficTypesPortgroupName on $($vss.vssName)"
-                        New-VirtualPortGroup -VirtualSwitch $vssObject -Name $trafficTypesPortgroupName | Out-Null
-                    } else {
-                        LogMessage -type INFO -message "[$currentHostFQDN] Portgroup $trafficTypesPortgroupName already exists. Skipping"
-                    }
-                    If ("VM_MANAGEMENT" -in $vss.vdsNetworks) {
-                        $vmMgmtPgExists = Get-VirtualPortGroup -VirtualSwitch $vssObject -Name "vm_mgmt" -ErrorAction SilentlyContinue
-                        If (!$vmMgmtPgExists) {
-                            LogMessage -type INFO -message "[$currentHostFQDN] Creating portgroup vm_mgmt on $($vss.vssName) with VLAN $vmMgmtVlanId"
-                            New-VirtualPortGroup -VirtualSwitch $vssObject -Name "vm_mgmt" -VLanId $vmMgmtVlanId | Out-Null
+                        $trafficTypesPortgroupName = "TRAFFIC_TYPES-" + ($vss.vdsNetworks -join "-")
+                        $vssObject = Get-VirtualSwitch -VMHost $currentHostFQDN -Name $vss.vssName
+                        $pgExists = Get-VirtualPortGroup -VirtualSwitch $vssObject -Name $trafficTypesPortgroupName -ErrorAction SilentlyContinue
+                        If (!$pgExists) {
+                            LogMessage -type INFO -message "[$currentHostFQDN] Creating portgroup $trafficTypesPortgroupName on $($vss.vssName)"
+                            New-VirtualPortGroup -VirtualSwitch $vssObject -Name $trafficTypesPortgroupName | Out-Null
                         } else {
-                            LogMessage -type INFO -message "[$currentHostFQDN] Portgroup vm_mgmt already exists. Skipping"
+                            LogMessage -type INFO -message "[$currentHostFQDN] Portgroup $trafficTypesPortgroupName already exists. Skipping"
+                        }
+                        If ("VM_MANAGEMENT" -in $vss.vdsNetworks) {
+                            $vmMgmtPgExists = Get-VirtualPortGroup -VirtualSwitch $vssObject -Name "vm_mgmt" -ErrorAction SilentlyContinue
+                            If (!$vmMgmtPgExists) {
+                                LogMessage -type INFO -message "[$currentHostFQDN] Creating portgroup vm_mgmt on $($vss.vssName) with VLAN $vmMgmtVlanId"
+                                New-VirtualPortGroup -VirtualSwitch $vssObject -Name "vm_mgmt" -VLanId $vmMgmtVlanId | Out-Null
+                            } else {
+                                LogMessage -type INFO -message "[$currentHostFQDN] Portgroup vm_mgmt already exists. Skipping"
+                            }
                         }
                     }
                 }
+                Disconnect-VIServer -Server $currentHostFQDN -Force -Confirm:$false
             }
-            Disconnect-VIServer -Server $currentHostFQDN -Force -Confirm:$false
         }
+
         $StopWatch.Stop()
         LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
     } else {
