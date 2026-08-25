@@ -4,6 +4,7 @@
 not, gets the latest keys from the corresponding components and updates in known_hosts file.
 
 """
+import argparse
 import base64
 import os
 import traceback
@@ -110,6 +111,19 @@ class RefreshSSHKeys:
         self.log.info('There are {} SSH keys in known_hosts'.format(len(known_hosts["knownHosts"])))
         return known_hosts
 
+    def toLabels(self, value):
+        """Lowercased matchable labels for a host value: itself, plus its short name if it
+        looks like an FQDN (e.g. 'esx01.domain.local' -> {'esx01.domain.local', 'esx01'})."""
+        if not value:
+            return set()
+        value = value.strip().lower()
+        labels = {value}
+        if self.isFqdn(value):
+            short = value.split('.')[0]
+            if short:
+                labels.add(short)
+        return labels
+
     def isFqdn(self, address):
         try:
             socket.inet_aton(address)
@@ -141,15 +155,22 @@ class RefreshSSHKeys:
         return lines[-1].strip() if lines else ''
 
     # flake8: noqa: C901
-    def getAndConfirmSSHKeyUpdate(self, known_hosts):
+    def getAndConfirmSSHKeyUpdate(self, known_hosts, targets=None):
         fetch_keys_failed_comps = list()
         update_comps = list()
         not_update_comps = list()
+        skipped_comps = list()
         for knownhost_entry in known_hosts["knownHosts"]:
             host = knownhost_entry["host"]
             key_type = knownhost_entry["keyType"]
             port = knownhost_entry.get("port")
             fqdn = socket.getfqdn(host)
+
+            if targets and not (targets & (self.toLabels(host) | self.toLabels(fqdn))):
+                self.log.info('Skipping {} (not in the requested target list)'.format(host))
+                skipped_comps.append(fqdn)
+                continue
+
             try:
                 current_fingerprint = self.getFingerprint(host, key_type, port)
                 if not current_fingerprint:
@@ -184,6 +205,8 @@ class RefreshSSHKeys:
                 print('\nFailed to fetch {} key for {}. Retry the operation after remediating the problem: {}'.format(
                     key_type, fqdn, e))
 
+        if skipped_comps:
+            print('\nSkipped (outside requested target list): {}'.format(skipped_comps))
         if fetch_keys_failed_comps:
             print('\nFetch SSH key was failed for {}'.format(fetch_keys_failed_comps))
         if not_update_comps:
@@ -208,11 +231,25 @@ class RefreshSSHKeys:
         """
         Execute refresh SSH keys operations
         """
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--targets', default=None,
+                            help='Comma-separated list of hostnames, IPs, FQDNs, or short names '
+                                 '(e.g. ESXi hosts or a specific appliance) to restrict the '
+                                 'refresh to. Matches against each known_hosts entry\'s host '
+                                 'value and its resolved FQDN. Omit to process every known_hosts '
+                                 'entry, matching the original unfiltered behavior.')
+        args = parser.parse_args()
+        targets = None
+        if args.targets:
+            targets = set()
+            for target in args.targets.split(','):
+                targets |= self.toLabels(target)
+
         try:
             print('Starting {}Refresh SSH keys{} operation..'.format(GREEN_PREFIX, COLOR_POSTFIX))
             print('Logs: {}'.format(LOG_FILENAME))
             known_hosts = self.getAllSSHKeys()
-            self.getAndConfirmSSHKeyUpdate(known_hosts)
+            self.getAndConfirmSSHKeyUpdate(known_hosts, targets)
             self.updateSSHKeys(known_hosts)
             print('\nRefreshed SSH keys successfully!!!')
         except Exception as e:
