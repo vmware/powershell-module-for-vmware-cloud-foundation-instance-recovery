@@ -8378,10 +8378,10 @@ Function Invoke-SddcManagerSSHKeyRefresh {
     non-interactively -- it is not a limitation this cmdlet works around.
 
     .EXAMPLE
-    Invoke-SddcManagerSSHKeyRefresh -vCenterFQDN "sfo-w02-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@sfo-w02.local" -vCenterAdminPassword "VMw@re1!VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -clusterName "sfo-w02-cl02" -targetType host -scope cluster -VcfUserPassword "VMw@re1!VMw@re1!" -RootPassword "VMw@re1!VMw@re1!"
+    Invoke-SddcManagerSSHKeyRefresh -vCenterFQDN "sfo-w02-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@sfo-w02.local" -vCenterAdminPassword "VMw@re1!VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -clusterName "sfo-w02-cl02" -targetType host -scope cluster -VcfUserPassword "VMw@re1!VMw@re1!"
 
     .EXAMPLE
-    Invoke-SddcManagerSSHKeyRefresh -vCenterFQDN "sfo-w02-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@sfo-w02.local" -vCenterAdminPassword "VMw@re1!VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -clusterName "sfo-w02-cl02" -targetType appliance -scope domain -VcfUserPassword "VMw@re1!VMw@re1!" -RootPassword "VMw@re1!VMw@re1!"
+    Invoke-SddcManagerSSHKeyRefresh -vCenterFQDN "sfo-w02-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@sfo-w02.local" -vCenterAdminPassword "VMw@re1!VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -clusterName "sfo-w02-cl02" -targetType appliance -scope domain -VcfUserPassword "VMw@re1!VMw@re1!"
 
     .PARAMETER vCenterFQDN
     FQDN of the vCenter instance hosting the cluster/domain to target
@@ -8406,9 +8406,6 @@ Function Invoke-SddcManagerSSHKeyRefresh {
 
     .PARAMETER VcfUserPassword
     Password for the vcf SSH user on the SDDC Manager appliance
-
-    .PARAMETER RootPassword
-    Root password for the SDDC Manager appliance (used for sudo elevation and, when -targetType is 'appliance', for the vCenter VAMI SSH-enable call)
     #>
 
     Param(
@@ -8419,8 +8416,7 @@ Function Invoke-SddcManagerSSHKeyRefresh {
         [Parameter (Mandatory = $true)][String] $clusterName,
         [Parameter (Mandatory = $true)][ValidateSet("host", "appliance")][String] $targetType,
         [Parameter (Mandatory = $true)][ValidateSet("cluster", "domain")][String] $scope,
-        [Parameter (Mandatory = $true)][String] $VcfUserPassword,
-        [Parameter (Mandatory = $true)][String] $RootPassword
+        [Parameter (Mandatory = $true)][String] $VcfUserPassword
     )
 
     $jumpboxName = hostname
@@ -8514,11 +8510,10 @@ Function Invoke-SddcManagerSSHKeyRefresh {
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
 
     $matchTokens = @($matchTokens | Where-Object { $_ } | Sort-Object -Unique)
-    LogMessage -type INFO -message "[$SddcManagerFqdn] Output will be filtered to lines matching: $($matchTokens -join ', ')"
 
-    # Upload refreshsshkeys.py to SDDC Manager via SSH, matching the base64-pipe upload pattern used
-    # elsewhere in this module (e.g. Invoke-VcfmsFleetComponentRegistration) -- avoids any SCP binary
-    # dependency and strips CR bytes so the file has Unix line endings regardless of local checkout.
+    # Upload refreshsshkeys.py to SDDC Manager via SCP (Set-SCPItem), matching the upload pattern
+    # used elsewhere in this module (e.g. New-UploadAndModifySDDCManagerBackup) -- the base64-pipe
+    # approach used by some other functions in this module failed for this script.
     $localScript = Join-Path -Path $PSScriptRoot -ChildPath "scripts/refreshsshkeys.py"
     if (-not (Test-Path $localScript)) {
         LogMessage -type ERROR -message "[$jumpboxName] Script not found: $localScript"
@@ -8535,42 +8530,92 @@ Function Invoke-SddcManagerSSHKeyRefresh {
     } Until ($sshSession)
 
     $remotePath = "/tmp/refreshsshkeys.py"
-    LogMessage -type INFO -message "[$SddcManagerFqdn] Uploading refreshsshkeys.py to $remotePath"
-    $scriptBytes = [System.IO.File]::ReadAllBytes($localScript)
-    $scriptBytes = [byte[]]($scriptBytes | Where-Object { $_ -ne 0x0D })
-    $b64 = [System.Convert]::ToBase64String($scriptBytes)
-    $uploadCmd = "printf '%s' '$b64' | base64 -d > $remotePath && chmod +x $remotePath"
-    $uploadResult = Invoke-SSHCommand -SessionId $sshSession.SessionId -Command $uploadCmd -TimeOut 60
-    if ($uploadResult.ExitStatus -ne 0) {
-        LogMessage -type ERROR -message "[$SddcManagerFqdn] Script upload failed (exit $($uploadResult.ExitStatus)): $($uploadResult.Error -join ' ')"
+    LogMessage -type INFO -message "[$SddcManagerFqdn] Uploading refreshsshkeys.py to $remotePath via SCP"
+    Try {
+        Set-SCPItem -ComputerName $SddcManagerFqdn -Credential $mycreds -Path $localScript -Destination "/tmp" -KnownHost $inmem -ErrorAction Stop | Out-Null
+    } Catch {
+        LogMessage -type ERROR -message "[$SddcManagerFqdn] SCP upload threw an exception: $($_.Exception.Message)"
+        Remove-SSHSession -SSHSession $sshSession | Out-Null
+        return
+    }
+
+    # Verify from the exact same SSH session used for upload/chmod/execution -- if the vcf user's SCP
+    # session lands in a different filesystem view/namespace than another login path used to check
+    # manually (e.g. a separate root console), that mismatch would otherwise look like a silent failure.
+    $verifyResult = Invoke-SSHCommand -SessionId $sshSession.SessionId -Command "ls -la $remotePath" -TimeOut 15
+    LogMessage -type INFO -message "[$SddcManagerFqdn] Post-upload verification (as seen by this SSH session): $($verifyResult.Output -join ' ')"
+    if ($verifyResult.ExitStatus -ne 0) {
+        LogMessage -type ERROR -message "[$SddcManagerFqdn] Uploaded file not found at $remotePath from this SSH session (exit $($verifyResult.ExitStatus)): $($verifyResult.Error -join ' ')"
+        Remove-SSHSession -SSHSession $sshSession | Out-Null
+        return
+    }
+
+    $chmodResult = Invoke-SSHCommand -SessionId $sshSession.SessionId -Command "chmod +x $remotePath" -TimeOut 15
+    if ($chmodResult.ExitStatus -ne 0) {
+        LogMessage -type ERROR -message "[$SddcManagerFqdn] chmod +x on uploaded script failed (exit $($chmodResult.ExitStatus)): $($chmodResult.Error -join ' ')"
         Remove-SSHSession -SSHSession $sshSession | Out-Null
         return
     }
 
     LogMessage -type INFO -message "[$SddcManagerFqdn] Running refreshsshkeys.py"
-    $execCmd = "echo '$RootPassword' | sudo -S bash -c `"cd /tmp && echo yes | python $remotePath`" 2>&1"
+    # Run exactly as specified -- as the vcf user, no root elevation. vcf already owns the uploaded
+    # file (confirmed via the post-upload ls -la above) and the script only needs to reach a localhost
+    # HTTP endpoint and run ssh-keyscan, neither of which requires root.
+    $execCmd = "cd /tmp && echo yes | python $remotePath 2>&1"
     $execResult = Invoke-SSHCommand -SessionId $sshSession.SessionId -Command $execCmd -TimeOut 300
 
-    # Filter the raw output down to only lines mentioning one of the enabled targets -- the script's
-    # own known_hosts source covers every component SDDC Manager tracks, not just these targets, and
-    # everything else (including the script's generic header/footer/status lines) is discarded.
     $rawOutputLines = @($execResult.Output) + @(($execResult.Error -join "`n") -split "`r?`n")
-    $rawOutputLines = @($rawOutputLines | Where-Object { $_ -ne '' -and $_ -notmatch '^\[sudo\]' })
-    Foreach ($line in $rawOutputLines) {
-        Foreach ($token in $matchTokens) {
-            if ($line -like "*$token*") {
+    $rawOutputLines = @($rawOutputLines | Where-Object { $_ -ne '' })
+
+    if ($execResult.ExitStatus -ne 0) {
+        # The filter below only makes sense to apply when the script actually ran its per-host logic
+        # (in which case the noise it's meant to hide would still be present). On a non-zero exit the
+        # cause could be anything -- an early failure before any host-specific line is ever printed --
+        # so filtering here would silently hide the only diagnostic available. Surface everything.
+        LogMessage -type ERROR -message "[$SddcManagerFqdn] refreshsshkeys.py exited with code $($execResult.ExitStatus). Full unfiltered output:"
+        Foreach ($line in $rawOutputLines) {
+            LogMessage -type ERROR -message "[$SddcManagerFqdn] $line"
+        }
+    } else {
+        # Filter the raw output down to lines mentioning one of the enabled targets, PLUS the script's own
+        # generic status/summary lines. Those status lines (e.g. "No components are selected or not required
+        # for SSH key update. Exiting." on a no-op, or "Refreshed SSH keys successfully!!!" on a real update)
+        # never contain a host token, so without this they were being silently discarded on every run
+        # regardless of outcome -- making a genuine success indistinguishable from a silent no-op or failure.
+        $genericStatusPatterns = @(
+            'Starting Refresh SSH keys operation',
+            '^Logs:',
+            'No components are selected or not required',
+            'Refreshed SSH keys successfully',
+            'Refresh SSH keys operation failed',
+            'SSH keys refresh completed',
+            'Fetch SSH key was failed for',
+            'SSH keys will not be updated for'
+        )
+        Foreach ($line in $rawOutputLines) {
+            $isGenericStatus = $false
+            Foreach ($pattern in $genericStatusPatterns) {
+                if ($line -match $pattern) { $isGenericStatus = $true; break }
+            }
+            if ($isGenericStatus) {
                 LogMessage -type INFO -message "[$SddcManagerFqdn] $line"
-                break
+                continue
+            }
+            Foreach ($token in $matchTokens) {
+                if ($line -like "*$token*") {
+                    LogMessage -type INFO -message "[$SddcManagerFqdn] $line"
+                    break
+                }
             }
         }
     }
 
-    Invoke-SSHCommand -SessionId $sshSession.SessionId -Command "rm -f $remotePath" -TimeOut 15 | Out-Null
-    Remove-SSHSession -SSHSession $sshSession | Out-Null
-
-    if ($execResult.ExitStatus -ne 0) {
-        LogMessage -type WARNING -message "[$SddcManagerFqdn] refreshsshkeys.py exited with code $($execResult.ExitStatus)"
+    if ($execResult.ExitStatus -eq 0) {
+        Invoke-SSHCommand -SessionId $sshSession.SessionId -Command "rm -f $remotePath" -TimeOut 15 | Out-Null
+    } else {
+        LogMessage -type WARNING -message "[$SddcManagerFqdn] Leaving $remotePath in place on SDDC Manager for manual inspection since the run failed"
     }
+    Remove-SSHSession -SSHSession $sshSession | Out-Null
 
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
