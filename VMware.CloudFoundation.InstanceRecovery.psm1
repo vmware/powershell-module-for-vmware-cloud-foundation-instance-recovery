@@ -8124,14 +8124,14 @@ Function Update-DomainDatastoreID {
 }
 Export-ModuleMember -Function Update-DomainDatastoreID
 
-Function Update-DomainHostSourceIDs {
+Function Update-ClusterHostSourceIDs {
     <#
     .SYNOPSIS
     Updates the source_id (vCenter host MoRef) in the SDDC Manager platform database for each host
     currently in a specified cluster.
 
     .DESCRIPTION
-    The Update-DomainHostSourceIDs cmdlet locates the workload domain whose vCenter matches the
+    The Update-ClusterHostSourceIDs cmdlet locates the workload domain whose vCenter matches the
     supplied FQDN, finds the named cluster within that domain, connects to vCenter and enumerates
     every host currently in that cluster along with its current MoRef, then connects to the SDDC
     Manager appliance via SSH and compares each host's persisted source_id (in the public.host table,
@@ -8147,7 +8147,7 @@ Function Update-DomainHostSourceIDs {
     full FQDN stored in public.host.hostname.
 
     .EXAMPLE
-    Update-DomainHostSourceIDs -extractedSDDCDataFile ".\extracted-sddc-data.json" -vCenterFQDN "sfo-w02-vc01.sfo.rainpole.io" -clusterName "sfo-w02-cl02" -VcfUserPassword "VMw@re1!VMw@re1!" -RootPassword "VMw@re1!VMw@re1!"
+    Update-ClusterHostSourceIDs -extractedSDDCDataFile ".\extracted-sddc-data.json" -vCenterFQDN "sfo-w02-vc01.sfo.rainpole.io" -clusterName "sfo-w02-cl02" -VcfUserPassword "VMw@re1!VMw@re1!" -RootPassword "VMw@re1!VMw@re1!"
 
     .PARAMETER extractedSDDCDataFile
     Relative or absolute path to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup).
@@ -8347,7 +8347,7 @@ Function Update-DomainHostSourceIDs {
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
 }
-Export-ModuleMember -Function Update-DomainHostSourceIDs
+Export-ModuleMember -Function Update-ClusterHostSourceIDs
 
 Function Invoke-SddcManagerSSHKeyRefresh {
     <#
