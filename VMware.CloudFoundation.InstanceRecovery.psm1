@@ -5204,6 +5204,38 @@ Function New-RebuiltVdsConfiguration {
             }
         }
 
+        #region Retry NSX Transport Node Profile Realization
+        # NSX does not reliably auto-trigger host transport node installation immediately after hosts are
+        # added to a VDS backing an NSX-prepared cluster. Observed live: the parent/sub Transport Node
+        # Profile mapping was already correct, but installation only started after manually re-running
+        # "Configure NSX (Advanced)" in the UI with no changes. This calls the documented NSX API that the
+        # UI action invokes, to force NSX to retry realization of the profile against the cluster.
+        LogMessage -type INFO -message "[$jumpboxName] Requesting NSX to retry Transport Node Profile realization for '$clusterName'"
+        $nsxManagerFqdn = ($workloadDomain.nsxNodeDetails | Select-Object -First 1).hostname
+        $nsxManagerAdmin = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain.domainName) -and ($_.username -eq "admin") }).username
+        $nsxManagerAdminPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain.domainName) -and ($_.username -eq "admin") }).password
+        $nsxHeaders = VCFIRCreateHeader -username $nsxManagerAdmin -password $nsxManagerAdminPassword
+
+        Try {
+            $clusterComputeCollection = (Invoke-RestMethod -Uri "https://$nsxManagerFqdn/api/v1/fabric/compute-collections" -Headers $nsxHeaders -Method Get -SkipCertificateCheck -ErrorAction Stop).results | Where-Object { $_.display_name -eq $clusterName }
+
+            If (!$clusterComputeCollection) {
+                LogMessage -type WARNING -message "[$nsxManagerFqdn] No compute collection found matching cluster name '$clusterName'. Skipping Transport Node Profile realization retry."
+            } Else {
+                $clusterTransportNodeCollection = (Invoke-RestMethod -Uri "https://$nsxManagerFqdn/policy/api/v1/infra/sites/default/enforcement-points/default/transport-node-collections" -Headers $nsxHeaders -Method Get -SkipCertificateCheck -ErrorAction Stop).results | Where-Object { $_.compute_collection_id -eq $clusterComputeCollection.external_id } | Select-Object -First 1
+
+                If (!$clusterTransportNodeCollection) {
+                    LogMessage -type WARNING -message "[$nsxManagerFqdn] No Transport Node Collection found for cluster '$clusterName'. Skipping Transport Node Profile realization retry."
+                } Else {
+                    Invoke-RestMethod -Uri "https://$nsxManagerFqdn/api/v1/transport-node-collections/$($clusterTransportNodeCollection.id)?action=retry_profile_realization" -Headers $nsxHeaders -Method Post -SkipCertificateCheck -ErrorAction Stop | Out-Null
+                    LogMessage -type INFO -message "[$nsxManagerFqdn] Requested retry of Transport Node Profile realization for Transport Node Collection $($clusterTransportNodeCollection.id)"
+                }
+            }
+        } Catch {
+            LogMessage -type WARNING -message "[$nsxManagerFqdn] Failed to trigger NSX Transport Node Profile realization retry: $($_.Exception.Message)"
+        }
+        #endregion Retry NSX Transport Node Profile Realization
+
         Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
         $StopWatch.Stop()
         LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
