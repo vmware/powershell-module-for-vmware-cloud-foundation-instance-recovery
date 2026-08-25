@@ -3395,7 +3395,6 @@ Function Add-HostsToCluster {
         }
         $az2Hosts = $clusterDetails.azHostMapping.az2
 
-        LogMessage -type INFO -message "[$clusterName] Discovering NSX Sub-Cluster"
         $nsxManagerFqdn = ($workloadDomain.nsxNodeDetails | Select-Object -First 1).hostname
         $nsxManagerAdmin = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain.domainName) -and ($_.username -eq "admin") }).username
         $nsxManagerAdminPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain.domainName) -and ($_.username -eq "admin") }).password
