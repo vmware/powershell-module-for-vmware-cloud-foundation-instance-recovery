@@ -3519,7 +3519,6 @@ Function Add-HostsToCluster {
                 if ([string]::IsNullOrWhiteSpace($hostSwitchId)) {
                     Throw "Get-VDSwitch -Name '$hostSwitchName' did not return a UUID via .ExtensionData.Uuid."
                 }
-                LogMessage -type INFO -message "[$clusterName] Resolved host_switch_id for '$hostSwitchName': $hostSwitchId"
 
                 $newSubClusterConfigEntry = @{
                     host_switch_config_sources = @(
@@ -3533,7 +3532,7 @@ Function Add-HostsToCluster {
                 $tncObj | Add-Member -NotePropertyName "sub_cluster_config" -NotePropertyValue (@($existingSubClusterConfig) + $newSubClusterConfigEntry) -Force
                 $tncBody = $tncObj | ConvertTo-Json -Depth 10
                 Invoke-RestMethod -Uri $tncUrl -Headers $headers -Method Put -Body $tncBody -ContentType "application/json" -SkipCertificateCheck -ErrorAction Stop | Out-Null
-                LogMessage -type INFO -message "[$clusterName] Mapped Sub-Cluster '$($targetSubCluster.SubClusterName)' onto TransportNodeCollection $($tnc.id)"
+                LogMessage -type INFO -message "[$clusterName] Mapped Sub-Cluster to TransportNodeCollection $($tnc.id)"
             }
         }
     }
@@ -5313,7 +5312,7 @@ Function Watch-NsxHostTransportNodeInstallation {
         Return
     }
 
-    LogMessage -type INFO -message "[$nsxManagerFqdn] Monitoring NSX installation on $($clusterTransportNodes.Count) host transport node(s) in cluster '$clusterName'"
+    LogMessage -type WAIT -message "[$nsxManagerFqdn] Monitoring NSX installation on $($clusterTransportNodes.Count) host transport node(s) in cluster '$clusterName'"
 
     $completedIds = @()
     $monitorCycle = 0
@@ -5361,7 +5360,7 @@ Function Watch-NsxHostTransportNodeInstallation {
         }
 
         If ($monitorCycle % $reportEveryNCycles -eq 0) {
-            LogMessage -type WAIT -message "[$nsxManagerFqdn] $($pendingNodes.Count) node(s) still pending."
+            LogMessage -type INFO -message "[$nsxManagerFqdn] $($pendingNodes.Count) node(s) still pending."
         }
         Start-Sleep -Seconds $pollIntervalSeconds
 
