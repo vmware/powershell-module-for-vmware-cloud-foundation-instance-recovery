@@ -8590,7 +8590,7 @@ Function Invoke-SddcManagerSSHKeyRefresh {
     } Until ($sshSession)
 
     $remotePath = "/tmp/refreshsshkeys.py"
-    LogMessage -type INFO -message "[$SddcManagerFqdn] Uploading refreshsshkeys.py to $remotePath via SCP"
+    LogMessage -type INFO -message "[$SddcManagerFqdn] Uploading refreshsshkeys.py to $remotePath"
     Try {
         Set-SCPItem -ComputerName $SddcManagerFqdn -Credential $mycreds -Path $localScript -Destination "/tmp" -KnownHost $inmem -ErrorAction Stop | Out-Null
     } Catch {
@@ -8603,7 +8603,6 @@ Function Invoke-SddcManagerSSHKeyRefresh {
     # session lands in a different filesystem view/namespace than another login path used to check
     # manually (e.g. a separate root console), that mismatch would otherwise look like a silent failure.
     $verifyResult = Invoke-SSHCommand -SessionId $sshSession.SessionId -Command "ls -la $remotePath" -TimeOut 15
-    LogMessage -type INFO -message "[$SddcManagerFqdn] Post-upload verification (as seen by this SSH session): $($verifyResult.Output -join ' ')"
     if ($verifyResult.ExitStatus -ne 0) {
         LogMessage -type ERROR -message "[$SddcManagerFqdn] Uploaded file not found at $remotePath from this SSH session (exit $($verifyResult.ExitStatus)): $($verifyResult.Error -join ' ')"
         Remove-SSHSession -SSHSession $sshSession | Out-Null
@@ -8668,12 +8667,6 @@ Function Invoke-SddcManagerSSHKeyRefresh {
                 }
             }
         }
-    }
-
-    if ($execResult.ExitStatus -eq 0) {
-        Invoke-SSHCommand -SessionId $sshSession.SessionId -Command "rm -f $remotePath" -TimeOut 15 | Out-Null
-    } else {
-        LogMessage -type WARNING -message "[$SddcManagerFqdn] Leaving $remotePath in place on SDDC Manager for manual inspection since the run failed"
     }
     Remove-SSHSession -SSHSession $sshSession | Out-Null
 
