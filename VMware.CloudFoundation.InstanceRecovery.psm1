@@ -6953,9 +6953,9 @@ Function Clear-vCenterAlarms
     # Execute the bulk clear (Passing NO specific flags inside the filter clears ALL active alarms)
     try {
         $alarmManager.ClearTriggeredAlarms($filter)
-        Write-Host "Successfully cleared all active alarms across vCenter." -ForegroundColor Green
+        LogMessage -type INFO -message "[$vcenterFQDN] Successfully cleared all active alarms"
     } catch {
-        Write-Error "Failed to clear alarms: $_"
+        LogMessage -type ERROR -message "$vcenterFQDN] Failed to clear alarms: $_"
     }
     Disconnect-VIServer * -confirm:$false
     $StopWatch.Stop()
