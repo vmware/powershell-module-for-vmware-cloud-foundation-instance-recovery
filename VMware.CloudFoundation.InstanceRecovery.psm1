@@ -2134,6 +2134,227 @@ Function New-UploadAndModifySDDCManagerBackup {
 }
 Export-ModuleMember -Function New-UploadAndModifySDDCManagerBackup
 
+Function Get-BackupsFromSFTPServer {
+    <#
+    .SYNOPSIS
+    Retrieves and displays VCF Fleet component backup information from a remote SFTP server.
+
+    .DESCRIPTION
+    The Get-BackupsFromSFTPServer cmdlet connects to a remote SFTP server and walks the backup folder structure
+    (<sftpServerBackupPath>/<vspId>/<version>/<component>/<subId>/<version>/<dated backup>) to find backups
+    for the specified component types, groups them by backup rank (rank 1 = most recent backup of each component,
+    rank 2 = second most recent, and so on), and lets the user interactively select a backup group. Output includes
+    component type, version, backup name, age, and path, mirroring the behaviour of Get-ServicesRuntimeComponentBackups.
+
+    .EXAMPLE
+    Get-BackupsFromSFTPServer -sftpServer "10.50.5.66" -sftpUser svc-bkup-user -sftpPassword "VMw@re1!" -sftpServerBackupPath "/media/backups/vcf/backups" -vspId "e6b2ad0a-b76f-4080-b9db-aa338bacdc64"
+
+    .EXAMPLE
+    Get-BackupsFromSFTPServer -sftpServer "10.50.5.66" -sftpUser svc-bkup-user -sftpPassword "VMw@re1!" -sftpServerBackupPath "/media/backups/vcf/backups" -vspId "e6b2ad0a-b76f-4080-b9db-aa338bacdc64" -componentNames "vcf-fleet-lcm","salt-raas"
+
+    .PARAMETER sftpServer
+    Address of the SFTP server that hosts the VCF Fleet backups
+
+    .PARAMETER sftpUser
+    Username for connection to the SFTP server that hosts the VCF Fleet backups
+
+    .PARAMETER sftpPassword
+    Password for the user (passed as the sftpUser parameter) for connection to the SFTP server that hosts the VCF Fleet backups
+
+    .PARAMETER sftpServerBackupPath
+    Path on the SFTP server under which the VCF instance backup folder (named for its instance ID) resides. If the path
+    does not already end with /vcf/backups, it is appended automatically
+
+    .PARAMETER vspId
+    ID of the VCF instance (the top level folder under sftpServerBackupPath) whose backups should be searched
+
+    .PARAMETER componentNames
+    Names of the components to find backups for. Defaults to vcf-fleet-lcm, vcf-fleet-depot, salt-raas, and vidb
+    #>
+    Param(
+        [Parameter (Mandatory = $true)][String] $sftpServer,
+        [Parameter (Mandatory = $true)][String] $sftpUser,
+        [Parameter (Mandatory = $true)][String] $sftpPassword,
+        [Parameter (Mandatory = $true)][String] $sftpServerBackupPath,
+        [Parameter (Mandatory = $true)][String] $vspId,
+        [Parameter (Mandatory = $false)][String[]] $componentNames = @("vcf-fleet-lcm", "vcf-fleet-depot", "salt-raas", "vidb")
+    )
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+
+    $sftpServerBackupPath = $sftpServerBackupPath.TrimEnd('/')
+    If ($sftpServerBackupPath -notlike "*/vcf/backups") {
+        $sftpServerBackupPath = "$sftpServerBackupPath/vcf/backups"
+        LogMessage -type INFO -message "[$jumpboxName] sftpServerBackupPath did not end with /vcf/backups, using $sftpServerBackupPath"
+    }
+
+    #Establish SFTP Connection
+    LogMessage -type INFO -message "[$jumpboxName] Establishing SFTP Connection to $sftpServer"
+    $SecurePassword = ConvertTo-SecureString -String $sftpPassword -AsPlainText -Force
+    $mycreds = New-Object System.Management.Automation.PSCredential ($sftpUser, $SecurePassword)
+    Get-SSHTrustedHost | Remove-SSHTrustedHost | Out-Null
+    $inmem = New-SSHMemoryKnownHost
+    New-SSHTrustedHost -KnownHostStore $inmem -HostName $sftpServer -FingerPrint ((Get-SSHHostKey -ComputerName $sftpServer).fingerprint) | Out-Null
+    Do {
+        $sftpSession = New-SFTPSession -ComputerName $sftpServer -Credential $mycreds -KnownHost $inmem
+    } Until ($sftpSession)
+
+    # Walk the backup folder structure and parse every backup found for the requested component types
+    $parsedBackups = @()
+    $instancePath = "$sftpServerBackupPath/$vspId"
+
+    Try {
+        Foreach ($componentName in $componentNames) {
+            LogMessage -type INFO -message "[$sftpServer] Searching for $componentName backups under $instancePath"
+
+            $versionFolders = Get-SFTPChildItem -SessionId $sftpSession.SessionId -Path $instancePath | Where-Object { $_.IsDirectory }
+            Foreach ($versionFolder in $versionFolders) {
+                $componentPath = "$($versionFolder.FullName)/$componentName"
+                If (!(Test-SFTPPath -SessionId $sftpSession.SessionId -Path $componentPath)) { Continue }
+
+                $subIdFolders = Get-SFTPChildItem -SessionId $sftpSession.SessionId -Path $componentPath | Where-Object { $_.IsDirectory }
+                Foreach ($subIdFolder in $subIdFolders) {
+                    $version2Folders = Get-SFTPChildItem -SessionId $sftpSession.SessionId -Path $subIdFolder.FullName | Where-Object { $_.IsDirectory }
+                    Foreach ($version2Folder in $version2Folders) {
+                        $backupFolders = Get-SFTPChildItem -SessionId $sftpSession.SessionId -Path $version2Folder.FullName | Where-Object { $_.IsDirectory }
+                        Foreach ($backupFolder in $backupFolders) {
+                            $parsedBackups += [PSCustomObject]@{
+                                ComponentType = $componentName
+                                Version       = $version2Folder.Name
+                                Name          = $backupFolder.Name
+                                BackupDate    = $backupFolder.LastWriteTime
+                                DaysOld       = [math]::Floor(((Get-Date) - $backupFolder.LastWriteTime).TotalDays)
+                                Path          = $backupFolder.FullName
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    } Finally {
+        Remove-SFTPSession -SFTPSession $sftpSession | Out-Null
+    }
+
+    if ($parsedBackups.Count -eq 0) {
+        LogMessage -type WARNING -message "[$sftpServer] No backups found for components: $($componentNames -join ', ')"
+        return
+    }
+
+    # Build rank-based backup groups: rank 1 = most recent backup of each component,
+    # rank 2 = second most recent, and so on. Components backed up at different times
+    # within the same scheduled window are still placed in the same rank group.
+    $byComponent = @{}
+    foreach ($b in $parsedBackups) {
+        if (-not $byComponent.ContainsKey($b.ComponentType)) {
+            $byComponent[$b.ComponentType] = [System.Collections.Generic.List[PSCustomObject]]::new()
+        }
+        $byComponent[$b.ComponentType].Add($b)
+    }
+    foreach ($key in @($byComponent.Keys)) {
+        $byComponent[$key] = @($byComponent[$key] | Sort-Object BackupDate -Descending)
+    }
+
+    $maxRank   = ($byComponent.Values | ForEach-Object { $_.Count } | Measure-Object -Maximum).Maximum
+    $groupList = [System.Collections.Generic.List[PSCustomObject]]::new()
+
+    for ($rank = 0; $rank -lt $maxRank; $rank++) {
+        $entries = [System.Collections.Generic.List[PSCustomObject]]::new()
+        foreach ($componentType in ($byComponent.Keys | Sort-Object)) {
+            if ($rank -lt $byComponent[$componentType].Count) {
+                $entries.Add($byComponent[$componentType][$rank])
+            }
+        }
+        if ($entries.Count -gt 0) {
+            $groupList.Add([PSCustomObject]@{ Index = ($rank + 1); Entries = $entries })
+        }
+    }
+
+    LogMessage -type INFO -message "[$sftpServer] Found $($parsedBackups.Count) backup(s) across $($groupList.Count) backup group(s)"
+
+    # Display numbered list of backup groups
+    Write-Host ""
+    Write-Host " Available Backup Groups" -ForegroundColor Cyan
+    Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+    Write-Host ("  {0,3}  {1,-25}  {2,-14}  {3}" -f "ID", "Newest Backup (UTC)", "Age", "Components") -ForegroundColor Gray
+    Write-Host ""
+
+    foreach ($group in $groupList) {
+        $newest      = $group.Entries | Sort-Object BackupDate -Descending | Select-Object -First 1
+        $ageStr      = if ($null -ne $newest.DaysOld) { "$($newest.DaysOld) days ago" } else { "unknown" }
+        $uniqueTypes = @($group.Entries | Select-Object -ExpandProperty ComponentType | Sort-Object -Unique)
+        Write-Host ("  {0,3}  {1,-25}  {2,-14}  {3} ({4})" -f $group.Index, $newest.Name, $ageStr, ($uniqueTypes -join ', '), $uniqueTypes.Count) -ForegroundColor White
+    }
+
+    Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+    Write-Host ""
+
+    # User selects a backup group
+    $selectedGroup = $null
+    Do {
+        Write-Host " Enter the ID of the backup group to use, or C to Cancel: " -ForegroundColor Yellow -NoNewline
+        $selection = Read-Host
+        if ($selection -in @("C", "c")) {
+            LogMessage -type INFO -message "[$jumpboxName] Cancelled by user."
+            $StopWatch.Stop()
+            $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+            LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+            return
+        }
+        $selNum = 0
+        if ([int]::TryParse($selection, [ref]$selNum) -and $selNum -ge 1 -and $selNum -le $groupList.Count) {
+            $selectedGroup = $groupList | Where-Object { $_.Index -eq $selNum }
+        } else {
+            Write-Host " Invalid selection. Enter a number between 1 and $($groupList.Count), or C to Cancel." -ForegroundColor Yellow
+        }
+    } Until ($null -ne $selectedGroup)
+
+    $groupLabel = ($selectedGroup.Entries | Sort-Object BackupDate -Descending | Select-Object -First 1).Name
+    LogMessage -type INFO -message "[$jumpboxName] Selected backup group $($selectedGroup.Index) ($groupLabel)"
+
+    # Show what is available in the selected backup group
+    Write-Host ""
+    Write-Host " Components in backup group $($selectedGroup.Index) ($groupLabel)" -ForegroundColor Cyan
+    Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+    $selectedGroup.Entries | Sort-Object ComponentType | ForEach-Object {
+        Write-Host ("  {0,-22}  {1,-15}  {2}" -f $_.ComponentType, $_.Version, $_.Path) -ForegroundColor White
+    }
+    Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+    Write-Host ""
+
+    # Offer to construct a restore JSON for the selected backup group
+    Do {
+        Write-Host " Would you like to construct a restore JSON for this backup group? (Y/N): " -ForegroundColor Yellow -NoNewline
+        $buildJson = Read-Host
+    } Until ($buildJson -in @("Y", "y", "N", "n"))
+
+    if ($buildJson -in @("Y", "y")) {
+        $sftpUriPrefix = "sftp://$sftpUser@${sftpServer}:22"
+        $restoreComponents = @(
+            foreach ($componentType in $componentNames) {
+                $entry = $selectedGroup.Entries | Where-Object { $_.ComponentType -eq $componentType } | Select-Object -First 1
+                if ($entry) { @{ path = "$sftpUriPrefix$($entry.Path)"; point = $entry.Name } }
+            }
+        )
+
+        $restorePayload = @{ components = $restoreComponents } | ConvertTo-Json -Depth 5
+        $outputFile     = ".\restore-payload.json"
+        $restorePayload | Out-File -FilePath $outputFile -Encoding utf8
+        LogMessage -type INFO -message "[$jumpboxName] Restore JSON saved to $outputFile ($($restoreComponents.Count) component(s))"
+        Write-Host ""
+        Write-Host " Restore JSON contents:" -ForegroundColor Cyan
+        Write-Host $restorePayload
+        Write-Host ""
+    }
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    Return $selectedGroup.Entries
+}
+Export-ModuleMember -Function Get-BackupsFromSFTPServer
+
 #EndRegion Data Gathering
 
 #Region SDDC Manager Functions
@@ -9384,6 +9605,146 @@ Function Get-VcfOperationsToken {
     }
 }
 
+Function Get-VcfOperationsRegisteredComponents {
+    <#
+    .SYNOPSIS
+    Retrieves registered component IDs and related details from a VCF Operations instance.
+
+    .DESCRIPTION
+    The Get-VcfOperationsRegisteredComponents cmdlet queries the VCF Operations internal /suite-api/internal/components endpoint and returns a structured object containing:
+    - components: Filtered component summaries for types FLEET_LCM, SALT_RAAS, VIDB, and LI.
+    - vsp: All VSP instances registered in the endpoint, deduplicated by UUID, always returned as an array.
+    - vcfa: VCFA component details if one is registered, otherwise null.
+
+    A VCF Operations token is obtained automatically via Get-VcfOperationsToken.
+
+    .EXAMPLE
+    $result = Get-VcfOperationsRegisteredComponents -VcfOperationsFqdn "flt-ops01a.rainpole.io" -Password "VMw@re1!VMw@re1!"
+
+    .EXAMPLE
+    $result = Get-VcfOperationsRegisteredComponents -VcfOperationsFqdn "flt-ops01a.rainpole.io" -Username "admin" -Password "VMw@re1!VMw@re1!" -AuthSource "local"
+
+    .PARAMETER VcfOperationsFqdn
+    FQDN of the VCF Operations instance (e.g. flt-ops01a.rainpole.io).
+
+    .PARAMETER Username
+    Username for the VCF Operations API. Default is "admin".
+
+    .PARAMETER Password
+    Password for the VCF Operations user.
+
+    .PARAMETER AuthSource
+    Authentication source for the VCF Operations API. Default is "local".
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][String] $VcfOperationsFqdn,
+        [Parameter(Mandatory = $false)][String] $Username = "admin",
+        [Parameter(Mandatory = $true)][String] $Password,
+        [Parameter(Mandatory = $false)][String] $AuthSource = "local"
+    )
+
+    $jumpboxName = hostname
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    $opsToken = Get-VcfOperationsToken -VcfOperationsFqdn $VcfOperationsFqdn -Username $Username -Password $Password -AuthSource $AuthSource
+    if (-not $opsToken) {
+        LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain VCF Operations token. Aborting."
+        return $null
+    }
+
+    $headers = @{
+        "Accept"                    = "application/json"
+        "X-Ops-API-use-unsupported" = "true"
+        "Authorization"             = "OpsToken $opsToken"
+    }
+
+    $componentsUri = "https://$VcfOperationsFqdn/suite-api/internal/components?_no_links=true"
+    LogMessage -type INFO -message "[$VcfOperationsFqdn] Retrieving registered components"
+
+    try {
+        $response = Invoke-RestMethod -Uri $componentsUri -Method GET -Headers $headers -SkipCertificateCheck
+    } catch {
+        LogMessage -type ERROR -message "[$VcfOperationsFqdn] Failed to retrieve components: $($_.Exception.Message)"
+        return $null
+    }
+
+    $allComponents = $response.components
+    if (-not $allComponents -or ($allComponents | Measure-Object).Count -eq 0) {
+        LogMessage -type WARNING -message "[$VcfOperationsFqdn] No components returned."
+        return $null
+    }
+
+    # Filter to the component types of interest
+    $targetTypes = @('FLEET_LCM', 'SALT_RAAS', 'VIDB', 'LI')
+    $filtered = @($allComponents | Where-Object { $targetTypes -contains ($_.componentType).ToUpper() })
+
+    # Collect all VSP instances, deduplicated by UUID
+    $vspComponents = @(
+        $allComponents |
+            Where-Object { ($_.componentType).ToUpper() -eq 'VSP' } |
+                ForEach-Object {
+                    $ip = if ($_.properties.ip) { $_.properties.ip } else { $_.vcfInstance.ip }
+                    [PSCustomObject]@{
+                        id               = $_.componentUuid
+                        componentVersion = $_.componentVersion
+                        fqdn             = $_.properties.fqdn
+                        fleetFqdn        = $_.properties.fleetFqdn
+                        ip               = $ip
+                        instanceName     = $_.vcfInstance.instanceName
+                        vcfInstanceFqdn  = $_.vcfInstance.fqdn
+                    }
+                } |
+                    Sort-Object -Property id -Unique
+    )
+
+    $vsp = $vspComponents
+
+    # Extract the first VCFA component if present
+    $vcfaComp = $allComponents | Where-Object { ($_.componentType).ToUpper() -eq 'VCFA' } | Select-Object -First 1
+    $vcfa = if ($vcfaComp) {
+        [PSCustomObject]@{
+            fqdn             = $vcfaComp.properties.fqdn
+            componentVersion = $vcfaComp.componentVersion
+            platformFqdn     = $vcfaComp.properties.platformFqdn
+            vspComponentUuid = $vcfaComp.properties.vspComponentUuid
+        }
+    } else {
+        $null
+    }
+
+    # Build filtered component summaries
+    $componentSummaries = @(
+        $filtered | ForEach-Object {
+            [PSCustomObject]@{
+                componentType    = $_.componentType
+                id               = $_.componentUuid
+                componentVersion = $_.componentVersion
+                fqdn             = $_.properties.fqdn
+            }
+        }
+    )
+
+    $result = [PSCustomObject]@{
+        components = $componentSummaries
+        vsp        = $vsp
+        vcfa       = $vcfa
+    }
+
+    LogMessage -type INFO -message "[$VcfOperationsFqdn] Found $($filtered.Count) filtered component(s) of types: $($targetTypes -join ', '); $($vspComponents.Count) VSP instance(s)"
+
+    $json = $result | ConvertTo-Json -Depth 10
+    Write-Host ""
+    Write-Host $json
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+Export-ModuleMember -Function Get-VcfOperationsRegisteredComponents
+
 Function Get-RegisteredComponentIds {
     <#
     .SYNOPSIS
@@ -12486,8 +12847,24 @@ Function New-ExtractVcfmsBackup {
 
         # Step 4: Walk the Velero tree and write YAML files
         $secretKind   = 'secrets'
+        $pdKind       = 'packagedeployments.releases.vmsp.vmware.com'
         $ns           = 'vmsp-platform'
         $writtenFiles = @()
+
+        # vmsp-platform.yaml (PackageDeployment)
+        $pdStem = 'vmsp-platform'
+        $pdJson = Resolve-VcfmsVeleroJson -VeleroBase $veleroRoot -ResourceKind $pdKind -Namespace $ns -Stem $pdStem
+        if ($pdJson) {
+            $obj  = ConvertTo-VcfmsOrderedHashtable (Get-Content $pdJson -Raw | ConvertFrom-Json)
+            $obj  = Remove-VcfmsTransientMeta $obj
+            $yaml = ConvertTo-VcfmsYaml $obj
+            $dest = Join-Path $resolvedOutputDir "$pdStem.yaml"
+            [System.IO.File]::WriteAllText($dest, $yaml + "`n", (New-Object System.Text.UTF8Encoding $false))
+            LogMessage -type INFO -message "[$jumpboxName] Written: $dest"
+            $writtenFiles += $dest
+        } else {
+            LogMessage -type WARNING -message "[$jumpboxName] $pdStem (PackageDeployment) not found in archive"
+        }
 
         # ingress-fleet-tls-ndc.yaml
         $ndcStem  = 'ingress-fleet-tls-ndc'
@@ -13808,7 +14185,7 @@ Function Invoke-VcfmsFleetComponentRegistration {
     # -------------------------------------------------------------------------
     # Validate the local script exists
     # -------------------------------------------------------------------------
-    $localScript = Join-Path -Path $PSScriptRoot -ChildPath "scripts/update_fleet_component_registration.sh"
+    $localScript = Join-Path -Path $PSScriptRoot -ChildPath "scripts/9.1.0/update_fleet_component_registration.sh"
     if (-not (Test-Path $localScript)) {
         LogMessage -type ERROR -message "[$jumpboxName] Script not found: $localScript"
         $StopWatch.Stop(); return
@@ -14438,7 +14815,7 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
     # -------------------------------------------------------------------------
     # Validate the local script exists
     # -------------------------------------------------------------------------
-    $localScript = Join-Path -Path $PSScriptRoot -ChildPath "scripts/update-vidb-vcf-instance.sh"
+    $localScript = Join-Path -Path $PSScriptRoot -ChildPath "scripts/9.1.0/update-vidb-vcf-instance.sh"
     if (-not (Test-Path $localScript)) {
         LogMessage -type ERROR -message "[$jumpboxName] Script not found: $localScript"
         $StopWatch.Stop(); return
