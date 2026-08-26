@@ -5227,8 +5227,8 @@ Function New-RebuiltVdsConfiguration {
                 If (!$clusterTransportNodeCollection) {
                     LogMessage -type WARNING -message "[$nsxManagerFqdn] No Transport Node Collection found for cluster '$clusterName'. Skipping Transport Node Profile realization retry."
                 } Else {
+                    LogMessage -type INFO -message "[$nsxManagerFqdn] Triggering Transport Node Profile realization for Transport Node Collection $($clusterTransportNodeCollection.id)"
                     Invoke-RestMethod -Uri "https://$nsxManagerFqdn/api/v1/transport-node-collections/$($clusterTransportNodeCollection.id)?action=retry_profile_realization" -Headers $nsxHeaders -Method Post -SkipCertificateCheck -ErrorAction Stop | Out-Null
-                    LogMessage -type INFO -message "[$nsxManagerFqdn] Requested retry of Transport Node Profile realization for Transport Node Collection $($clusterTransportNodeCollection.id)"
                 }
             }
         } Catch {
