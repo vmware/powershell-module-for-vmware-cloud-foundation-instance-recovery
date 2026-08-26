@@ -6929,6 +6929,40 @@ Function Restore-ClusterVMTags {
 }
 Export-ModuleMember -Function Restore-ClusterVMTags
 
+Function Clear-vCenterAlarms
+{
+    Param(
+        [Parameter (Mandatory = $true)][String] $vCenterFQDN,
+        [Parameter (Mandatory = $true)][String] $vCenterAdmin,
+        [Parameter (Mandatory = $true)][String] $vCenterAdminPassword
+    )
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+    LogMessage -type INFO -Message "[$jumpboxName] Connecting to $vCenterFQDN"
+    $vcenterConnection = Connect-VIServer -server $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
+
+    LogMessage -type INFO -Message "[$vcenterFQDN] Clearing all Alarms"
+    # Get the AlarmManager view
+    $alarmManager = Get-View AlarmManager
+
+    # Create the mandatory Filter Specification object expected by the API
+    $filter = New-Object VMware.Vim.AlarmFilterSpec
+
+    # Execute the bulk clear (Passing NO specific flags inside the filter clears ALL active alarms)
+    try {
+        $alarmManager.ClearTriggeredAlarms($filter)
+        Write-Host "Successfully cleared all active alarms across vCenter." -ForegroundColor Green
+    } catch {
+        Write-Error "Failed to clear alarms: $_"
+    }
+    Disconnect-VIServer * -confirm:$false
+    $StopWatch.Stop()
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+}
+Export-ModuleMember -Function Clear-vCenterAlarms
+
 #EndRegion vCenter Functions
 
 #Region NSXT Functions
