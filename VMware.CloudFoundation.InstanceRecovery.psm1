@@ -10838,9 +10838,13 @@ Function Get-ServicesRuntimeComponentBackups {
         $groupLabel = "Custom"
         LogMessage -type INFO -message "[$jumpboxName] Selected custom backup group ($($finalEntries.Count) component(s))"
     } else {
-        $finalEntries = @($selectedGroup.Entries)
-        $groupLabel   = ($selectedGroup.Entries | Sort-Object BackupDate -Descending | Select-Object -First 1).Name
-        LogMessage -type INFO -message "[$jumpboxName] Selected backup group $($selectedGroup.Index) ($groupLabel)"
+        $finalEntries      = @($selectedGroup.Entries)
+        $sortedFinalEntries = $finalEntries | Sort-Object BackupDate -Descending
+        $newestFinal       = $sortedFinalEntries | Select-Object -First 1
+        $oldestFinal       = $sortedFinalEntries | Select-Object -Last 1
+        $newestFinalStr    = if ($newestFinal.BackupDate) { $newestFinal.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
+        $oldestFinalStr    = if ($oldestFinal.BackupDate) { $oldestFinal.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
+        $groupLabel        = if ($oldestFinalStr -eq $newestFinalStr) { $newestFinalStr } else { "$oldestFinalStr -> $newestFinalStr" }
     }
 
     # Show what is available in the selected backup group
