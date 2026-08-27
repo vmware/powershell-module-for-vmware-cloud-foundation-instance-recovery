@@ -360,6 +360,7 @@ Function New-ExtractDataFromSDDCBackup {
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
     $backupFileFullPath = (Resolve-Path -Path $vcfBackupFilePath).path
+    $credentialsFileFullPath = (Resolve-Path -Path $credentialsFilePath).path
     $backupFileName = (Get-ChildItem -path $backupFileFullPath).name
     $parentFolder = Split-Path -Path $backupFileFullPath
     $extractedBackupFolder = ($backupFileName -Split (".tar.gz"))[0]
@@ -403,10 +404,8 @@ Function New-ExtractDataFromSDDCBackup {
     LogMessage -type INFO -message "[$jumpboxName] Extracting Backup"
     tar -xzf "$parentFolder\decrypted-sddc-manager-backup.tar.gz" $filesToExtract
 
-
     #Get Content of Credentials File (SDDC Manager credentials API output)
     LogMessage -type INFO -message "[$jumpboxName] Reading Credentials File"
-    $credentialsFileFullPath = (Resolve-Path -Path $credentialsFilePath).path
     $credentialsJson = Get-Content $credentialsFileFullPath | ConvertFrom-JSON
     $passwordVaultObject = @()
     Foreach ($object in $credentialsJson) {
