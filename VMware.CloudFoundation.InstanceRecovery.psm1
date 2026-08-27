@@ -10589,6 +10589,8 @@ Function Get-ServicesRuntimeComponentBackups {
     .DESCRIPTION
     The Get-ServicesRuntimeComponentBackups cmdlet queries the  Services Runtime GET /api/v1/system/backups endpoint and returns backup details for the specified component types, sorted by component type and age. Output includes component type, version, backup name, age, and path.
 
+    When -Components does not include "vsp" or "vcfa", the "Available Backup Groups" table includes an additional "Associated VSP Backup (UTC)" column showing the vsp backup whose timestamp is closest to each group, for reference when the vsp component itself is not part of the selection.
+
     .EXAMPLE
     Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!"
 
@@ -10729,31 +10731,85 @@ Function Get-ServicesRuntimeComponentBackups {
     # Display numbered list of backup groups
     $isSingleComponent = ($Components.Count -eq 1)
 
+    # When the selection doesn't include vsp (or vcfa) directly, surface the nearest vsp backup
+    # alongside each group for reference -- vsp is the platform's own backup and its timing is
+    # useful context even when it wasn't explicitly requested. $allBackups is unfiltered by
+    # -Components (only by -VspId), so vsp entries are available here regardless of $Components.
+    $showVspColumn = ($Components -notcontains "vsp") -and ($Components -notcontains "vcfa")
+    $vspBackups = @()
+    if ($showVspColumn) {
+        foreach ($backup in $allBackups) {
+            if ($backup.component.type -ne "vsp") { continue }
+            $vspNormalizedName = $backup.name -replace 'T(\d{2})-(\d{2})-(\d{2})Z', 'T$1:$2:$3Z'
+            $vspBackupDate = $null
+            try {
+                $vspBackupDate = [datetime]::Parse($vspNormalizedName, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal)
+            } catch {}
+            if ($vspBackupDate) {
+                $vspBackups += [PSCustomObject]@{ Name = $backup.name; BackupDate = $vspBackupDate }
+            }
+        }
+        if ($vspBackups.Count -eq 0) {
+            LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] No vsp backups found to correlate with the requested component(s). Associated VSP Backup column will be omitted."
+            $showVspColumn = $false
+        }
+    }
+
     # Build every row up front so the separator can be sized to the widest row --
     # the Components column's length varies with how many component types share a group.
     $headerLine = if ($isSingleComponent) {
-        "  {0,3}  {1,-20}  {2,-14}  {3}" -f "ID", "Backup Points (UTC)", "Age", "Components"
+        if ($showVspColumn) {
+            "  {0,3}  {1,-20}  {2,-10}  {3,-26}  {4}" -f "ID", "Backup Points", "Age", "Associated VSP Backup", "Components"
+        } else {
+            "  {0,3}  {1,-20}  {2,-10}  {3}" -f "ID", "Backup Points", "Age", "Components"
+        }
     } else {
-        "  {0,3}  {1,-26}  {2,-24}  {3,-14}  {4}" -f "ID", "Backup Start (UTC)", "Backup End (UTC)", "Age", "Components"
+        if ($showVspColumn) {
+            "  {0,3}  {1,-18}  {2,-16}  {3,-10}  {4,-26}  {5}" -f "ID", "Backup Start", "Backup End", "Age", "Associated VSP Backup", "Components"
+        } else {
+            "  {0,3}  {1,-18}  {2,-16}  {3,-10}  {4}" -f "ID", "Backup Start", "Backup End", "Age", "Components"
+        }
     }
 
     $rowLines = [System.Collections.Generic.List[String]]::new()
     if (-not $isSingleComponent) {
-        $rowLines.Add(("  {0,3}  {1,-26}  {2,-24}  {3,-14}  {4}" -f 0, "Custom", "-", "-", "Choose a backup point per component"))
+        if ($showVspColumn) {
+            $rowLines.Add(("  {0,3}  {1,-18}  {2,-16}  {3,-10}  {4,-26}  {5}" -f 0, "Custom", "-", "-", "-", "Choose a backup point per component"))
+        } else {
+            $rowLines.Add(("  {0,3}  {1,-18}  {2,-16}  {3,-10}  {4}" -f 0, "Custom", "-", "-", "Choose a backup point per component"))
+        }
     }
 
     foreach ($group in $groupList) {
         $sortedEntries = $group.Entries | Sort-Object BackupDate -Descending
         $newest        = $sortedEntries | Select-Object -First 1
         $oldest        = $sortedEntries | Select-Object -Last 1
-        $ageStr        = if ($null -ne $newest.DaysOld) { "$($newest.DaysOld) days ago" } else { "unknown" }
+        $ageStr        = if ($newest.BackupDate) {
+            $ageSpan = $now - $newest.BackupDate
+            if ($ageSpan.TotalDays -ge 1) { "$([math]::Floor($ageSpan.TotalDays)) Days" } else { "$([math]::Floor($ageSpan.TotalHours)) Hours" }
+        } else { "unknown" }
         $uniqueTypes   = @($group.Entries | Select-Object -ExpandProperty ComponentType | Sort-Object -Unique)
         $newestStr     = if ($newest.BackupDate) { $newest.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
+
+        $vspStr = "-"
+        if ($showVspColumn -and $newest.BackupDate) {
+            $nearestVsp = $vspBackups | Sort-Object { [math]::Abs(($_.BackupDate - $newest.BackupDate).Ticks) } | Select-Object -First 1
+            if ($nearestVsp) { $vspStr = $nearestVsp.BackupDate.ToString("yyyy-MM-dd HH:mm") }
+        }
+
         if ($isSingleComponent) {
-            $rowLines.Add(("  {0,3}  {1,-20}  {2,-14}  {3} ({4})" -f $group.Index, $newestStr, $ageStr, ($uniqueTypes -join ', '), $uniqueTypes.Count))
+            if ($showVspColumn) {
+                $rowLines.Add(("  {0,3}  {1,-20}  {2,-10}  {3,-26}  {4} ({5})" -f $group.Index, $newestStr, $ageStr, $vspStr, ($uniqueTypes -join ', '), $uniqueTypes.Count))
+            } else {
+                $rowLines.Add(("  {0,3}  {1,-20}  {2,-10}  {3} ({4})" -f $group.Index, $newestStr, $ageStr, ($uniqueTypes -join ', '), $uniqueTypes.Count))
+            }
         } else {
             $oldestStr = if ($oldest.BackupDate) { $oldest.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
-            $rowLines.Add(("  {0,3}  {1,-26}  {2,-24}  {3,-14}  {4} ({5})" -f $group.Index, $oldestStr, $newestStr, $ageStr, ($uniqueTypes -join ', '), $uniqueTypes.Count))
+            if ($showVspColumn) {
+                $rowLines.Add(("  {0,3}  {1,-18}  {2,-16}  {3,-10}  {4,-26}  {5} ({6})" -f $group.Index, $oldestStr, $newestStr, $ageStr, $vspStr, ($uniqueTypes -join ', '), $uniqueTypes.Count))
+            } else {
+                $rowLines.Add(("  {0,3}  {1,-18}  {2,-16}  {3,-10}  {4} ({5})" -f $group.Index, $oldestStr, $newestStr, $ageStr, ($uniqueTypes -join ', '), $uniqueTypes.Count))
+            }
         }
     }
 
@@ -10761,7 +10817,7 @@ Function Get-ServicesRuntimeComponentBackups {
     $separator  = " " + ("─" * $tableWidth)
 
     Write-Host ""
-    Write-Host " Available Backup Groups" -ForegroundColor Cyan
+    Write-Host " Available Backup Groups (All times in UTC)" -ForegroundColor Cyan
     Write-Host $separator -ForegroundColor Cyan
     Write-Host $headerLine -ForegroundColor Gray
     Write-Host ""
@@ -10805,12 +10861,15 @@ Function Get-ServicesRuntimeComponentBackups {
             Write-Host ""
             Write-Host " Backup points for '$componentType'" -ForegroundColor Cyan
             Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
-            Write-Host ("  {0,3}  {1,-20}  {2,-14}  {3}" -f "ID", "Backup Time (UTC)", "Age", "Version") -ForegroundColor Gray
+            Write-Host ("  {0,3}  {1,-20}  {2,-10}  {3}" -f "ID", "Backup Time (UTC)", "Age", "Version") -ForegroundColor Gray
             for ($i = 0; $i -lt $options.Count; $i++) {
                 $opt    = $options[$i]
                 $optStr = if ($opt.BackupDate) { $opt.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
-                $optAge = if ($null -ne $opt.DaysOld) { "$($opt.DaysOld) days ago" } else { "unknown" }
-                Write-Host ("  {0,3}  {1,-20}  {2,-14}  {3}" -f ($i + 1), $optStr, $optAge, $opt.Version) -ForegroundColor White
+                $optAge = if ($opt.BackupDate) {
+                    $optAgeSpan = $now - $opt.BackupDate
+                    if ($optAgeSpan.TotalDays -ge 1) { "$([math]::Floor($optAgeSpan.TotalDays)) Days" } else { "$([math]::Floor($optAgeSpan.TotalHours)) Hours" }
+                } else { "unknown" }
+                Write-Host ("  {0,3}  {1,-20}  {2,-10}  {3}" -f ($i + 1), $optStr, $optAge, $opt.Version) -ForegroundColor White
             }
             Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
 
@@ -10844,7 +10903,7 @@ Function Get-ServicesRuntimeComponentBackups {
         $oldestFinal       = $sortedFinalEntries | Select-Object -Last 1
         $newestFinalStr    = if ($newestFinal.BackupDate) { $newestFinal.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
         $oldestFinalStr    = if ($oldestFinal.BackupDate) { $oldestFinal.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
-        $groupLabel        = if ($oldestFinalStr -eq $newestFinalStr) { $newestFinalStr } else { "$oldestFinalStr -> $newestFinalStr" }
+        $groupLabel        = if ($oldestFinalStr -eq $newestFinalStr) { "$newestFinalStr UTC" } else { "$oldestFinalStr -> $newestFinalStr UTC" }
     }
 
     # Show what is available in the selected backup group
@@ -10852,10 +10911,10 @@ Function Get-ServicesRuntimeComponentBackups {
     Write-Host ""
     Write-Host " $groupTitle" -ForegroundColor Cyan
     Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
-    Write-Host ("  {0,-22}  {1,-18}  {2}" -f "Component", "Version", "Backup Time (UTC)") -ForegroundColor Gray
+    Write-Host ("  {0,-16}  {1,-18}  {2}" -f "Component", "Version", "Backup Time") -ForegroundColor Gray
     $finalEntries | Sort-Object BackupDate -Descending | ForEach-Object {
         $entryTimeStr = if ($_.BackupDate) { $_.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
-        Write-Host ("  {0,-22}  {1,-18}  {2}" -f $_.ComponentType, $_.Version, $entryTimeStr) -ForegroundColor White
+        Write-Host ("  {0,-16}  {1,-18}  {2}" -f $_.ComponentType, $_.Version, $entryTimeStr) -ForegroundColor White
     }
     Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
     Write-Host ""
