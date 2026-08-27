@@ -10727,24 +10727,53 @@ Function Get-ServicesRuntimeComponentBackups {
     LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Found $($parsedBackups.Count) backup(s) across $($groupList.Count) backup group(s)"
 
     # Display numbered list of backup groups
-    Write-Host ""
-    Write-Host " Available Backup Groups" -ForegroundColor Cyan
-    Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
-    Write-Host ("  {0,3}  {1,-25}  {2,-14}  {3}" -f "ID", "Newest Backup (UTC)", "Age", "Components") -ForegroundColor Gray
-    Write-Host ""
+    $isSingleComponent = ($Components.Count -eq 1)
 
-    foreach ($group in $groupList) {
-        $newest      = $group.Entries | Sort-Object BackupDate -Descending | Select-Object -First 1
-        $ageStr      = if ($null -ne $newest.DaysOld) { "$($newest.DaysOld) days ago" } else { "unknown" }
-        $uniqueTypes = @($group.Entries | Select-Object -ExpandProperty ComponentType | Sort-Object -Unique)
-        Write-Host ("  {0,3}  {1,-25}  {2,-14}  {3} ({4})" -f $group.Index, $newest.Name, $ageStr, ($uniqueTypes -join ', '), $uniqueTypes.Count) -ForegroundColor White
+    # Build every row up front so the separator can be sized to the widest row --
+    # the Components column's length varies with how many component types share a group.
+    $headerLine = if ($isSingleComponent) {
+        "  {0,3}  {1,-20}  {2,-14}  {3}" -f "ID", "Backup Points (UTC)", "Age", "Components"
+    } else {
+        "  {0,3}  {1,-26}  {2,-24}  {3,-14}  {4}" -f "ID", "Backup Start (UTC)", "Backup End (UTC)", "Age", "Components"
     }
 
-    Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+    $rowLines = [System.Collections.Generic.List[String]]::new()
+    if (-not $isSingleComponent) {
+        $rowLines.Add(("  {0,3}  {1,-26}  {2,-24}  {3,-14}  {4}" -f 0, "Custom", "-", "-", "Choose a backup point per component"))
+    }
+
+    foreach ($group in $groupList) {
+        $sortedEntries = $group.Entries | Sort-Object BackupDate -Descending
+        $newest        = $sortedEntries | Select-Object -First 1
+        $oldest        = $sortedEntries | Select-Object -Last 1
+        $ageStr        = if ($null -ne $newest.DaysOld) { "$($newest.DaysOld) days ago" } else { "unknown" }
+        $uniqueTypes   = @($group.Entries | Select-Object -ExpandProperty ComponentType | Sort-Object -Unique)
+        $newestStr     = if ($newest.BackupDate) { $newest.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
+        if ($isSingleComponent) {
+            $rowLines.Add(("  {0,3}  {1,-20}  {2,-14}  {3} ({4})" -f $group.Index, $newestStr, $ageStr, ($uniqueTypes -join ', '), $uniqueTypes.Count))
+        } else {
+            $oldestStr = if ($oldest.BackupDate) { $oldest.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
+            $rowLines.Add(("  {0,3}  {1,-26}  {2,-24}  {3,-14}  {4} ({5})" -f $group.Index, $oldestStr, $newestStr, $ageStr, ($uniqueTypes -join ', '), $uniqueTypes.Count))
+        }
+    }
+
+    $tableWidth = (@($rowLines) + $headerLine | Measure-Object -Property Length -Maximum).Maximum
+    $separator  = " " + ("─" * $tableWidth)
+
+    Write-Host ""
+    Write-Host " Available Backup Groups" -ForegroundColor Cyan
+    Write-Host $separator -ForegroundColor Cyan
+    Write-Host $headerLine -ForegroundColor Gray
+    Write-Host ""
+
+    $rowLines | ForEach-Object { Write-Host $_ -ForegroundColor White }
+
+    Write-Host $separator -ForegroundColor Cyan
     Write-Host ""
 
     # User selects a backup group
     $selectedGroup = $null
+    $customMode    = $false
     Do {
         Write-Host " Enter the ID of the backup group to use, or C to Cancel: " -ForegroundColor Yellow -NoNewline
         $selection = Read-Host
@@ -10755,23 +10784,74 @@ Function Get-ServicesRuntimeComponentBackups {
             LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
             return
         }
-        $selNum = 0
-        if ([int]::TryParse($selection, [ref]$selNum) -and $selNum -ge 1 -and $selNum -le $groupList.Count) {
+        $selNum = -1
+        if ([int]::TryParse($selection, [ref]$selNum) -and (-not $isSingleComponent) -and $selNum -eq 0) {
+            $customMode    = $true
+            $selectedGroup = [PSCustomObject]@{ Index = 0; Entries = @() }
+        } elseif ([int]::TryParse($selection, [ref]$selNum) -and $selNum -ge 1 -and $selNum -le $groupList.Count) {
             $selectedGroup = $groupList | Where-Object { $_.Index -eq $selNum }
         } else {
             Write-Host " Invalid selection. Enter a number between 1 and $($groupList.Count), or C to Cancel." -ForegroundColor Yellow
         }
     } Until ($null -ne $selectedGroup)
 
-    $groupLabel = ($selectedGroup.Entries | Sort-Object BackupDate -Descending | Select-Object -First 1).Name
-    LogMessage -type INFO -message "[$jumpboxName] Selected backup group $($selectedGroup.Index) ($groupLabel)"
+    # Build the final list of chosen entries: either the picked rank group, or a per-component custom selection
+    $finalEntries = @()
+    if ($customMode) {
+        LogMessage -type INFO -message "[$jumpboxName] Building custom backup selection"
+        foreach ($componentType in ($byComponent.Keys | Sort-Object)) {
+            $options = $byComponent[$componentType]
+
+            Write-Host ""
+            Write-Host " Backup points for '$componentType'" -ForegroundColor Cyan
+            Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+            Write-Host ("  {0,3}  {1,-20}  {2,-14}  {3}" -f "ID", "Backup Time (UTC)", "Age", "Version") -ForegroundColor Gray
+            for ($i = 0; $i -lt $options.Count; $i++) {
+                $opt    = $options[$i]
+                $optStr = if ($opt.BackupDate) { $opt.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
+                $optAge = if ($null -ne $opt.DaysOld) { "$($opt.DaysOld) days ago" } else { "unknown" }
+                Write-Host ("  {0,3}  {1,-20}  {2,-14}  {3}" -f ($i + 1), $optStr, $optAge, $opt.Version) -ForegroundColor White
+            }
+            Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+
+            $chosenEntry = $null
+            Do {
+                Write-Host " Enter the ID of the backup point to use for '$componentType', or C to Cancel: " -ForegroundColor Yellow -NoNewline
+                $optSelection = Read-Host
+                if ($optSelection -in @("C", "c")) {
+                    LogMessage -type INFO -message "[$jumpboxName] Cancelled by user."
+                    $StopWatch.Stop()
+                    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+                    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+                    return
+                }
+                $optNum = 0
+                if ([int]::TryParse($optSelection, [ref]$optNum) -and $optNum -ge 1 -and $optNum -le $options.Count) {
+                    $chosenEntry = $options[$optNum - 1]
+                } else {
+                    Write-Host " Invalid selection. Enter a number between 1 and $($options.Count), or C to Cancel." -ForegroundColor Yellow
+                }
+            } Until ($null -ne $chosenEntry)
+
+            $finalEntries += $chosenEntry
+        }
+        $groupLabel = "Custom"
+        LogMessage -type INFO -message "[$jumpboxName] Selected custom backup group ($($finalEntries.Count) component(s))"
+    } else {
+        $finalEntries = @($selectedGroup.Entries)
+        $groupLabel   = ($selectedGroup.Entries | Sort-Object BackupDate -Descending | Select-Object -First 1).Name
+        LogMessage -type INFO -message "[$jumpboxName] Selected backup group $($selectedGroup.Index) ($groupLabel)"
+    }
 
     # Show what is available in the selected backup group
+    $groupTitle = if ($customMode) { "Components in custom backup group" } else { "Components in backup group $($selectedGroup.Index) ($groupLabel)" }
     Write-Host ""
-    Write-Host " Components in backup group $($selectedGroup.Index) ($groupLabel)" -ForegroundColor Cyan
+    Write-Host " $groupTitle" -ForegroundColor Cyan
     Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
-    $selectedGroup.Entries | Sort-Object ComponentType | ForEach-Object {
-        Write-Host ("  {0,-22}  {1,-15}  {2}" -f $_.ComponentType, $_.Version, $_.Path) -ForegroundColor White
+    Write-Host ("  {0,-22}  {1,-18}  {2}" -f "Component", "Version", "Backup Time (UTC)") -ForegroundColor Gray
+    $finalEntries | Sort-Object BackupDate -Descending | ForEach-Object {
+        $entryTimeStr = if ($_.BackupDate) { $_.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
+        Write-Host ("  {0,-22}  {1,-18}  {2}" -f $_.ComponentType, $_.Version, $entryTimeStr) -ForegroundColor White
     }
     Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
     Write-Host ""
@@ -10788,7 +10868,7 @@ Function Get-ServicesRuntimeComponentBackups {
 
         $restoreComponents = @(
             foreach ($componentType in $restoreComponentTypes) {
-                $entry = $selectedGroup.Entries | Where-Object { $_.ComponentType -eq $componentType } | Select-Object -First 1
+                $entry = $finalEntries | Where-Object { $_.ComponentType -eq $componentType } | Select-Object -First 1
                 if ($entry) { @{ path = $entry.Path; point = $entry.Name } }
             }
         )
