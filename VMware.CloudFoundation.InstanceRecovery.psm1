@@ -12694,19 +12694,18 @@ Function New-ExtractVcfmsBackup {
 
     .DESCRIPTION
     The New-ExtractVcfmsBackup cmdlet decrypts a local *.base.tgz VMSP backup archive, extracts
-    the inner Velero archive, and writes selected Kubernetes resources as YAML files to OutputDir.
+    the inner Velero archive, and writes the following Kubernetes resources as YAML files
+    directly under OutputDir when present in the archive:
+      vmsp-platform.yaml              PackageDeployment
+      ingress-fleet-tls-ndc.yaml      NDC mirror secret
+      ingress-fleet-tls.yaml          Standard TLS secret (from backup or synthesized from NDC)
+      ingress-instance-tls-ndc.yaml   NDC mirror secret
+      ingress-instance-tls.yaml       Standard TLS secret (from backup or synthesized from NDC)
+      ingress-platform-tls-ndc.yaml   NDC mirror secret
+      ingress-platform-tls.yaml       Standard TLS secret (from backup or synthesized from NDC)
 
     The archive is decrypted using AES-256-CBC with PBKDF2 key derivation, matching the OpenSSL
     enc -aes-256-cbc -pbkdf2 format produced by the VMSP backup service.
-
-    The following resources are extracted when present in the Velero archive:
-      vmsp-platform.yaml              PackageDeployment
-      ingress-fleet-tls-ndc.yaml     NDC mirror secret
-      ingress-instance-tls-ndc.yaml  NDC mirror secret
-      ingress-platform-tls-ndc.yaml  NDC mirror secret
-      ingress-fleet-tls.yaml         Standard TLS secret (from backup or synthesized from NDC)
-      ingress-instance-tls.yaml      Standard TLS secret (from backup or synthesized from NDC)
-      ingress-platform-tls.yaml      Standard TLS secret (from backup or synthesized from NDC)
 
     Transient metadata fields (managedFields, resourceVersion, uid, creationTimestamp) are
     stripped from every resource before writing.
@@ -12866,45 +12865,47 @@ Function New-ExtractVcfmsBackup {
             LogMessage -type WARNING -message "[$jumpboxName] $pdStem (PackageDeployment) not found in archive"
         }
 
-        # ingress-fleet-tls-ndc.yaml
-        $ndcStem  = 'ingress-fleet-tls-ndc'
-        $ndcJson  = Resolve-VcfmsVeleroJson -VeleroBase $veleroRoot -ResourceKind $secretKind -Namespace $ns -Stem $ndcStem
-        if ($ndcJson) {
-            $obj  = ConvertTo-VcfmsOrderedHashtable (Get-Content $ndcJson -Raw | ConvertFrom-Json)
-            $obj  = Remove-VcfmsTransientMeta $obj
-            $yaml = ConvertTo-VcfmsYaml $obj
-            $dest = Join-Path $resolvedOutputDir "$ndcStem.yaml"
-            [System.IO.File]::WriteAllText($dest, $yaml + "`n", (New-Object System.Text.UTF8Encoding $false))
-            LogMessage -type INFO -message "[$jumpboxName] Written: $dest"
-            $writtenFiles += $dest
-        } else {
-            LogMessage -type WARNING -message "[$jumpboxName] $ndcStem not found in archive"
-        }
+        # ingress-<family>-tls-ndc.yaml / ingress-<family>-tls.yaml for each ingress family
+        foreach ($family in @('fleet', 'instance', 'platform')) {
+            $ndcStem  = "ingress-$family-tls-ndc"
+            $ndcJson  = Resolve-VcfmsVeleroJson -VeleroBase $veleroRoot -ResourceKind $secretKind -Namespace $ns -Stem $ndcStem
+            if ($ndcJson) {
+                $obj  = ConvertTo-VcfmsOrderedHashtable (Get-Content $ndcJson -Raw | ConvertFrom-Json)
+                $obj  = Remove-VcfmsTransientMeta $obj
+                $yaml = ConvertTo-VcfmsYaml $obj
+                $dest = Join-Path $resolvedOutputDir "$ndcStem.yaml"
+                [System.IO.File]::WriteAllText($dest, $yaml + "`n", (New-Object System.Text.UTF8Encoding $false))
+                LogMessage -type INFO -message "[$jumpboxName] Written: $dest"
+                $writtenFiles += $dest
+            } else {
+                LogMessage -type WARNING -message "[$jumpboxName] $ndcStem not found in archive"
+            }
 
-        # ingress-fleet-tls.yaml — from backup directly, or synthesized from NDC
-        $plainStem = 'ingress-fleet-tls'
-        $dest      = Join-Path $resolvedOutputDir "$plainStem.yaml"
-        $plainJson = Resolve-VcfmsVeleroJson -VeleroBase $veleroRoot -ResourceKind $secretKind -Namespace $ns -Stem $plainStem
-        if ($plainJson) {
-            $obj  = ConvertTo-VcfmsOrderedHashtable (Get-Content $plainJson -Raw | ConvertFrom-Json)
-            $obj  = Remove-VcfmsTransientMeta $obj
-            $yaml = ConvertTo-VcfmsYaml $obj
-            [System.IO.File]::WriteAllText($dest, $yaml + "`n", (New-Object System.Text.UTF8Encoding $false))
-            LogMessage -type INFO -message "[$jumpboxName] Written: $dest"
-            $writtenFiles += $dest
-        } elseif ($ndcJson) {
-            try {
-                $obj  = New-VcfmsTlsSecretFromNdc -NdcJsonPath $ndcJson -PlainStem $plainStem
+            # ingress-<family>-tls.yaml — from backup directly, or synthesized from NDC
+            $plainStem = "ingress-$family-tls"
+            $dest      = Join-Path $resolvedOutputDir "$plainStem.yaml"
+            $plainJson = Resolve-VcfmsVeleroJson -VeleroBase $veleroRoot -ResourceKind $secretKind -Namespace $ns -Stem $plainStem
+            if ($plainJson) {
+                $obj  = ConvertTo-VcfmsOrderedHashtable (Get-Content $plainJson -Raw | ConvertFrom-Json)
                 $obj  = Remove-VcfmsTransientMeta $obj
                 $yaml = ConvertTo-VcfmsYaml $obj
                 [System.IO.File]::WriteAllText($dest, $yaml + "`n", (New-Object System.Text.UTF8Encoding $false))
-                LogMessage -type INFO -message "[$jumpboxName] Written (synthesized from NDC): $dest"
+                LogMessage -type INFO -message "[$jumpboxName] Written: $dest"
                 $writtenFiles += $dest
-            } catch {
-                LogMessage -type WARNING -message "[$jumpboxName] Could not synthesize $plainStem : $($_.Exception.Message)"
+            } elseif ($ndcJson) {
+                try {
+                    $obj  = New-VcfmsTlsSecretFromNdc -NdcJsonPath $ndcJson -PlainStem $plainStem
+                    $obj  = Remove-VcfmsTransientMeta $obj
+                    $yaml = ConvertTo-VcfmsYaml $obj
+                    [System.IO.File]::WriteAllText($dest, $yaml + "`n", (New-Object System.Text.UTF8Encoding $false))
+                    LogMessage -type INFO -message "[$jumpboxName] Written (synthesized from NDC): $dest"
+                    $writtenFiles += $dest
+                } catch {
+                    LogMessage -type WARNING -message "[$jumpboxName] Could not synthesize $plainStem : $($_.Exception.Message)"
+                }
+            } else {
+                LogMessage -type WARNING -message "[$jumpboxName] $plainStem not found in archive and no NDC source to synthesize from"
             }
-        } else {
-            LogMessage -type WARNING -message "[$jumpboxName] $plainStem not found in archive and no NDC source to synthesize from"
         }
 
         Write-Host ""
