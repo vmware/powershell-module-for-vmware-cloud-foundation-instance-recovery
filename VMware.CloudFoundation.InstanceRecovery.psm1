@@ -918,6 +918,7 @@ Function New-ExtractDataFromSDDCBackup {
     $isStretchedColumn = $columns.IndexOf('is_stretched')
     $vCenterIDColumn = $columns.IndexOf('vcenter_id')
     $primaryDatastoreTypeColumn = $columns.IndexOf('primary_datastore_type')
+    $primaryDatastoreSourceIDColumn = $columns.IndexOf('primary_datastore_source_id')
     $sourceIDColumn = $columns.IndexOf('source_id')
     $isImagedBasedColumn = $columns.IndexOf('is_image_based')
 
@@ -933,6 +934,7 @@ Function New-ExtractDataFromSDDCBackup {
             $isStretched = $lineContent.split("`t")[$isStretchedColumn]
             $vCenterID = $lineContent.split("`t")[$vCenterIDColumn]
             $primaryDatastoreType = $lineContent.split("`t")[$primaryDatastoreTypeColumn]
+            $primaryDatastoreMoRef = $lineContent.split("`t")[$primaryDatastoreSourceIDColumn]
             $sourceID = $lineContent.split("`t")[$sourceIDColumn]
             $isImagedBased = $lineContent.split("`t")[$isImagedBasedColumn]
             $vdsDetails = @()
@@ -1044,6 +1046,7 @@ Function New-ExtractDataFromSDDCBackup {
                 'vCenterID'              = $vCenterID
                 'primaryDatastoreName'   = $null
                 'primaryDatastoreType'   = $primaryDatastoreType
+                'primaryDatastoreMoRef'  = $primaryDatastoreMoRef
                 'primaryDatastorePolicy' = $null
                 'isImageBased'           = $isImagedBased
                 'sourceID'               = $sourceID
@@ -1360,12 +1363,15 @@ Function Update-ExtractedSDDCData {
         $vCenterConnection = Connect-VIServer -server $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
 
         Foreach ($cluster in $workloadDomain.vsphereClusterDetails) {
-            #$clusterInfo = Invoke-VcfGetCluster -Id $cluster.id
-            $clusterInfo = (Invoke-VcfGetClusters).elements | Where-Object { $_.Id -eq $cluster.id } # Replacement for previous line which was failing for unknown cause
-            $clusterName = $clusterInfo.Name
+            # Resolve cluster and primary datastore names directly from vCenter using the MoRefs
+            # captured from the SDDC Manager backup (cluster.source_id / cluster.primary_datastore_source_id),
+            # rather than calling Invoke-VcfGetClusters against SDDC Manager.
+            $clusterView = Get-View -Id "ClusterComputeResource-$($cluster.sourceID)"
+            $clusterName = $clusterView.Name
             LogMessage -type INFO -message "Injecting cluster name $clusterName into $($workloadDomain.domainName)"
             $cluster.name = $clusterName
-            $primaryDatastoreName = $clusterInfo.PrimaryDatastoreName
+            $datastoreView = Get-View -Id "Datastore-$($cluster.primaryDatastoreMoRef)"
+            $primaryDatastoreName = $datastoreView.Name
             $primaryDatastorePolicy = ((Get-Datastore -name $primaryDatastoreName | Get-SpbmEntityConfiguration)).storagePolicy.name
             LogMessage -type INFO -message "Injecting primary datastore name $primaryDatastoreName into $($workloadDomain.domainName)"
             $cluster.primaryDatastoreName = $primaryDatastoreName
