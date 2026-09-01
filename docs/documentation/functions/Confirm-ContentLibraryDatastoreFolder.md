@@ -7,12 +7,12 @@ Checks for the presence of a content library folder on the target datastore and 
 ## Syntax
 
 ```powershell
-Confirm-ContentLibraryDatastoreFolder [-vCenterFQDN] <String> [-vCenterAdmin] <String> [-vCenterAdminPassword] <String> [-datastoreName] <String> [-libraryId] <String> [<CommonParameters>]
+Confirm-ContentLibraryDatastoreFolder [-vCenterFQDN] <String> [-vCenterAdmin] <String> [-vCenterAdminPassword] <String> [-datastoreName] <String> [-contentLibraryName] <String> [<CommonParameters>]
 ```
 
 ## Description
 
-The `Confirm-ContentLibraryDatastoreFolder` cmdlet connects to the specified vCenter, locates the named datastore, and verifies that a folder in the format `contentlib-<libraryId>` exists at the root of that datastore. If the folder is not found it is created.
+The `Confirm-ContentLibraryDatastoreFolder` cmdlet connects to the specified vCenter, resolves the named content library to its GUID, locates the named datastore, and verifies that a folder in the format `contentlib-<libraryId>` exists at the root of that datastore. If the folder is not found it is created.
 
 For vSAN datastores (both OSA and ESA), the function uses the PowerCLI VimDatastore PSDrive provider, which wraps vSphere's Datastore Browser API (`MakeDirectory`). vCenter exposes this API uniformly for all datastore types it manages, so the same code path also handles VMFS and NFS datastores that are registered as named datastores in vCenter.
 
@@ -30,7 +30,7 @@ Confirm-ContentLibraryDatastoreFolder `
     -vCenterAdmin         "administrator@vsphere.local" `
     -vCenterAdminPassword "VMware1!" `
     -datastoreName        "sfo-m01-cl01-ds-vsan01" `
-    -libraryId            "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+    -contentLibraryName   "sfo-m01-cl01"
 ```
 
 ## Parameters
@@ -99,9 +99,9 @@ Accept pipeline input: False
 Accept wildcard characters: False
 ```
 
-### -libraryId
+### -contentLibraryName
 
-GUID of the content library. The folder name is constructed as `contentlib-<libraryId>`.
+Name of the content library. Its GUID is resolved via `Get-ContentLibrary` and the folder name is constructed as `contentlib-<libraryId>`.
 
 ```yaml
 Type: String
