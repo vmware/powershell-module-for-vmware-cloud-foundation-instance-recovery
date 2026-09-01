@@ -4297,6 +4297,8 @@ Function Add-DiskgroupsToManagementHosts {
     .DESCRIPTION
     The Add-DiskgroupsToManagementHosts cmdlet reads the existing vSAN OSA disk group configuration from the first host in the cluster (which was previously configured by New-SingleHostVsanDatastore) and uses it as a reference to create matching disk groups on all remaining hosts that do not yet have disk groups. Disk matching across hosts is done positionally by runtime name sort order, which assumes a standardized disk layout across all hosts.
 
+    After disk groups are confirmed/created, the cmdlet also verifies that every host in the cluster has a vSAN unicast agent entry for every other host, adding any that are missing. vCenter does not reliably build this peer mesh automatically for hosts whose vSAN cluster membership originated outside its own "enable vSAN on this cluster" workflow (notably the bootstrap host created by New-SingleHostVsanDatastore) — without it, hosts can share the same Sub-Cluster UUID yet never discover each other, each electing itself master of its own single-host partition. This step connects to each host over SSH as root, using credentials looked up from the extracted SDDC data, so SSH must be enabled on every host in the cluster.
+
     .EXAMPLE
     Add-DiskgroupsToManagementHosts -targetFQDN "sfo-m01-vc01.sfo.rainpole.io" -targetAdmin "administrator@vsphere.local" -targetAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01" -extractedSDDCDataFile ".\extracted-sddc-data.json"
 
@@ -4526,68 +4528,137 @@ Function Add-DiskgroupsToManagementHosts {
 
     If ($hostsNeedingDiskGroups.Count -eq 0) {
         LogMessage -type INFO -message "[$clusterName] All hosts already have disk groups configured. Nothing to do."
-        Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
-        $StopWatch.Stop()
-        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
-        return
-    }
+    } else {
+        Write-Host ""
+        Write-Host " Proposed Disk Group Configuration — All Hosts" -ForegroundColor Yellow
+        Write-Host ""
+        $proposedDisplayRows | Format-Table -Property @{Expression = " " }, Host, DG, Status, CTL, Type, Role, CapacityGB -AutoSize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
+        Write-Host ""
+        Write-Host " Do you wish to proceed? (Y/N): " -ForegroundColor Yellow -nonewline
+        Do {
+            $proceedAccepted = Read-Host
+        } Until ($proceedAccepted -in "Y", "N")
 
-    Write-Host ""
-    Write-Host " Proposed Disk Group Configuration — All Hosts" -ForegroundColor Yellow
-    Write-Host ""
-    $proposedDisplayRows | Format-Table -Property @{Expression = " " }, Host, DG, Status, CTL, Type, Role, CapacityGB -AutoSize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
-    Write-Host ""
-    Write-Host " Do you wish to proceed? (Y/N): " -ForegroundColor Yellow -nonewline
-    Do {
-        $proceedAccepted = Read-Host
-    } Until ($proceedAccepted -in "Y", "N")
-
-    If ($proceedAccepted -eq "N") {
-        LogMessage -type INFO -message "[$clusterName] User cancelled. No changes made."
-        Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
-        $StopWatch.Stop()
-        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
-        return
-    }
-
-    LogMessage -type INFO -message "[$clusterName] Starting parallel disk group creation across hosts requiring configuration"
-    $diskGroupNumber = $referenceConfig.Count
-    Foreach ($vmHost in $hostsNeedingDiskGroups) {
-        $scriptBlock = {
-            $moduleFunctions = Import-Module VMware.CloudFoundation.InstanceRecovery -PassThru
-            $restoredvCenterConnection = Connect-ViServer $using:targetFQDN -user $using:targetAdmin -password $using:targetAdminPassword
-            $vmhost = Get-VMHost -Name $using:vmHost.Name
-
-            # Get this host's eligible disks (VsanStatus = Eligible) sorted by runtime name.
-            # Canonical names are matched positionally against the reference config, which was
-            # also sorted by runtime name — so disk layout must be standardized across all hosts.
-            $hostEligibleDisks = $vmhost | Get-VMHostDisk | Where-Object { $_.ScsiLun.VsanStatus -eq 'Eligible' } | Sort-Object -Property @{e = { $_.ScsiLun.RuntimeName } }
-
-            $referenceConfig = $using:referenceConfig
-            For ($i = 1; $i -le $using:diskGroupNumber; $i++) {
-                $diskGroupConfigurationIndex = ($i - 1)
-                $config = $referenceConfig[$diskGroupConfigurationIndex]
-
-                # The reference config stores canonical names from the reference host sorted by
-                # runtime name. We use the same positional index to pick disks on this host.
-                $allRefCanonicalNames = ($referenceConfig | ForEach-Object { @($_.cacheDiskCanonicalName) + @($_.capacityDiskCanonicalNames) })
-                $cachePositionIndex = [Array]::IndexOf($allRefCanonicalNames, $config.cacheDiskCanonicalName)
-                $cacheDiskCanonicalName = ($hostEligibleDisks[$cachePositionIndex]).ScsiLun.CanonicalName
-
-                $capacityDiskCanonicalNames = @()
-                Foreach ($refCapacityCanonicalName in $config.capacityDiskCanonicalNames) {
-                    $capacityPositionIndex = [Array]::IndexOf($allRefCanonicalNames, $refCapacityCanonicalName)
-                    $capacityDiskCanonicalNames += ($hostEligibleDisks[$capacityPositionIndex]).ScsiLun.CanonicalName
-                }
-
-                & $moduleFunctions { LogMessage -type INFO -message "[$($vmhost.Name)] Creating vSAN OSA Disk Group $i (cache: $cacheDiskCanonicalName)" }
-                New-VsanDiskGroup -VMHost $vmhost -SsdCanonicalName $cacheDiskCanonicalName -DataDiskCanonicalName $capacityDiskCanonicalNames | Out-Null
-            }
+        If ($proceedAccepted -eq "N") {
+            LogMessage -type INFO -message "[$clusterName] User cancelled. No changes made."
             Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+            $StopWatch.Stop()
+            LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+            return
         }
-        Start-Job -ScriptBlock $scriptBlock -ArgumentList ($diskGroupNumber, $referenceConfig, $vmHost, $targetFQDN, $targetAdmin, $targetAdminPassword) | Out-Null
+
+        LogMessage -type INFO -message "[$clusterName] Starting parallel disk group creation across hosts requiring configuration"
+        $diskGroupNumber = $referenceConfig.Count
+        Foreach ($vmHost in $hostsNeedingDiskGroups) {
+            $scriptBlock = {
+                $moduleFunctions = Import-Module VMware.CloudFoundation.InstanceRecovery -PassThru
+                $restoredvCenterConnection = Connect-ViServer $using:targetFQDN -user $using:targetAdmin -password $using:targetAdminPassword
+                $vmhost = Get-VMHost -Name $using:vmHost.Name
+
+                # Get this host's eligible disks (VsanStatus = Eligible) sorted by runtime name.
+                # Canonical names are matched positionally against the reference config, which was
+                # also sorted by runtime name — so disk layout must be standardized across all hosts.
+                $hostEligibleDisks = $vmhost | Get-VMHostDisk | Where-Object { $_.ScsiLun.VsanStatus -eq 'Eligible' } | Sort-Object -Property @{e = { $_.ScsiLun.RuntimeName } }
+
+                $referenceConfig = $using:referenceConfig
+                For ($i = 1; $i -le $using:diskGroupNumber; $i++) {
+                    $diskGroupConfigurationIndex = ($i - 1)
+                    $config = $referenceConfig[$diskGroupConfigurationIndex]
+
+                    # The reference config stores canonical names from the reference host sorted by
+                    # runtime name. We use the same positional index to pick disks on this host.
+                    $allRefCanonicalNames = ($referenceConfig | ForEach-Object { @($_.cacheDiskCanonicalName) + @($_.capacityDiskCanonicalNames) })
+                    $cachePositionIndex = [Array]::IndexOf($allRefCanonicalNames, $config.cacheDiskCanonicalName)
+                    $cacheDiskCanonicalName = ($hostEligibleDisks[$cachePositionIndex]).ScsiLun.CanonicalName
+
+                    $capacityDiskCanonicalNames = @()
+                    Foreach ($refCapacityCanonicalName in $config.capacityDiskCanonicalNames) {
+                        $capacityPositionIndex = [Array]::IndexOf($allRefCanonicalNames, $refCapacityCanonicalName)
+                        $capacityDiskCanonicalNames += ($hostEligibleDisks[$capacityPositionIndex]).ScsiLun.CanonicalName
+                    }
+
+                    & $moduleFunctions { LogMessage -type INFO -message "[$($vmhost.Name)] Creating vSAN OSA Disk Group $i (cache: $cacheDiskCanonicalName)" }
+                    New-VsanDiskGroup -VMHost $vmhost -SsdCanonicalName $cacheDiskCanonicalName -DataDiskCanonicalName $capacityDiskCanonicalNames | Out-Null
+                }
+                Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+            }
+            Start-Job -ScriptBlock $scriptBlock -ArgumentList ($diskGroupNumber, $referenceConfig, $vmHost, $targetFQDN, $targetAdmin, $targetAdminPassword) | Out-Null
+        }
+        Get-Job | Receive-Job -Wait -AutoRemoveJob
     }
-    Get-Job | Receive-Job -Wait -AutoRemoveJob
+
+    # -------------------------------------------------------------------------
+    # Ensure every host in the cluster has a vSAN unicast agent entry for every
+    # other host. vCenter does not reliably build this peer mesh automatically
+    # for hosts whose vSAN cluster membership originated outside its own
+    # "enable vSAN on this cluster" workflow (e.g. the bootstrap host created by
+    # New-SingleHostVsanDatastore). Hosts can end up sharing the same
+    # Sub-Cluster UUID yet never discover each other, each electing itself
+    # master of its own single-host partition. Requires SSH access to each
+    # host as root, using credentials from the extracted SDDC data.
+    # -------------------------------------------------------------------------
+    LogMessage -type INFO -message "[$clusterName] Verifying vSAN unicast agent mesh across all hosts"
+
+    $vsanPeers = @()
+    Foreach ($vmHost in $vmHosts) {
+        $nodeUuid = $vmHost.ExtensionData.Config.VsanHostConfig.ClusterInfo.NodeUuid
+        if (-not $nodeUuid) {
+            LogMessage -type WARNING -message "[$($vmHost.Name)] Could not resolve vSAN Node UUID (vSAN may not be enabled on this host) — skipping for unicast mesh"
+            continue
+        }
+
+        $esxcli = Get-EsxCli -VMHost $vmHost -V2
+        $vsanNetwork = @($esxcli.vsan.network.list.Invoke() | Where-Object { ($_.TrafficType -join ',') -match 'vsan' }) | Select-Object -First 1
+        if (-not $vsanNetwork) {
+            LogMessage -type WARNING -message "[$($vmHost.Name)] Could not resolve a vmknic tagged for vSAN traffic — skipping for unicast mesh"
+            continue
+        }
+
+        $vsanVmk = Get-VMHostNetworkAdapter -VMHost $vmHost -VMKernel -Name $vsanNetwork.VmkNicName -ErrorAction SilentlyContinue
+        if (-not $vsanVmk -or -not $vsanVmk.IP) {
+            LogMessage -type WARNING -message "[$($vmHost.Name)] Could not resolve an IP address for vSAN vmknic '$($vsanNetwork.VmkNicName)' — skipping for unicast mesh"
+            continue
+        }
+
+        $rootPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $vmHost.Name) -and ($_.username -eq "root") }).password
+        if (-not $rootPassword) {
+            LogMessage -type WARNING -message "[$($vmHost.Name)] Could not resolve root password from extracted SDDC data — skipping for unicast mesh"
+            continue
+        }
+
+        $vsanPeers += [PSCustomObject]@{
+            Name         = $vmHost.Name
+            NodeUuid     = $nodeUuid
+            VsanIp       = $vsanVmk.IP
+            RootPassword = $rootPassword
+        }
+    }
+
+    Foreach ($peer in $vsanPeers) {
+        $otherPeers = @($vsanPeers | Where-Object { $_.Name -ne $peer.Name })
+        if ($otherPeers.Count -eq 0) { continue }
+
+        $sshSession = $null
+        Try {
+            $SecurePassword = ConvertTo-SecureString -String $peer.RootPassword -AsPlainText -Force
+            $rootCreds      = New-Object System.Management.Automation.PSCredential ("root", $SecurePassword)
+            $sshSession     = Open-VcfmsSshSession -Fqdn $peer.Name -Creds $rootCreds
+
+            Foreach ($otherPeer in $otherPeers) {
+                $addCmd = "esxcli vsan cluster unicastagent add -t node -u $($otherPeer.NodeUuid) -U true -p 12321 -a $($otherPeer.VsanIp)"
+                $result = Invoke-SSHCommand -SessionId $sshSession.SessionId -Command $addCmd -TimeOut 30
+                if ($result.ExitStatus -eq 0) {
+                    LogMessage -type INFO -message "[$($peer.Name)] Added/confirmed unicast agent for $($otherPeer.Name) ($($otherPeer.VsanIp))"
+                } else {
+                    LogMessage -type WARNING -message "[$($peer.Name)] unicastagent add for $($otherPeer.Name) exited $($result.ExitStatus): $(($result.Output + $result.Error) -join ' ')"
+                }
+            }
+        } Catch {
+            LogMessage -type ERROR -message "[$($peer.Name)] Failed to configure vSAN unicast agents: $($_.Exception.Message)"
+        } Finally {
+            if ($sshSession) { Remove-SSHSession -SSHSession $sshSession | Out-Null }
+        }
+    }
 
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
     $StopWatch.Stop()
