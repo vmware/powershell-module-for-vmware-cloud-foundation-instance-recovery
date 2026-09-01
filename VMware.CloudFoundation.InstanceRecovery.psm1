@@ -13074,6 +13074,199 @@ Function New-ExtractVcfmsBackup {
 }
 Export-ModuleMember -Function New-ExtractVcfmsBackup
 
+Function Invoke-VcfmsBackupSftpToYaml {
+    <#
+    .SYNOPSIS
+    Copies and executes the vmsp-backup-sftp-to-yaml.sh script on the Services Runtime
+    control plane node to pull a VMSP component backup from SFTP and export it as YAML.
+
+    .DESCRIPTION
+    The Invoke-VcfmsBackupSftpToYaml cmdlet performs the following steps:
+
+      1. Resolves the Services Runtime control plane node (handles worker-node redirect
+         via node-agent.conf automatically).
+      2. Base64-encodes the bundled vmsp-backup-sftp-to-yaml.sh script and uploads it to
+         /tmp on the control plane node via the existing SSH session — no SCP binary
+         required.
+      3. Executes the script under sudo with KUBECONFIG=/etc/kubernetes/admin.conf (so the
+         script can read the encryption passphrase secret from the cluster) and
+         VMSP_SFTP_PASSWORD set from -SftpPassword, as:
+
+           bash ./vmsp-backup-sftp-to-yaml.sh \
+             --sftp-host "<SftpHost>" \
+             --sftp-user "<SftpUser>" \
+             --sftp-dir "<SftpDir>" \
+             --remote-archive "<RemoteArchive>" \
+             --output-dir ./backup-yaml
+
+      4. Streams script output to the console in real time.
+      5. Removes the temporary script from the remote node on completion.
+
+    .EXAMPLE
+    Invoke-VcfmsBackupSftpToYaml `
+        -ServicesRuntimeFqdn     "sfo-sr01.sfo.rainpole.io" `
+        -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
+        -SftpHost                "10.167.173.130" `
+        -SftpUser                "svc-vcf-bck" `
+        -SftpPassword            "VMw@re1!VMw@re1!" `
+        -SftpDir                 "/media/backups" `
+        -RemoteArchive           "/media/backups/vcf/backups/e6b2ad0a-b76f-4080-b9db-aa338bacdc64/9.1.1.0.25662438/vsp/e6b2ad0a-b76f-4080-b9db-aa338bacdc64/9.1.1.0.25662438/2026-08-20T10-13-53Z/2026-08-20T10-13-53Z.base.tgz"
+
+    .PARAMETER ServicesRuntimeFqdn
+    FQDN or IP of any Services Runtime cluster node. If a worker node is supplied the
+    function automatically resolves and connects to the control plane.
+
+    .PARAMETER ServicesRuntimePassword
+    Password for vmware-system-user (SSH login and sudo elevation).
+
+    .PARAMETER SftpHost
+    SFTP server host or IP. Passed as --sftp-host.
+
+    .PARAMETER SftpUser
+    SFTP username. Passed as --sftp-user.
+
+    .PARAMETER SftpPassword
+    SFTP password. Passed to the remote script as the VMSP_SFTP_PASSWORD environment
+    variable rather than a command-line flag.
+
+    .PARAMETER SftpDir
+    Remote SFTP root directory for backups. Passed as --sftp-dir.
+
+    .PARAMETER RemoteArchive
+    Full SFTP path to the *.base.tgz backup archive. Passed as --remote-archive.
+
+    .PARAMETER RemoteScriptTimeout
+    Seconds to wait for the remote script to complete. Default is 600 (10 minutes).
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][String] $ServicesRuntimeFqdn,
+        [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
+        [Parameter(Mandatory = $true)][String] $SftpHost,
+        [Parameter(Mandatory = $true)][String] $SftpUser,
+        [Parameter(Mandatory = $true)][String] $SftpPassword,
+        [Parameter(Mandatory = $true)][String] $SftpDir,
+        [Parameter(Mandatory = $true)][String] $RemoteArchive,
+        [Parameter(Mandatory = $false)][Int] $RemoteScriptTimeout = 600
+    )
+
+    $jumpboxName = hostname
+    $StopWatch   = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    # -------------------------------------------------------------------------
+    # Validate the local script exists
+    # -------------------------------------------------------------------------
+    $localScript = Join-Path -Path $PSScriptRoot -ChildPath "scripts/vmsp-backup-sftp-to-yaml.sh"
+    if (-not (Test-Path $localScript)) {
+        LogMessage -type ERROR -message "[$jumpboxName] Script not found: $localScript"
+        $StopWatch.Stop(); return
+    }
+
+    # -------------------------------------------------------------------------
+    # Resolve the control plane node
+    # Reuse Get-VcfmsServicesRuntimeKubeconfig which handles worker → CP redirect.
+    # -------------------------------------------------------------------------
+    LogMessage -type INFO -message "[$jumpboxName] Resolving control plane node from $ServicesRuntimeFqdn"
+    $kubeconfigResult = Get-VcfmsServicesRuntimeKubeconfig `
+        -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
+        -Password            $ServicesRuntimePassword `
+        -OutputDir           "."
+    if (-not $kubeconfigResult) {
+        LogMessage -type ERROR -message "[$jumpboxName] Could not resolve control plane node. Aborting."
+        $StopWatch.Stop(); return
+    }
+    $controlPlaneHost = $kubeconfigResult.ControlPlaneHost
+    LogMessage -type INFO -message "[$jumpboxName] Control plane node  : $controlPlaneHost"
+
+    # -------------------------------------------------------------------------
+    # Open SSH session to the control plane node
+    # -------------------------------------------------------------------------
+    $SecurePassword    = ConvertTo-SecureString -String $ServicesRuntimePassword -AsPlainText -Force
+    $creds             = New-Object System.Management.Automation.PSCredential ('vmware-system-user', $SecurePassword)
+    $session           = $null
+    $remoteScriptName  = "vmsp-backup-sftp-to-yaml.sh"
+    $remotePath        = "/tmp/$remoteScriptName"
+
+    try {
+        $session = Open-VcfmsSshSession -Fqdn $controlPlaneHost -Creds $creds
+
+        # -------------------------------------------------------------------------
+        # Upload the script via base64 pipe — avoids any SCP binary dependency
+        # -------------------------------------------------------------------------
+        LogMessage -type INFO -message "[$controlPlaneHost] Uploading script to $remotePath"
+        $scriptBytes = [System.IO.File]::ReadAllBytes($localScript)
+        # Strip CR bytes so the file always has Unix line endings on the remote node,
+        # regardless of how git checked it out on the local machine (Windows autocrlf etc.)
+        $scriptBytes = [byte[]]($scriptBytes | Where-Object { $_ -ne 0x0D })
+        $b64         = [System.Convert]::ToBase64String($scriptBytes)
+
+        # printf is used instead of echo to avoid an appended newline corrupting the decode
+        $uploadCmd    = "printf '%s' '$b64' | base64 -d > $remotePath && chmod +x $remotePath"
+        $uploadResult = Invoke-SSHCommand -SessionId $session.SessionId -Command $uploadCmd -TimeOut 60
+        if ($uploadResult.ExitStatus -ne 0) {
+            LogMessage -type ERROR -message "[$controlPlaneHost] Script upload failed (exit $($uploadResult.ExitStatus)): $($uploadResult.Error -join ' ')"
+            return
+        }
+        LogMessage -type INFO -message "[$controlPlaneHost] Script uploaded successfully"
+
+        # -------------------------------------------------------------------------
+        # Build and execute the remote command
+        # sudo -S reads the password from stdin; env preserves KUBECONFIG (so the script
+        # can read the encryption passphrase secret from the cluster) and VMSP_SFTP_PASSWORD
+        # across the sudo boundary.
+        # -------------------------------------------------------------------------
+        $scriptArgs = "--sftp-host '$SftpHost' --sftp-user '$SftpUser' --sftp-dir '$SftpDir' --remote-archive '$RemoteArchive' --output-dir ./backup-yaml"
+
+        $execCmd = "cd /tmp && echo '$ServicesRuntimePassword' | sudo -S env KUBECONFIG=/etc/kubernetes/admin.conf VMSP_SFTP_PASSWORD='$SftpPassword' bash ./$remoteScriptName $scriptArgs 2>&1"
+
+        LogMessage -type INFO -message "[$controlPlaneHost] Executing script (timeout: ${RemoteScriptTimeout}s)"
+        Write-Host ""
+        Write-Host " ── vmsp-backup-sftp-to-yaml output ──────────────────────" -ForegroundColor Cyan
+
+        $execResult = Invoke-SSHCommand -SessionId $session.SessionId -Command $execCmd -TimeOut $RemoteScriptTimeout
+
+        # Print all output (stdout + stderr merged via 2>&1); filter sudo prompt noise
+        $execResult.Output |
+            Where-Object { $_ -notmatch '^\[sudo\]' } |
+            ForEach-Object { Write-Host "  $_" }
+
+        # Belt-and-suspenders: if Posh-SSH still delivers anything on the Error channel
+        # split on newlines first so a single multi-line string is handled correctly
+        if ($execResult.Error) {
+            (($execResult.Error -join "`n") -split "`r?`n") |
+                Where-Object { $_ -notmatch '^\[sudo\]' -and $_ -ne '' } |
+                ForEach-Object { Write-Host "  $_" -ForegroundColor Yellow }
+        }
+
+        Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+        Write-Host ""
+
+        if ($execResult.ExitStatus -eq 0) {
+            LogMessage -type INFO -message "[$controlPlaneHost] Script completed successfully"
+        } else {
+            LogMessage -type ERROR -message "[$controlPlaneHost] Script exited with code $($execResult.ExitStatus)"
+        }
+
+    } catch {
+        LogMessage -type ERROR -message "[$jumpboxName] $($_.Exception.Message)"
+    } finally {
+        # Always remove the temporary script from the remote node
+        if ($session) {
+            Invoke-SSHCommand -SessionId $session.SessionId `
+                -Command "rm -f $remotePath" -TimeOut 15 | Out-Null
+            Remove-SSHSession -SSHSession $session | Out-Null
+            LogMessage -type INFO -message "[$controlPlaneHost] Temporary script removed"
+        }
+    }
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+Export-ModuleMember -Function Invoke-VcfmsBackupSftpToYaml
+
 Function Disable-VcfmsClusterLogging {
     <#
     .SYNOPSIS
