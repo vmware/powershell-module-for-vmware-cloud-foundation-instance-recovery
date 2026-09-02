@@ -4642,7 +4642,12 @@ Function Add-DiskgroupsToManagementHosts {
         Try {
             $SecurePassword = ConvertTo-SecureString -String $peer.RootPassword -AsPlainText -Force
             $rootCreds      = New-Object System.Management.Automation.PSCredential ("root", $SecurePassword)
-            $sshSession     = Open-VcfmsSshSession -Fqdn $peer.Name -Creds $rootCreds
+            $inmem          = New-SSHMemoryKnownHost
+            New-SSHTrustedHost -KnownHostStore $inmem -HostName $peer.Name `
+                -FingerPrint ((Get-SSHHostKey -ComputerName $peer.Name).fingerprint) | Out-Null
+            Do {
+                $sshSession = New-SSHSession -ComputerName $peer.Name -Credential $rootCreds -KnownHost $inmem
+            } Until ($sshSession)
 
             Foreach ($otherPeer in $otherPeers) {
                 $addCmd = "esxcli vsan cluster unicastagent add -t node -u $($otherPeer.NodeUuid) -U true -p 12321 -a $($otherPeer.VsanIp)"
