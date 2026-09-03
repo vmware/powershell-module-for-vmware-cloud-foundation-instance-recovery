@@ -14622,7 +14622,7 @@ Function Invoke-VcfmsFleetComponentRegistration {
     # -------------------------------------------------------------------------
     # Validate the local script exists
     # -------------------------------------------------------------------------
-    $localScript = Join-Path -Path $PSScriptRoot -ChildPath "scripts/9.1.0/update_fleet_component_registration.sh"
+    $localScript = Join-Path -Path $PSScriptRoot -ChildPath "scripts/update_fleet_component_registration.sh"
     if (-not (Test-Path $localScript)) {
         LogMessage -type ERROR -message "[$jumpboxName] Script not found: $localScript"
         $StopWatch.Stop(); return
@@ -15252,7 +15252,7 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
     # -------------------------------------------------------------------------
     # Validate the local script exists
     # -------------------------------------------------------------------------
-    $localScript = Join-Path -Path $PSScriptRoot -ChildPath "scripts/9.1.0/update-vidb-vcf-instance.sh"
+    $localScript = Join-Path -Path $PSScriptRoot -ChildPath "scripts/update-vidb-vcf-instance.sh"
     if (-not (Test-Path $localScript)) {
         LogMessage -type ERROR -message "[$jumpboxName] Script not found: $localScript"
         $StopWatch.Stop(); return
