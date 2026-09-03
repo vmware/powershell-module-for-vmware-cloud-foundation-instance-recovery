@@ -4245,7 +4245,7 @@ Function New-RebuiltVsanDatastore {
                 $azVmHosts = $vmhosts | Where-Object { $_.name -in $azHosts }
                 If ($clusterDetails.isStretched -eq 't')
                 {
-                    LogMessage -type INFO -message "[$clusterName] Starting Parallel Disk Group Creation across all $($az1.ToUpper()) hosts"
+                    LogMessage -type INFO -message "[$clusterName] Starting Parallel Disk Group Creation across all $($az.ToUpper()) hosts"
                 }
                 else
                 {
