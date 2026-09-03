@@ -12,6 +12,11 @@
 #   (2) If the archive contains standard ingress-*-tls Secret JSON, writes matching ingress-*-tls.yaml.
 #   (3) If plain ingress-*-tls are absent but *-tls-ndc JSON exists, synthesizes kubernetes.io/tls
 #       ingress-*-tls.yaml from NDC data (cert/key → tls.crt/tls.key), annotated as generated.
+#   (4) Also writes vmsp-platform.json: a merge-patch body with just spec.values.profiles.name and
+#       spec.values.cluster.worker.size from the backed-up PackageDeployment, for restoring cluster
+#       size/worker size onto a freshly-redeployed cluster via:
+#         kubectl patch packagedeployment vmsp-platform -n vmsp-platform --type=merge \
+#           --patch-file vmsp-platform.json
 #
 # Requirements: bash 3.2+, openssl, tar, gzip, sshpass, sftp, python3 (PyYAML),
 #               jq when using cluster (--configure-cluster, --trigger-backup,
@@ -104,6 +109,8 @@ Output:
 
 Exports (under output dir):
   vmsp-platform.yaml              PackageDeployment (if present in backup)
+  vmsp-platform.json              Merge-patch body: spec.values.profiles.name and
+                                  spec.values.cluster.worker.size (if present in backup)
   ingress-*-tls-ndc.yaml          NDC mirror secrets from backup (if present)
   ingress-*-tls.yaml            Standard TLS secrets; from backup if present, else
                                   synthesized from *-tls-ndc (same cert/key material)
@@ -312,6 +319,21 @@ if p is not None:
     with open(dst, "w") as f:
         yaml.safe_dump(obj, f, default_flow_style=False, sort_keys=False)
     print(dst)
+
+    values = (obj.get("spec") or {}).get("values") or {}
+    patch_values = {}
+    profile_name = (values.get("profiles") or {}).get("name")
+    if profile_name is not None:
+        patch_values.setdefault("profiles", {})["name"] = profile_name
+    worker_size = ((values.get("cluster") or {}).get("worker") or {}).get("size")
+    if worker_size is not None:
+        patch_values.setdefault("cluster", {}).setdefault("worker", {})["size"] = worker_size
+    if patch_values:
+        patch_dst = out_dir / "vmsp-platform.json"
+        with open(patch_dst, "w") as f:
+            json.dump({"spec": {"values": patch_values}}, f, indent=2)
+            f.write("\n")
+        print(patch_dst)
 
 for ndc_stem in ("ingress-fleet-tls-ndc", "ingress-instance-tls-ndc", "ingress-platform-tls-ndc"):
     p = resolve_secret_json(ndc_stem)
