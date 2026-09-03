@@ -4094,11 +4094,11 @@ Function New-RebuiltVsanDatastore {
     LogMessage -type INFO -message "[$jumpboxName] Connecting to Restored vCenter: $targetFQDN"
     $restoredvCenterConnection = Connect-ViServer $targetFQDN -user $targetAdmin -password $targetAdminPassword
     If ($datastoreType -ne "VSAN_ESA") {
-        $azHosts = $clusterDetails.azHostMapping.az1
-        $vmhosts = (Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name | Where-Object { $_.name -in $azHosts })
-        LogMessage -type INFO -message "[$($vmhosts[0].name)] Using host as reference for Eligible Physical Disks"
+        $vmhosts = (Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)
+        $az1Hosts = $vmhosts | Where-Object { $_.name -in $clusterDetails.azHostMapping.az1 }
+        LogMessage -type INFO -message "[$($az1Hosts[0].name)] Using host as reference for Eligible Physical Disks"
 
-        $disks = ((Get-Cluster -name $clusterName | Get-VMHost | Sort-Object -property Name)[0] | Get-VMHostDisk) | Where-Object { $_.ScsiLun.VsanStatus -eq 'Eligible' } | Sort-Object -Property @{e = { $_.scsilun.runtimename } }
+        $disks = (Get-VMHost -name $az1Hosts[0].name | Get-VMHostDisk) | Where-Object { $_.ScsiLun.VsanStatus -eq 'Eligible' } | Sort-Object -Property @{e = { $_.scsilun.runtimename } }
         $disksDisplayObject = @()
         $disksIndex = 1
         $disksDisplayObject += [pscustomobject]@{
