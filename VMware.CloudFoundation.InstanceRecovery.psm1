@@ -3638,7 +3638,7 @@ Function Add-HostsToCluster {
         }
         $az2Hosts = $clusterDetails.azHostMapping.az2
 
-        $nsxManagerFqdn = ($workloadDomain.nsxNodeDetails | Select-Object -First 1).hostname
+        $nsxManagerFqdn = $workloadDomain.nsxClusterDetails.clusterFqdn
         $nsxManagerAdmin = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain.domainName) -and ($_.username -eq "admin") }).username
         $nsxManagerAdminPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain.domainName) -and ($_.username -eq "admin") }).password
         $headers = VCFIRCreateHeader -username $nsxManagerAdmin -password $nsxManagerAdminPassword
@@ -5513,7 +5513,7 @@ Function New-RebuiltVdsConfiguration {
         # "Configure NSX (Advanced)" in the UI with no changes. This calls the documented NSX API that the
         # UI action invokes, to force NSX to retry realization of the profile against the cluster.
         LogMessage -type INFO -message "[$jumpboxName] Requesting NSX to retry Transport Node Profile realization for '$clusterName'"
-        $nsxManagerFqdn = ($workloadDomain.nsxNodeDetails | Select-Object -First 1).hostname
+        $nsxManagerFqdn = $workloadDomain.nsxClusterDetails.clusterFqdn
         $nsxManagerAdmin = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain.domainName) -and ($_.username -eq "admin") }).username
         $nsxManagerAdminPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain.domainName) -and ($_.username -eq "admin") }).password
         $nsxHeaders = VCFIRCreateHeader -username $nsxManagerAdmin -password $nsxManagerAdminPassword
@@ -5599,7 +5599,7 @@ Function Watch-NsxHostTransportNodeInstallation {
         LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
         Return
     }
-    $nsxManagerFqdn = ($workloadDomain.nsxNodeDetails | Select-Object -First 1).hostname
+    $nsxManagerFqdn = $workloadDomain.nsxClusterDetails.clusterFqdn
     $nsxManagerAdmin = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain.domainName) -and ($_.username -eq "admin") }).username
     $nsxManagerAdminPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain.domainName) -and ($_.username -eq "admin") }).password
 
