@@ -16544,7 +16544,17 @@ $domainsListBox.Add_SelectionChanged({
 }.GetNewClosure())
 
 Start-TerminalReadyWatcher
-[void]$window.ShowDialog()
+
+# EasyWindowsTerminalControl's native rendering/ConPTY session appears to need a real
+# System.Windows.Application (Application.Current) to exist -- without one, ConPTYTerm ends up
+# non-null but only partially initialized (WriteToTerm throws NullReferenceException internally,
+# and nothing renders in the control's area at all). Window.ShowDialog() alone doesn't create one.
+if ($null -eq [System.Windows.Application]::Current) {
+    $app = New-Object System.Windows.Application
+    [void]$app.Run($window)
+} else {
+    [void]$window.ShowDialog()
+}
 '@
 
     $initialSessionState = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault()
