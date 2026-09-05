@@ -257,7 +257,7 @@
 
             <!-- Embedded console -->
             <GroupBox Grid.Column="2" Header="Console">
-                <term:EasyTerminalControl x:Name="Term" StartupCommandLine="pwsh.exe -NoLogo -NoExit" />
+                <term:EasyTerminalControl x:Name="Term" StartupCommandLine="pwsh.exe -NoLogo -NoExit" FontSizeWhenSettingTheme="11" />
             </GroupBox>
         </Grid>
     </Grid>
