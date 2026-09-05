@@ -3,6 +3,10 @@
     "defaultMode": "bypassPermissions",
     "allow": [
       "Read(//c/Users/Administrator/.claude/projects/C--Users-Administrator/**)"
-    ]
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\Administrator\\AppData\\Local\\Temp\\2\\claude"
+    ],
+    "blockReadsOutsideWorkingDirectories": false
   }
 }

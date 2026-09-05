@@ -16333,7 +16333,8 @@ $term = $window.FindName('Term')
 # so the TerminalOutput completion-watcher never sees $null before that happens.
 $global:managementDomainRestoresStepRows = @()
 $global:recoverDefaultClusterStepRows = @()
-$global:consoleOutputBuffer = ''
+$global:consoleOutputBuffer = [System.Text.StringBuilder]::new()
+$global:consoleOutputBufferLock = [object]::new()
 
 function Protect-SingleQuotes([string]$Value) {
     return $Value.Replace("'", "''")
@@ -16469,30 +16470,59 @@ function Start-TerminalReadyWatcher {
             $this.Stop()
 
             # Watches raw console output for the module's own "Completed Task <cmdlet>" log line
-            # (see LogMessage) to mark the matching Step row Done. TerminalOutput fires on the
-            # ConPTY control's own read thread, not the UI thread, so row updates are marshaled back
-            # via the Dispatcher. This MUST be BeginInvoke (queue and return), not the blocking
-            # Invoke: WriteToTerm (called from the UI thread when Run is clicked) and this read
-            # thread both touch the same native ConPTY session, so a synchronous Invoke here can
-            # deadlock against a WriteToTerm call that's waiting on that same session -- which is
-            # exactly what made Run appear to do nothing after this watcher was added.
+            # (see LogMessage) to mark the matching Step row Done.
+            #
+            # TerminalOutput can fire very frequently (once per small read-buffer flush -- many
+            # times a second during verbose cmdlet output). An earlier version of this appended
+            # each chunk with plain string "+=" (full copy of up to a 50,000-char buffer on every
+            # single chunk, landing on the Large Object Heap once past ~42KB) AND marshaled a
+            # Dispatcher call to the UI thread on every chunk too. That much sustained allocation
+            # pressure was enough to trigger frequent GC collections, which is what exposed an
+            # unrelated, otherwise-latent bug in EasyWindowsTerminalControl itself: it registers a
+            # native console control-handler callback without keeping a durable managed reference
+            # to the delegate, so once GC actually collects it, the next native invocation crashes
+            # the whole process via FailFast ("callback was made on a garbage collected delegate").
+            # Rare before this watcher existed (GC ran rarely enough not to hit it); reliably
+            # reproducible within minutes once this watcher added that much extra churn.
+            #
+            # Fix: append with StringBuilder (amortized, no full-buffer copy per chunk) on the
+            # background read thread, guarded by a lock since the completion-check timer below
+            # reads the same buffer from the UI thread; do the actual completion scan on a throttled
+            # DispatcherTimer (every 400ms) instead of on every raw chunk, so UI-thread work and
+            # allocation happen at a small fixed rate regardless of how much output streams through.
             $term.ConPTYTerm.Add_TerminalOutput({
                 param($sender, $e)
-                $global:consoleOutputBuffer += $e.Data
-                if ($global:consoleOutputBuffer.Length -gt 50000) {
-                    $global:consoleOutputBuffer = $global:consoleOutputBuffer.Substring($global:consoleOutputBuffer.Length - 50000)
-                }
-                $window.Dispatcher.BeginInvoke([action]{
-                    foreach ($row in (@($global:managementDomainRestoresStepRows) + @($global:recoverDefaultClusterStepRows))) {
-                        if ($row.Button.Content -eq 'Done') { continue }
-                        if ($global:consoleOutputBuffer.Contains("Completed Task $($row.CmdletName)")) {
-                            $row.Dot.Fill = [System.Windows.Media.Brushes]::Green
-                            $row.Button.Content = 'Done'
-                            $row.Button.Background = [System.Windows.Media.Brushes]::Green
-                        }
+                [System.Threading.Monitor]::Enter($global:consoleOutputBufferLock)
+                try {
+                    [void]$global:consoleOutputBuffer.Append($e.Data)
+                    $excess = $global:consoleOutputBuffer.Length - 50000
+                    if ($excess -gt 0) {
+                        [void]$global:consoleOutputBuffer.Remove(0, $excess)
                     }
-                }) | Out-Null
+                } finally {
+                    [System.Threading.Monitor]::Exit($global:consoleOutputBufferLock)
+                }
             })
+
+            $completionTimer = New-Object System.Windows.Threading.DispatcherTimer
+            $completionTimer.Interval = [TimeSpan]::FromMilliseconds(400)
+            $completionTimer.Add_Tick({
+                [System.Threading.Monitor]::Enter($global:consoleOutputBufferLock)
+                try {
+                    $snapshot = $global:consoleOutputBuffer.ToString()
+                } finally {
+                    [System.Threading.Monitor]::Exit($global:consoleOutputBufferLock)
+                }
+                foreach ($row in (@($global:managementDomainRestoresStepRows) + @($global:recoverDefaultClusterStepRows))) {
+                    if ($row.Button.Content -eq 'Done') { continue }
+                    if ($snapshot.Contains("Completed Task $($row.CmdletName)")) {
+                        $row.Dot.Fill = [System.Windows.Media.Brushes]::Green
+                        $row.Button.Content = 'Done'
+                        $row.Button.Background = [System.Windows.Media.Brushes]::Green
+                    }
+                }
+            })
+            $completionTimer.Start()
         } elseif ($script:terminalReadyAttempts -gt 50) {
             $this.Stop()
             $statusTextBlock.Text = 'Embedded console did not start in time.'
