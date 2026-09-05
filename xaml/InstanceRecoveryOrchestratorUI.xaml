@@ -169,10 +169,10 @@
             <TextBlock Text="VCF Instance Recovery Orchestrator" Foreground="White" FontSize="16" FontWeight="SemiBold" />
         </Border>
 
-        <!-- Left rail (30%) + console (70%). Kept as two independent columns -- rather than one
-             big stacked column including the console -- specifically so the console's size never
-             depends on how tall the left rail's panes get (that coupling used to push the console
-             off the bottom of the window once Steps/Variables appeared). -->
+        <!-- Left rail (30%) and console (70%) are two independent columns, not one big stacked
+             column including the console, specifically so the console's size never depends on how
+             tall the left rail's panes get (that coupling used to push the console off the bottom
+             of the window once Steps/Variables appeared). -->
         <Grid Grid.Row="1" Margin="14">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="3*" />
