@@ -209,7 +209,7 @@ jobs:
           Write-Output "INFO: Setting location to the GitHub workspace at '$env:GITHUB_WORKSPACE'."
           Set-Location $env:GITHUB_WORKSPACE
           Write-Output "INFO: Publishing module to the PowerShell Gallery."
-          $remove = @('.ci', '.dependencies', '.git', '.github', '.gitignore', '.vscode', 'docs', 'spikes', 'ui', 'CODEOWNERS', 'CODE_OF_CONDUCT.md', 'CONTRIBUTING.md', 'Makefile', 'mkdocs.yml')
+          $remove = @('.ci', '.dependencies', '.git', '.github', '.gitignore', '.vscode', 'docs', 'spikes', 'CODEOWNERS', 'CODE_OF_CONDUCT.md', 'CONTRIBUTING.md', 'Makefile', 'mkdocs.yml')
           $random = Get-Random -Count 1
           $destinationPath = Join-Path -Path $env:GITHUB_WORKSPACE -ChildPath $random
           $manifestName = (Get-ChildItem -Path $env:GITHUB_WORKSPACE -Filter *.psd1).Name

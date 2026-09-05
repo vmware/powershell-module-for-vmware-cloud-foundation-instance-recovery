@@ -16246,13 +16246,13 @@ Export-ModuleMember -Function Invoke-SupervisorRestore
 
 #Region UI Orchestrator
 
-Function Start-InstanceRecoveryOrchestratorUI {
+Function Start-InstanceRecoveryUI {
     <#
     .SYNOPSIS
     Launches the VCF Instance Recovery orchestrator UI
 
     .DESCRIPTION
-    The Start-InstanceRecoveryOrchestratorUI cmdlet opens a WPF window -- loaded in-process from
+    The Start-InstanceRecoveryUI cmdlet opens a WPF window -- loaded in-process from
     xaml\InstanceRecoveryOrchestratorUI.xaml via XamlReader, no separate .exe or build step -- that
     lets you pick an extracted-sddc-data.json file, lists the workload domains it contains, and runs
     the recovery steps for the selected domain in an embedded, fully interactive PowerShell console
@@ -16262,7 +16262,7 @@ Function Start-InstanceRecoveryOrchestratorUI {
     immediately rather than blocking until the window is closed.
 
     .EXAMPLE
-    Start-InstanceRecoveryOrchestratorUI
+    Start-InstanceRecoveryUI
     #>
 
     Param()
@@ -16466,6 +16466,6 @@ Start-TerminalReadyWatcher
 
     LogMessage -type NOTE -message "Instance Recovery Orchestrator UI launched."
 }
-Export-ModuleMember -Function Start-InstanceRecoveryOrchestratorUI
+Export-ModuleMember -Function Start-InstanceRecoveryUI
 
 #EndRegion UI Orchestrator

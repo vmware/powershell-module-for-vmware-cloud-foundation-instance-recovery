@@ -3,7 +3,7 @@
         xmlns:term="clr-namespace:EasyWindowsTerminalControl;assembly=EasyWindowsTerminalControl"
         Title="VCF Instance Recovery Orchestrator" Height="800" Width="1100">
     <!--
-        Loaded via XamlReader.Load from Start-InstanceRecoveryOrchestratorUI (see the .psm1).
+        Loaded via XamlReader.Load from Start-InstanceRecoveryUI (see the .psm1).
         There is no code-behind class, so this file deliberately has no x:Class, no inline event
         handler attributes (Click=/SelectionChanged=), and no data-binding markup on the list
         boxes. All wiring and list population happens imperatively in the PowerShell loader script.
@@ -25,8 +25,8 @@
 
             <GroupBox Grid.Column="0" Header="Data Source">
                 <StackPanel Margin="5">
-                    <RadioButton x:Name="ExtractBackupRadio" Content="Extract a backup file" GroupName="DataSource" Margin="0,0,0,5" />
-                    <RadioButton x:Name="UseExtractedDataRadio" Content="Start with existing extracted data" GroupName="DataSource" IsChecked="True" Margin="0,0,0,5" />
+                    <RadioButton x:Name="ExtractBackupRadio" Content="Extract SDDC Manager Backup" GroupName="DataSource" Margin="0,0,0,5" />
+                    <RadioButton x:Name="UseExtractedDataRadio" Content="Load Extracted SDDC Data" GroupName="DataSource" IsChecked="True" Margin="0,0,0,5" />
                     <DockPanel Margin="0,5,0,0">
                         <Button x:Name="BrowseButton" Content="Browse..." Width="80" DockPanel.Dock="Right" />
                         <TextBox x:Name="FilePathTextBox" IsReadOnly="True" Margin="0,0,5,0" VerticalContentAlignment="Center" />
