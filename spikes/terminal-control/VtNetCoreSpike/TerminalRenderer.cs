@@ -80,7 +80,7 @@ namespace VtNetCoreSpike
                     var chunk = new byte[read];
                     Array.Copy(buffer, chunk, read);
                     _consumer.Push(chunk);
-                    Dispatcher.BeginInvoke(DispatcherPriority.Render, InvalidateVisual);
+                    Dispatcher.BeginInvoke(new Action(InvalidateVisual), DispatcherPriority.Render);
                 }
             }
             catch (ObjectDisposedException)
