@@ -16330,11 +16330,9 @@ $variablesItemsPanel = $window.FindName('VariablesItemsPanel')
 $term = $window.FindName('Term')
 
 # Populated once a domain is selected (see the SelectionChanged handler below); initialized here
-# so the TerminalOutput completion-watcher never sees $null before that happens.
+# so Run All never sees $null before that happens.
 $global:managementDomainRestoresStepRows = @()
 $global:recoverDefaultClusterStepRows = @()
-$global:consoleOutputBuffer = [System.Text.StringBuilder]::new()
-$global:consoleOutputBufferLock = [object]::new()
 
 function Protect-SingleQuotes([string]$Value) {
     return $Value.Replace("'", "''")
@@ -16352,19 +16350,14 @@ function Send-ToConsole([string]$CommandLine) {
     }
 }
 
-# Resets a row to its "in progress" look, including undoing any earlier "Done" state -- re-running
-# a step that previously completed should stop showing it as done until it completes again.
-function Invoke-Step($Dot, $Button, [string]$CommandLine) {
+function Invoke-Step($Dot, [string]$CommandLine) {
     $Dot.Fill = [System.Windows.Media.Brushes]::DodgerBlue
-    $Button.Content = 'Run'
-    $Button.ClearValue([System.Windows.Controls.Control]::BackgroundProperty)
     Send-ToConsole $CommandLine
 }
 
-# Returns [PSCustomObject]@{ Panel; Dot; Button; CommandLine; CmdletName }, not just the row's
-# visual Panel -- the other fields are needed separately so a tab's "Run All" button can replay
-# every row's Run action, and so the console-output watcher can mark a row Done by cmdlet name
-# without re-parsing the rendered list.
+# Returns [PSCustomObject]@{ Panel; Dot; CommandLine }, not just the row's visual Panel -- Dot and
+# CommandLine are needed separately so a tab's "Run All" button can replay every row's Run action
+# (dot included) without re-parsing the rendered list.
 function New-StepRow([string]$CommandLine) {
     $panel = New-Object System.Windows.Controls.DockPanel
     $panel.Margin = '2,0,2,0'
@@ -16390,7 +16383,7 @@ function New-StepRow([string]$CommandLine) {
     [System.Windows.Controls.DockPanel]::SetDock($runButton, [System.Windows.Controls.Dock]::Right)
     $runButton.Add_Click({
         try {
-            Invoke-Step $dot $runButton $CommandLine
+            Invoke-Step $dot $CommandLine
         } catch {
             $statusTextBlock.Text = "Run button failed: $($_.Exception.Message)"
         }
@@ -16404,7 +16397,7 @@ function New-StepRow([string]$CommandLine) {
     [void]$panel.Children.Add($dot)
     [void]$panel.Children.Add($runButton)
     [void]$panel.Children.Add($label)
-    return [PSCustomObject]@{ Panel = $panel; Dot = $dot; Button = $runButton; CommandLine = $CommandLine; CmdletName = $cmdletName }
+    return [PSCustomObject]@{ Panel = $panel; Dot = $dot; CommandLine = $CommandLine }
 }
 
 # Variable names referenced across $CommandLines (e.g. "$targetFqdn"), in order of first
@@ -16468,61 +16461,6 @@ function Start-TerminalReadyWatcher {
         $script:terminalReadyAttempts++
         if ($null -ne $term.ConPTYTerm) {
             $this.Stop()
-
-            # Watches raw console output for the module's own "Completed Task <cmdlet>" log line
-            # (see LogMessage) to mark the matching Step row Done.
-            #
-            # TerminalOutput can fire very frequently (once per small read-buffer flush -- many
-            # times a second during verbose cmdlet output). An earlier version of this appended
-            # each chunk with plain string "+=" (full copy of up to a 50,000-char buffer on every
-            # single chunk, landing on the Large Object Heap once past ~42KB) AND marshaled a
-            # Dispatcher call to the UI thread on every chunk too. That much sustained allocation
-            # pressure was enough to trigger frequent GC collections, which is what exposed an
-            # unrelated, otherwise-latent bug in EasyWindowsTerminalControl itself: it registers a
-            # native console control-handler callback without keeping a durable managed reference
-            # to the delegate, so once GC actually collects it, the next native invocation crashes
-            # the whole process via FailFast ("callback was made on a garbage collected delegate").
-            # Rare before this watcher existed (GC ran rarely enough not to hit it); reliably
-            # reproducible within minutes once this watcher added that much extra churn.
-            #
-            # Fix: append with StringBuilder (amortized, no full-buffer copy per chunk) on the
-            # background read thread, guarded by a lock since the completion-check timer below
-            # reads the same buffer from the UI thread; do the actual completion scan on a throttled
-            # DispatcherTimer (every 400ms) instead of on every raw chunk, so UI-thread work and
-            # allocation happen at a small fixed rate regardless of how much output streams through.
-            $term.ConPTYTerm.Add_TerminalOutput({
-                param($sender, $e)
-                [System.Threading.Monitor]::Enter($global:consoleOutputBufferLock)
-                try {
-                    [void]$global:consoleOutputBuffer.Append($e.Data)
-                    $excess = $global:consoleOutputBuffer.Length - 50000
-                    if ($excess -gt 0) {
-                        [void]$global:consoleOutputBuffer.Remove(0, $excess)
-                    }
-                } finally {
-                    [System.Threading.Monitor]::Exit($global:consoleOutputBufferLock)
-                }
-            })
-
-            $completionTimer = New-Object System.Windows.Threading.DispatcherTimer
-            $completionTimer.Interval = [TimeSpan]::FromMilliseconds(400)
-            $completionTimer.Add_Tick({
-                [System.Threading.Monitor]::Enter($global:consoleOutputBufferLock)
-                try {
-                    $snapshot = $global:consoleOutputBuffer.ToString()
-                } finally {
-                    [System.Threading.Monitor]::Exit($global:consoleOutputBufferLock)
-                }
-                foreach ($row in (@($global:managementDomainRestoresStepRows) + @($global:recoverDefaultClusterStepRows))) {
-                    if ($row.Button.Content -eq 'Done') { continue }
-                    if ($snapshot.Contains("Completed Task $($row.CmdletName)")) {
-                        $row.Dot.Fill = [System.Windows.Media.Brushes]::Green
-                        $row.Button.Content = 'Done'
-                        $row.Button.Background = [System.Windows.Media.Brushes]::Green
-                    }
-                }
-            })
-            $completionTimer.Start()
         } elseif ($script:terminalReadyAttempts -gt 50) {
             $this.Stop()
             $statusTextBlock.Text = 'Embedded console did not start in time.'
@@ -16717,7 +16655,7 @@ $domainsListBox.Add_SelectionChanged({
 $runAllManagementDomainRestoresButton.Add_Click({
     try {
         foreach ($row in $global:managementDomainRestoresStepRows) {
-            Invoke-Step $row.Dot $row.Button $row.CommandLine
+            Invoke-Step $row.Dot $row.CommandLine
         }
     } catch {
         $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
@@ -16727,7 +16665,7 @@ $runAllManagementDomainRestoresButton.Add_Click({
 $runAllRecoverDefaultClusterButton.Add_Click({
     try {
         foreach ($row in $global:recoverDefaultClusterStepRows) {
-            Invoke-Step $row.Dot $row.Button $row.CommandLine
+            Invoke-Step $row.Dot $row.CommandLine
         }
     } catch {
         $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
