@@ -16323,9 +16323,16 @@ $recoverDefaultClusterStepsListBox = $window.FindName('RecoverDefaultClusterStep
 $variablesPanel = $window.FindName('VariablesPanel')
 $term = $window.FindName('Term')
 
-$script:variableInputs = @{}
-$script:managementDomainRestoresCommandLines = @()
-$script:recoverDefaultClusterCommandLines = @()
+# Deliberately $global:, not $script:. Every event handler below is a .GetNewClosure()'d
+# scriptblock, and GetNewClosure() gives each one its own PRIVATE snapshot of $script: scope --
+# writes made inside one closure are invisible to every other closure and to plain functions
+# reading $script:. $global: is the one scope that isn't snapshotted, so it's the only reliable
+# way to share state across these handlers (confirmed empirically; this isn't a style choice).
+# Safe here because this whole UI runs in its own dedicated Runspace, so $global: is private to
+# it, not the caller's actual PowerShell session.
+$global:variableInputs = @{}
+$global:managementDomainRestoresCommandLines = @()
+$global:recoverDefaultClusterCommandLines = @()
 
 function Protect-SingleQuotes([string]$Value) {
     return $Value.Replace("'", "''")
@@ -16358,12 +16365,12 @@ function Get-InputControlValue($Control) {
 function Update-VariablesForActiveTab {
     try {
         $variablesPanel.Children.Clear()
-        $script:variableInputs = @{}
+        $global:variableInputs = @{}
 
         $activeCommandLines = if ($stepsTabControl.SelectedIndex -eq 1) {
-            $script:recoverDefaultClusterCommandLines
+            $global:recoverDefaultClusterCommandLines
         } else {
-            $script:managementDomainRestoresCommandLines
+            $global:managementDomainRestoresCommandLines
         }
 
         $variableNames = @($activeCommandLines | ForEach-Object { Get-CommandVariableNames $_ } | Select-Object -Unique | Sort-Object)
@@ -16397,7 +16404,7 @@ function New-VariableField([string]$VariableName) {
     [void]$tile.Children.Add($inputControl)
     [void]$variablesPanel.Children.Add($tile)
 
-    $script:variableInputs[$VariableName] = $inputControl
+    $global:variableInputs[$VariableName] = $inputControl
 }
 
 function New-StepRow([string]$CommandLine) {
@@ -16423,7 +16430,7 @@ function New-StepRow([string]$CommandLine) {
     [System.Windows.Controls.DockPanel]::SetDock($runButton, [System.Windows.Controls.Dock]::Right)
     $runButton.Add_Click({
         foreach ($variableName in $stepVariableNames) {
-            $inputControl = $script:variableInputs[$variableName]
+            $inputControl = $global:variableInputs[$variableName]
             if ($null -ne $inputControl) {
                 $escapedValue = Protect-SingleQuotes (Get-InputControlValue $inputControl)
                 Send-ToConsole "`$$variableName = '$escapedValue'"
@@ -16488,7 +16495,7 @@ $browseButton.Add_Click({
     $managementDomainRestoresStepsListBox.Items.Clear()
     $recoverDefaultClusterStepsListBox.Items.Clear()
     $variablesPanel.Children.Clear()
-    $script:variableInputs = @{}
+    $global:variableInputs = @{}
     $phasesRow.Visibility = [System.Windows.Visibility]::Collapsed
     $statusTextBlock.Text = ''
 
@@ -16520,9 +16527,9 @@ $domainsListBox.Add_SelectionChanged({
     $managementDomainRestoresStepsListBox.Items.Clear()
     $recoverDefaultClusterStepsListBox.Items.Clear()
     $variablesPanel.Children.Clear()
-    $script:variableInputs = @{}
-    $script:managementDomainRestoresCommandLines = @()
-    $script:recoverDefaultClusterCommandLines = @()
+    $global:variableInputs = @{}
+    $global:managementDomainRestoresCommandLines = @()
+    $global:recoverDefaultClusterCommandLines = @()
 
     $selected = $domainsListBox.SelectedItem
     if ($null -eq $selected) {
@@ -16532,7 +16539,8 @@ $domainsListBox.Add_SelectionChanged({
     $phasesRow.Visibility = [System.Windows.Visibility]::Visible
 
     if ($selected.Tag.domainType -eq 'MANAGEMENT') {
-        $script:managementDomainRestoresCommandLines = @(
+        $global:managementDomainRestoresCommandLines = @(
+            'New-ExtractDataFromSDDCBackup -vcfBackupFilePath $vcfBackupFilePath -encryptionPassword $encryptionPassword -credentialsFilePath $credentialsFilePath',
             'New-PrepareManagementHostNetworking -extractedSDDCDataFile $extractedSDDCDataFile -mtu 8900',
             'Add-VMKernelsToManagementHosts -extractedSDDCDataFile $extractedSDDCDataFile',
             'New-SingleHostVsanDatastore -extractedSDDCDataFile $extractedSDDCDataFile',
@@ -16546,7 +16554,7 @@ $domainsListBox.Add_SelectionChanged({
             'Update-ExtractedSDDCData -extractedSDDCDataFile $extractedSDDCDataFile -sddcManagerFQDN $sddcManagerFQDN -sddcManagerAdmin $sddcManagerAdmin -sddcManagerAdminPassword $sddcManagerAdminPassword -vCenterFQDN $restoredVcenterFqdn'
         )
 
-        $script:recoverDefaultClusterCommandLines = @(
+        $global:recoverDefaultClusterCommandLines = @(
             'Backup-ClusterVMOverrides -clusterName $clusterName',
             'Backup-ClusterVMLocations -clusterName $clusterName',
             'Backup-ClusterDRSGroupsAndRules -clusterName $clusterName',
@@ -16567,10 +16575,10 @@ $domainsListBox.Add_SelectionChanged({
         )
     }
 
-    foreach ($commandLine in $script:managementDomainRestoresCommandLines) {
+    foreach ($commandLine in $global:managementDomainRestoresCommandLines) {
         [void]$managementDomainRestoresStepsListBox.Items.Add((New-StepRow $commandLine))
     }
-    foreach ($commandLine in $script:recoverDefaultClusterCommandLines) {
+    foreach ($commandLine in $global:recoverDefaultClusterCommandLines) {
         [void]$recoverDefaultClusterStepsListBox.Items.Add((New-StepRow $commandLine))
     }
 
