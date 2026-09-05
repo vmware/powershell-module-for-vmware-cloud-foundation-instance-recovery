@@ -16270,7 +16270,6 @@ Function Start-InstanceRecoveryUI {
     $moduleRoot = $PSScriptRoot
     $xamlPath = Join-Path $moduleRoot 'xaml\InstanceRecoveryOrchestratorUI.xaml'
     $libPath = Join-Path $moduleRoot 'lib\EasyWindowsTerminalControl'
-    $manifestPath = Join-Path $moduleRoot 'VMware.CloudFoundation.InstanceRecovery.psd1'
 
     if (-not (Test-Path $xamlPath)) {
         LogMessage -type ERROR -message "Cannot find UI resource '$xamlPath'."
@@ -16280,18 +16279,13 @@ Function Start-InstanceRecoveryUI {
         LogMessage -type ERROR -message "Cannot find vendored EasyWindowsTerminalControl assemblies at '$libPath'."
         return
     }
-    if (-not (Test-Path $manifestPath)) {
-        LogMessage -type ERROR -message "Cannot find module manifest '$manifestPath'."
-        return
-    }
 
     # Self-contained: runs in its own isolated runspace/session state, so it has no dependency on
     # this module's functions (e.g. LogMessage) -- only .NET/WPF and the vendored terminal control.
     $uiScript = @'
 param(
     [string]$XamlPath,
-    [string]$LibPath,
-    [string]$ManifestPath
+    [string]$LibPath
 )
 
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Xaml
@@ -16393,13 +16387,18 @@ function Start-TerminalReadyWatcher {
     $timer.Interval = [TimeSpan]::FromMilliseconds(200)
     $script:terminalReadyAttempts = 0
     $timer.Add_Tick({
+        # $this, not $timer -- by the time this fires, Start-TerminalReadyWatcher has already
+        # returned, so its local $timer variable is out of scope and resolves to $null here.
+        # $this is bound to the DispatcherTimer instance automatically by Add_Tick.
+        #
+        # No command is sent to the console once it's ready: the module is installed on
+        # $env:PSModulePath, so PowerShell auto-loads it the first time a Step's cmdlet actually
+        # runs -- an explicit Import-Module here would just be a redundant, race-prone extra step.
         $script:terminalReadyAttempts++
         if ($null -ne $term.ConPTYTerm) {
-            $timer.Stop()
-            $escapedManifestPath = Protect-SingleQuotes $ManifestPath
-            Send-ToConsole "Import-Module '$escapedManifestPath' -Force"
+            $this.Stop()
         } elseif ($script:terminalReadyAttempts -gt 50) {
-            $timer.Stop()
+            $this.Stop()
             $statusTextBlock.Text = 'Embedded console did not start in time.'
         }
     })
@@ -16566,7 +16565,6 @@ Start-TerminalReadyWatcher
     [void]$uiPowerShell.AddScript($uiScript)
     [void]$uiPowerShell.AddArgument($xamlPath)
     [void]$uiPowerShell.AddArgument($libPath)
-    [void]$uiPowerShell.AddArgument($manifestPath)
 
     # Kept alive at module script scope so the async UI isn't torn down by GC while the window is open.
     $script:InstanceRecoveryOrchestratorUIRunspace = $uiRunspace
