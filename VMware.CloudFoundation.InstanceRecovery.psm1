@@ -16353,6 +16353,11 @@ $term.Theme = $terminalTheme
 $global:managementDomainRestoresStepRows = @()
 $global:recoverDefaultClusterStepRows = @()
 
+# Per-launch scratch folder for step-completion marker files (see Invoke-Step/New-StepRow below).
+# Keyed by this process's PID so concurrent orchestrator instances never collide.
+$global:stepStatusDir = Join-Path $env:TEMP "vcfir-step-status-$PID"
+[void](New-Item -ItemType Directory -Path $global:stepStatusDir -Force)
+
 function Protect-SingleQuotes([string]$Value) {
     return $Value.Replace("'", "''")
 }
@@ -16369,14 +16374,27 @@ function Send-ToConsole([string]$CommandLine) {
     }
 }
 
-function Invoke-Step($Dot, [string]$CommandLine) {
+# Completion tracking, attempt 2: rather than watching the terminal's raw rendered output (the
+# previous approach -- fragile, and the extra allocation it caused is what exposed a FailFast bug
+# in EasyWindowsTerminalControl itself), each Run sends a small follow-up line that has the
+# console session itself write a one-word marker file once the real command finishes, based on $?
+# (PowerShell's own success/failure flag for the command that just ran). A plain DispatcherTimer
+# (UI thread only, no events on the terminal control, no background thread, no shared buffer) then
+# just polls for those files. Much smaller failure surface.
+function Invoke-Step($Dot, $Button, [string]$MarkerPath, [string]$CommandLine) {
     $Dot.Fill = [System.Windows.Media.Brushes]::DodgerBlue
+    $Button.Content = 'Run'
+    $Button.ClearValue([System.Windows.Controls.Control]::BackgroundProperty)
+    Remove-Item -Path $MarkerPath -Force -ErrorAction SilentlyContinue
     Send-ToConsole $CommandLine
+    $escapedMarkerPath = Protect-SingleQuotes $MarkerPath
+    Send-ToConsole "if (`$?) { Set-Content -Path '$escapedMarkerPath' -Value 'ok' -Force } else { Set-Content -Path '$escapedMarkerPath' -Value 'fail' -Force }"
 }
 
-# Returns [PSCustomObject]@{ Panel; Dot; CommandLine }, not just the row's visual Panel -- Dot and
-# CommandLine are needed separately so a tab's "Run All" button can replay every row's Run action
-# (dot included) without re-parsing the rendered list.
+# Returns [PSCustomObject]@{ Panel; Dot; Button; CommandLine; MarkerPath }, not just the row's
+# visual Panel -- the other fields are needed separately so a tab's "Run All" button can replay
+# every row's Run action, and so the completion-poller can update the right row's dot/button
+# without re-parsing the rendered list.
 function New-StepRow([string]$CommandLine) {
     $panel = New-Object System.Windows.Controls.DockPanel
     $panel.Margin = '2,0,2,0'
@@ -16393,6 +16411,7 @@ function New-StepRow([string]$CommandLine) {
     # values referenced in it (e.g. $targetFqdn) come from whatever was loaded via "Load
     # Variables..." -- they're already set in the console session by the time Run is clicked.
     $cmdletName = ($CommandLine -split '\s+', 2)[0]
+    $markerPath = Join-Path $global:stepStatusDir "$([guid]::NewGuid()).status"
 
     $runButton = New-Object System.Windows.Controls.Button
     $runButton.Content = 'Run'
@@ -16402,7 +16421,7 @@ function New-StepRow([string]$CommandLine) {
     [System.Windows.Controls.DockPanel]::SetDock($runButton, [System.Windows.Controls.Dock]::Right)
     $runButton.Add_Click({
         try {
-            Invoke-Step $dot $CommandLine
+            Invoke-Step $dot $runButton $markerPath $CommandLine
         } catch {
             $statusTextBlock.Text = "Run button failed: $($_.Exception.Message)"
         }
@@ -16416,7 +16435,26 @@ function New-StepRow([string]$CommandLine) {
     [void]$panel.Children.Add($dot)
     [void]$panel.Children.Add($runButton)
     [void]$panel.Children.Add($label)
-    return [PSCustomObject]@{ Panel = $panel; Dot = $dot; CommandLine = $CommandLine }
+    return [PSCustomObject]@{ Panel = $panel; Dot = $dot; Button = $runButton; CommandLine = $CommandLine; MarkerPath = $markerPath }
+}
+
+function Start-StepCompletionPoller {
+    $pollTimer = New-Object System.Windows.Threading.DispatcherTimer
+    $pollTimer.Interval = [TimeSpan]::FromMilliseconds(500)
+    $pollTimer.Add_Tick({
+        foreach ($row in (@($global:managementDomainRestoresStepRows) + @($global:recoverDefaultClusterStepRows))) {
+            if ($row.Button.Content -eq 'Done' -or -not (Test-Path $row.MarkerPath)) { continue }
+            $result = Get-Content -Path $row.MarkerPath -Raw -ErrorAction SilentlyContinue
+            if ($result -match 'ok') {
+                $row.Dot.Fill = [System.Windows.Media.Brushes]::Green
+                $row.Button.Content = 'Done'
+                $row.Button.Background = [System.Windows.Media.Brushes]::Green
+            } elseif ($result -match 'fail') {
+                $row.Dot.Fill = [System.Windows.Media.Brushes]::Red
+            }
+        }
+    })
+    $pollTimer.Start()
 }
 
 # Variable names referenced across $CommandLines (e.g. "$targetFqdn"), in order of first
@@ -16674,7 +16712,7 @@ $domainsListBox.Add_SelectionChanged({
 $runAllManagementDomainRestoresButton.Add_Click({
     try {
         foreach ($row in $global:managementDomainRestoresStepRows) {
-            Invoke-Step $row.Dot $row.CommandLine
+            Invoke-Step $row.Dot $row.Button $row.MarkerPath $row.CommandLine
         }
     } catch {
         $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
@@ -16684,7 +16722,7 @@ $runAllManagementDomainRestoresButton.Add_Click({
 $runAllRecoverDefaultClusterButton.Add_Click({
     try {
         foreach ($row in $global:recoverDefaultClusterStepRows) {
-            Invoke-Step $row.Dot $row.CommandLine
+            Invoke-Step $row.Dot $row.Button $row.MarkerPath $row.CommandLine
         }
     } catch {
         $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
@@ -16692,6 +16730,7 @@ $runAllRecoverDefaultClusterButton.Add_Click({
 }.GetNewClosure())
 
 Start-TerminalReadyWatcher
+Start-StepCompletionPoller
 
 [void]$app.Run($window)
 '@
