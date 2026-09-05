@@ -176,10 +176,9 @@ namespace VtNetCoreSpike
         protected override void OnPreviewKeyDown(KeyEventArgs e)
         {
             var control = Keyboard.Modifiers.HasFlag(ModifierKeys.Control);
-            var shift = Keyboard.Modifiers.HasFlag(ModifierKeys.Shift);
 
-            // Ctrl+C has no entry in VtNetCore's key table (it's a signal, not a key sequence) —
-            // forward it as raw ETX so Write-Progress loops / prompts can be interrupted like a real console.
+            // Ctrl+C is a signal, not a key sequence — forward it as raw ETX so
+            // Write-Progress loops / prompts can be interrupted like a real console.
             if (control && e.Key == Key.C)
             {
                 _session.Write(new byte[] { 0x03 });
@@ -187,8 +186,7 @@ namespace VtNetCoreSpike
                 return;
             }
 
-            var sequence = KeyboardTranslations.GetKeySequence(
-                e.Key.ToString(), control, shift, _controller.CursorState.ApplicationCursorKeysMode);
+            var sequence = GetKeySequence(e.Key);
             if (sequence != null)
             {
                 _session.Write(sequence);
@@ -196,6 +194,47 @@ namespace VtNetCoreSpike
             }
 
             base.OnPreviewKeyDown(e);
+        }
+
+        /// <summary>
+        /// VtNetCore's own key-translation table (KeyboardTranslations) is internal to its
+        /// assembly, so it isn't usable here. This is a minimal hand-rolled xterm-style mapping —
+        /// enough for the test-render.ps1 scenarios (Read-Host, Y/N prompts, arrow/editing keys),
+        /// not a complete terminal keymap (no shift/alt variants).
+        /// </summary>
+        private string? GetKeySequence(Key key)
+        {
+            var applicationMode = _controller.CursorState.ApplicationCursorKeysMode;
+            return key switch
+            {
+                Key.Up => applicationMode ? "OA" : "[A",
+                Key.Down => applicationMode ? "OB" : "[B",
+                Key.Right => applicationMode ? "OC" : "[C",
+                Key.Left => applicationMode ? "OD" : "[D",
+                Key.Home => "[H",
+                Key.End => "[F",
+                Key.Insert => "[2~",
+                Key.Delete => "[3~",
+                Key.PageUp => "[5~",
+                Key.PageDown => "[6~",
+                Key.F1 => "OP",
+                Key.F2 => "OQ",
+                Key.F3 => "OR",
+                Key.F4 => "OS",
+                Key.F5 => "[15~",
+                Key.F6 => "[17~",
+                Key.F7 => "[18~",
+                Key.F8 => "[19~",
+                Key.F9 => "[20~",
+                Key.F10 => "[21~",
+                Key.F11 => "[23~",
+                Key.F12 => "[24~",
+                Key.Enter => "\r",
+                Key.Back => "",
+                Key.Tab => "\t",
+                Key.Escape => "",
+                _ => null
+            };
         }
 
         protected override void OnMouseDown(MouseButtonEventArgs e)
