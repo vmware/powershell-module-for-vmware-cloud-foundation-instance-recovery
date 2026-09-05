@@ -16316,12 +16316,16 @@ $browseButton = $window.FindName('BrowseButton')
 $filePathTextBox = $window.FindName('FilePathTextBox')
 $statusTextBlock = $window.FindName('StatusTextBlock')
 $domainsListBox = $window.FindName('WorkloadDomainsListBox')
+$phasesRow = $window.FindName('PhasesRow')
+$stepsTabControl = $window.FindName('StepsTabControl')
 $managementDomainRestoresStepsListBox = $window.FindName('ManagementDomainRestoresStepsListBox')
 $recoverDefaultClusterStepsListBox = $window.FindName('RecoverDefaultClusterStepsListBox')
 $variablesPanel = $window.FindName('VariablesPanel')
 $term = $window.FindName('Term')
 
 $script:variableInputs = @{}
+$script:managementDomainRestoresCommandLines = @()
+$script:recoverDefaultClusterCommandLines = @()
 
 function Protect-SingleQuotes([string]$Value) {
     return $Value.Replace("'", "''")
@@ -16349,11 +16353,28 @@ function Get-InputControlValue($Control) {
     return $Control.Text
 }
 
+# Rebuilds the Variables panel from just the currently active Steps tab, not the union of every
+# phase -- switching tabs (or selecting a domain, which defaults to the first tab) calls this.
+function Update-VariablesForActiveTab {
+    $variablesPanel.Children.Clear()
+    $script:variableInputs = @{}
+
+    $activeCommandLines = if ($stepsTabControl.SelectedIndex -eq 1) {
+        $script:recoverDefaultClusterCommandLines
+    } else {
+        $script:managementDomainRestoresCommandLines
+    }
+
+    $variableNames = @($activeCommandLines | ForEach-Object { Get-CommandVariableNames $_ } | Select-Object -Unique | Sort-Object)
+    foreach ($variableName in $variableNames) {
+        New-VariableField $variableName
+    }
+}
+
 # Password-like variable names get a masked PasswordBox instead of a plain TextBox.
 function New-VariableField([string]$VariableName) {
     $tile = New-Object System.Windows.Controls.StackPanel
-    $tile.Margin = '0,0,10,10'
-    $tile.Width = 220
+    $tile.Margin = '0,0,0,8'
 
     $label = New-Object System.Windows.Controls.TextBlock
     $label.Text = $VariableName
@@ -16375,7 +16396,7 @@ function New-VariableField([string]$VariableName) {
 
 function New-StepRow([string]$CommandLine) {
     $panel = New-Object System.Windows.Controls.DockPanel
-    $panel.Margin = '4,3,4,3'
+    $panel.Margin = '4,0,4,0'
 
     $dot = New-Object System.Windows.Shapes.Ellipse
     $dot.Width = 10
@@ -16385,6 +16406,9 @@ function New-StepRow([string]$CommandLine) {
     $dot.VerticalAlignment = 'Center'
 
     $stepVariableNames = Get-CommandVariableNames $CommandLine
+    # Only the cmdlet name is shown; the full command line (with its parameters) stays in the
+    # module and is only ever sent to the console, never rendered in the Steps list.
+    $cmdletName = ($CommandLine -split '\s+', 2)[0]
 
     $runButton = New-Object System.Windows.Controls.Button
     $runButton.Content = 'Run'
@@ -16404,7 +16428,7 @@ function New-StepRow([string]$CommandLine) {
     }.GetNewClosure())
 
     $label = New-Object System.Windows.Controls.TextBlock
-    $label.Text = $CommandLine
+    $label.Text = $cmdletName
     $label.FontFamily = New-Object System.Windows.Media.FontFamily('Consolas')
     $label.VerticalAlignment = 'Center'
 
@@ -16457,6 +16481,9 @@ $browseButton.Add_Click({
     $domainsListBox.Items.Clear()
     $managementDomainRestoresStepsListBox.Items.Clear()
     $recoverDefaultClusterStepsListBox.Items.Clear()
+    $variablesPanel.Children.Clear()
+    $script:variableInputs = @{}
+    $phasesRow.Visibility = [System.Windows.Visibility]::Collapsed
     $statusTextBlock.Text = ''
 
     try {
@@ -16487,17 +16514,18 @@ $domainsListBox.Add_SelectionChanged({
     $recoverDefaultClusterStepsListBox.Items.Clear()
     $variablesPanel.Children.Clear()
     $script:variableInputs = @{}
+    $script:managementDomainRestoresCommandLines = @()
+    $script:recoverDefaultClusterCommandLines = @()
 
     $selected = $domainsListBox.SelectedItem
     if ($null -eq $selected) {
+        $phasesRow.Visibility = [System.Windows.Visibility]::Collapsed
         return
     }
-
-    $managementDomainRestoresCommandLines = @()
-    $recoverDefaultClusterCommandLines = @()
+    $phasesRow.Visibility = [System.Windows.Visibility]::Visible
 
     if ($selected.Tag.domainType -eq 'MANAGEMENT') {
-        $managementDomainRestoresCommandLines = @(
+        $script:managementDomainRestoresCommandLines = @(
             'New-PrepareManagementHostNetworking -extractedSDDCDataFile $extractedSDDCDataFile -mtu 8900',
             'Add-VMKernelsToManagementHosts -extractedSDDCDataFile $extractedSDDCDataFile',
             'New-SingleHostVsanDatastore -extractedSDDCDataFile $extractedSDDCDataFile',
@@ -16511,7 +16539,7 @@ $domainsListBox.Add_SelectionChanged({
             'Update-ExtractedSDDCData -extractedSDDCDataFile $extractedSDDCDataFile -sddcManagerFQDN $sddcManagerFQDN -sddcManagerAdmin $sddcManagerAdmin -sddcManagerAdminPassword $sddcManagerAdminPassword -vCenterFQDN $restoredVcenterFqdn'
         )
 
-        $recoverDefaultClusterCommandLines = @(
+        $script:recoverDefaultClusterCommandLines = @(
             'Backup-ClusterVMOverrides -clusterName $clusterName',
             'Backup-ClusterVMLocations -clusterName $clusterName',
             'Backup-ClusterDRSGroupsAndRules -clusterName $clusterName',
@@ -16532,18 +16560,25 @@ $domainsListBox.Add_SelectionChanged({
         )
     }
 
-    foreach ($commandLine in $managementDomainRestoresCommandLines) {
+    foreach ($commandLine in $script:managementDomainRestoresCommandLines) {
         [void]$managementDomainRestoresStepsListBox.Items.Add((New-StepRow $commandLine))
     }
-    foreach ($commandLine in $recoverDefaultClusterCommandLines) {
+    foreach ($commandLine in $script:recoverDefaultClusterCommandLines) {
         [void]$recoverDefaultClusterStepsListBox.Items.Add((New-StepRow $commandLine))
     }
 
-    $allCommandLines = @($managementDomainRestoresCommandLines) + @($recoverDefaultClusterCommandLines)
-    $allVariableNames = @($allCommandLines | ForEach-Object { Get-CommandVariableNames $_ } | Select-Object -Unique | Sort-Object)
-    foreach ($variableName in $allVariableNames) {
-        New-VariableField $variableName
+    Update-VariablesForActiveTab
+}.GetNewClosure())
+
+# TabControl.SelectionChanged shares the same routed event as ListBox.SelectionChanged, so a click
+# inside a step row (which selects that row's ListBoxItem) bubbles up and would otherwise trigger
+# this handler too. Only react when the TabControl itself is the actual source.
+$stepsTabControl.Add_SelectionChanged({
+    param($sender, $e)
+    if ($e.Source -ne $stepsTabControl) {
+        return
     }
+    Update-VariablesForActiveTab
 }.GetNewClosure())
 
 Start-TerminalReadyWatcher

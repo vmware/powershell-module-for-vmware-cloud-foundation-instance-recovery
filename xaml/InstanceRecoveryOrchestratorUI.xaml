@@ -12,7 +12,6 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
@@ -42,34 +41,40 @@
         </Grid>
 
         <!--
-            Steps for the selected domain, grouped into phase tabs. MaxHeight caps this Auto row so a
-            tab with many steps can't starve the Console row ("*") of space; the inner ListBox gets
-            its own scrollbar via MaxHeight instead of growing to fit every item unscrolled.
+            Steps (left) + Variables (right) for the selected domain. Collapsed until a domain is
+            picked (see the .psm1's domain SelectionChanged handler). Steps show only the cmdlet
+            name; the full command line with its parameters lives in the .psm1 and is never
+            rendered here. Variables shows only the currently active tab's own variables, rebuilt on
+            tab switch (see Update-VariablesForActiveTab). Both lists are capped to roughly 10 rows
+            with a scrollbar for the rest.
         -->
-        <GroupBox Grid.Row="1" Header="Steps" Margin="0,0,0,10" MinHeight="160" MaxHeight="260">
-            <TabControl x:Name="StepsTabControl">
-                <TabItem Header="Management Domain Restores">
-                    <ListBox x:Name="ManagementDomainRestoresStepsListBox" />
-                </TabItem>
-                <TabItem Header="Recover Default Cluster">
-                    <ListBox x:Name="RecoverDefaultClusterStepsListBox" />
-                </TabItem>
-            </TabControl>
-        </GroupBox>
+        <Grid Grid.Row="1" x:Name="PhasesRow" Margin="0,0,0,10" Visibility="Collapsed">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="10" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
 
-        <!--
-            Variables referenced by the visible steps but not already known (i.e. everything except
-            $extractedSDDCDataFile, which the Data Source panel sets). Built dynamically per selected
-            domain (see New-VariableField in the .psm1), since different steps need different sets.
-        -->
-        <GroupBox Grid.Row="2" Header="Variables" Margin="0,0,0,10" MaxHeight="220">
-            <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <WrapPanel x:Name="VariablesPanel" Margin="5" />
-            </ScrollViewer>
-        </GroupBox>
+            <GroupBox Grid.Column="0" Header="Steps">
+                <TabControl x:Name="StepsTabControl">
+                    <TabItem Header="Management Domain Restores">
+                        <ListBox x:Name="ManagementDomainRestoresStepsListBox" MaxHeight="240" ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                    </TabItem>
+                    <TabItem Header="Recover Default Cluster">
+                        <ListBox x:Name="RecoverDefaultClusterStepsListBox" MaxHeight="240" ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                    </TabItem>
+                </TabControl>
+            </GroupBox>
+
+            <GroupBox Grid.Column="2" Header="Variables">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="240">
+                    <StackPanel x:Name="VariablesPanel" Margin="5" />
+                </ScrollViewer>
+            </GroupBox>
+        </Grid>
 
         <!-- Embedded console -->
-        <GroupBox Grid.Row="3" Header="Console">
+        <GroupBox Grid.Row="2" Header="Console">
             <term:EasyTerminalControl x:Name="Term" StartupCommandLine="pwsh.exe -NoLogo -NoExit" Margin="5" />
         </GroupBox>
     </Grid>
