@@ -12,6 +12,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
@@ -40,13 +41,34 @@
             </GroupBox>
         </Grid>
 
-        <!-- Steps for the selected domain -->
-        <GroupBox Grid.Row="1" Header="Steps" Margin="0,0,0,10" MinHeight="120">
-            <ListBox x:Name="StepsListBox" />
+        <!--
+            Steps for the selected domain, grouped into phase tabs. Only one phase exists today
+            (Management Domain Restores); more tabs get added here as later phases are defined.
+        -->
+        <GroupBox Grid.Row="1" Header="Steps" Margin="0,0,0,10" MinHeight="160">
+            <TabControl x:Name="StepsTabControl">
+                <TabItem Header="Management Domain Restores">
+                    <ListBox x:Name="ManagementDomainRestoresStepsListBox" />
+                </TabItem>
+                <TabItem Header="Recover Default Cluster">
+                    <ListBox x:Name="RecoverDefaultClusterStepsListBox" />
+                </TabItem>
+            </TabControl>
+        </GroupBox>
+
+        <!--
+            Variables referenced by the visible steps but not already known (i.e. everything except
+            $extractedSDDCDataFile, which the Data Source panel sets). Built dynamically per selected
+            domain (see New-VariableField in the .psm1), since different steps need different sets.
+        -->
+        <GroupBox Grid.Row="2" Header="Variables" Margin="0,0,0,10" MaxHeight="220">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <WrapPanel x:Name="VariablesPanel" Margin="5" />
+            </ScrollViewer>
         </GroupBox>
 
         <!-- Embedded console -->
-        <GroupBox Grid.Row="2" Header="Console">
+        <GroupBox Grid.Row="3" Header="Console">
             <term:EasyTerminalControl x:Name="Term" StartupCommandLine="pwsh.exe -NoLogo -NoExit" Margin="5" />
         </GroupBox>
     </Grid>

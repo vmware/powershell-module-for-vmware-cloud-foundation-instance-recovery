@@ -16316,8 +16316,12 @@ $browseButton = $window.FindName('BrowseButton')
 $filePathTextBox = $window.FindName('FilePathTextBox')
 $statusTextBlock = $window.FindName('StatusTextBlock')
 $domainsListBox = $window.FindName('WorkloadDomainsListBox')
-$stepsListBox = $window.FindName('StepsListBox')
+$managementDomainRestoresStepsListBox = $window.FindName('ManagementDomainRestoresStepsListBox')
+$recoverDefaultClusterStepsListBox = $window.FindName('RecoverDefaultClusterStepsListBox')
+$variablesPanel = $window.FindName('VariablesPanel')
 $term = $window.FindName('Term')
+
+$script:variableInputs = @{}
 
 function Protect-SingleQuotes([string]$Value) {
     return $Value.Replace("'", "''")
@@ -16331,6 +16335,44 @@ function Send-ToConsole([string]$CommandLine) {
     $term.ConPTYTerm.WriteToTerm("$CommandLine`r")
 }
 
+# Every $variableName referenced in a step's command line, except $extractedSDDCDataFile (that one
+# is already set globally by the Data Source panel, so it never needs its own input field).
+function Get-CommandVariableNames([string]$CommandLine) {
+    $found = [regex]::Matches($CommandLine, '\$([A-Za-z_][A-Za-z0-9_]*)') | ForEach-Object { $_.Groups[1].Value }
+    return @($found | Where-Object { $_ -ne 'extractedSDDCDataFile' } | Select-Object -Unique)
+}
+
+function Get-InputControlValue($Control) {
+    if ($Control -is [System.Windows.Controls.PasswordBox]) {
+        return $Control.Password
+    }
+    return $Control.Text
+}
+
+# Password-like variable names get a masked PasswordBox instead of a plain TextBox.
+function New-VariableField([string]$VariableName) {
+    $tile = New-Object System.Windows.Controls.StackPanel
+    $tile.Margin = '0,0,10,10'
+    $tile.Width = 220
+
+    $label = New-Object System.Windows.Controls.TextBlock
+    $label.Text = $VariableName
+    $label.FontSize = 11
+    $label.Foreground = [System.Windows.Media.Brushes]::DimGray
+
+    if ($VariableName -match 'password|passphrase') {
+        $inputControl = New-Object System.Windows.Controls.PasswordBox
+    } else {
+        $inputControl = New-Object System.Windows.Controls.TextBox
+    }
+
+    [void]$tile.Children.Add($label)
+    [void]$tile.Children.Add($inputControl)
+    [void]$variablesPanel.Children.Add($tile)
+
+    $script:variableInputs[$VariableName] = $inputControl
+}
+
 function New-StepRow([string]$CommandLine) {
     $panel = New-Object System.Windows.Controls.DockPanel
     $panel.Margin = '4,3,4,3'
@@ -16342,12 +16384,21 @@ function New-StepRow([string]$CommandLine) {
     $dot.Margin = '0,0,8,0'
     $dot.VerticalAlignment = 'Center'
 
+    $stepVariableNames = Get-CommandVariableNames $CommandLine
+
     $runButton = New-Object System.Windows.Controls.Button
     $runButton.Content = 'Run'
     $runButton.Width = 60
     $runButton.Margin = '8,0,0,0'
     [System.Windows.Controls.DockPanel]::SetDock($runButton, [System.Windows.Controls.Dock]::Right)
     $runButton.Add_Click({
+        foreach ($variableName in $stepVariableNames) {
+            $inputControl = $script:variableInputs[$variableName]
+            if ($null -ne $inputControl) {
+                $escapedValue = Protect-SingleQuotes (Get-InputControlValue $inputControl)
+                Send-ToConsole "`$$variableName = '$escapedValue'"
+            }
+        }
         $dot.Fill = [System.Windows.Media.Brushes]::DodgerBlue
         Send-ToConsole $CommandLine
     }.GetNewClosure())
@@ -16404,7 +16455,8 @@ $browseButton.Add_Click({
     }
 
     $domainsListBox.Items.Clear()
-    $stepsListBox.Items.Clear()
+    $managementDomainRestoresStepsListBox.Items.Clear()
+    $recoverDefaultClusterStepsListBox.Items.Clear()
     $statusTextBlock.Text = ''
 
     try {
@@ -16431,14 +16483,66 @@ $browseButton.Add_Click({
 }.GetNewClosure())
 
 $domainsListBox.Add_SelectionChanged({
-    $stepsListBox.Items.Clear()
+    $managementDomainRestoresStepsListBox.Items.Clear()
+    $recoverDefaultClusterStepsListBox.Items.Clear()
+    $variablesPanel.Children.Clear()
+    $script:variableInputs = @{}
+
     $selected = $domainsListBox.SelectedItem
     if ($null -eq $selected) {
         return
     }
+
+    $managementDomainRestoresCommandLines = @()
+    $recoverDefaultClusterCommandLines = @()
+
     if ($selected.Tag.domainType -eq 'MANAGEMENT') {
-        [void]$stepsListBox.Items.Add((New-StepRow 'New-PrepareManagementHostNetworking -extractedSDDCDataFile $extractedSDDCDataFile -mtu 8900'))
-        [void]$stepsListBox.Items.Add((New-StepRow 'Add-VMKernelsToManagementHosts -extractedSDDCDataFile $extractedSDDCDataFile'))
+        $managementDomainRestoresCommandLines = @(
+            'New-PrepareManagementHostNetworking -extractedSDDCDataFile $extractedSDDCDataFile -mtu 8900',
+            'Add-VMKernelsToManagementHosts -extractedSDDCDataFile $extractedSDDCDataFile',
+            'New-SingleHostVsanDatastore -extractedSDDCDataFile $extractedSDDCDataFile',
+            'New-vCenterOvaDeployment -targetType $targetType -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -restoredvCenterDeploymentSize $restoredvCenterDeploymentSize -vCenterOvaFile $vCenterOvaFile',
+            'New-NSXManagerOvaDeployment -targetType $targetType -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -restoredNsxManagerDeploymentSize $restoredNsxManagerDeploymentSize -nsxManagerOvaFile $nsxManagerOvaFile',
+            'New-SDDCManagerOvaDeployment -targetType $targetType -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -sddcManagerOvaFile $sddcManagerOvaFile -rootUserPassword $rootUserPassword -vcfUserPassword $vcfUserPassword -localUserPassword $localUserPassword -basicAuthUserPassword $basicAuthUserPassword',
+            'Invoke-vCenterRestore -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -vCenterBackupPath $vCenterBackupPath -locationtype $locationtype -locationUser $locationUser -locationPassword $locationPassword',
+            'Invoke-NSXManagerRestore -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -sftpServer $sftpServer -sftpUser $sftpUser -sftpPassword $sftpPassword -sftpServerBackupPath $sftpServerBackupPath -backupPassphrase $nsxBackupPassphrase',
+            'New-UploadAndModifySDDCManagerBackup -targetType $targetType -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -rootUserPassword $rootUserPassword -vcfUserPassword $vcfUserPassword -backupFilePath $vcfbackupFilePath -encryptionPassword $encryptionPassword -extractedSDDCDataFile $extractedSDDCDataFile',
+            'Invoke-SDDCManagerRestore -extractedSDDCDataFile $extractedSDDCDataFile -backupFilePath $vcfbackupFilePath -vcfUserPassword $vcfUserPassword -localUserPassword $localUserPassword -rootUserPassword $rootUserPassword -encryptionPassword $encryptionPassword',
+            'Update-ExtractedSDDCData -extractedSDDCDataFile $extractedSDDCDataFile -sddcManagerFQDN $sddcManagerFQDN -sddcManagerAdmin $sddcManagerAdmin -sddcManagerAdminPassword $sddcManagerAdminPassword -vCenterFQDN $restoredVcenterFqdn'
+        )
+
+        $recoverDefaultClusterCommandLines = @(
+            'Backup-ClusterVMOverrides -clusterName $clusterName',
+            'Backup-ClusterVMLocations -clusterName $clusterName',
+            'Backup-ClusterDRSGroupsAndRules -clusterName $clusterName',
+            'Backup-ClusterVMTags -clusterName $clusterName',
+            'Remove-NonResponsiveHosts -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -NsxManagerFQDN $restoredNsxManagerFqdn -NsxManagerAdmin $restoredNsxManagerAdmin -NsxManagerAdminPassword $restoredNsxManagerAdminPassword -NsxManagerRootPassword $restoredNsxManagerRootPassword',
+            'Add-HostsToCluster -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -sddcManagerFqdn $sddcManagerFqdn -sddcManagerAdmin $sddcManagerAdmin -sddcManagerAdminPassword $sddcManagerAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile',
+            'New-RebuiltVdsConfiguration -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile',
+            'Watch-NsxHostTransportNodeInstallation -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile',
+            'Add-DiskgroupsToManagementHosts -targetFqdn $restoredVcenterFqdn -targetAdmin $restoredVcenterAdmin -targetAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile',
+            'Set-ManagementDatastorePolicy -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile',
+            'New-ReconfiguredVsanStretchedCluster -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile',
+            'Clear-vCenterAlarms -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword',
+            'Update-DomainDatastoreID -extractedSDDCDataFile $extractedSDDCDataFile -vCenterFqdn $vCenterFqdn -clusterName $clusterName -VcfUserPassword $VcfUserPassword -RootPassword $RootPassword',
+            'Update-ClusterHostSourceIDs -extractedSDDCDataFile $extractedSDDCDataFile -vCenterFqdn $vCenterFqdn -clusterName $clusterName -VcfUserPassword $VcfUserPassword -RootPassword $RootPassword',
+            'Invoke-SddcManagerSSHKeyRefresh -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -clusterName $clusterName -workloadDomain $workloadDomain -VcfUserPassword $VcfUserPassword',
+            'Resolve-PhysicalHostServiceAccounts -targetFQDN $restoredVcenterFqdn -targetAdmin $restoredVcenterAdmin -targetAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -svcAccountPassword $svcAccountPassword -sddcManagerFqdn $sddcManagerFqdn -sddcManagerAdmin $sddcManagerAdmin -sddcManagerAdminPassword $sddcManagerAdminPassword',
+            'Invoke-NSXEdgeClusterRecoverySelective -nsxManagerFqdn $restoredNsxManagerFqdn -nsxManagerAdmin $restoredNsxManagerAdmin -nsxManagerAdminPassword $restoredNsxManagerAdminPassword -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredvCenterAdmin -vCenterAdminPassword $restoredvCenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile'
+        )
+    }
+
+    foreach ($commandLine in $managementDomainRestoresCommandLines) {
+        [void]$managementDomainRestoresStepsListBox.Items.Add((New-StepRow $commandLine))
+    }
+    foreach ($commandLine in $recoverDefaultClusterCommandLines) {
+        [void]$recoverDefaultClusterStepsListBox.Items.Add((New-StepRow $commandLine))
+    }
+
+    $allCommandLines = @($managementDomainRestoresCommandLines) + @($recoverDefaultClusterCommandLines)
+    $allVariableNames = @($allCommandLines | ForEach-Object { Get-CommandVariableNames $_ } | Select-Object -Unique | Sort-Object)
+    foreach ($variableName in $allVariableNames) {
+        New-VariableField $variableName
     }
 }.GetNewClosure())
 
