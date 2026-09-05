@@ -192,29 +192,35 @@
             -->
             <Grid Grid.Column="0">
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
                     <RowDefinition Height="1*" />
                     <RowDefinition Height="1*" />
                     <RowDefinition Height="1*" />
                 </Grid.RowDefinitions>
 
-                <GroupBox Grid.Row="0" Header="Data Source" Margin="0,0,0,12">
-                    <StackPanel>
-                        <RadioButton x:Name="ExtractBackupRadio" Content="Extract SDDC Manager Backup" GroupName="DataSource" Margin="0,0,0,6" />
-                        <RadioButton x:Name="UseExtractedDataRadio" Content="Load Extracted SDDC Data" GroupName="DataSource" IsChecked="True" Margin="0,0,0,6" />
-                        <DockPanel Margin="0,4,0,0">
-                            <Button x:Name="BrowseButton" Content="Browse..." Width="80" DockPanel.Dock="Right" />
-                            <TextBox x:Name="FilePathTextBox" IsReadOnly="True" Margin="0,0,8,0" VerticalContentAlignment="Center" />
-                        </DockPanel>
-                        <TextBlock x:Name="StatusTextBlock" Margin="0,8,0,0" TextWrapping="Wrap" Foreground="#C0392B" />
-                    </StackPanel>
+                <!-- Data Source and Workload Domains share one card as tabs (rather than two
+                     separate always-visible panes) to free up vertical space for Steps/Variables.
+                     The .psm1 switches to the Workload Domains tab automatically once a data file
+                     is loaded. -->
+                <GroupBox Grid.Row="0" Header="Setup" Margin="0,0,0,12">
+                    <TabControl x:Name="DataSourceDomainsTabControl" Background="Transparent" BorderThickness="0">
+                        <TabItem Header="Data Source">
+                            <StackPanel Margin="0,8,0,0">
+                                <RadioButton x:Name="ExtractBackupRadio" Content="Extract SDDC Manager Backup" GroupName="DataSource" Margin="0,0,0,6" />
+                                <RadioButton x:Name="UseExtractedDataRadio" Content="Load Extracted SDDC Data" GroupName="DataSource" IsChecked="True" Margin="0,0,0,6" />
+                                <DockPanel Margin="0,4,0,0">
+                                    <Button x:Name="BrowseButton" Content="Browse..." Width="80" DockPanel.Dock="Right" />
+                                    <TextBox x:Name="FilePathTextBox" IsReadOnly="True" Margin="0,0,8,0" VerticalContentAlignment="Center" />
+                                </DockPanel>
+                                <TextBlock x:Name="StatusTextBlock" Margin="0,8,0,0" TextWrapping="Wrap" Foreground="#C0392B" />
+                            </StackPanel>
+                        </TabItem>
+                        <TabItem Header="Workload Domains">
+                            <ListBox x:Name="WorkloadDomainsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" Margin="0,8,0,0" />
+                        </TabItem>
+                    </TabControl>
                 </GroupBox>
 
-                <GroupBox Grid.Row="1" Header="Workload Domains" Margin="0,0,0,12">
-                    <ListBox x:Name="WorkloadDomainsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" />
-                </GroupBox>
-
-                <GroupBox x:Name="StepsGroupBox" Grid.Row="2" Header="Steps" Margin="0,0,0,12" Visibility="Collapsed">
+                <GroupBox x:Name="StepsGroupBox" Grid.Row="1" Header="Steps" Margin="0,0,0,12" Visibility="Collapsed">
                     <TabControl x:Name="StepsTabControl" Background="Transparent" BorderThickness="0">
                         <TabItem Header="Management Domain Restores">
                             <DockPanel Margin="0,8,0,0">
@@ -231,7 +237,7 @@
                     </TabControl>
                 </GroupBox>
 
-                <GroupBox x:Name="VariablesGroupBox" Grid.Row="3" Header="Variables" Visibility="Collapsed">
+                <GroupBox x:Name="VariablesGroupBox" Grid.Row="2" Header="Variables" Visibility="Collapsed">
                     <DockPanel>
                         <Button x:Name="LoadVariablesButton" Content="Load Variables..." DockPanel.Dock="Top" HorizontalAlignment="Left" Margin="0,0,0,8" />
                         <TextBlock x:Name="LoadedVariablesTextBlock" DockPanel.Dock="Top" Margin="0,0,0,8" TextWrapping="Wrap" Foreground="{StaticResource SubtleTextBrush}" Text="No variables loaded yet." />

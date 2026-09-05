@@ -16316,6 +16316,7 @@ $extractRadio = $window.FindName('ExtractBackupRadio')
 $browseButton = $window.FindName('BrowseButton')
 $filePathTextBox = $window.FindName('FilePathTextBox')
 $statusTextBlock = $window.FindName('StatusTextBlock')
+$dataSourceDomainsTabControl = $window.FindName('DataSourceDomainsTabControl')
 $domainsListBox = $window.FindName('WorkloadDomainsListBox')
 $stepsGroupBox = $window.FindName('StepsGroupBox')
 $managementDomainRestoresStepsListBox = $window.FindName('ManagementDomainRestoresStepsListBox')
@@ -16511,6 +16512,10 @@ $browseButton.Add_Click({
         $item.Tag = $domain
         [void]$domainsListBox.Items.Add($item)
     }
+
+    # Switch focus to the Workload Domains tab now that there's something to pick from -- saves a
+    # manual click back and forth between the two tabs every time a data file is loaded.
+    $dataSourceDomainsTabControl.SelectedIndex = 1
 
     $escapedPath = Protect-SingleQuotes $dialog.FileName
     Send-ToConsole "`$extractedSDDCDataFile = '$escapedPath'"
