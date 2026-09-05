@@ -16307,6 +16307,13 @@ Get-ChildItem -Path $LibPath -Filter '*.dll' | ForEach-Object {
     }
 }
 
+# EasyWindowsTerminalControl's native rendering/ConPTY session appears to need
+# Application.Current to already exist by the time the control is constructed -- a normal
+# compiled WPF app's generated Main() always does "new Application(); app.Run();" before its
+# StartupUri window (and therefore any control inside it) is ever built. XamlReader.Load()
+# below constructs the Term control immediately, so the Application must be created first.
+$app = New-Object System.Windows.Application
+
 [xml]$xamlDocument = Get-Content -Path $XamlPath -Raw
 $xamlReader = New-Object System.Xml.XmlNodeReader $xamlDocument
 $window = [System.Windows.Markup.XamlReader]::Load($xamlReader)
@@ -16545,16 +16552,7 @@ $domainsListBox.Add_SelectionChanged({
 
 Start-TerminalReadyWatcher
 
-# EasyWindowsTerminalControl's native rendering/ConPTY session appears to need a real
-# System.Windows.Application (Application.Current) to exist -- without one, ConPTYTerm ends up
-# non-null but only partially initialized (WriteToTerm throws NullReferenceException internally,
-# and nothing renders in the control's area at all). Window.ShowDialog() alone doesn't create one.
-if ($null -eq [System.Windows.Application]::Current) {
-    $app = New-Object System.Windows.Application
-    [void]$app.Run($window)
-} else {
-    [void]$window.ShowDialog()
-}
+[void]$app.Run($window)
 '@
 
     $initialSessionState = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault()
