@@ -1,0 +1,16 @@
+<Window x:Class="EasyTerminalSpike.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:term="clr-namespace:EasyWindowsTerminalControl;assembly=EasyWindowsTerminalControl"
+        Title="Spike: EasyWindowsTerminalControl" Height="700" Width="1000">
+    <Grid>
+        <!--
+            StartupCommandLine/xmlns confirmed against EasyWindowsTerminalControl's own
+            TermExample sample app (MainWindow.xaml in the mitchcapper/EasyWindowsTerminalControl
+            repo). test-render.ps1 is copied next to the built exe by the csproj, so it's runnable
+            here via a relative path once the window is open.
+        -->
+        <term:EasyTerminalControl x:Name="Term"
+                                   StartupCommandLine="pwsh.exe -NoLogo -NoExit" />
+    </Grid>
+</Window>

@@ -9,3 +9,9 @@
 # MkDocs
 ## Ignore site directory.
 **/.site/**
+
+# .NET / Visual Studio (spikes/ prototypes)
+**/bin/
+**/obj/
+**/.vs/
+*.user

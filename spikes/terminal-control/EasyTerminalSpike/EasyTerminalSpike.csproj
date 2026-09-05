@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    NuGet package EasyWindowsTerminalControl 1.0.38 lists net8.0-windows7.0 as a supported TFM,
+    but the project's own README calls the WPF flavor "not yet publicly packaged" / dependent on
+    beta Windows Terminal packages, and its own sample app (TermExample) instead targets
+    net10.0-windows10.0.26100.0 with RuntimeIdentifier win-x64 via a ProjectReference rather than
+    the NuGet package. If restore/build fails on net8.0-windows7.0 below, try switching to that
+    TFM + RuntimeIdentifier combination as the first troubleshooting step — see spike README.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows7.0</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Platforms>x64</Platforms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="EasyWindowsTerminalControl" Version="1.0.38" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\test-render.ps1" Link="test-render.ps1" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

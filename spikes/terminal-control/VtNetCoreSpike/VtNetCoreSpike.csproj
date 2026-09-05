@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    VtNetCore's NuGet package (id "VtNetCore") was unlisted by its owner after its last publish
+    (v1.0.30, 2019) — unlisting hides it from search but direct restore by exact version should
+    still work. If restore fails, the library is small (VtNetCore/ folder in
+    https://github.com/darrenstarr/VtNetCore); vendoring its source directly into this project is
+    the fallback — see spike README.
+  -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Platforms>x64</Platforms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="VtNetCore" Version="1.0.30" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ConPty\ConPty.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\test-render.ps1" Link="test-render.ps1" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>
