@@ -16356,18 +16356,24 @@ function Get-InputControlValue($Control) {
 # Rebuilds the Variables panel from just the currently active Steps tab, not the union of every
 # phase -- switching tabs (or selecting a domain, which defaults to the first tab) calls this.
 function Update-VariablesForActiveTab {
-    $variablesPanel.Children.Clear()
-    $script:variableInputs = @{}
+    try {
+        $variablesPanel.Children.Clear()
+        $script:variableInputs = @{}
 
-    $activeCommandLines = if ($stepsTabControl.SelectedIndex -eq 1) {
-        $script:recoverDefaultClusterCommandLines
-    } else {
-        $script:managementDomainRestoresCommandLines
-    }
+        $activeCommandLines = if ($stepsTabControl.SelectedIndex -eq 1) {
+            $script:recoverDefaultClusterCommandLines
+        } else {
+            $script:managementDomainRestoresCommandLines
+        }
 
-    $variableNames = @($activeCommandLines | ForEach-Object { Get-CommandVariableNames $_ } | Select-Object -Unique | Sort-Object)
-    foreach ($variableName in $variableNames) {
-        New-VariableField $variableName
+        $variableNames = @($activeCommandLines | ForEach-Object { Get-CommandVariableNames $_ } | Select-Object -Unique | Sort-Object)
+        foreach ($variableName in $variableNames) {
+            New-VariableField $variableName
+        }
+    } catch {
+        # WPF event handler exceptions on this background runspace have no console to surface to,
+        # so without this they fail completely silently. Temporary diagnostic pending a real cause.
+        $statusTextBlock.Text = "Update-VariablesForActiveTab failed: $($_.Exception.Message)"
     }
 }
 
@@ -16510,6 +16516,7 @@ $browseButton.Add_Click({
 }.GetNewClosure())
 
 $domainsListBox.Add_SelectionChanged({
+  try {
     $managementDomainRestoresStepsListBox.Items.Clear()
     $recoverDefaultClusterStepsListBox.Items.Clear()
     $variablesPanel.Children.Clear()
@@ -16568,6 +16575,9 @@ $domainsListBox.Add_SelectionChanged({
     }
 
     Update-VariablesForActiveTab
+  } catch {
+    $statusTextBlock.Text = "Domain selection handler failed: $($_.Exception.Message)"
+  }
 }.GetNewClosure())
 
 # TabControl.SelectionChanged shares the same routed event as ListBox.SelectionChanged, so a click
@@ -16575,10 +16585,14 @@ $domainsListBox.Add_SelectionChanged({
 # this handler too. Only react when the TabControl itself is the actual source.
 $stepsTabControl.Add_SelectionChanged({
     param($sender, $e)
-    if ($e.Source -ne $stepsTabControl) {
-        return
+    try {
+        if ($e.Source -ne $stepsTabControl) {
+            return
+        }
+        Update-VariablesForActiveTab
+    } catch {
+        $statusTextBlock.Text = "Tab selection handler failed: $($_.Exception.Message)"
     }
-    Update-VariablesForActiveTab
 }.GetNewClosure())
 
 Start-TerminalReadyWatcher
