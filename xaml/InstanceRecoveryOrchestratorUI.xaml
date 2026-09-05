@@ -255,11 +255,9 @@
                 </GroupBox>
             </Grid>
 
-            <!-- Embedded console. FontSizeWhenSettingTheme is EasyWindowsTerminalControl's own knob
-                 for the native ConPTY renderer's text size; the inherited WPF FontSize property
-                 has no effect here since the terminal draws its own glyphs, not standard WPF text. -->
+            <!-- Embedded console -->
             <GroupBox Grid.Column="2" Header="Console">
-                <term:EasyTerminalControl x:Name="Term" StartupCommandLine="pwsh.exe -NoLogo -NoExit" FontSizeWhenSettingTheme="11" />
+                <term:EasyTerminalControl x:Name="Term" StartupCommandLine="pwsh.exe -NoLogo -NoExit" />
             </GroupBox>
         </Grid>
     </Grid>
