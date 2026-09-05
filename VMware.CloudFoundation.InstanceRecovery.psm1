@@ -16243,3 +16243,229 @@ Function Invoke-SupervisorRestore
 Export-ModuleMember -Function Invoke-SupervisorRestore
 
 #EndRegion Supervisor
+
+#Region UI Orchestrator
+
+Function Start-InstanceRecoveryOrchestratorUI {
+    <#
+    .SYNOPSIS
+    Launches the VCF Instance Recovery orchestrator UI
+
+    .DESCRIPTION
+    The Start-InstanceRecoveryOrchestratorUI cmdlet opens a WPF window -- loaded in-process from
+    xaml\InstanceRecoveryOrchestratorUI.xaml via XamlReader, no separate .exe or build step -- that
+    lets you pick an extracted-sddc-data.json file, lists the workload domains it contains, and runs
+    the recovery steps for the selected domain in an embedded, fully interactive PowerShell console
+    (via EasyWindowsTerminalControl, vendored under lib\EasyWindowsTerminalControl).
+
+    The window runs on its own dedicated STA runspace so this cmdlet returns control to your console
+    immediately rather than blocking until the window is closed.
+
+    .EXAMPLE
+    Start-InstanceRecoveryOrchestratorUI
+    #>
+
+    Param()
+
+    $moduleRoot = $PSScriptRoot
+    $xamlPath = Join-Path $moduleRoot 'xaml\InstanceRecoveryOrchestratorUI.xaml'
+    $libPath = Join-Path $moduleRoot 'lib\EasyWindowsTerminalControl'
+    $manifestPath = Join-Path $moduleRoot 'VMware.CloudFoundation.InstanceRecovery.psd1'
+
+    if (-not (Test-Path $xamlPath)) {
+        LogMessage -type ERROR -message "Cannot find UI resource '$xamlPath'."
+        return
+    }
+    if (-not (Test-Path $libPath)) {
+        LogMessage -type ERROR -message "Cannot find vendored EasyWindowsTerminalControl assemblies at '$libPath'."
+        return
+    }
+    if (-not (Test-Path $manifestPath)) {
+        LogMessage -type ERROR -message "Cannot find module manifest '$manifestPath'."
+        return
+    }
+
+    # Self-contained: runs in its own isolated runspace/session state, so it has no dependency on
+    # this module's functions (e.g. LogMessage) -- only .NET/WPF and the vendored terminal control.
+    $uiScript = @'
+param(
+    [string]$XamlPath,
+    [string]$LibPath,
+    [string]$ManifestPath
+)
+
+Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Xaml
+
+# Prepend the vendored folder to the native search path -- EasyWindowsTerminalControl wraps native
+# C++/DirectX rendering components that need to resolve alongside its managed assembly.
+$env:PATH = "$LibPath;$env:PATH"
+Get-ChildItem -Path $LibPath -Filter '*.dll' | ForEach-Object {
+    try {
+        Add-Type -Path $_.FullName -ErrorAction Stop
+    } catch {
+        Write-Warning "Failed to load $($_.FullName): $($_.Exception.Message)"
+    }
+}
+
+[xml]$xamlDocument = Get-Content -Path $XamlPath -Raw
+$xamlReader = New-Object System.Xml.XmlNodeReader $xamlDocument
+$window = [System.Windows.Markup.XamlReader]::Load($xamlReader)
+
+$extractRadio = $window.FindName('ExtractBackupRadio')
+$browseButton = $window.FindName('BrowseButton')
+$filePathTextBox = $window.FindName('FilePathTextBox')
+$statusTextBlock = $window.FindName('StatusTextBlock')
+$domainsListBox = $window.FindName('WorkloadDomainsListBox')
+$stepsListBox = $window.FindName('StepsListBox')
+$term = $window.FindName('Term')
+
+function Protect-SingleQuotes([string]$Value) {
+    return $Value.Replace("'", "''")
+}
+
+function Send-ToConsole([string]$CommandLine) {
+    if ($null -eq $term.ConPTYTerm) {
+        $statusTextBlock.Text = "Console isn't ready yet -- try again in a moment."
+        return
+    }
+    $term.ConPTYTerm.WriteToTerm("$CommandLine`r")
+}
+
+function New-StepRow([string]$CommandLine) {
+    $panel = New-Object System.Windows.Controls.DockPanel
+    $panel.Margin = '4,3,4,3'
+
+    $dot = New-Object System.Windows.Shapes.Ellipse
+    $dot.Width = 10
+    $dot.Height = 10
+    $dot.Fill = [System.Windows.Media.Brushes]::LightGray
+    $dot.Margin = '0,0,8,0'
+    $dot.VerticalAlignment = 'Center'
+
+    $runButton = New-Object System.Windows.Controls.Button
+    $runButton.Content = 'Run'
+    $runButton.Width = 60
+    $runButton.Margin = '8,0,0,0'
+    [System.Windows.Controls.DockPanel]::SetDock($runButton, [System.Windows.Controls.Dock]::Right)
+    $runButton.Add_Click({
+        $dot.Fill = [System.Windows.Media.Brushes]::DodgerBlue
+        Send-ToConsole $CommandLine
+    }.GetNewClosure())
+
+    $label = New-Object System.Windows.Controls.TextBlock
+    $label.Text = $CommandLine
+    $label.FontFamily = New-Object System.Windows.Media.FontFamily('Consolas')
+    $label.VerticalAlignment = 'Center'
+
+    [void]$panel.Children.Add($dot)
+    [void]$panel.Children.Add($runButton)
+    [void]$panel.Children.Add($label)
+    return $panel
+}
+
+function Start-TerminalReadyWatcher {
+    $timer = New-Object System.Windows.Threading.DispatcherTimer
+    $timer.Interval = [TimeSpan]::FromMilliseconds(200)
+    $script:terminalReadyAttempts = 0
+    $timer.Add_Tick({
+        $script:terminalReadyAttempts++
+        if ($null -ne $term.ConPTYTerm) {
+            $timer.Stop()
+            $escapedManifestPath = Protect-SingleQuotes $ManifestPath
+            Send-ToConsole "Import-Module '$escapedManifestPath' -Force"
+        } elseif ($script:terminalReadyAttempts -gt 50) {
+            $timer.Stop()
+            $statusTextBlock.Text = 'Embedded console did not start in time.'
+        }
+    })
+    $timer.Start()
+}
+
+$browseButton.Add_Click({
+    $extracting = $extractRadio.IsChecked -eq $true
+    $dialog = New-Object Microsoft.Win32.OpenFileDialog
+    if ($extracting) {
+        $dialog.Filter = 'All files (*.*)|*.*'
+        $dialog.Title = 'Select backup file'
+    } else {
+        $dialog.Filter = 'JSON files (*.json)|*.json|All files (*.*)|*.*'
+        $dialog.Title = 'Select extracted-sddc-data.json'
+    }
+
+    if ($dialog.ShowDialog() -ne $true) {
+        return
+    }
+
+    $filePathTextBox.Text = $dialog.FileName
+
+    if ($extracting) {
+        # Extracting a backup file is not implemented yet -- selecting a file here does nothing further.
+        return
+    }
+
+    $domainsListBox.Items.Clear()
+    $stepsListBox.Items.Clear()
+    $statusTextBlock.Text = ''
+
+    try {
+        $extractedSddcData = Get-Content -Path $dialog.FileName -Raw | ConvertFrom-Json
+    } catch {
+        $statusTextBlock.Text = "Failed to load extracted SDDC data: $($_.Exception.Message)"
+        return
+    }
+
+    if (-not $extractedSddcData.workloadDomains) {
+        $statusTextBlock.Text = "No 'workloadDomains' property found in the selected file."
+        return
+    }
+
+    foreach ($domain in $extractedSddcData.workloadDomains) {
+        $item = New-Object System.Windows.Controls.ListBoxItem
+        $item.Content = "$($domain.domainName) ($($domain.domainType))"
+        $item.Tag = $domain
+        [void]$domainsListBox.Items.Add($item)
+    }
+
+    $escapedPath = Protect-SingleQuotes $dialog.FileName
+    Send-ToConsole "`$extractedSDDCDataFile = '$escapedPath'"
+}.GetNewClosure())
+
+$domainsListBox.Add_SelectionChanged({
+    $stepsListBox.Items.Clear()
+    $selected = $domainsListBox.SelectedItem
+    if ($null -eq $selected) {
+        return
+    }
+    if ($selected.Tag.domainType -eq 'MANAGEMENT') {
+        [void]$stepsListBox.Items.Add((New-StepRow 'New-PrepareManagementHostNetworking -extractedSDDCDataFile $extractedSDDCDataFile -mtu 8900'))
+        [void]$stepsListBox.Items.Add((New-StepRow 'Add-VMKernelsToManagementHosts -extractedSDDCDataFile $extractedSDDCDataFile'))
+    }
+}.GetNewClosure())
+
+Start-TerminalReadyWatcher
+[void]$window.ShowDialog()
+'@
+
+    $initialSessionState = [System.Management.Automation.Runspaces.InitialSessionState]::CreateDefault()
+    $uiRunspace = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace($initialSessionState)
+    $uiRunspace.ApartmentState = [System.Threading.ApartmentState]::STA
+    $uiRunspace.ThreadOptions = [System.Management.Automation.Runspaces.PSThreadOptions]::ReuseThread
+    $uiRunspace.Open()
+
+    $uiPowerShell = [System.Management.Automation.PowerShell]::Create()
+    $uiPowerShell.Runspace = $uiRunspace
+    [void]$uiPowerShell.AddScript($uiScript)
+    [void]$uiPowerShell.AddArgument($xamlPath)
+    [void]$uiPowerShell.AddArgument($libPath)
+    [void]$uiPowerShell.AddArgument($manifestPath)
+
+    # Kept alive at module script scope so the async UI isn't torn down by GC while the window is open.
+    $script:InstanceRecoveryOrchestratorUIRunspace = $uiRunspace
+    $script:InstanceRecoveryOrchestratorUIPowerShell = $uiPowerShell
+    $script:InstanceRecoveryOrchestratorUIAsyncResult = $uiPowerShell.BeginInvoke()
+
+    LogMessage -type NOTE -message "Instance Recovery Orchestrator UI launched."
+}
+Export-ModuleMember -Function Start-InstanceRecoveryOrchestratorUI
+
+#EndRegion UI Orchestrator
