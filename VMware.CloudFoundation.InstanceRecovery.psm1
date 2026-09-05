@@ -16319,6 +16319,7 @@ $statusTextBlock = $window.FindName('StatusTextBlock')
 $dataSourceDomainsTabControl = $window.FindName('DataSourceDomainsTabControl')
 $domainsListBox = $window.FindName('WorkloadDomainsListBox')
 $stepsVariablesGroupBox = $window.FindName('StepsVariablesGroupBox')
+$stepsVariablesTabControl = $window.FindName('StepsVariablesTabControl')
 $managementDomainRestoresStepsListBox = $window.FindName('ManagementDomainRestoresStepsListBox')
 $recoverDefaultClusterStepsListBox = $window.FindName('RecoverDefaultClusterStepsListBox')
 $runAllManagementDomainRestoresButton = $window.FindName('RunAllManagementDomainRestoresButton')
@@ -16327,6 +16328,12 @@ $loadVariablesButton = $window.FindName('LoadVariablesButton')
 $loadedVariablesTextBlock = $window.FindName('LoadedVariablesTextBlock')
 $variablesItemsPanel = $window.FindName('VariablesItemsPanel')
 $term = $window.FindName('Term')
+
+# Populated once a domain is selected (see the SelectionChanged handler below); initialized here
+# so the TerminalOutput completion-watcher never sees $null before that happens.
+$global:managementDomainRestoresStepRows = @()
+$global:recoverDefaultClusterStepRows = @()
+$global:consoleOutputBuffer = ''
 
 function Protect-SingleQuotes([string]$Value) {
     return $Value.Replace("'", "''")
@@ -16344,14 +16351,19 @@ function Send-ToConsole([string]$CommandLine) {
     }
 }
 
-function Invoke-Step($Dot, [string]$CommandLine) {
+# Resets a row to its "in progress" look, including undoing any earlier "Done" state -- re-running
+# a step that previously completed should stop showing it as done until it completes again.
+function Invoke-Step($Dot, $Button, [string]$CommandLine) {
     $Dot.Fill = [System.Windows.Media.Brushes]::DodgerBlue
+    $Button.Content = 'Run'
+    $Button.ClearValue([System.Windows.Controls.Control]::BackgroundProperty)
     Send-ToConsole $CommandLine
 }
 
-# Returns [PSCustomObject]@{ Panel; Dot; CommandLine }, not just the row's visual Panel -- Dot and
-# CommandLine are needed separately so a tab's "Run All" button can replay every row's Run action
-# (dot included) without re-parsing the rendered list.
+# Returns [PSCustomObject]@{ Panel; Dot; Button; CommandLine; CmdletName }, not just the row's
+# visual Panel -- the other fields are needed separately so a tab's "Run All" button can replay
+# every row's Run action, and so the console-output watcher can mark a row Done by cmdlet name
+# without re-parsing the rendered list.
 function New-StepRow([string]$CommandLine) {
     $panel = New-Object System.Windows.Controls.DockPanel
     $panel.Margin = '2,0,2,0'
@@ -16377,7 +16389,7 @@ function New-StepRow([string]$CommandLine) {
     [System.Windows.Controls.DockPanel]::SetDock($runButton, [System.Windows.Controls.Dock]::Right)
     $runButton.Add_Click({
         try {
-            Invoke-Step $dot $CommandLine
+            Invoke-Step $dot $runButton $CommandLine
         } catch {
             $statusTextBlock.Text = "Run button failed: $($_.Exception.Message)"
         }
@@ -16391,7 +16403,7 @@ function New-StepRow([string]$CommandLine) {
     [void]$panel.Children.Add($dot)
     [void]$panel.Children.Add($runButton)
     [void]$panel.Children.Add($label)
-    return [PSCustomObject]@{ Panel = $panel; Dot = $dot; CommandLine = $CommandLine }
+    return [PSCustomObject]@{ Panel = $panel; Dot = $dot; Button = $runButton; CommandLine = $CommandLine; CmdletName = $cmdletName }
 }
 
 # Variable names referenced across $CommandLines (e.g. "$targetFqdn"), in order of first
@@ -16455,6 +16467,29 @@ function Start-TerminalReadyWatcher {
         $script:terminalReadyAttempts++
         if ($null -ne $term.ConPTYTerm) {
             $this.Stop()
+
+            # Watches raw console output for the module's own "Completed Task <cmdlet>" log line
+            # (see LogMessage) to mark the matching Step row Done. TerminalOutput fires on the
+            # ConPTY control's own read thread, not the UI thread, so row updates are marshaled via
+            # Dispatcher.Invoke -- touching WPF elements directly from that thread would throw
+            # (silently, per the same background-thread exception behavior noted above).
+            $term.ConPTYTerm.Add_TerminalOutput({
+                param($sender, $e)
+                $global:consoleOutputBuffer += $e.Data
+                if ($global:consoleOutputBuffer.Length -gt 50000) {
+                    $global:consoleOutputBuffer = $global:consoleOutputBuffer.Substring($global:consoleOutputBuffer.Length - 50000)
+                }
+                $window.Dispatcher.Invoke([action]{
+                    foreach ($row in (@($global:managementDomainRestoresStepRows) + @($global:recoverDefaultClusterStepRows))) {
+                        if ($row.Button.Content -eq 'Done') { continue }
+                        if ($global:consoleOutputBuffer.Contains("Completed Task $($row.CmdletName)")) {
+                            $row.Dot.Fill = [System.Windows.Media.Brushes]::Green
+                            $row.Button.Content = 'Done'
+                            $row.Button.Background = [System.Windows.Media.Brushes]::Green
+                        }
+                    }
+                })
+            })
         } elseif ($script:terminalReadyAttempts -gt 50) {
             $this.Stop()
             $statusTextBlock.Text = 'Embedded console did not start in time.'
@@ -16560,6 +16595,10 @@ $loadVariablesButton.Add_Click({
         }
 
         $loadedVariablesTextBlock.Text = "Loaded $($orderedNames.Count) variable(s) from $($dialog.FileName)."
+
+        # Switch to the Steps tab now that variables are in place -- saves a manual click back and
+        # forth, the same way picking a domain switches Setup to the Workload Domains tab.
+        $stepsVariablesTabControl.SelectedIndex = 1
     } catch {
         $statusTextBlock.Text = "Load Variables failed: $($_.Exception.Message)"
     }
@@ -16640,7 +16679,7 @@ $domainsListBox.Add_SelectionChanged({
 $runAllManagementDomainRestoresButton.Add_Click({
     try {
         foreach ($row in $global:managementDomainRestoresStepRows) {
-            Invoke-Step $row.Dot $row.CommandLine
+            Invoke-Step $row.Dot $row.Button $row.CommandLine
         }
     } catch {
         $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
@@ -16650,7 +16689,7 @@ $runAllManagementDomainRestoresButton.Add_Click({
 $runAllRecoverDefaultClusterButton.Add_Click({
     try {
         foreach ($row in $global:recoverDefaultClusterStepRows) {
-            Invoke-Step $row.Dot $row.CommandLine
+            Invoke-Step $row.Dot $row.Button $row.CommandLine
         }
     } catch {
         $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"

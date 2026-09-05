@@ -226,6 +226,15 @@
                      since you're typically working in one or the other, not both at once. -->
                 <GroupBox x:Name="StepsVariablesGroupBox" Grid.Row="1" Header="Execution" Visibility="Collapsed">
                     <TabControl x:Name="StepsVariablesTabControl" Background="Transparent" BorderThickness="0">
+                        <TabItem Header="Variables">
+                            <DockPanel Margin="0,8,0,0">
+                                <Button x:Name="LoadVariablesButton" Content="Load Variables..." DockPanel.Dock="Top" HorizontalAlignment="Left" Margin="0,0,0,8" />
+                                <TextBlock x:Name="LoadedVariablesTextBlock" DockPanel.Dock="Top" Margin="0,0,0,8" TextWrapping="Wrap" Foreground="{StaticResource SubtleTextBrush}" Text="No variables loaded yet." />
+                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                    <StackPanel x:Name="VariablesItemsPanel" />
+                                </ScrollViewer>
+                            </DockPanel>
+                        </TabItem>
                         <TabItem Header="Steps">
                             <TabControl x:Name="StepsTabControl" Background="Transparent" BorderThickness="0" Margin="0,8,0,0">
                                 <TabItem Header="Management Domain Restores">
@@ -242,22 +251,15 @@
                                 </TabItem>
                             </TabControl>
                         </TabItem>
-                        <TabItem Header="Variables">
-                            <DockPanel Margin="0,8,0,0">
-                                <Button x:Name="LoadVariablesButton" Content="Load Variables..." DockPanel.Dock="Top" HorizontalAlignment="Left" Margin="0,0,0,8" />
-                                <TextBlock x:Name="LoadedVariablesTextBlock" DockPanel.Dock="Top" Margin="0,0,0,8" TextWrapping="Wrap" Foreground="{StaticResource SubtleTextBrush}" Text="No variables loaded yet." />
-                                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                    <StackPanel x:Name="VariablesItemsPanel" />
-                                </ScrollViewer>
-                            </DockPanel>
-                        </TabItem>
                     </TabControl>
                 </GroupBox>
             </Grid>
 
-            <!-- Embedded console -->
+            <!-- Embedded console. FontSizeWhenSettingTheme is EasyWindowsTerminalControl's own knob
+                 for the native ConPTY renderer's text size; the inherited WPF FontSize property
+                 has no effect here since the terminal draws its own glyphs, not standard WPF text. -->
             <GroupBox Grid.Column="2" Header="Console">
-                <term:EasyTerminalControl x:Name="Term" StartupCommandLine="pwsh.exe -NoLogo -NoExit" />
+                <term:EasyTerminalControl x:Name="Term" StartupCommandLine="pwsh.exe -NoLogo -NoExit" FontSizeWhenSettingTheme="11" />
             </GroupBox>
         </Grid>
     </Grid>
