@@ -16470,16 +16470,19 @@ function Start-TerminalReadyWatcher {
 
             # Watches raw console output for the module's own "Completed Task <cmdlet>" log line
             # (see LogMessage) to mark the matching Step row Done. TerminalOutput fires on the
-            # ConPTY control's own read thread, not the UI thread, so row updates are marshaled via
-            # Dispatcher.Invoke -- touching WPF elements directly from that thread would throw
-            # (silently, per the same background-thread exception behavior noted above).
+            # ConPTY control's own read thread, not the UI thread, so row updates are marshaled back
+            # via the Dispatcher. This MUST be BeginInvoke (queue and return), not the blocking
+            # Invoke: WriteToTerm (called from the UI thread when Run is clicked) and this read
+            # thread both touch the same native ConPTY session, so a synchronous Invoke here can
+            # deadlock against a WriteToTerm call that's waiting on that same session -- which is
+            # exactly what made Run appear to do nothing after this watcher was added.
             $term.ConPTYTerm.Add_TerminalOutput({
                 param($sender, $e)
                 $global:consoleOutputBuffer += $e.Data
                 if ($global:consoleOutputBuffer.Length -gt 50000) {
                     $global:consoleOutputBuffer = $global:consoleOutputBuffer.Substring($global:consoleOutputBuffer.Length - 50000)
                 }
-                $window.Dispatcher.Invoke([action]{
+                $window.Dispatcher.BeginInvoke([action]{
                     foreach ($row in (@($global:managementDomainRestoresStepRows) + @($global:recoverDefaultClusterStepRows))) {
                         if ($row.Button.Content -eq 'Done') { continue }
                         if ($global:consoleOutputBuffer.Contains("Completed Task $($row.CmdletName)")) {
@@ -16488,7 +16491,7 @@ function Start-TerminalReadyWatcher {
                             $row.Button.Background = [System.Windows.Media.Brushes]::Green
                         }
                     }
-                })
+                }) | Out-Null
             })
         } elseif ($script:terminalReadyAttempts -gt 50) {
             $this.Stop()
@@ -16577,6 +16580,11 @@ $loadVariablesButton.Add_Click({
         foreach ($property in $answers.PSObject.Properties) {
             $answerMap[$property.Name] = [string]$property.Value
         }
+
+        # extractedSDDCDataFile comes from the Data Source browse selection, not the answers file --
+        # an answer file that happens to also define it must not overwrite that value or show up as
+        # an editable row here.
+        $answerMap.Remove('extractedSDDCDataFile')
 
         $variablesItemsPanel.Children.Clear()
 
