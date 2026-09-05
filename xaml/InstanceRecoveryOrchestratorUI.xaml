@@ -202,12 +202,13 @@
             </Grid>
 
             <!--
-                Steps (left) + Variables (right) for the selected domain. Collapsed until a domain is
-                picked (see the .psm1's domain SelectionChanged handler). Steps show only the cmdlet
-                name; the full command line with its parameters lives in the .psm1 and is never
-                rendered here. Variables shows only the currently active tab's own variables, rebuilt
-                on tab switch (see Update-VariablesForActiveTab). Both lists are capped to roughly 10
-                rows with a scrollbar for the rest.
+                Steps (left) + Load Variables (right) for the selected domain. Collapsed until a
+                domain is picked (see the .psm1's domain SelectionChanged handler). Steps show only
+                the cmdlet name; the full command line with its parameters lives in the .psm1 and is
+                never rendered here. Variable values come from a JSON answer file (flat
+                {"variableName": "value", ...}) loaded via the button below; each entry is sent to
+                the console as "$variableName = 'value'" once, immediately on load, so every step's
+                Run button can just send its command line directly without per-step lookups.
             -->
             <Grid Grid.Row="1" x:Name="PhasesRow" Margin="0,0,0,12" Visibility="Collapsed">
                 <Grid.ColumnDefinitions>
@@ -228,9 +229,10 @@
                 </GroupBox>
 
                 <GroupBox Grid.Column="2" Header="Variables">
-                    <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="240">
-                        <StackPanel x:Name="VariablesPanel" />
-                    </ScrollViewer>
+                    <StackPanel>
+                        <Button x:Name="LoadVariablesButton" Content="Load Variables..." HorizontalAlignment="Left" />
+                        <TextBlock x:Name="LoadedVariablesTextBlock" Margin="0,10,0,0" TextWrapping="Wrap" Foreground="{StaticResource SubtleTextBrush}" Text="No variables loaded yet." />
+                    </StackPanel>
                 </GroupBox>
             </Grid>
 

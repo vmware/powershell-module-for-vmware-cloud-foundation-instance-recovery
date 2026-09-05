@@ -16317,22 +16317,11 @@ $filePathTextBox = $window.FindName('FilePathTextBox')
 $statusTextBlock = $window.FindName('StatusTextBlock')
 $domainsListBox = $window.FindName('WorkloadDomainsListBox')
 $phasesRow = $window.FindName('PhasesRow')
-$stepsTabControl = $window.FindName('StepsTabControl')
 $managementDomainRestoresStepsListBox = $window.FindName('ManagementDomainRestoresStepsListBox')
 $recoverDefaultClusterStepsListBox = $window.FindName('RecoverDefaultClusterStepsListBox')
-$variablesPanel = $window.FindName('VariablesPanel')
+$loadVariablesButton = $window.FindName('LoadVariablesButton')
+$loadedVariablesTextBlock = $window.FindName('LoadedVariablesTextBlock')
 $term = $window.FindName('Term')
-
-# Deliberately $global:, not $script:. Every event handler below is a .GetNewClosure()'d
-# scriptblock, and GetNewClosure() gives each one its own PRIVATE snapshot of $script: scope --
-# writes made inside one closure are invisible to every other closure and to plain functions
-# reading $script:. $global: is the one scope that isn't snapshotted, so it's the only reliable
-# way to share state across these handlers (confirmed empirically; this isn't a style choice).
-# Safe here because this whole UI runs in its own dedicated Runspace, so $global: is private to
-# it, not the caller's actual PowerShell session.
-$global:variableInputs = @{}
-$global:managementDomainRestoresCommandLines = @()
-$global:recoverDefaultClusterCommandLines = @()
 
 function Protect-SingleQuotes([string]$Value) {
     return $Value.Replace("'", "''")
@@ -16340,71 +16329,14 @@ function Protect-SingleQuotes([string]$Value) {
 
 function Send-ToConsole([string]$CommandLine) {
     if ($null -eq $term.ConPTYTerm) {
-        $statusTextBlock.Text = "Console isn't ready yet -- try again in a moment."
+        $statusTextBlock.Text = "Console isn't ready yet (ConPTYTerm is null) -- try again in a moment."
         return
     }
-    $term.ConPTYTerm.WriteToTerm("$CommandLine`r")
-}
-
-# Every $variableName referenced in a step's command line, except $extractedSDDCDataFile (that one
-# is already set globally by the Data Source panel, so it never needs its own input field).
-function Get-CommandVariableNames([string]$CommandLine) {
-    $found = [regex]::Matches($CommandLine, '\$([A-Za-z_][A-Za-z0-9_]*)') | ForEach-Object { $_.Groups[1].Value }
-    return @($found | Where-Object { $_ -ne 'extractedSDDCDataFile' } | Select-Object -Unique)
-}
-
-function Get-InputControlValue($Control) {
-    if ($Control -is [System.Windows.Controls.PasswordBox]) {
-        return $Control.Password
-    }
-    return $Control.Text
-}
-
-# Rebuilds the Variables panel from just the currently active Steps tab, not the union of every
-# phase -- switching tabs (or selecting a domain, which defaults to the first tab) calls this.
-function Update-VariablesForActiveTab {
     try {
-        $variablesPanel.Children.Clear()
-        $global:variableInputs = @{}
-
-        $activeCommandLines = if ($stepsTabControl.SelectedIndex -eq 1) {
-            $global:recoverDefaultClusterCommandLines
-        } else {
-            $global:managementDomainRestoresCommandLines
-        }
-
-        $variableNames = @($activeCommandLines | ForEach-Object { Get-CommandVariableNames $_ } | Select-Object -Unique | Sort-Object)
-        foreach ($variableName in $variableNames) {
-            New-VariableField $variableName
-        }
+        $term.ConPTYTerm.WriteToTerm("$CommandLine`r")
     } catch {
-        # WPF event handler exceptions on this background runspace have no console to surface to,
-        # so without this they fail completely silently. Temporary diagnostic pending a real cause.
-        $statusTextBlock.Text = "Update-VariablesForActiveTab failed: $($_.Exception.Message)"
+        $statusTextBlock.Text = "WriteToTerm failed: $($_.Exception.Message)"
     }
-}
-
-# Password-like variable names get a masked PasswordBox instead of a plain TextBox.
-function New-VariableField([string]$VariableName) {
-    $tile = New-Object System.Windows.Controls.StackPanel
-    $tile.Margin = '0,0,0,8'
-
-    $label = New-Object System.Windows.Controls.TextBlock
-    $label.Text = $VariableName
-    $label.FontSize = 11
-    $label.Foreground = [System.Windows.Media.Brushes]::DimGray
-
-    if ($VariableName -match 'password|passphrase') {
-        $inputControl = New-Object System.Windows.Controls.PasswordBox
-    } else {
-        $inputControl = New-Object System.Windows.Controls.TextBox
-    }
-
-    [void]$tile.Children.Add($label)
-    [void]$tile.Children.Add($inputControl)
-    [void]$variablesPanel.Children.Add($tile)
-
-    $global:variableInputs[$VariableName] = $inputControl
 }
 
 function New-StepRow([string]$CommandLine) {
@@ -16418,9 +16350,10 @@ function New-StepRow([string]$CommandLine) {
     $dot.Margin = '0,0,8,0'
     $dot.VerticalAlignment = 'Center'
 
-    $stepVariableNames = Get-CommandVariableNames $CommandLine
     # Only the cmdlet name is shown; the full command line (with its parameters) stays in the
-    # module and is only ever sent to the console, never rendered in the Steps list.
+    # module and is only ever sent to the console, never rendered in the Steps list. Variable
+    # values referenced in it (e.g. $targetFqdn) come from whatever was loaded via "Load
+    # Variables..." -- they're already set in the console session by the time Run is clicked.
     $cmdletName = ($CommandLine -split '\s+', 2)[0]
 
     $runButton = New-Object System.Windows.Controls.Button
@@ -16429,15 +16362,12 @@ function New-StepRow([string]$CommandLine) {
     $runButton.Margin = '8,0,0,0'
     [System.Windows.Controls.DockPanel]::SetDock($runButton, [System.Windows.Controls.Dock]::Right)
     $runButton.Add_Click({
-        foreach ($variableName in $stepVariableNames) {
-            $inputControl = $global:variableInputs[$variableName]
-            if ($null -ne $inputControl) {
-                $escapedValue = Protect-SingleQuotes (Get-InputControlValue $inputControl)
-                Send-ToConsole "`$$variableName = '$escapedValue'"
-            }
+        try {
+            $dot.Fill = [System.Windows.Media.Brushes]::DodgerBlue
+            Send-ToConsole $CommandLine
+        } catch {
+            $statusTextBlock.Text = "Run button failed: $($_.Exception.Message)"
         }
-        $dot.Fill = [System.Windows.Media.Brushes]::DodgerBlue
-        Send-ToConsole $CommandLine
     }.GetNewClosure())
 
     $label = New-Object System.Windows.Controls.TextBlock
@@ -16494,8 +16424,6 @@ $browseButton.Add_Click({
     $domainsListBox.Items.Clear()
     $managementDomainRestoresStepsListBox.Items.Clear()
     $recoverDefaultClusterStepsListBox.Items.Clear()
-    $variablesPanel.Children.Clear()
-    $global:variableInputs = @{}
     $phasesRow.Visibility = [System.Windows.Visibility]::Collapsed
     $statusTextBlock.Text = ''
 
@@ -16522,14 +16450,43 @@ $browseButton.Add_Click({
     Send-ToConsole "`$extractedSDDCDataFile = '$escapedPath'"
 }.GetNewClosure())
 
+# Answer file is a flat JSON object, e.g. { "targetFqdn": "sfo-m01-vc02...", "targetAdminPassword": "..." }.
+# Each entry is sent to the console once, immediately, as "$name = 'value'" -- from then on every
+# step's Run button can reference $targetFqdn etc. directly, the same way $extractedSDDCDataFile
+# already works. Only variable *names* are ever shown in the UI, never the values.
+$loadVariablesButton.Add_Click({
+    try {
+        $dialog = New-Object Microsoft.Win32.OpenFileDialog
+        $dialog.Filter = 'JSON files (*.json)|*.json|All files (*.*)|*.*'
+        $dialog.Title = 'Select variable answers file'
+        if ($dialog.ShowDialog() -ne $true) {
+            return
+        }
+
+        $answers = Get-Content -Path $dialog.FileName -Raw | ConvertFrom-Json
+        $names = @()
+        foreach ($property in $answers.PSObject.Properties) {
+            $escapedValue = Protect-SingleQuotes ([string]$property.Value)
+            Send-ToConsole "`$$($property.Name) = '$escapedValue'"
+            $names += $property.Name
+        }
+
+        if ($names.Count -eq 0) {
+            $loadedVariablesTextBlock.Text = "No variables found in '$($dialog.FileName)'."
+        } else {
+            $loadedVariablesTextBlock.Text = "Loaded $($names.Count) variable(s) from $($dialog.FileName):`n$($names -join ', ')"
+        }
+    } catch {
+        $statusTextBlock.Text = "Load Variables failed: $($_.Exception.Message)"
+    }
+}.GetNewClosure())
+
 $domainsListBox.Add_SelectionChanged({
   try {
     $managementDomainRestoresStepsListBox.Items.Clear()
     $recoverDefaultClusterStepsListBox.Items.Clear()
-    $variablesPanel.Children.Clear()
-    $global:variableInputs = @{}
-    $global:managementDomainRestoresCommandLines = @()
-    $global:recoverDefaultClusterCommandLines = @()
+    $managementDomainRestoresCommandLines = @()
+    $recoverDefaultClusterCommandLines = @()
 
     $selected = $domainsListBox.SelectedItem
     if ($null -eq $selected) {
@@ -16539,7 +16496,7 @@ $domainsListBox.Add_SelectionChanged({
     $phasesRow.Visibility = [System.Windows.Visibility]::Visible
 
     if ($selected.Tag.domainType -eq 'MANAGEMENT') {
-        $global:managementDomainRestoresCommandLines = @(
+        $managementDomainRestoresCommandLines = @(
             'New-ExtractDataFromSDDCBackup -vcfBackupFilePath $vcfBackupFilePath -encryptionPassword $encryptionPassword -credentialsFilePath $credentialsFilePath',
             'New-PrepareManagementHostNetworking -extractedSDDCDataFile $extractedSDDCDataFile -mtu 8900',
             'Add-VMKernelsToManagementHosts -extractedSDDCDataFile $extractedSDDCDataFile',
@@ -16554,7 +16511,7 @@ $domainsListBox.Add_SelectionChanged({
             'Update-ExtractedSDDCData -extractedSDDCDataFile $extractedSDDCDataFile -sddcManagerFQDN $sddcManagerFQDN -sddcManagerAdmin $sddcManagerAdmin -sddcManagerAdminPassword $sddcManagerAdminPassword -vCenterFQDN $restoredVcenterFqdn'
         )
 
-        $global:recoverDefaultClusterCommandLines = @(
+        $recoverDefaultClusterCommandLines = @(
             'Backup-ClusterVMOverrides -clusterName $clusterName',
             'Backup-ClusterVMLocations -clusterName $clusterName',
             'Backup-ClusterDRSGroupsAndRules -clusterName $clusterName',
@@ -16575,32 +16532,15 @@ $domainsListBox.Add_SelectionChanged({
         )
     }
 
-    foreach ($commandLine in $global:managementDomainRestoresCommandLines) {
+    foreach ($commandLine in $managementDomainRestoresCommandLines) {
         [void]$managementDomainRestoresStepsListBox.Items.Add((New-StepRow $commandLine))
     }
-    foreach ($commandLine in $global:recoverDefaultClusterCommandLines) {
+    foreach ($commandLine in $recoverDefaultClusterCommandLines) {
         [void]$recoverDefaultClusterStepsListBox.Items.Add((New-StepRow $commandLine))
     }
-
-    Update-VariablesForActiveTab
   } catch {
     $statusTextBlock.Text = "Domain selection handler failed: $($_.Exception.Message)"
   }
-}.GetNewClosure())
-
-# TabControl.SelectionChanged shares the same routed event as ListBox.SelectionChanged, so a click
-# inside a step row (which selects that row's ListBoxItem) bubbles up and would otherwise trigger
-# this handler too. Only react when the TabControl itself is the actual source.
-$stepsTabControl.Add_SelectionChanged({
-    param($sender, $e)
-    try {
-        if ($e.Source -ne $stepsTabControl) {
-            return
-        }
-        Update-VariablesForActiveTab
-    } catch {
-        $statusTextBlock.Text = "Tab selection handler failed: $($_.Exception.Message)"
-    }
 }.GetNewClosure())
 
 Start-TerminalReadyWatcher

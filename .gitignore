@@ -15,3 +15,6 @@
 **/obj/
 **/.vs/
 *.user
+
+# Local test fixtures with credential-shaped content -- never commit
+/test-data/
