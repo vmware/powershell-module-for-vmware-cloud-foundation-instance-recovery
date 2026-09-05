@@ -16317,11 +16317,15 @@ $browseButton = $window.FindName('BrowseButton')
 $filePathTextBox = $window.FindName('FilePathTextBox')
 $statusTextBlock = $window.FindName('StatusTextBlock')
 $domainsListBox = $window.FindName('WorkloadDomainsListBox')
-$phasesRow = $window.FindName('PhasesRow')
+$stepsGroupBox = $window.FindName('StepsGroupBox')
 $managementDomainRestoresStepsListBox = $window.FindName('ManagementDomainRestoresStepsListBox')
 $recoverDefaultClusterStepsListBox = $window.FindName('RecoverDefaultClusterStepsListBox')
+$runAllManagementDomainRestoresButton = $window.FindName('RunAllManagementDomainRestoresButton')
+$runAllRecoverDefaultClusterButton = $window.FindName('RunAllRecoverDefaultClusterButton')
+$variablesGroupBox = $window.FindName('VariablesGroupBox')
 $loadVariablesButton = $window.FindName('LoadVariablesButton')
 $loadedVariablesTextBlock = $window.FindName('LoadedVariablesTextBlock')
+$variablesItemsPanel = $window.FindName('VariablesItemsPanel')
 $term = $window.FindName('Term')
 
 function Protect-SingleQuotes([string]$Value) {
@@ -16340,6 +16344,14 @@ function Send-ToConsole([string]$CommandLine) {
     }
 }
 
+function Invoke-Step($Dot, [string]$CommandLine) {
+    $Dot.Fill = [System.Windows.Media.Brushes]::DodgerBlue
+    Send-ToConsole $CommandLine
+}
+
+# Returns [PSCustomObject]@{ Panel; Dot; CommandLine }, not just the row's visual Panel -- Dot and
+# CommandLine are needed separately so a tab's "Run All" button can replay every row's Run action
+# (dot included) without re-parsing the rendered list.
 function New-StepRow([string]$CommandLine) {
     $panel = New-Object System.Windows.Controls.DockPanel
     $panel.Margin = '4,0,4,0'
@@ -16364,8 +16376,7 @@ function New-StepRow([string]$CommandLine) {
     [System.Windows.Controls.DockPanel]::SetDock($runButton, [System.Windows.Controls.Dock]::Right)
     $runButton.Add_Click({
         try {
-            $dot.Fill = [System.Windows.Media.Brushes]::DodgerBlue
-            Send-ToConsole $CommandLine
+            Invoke-Step $dot $CommandLine
         } catch {
             $statusTextBlock.Text = "Run button failed: $($_.Exception.Message)"
         }
@@ -16379,6 +16390,51 @@ function New-StepRow([string]$CommandLine) {
     [void]$panel.Children.Add($dot)
     [void]$panel.Children.Add($runButton)
     [void]$panel.Children.Add($label)
+    return [PSCustomObject]@{ Panel = $panel; Dot = $dot; CommandLine = $CommandLine }
+}
+
+# Variable names referenced across $CommandLines (e.g. "$targetFqdn"), in order of first
+# appearance, deduplicated. Used to order the Variables panel by when each value is actually
+# needed as you work down the Steps list, rather than alphabetically or by answer-file order.
+function Get-ReferencedVariableNames([string[]]$CommandLines) {
+    $names = [System.Collections.Generic.List[string]]::new()
+    $seen = @{}
+    foreach ($commandLine in $CommandLines) {
+        foreach ($match in [regex]::Matches($commandLine, '\$([A-Za-z_][A-Za-z0-9_]*)')) {
+            $name = $match.Groups[1].Value
+            if (-not $seen.ContainsKey($name)) {
+                $seen[$name] = $true
+                [void]$names.Add($name)
+            }
+        }
+    }
+    return $names
+}
+
+function New-VariableRow([string]$Name, [string]$Value) {
+    $panel = New-Object System.Windows.Controls.DockPanel
+    $panel.Margin = '0,0,0,6'
+
+    $label = New-Object System.Windows.Controls.TextBlock
+    $label.Text = $Name
+    $label.FontFamily = New-Object System.Windows.Media.FontFamily('Consolas')
+    $label.VerticalAlignment = 'Center'
+    $label.Width = 160
+    $label.Margin = '0,0,8,0'
+    $label.TextTrimming = 'CharacterEllipsis'
+    [System.Windows.Controls.DockPanel]::SetDock($label, [System.Windows.Controls.Dock]::Left)
+
+    $valueBox = New-Object System.Windows.Controls.TextBox
+    $valueBox.Text = $Value
+
+    # Edits only take effect on LostFocus (not per-keystroke) -- re-sends the updated value to the
+    # console so a value changed after loading still reaches the running session.
+    $valueBox.Add_LostFocus({
+        Send-ToConsole "`$$Name = '$(Protect-SingleQuotes $valueBox.Text)'"
+    }.GetNewClosure())
+
+    [void]$panel.Children.Add($label)
+    [void]$panel.Children.Add($valueBox)
     return $panel
 }
 
@@ -16430,7 +16486,11 @@ $browseButton.Add_Click({
     $domainsListBox.Items.Clear()
     $managementDomainRestoresStepsListBox.Items.Clear()
     $recoverDefaultClusterStepsListBox.Items.Clear()
-    $phasesRow.Visibility = [System.Windows.Visibility]::Collapsed
+    $variablesItemsPanel.Children.Clear()
+    $loadedVariablesTextBlock.Text = 'No variables loaded yet.'
+    $stepsGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
+    $variablesGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
+    $global:allStepCommandLines = @()
     $statusTextBlock.Text = ''
 
     try {
@@ -16459,7 +16519,10 @@ $browseButton.Add_Click({
 # Answer file is a flat JSON object, e.g. { "targetFqdn": "sfo-m01-vc02...", "targetAdminPassword": "..." }.
 # Each entry is sent to the console once, immediately, as "$name = 'value'" -- from then on every
 # step's Run button can reference $targetFqdn etc. directly, the same way $extractedSDDCDataFile
-# already works. Only variable *names* are ever shown in the UI, never the values.
+# already works. Rows are ordered by first use across the selected domain's steps (Management
+# Domain Restores, then Recover Default Cluster) so they read top-to-bottom in the order you'll
+# need them; any answer-file entries not referenced by any step are appended afterward, in file
+# order, so nothing loaded is ever silently dropped from view.
 $loadVariablesButton.Add_Click({
     try {
         $dialog = New-Object Microsoft.Win32.OpenFileDialog
@@ -16470,18 +16533,28 @@ $loadVariablesButton.Add_Click({
         }
 
         $answers = Get-Content -Path $dialog.FileName -Raw | ConvertFrom-Json
-        $names = @()
+        $answerMap = [ordered]@{}
         foreach ($property in $answers.PSObject.Properties) {
-            $escapedValue = Protect-SingleQuotes ([string]$property.Value)
-            Send-ToConsole "`$$($property.Name) = '$escapedValue'"
-            $names += $property.Name
+            $answerMap[$property.Name] = [string]$property.Value
         }
 
-        if ($names.Count -eq 0) {
+        $variablesItemsPanel.Children.Clear()
+
+        if ($answerMap.Count -eq 0) {
             $loadedVariablesTextBlock.Text = "No variables found in '$($dialog.FileName)'."
-        } else {
-            $loadedVariablesTextBlock.Text = "Loaded $($names.Count) variable(s) from $($dialog.FileName):`n$($names -join ', ')"
+            return
         }
+
+        $orderedNames = @(Get-ReferencedVariableNames $global:allStepCommandLines | Where-Object { $answerMap.Contains($_) })
+        $orderedNames += @($answerMap.Keys | Where-Object { $orderedNames -notcontains $_ })
+
+        foreach ($name in $orderedNames) {
+            $value = $answerMap[$name]
+            Send-ToConsole "`$$name = '$(Protect-SingleQuotes $value)'"
+            [void]$variablesItemsPanel.Children.Add((New-VariableRow $name $value))
+        }
+
+        $loadedVariablesTextBlock.Text = "Loaded $($orderedNames.Count) variable(s) from $($dialog.FileName)."
     } catch {
         $statusTextBlock.Text = "Load Variables failed: $($_.Exception.Message)"
     }
@@ -16491,15 +16564,20 @@ $domainsListBox.Add_SelectionChanged({
   try {
     $managementDomainRestoresStepsListBox.Items.Clear()
     $recoverDefaultClusterStepsListBox.Items.Clear()
+    $variablesItemsPanel.Children.Clear()
+    $loadedVariablesTextBlock.Text = 'No variables loaded yet.'
     $managementDomainRestoresCommandLines = @()
     $recoverDefaultClusterCommandLines = @()
 
     $selected = $domainsListBox.SelectedItem
     if ($null -eq $selected) {
-        $phasesRow.Visibility = [System.Windows.Visibility]::Collapsed
+        $stepsGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
+        $variablesGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
+        $global:allStepCommandLines = @()
         return
     }
-    $phasesRow.Visibility = [System.Windows.Visibility]::Visible
+    $stepsGroupBox.Visibility = [System.Windows.Visibility]::Visible
+    $variablesGroupBox.Visibility = [System.Windows.Visibility]::Visible
 
     if ($selected.Tag.domainType -eq 'MANAGEMENT') {
         $managementDomainRestoresCommandLines = @(
@@ -16538,15 +16616,42 @@ $domainsListBox.Add_SelectionChanged({
         )
     }
 
+    $global:managementDomainRestoresStepRows = @()
     foreach ($commandLine in $managementDomainRestoresCommandLines) {
-        [void]$managementDomainRestoresStepsListBox.Items.Add((New-StepRow $commandLine))
+        $row = New-StepRow $commandLine
+        [void]$managementDomainRestoresStepsListBox.Items.Add($row.Panel)
+        $global:managementDomainRestoresStepRows += $row
     }
+    $global:recoverDefaultClusterStepRows = @()
     foreach ($commandLine in $recoverDefaultClusterCommandLines) {
-        [void]$recoverDefaultClusterStepsListBox.Items.Add((New-StepRow $commandLine))
+        $row = New-StepRow $commandLine
+        [void]$recoverDefaultClusterStepsListBox.Items.Add($row.Panel)
+        $global:recoverDefaultClusterStepRows += $row
     }
+    $global:allStepCommandLines = @($managementDomainRestoresCommandLines) + @($recoverDefaultClusterCommandLines)
   } catch {
     $statusTextBlock.Text = "Domain selection handler failed: $($_.Exception.Message)"
   }
+}.GetNewClosure())
+
+$runAllManagementDomainRestoresButton.Add_Click({
+    try {
+        foreach ($row in $global:managementDomainRestoresStepRows) {
+            Invoke-Step $row.Dot $row.CommandLine
+        }
+    } catch {
+        $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
+    }
+}.GetNewClosure())
+
+$runAllRecoverDefaultClusterButton.Add_Click({
+    try {
+        foreach ($row in $global:recoverDefaultClusterStepRows) {
+            Invoke-Step $row.Dot $row.CommandLine
+        }
+    } catch {
+        $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
+    }
 }.GetNewClosure())
 
 Start-TerminalReadyWatcher

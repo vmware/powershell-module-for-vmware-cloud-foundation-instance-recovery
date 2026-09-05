@@ -1,7 +1,7 @@
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:term="clr-namespace:EasyWindowsTerminalControl;assembly=EasyWindowsTerminalControl"
-        Title="VCF Instance Recovery Orchestrator" Height="820" Width="1100">
+        Title="VCF Instance Recovery Orchestrator" Height="820" Width="1100" WindowState="Maximized">
     <!--
         Loaded via XamlReader.Load from Start-InstanceRecoveryUI (see the .psm1).
         There is no code-behind class, so this file deliberately has no x:Class, no inline event
@@ -169,22 +169,36 @@
             <TextBlock Text="VCF Instance Recovery Orchestrator" Foreground="White" FontSize="16" FontWeight="SemiBold" />
         </Border>
 
+        <!-- Left rail (30%) + console (70%). Kept as two independent columns -- rather than one
+             big stacked column including the console -- specifically so the console's size never
+             depends on how tall the left rail's panes get (that coupling used to push the console
+             off the bottom of the window once Steps/Variables appeared). -->
         <Grid Grid.Row="1" Margin="14">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="*" />
-            </Grid.RowDefinitions>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="3*" />
+                <ColumnDefinition Width="12" />
+                <ColumnDefinition Width="7*" />
+            </Grid.ColumnDefinitions>
 
-            <!-- Data source (left) + workload domains (right) -->
-            <Grid Grid.Row="0" Margin="0,0,0,12">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="12" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
+            <!--
+                Data Source / Workload Domains / Steps / Variables, stacked top to bottom. Steps and
+                Variables are collapsed until a domain is picked (see the .psm1's domain
+                SelectionChanged handler). Steps show only the cmdlet name; the full command line
+                with its parameters lives in the .psm1 and is never rendered here. Variable values
+                come from a JSON answer file (flat {"variableName": "value", ...}) loaded via the
+                button below; each entry is sent to the console as "$variableName = 'value'"
+                immediately on load, so every step's Run button can just send its command line
+                directly without per-step lookups.
+            -->
+            <Grid Grid.Column="0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="1*" />
+                    <RowDefinition Height="1*" />
+                    <RowDefinition Height="1*" />
+                </Grid.RowDefinitions>
 
-                <GroupBox Grid.Column="0" Header="Data Source">
+                <GroupBox Grid.Row="0" Header="Data Source" Margin="0,0,0,12">
                     <StackPanel>
                         <RadioButton x:Name="ExtractBackupRadio" Content="Extract SDDC Manager Backup" GroupName="DataSource" Margin="0,0,0,6" />
                         <RadioButton x:Name="UseExtractedDataRadio" Content="Load Extracted SDDC Data" GroupName="DataSource" IsChecked="True" Margin="0,0,0,6" />
@@ -196,48 +210,40 @@
                     </StackPanel>
                 </GroupBox>
 
-                <GroupBox Grid.Column="2" Header="Workload Domains">
-                    <ListBox x:Name="WorkloadDomainsListBox" />
+                <GroupBox Grid.Row="1" Header="Workload Domains" Margin="0,0,0,12">
+                    <ListBox x:Name="WorkloadDomainsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" />
                 </GroupBox>
-            </Grid>
 
-            <!--
-                Steps (left) + Load Variables (right) for the selected domain. Collapsed until a
-                domain is picked (see the .psm1's domain SelectionChanged handler). Steps show only
-                the cmdlet name; the full command line with its parameters lives in the .psm1 and is
-                never rendered here. Variable values come from a JSON answer file (flat
-                {"variableName": "value", ...}) loaded via the button below; each entry is sent to
-                the console as "$variableName = 'value'" once, immediately on load, so every step's
-                Run button can just send its command line directly without per-step lookups.
-            -->
-            <Grid Grid.Row="1" x:Name="PhasesRow" Margin="0,0,0,12" Visibility="Collapsed">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="12" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-
-                <GroupBox Grid.Column="0" Header="Steps">
+                <GroupBox x:Name="StepsGroupBox" Grid.Row="2" Header="Steps" Margin="0,0,0,12" Visibility="Collapsed">
                     <TabControl x:Name="StepsTabControl" Background="Transparent" BorderThickness="0">
                         <TabItem Header="Management Domain Restores">
-                            <ListBox x:Name="ManagementDomainRestoresStepsListBox" MaxHeight="240" ScrollViewer.VerticalScrollBarVisibility="Auto" Margin="0,8,0,0" />
+                            <DockPanel Margin="0,8,0,0">
+                                <Button x:Name="RunAllManagementDomainRestoresButton" Content="Run All" DockPanel.Dock="Top" HorizontalAlignment="Left" Margin="0,0,0,8" />
+                                <ListBox x:Name="ManagementDomainRestoresStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                            </DockPanel>
                         </TabItem>
                         <TabItem Header="Recover Default Cluster">
-                            <ListBox x:Name="RecoverDefaultClusterStepsListBox" MaxHeight="240" ScrollViewer.VerticalScrollBarVisibility="Auto" Margin="0,8,0,0" />
+                            <DockPanel Margin="0,8,0,0">
+                                <Button x:Name="RunAllRecoverDefaultClusterButton" Content="Run All" DockPanel.Dock="Top" HorizontalAlignment="Left" Margin="0,0,0,8" />
+                                <ListBox x:Name="RecoverDefaultClusterStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                            </DockPanel>
                         </TabItem>
                     </TabControl>
                 </GroupBox>
 
-                <GroupBox Grid.Column="2" Header="Variables">
-                    <StackPanel>
-                        <Button x:Name="LoadVariablesButton" Content="Load Variables..." HorizontalAlignment="Left" />
-                        <TextBlock x:Name="LoadedVariablesTextBlock" Margin="0,10,0,0" TextWrapping="Wrap" Foreground="{StaticResource SubtleTextBrush}" Text="No variables loaded yet." />
-                    </StackPanel>
+                <GroupBox x:Name="VariablesGroupBox" Grid.Row="3" Header="Variables" Visibility="Collapsed">
+                    <DockPanel>
+                        <Button x:Name="LoadVariablesButton" Content="Load Variables..." DockPanel.Dock="Top" HorizontalAlignment="Left" Margin="0,0,0,8" />
+                        <TextBlock x:Name="LoadedVariablesTextBlock" DockPanel.Dock="Top" Margin="0,0,0,8" TextWrapping="Wrap" Foreground="{StaticResource SubtleTextBrush}" Text="No variables loaded yet." />
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel x:Name="VariablesItemsPanel" />
+                        </ScrollViewer>
+                    </DockPanel>
                 </GroupBox>
             </Grid>
 
             <!-- Embedded console -->
-            <GroupBox Grid.Row="2" Header="Console">
+            <GroupBox Grid.Column="2" Header="Console">
                 <term:EasyTerminalControl x:Name="Term" StartupCommandLine="pwsh.exe -NoLogo -NoExit" />
             </GroupBox>
         </Grid>
