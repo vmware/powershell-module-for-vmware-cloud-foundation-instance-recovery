@@ -16318,12 +16318,11 @@ $filePathTextBox = $window.FindName('FilePathTextBox')
 $statusTextBlock = $window.FindName('StatusTextBlock')
 $dataSourceDomainsTabControl = $window.FindName('DataSourceDomainsTabControl')
 $domainsListBox = $window.FindName('WorkloadDomainsListBox')
-$stepsGroupBox = $window.FindName('StepsGroupBox')
+$stepsVariablesGroupBox = $window.FindName('StepsVariablesGroupBox')
 $managementDomainRestoresStepsListBox = $window.FindName('ManagementDomainRestoresStepsListBox')
 $recoverDefaultClusterStepsListBox = $window.FindName('RecoverDefaultClusterStepsListBox')
 $runAllManagementDomainRestoresButton = $window.FindName('RunAllManagementDomainRestoresButton')
 $runAllRecoverDefaultClusterButton = $window.FindName('RunAllRecoverDefaultClusterButton')
-$variablesGroupBox = $window.FindName('VariablesGroupBox')
 $loadVariablesButton = $window.FindName('LoadVariablesButton')
 $loadedVariablesTextBlock = $window.FindName('LoadedVariablesTextBlock')
 $variablesItemsPanel = $window.FindName('VariablesItemsPanel')
@@ -16355,13 +16354,13 @@ function Invoke-Step($Dot, [string]$CommandLine) {
 # (dot included) without re-parsing the rendered list.
 function New-StepRow([string]$CommandLine) {
     $panel = New-Object System.Windows.Controls.DockPanel
-    $panel.Margin = '4,0,4,0'
+    $panel.Margin = '2,0,2,0'
 
     $dot = New-Object System.Windows.Shapes.Ellipse
-    $dot.Width = 10
-    $dot.Height = 10
+    $dot.Width = 8
+    $dot.Height = 8
     $dot.Fill = [System.Windows.Media.Brushes]::LightGray
-    $dot.Margin = '0,0,8,0'
+    $dot.Margin = '0,0,6,0'
     $dot.VerticalAlignment = 'Center'
 
     # Only the cmdlet name is shown; the full command line (with its parameters) stays in the
@@ -16372,8 +16371,9 @@ function New-StepRow([string]$CommandLine) {
 
     $runButton = New-Object System.Windows.Controls.Button
     $runButton.Content = 'Run'
-    $runButton.Width = 60
-    $runButton.Margin = '8,0,0,0'
+    $runButton.Width = 50
+    $runButton.Padding = '6,2'
+    $runButton.Margin = '6,0,0,0'
     [System.Windows.Controls.DockPanel]::SetDock($runButton, [System.Windows.Controls.Dock]::Right)
     $runButton.Add_Click({
         try {
@@ -16414,19 +16414,20 @@ function Get-ReferencedVariableNames([string[]]$CommandLines) {
 
 function New-VariableRow([string]$Name, [string]$Value) {
     $panel = New-Object System.Windows.Controls.DockPanel
-    $panel.Margin = '0,0,0,6'
+    $panel.Margin = '0,0,0,3'
 
     $label = New-Object System.Windows.Controls.TextBlock
     $label.Text = $Name
     $label.FontFamily = New-Object System.Windows.Media.FontFamily('Consolas')
     $label.VerticalAlignment = 'Center'
-    $label.Width = 160
-    $label.Margin = '0,0,8,0'
+    $label.Width = 150
+    $label.Margin = '0,0,6,0'
     $label.TextTrimming = 'CharacterEllipsis'
     [System.Windows.Controls.DockPanel]::SetDock($label, [System.Windows.Controls.Dock]::Left)
 
     $valueBox = New-Object System.Windows.Controls.TextBox
     $valueBox.Text = $Value
+    $valueBox.Padding = '4,2'
 
     # Edits only take effect on LostFocus (not per-keystroke) -- re-sends the updated value to the
     # console so a value changed after loading still reaches the running session.
@@ -16489,8 +16490,7 @@ $browseButton.Add_Click({
     $recoverDefaultClusterStepsListBox.Items.Clear()
     $variablesItemsPanel.Children.Clear()
     $loadedVariablesTextBlock.Text = 'No variables loaded yet.'
-    $stepsGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
-    $variablesGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
+    $stepsVariablesGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
     $global:allStepCommandLines = @()
     $statusTextBlock.Text = ''
 
@@ -16576,13 +16576,11 @@ $domainsListBox.Add_SelectionChanged({
 
     $selected = $domainsListBox.SelectedItem
     if ($null -eq $selected) {
-        $stepsGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
-        $variablesGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
+        $stepsVariablesGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
         $global:allStepCommandLines = @()
         return
     }
-    $stepsGroupBox.Visibility = [System.Windows.Visibility]::Visible
-    $variablesGroupBox.Visibility = [System.Windows.Visibility]::Visible
+    $stepsVariablesGroupBox.Visibility = [System.Windows.Visibility]::Visible
 
     if ($selected.Tag.domainType -eq 'MANAGEMENT') {
         $managementDomainRestoresCommandLines = @(

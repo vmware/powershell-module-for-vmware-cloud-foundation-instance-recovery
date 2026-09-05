@@ -37,7 +37,7 @@
         <!-- Plain white card with a bold title directly on it (no separate header-bar strip),
              matching Clarity's dashboard card style (e.g. "Folder Details", "Usage" panels). -->
         <Style TargetType="GroupBox">
-            <Setter Property="Padding" Value="14" />
+            <Setter Property="Padding" Value="10" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="GroupBox">
@@ -113,7 +113,7 @@
         <!-- Flat hover/selected highlight instead of the default gray selection box + dotted
              focus rectangle. -->
         <Style TargetType="ListBoxItem">
-            <Setter Property="Padding" Value="4,3" />
+            <Setter Property="Padding" Value="3,1" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ListBoxItem">
@@ -192,13 +192,14 @@
             -->
             <Grid Grid.Column="0">
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="1*" />
-                    <RowDefinition Height="1*" />
-                    <RowDefinition Height="1*" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
                 <!-- Data Source and Workload Domains share one card as tabs (rather than two
-                     separate always-visible panes) to free up vertical space for Steps/Variables.
+                     separate always-visible panes) to free up vertical space below. Sized Auto,
+                     not a Grid share, since its content is small and fixed; giving it an equal
+                     share with Steps/Variables would waste space neither of those two can spare.
                      The .psm1 switches to the Workload Domains tab automatically once a data file
                      is loaded. -->
                 <GroupBox Grid.Row="0" Header="Setup" Margin="0,0,0,12">
@@ -215,36 +216,42 @@
                             </StackPanel>
                         </TabItem>
                         <TabItem Header="Workload Domains">
-                            <ListBox x:Name="WorkloadDomainsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" Margin="0,8,0,0" />
+                            <ListBox x:Name="WorkloadDomainsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" Margin="0,8,0,0" MaxHeight="160" />
                         </TabItem>
                     </TabControl>
                 </GroupBox>
 
-                <GroupBox x:Name="StepsGroupBox" Grid.Row="1" Header="Steps" Margin="0,0,0,12" Visibility="Collapsed">
-                    <TabControl x:Name="StepsTabControl" Background="Transparent" BorderThickness="0">
-                        <TabItem Header="Management Domain Restores">
-                            <DockPanel Margin="0,8,0,0">
-                                <Button x:Name="RunAllManagementDomainRestoresButton" Content="Run All" DockPanel.Dock="Top" HorizontalAlignment="Left" Margin="0,0,0,8" />
-                                <ListBox x:Name="ManagementDomainRestoresStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" />
-                            </DockPanel>
+                <!-- Steps and Variables also share one card as tabs, for the same reason: each
+                     gets the whole remaining pane's height instead of splitting it permanently,
+                     since you're typically working in one or the other, not both at once. -->
+                <GroupBox x:Name="StepsVariablesGroupBox" Grid.Row="1" Header="Execution" Visibility="Collapsed">
+                    <TabControl x:Name="StepsVariablesTabControl" Background="Transparent" BorderThickness="0">
+                        <TabItem Header="Steps">
+                            <TabControl x:Name="StepsTabControl" Background="Transparent" BorderThickness="0" Margin="0,8,0,0">
+                                <TabItem Header="Management Domain Restores">
+                                    <DockPanel Margin="0,8,0,0">
+                                        <Button x:Name="RunAllManagementDomainRestoresButton" Content="Run All" DockPanel.Dock="Top" HorizontalAlignment="Left" Margin="0,0,0,8" />
+                                        <ListBox x:Name="ManagementDomainRestoresStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                                    </DockPanel>
+                                </TabItem>
+                                <TabItem Header="Recover Default Cluster">
+                                    <DockPanel Margin="0,8,0,0">
+                                        <Button x:Name="RunAllRecoverDefaultClusterButton" Content="Run All" DockPanel.Dock="Top" HorizontalAlignment="Left" Margin="0,0,0,8" />
+                                        <ListBox x:Name="RecoverDefaultClusterStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                                    </DockPanel>
+                                </TabItem>
+                            </TabControl>
                         </TabItem>
-                        <TabItem Header="Recover Default Cluster">
+                        <TabItem Header="Variables">
                             <DockPanel Margin="0,8,0,0">
-                                <Button x:Name="RunAllRecoverDefaultClusterButton" Content="Run All" DockPanel.Dock="Top" HorizontalAlignment="Left" Margin="0,0,0,8" />
-                                <ListBox x:Name="RecoverDefaultClusterStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                                <Button x:Name="LoadVariablesButton" Content="Load Variables..." DockPanel.Dock="Top" HorizontalAlignment="Left" Margin="0,0,0,8" />
+                                <TextBlock x:Name="LoadedVariablesTextBlock" DockPanel.Dock="Top" Margin="0,0,0,8" TextWrapping="Wrap" Foreground="{StaticResource SubtleTextBrush}" Text="No variables loaded yet." />
+                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                    <StackPanel x:Name="VariablesItemsPanel" />
+                                </ScrollViewer>
                             </DockPanel>
                         </TabItem>
                     </TabControl>
-                </GroupBox>
-
-                <GroupBox x:Name="VariablesGroupBox" Grid.Row="2" Header="Variables" Visibility="Collapsed">
-                    <DockPanel>
-                        <Button x:Name="LoadVariablesButton" Content="Load Variables..." DockPanel.Dock="Top" HorizontalAlignment="Left" Margin="0,0,0,8" />
-                        <TextBlock x:Name="LoadedVariablesTextBlock" DockPanel.Dock="Top" Margin="0,0,0,8" TextWrapping="Wrap" Foreground="{StaticResource SubtleTextBrush}" Text="No variables loaded yet." />
-                        <ScrollViewer VerticalScrollBarVisibility="Auto">
-                            <StackPanel x:Name="VariablesItemsPanel" />
-                        </ScrollViewer>
-                    </DockPanel>
                 </GroupBox>
             </Grid>
 
