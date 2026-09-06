@@ -16534,7 +16534,7 @@ function Start-TerminalReadyWatcher {
         if ($null -ne $term.ConPTYTerm -and $term.ConPTYTerm.TermProcIsStarted) {
             $this.Stop()
             $escapedTranscriptPath = Protect-SingleQuotes $global:transcriptPath
-            Send-ToConsole "Start-Transcript -Path '$escapedTranscriptPath' -Force"
+            Send-ToConsole "Start-Transcript -Path '$escapedTranscriptPath' -Force | Out-Null"
         } elseif ($script:terminalReadyAttempts -gt 50) {
             $this.Stop()
             $statusTextBlock.Text = 'Embedded console did not start in time.'
