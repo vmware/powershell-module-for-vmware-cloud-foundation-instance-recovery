@@ -16288,6 +16288,39 @@ Function Import-RecoveryVariables {
 }
 Export-ModuleMember -Function Import-RecoveryVariables
 
+Function Set-ExportedSDDCDataFilePath {
+    <#
+    .SYNOPSIS
+    Sets $extractedSDDCDataFile in the current session
+
+    .DESCRIPTION
+    The Set-ExportedSDDCDataFilePath cmdlet sets $extractedSDDCDataFile to the given path, so the
+    other Instance Recovery cmdlets in this module can reference it directly without it needing to be
+    passed explicitly on the command line every time.
+
+    .PARAMETER Path
+    Path to the extracted SDDC data JSON file.
+
+    .EXAMPLE
+    Set-ExportedSDDCDataFilePath -Path 'C:\VCFIR\extracted-sddc-data.json'
+    #>
+    Param(
+        [Parameter (Mandatory = $true)][String] $Path
+    )
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+
+    LogMessage -type INFO -message "[$jumpboxName] Setting extracted SDDC data file path to '$Path'"
+    Set-Variable -Name 'extractedSDDCDataFile' -Value $Path -Scope Global
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+Export-ModuleMember -Function Set-ExportedSDDCDataFilePath
+
 #EndRegion Recovery Variables
 
 #Region UI Orchestrator
@@ -16673,7 +16706,7 @@ function Import-ExtractedSddcDataFile([string]$Path) {
     $dataSourceDomainsTabControl.SelectedIndex = 1
 
     $escapedPath = Protect-SingleQuotes $Path
-    Send-ToConsole "`$extractedSDDCDataFile = '$escapedPath'"
+    Send-ToConsole "Set-ExportedSDDCDataFilePath -Path '$escapedPath'"
 }
 
 $browseButton.Add_Click({
