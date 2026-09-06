@@ -16422,28 +16422,16 @@ function Start-StepCompletionPoller {
     $pollTimer = New-Object System.Windows.Threading.DispatcherTimer
     $pollTimer.Interval = [TimeSpan]::FromMilliseconds(750)
     $pollTimer.Add_Tick({
-        try {
-            if ($null -eq $term.ConPTYTerm -or -not $term.ConPTYTerm.TermProcIsStarted) { return }
-            $pendingRows = @(@($global:managementDomainRestoresStepRows) + @($global:recoverDefaultClusterStepRows) | Where-Object { $_.Button.Content -ne 'Done' })
-            if ($pendingRows.Count -eq 0) { return }
-            # GetConsoleText reflects the actual on-screen character grid, which wraps long lines at
-            # the console's width -- a long "[NOTE] ... Completed Task <cmdlet> ..." line can easily
-            # get split mid-string across two grid rows, breaking a plain Contains() check. Collapsing
-            # all whitespace (including the newlines between wrapped rows) back to single spaces heals
-            # that without risking false positives, since "Completed Task <cmdlet>" is specific enough
-            # that merging it with adjacent unrelated lines can't accidentally recreate the phrase.
-            $consoleText = ($term.ConPTYTerm.GetConsoleText($true)) -replace '\s+', ' '
-            foreach ($row in $pendingRows) {
-                if ($consoleText.Contains("Completed Task $($row.CmdletName)")) {
-                    $row.Dot.Fill = [System.Windows.Media.Brushes]::Green
-                    $row.Button.Content = 'Done'
-                    $row.Button.Background = [System.Windows.Media.Brushes]::Green
-                }
+        if ($null -eq $term.ConPTYTerm) { return }
+        $pendingRows = @(@($global:managementDomainRestoresStepRows) + @($global:recoverDefaultClusterStepRows) | Where-Object { $_.Button.Content -ne 'Done' })
+        if ($pendingRows.Count -eq 0) { return }
+        $consoleText = $term.ConPTYTerm.GetConsoleText($true)
+        foreach ($row in $pendingRows) {
+            if ($consoleText.Contains("Completed Task $($row.CmdletName)")) {
+                $row.Dot.Fill = [System.Windows.Media.Brushes]::Green
+                $row.Button.Content = 'Done'
+                $row.Button.Background = [System.Windows.Media.Brushes]::Green
             }
-        } catch {
-            # GetConsoleText can throw internally (e.g. if called before the control's native
-            # rendering surface is fully attached) -- swallow and retry on the next tick rather than
-            # letting one transient failure spam the error stream or block later ticks.
         }
     })
     $pollTimer.Start()
