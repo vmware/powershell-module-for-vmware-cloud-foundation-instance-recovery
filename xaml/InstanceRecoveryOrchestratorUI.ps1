@@ -159,28 +159,51 @@ $consoleStartInfo.StandardErrorEncoding = [System.Text.Encoding]::UTF8
 
 $consoleProcess = New-Object System.Diagnostics.Process
 $consoleProcess.StartInfo = $consoleStartInfo
-$consoleProcess.EnableRaisingEvents = $true
-
-# OutputDataReceived/ErrorDataReceived fire on a threadpool thread, not the UI thread -- touching a
-# WPF element directly from there throws, hence the Dispatcher.BeginInvoke wrapping. .GetNewClosure()
-# on the inner scriptblock captures this specific firing's $line by value before handing it to the
-# dispatcher queue -- without it, a burst of output arriving faster than the UI thread drains the
-# queue could have several queued callbacks all resolve $line however it happens to look by the time
-# each one actually runs, the same class of bug New-StepRow's Add_Click already has to guard against.
-$consoleProcess.Add_OutputDataReceived({
-    if ($null -eq $EventArgs.Data) { return }
-    $line = $EventArgs.Data
-    $window.Dispatcher.BeginInvoke([Action]({ Add-ConsoleLine $line }.GetNewClosure())) | Out-Null
-})
-$consoleProcess.Add_ErrorDataReceived({
-    if ($null -eq $EventArgs.Data) { return }
-    $line = $EventArgs.Data
-    $window.Dispatcher.BeginInvoke([Action]({ Add-ConsoleLine $line 'ERROR' }.GetNewClosure())) | Out-Null
-})
-
 [void]$consoleProcess.Start()
-$consoleProcess.BeginOutputReadLine()
-$consoleProcess.BeginErrorReadLine()
+
+# Deliberately not OutputDataReceived/BeginOutputReadLine: that event fires on an arbitrary .NET
+# threadpool thread with no PowerShell runspace bound to it at all, and invoking a PowerShell
+# scriptblock to handle it -- regardless of what the scriptblock's body does -- needs one. Every
+# other .Add_EventName({...}) in this file (Button.Click, Window.Closing, DispatcherTimer.Tick) is
+# safe only because WPF itself guarantees those specific events fire on the UI thread; this one
+# doesn't. Polled asynchronously instead, entirely from the UI thread via a DispatcherTimer, the same
+# proven pattern Start-StepCompletionWatcher already uses: ReadLineAsync() does the actual blocking
+# wait on a plain .NET-managed thread, but nothing PowerShell-side ever touches it off the UI thread --
+# each tick only checks whether the pending read has already completed, and never blocks itself.
+$script:pendingConsoleOutputRead = $consoleProcess.StandardOutput.ReadLineAsync()
+$script:pendingConsoleErrorRead = $consoleProcess.StandardError.ReadLineAsync()
+
+function Start-ConsoleOutputPump {
+    $pumpTimer = New-Object System.Windows.Threading.DispatcherTimer
+    $pumpTimer.Interval = [TimeSpan]::FromMilliseconds(100)
+    $pumpTimer.Add_Tick({
+        try {
+            if ($script:pendingConsoleOutputRead.IsCompleted) {
+                $line = $script:pendingConsoleOutputRead.Result
+                if ($null -ne $line) {
+                    Add-ConsoleLine $line
+                    $script:pendingConsoleOutputRead = $consoleProcess.StandardOutput.ReadLineAsync()
+                }
+                # $null means the stream hit EOF (the console process's stdout closed) --
+                # deliberately not starting another read, since there's never anything more to read.
+            }
+            if ($script:pendingConsoleErrorRead.IsCompleted) {
+                $line = $script:pendingConsoleErrorRead.Result
+                if ($null -ne $line) {
+                    Add-ConsoleLine $line 'ERROR'
+                    $script:pendingConsoleErrorRead = $consoleProcess.StandardError.ReadLineAsync()
+                }
+            }
+        } catch {
+            # A faulted task (e.g. the console process exiting unexpectedly and disposing its
+            # streams) would otherwise re-throw from .Result -- on the UI thread, inside a
+            # DispatcherTimer tick, an uncaught exception here would take the whole window down with
+            # it. Stop polling rather than let that happen or spin retrying a stream that's gone bad.
+            $this.Stop()
+        }
+    })
+    $pumpTimer.Start()
+}
 
 # Kills the console process when the window actually closes, regardless of which path got it there
 # (the X button or Exit) -- a plain child process isn't torn down automatically just because this
@@ -680,6 +703,7 @@ $resumeButton.Add_Click({
     }
 }.GetNewClosure())
 
+Start-ConsoleOutputPump
 Start-StepCompletionWatcher
 
 [void]$app.Run($window)
