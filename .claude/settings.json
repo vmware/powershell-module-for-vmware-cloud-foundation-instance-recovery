@@ -1,13 +1,12 @@
 {
   "permissions": {
-    "allow": [
-      "Read(//c/Users/Administrator/.claude/projects/C--Users-Administrator/**)",
-      "Read(//f/PlatformTools/**)"
-    ],
     "defaultMode": "bypassPermissions",
-    "blockReadsOutsideWorkingDirectories": false,
+    "allow": [
+      "Read(//c/Users/Administrator/.claude/projects/C--Users-Administrator/**)"
+    ],
     "additionalDirectories": [
       "C:\\Users\\Administrator\\AppData\\Local\\Temp\\2\\claude"
-    ]
+    ],
+    "blockReadsOutsideWorkingDirectories": false
   }
 }
