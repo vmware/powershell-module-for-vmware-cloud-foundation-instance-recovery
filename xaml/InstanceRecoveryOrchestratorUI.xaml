@@ -3,7 +3,8 @@
         xmlns:term="clr-namespace:EasyWindowsTerminalControl;assembly=EasyWindowsTerminalControl"
         Title="VCF Instance Backup &amp; Restore Orchestrator" Height="820" Width="1100" WindowState="Maximized">
     <!--
-        Loaded via XamlReader.Load from Start-VCFIBROrchestrator (see the .psm1).
+        Loaded via XamlReader.Load from InstanceRecoveryOrchestratorUI.ps1 (launched, as its own
+        detached process, by Start-VCFIBROrchestrator in the module's .psm1).
         There is no code-behind class, so this file deliberately has no x:Class, no inline event
         handler attributes (Click=/SelectionChanged=), and no data-binding markup on the list
         boxes. All wiring and list population happens imperatively in the PowerShell loader script.
