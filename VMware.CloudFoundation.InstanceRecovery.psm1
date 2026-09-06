@@ -16329,15 +16329,34 @@ $loadedVariablesTextBlock = $window.FindName('LoadedVariablesTextBlock')
 $variablesItemsPanel = $window.FindName('VariablesItemsPanel')
 $term = $window.FindName('Term')
 
-# Deliberately NOT setting a custom Theme/FontSizeWhenSettingTheme here for now: doing so is the
-# leading suspect for the console line-corruption bug (first reported right after that change was
-# introduced, before any completion-tracking code existed), so it's reverted to the control's own
-# built-in default rendering until that's confirmed one way or the other.
+# EasyTerminalControl.FontSizeWhenSettingTheme is a no-op by itself -- it's only ever read inside
+# SetTheme(), which the control skips entirely whenever its Theme property is null (the default,
+# since XAML never sets one). So the font size must be applied together with an explicit Theme;
+# otherwise the "smaller font" request silently does nothing. Colors below are the standard
+# Windows Terminal "Campbell" default scheme, matching what the control already renders without a
+# Theme, so this changes only the font size, not the look.
+$campbellColors = @(
+    '#0C0C0C', '#C50F1F', '#13A10E', '#C19C00', '#0037DA', '#881798', '#3A96DD', '#CCCCCC',
+    '#767676', '#E74856', '#16C60C', '#F9F1A5', '#3B78FF', '#B4009E', '#61D6D6', '#F2F2F2'
+)
+$toColorVal = { param([string]$Hex) [EasyWindowsTerminalControl.EasyTerminalControl]::ColorToVal([System.Windows.Media.ColorConverter]::ConvertFromString($Hex)) }
+$terminalTheme = New-Object Microsoft.Terminal.Wpf.TerminalTheme
+$terminalTheme.DefaultBackground = & $toColorVal '#0C0C0C'
+$terminalTheme.DefaultForeground = & $toColorVal '#CCCCCC'
+$terminalTheme.DefaultSelectionBackground = & $toColorVal '#FFFFFF'
+$terminalTheme.ColorTable = [uint32[]]($campbellColors | ForEach-Object { & $toColorVal $_ })
+$term.FontSizeWhenSettingTheme = 11
+$term.Theme = $terminalTheme
 
 # Populated once a domain is selected (see the SelectionChanged handler below); initialized here
 # so Run All never sees $null before that happens.
 $global:managementDomainRestoresStepRows = @()
 $global:recoverDefaultClusterStepRows = @()
+
+# Per-launch scratch folder for step-completion marker files (see Invoke-Step/New-StepRow below).
+# Keyed by this process's PID so concurrent orchestrator instances never collide.
+$global:stepStatusDir = Join-Path $env:TEMP "vcfir-step-status-$PID"
+[void](New-Item -ItemType Directory -Path $global:stepStatusDir -Force)
 
 function Protect-SingleQuotes([string]$Value) {
     return $Value.Replace("'", "''")
@@ -16355,19 +16374,29 @@ function Send-ToConsole([string]$CommandLine) {
     }
 }
 
-# Resets a row to its "in progress" look, including undoing any earlier "Done" state -- re-running
-# a step that previously completed should stop showing it as done until it completes again.
-function Invoke-Step($Dot, $Button, [string]$CommandLine) {
+# Completion tracking, attempt 2: rather than watching the terminal's raw rendered output (the
+# previous approach -- fragile, and the extra allocation it caused is what exposed a FailFast bug
+# in EasyWindowsTerminalControl itself), each Run appends a call to the console session's own
+# __vcfirDone helper (defined once at console startup, see the XAML's StartupCommandLine) that
+# writes a one-word marker file based on $? (PowerShell's own success/failure flag). This is sent
+# as ONE combined line with the real command ("<CommandLine>; __vcfirDone '<path>'"), not a
+# separate follow-up line: two rapid, separately-submitted lines raced the terminal's line editor
+# against the first command's own output and caused visible corruption. A plain DispatcherTimer
+# (UI thread only, no events on the terminal control, no background thread, no shared buffer) then
+# just polls for those marker files. Much smaller failure surface than watching raw output.
+function Invoke-Step($Dot, $Button, [string]$MarkerPath, [string]$CommandLine) {
     $Dot.Fill = [System.Windows.Media.Brushes]::DodgerBlue
     $Button.Content = 'Run'
     $Button.ClearValue([System.Windows.Controls.Control]::BackgroundProperty)
-    Send-ToConsole $CommandLine
+    Remove-Item -Path $MarkerPath -Force -ErrorAction SilentlyContinue
+    $escapedMarkerPath = Protect-SingleQuotes $MarkerPath
+    Send-ToConsole "$CommandLine; __vcfirDone '$escapedMarkerPath'"
 }
 
-# Returns [PSCustomObject]@{ Panel; Dot; Button; CommandLine; CmdletName }, not just the row's
+# Returns [PSCustomObject]@{ Panel; Dot; Button; CommandLine; MarkerPath }, not just the row's
 # visual Panel -- the other fields are needed separately so a tab's "Run All" button can replay
-# every row's Run action, and so the completion-poller can match console output to this row by
-# cmdlet name without re-parsing the rendered list.
+# every row's Run action, and so the completion-poller can update the right row's dot/button
+# without re-parsing the rendered list.
 function New-StepRow([string]$CommandLine) {
     $panel = New-Object System.Windows.Controls.DockPanel
     $panel.Margin = '2,0,2,0'
@@ -16384,6 +16413,7 @@ function New-StepRow([string]$CommandLine) {
     # values referenced in it (e.g. $targetFqdn) come from whatever was loaded via "Load
     # Variables..." -- they're already set in the console session by the time Run is clicked.
     $cmdletName = ($CommandLine -split '\s+', 2)[0]
+    $markerPath = Join-Path $global:stepStatusDir "$([guid]::NewGuid()).status"
 
     $runButton = New-Object System.Windows.Controls.Button
     $runButton.Content = 'Run'
@@ -16393,7 +16423,7 @@ function New-StepRow([string]$CommandLine) {
     [System.Windows.Controls.DockPanel]::SetDock($runButton, [System.Windows.Controls.Dock]::Right)
     $runButton.Add_Click({
         try {
-            Invoke-Step $dot $runButton $CommandLine
+            Invoke-Step $dot $runButton $markerPath $CommandLine
         } catch {
             $statusTextBlock.Text = "Run button failed: $($_.Exception.Message)"
         }
@@ -16407,30 +16437,22 @@ function New-StepRow([string]$CommandLine) {
     [void]$panel.Children.Add($dot)
     [void]$panel.Children.Add($runButton)
     [void]$panel.Children.Add($label)
-    return [PSCustomObject]@{ Panel = $panel; Dot = $dot; Button = $runButton; CommandLine = $CommandLine; CmdletName = $cmdletName }
+    return [PSCustomObject]@{ Panel = $panel; Dot = $dot; Button = $runButton; CommandLine = $CommandLine; MarkerPath = $markerPath }
 }
 
-# Completion tracking, attempt 3: the command sent for a step must stay byte-for-byte identical to
-# what you'd type yourself -- attempt 2 appended a marker call to it, which both showed up as
-# unwanted clutter and (by making an already-long line longer) triggered the terminal's line-wrap
-# corruption bug even more reliably. This version doesn't send anything extra to the console at
-# all: it just reads the terminal's own already-rendered text back via ConPTYTerm.GetConsoleText()
-# on a plain DispatcherTimer (UI thread only, one string fetch per tick, no event subscription, no
-# manually-managed buffer) and checks it for the module's own "Completed Task <cmdlet>" NOTE-level
-# log line -- the same signal the original request named, just read passively instead of injected.
 function Start-StepCompletionPoller {
     $pollTimer = New-Object System.Windows.Threading.DispatcherTimer
-    $pollTimer.Interval = [TimeSpan]::FromMilliseconds(750)
+    $pollTimer.Interval = [TimeSpan]::FromMilliseconds(500)
     $pollTimer.Add_Tick({
-        if ($null -eq $term.ConPTYTerm) { return }
-        $pendingRows = @(@($global:managementDomainRestoresStepRows) + @($global:recoverDefaultClusterStepRows) | Where-Object { $_.Button.Content -ne 'Done' })
-        if ($pendingRows.Count -eq 0) { return }
-        $consoleText = $term.ConPTYTerm.GetConsoleText($true)
-        foreach ($row in $pendingRows) {
-            if ($consoleText.Contains("Completed Task $($row.CmdletName)")) {
+        foreach ($row in (@($global:managementDomainRestoresStepRows) + @($global:recoverDefaultClusterStepRows))) {
+            if ($row.Button.Content -eq 'Done' -or -not (Test-Path $row.MarkerPath)) { continue }
+            $result = Get-Content -Path $row.MarkerPath -Raw -ErrorAction SilentlyContinue
+            if ($result -match 'ok') {
                 $row.Dot.Fill = [System.Windows.Media.Brushes]::Green
                 $row.Button.Content = 'Done'
                 $row.Button.Background = [System.Windows.Media.Brushes]::Green
+            } elseif ($result -match 'fail') {
+                $row.Dot.Fill = [System.Windows.Media.Brushes]::Red
             }
         }
     })
@@ -16692,7 +16714,7 @@ $domainsListBox.Add_SelectionChanged({
 $runAllManagementDomainRestoresButton.Add_Click({
     try {
         foreach ($row in $global:managementDomainRestoresStepRows) {
-            Invoke-Step $row.Dot $row.Button $row.CommandLine
+            Invoke-Step $row.Dot $row.Button $row.MarkerPath $row.CommandLine
         }
     } catch {
         $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
@@ -16702,7 +16724,7 @@ $runAllManagementDomainRestoresButton.Add_Click({
 $runAllRecoverDefaultClusterButton.Add_Click({
     try {
         foreach ($row in $global:recoverDefaultClusterStepRows) {
-            Invoke-Step $row.Dot $row.Button $row.CommandLine
+            Invoke-Step $row.Dot $row.Button $row.MarkerPath $row.CommandLine
         }
     } catch {
         $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
