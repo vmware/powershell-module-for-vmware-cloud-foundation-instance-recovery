@@ -16402,21 +16402,6 @@ function Send-ToConsole([string]$CommandLine) {
     }
 }
 
-# Lets the UI thread finish whatever work is already queued on it before carrying on. The terminal
-# control renders the console's output on this same thread, so a loop that holds onto it (sending a
-# whole answer file's worth of assignments, say) starves the renderer: the output piles up unrendered
-# and gets drawn in one late batch, by which point the control's idea of where the cursor is has gone
-# stale, and lines land on top of earlier ones. Invoking an empty action at Background priority pumps
-# everything queued above that priority (rendering included) and returns once it's drained. Nothing
-# about what gets sent to the console changes; this only paces when.
-function Invoke-UiYield {
-    try {
-        $window.Dispatcher.Invoke([Action] {}, [System.Windows.Threading.DispatcherPriority]::Background)
-    } catch {
-        # A yield failing is never worth interrupting the caller over; the loop just runs unpaced.
-    }
-}
-
 # Starts (or restarts) watching the transcript for this row's "Completed Task <cmdlet>" line, from
 # whatever the transcript's current length is right now -- so an OLDER completion line already in
 # the transcript from a previous run of the same cmdlet can't cause an immediate false-positive
@@ -16706,9 +16691,6 @@ function Import-VariablesAnswersFile([string]$Path) {
             $value = $answerMap[$name]
             Send-ToConsole "`$$name = '$(Protect-SingleQuotes $value)'"
             [void]$variablesItemsPanel.Children.Add((New-VariableRow $name $value))
-            # Each iteration both writes to the console and builds a WPF row, so without this the
-            # whole answer file is processed without the renderer ever getting the thread back.
-            Invoke-UiYield
         }
 
         $loadedVariablesTextBlock.Text = "Loaded $($orderedNames.Count) variable(s) from $Path."

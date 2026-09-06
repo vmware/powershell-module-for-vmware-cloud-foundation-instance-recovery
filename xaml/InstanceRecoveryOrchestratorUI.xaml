@@ -167,9 +167,15 @@
         <!-- Header bar, modeled on the vSphere Client dark top bar -->
         <Border Grid.Row="0" Background="{StaticResource HeaderBarBrush}" Padding="18,12">
             <DockPanel>
+                <!-- Height is capped below the title TextBlock's own height on purpose. The console
+                     sits directly beneath this bar, so anything that makes the bar taller makes the
+                     console shorter, changing how many character rows it has. Letting the buttons
+                     size themselves grew the bar by roughly 6px, which is the one rendering-relevant
+                     difference RC5 introduced. Keeping the TextBlock as the tallest element here
+                     leaves the bar, and therefore the console, exactly the size it was at RC4. -->
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                    <Button x:Name="ResumeButton" Content="Resume..." Width="90" Margin="0,0,8,0" />
-                    <Button x:Name="ExitButton" Content="Exit" Width="70" />
+                    <Button x:Name="ResumeButton" Content="Resume..." Width="90" Height="20" Padding="10,0" Margin="0,0,8,0" />
+                    <Button x:Name="ExitButton" Content="Exit" Width="70" Height="20" Padding="10,0" />
                 </StackPanel>
                 <TextBlock Text="VCF Instance Backup &amp; Restore Orchestrator" Foreground="White" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" />
             </DockPanel>
