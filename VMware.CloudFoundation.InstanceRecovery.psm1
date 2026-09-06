@@ -16403,15 +16403,30 @@ Function Start-VCFIBROrchestrator {
     }
 
     $pwshPath = (Get-Process -Id $PID).Path   # same pwsh.exe/powershell.exe build this session is running under
-    $arguments = @(
-        '-NoProfile'
-        '-File', $uiScriptPath
-        '-XamlPath', $xamlPath
-        '-LibPath', $libPath
-        '-WorkingDirectory', $launchDirectory
-    )
 
-    $process = Start-Process -FilePath $pwshPath -ArgumentList $arguments -PassThru
+    # ProcessStartInfo.ArgumentList, not Start-Process's own -ArgumentList: the cmdlet's version just
+    # joins array elements with spaces and does not quote ones that themselves contain spaces, which
+    # breaks the moment the module is installed under a path like "C:\Program Files\..." -- pwsh.exe's
+    # own command-line parser then splits that path at the space and can't find a script file at all.
+    # ArgumentList.Add() here quotes each argument correctly regardless of what it contains.
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $pwshPath
+    # pwsh.exe is a console-subsystem executable, so launching it this way would otherwise open a
+    # visible console window behind the WPF one -- the in-process runspace this used to run in never
+    # showed one, and the orchestrator window is the only thing meant to be visible.
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.ArgumentList.Add('-NoProfile')
+    $startInfo.ArgumentList.Add('-File')
+    $startInfo.ArgumentList.Add($uiScriptPath)
+    $startInfo.ArgumentList.Add('-XamlPath')
+    $startInfo.ArgumentList.Add($xamlPath)
+    $startInfo.ArgumentList.Add('-LibPath')
+    $startInfo.ArgumentList.Add($libPath)
+    $startInfo.ArgumentList.Add('-WorkingDirectory')
+    $startInfo.ArgumentList.Add($launchDirectory)
+
+    $process = [System.Diagnostics.Process]::Start($startInfo)
     $script:InstanceRecoveryOrchestratorUIProcess = $process
 
     LogMessage -type NOTE -message "Instance Recovery Orchestrator UI launched (PID $($process.Id))."
