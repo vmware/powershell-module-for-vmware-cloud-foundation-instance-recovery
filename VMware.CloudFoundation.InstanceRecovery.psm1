@@ -16388,7 +16388,7 @@ function Protect-SingleQuotes([string]$Value) {
 # piped to Out-Null so launching it leaves no trace in the console at all.
 $escapedWorkingDirectory = Protect-SingleQuotes $WorkingDirectory
 $escapedTranscriptPath = Protect-SingleQuotes $global:transcriptPath
-$term.StartupCommandLine = "pwsh.exe -NoLogo -NoExit -Command `"Set-Location -LiteralPath '$escapedWorkingDirectory'; Set-PSReadLineOption -PredictionSource None; Start-Transcript -Path '$escapedTranscriptPath' -Force | Out-Null`""
+$term.StartupCommandLine = "pwsh.exe -NoLogo -NoExit -Command `"Set-Location -LiteralPath '$escapedWorkingDirectory'; Remove-Module PSReadLine -Force -ErrorAction SilentlyContinue; Start-Transcript -Path '$escapedTranscriptPath' -Force | Out-Null`""
 
 function Send-ToConsole([string]$CommandLine) {
     if ($null -eq $term.ConPTYTerm) {
