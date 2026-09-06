@@ -305,9 +305,22 @@ function Send-ToConsole([string]$CommandLine) {
 }
 
 # PreviewKeyDown (the tunneling-phase event, fired before the TextBox's own default key handling),
-# not KeyDown -- KeyDown is not reliable for catching Enter specifically in a TextBox in WPF.
+# not KeyDown -- KeyDown is not reliable for catching Enter specifically in a TextBox in WPF. The
+# actual key can also arrive as System or ImeProcessed instead of Enter directly, depending on
+# keyboard input handling (this session runs over RDP, which is a known trigger) -- when it does,
+# the real key is in SystemKey/ImeProcessedKey instead, so checking Key alone would silently never
+# match at all, with nothing to indicate why.
 $consoleInput.Add_PreviewKeyDown({
-    if ($EventArgs.Key -eq [System.Windows.Input.Key]::Enter) {
+    $key = $EventArgs.Key
+    if ($key -eq [System.Windows.Input.Key]::System) {
+        $key = $EventArgs.SystemKey
+    } elseif ($key -eq [System.Windows.Input.Key]::ImeProcessed) {
+        $key = $EventArgs.ImeProcessedKey
+    }
+    # Temporary diagnostic: if Enter still doesn't work, this shows exactly what WPF actually
+    # reported instead of guessing again -- safe to remove once Enter is confirmed working.
+    $statusTextBlock.Text = "Last key in console input: resolved=$key raw=$($EventArgs.Key)"
+    if ($key -eq [System.Windows.Input.Key]::Enter) {
         $EventArgs.Handled = $true
         $commandText = $consoleInput.Text
         $consoleInput.Clear()
