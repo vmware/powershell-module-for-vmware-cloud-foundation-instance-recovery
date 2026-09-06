@@ -246,8 +246,10 @@ $consoleProcess.StartInfo = $consoleStartInfo
 # shown (Application.Run() hasn't been called yet), so blocking briefly here is fine, the same way
 # Start-VCFIBROrchestrator briefly waits for this whole process to start. Hidden immediately once
 # found, so it never visibly flashes as a free-floating window before ConsoleHwndHost embeds it.
+# 30 seconds, not 10: measured launches on this environment taking noticeably longer than that under
+# load (RDP session, VM overhead), so 10 was tripping this timeout on otherwise-successful launches.
 $consoleHwnd = [IntPtr]::Zero
-$deadline = (Get-Date).AddSeconds(10)
+$deadline = (Get-Date).AddSeconds(30)
 while ((Get-Date) -lt $deadline) {
     $consoleProcess.Refresh()
     if ($consoleProcess.HasExited) {
@@ -263,7 +265,7 @@ if ($consoleHwnd -ne [IntPtr]::Zero) {
     $consoleHwndHost = New-Object VCFIRConsole.ConsoleHwndHost($consoleHwnd)
     $consoleHostBorder.Child = $consoleHwndHost
 } else {
-    $statusTextBlock.Text = "Console window did not appear within 10 seconds."
+    $statusTextBlock.Text = "Console window did not appear within 30 seconds."
 }
 
 # Kills the console process when the window actually closes, regardless of which path got it there
