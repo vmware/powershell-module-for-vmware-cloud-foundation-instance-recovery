@@ -16502,17 +16502,28 @@ function Start-TerminalReadyWatcher {
 # there. A separate, throttled DispatcherTimer (UI thread only) does the actual matching and button
 # updates, so UI work happens at a small fixed rate regardless of how much output streams through.
 function Start-StepCompletionWatcher {
+    # This handler MUST NEVER let an exception escape. TerminalOutput is not a passive notification
+    # event -- per Microsoft.Terminal.Wpf.TerminalContainer, the control's own render callback
+    # (Connection_TerminalOutput, which actually paints the console via TerminalSendOutput) is
+    # subscribed to this SAME event. .NET invokes multicast delegate subscribers in order, and if
+    # one throws, every subscriber after it in the chain is skipped for that invocation. If this
+    # handler runs before the renderer's own subscription and throws, the renderer never sees that
+    # output -- which, happening repeatedly, is exactly what made the console go entirely blank.
     $term.ConPTYTerm.Add_TerminalOutput({
         param($sender, $e)
-        [System.Threading.Monitor]::Enter($global:consoleOutputBufferLock)
         try {
-            [void]$global:consoleOutputBuffer.Append($e.Data)
-            $excess = $global:consoleOutputBuffer.Length - 50000
-            if ($excess -gt 0) {
-                [void]$global:consoleOutputBuffer.Remove(0, $excess)
+            [System.Threading.Monitor]::Enter($global:consoleOutputBufferLock)
+            try {
+                [void]$global:consoleOutputBuffer.Append($e.Data)
+                $excess = $global:consoleOutputBuffer.Length - 50000
+                if ($excess -gt 0) {
+                    [void]$global:consoleOutputBuffer.Remove(0, $excess)
+                }
+            } finally {
+                [System.Threading.Monitor]::Exit($global:consoleOutputBufferLock)
             }
-        } finally {
-            [System.Threading.Monitor]::Exit($global:consoleOutputBufferLock)
+        } catch {
+            # Swallow unconditionally -- see comment above.
         }
     })
 
