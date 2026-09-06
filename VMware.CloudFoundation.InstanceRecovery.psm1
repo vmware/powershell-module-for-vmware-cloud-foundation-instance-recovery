@@ -16376,21 +16376,19 @@ function Send-ToConsole([string]$CommandLine) {
 
 # Completion tracking, attempt 2: rather than watching the terminal's raw rendered output (the
 # previous approach -- fragile, and the extra allocation it caused is what exposed a FailFast bug
-# in EasyWindowsTerminalControl itself), each Run appends a call to the console session's own
-# __vcfirDone helper (defined once at console startup, see the XAML's StartupCommandLine) that
-# writes a one-word marker file based on $? (PowerShell's own success/failure flag). This is sent
-# as ONE combined line with the real command ("<CommandLine>; __vcfirDone '<path>'"), not a
-# separate follow-up line: two rapid, separately-submitted lines raced the terminal's line editor
-# against the first command's own output and caused visible corruption. A plain DispatcherTimer
+# in EasyWindowsTerminalControl itself), each Run sends a small follow-up line that has the
+# console session itself write a one-word marker file once the real command finishes, based on $?
+# (PowerShell's own success/failure flag for the command that just ran). A plain DispatcherTimer
 # (UI thread only, no events on the terminal control, no background thread, no shared buffer) then
-# just polls for those marker files. Much smaller failure surface than watching raw output.
+# just polls for those files. Much smaller failure surface.
 function Invoke-Step($Dot, $Button, [string]$MarkerPath, [string]$CommandLine) {
     $Dot.Fill = [System.Windows.Media.Brushes]::DodgerBlue
     $Button.Content = 'Run'
     $Button.ClearValue([System.Windows.Controls.Control]::BackgroundProperty)
     Remove-Item -Path $MarkerPath -Force -ErrorAction SilentlyContinue
+    Send-ToConsole $CommandLine
     $escapedMarkerPath = Protect-SingleQuotes $MarkerPath
-    Send-ToConsole "$CommandLine; __vcfirDone '$escapedMarkerPath'"
+    Send-ToConsole "if (`$?) { Set-Content -Path '$escapedMarkerPath' -Value 'ok' -Force } else { Set-Content -Path '$escapedMarkerPath' -Value 'fail' -Force }"
 }
 
 # Returns [PSCustomObject]@{ Panel; Dot; Button; CommandLine; MarkerPath }, not just the row's
