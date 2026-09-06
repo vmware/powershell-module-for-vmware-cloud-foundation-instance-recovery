@@ -260,20 +260,8 @@
                 <!-- PSReadLine's predictive IntelliSense redraws the input line using cursor-repositioning
                      sequences this vendored terminal control doesn't fully support, which shows up as new
                      output clobbering the tail of previous output. Disabled for this embedded, scripted-only
-                     console (not meant for interactive editing) to avoid that.
-
-                     Font size is done as a pure WPF visual scale (Viewbox), NOT via
-                     EasyTerminalControl's Theme/FontSizeWhenSettingTheme; that path is the
-                     confirmed cause of a console line-corruption bug, so it's avoided entirely.
-                     The terminal is given a fixed nominal size larger than its actual on-screen
-                     area; Viewbox scales that down to fit, so the terminal renders (at its own
-                     default, untouched font) into a larger virtual area than it's displayed at,
-                     making the apparent text smaller while still filling the console pane. The
-                     1600x1000 nominal size is a starting point; shrink it for larger text, grow
-                     it for smaller. -->
-                <Viewbox Stretch="Fill">
-                    <term:EasyTerminalControl x:Name="Term" Width="1600" Height="1000" StartupCommandLine="pwsh.exe -NoLogo -NoExit -Command &quot;Set-PSReadLineOption -PredictionSource None&quot;" />
-                </Viewbox>
+                     console (not meant for interactive editing) to avoid that. -->
+                <term:EasyTerminalControl x:Name="Term" StartupCommandLine="pwsh.exe -NoLogo -NoExit -Command &quot;Set-PSReadLineOption -PredictionSource None&quot;" />
             </GroupBox>
         </Grid>
     </Grid>

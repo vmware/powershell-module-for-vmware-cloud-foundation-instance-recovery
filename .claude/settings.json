@@ -5,7 +5,10 @@
       "Read(//c/Users/Administrator/.claude/projects/C--Users-Administrator/**)"
     ],
     "additionalDirectories": [
-      "C:\\Users\\Administrator\\AppData\\Local\\Temp\\2\\claude"
+      "C:\\Users\\Administrator\\AppData\\Local\\Temp\\2\\claude",
+      "C:\\Users\\ADMINI~1\\AppData\\Local\\Temp\\2\\claude",
+      "C:\\Users\\Administrator\\AppData\\Local\\Temp",
+      "C:\\Users\\ADMINI~1\\AppData\\Local\\Temp"
     ],
     "blockReadsOutsideWorkingDirectories": false
   }
