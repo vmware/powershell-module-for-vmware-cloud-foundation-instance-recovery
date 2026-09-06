@@ -16246,13 +16246,13 @@ Export-ModuleMember -Function Invoke-SupervisorRestore
 
 #Region UI Orchestrator
 
-Function Start-VCFIBROrchestrator {
+Function Start-InstanceRecoveryUI {
     <#
     .SYNOPSIS
-    Launches the VCF IBR Orchestrator UI
+    Launches the VCF Instance Recovery orchestrator UI
 
     .DESCRIPTION
-    The Start-VCFIBROrchestrator cmdlet opens a WPF window -- loaded in-process from
+    The Start-InstanceRecoveryUI cmdlet opens a WPF window -- loaded in-process from
     xaml\InstanceRecoveryOrchestratorUI.xaml via XamlReader, no separate .exe or build step -- that
     lets you pick an extracted-sddc-data.json file, lists the workload domains it contains, and runs
     the recovery steps for the selected domain in an embedded, fully interactive PowerShell console
@@ -16262,7 +16262,7 @@ Function Start-VCFIBROrchestrator {
     immediately rather than blocking until the window is closed.
 
     .EXAMPLE
-    Start-VCFIBROrchestrator
+    Start-InstanceRecoveryUI
     #>
 
     Param()
@@ -16270,11 +16270,6 @@ Function Start-VCFIBROrchestrator {
     $moduleRoot = $PSScriptRoot
     $xamlPath = Join-Path $moduleRoot 'xaml\InstanceRecoveryOrchestratorUI.xaml'
     $libPath = Join-Path $moduleRoot 'lib\EasyWindowsTerminalControl'
-    # Captured here, not inside the UI runspace: that runspace never runs this cmdlet, so it has no
-    # notion of "the caller's current directory" of its own. The embedded console is started with
-    # this as its own working directory (see Set-Location in $term.StartupCommandLine, below), and
-    # transcripts are written here too, so both land wherever the user ran this cmdlet from.
-    $launchDirectory = (Get-Location).Path
 
     if (-not (Test-Path $xamlPath)) {
         LogMessage -type ERROR -message "Cannot find UI resource '$xamlPath'."
@@ -16290,8 +16285,7 @@ Function Start-VCFIBROrchestrator {
     $uiScript = @'
 param(
     [string]$XamlPath,
-    [string]$LibPath,
-    [string]$WorkingDirectory
+    [string]$LibPath
 )
 
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Xaml
@@ -16363,10 +16357,7 @@ $global:recoverDefaultClusterStepRows = @()
 # This is fully decoupled from the terminal control itself -- no event subscription (confirmed to
 # collide with the control's own rendering), no reading the control's rendered text back. Just a
 # plain text file that PowerShell itself appends to, and a plain file read on a timer.
-#
-# Saved in the launch directory (not $env:TEMP) with a timestamp in the name so past runs can be
-# told apart and reviewed later instead of being overwritten or left to rot in a temp folder.
-$global:transcriptPath = Join-Path $WorkingDirectory "vcfir-transcript-$(Get-Date -Format 'yyyyMMdd-HHmmss')-$PID.log"
+$global:transcriptPath = Join-Path $env:TEMP "vcfir-transcript-$PID.log"
 # Steps currently being watched for their own "Completed Task <cmdlet>" line, one entry per Run
 # click; each is removed (stopping that row's watch) once its text is found. See Add-StepWatch.
 $global:activeStepWatches = [System.Collections.Generic.List[object]]::new()
@@ -16375,15 +16366,13 @@ function Protect-SingleQuotes([string]$Value) {
     return $Value.Replace("'", "''")
 }
 
-# Set here, not in the XAML, since it needs to embed values computed above/passed in (the launch
-# directory, the per-launch transcript path). The Set-Location, PSReadLine prediction fix, and
-# Start-Transcript all run as part of the console's own process startup (-Command), before the
-# interactive session ever begins -- so none of them are ever "typed" into the visible console, the
-# way sending them afterward via WriteToTerm would be. Start-Transcript's own confirmation output is
-# piped to Out-Null so launching it leaves no trace in the console at all.
-$escapedWorkingDirectory = Protect-SingleQuotes $WorkingDirectory
+# Set here, not in the XAML, since it needs to embed the per-launch transcript path computed above.
+# Both PSReadLine's prediction fix and Start-Transcript run as part of the console's own process
+# startup (-Command), before the interactive session ever begins -- so neither is ever "typed" into
+# the visible console, unlike sending them afterward via WriteToTerm would be. Start-Transcript's own
+# confirmation output is piped to Out-Null so launching it leaves no trace in the console at all.
 $escapedTranscriptPath = Protect-SingleQuotes $global:transcriptPath
-$term.StartupCommandLine = "pwsh.exe -NoLogo -NoExit -Command `"Set-Location -LiteralPath '$escapedWorkingDirectory'; Set-PSReadLineOption -PredictionSource None; Start-Transcript -Path '$escapedTranscriptPath' -Force | Out-Null`""
+$term.StartupCommandLine = "pwsh.exe -NoLogo -NoExit -Command `"Set-PSReadLineOption -PredictionSource None; Start-Transcript -Path '$escapedTranscriptPath' -Force | Out-Null`""
 
 function Send-ToConsole([string]$CommandLine) {
     if ($null -eq $term.ConPTYTerm) {
@@ -16806,7 +16795,6 @@ Start-StepCompletionWatcher
     [void]$uiPowerShell.AddScript($uiScript)
     [void]$uiPowerShell.AddArgument($xamlPath)
     [void]$uiPowerShell.AddArgument($libPath)
-    [void]$uiPowerShell.AddArgument($launchDirectory)
 
     # Kept alive at module script scope so the async UI isn't torn down by GC while the window is open.
     $script:InstanceRecoveryOrchestratorUIRunspace = $uiRunspace
@@ -16815,6 +16803,6 @@ Start-StepCompletionWatcher
 
     LogMessage -type NOTE -message "Instance Recovery Orchestrator UI launched."
 }
-Export-ModuleMember -Function Start-VCFIBROrchestrator
+Export-ModuleMember -Function Start-InstanceRecoveryUI
 
 #EndRegion UI Orchestrator
