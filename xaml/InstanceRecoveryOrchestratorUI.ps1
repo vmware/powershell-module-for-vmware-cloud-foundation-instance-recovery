@@ -305,23 +305,27 @@ function Send-ToConsole([string]$CommandLine) {
 }
 
 # PreviewKeyDown (the tunneling-phase event, fired before the TextBox's own default key handling),
-# not KeyDown -- KeyDown is not reliable for catching Enter specifically in a TextBox in WPF. The
-# actual key can also arrive as System or ImeProcessed instead of Enter directly, depending on
-# keyboard input handling (this session runs over RDP, which is a known trigger) -- when it does,
-# the real key is in SystemKey/ImeProcessedKey instead, so checking Key alone would silently never
-# match at all, with nothing to indicate why.
+# not KeyDown -- KeyDown is not reliable for catching Enter specifically in a TextBox in WPF.
+#
+# param($sender, $e), not the automatic $this/$EventArgs variables: confirmed by the diagnostic
+# above (both "resolved=" and "raw=" showed blank, meaning $EventArgs was actually $null here) that
+# that automatic-variable convention isn't reliable for this event in this context. Declaring the
+# delegate's real parameters explicitly is standard PowerShell parameter binding, not dependent on
+# any engine "magic" -- it works regardless of why $EventArgs wasn't populating.
 $consoleInput.Add_PreviewKeyDown({
-    $key = $EventArgs.Key
+    param($senderControl, $e)
+
+    $key = $e.Key
     if ($key -eq [System.Windows.Input.Key]::System) {
-        $key = $EventArgs.SystemKey
+        $key = $e.SystemKey
     } elseif ($key -eq [System.Windows.Input.Key]::ImeProcessed) {
-        $key = $EventArgs.ImeProcessedKey
+        $key = $e.ImeProcessedKey
     }
     # Temporary diagnostic: if Enter still doesn't work, this shows exactly what WPF actually
     # reported instead of guessing again -- safe to remove once Enter is confirmed working.
-    $statusTextBlock.Text = "Last key in console input: resolved=$key raw=$($EventArgs.Key)"
+    $statusTextBlock.Text = "Last key in console input: resolved=$key raw=$($e.Key)"
     if ($key -eq [System.Windows.Input.Key]::Enter) {
-        $EventArgs.Handled = $true
+        $e.Handled = $true
         $commandText = $consoleInput.Text
         $consoleInput.Clear()
         if ($commandText) {
