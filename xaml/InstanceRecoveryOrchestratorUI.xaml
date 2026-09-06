@@ -261,37 +261,15 @@
                 </GroupBox>
             </Grid>
 
-            <!-- Console: a plain read-only output pane plus a single-line input box, fed by a plain
-                 redirected-I/O child PowerShell process (see the .ps1), deliberately not a terminal
-                 emulator control. Every command this app runs is either single-line Read-Host-style
-                 input or line-by-line LogMessage output; nothing needs cursor-positioning or
-                 full-screen redraws, and a real terminal emulator's rendering is exactly what kept
-                 corrupting output before this. Both controls start empty; content and coloring are
-                 added imperatively from the loader script as output arrives. -->
+            <!-- Console: a real, separate pwsh.exe console window, reparented into ConsoleHostBorder
+                 by the loader script (see ConsoleHwndHost in the .ps1) rather than rendered by any
+                 control of ours. Nothing here draws a single character of it; Windows' own console
+                 host does that, exactly as reliably as it always has, and we only relocate that
+                 already-correct window to sit inside this layout position instead of floating
+                 separately. Starts empty; the loader script attaches the reparented window as the
+                 Border's Child once the console process is up. -->
             <GroupBox Grid.Column="2" Header="Console">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="*" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
-                    <RichTextBox x:Name="ConsoleOutput"
-                                 Grid.Row="0"
-                                 IsReadOnly="True"
-                                 Focusable="False"
-                                 VerticalScrollBarVisibility="Auto"
-                                 HorizontalScrollBarVisibility="Auto"
-                                 Background="#0C0C0C"
-                                 Foreground="#CCCCCC"
-                                 FontFamily="Consolas"
-                                 FontSize="12"
-                                 BorderThickness="0"
-                                 Padding="6" />
-                    <TextBox x:Name="ConsoleInput"
-                             Grid.Row="1"
-                             Margin="0,6,0,0"
-                             FontFamily="Consolas"
-                             FontSize="12" />
-                </Grid>
+                <Border x:Name="ConsoleHostBorder" Background="#0C0C0C" />
             </GroupBox>
         </Grid>
     </Grid>

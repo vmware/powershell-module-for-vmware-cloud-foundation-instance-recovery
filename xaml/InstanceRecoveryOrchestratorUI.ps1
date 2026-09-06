@@ -4,16 +4,23 @@
 # script gets a completely fresh CLR and WPF runtime, so closing the window and running
 # Start-VCFIBROrchestrator again always starts over cleanly, with no shared state to worry about.
 #
-# The console is a plain read-only output pane plus a single-line input box (see the XAML), fed by
-# a second pwsh.exe process run with plain redirected stdin/stdout/stderr -- not a ConPTY-backed
-# terminal emulator control. That control (EasyWindowsTerminalControl, wrapping an unpublished
-# CI/beta build of Microsoft's own terminal-hosting layer) was the source of most of this feature's
-# problems: a crash bug that needed a binary patch, and a rendering corruption bug that survived
-# every fix attempted at the PowerShell level, confirmed (by running the exact same commands in a
-# normal PowerShell console with no corruption) to be in that control's own rendering. This app's
-# actual console traffic is entirely line-based -- LogMessage output and single-line Read-Host-style
-# prompts -- nothing here ever needed real terminal emulation (cursor positioning, full-screen
-# redraws) in the first place.
+# The console is a second, completely ordinary pwsh.exe process, given a real console window by
+# Windows exactly as if it had been launched normally, then reparented (SetParent) into this
+# window's layout (see ConsoleHwndHost, below) rather than left as its own separate top-level
+# window. Nothing here renders a single character of it or reads a single byte of its output --
+# Windows' own console host does all of that, unchanged, exactly as reliably as it already does for
+# every other PowerShell session. Typing happens directly in that embedded window; the "Run"/"Run
+# All" buttons inject the step's command by simulating real keystrokes into it (WriteConsoleInput),
+# indistinguishable from someone typing them.
+#
+# This replaced two earlier designs, both of which tried to reproduce a terminal ourselves rather
+# than reuse the real one: EasyWindowsTerminalControl (a ConPTY-backed control wrapping an
+# unpublished CI/beta build of Microsoft's own terminal-hosting layer) caused a crash that needed a
+# binary patch and a rendering corruption bug that survived every fix attempted at the PowerShell
+# level, both confirmed to be inside that control's own custom rendering; a plain redirected-I/O
+# process with our own RichTextBox rendering fixed the corruption but produced a disconnected,
+# non-terminal-like two-box UI. Reparenting the real console window avoids both problems at once by
+# not reimplementing anything.
 #
 # Self-contained: has no dependency on the module's own functions (e.g. LogMessage) -- only .NET/WPF.
 param(
@@ -46,113 +53,7 @@ $runAllRecoverDefaultClusterButton = $window.FindName('RunAllRecoverDefaultClust
 $loadVariablesButton = $window.FindName('LoadVariablesButton')
 $loadedVariablesTextBlock = $window.FindName('LoadedVariablesTextBlock')
 $variablesItemsPanel = $window.FindName('VariablesItemsPanel')
-$consoleOutput = $window.FindName('ConsoleOutput')
-$consoleInput = $window.FindName('ConsoleInput')
-
-# Every line appended goes into ONE shared Paragraph as Run+LineBreak pairs, rather than one
-# Paragraph per line -- RichTextBox's default paragraph spacing would otherwise leave a visible gap
-# between every single line, which looks nothing like a console.
-$consoleOutputParagraph = New-Object System.Windows.Documents.Paragraph
-$consoleOutputParagraph.Margin = '0'
-$consoleOutput.Document.Blocks.Clear()
-$consoleOutput.Document.Blocks.Add($consoleOutputParagraph)
-
-# Colors matching LogMessage's own ANSI scheme (INFO green, ERROR/EXCEPTION red, WARNING/ADVISORY/
-# QUESTION yellow, NOTE/WAIT white) -- applied by us based on the [type] tag in each line, instead of
-# interpreting the ANSI escape codes LogMessage actually emits (stripped out entirely, see
-# Remove-AnsiCodes). PROMPT is our own pseudo-type for the command-echo lines Send-ToConsole adds.
-$logTypeColors = @{
-    INFO      = '#3DDC84'
-    ERROR     = '#FF5555'
-    EXCEPTION = '#FF5555'
-    WARNING   = '#FFD866'
-    ADVISORY  = '#FFD866'
-    QUESTION  = '#FFD866'
-    NOTE      = '#FFFFFF'
-    WAIT      = '#FFFFFF'
-    PROMPT    = '#5DB2FF'
-}
-$defaultConsoleColor = [System.Windows.Media.ColorConverter]::ConvertFromString('#CCCCCC')
-
-function Remove-AnsiCodes([string]$Text) {
-    return $Text -replace "`e\[[0-9;]*m", ''
-}
-
-function Get-ConsoleLineColor([string]$CleanText, [string]$ForcedType) {
-    $type = $ForcedType
-    if (-not $type) {
-        $match = [regex]::Match($CleanText, '\[(INFO|ERROR|WARNING|EXCEPTION|ADVISORY|NOTE|QUESTION|WAIT)\]')
-        if ($match.Success) { $type = $match.Groups[1].Value }
-    }
-    if ($type -and $logTypeColors.ContainsKey($type)) {
-        return [System.Windows.Media.ColorConverter]::ConvertFromString($logTypeColors[$type])
-    }
-    return $defaultConsoleColor
-}
-
-# Text read from the console process that hasn't reached a newline yet, and the Run currently
-# displaying it. Prompts like "Enter the desired number of disk groups...: " or "PS C:\path>" are
-# deliberately never newline-terminated -- the answer is meant to continue right after them on the
-# same line -- so waiting for a newline before showing them would mean never showing them at all.
-# Add-ConsoleChunk displays this partial text immediately and grows it in place as more arrives,
-# exactly like a real terminal renders characters as they arrive rather than waiting for whole lines.
-$script:consolePendingText = ''
-$script:consolePendingRun = $null
-
-# Handles raw text as it arrives from the console process, which may contain zero, one, or several
-# newlines and may end mid-line. Complete (newline-terminated) lines are colored and closed off with
-# a real line break as soon as they're found; any trailing partial text is shown right away too.
-function Add-ConsoleChunk {
-    param([string]$Chunk, [string]$ForcedType)
-
-    $remaining = $Chunk
-    while ($remaining.Length -gt 0) {
-        $newlineIndex = $remaining.IndexOf("`n")
-        if ($newlineIndex -lt 0) {
-            $piece = $remaining
-            $remaining = ''
-        } else {
-            $piece = $remaining.Substring(0, $newlineIndex).TrimEnd("`r")
-            $remaining = $remaining.Substring($newlineIndex + 1)
-        }
-
-        $script:consolePendingText += $piece
-        if ($null -eq $script:consolePendingRun) {
-            $script:consolePendingRun = New-Object System.Windows.Documents.Run
-            [void]$consoleOutputParagraph.Inlines.Add($script:consolePendingRun)
-        }
-        $clean = Remove-AnsiCodes $script:consolePendingText
-        $script:consolePendingRun.Text = $clean
-        $script:consolePendingRun.Foreground = New-Object System.Windows.Media.SolidColorBrush((Get-ConsoleLineColor $clean $ForcedType))
-
-        if ($newlineIndex -ge 0) {
-            [void]$consoleOutputParagraph.Inlines.Add((New-Object System.Windows.Documents.LineBreak))
-            $script:consolePendingText = ''
-            $script:consolePendingRun = $null
-        }
-    }
-    $consoleOutput.ScrollToEnd()
-}
-
-# Adds a complete line we generated ourselves (the command echo, below) -- always its own fresh Run,
-# never partial. Closes off anything still pending from the console process's own output first, so
-# our line never ends up visually glued onto the end of an unfinished prompt.
-function Add-ConsoleLine {
-    param([string]$Text, [string]$ForcedType)
-
-    if ($script:consolePendingRun) {
-        [void]$consoleOutputParagraph.Inlines.Add((New-Object System.Windows.Documents.LineBreak))
-        $script:consolePendingText = ''
-        $script:consolePendingRun = $null
-    }
-
-    $clean = Remove-AnsiCodes $Text
-    $run = New-Object System.Windows.Documents.Run($clean)
-    $run.Foreground = New-Object System.Windows.Media.SolidColorBrush((Get-ConsoleLineColor $clean $ForcedType))
-    [void]$consoleOutputParagraph.Inlines.Add($run)
-    [void]$consoleOutputParagraph.Inlines.Add((New-Object System.Windows.Documents.LineBreak))
-    $consoleOutput.ScrollToEnd()
-}
+$consoleHostBorder = $window.FindName('ConsoleHostBorder')
 
 # Populated once a domain is selected (see the SelectionChanged handler below); initialized here
 # so Run All never sees $null before that happens.
@@ -179,15 +80,149 @@ function Protect-SingleQuotes([string]$Value) {
     return $Value.Replace("'", "''")
 }
 
-# The console process: an ordinary pwsh.exe with its stdin/stdout/stderr redirected to us, not a
-# ConPTY-backed pseudo-terminal. Set-Location, removing PSReadLine, and Start-Transcript all run as
-# part of its own startup -Command, before Send-ToConsole ever writes anything to its stdin, for the
-# same reason as before: none of them should appear as if a user typed them. PSReadLine is removed
-# defensively -- it should never engage at all against a redirected, non-terminal stdin/stdout, but
-# there's no cost to being certain, and it was the confirmed cause of a real corruption bug earlier
-# in this feature's life. No -Encoding on Start-Transcript: that parameter doesn't exist on every
-# PowerShell version, and Get-Content (used to read the transcript back) auto-detects the encoding
-# from its BOM regardless of which default Start-Transcript happened to use to write it.
+# Native pieces needed to reparent a real console window and to type into it programmatically.
+# ConsoleHwndHost never creates or destroys the console window it's given -- that belongs to the
+# console process for its entire lifetime; this only relocates it visually into this app's layout.
+# WriteConsoleInput needs a handle to the target console's own input buffer, obtained by briefly
+# attaching this process to it (AttachConsole/FreeConsole) -- unrelated to, and safe alongside,
+# the window having been reparented; reparenting only changes where the window sits on screen, not
+# which console session it belongs to.
+#
+# -ReferencedAssemblies needs the *exact* WindowsBase/PresentationCore DLLs already loaded above
+# (by file path), not their simple names: passing simple names lets Add-Type's own resolution pick
+# a different-versioned WindowsBase than the one already loaded, which then fails to compile with a
+# "higher version than referenced assembly" error -- HwndHost (in PresentationFramework) needs the
+# identical WindowsBase the rest of this process is already using.
+$wpfAssemblyPaths = foreach ($assemblyName in 'WindowsBase', 'PresentationCore', 'PresentationFramework') {
+    ([System.AppDomain]::CurrentDomain.GetAssemblies() | Where-Object { $_.GetName().Name -eq $assemblyName } | Select-Object -First 1).Location
+}
+Add-Type -ReferencedAssemblies $wpfAssemblyPaths -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+using System.Windows.Interop;
+
+namespace VCFIRConsole {
+    // CharSet.Unicode on both structs is required, not cosmetic: a plain C# char field marshals as
+    // a single ANSI byte by default, but the native KEY_EVENT_RECORD.uChar.UnicodeChar field is a
+    // WCHAR (2 bytes). Without this, every record after the mismatched byte is misaligned, so
+    // WriteConsoleInput reports success (Windows accepted the call) while the actual key data inside
+    // each record is garbage -- confirmed by testing: it returned true and "wrote" every record, but
+    // the target console never actually acted on any of them.
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    public struct KEY_EVENT_RECORD {
+        [MarshalAs(UnmanagedType.Bool)] public bool bKeyDown;
+        public short wRepeatCount;
+        public short wVirtualKeyCode;
+        public short wVirtualScanCode;
+        public char UnicodeChar;
+        public int dwControlKeyState;
+    }
+
+    [StructLayout(LayoutKind.Explicit, CharSet = CharSet.Unicode)]
+    public struct INPUT_RECORD {
+        [FieldOffset(0)] public short EventType;
+        [FieldOffset(4)] public KEY_EVENT_RECORD KeyEvent;
+    }
+
+    public static class NativeMethods {
+        public const int GWL_STYLE = -16;
+        public const long WS_CHILD = 0x40000000L;
+        public const long WS_CAPTION = 0x00C00000L;
+        public const long WS_THICKFRAME = 0x00040000L;
+        public const long WS_SYSMENU = 0x00080000L;
+        public const long WS_MINIMIZEBOX = 0x00020000L;
+        public const long WS_MAXIMIZEBOX = 0x00010000L;
+        public const int SW_HIDE = 0;
+        public const int SW_SHOW = 5;
+        public const int STD_INPUT_HANDLE = -10;
+
+        [DllImport("user32.dll", EntryPoint = "GetWindowLongPtr", SetLastError = true)]
+        private static extern IntPtr GetWindowLongPtr64(IntPtr hWnd, int nIndex);
+        [DllImport("user32.dll", EntryPoint = "GetWindowLong", SetLastError = true)]
+        private static extern IntPtr GetWindowLong32(IntPtr hWnd, int nIndex);
+        [DllImport("user32.dll", EntryPoint = "SetWindowLongPtr", SetLastError = true)]
+        private static extern IntPtr SetWindowLongPtr64(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+        [DllImport("user32.dll", EntryPoint = "SetWindowLong", SetLastError = true)]
+        private static extern IntPtr SetWindowLong32(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+
+        // 64-bit-only in practice on this platform, but dispatching on IntPtr.Size costs nothing
+        // and avoids silently mis-marshaling if that ever stops being true.
+        public static IntPtr GetWindowLongPtr(IntPtr hWnd, int nIndex) {
+            return IntPtr.Size == 8 ? GetWindowLongPtr64(hWnd, nIndex) : GetWindowLong32(hWnd, nIndex);
+        }
+        public static IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong) {
+            return IntPtr.Size == 8 ? SetWindowLongPtr64(hWnd, nIndex, dwNewLong) : SetWindowLong32(hWnd, nIndex, dwNewLong);
+        }
+
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern IntPtr SetParent(IntPtr hWndChild, IntPtr hWndNewParent);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern IntPtr SetFocus(IntPtr hWnd);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern bool AttachConsole(uint dwProcessId);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern bool FreeConsole();
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern IntPtr GetStdHandle(int nStdHandle);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern bool WriteConsoleInput(IntPtr hConsoleInput, INPUT_RECORD[] lpBuffer, uint nLength, out uint lpNumberOfEventsWritten);
+
+        // Strips the console window's own title bar/border/system menu so it reads as embedded
+        // content rather than a window-within-a-window, and marks it WS_CHILD, which SetParent
+        // requires before it will treat this as a child rather than an owned top-level window.
+        public static void PrepareForEmbedding(IntPtr hwnd) {
+            long style = GetWindowLongPtr(hwnd, GWL_STYLE).ToInt64();
+            style &= ~(WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX);
+            style |= WS_CHILD;
+            SetWindowLongPtr(hwnd, GWL_STYLE, new IntPtr(style));
+        }
+    }
+
+    // Hosts an already-existing native window (the real console window) at this element's layout
+    // position, rather than rendering anything itself.
+    public class ConsoleHwndHost : HwndHost {
+        private readonly IntPtr _consoleHwnd;
+
+        public ConsoleHwndHost(IntPtr consoleHwnd) {
+            _consoleHwnd = consoleHwnd;
+        }
+
+        protected override HandleRef BuildWindowCore(HandleRef hwndParent) {
+            NativeMethods.PrepareForEmbedding(_consoleHwnd);
+            NativeMethods.SetParent(_consoleHwnd, hwndParent.Handle);
+            NativeMethods.ShowWindow(_consoleHwnd, NativeMethods.SW_SHOW);
+            return new HandleRef(this, _consoleHwnd);
+        }
+
+        protected override void DestroyWindowCore(HandleRef hwnd) {
+            // Deliberately empty -- see class comment: the console window is never ours to destroy.
+        }
+    }
+}
+'@
+
+# The console process: a completely ordinary pwsh.exe, given a real console window by Windows.
+# PSReadLine is removed here -- confirmed by testing, not assumed: WriteConsoleInput reports success
+# writing every record regardless, but with PSReadLine active the console never actually acts on any
+# of them (an injected "exit`r" left the process running); with PSReadLine removed, the identical
+# injection reliably exits it. PSReadLine owns line-editing (history, tab completion, syntax
+# coloring) but has nothing to do with output rendering -- that's the console host's job, always
+# was, and was never the source of the corruption bugs earlier designs hit. Losing PSReadLine here
+# costs those editing niceties for anyone typing directly into the window; it doesn't reintroduce any
+# of that risk, and it's the only way the Run/Run All buttons work at all.
+# Set-Location and Start-Transcript still run as part of the startup -Command, before anything is
+# typed into the console, so neither ever appears as if a user typed them. No -Encoding on
+# Start-Transcript: that parameter doesn't exist on every PowerShell version, and Get-Content (used
+# to read the transcript back) auto-detects the encoding from its BOM regardless of which default
+# Start-Transcript happened to use to write it.
 $escapedWorkingDirectory = Protect-SingleQuotes $WorkingDirectory
 $escapedTranscriptPath = Protect-SingleQuotes $global:transcriptPath
 $consoleStartupCommand = "Set-Location -LiteralPath '$escapedWorkingDirectory'; Remove-Module PSReadLine -Force -ErrorAction SilentlyContinue; Start-Transcript -Path '$escapedTranscriptPath' -Force | Out-Null"
@@ -201,76 +236,41 @@ $consoleStartInfo.ArgumentList.Add('-Command')
 $consoleStartInfo.ArgumentList.Add($consoleStartupCommand)
 $consoleStartInfo.WorkingDirectory = $WorkingDirectory
 $consoleStartInfo.UseShellExecute = $false
-$consoleStartInfo.CreateNoWindow = $true
-$consoleStartInfo.RedirectStandardInput = $true
-$consoleStartInfo.RedirectStandardOutput = $true
-$consoleStartInfo.RedirectStandardError = $true
-$consoleStartInfo.StandardOutputEncoding = [System.Text.Encoding]::UTF8
-$consoleStartInfo.StandardErrorEncoding = [System.Text.Encoding]::UTF8
+$consoleStartInfo.CreateNoWindow = $false   # a real, visible console window is exactly the point
 
 $consoleProcess = New-Object System.Diagnostics.Process
 $consoleProcess.StartInfo = $consoleStartInfo
 [void]$consoleProcess.Start()
 
-# Deliberately not OutputDataReceived/BeginOutputReadLine: that event fires on an arbitrary .NET
-# threadpool thread with no PowerShell runspace bound to it at all, and invoking a PowerShell
-# scriptblock to handle it -- regardless of what the scriptblock's body does -- needs one. Every
-# other .Add_EventName({...}) in this file (Button.Click, Window.Closing, DispatcherTimer.Tick) is
-# safe only because WPF itself guarantees those specific events fire on the UI thread; this one
-# doesn't. Polled asynchronously instead, entirely from the UI thread via a DispatcherTimer, the same
-# proven pattern Start-StepCompletionWatcher already uses.
-#
-# Reading raw bytes off the BaseStream, not ReadLineAsync(): a line-based read would never return a
-# prompt that doesn't end in a newline (every interactive Read-Host-style prompt, and the "PS
-# C:\path>" prompt itself, is written exactly that way, since the answer is meant to continue on the
-# same line) -- it would just sit there waiting for a newline that's never coming. ReadAsync() on a
-# pipe's BaseStream returns as soon as any data at all is available, letting Add-ConsoleChunk display
-# partial, not-yet-terminated text immediately. Decoding each chunk independently as UTF8, rather than
-# through a stateful incremental decoder, means a multi-byte character split exactly across two reads
-# could in principle render as one wrong character; harmless and exceedingly unlikely given this
-# app's actual traffic (hostnames, paths, plain English messages), and not worth the extra complexity.
-$script:consoleOutputStream = $consoleProcess.StandardOutput.BaseStream
-$script:consoleErrorStream = $consoleProcess.StandardError.BaseStream
-$script:consoleOutputBuffer = New-Object byte[] 4096
-$script:consoleErrorBuffer = New-Object byte[] 4096
-$script:pendingConsoleOutputRead = $script:consoleOutputStream.ReadAsync($script:consoleOutputBuffer, 0, $script:consoleOutputBuffer.Length)
-$script:pendingConsoleErrorRead = $script:consoleErrorStream.ReadAsync($script:consoleErrorBuffer, 0, $script:consoleErrorBuffer.Length)
-
-function Start-ConsoleOutputPump {
-    $pumpTimer = New-Object System.Windows.Threading.DispatcherTimer
-    $pumpTimer.Interval = [TimeSpan]::FromMilliseconds(100)
-    $pumpTimer.Add_Tick({
-        try {
-            if ($script:pendingConsoleOutputRead.IsCompleted) {
-                $bytesRead = $script:pendingConsoleOutputRead.Result
-                if ($bytesRead -gt 0) {
-                    Add-ConsoleChunk ([System.Text.Encoding]::UTF8.GetString($script:consoleOutputBuffer, 0, $bytesRead))
-                    $script:pendingConsoleOutputRead = $script:consoleOutputStream.ReadAsync($script:consoleOutputBuffer, 0, $script:consoleOutputBuffer.Length)
-                }
-                # 0 bytes read means the stream hit EOF (the console process's stdout closed) --
-                # deliberately not starting another read, since there's never anything more to read.
-            }
-            if ($script:pendingConsoleErrorRead.IsCompleted) {
-                $bytesRead = $script:pendingConsoleErrorRead.Result
-                if ($bytesRead -gt 0) {
-                    Add-ConsoleChunk ([System.Text.Encoding]::UTF8.GetString($script:consoleErrorBuffer, 0, $bytesRead)) 'ERROR'
-                    $script:pendingConsoleErrorRead = $script:consoleErrorStream.ReadAsync($script:consoleErrorBuffer, 0, $script:consoleErrorBuffer.Length)
-                }
-            }
-        } catch {
-            # A faulted task (e.g. the console process exiting unexpectedly and disposing its
-            # streams) would otherwise re-throw from .Result -- on the UI thread, inside a
-            # DispatcherTimer tick, an uncaught exception here would take the whole window down with
-            # it. Stop polling rather than let that happen or spin retrying a stream that's gone bad.
-            $this.Stop()
-        }
-    })
-    $pumpTimer.Start()
+# Bounded wait for the console's own window to exist -- this happens well before the main window is
+# shown (Application.Run() hasn't been called yet), so blocking briefly here is fine, the same way
+# Start-VCFIBROrchestrator briefly waits for this whole process to start. Hidden immediately once
+# found, so it never visibly flashes as a free-floating window before ConsoleHwndHost embeds it.
+$consoleHwnd = [IntPtr]::Zero
+$deadline = (Get-Date).AddSeconds(10)
+while ((Get-Date) -lt $deadline) {
+    $consoleProcess.Refresh()
+    if ($consoleProcess.HasExited) {
+        $statusTextBlock.Text = "Console process exited before its window appeared."
+        break
+    }
+    $consoleHwnd = $consoleProcess.MainWindowHandle
+    if ($consoleHwnd -ne [IntPtr]::Zero) { break }
+    Start-Sleep -Milliseconds 50
+}
+if ($consoleHwnd -ne [IntPtr]::Zero) {
+    [VCFIRConsole.NativeMethods]::ShowWindow($consoleHwnd, [VCFIRConsole.NativeMethods]::SW_HIDE) | Out-Null
+    $consoleHwndHost = New-Object VCFIRConsole.ConsoleHwndHost($consoleHwnd)
+    $consoleHostBorder.Child = $consoleHwndHost
+} else {
+    $statusTextBlock.Text = "Console window did not appear within 10 seconds."
 }
 
 # Kills the console process when the window actually closes, regardless of which path got it there
 # (the X button or Exit) -- a plain child process isn't torn down automatically just because this
-# process exits, so without this every close would leak an orphaned pwsh.exe.
+# process exits, so without this every close would leak an orphaned pwsh.exe. Reparenting doesn't
+# change this: the console window being a child of ours now makes it even less discoverable/
+# manageable on its own if left behind, not more.
 $window.Add_Closed({
     if ($consoleProcess -and -not $consoleProcess.HasExited) {
         try { $consoleProcess.Kill($true) } catch {}
@@ -278,58 +278,63 @@ $window.Add_Closed({
 })
 
 # WPF's own default (focus the first focusable control in the visual tree) would land on something
-# in the left rail, not the console -- without this, nothing typed goes anywhere until the input box
-# is clicked into manually, which is easy to miss now that output and input are two separate controls
-# rather than one big terminal area you could click into anywhere.
+# in the left rail, not the console -- SetFocus puts the initial keyboard focus on the embedded
+# console instead, so typing works immediately without clicking into it first.
 $window.Add_Loaded({
-    [void]$consoleInput.Focus()
+    if ($consoleHwnd -ne [IntPtr]::Zero) {
+        [VCFIRConsole.NativeMethods]::SetFocus($consoleHwnd) | Out-Null
+    }
 })
 
+# Injects a command by simulating real keystrokes into the embedded console (WriteConsoleInput),
+# indistinguishable to PowerShell from someone typing them -- no echo of our own to add, no pipe to
+# write to; the real console echoes what's "typed" exactly as it always does, because as far as it
+# knows, that's exactly what happened.
 function Send-ToConsole([string]$CommandLine) {
     if ($null -eq $consoleProcess -or $consoleProcess.HasExited) {
         $statusTextBlock.Text = "Console process isn't running."
         return
     }
-    # Echoed ourselves: a redirected pipe, unlike a real terminal, never echoes typed input on its
-    # own -- without this, the command actually sent wouldn't be visible anywhere.
-    Add-ConsoleLine "PS $WorkingDirectory> $CommandLine" 'PROMPT'
     try {
-        $consoleProcess.StandardInput.WriteLine($CommandLine)
+        [VCFIRConsole.NativeMethods]::FreeConsole() | Out-Null
+        if (-not [VCFIRConsole.NativeMethods]::AttachConsole([uint32]$consoleProcess.Id)) {
+            throw "AttachConsole failed (Win32 error $([System.Runtime.InteropServices.Marshal]::GetLastWin32Error()))."
+        }
+        try {
+            $inputHandle = [VCFIRConsole.NativeMethods]::GetStdHandle([VCFIRConsole.NativeMethods]::STD_INPUT_HANDLE)
+            $records = [System.Collections.Generic.List[VCFIRConsole.INPUT_RECORD]]::new()
+            foreach ($character in ($CommandLine + "`r").ToCharArray()) {
+                $keyDown = New-Object VCFIRConsole.KEY_EVENT_RECORD
+                $keyDown.bKeyDown = $true
+                $keyDown.wRepeatCount = 1
+                $keyDown.UnicodeChar = $character
+                $downRecord = New-Object VCFIRConsole.INPUT_RECORD
+                $downRecord.EventType = 1
+                $downRecord.KeyEvent = $keyDown
+                $records.Add($downRecord)
+
+                $keyUp = New-Object VCFIRConsole.KEY_EVENT_RECORD
+                $keyUp.bKeyDown = $false
+                $keyUp.wRepeatCount = 1
+                $keyUp.UnicodeChar = $character
+                $upRecord = New-Object VCFIRConsole.INPUT_RECORD
+                $upRecord.EventType = 1
+                $upRecord.KeyEvent = $keyUp
+                $records.Add($upRecord)
+            }
+            $recordsArray = $records.ToArray()
+            [uint32]$written = 0
+            [void][VCFIRConsole.NativeMethods]::WriteConsoleInput($inputHandle, $recordsArray, [uint32]$recordsArray.Length, [ref]$written)
+        } finally {
+            [VCFIRConsole.NativeMethods]::FreeConsole() | Out-Null
+        }
     } catch {
         $statusTextBlock.Text = "Failed to send command: $($_.Exception.Message)"
     }
-    # Sending a command is exactly when a step or an interactive prompt is about to need typed input
-    # next -- without this, focus stays wherever it was (e.g. on the Run button just clicked), and
-    # nothing typed goes anywhere until the input box is clicked into manually.
-    [void]$consoleInput.Focus()
+    if ($consoleHwnd -ne [IntPtr]::Zero) {
+        [VCFIRConsole.NativeMethods]::SetFocus($consoleHwnd) | Out-Null
+    }
 }
-
-# PreviewKeyDown (the tunneling-phase event, fired before the TextBox's own default key handling),
-# not KeyDown -- KeyDown is not reliable for catching Enter specifically in a TextBox in WPF.
-#
-# param($senderControl, $e), not the automatic $this/$EventArgs variables: a diagnostic confirmed
-# $EventArgs was actually $null for this event in this context, so that automatic-variable
-# convention isn't reliable here. Declaring the delegate's real parameters explicitly is standard
-# PowerShell parameter binding, not dependent on any engine "magic" -- it works regardless of why
-# $EventArgs wasn't populating.
-$consoleInput.Add_PreviewKeyDown({
-    param($senderControl, $e)
-
-    $key = $e.Key
-    if ($key -eq [System.Windows.Input.Key]::System) {
-        $key = $e.SystemKey
-    } elseif ($key -eq [System.Windows.Input.Key]::ImeProcessed) {
-        $key = $e.ImeProcessedKey
-    }
-    if ($key -eq [System.Windows.Input.Key]::Enter) {
-        $e.Handled = $true
-        $commandText = $consoleInput.Text
-        $consoleInput.Clear()
-        if ($commandText) {
-            Send-ToConsole $commandText
-        }
-    }
-})
 
 # Starts (or restarts) watching the transcript for this row's "Completed Task <cmdlet>" line, from
 # whatever the transcript's current length is right now -- so an OLDER completion line already in
