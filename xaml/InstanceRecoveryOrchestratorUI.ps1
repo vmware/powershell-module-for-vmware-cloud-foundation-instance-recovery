@@ -277,6 +277,14 @@ $window.Add_Closed({
     }
 })
 
+# WPF's own default (focus the first focusable control in the visual tree) would land on something
+# in the left rail, not the console -- without this, nothing typed goes anywhere until the input box
+# is clicked into manually, which is easy to miss now that output and input are two separate controls
+# rather than one big terminal area you could click into anywhere.
+$window.Add_Loaded({
+    [void]$consoleInput.Focus()
+})
+
 function Send-ToConsole([string]$CommandLine) {
     if ($null -eq $consoleProcess -or $consoleProcess.HasExited) {
         $statusTextBlock.Text = "Console process isn't running."
@@ -290,6 +298,10 @@ function Send-ToConsole([string]$CommandLine) {
     } catch {
         $statusTextBlock.Text = "Failed to send command: $($_.Exception.Message)"
     }
+    # Sending a command is exactly when a step or an interactive prompt is about to need typed input
+    # next -- without this, focus stays wherever it was (e.g. on the Run button just clicked), and
+    # nothing typed goes anywhere until the input box is clicked into manually.
+    [void]$consoleInput.Focus()
 }
 
 $consoleInput.Add_KeyDown({
