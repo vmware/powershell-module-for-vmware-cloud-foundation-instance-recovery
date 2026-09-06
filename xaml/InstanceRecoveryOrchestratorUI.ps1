@@ -307,11 +307,11 @@ function Send-ToConsole([string]$CommandLine) {
 # PreviewKeyDown (the tunneling-phase event, fired before the TextBox's own default key handling),
 # not KeyDown -- KeyDown is not reliable for catching Enter specifically in a TextBox in WPF.
 #
-# param($sender, $e), not the automatic $this/$EventArgs variables: confirmed by the diagnostic
-# above (both "resolved=" and "raw=" showed blank, meaning $EventArgs was actually $null here) that
-# that automatic-variable convention isn't reliable for this event in this context. Declaring the
-# delegate's real parameters explicitly is standard PowerShell parameter binding, not dependent on
-# any engine "magic" -- it works regardless of why $EventArgs wasn't populating.
+# param($senderControl, $e), not the automatic $this/$EventArgs variables: a diagnostic confirmed
+# $EventArgs was actually $null for this event in this context, so that automatic-variable
+# convention isn't reliable here. Declaring the delegate's real parameters explicitly is standard
+# PowerShell parameter binding, not dependent on any engine "magic" -- it works regardless of why
+# $EventArgs wasn't populating.
 $consoleInput.Add_PreviewKeyDown({
     param($senderControl, $e)
 
@@ -321,9 +321,6 @@ $consoleInput.Add_PreviewKeyDown({
     } elseif ($key -eq [System.Windows.Input.Key]::ImeProcessed) {
         $key = $e.ImeProcessedKey
     }
-    # Temporary diagnostic: if Enter still doesn't work, this shows exactly what WPF actually
-    # reported instead of guessing again -- safe to remove once Enter is confirmed working.
-    $statusTextBlock.Text = "Last key in console input: resolved=$key raw=$($e.Key)"
     if ($key -eq [System.Windows.Input.Key]::Enter) {
         $e.Handled = $true
         $commandText = $consoleInput.Text
