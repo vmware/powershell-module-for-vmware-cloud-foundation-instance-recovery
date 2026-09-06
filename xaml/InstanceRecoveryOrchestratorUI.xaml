@@ -1,7 +1,11 @@
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:term="clr-namespace:EasyWindowsTerminalControl;assembly=EasyWindowsTerminalControl"
+<<<<<<< HEAD
         Title="VCF Instance Backup &amp; Restore Orchestrator" Height="820" Width="1100" WindowState="Maximized">
+=======
+        Title="VCF IBR Orchestrator" Height="820" Width="1100" WindowState="Maximized">
+>>>>>>> parent of 56649c0 (Revert "small details")
     <!--
         Loaded via XamlReader.Load from Start-VCFIBROrchestrator (see the .psm1).
         There is no code-behind class, so this file deliberately has no x:Class, no inline event
@@ -166,6 +170,7 @@
 
         <!-- Header bar, modeled on the vSphere Client dark top bar -->
         <Border Grid.Row="0" Background="{StaticResource HeaderBarBrush}" Padding="18,12">
+<<<<<<< HEAD
             <DockPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                     <Button x:Name="ResumeButton" Content="Resume..." Width="90" Margin="0,0,8,0" />
@@ -173,6 +178,9 @@
                 </StackPanel>
                 <TextBlock Text="VCF Instance Backup &amp; Restore Orchestrator" Foreground="White" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" />
             </DockPanel>
+=======
+            <TextBlock Text="VCF IBR Orchestrator" Foreground="White" FontSize="16" FontWeight="SemiBold" />
+>>>>>>> parent of 56649c0 (Revert "small details")
         </Border>
 
         <!-- Left rail (30%) and console (70%) are two independent columns, not one big stacked
