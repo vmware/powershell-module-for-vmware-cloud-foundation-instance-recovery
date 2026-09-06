@@ -277,6 +277,7 @@
                     <RichTextBox x:Name="ConsoleOutput"
                                  Grid.Row="0"
                                  IsReadOnly="True"
+                                 Focusable="False"
                                  VerticalScrollBarVisibility="Auto"
                                  HorizontalScrollBarVisibility="Auto"
                                  Background="#0C0C0C"
