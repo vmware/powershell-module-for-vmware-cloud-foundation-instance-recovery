@@ -16353,6 +16353,13 @@ $term.Theme = $terminalTheme
 $global:managementDomainRestoresStepRows = @()
 $global:recoverDefaultClusterStepRows = @()
 
+# Raw console output, accumulated for step-completion detection (see Start-StepCompletionWatcher).
+# StringBuilder + lock, not plain string "+=": TerminalOutput can fire many times a second, and
+# repeated full-buffer-copy string concatenation was what previously created enough allocation
+# pressure to trigger an (already separately fixed) crash in the vendored terminal control.
+$global:consoleOutputBuffer = [System.Text.StringBuilder]::new()
+$global:consoleOutputBufferLock = [object]::new()
+
 function Protect-SingleQuotes([string]$Value) {
     return $Value.Replace("'", "''")
 }
@@ -16490,35 +16497,55 @@ function Start-TerminalReadyWatcher {
 }
 
 # Watches console output for the module's own "Completed Task <cmdlet>" log line and marks the
-# matching Step row's button Done + green.
-#
-# This deliberately does NOT subscribe to ConPTYTerm's TerminalOutput event. Per
-# Microsoft.Terminal.Wpf.TerminalContainer (decompiled), that event is not a passive notification --
-# the control's own render callback (Connection_TerminalOutput, which paints the console via
-# TerminalSendOutput) is subscribed to that exact same event, and adding another subscriber turned
-# the console blank. GetConsoleText() is a plain method call with no such shared side effect, so
-# polling it on a timer can't interfere with rendering by construction.
+# matching Step row's button Done + green. TerminalOutput fires on the terminal's own read thread,
+# not the UI thread, so it only ever appends to the (locked) buffer -- no UI objects are touched
+# there. A separate, throttled DispatcherTimer (UI thread only) does the actual matching and button
+# updates, so UI work happens at a small fixed rate regardless of how much output streams through.
 function Start-StepCompletionWatcher {
+    # This handler MUST NEVER let an exception escape. TerminalOutput is not a passive notification
+    # event -- per Microsoft.Terminal.Wpf.TerminalContainer, the control's own render callback
+    # (Connection_TerminalOutput, which actually paints the console via TerminalSendOutput) is
+    # subscribed to this SAME event. .NET invokes multicast delegate subscribers in order, and if
+    # one throws, every subscriber after it in the chain is skipped for that invocation. If this
+    # handler runs before the renderer's own subscription and throws, the renderer never sees that
+    # output -- which, happening repeatedly, is exactly what made the console go entirely blank.
+    $term.ConPTYTerm.Add_TerminalOutput({
+        param($sender, $e)
+        try {
+            [System.Threading.Monitor]::Enter($global:consoleOutputBufferLock)
+            try {
+                [void]$global:consoleOutputBuffer.Append($e.Data)
+                $excess = $global:consoleOutputBuffer.Length - 50000
+                if ($excess -gt 0) {
+                    [void]$global:consoleOutputBuffer.Remove(0, $excess)
+                }
+            } finally {
+                [System.Threading.Monitor]::Exit($global:consoleOutputBufferLock)
+            }
+        } catch {
+            # Swallow unconditionally -- see comment above.
+        }
+    })
+
     $checkTimer = New-Object System.Windows.Threading.DispatcherTimer
     $checkTimer.Interval = [TimeSpan]::FromMilliseconds(500)
     $checkTimer.Add_Tick({
+        $pendingRows = @(@($global:managementDomainRestoresStepRows) + @($global:recoverDefaultClusterStepRows) | Where-Object { $_.Button.Content -ne 'Done' })
+        if ($pendingRows.Count -eq 0) { return }
+        [System.Threading.Monitor]::Enter($global:consoleOutputBufferLock)
         try {
-            if ($null -eq $term.ConPTYTerm -or -not $term.ConPTYTerm.TermProcIsStarted) { return }
-            $pendingRows = @(@($global:managementDomainRestoresStepRows) + @($global:recoverDefaultClusterStepRows) | Where-Object { $_.Button.Content -ne 'Done' })
-            if ($pendingRows.Count -eq 0) { return }
             # Collapse whitespace (including newlines from the console wrapping long lines at its
             # width) so "Completed Task <cmdlet>" can still be found even if it got split mid-string
             # across two wrapped rows.
-            $consoleText = ($term.ConPTYTerm.GetConsoleText($true)) -replace '\s+', ' '
-            foreach ($row in $pendingRows) {
-                if ($consoleText.Contains("Completed Task $($row.CmdletName)")) {
-                    $row.Button.Content = 'Done'
-                    $row.Button.Background = [System.Windows.Media.Brushes]::Green
-                }
+            $consoleText = $global:consoleOutputBuffer.ToString() -replace '\s+', ' '
+        } finally {
+            [System.Threading.Monitor]::Exit($global:consoleOutputBufferLock)
+        }
+        foreach ($row in $pendingRows) {
+            if ($consoleText.Contains("Completed Task $($row.CmdletName)")) {
+                $row.Button.Content = 'Done'
+                $row.Button.Background = [System.Windows.Media.Brushes]::Green
             }
-        } catch {
-            # GetConsoleText can throw internally; skip this tick and retry on the next one rather
-            # than letting a transient failure spam the error stream or block future ticks.
         }
     })
     $checkTimer.Start()
