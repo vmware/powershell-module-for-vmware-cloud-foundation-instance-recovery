@@ -16353,6 +16353,15 @@ $term.Theme = $terminalTheme
 $global:managementDomainRestoresStepRows = @()
 $global:recoverDefaultClusterStepRows = @()
 
+# Completion tracking, attempt 5: a PowerShell transcript of the embedded console, read from disk.
+# This is fully decoupled from the terminal control itself -- no event subscription (confirmed to
+# collide with the control's own rendering), no reading the control's rendered text back. Just a
+# plain text file that PowerShell itself appends to, and a plain file read on a timer.
+$global:transcriptPath = Join-Path $env:TEMP "vcfir-transcript-$PID.log"
+# Steps currently being watched for their own "Completed Task <cmdlet>" line, one entry per Run
+# click; each is removed (stopping that row's watch) once its text is found. See Add-StepWatch.
+$global:activeStepWatches = [System.Collections.Generic.List[object]]::new()
+
 function Protect-SingleQuotes([string]$Value) {
     return $Value.Replace("'", "''")
 }
@@ -16369,14 +16378,43 @@ function Send-ToConsole([string]$CommandLine) {
     }
 }
 
-function Invoke-Step($Dot, [string]$CommandLine) {
+# Starts (or restarts) watching the transcript for this row's "Completed Task <cmdlet>" line, from
+# whatever the transcript's current length is right now -- so an OLDER completion line already in
+# the transcript from a previous run of the same cmdlet can't cause an immediate false-positive
+# match on a re-run. Kept as its own function, separate from Invoke-Step, so a future "Run All"
+# sequencer can call it the same way an individual Run does when it's ready to wait for step N to
+# finish before starting step N+1 (not wired up yet -- Run All still just fires every step's command
+# immediately, same as today).
+function Add-StepWatch($Button, [string]$CmdletName) {
+    $currentText = ''
+    if (Test-Path $global:transcriptPath) {
+        $currentText = Get-Content -Path $global:transcriptPath -Raw -ErrorAction SilentlyContinue
+        if ($null -eq $currentText) { $currentText = '' }
+    }
+    # Drop any earlier watch for this same button first, rather than stacking duplicates on a re-run.
+    $global:activeStepWatches = [System.Collections.Generic.List[object]]($global:activeStepWatches | Where-Object { $_.Button -ne $Button })
+    $global:activeStepWatches.Add([PSCustomObject]@{
+        Button     = $Button
+        TargetText = "Completed Task $CmdletName"
+        StartOffset = $currentText.Length
+    })
+}
+
+# Resets a row to its "in progress" look (undoing any earlier Done state -- re-running a step that
+# previously completed should stop showing it as done until it completes again) and starts watching
+# for its completion.
+function Invoke-Step($Dot, $Button, [string]$CmdletName, [string]$CommandLine) {
     $Dot.Fill = [System.Windows.Media.Brushes]::DodgerBlue
+    $Button.Content = 'Run'
+    $Button.ClearValue([System.Windows.Controls.Control]::BackgroundProperty)
+    Add-StepWatch $Button $CmdletName
     Send-ToConsole $CommandLine
 }
 
-# Returns [PSCustomObject]@{ Panel; Dot; CommandLine }, not just the row's visual Panel -- Dot and
-# CommandLine are needed separately so a tab's "Run All" button can replay every row's Run action
-# (dot included) without re-parsing the rendered list.
+# Returns [PSCustomObject]@{ Panel; Dot; CommandLine; Button; CmdletName }, not just the row's
+# visual Panel -- the other fields are needed separately so a tab's "Run All" button can replay
+# every row's Run action, and so Invoke-Step/Add-StepWatch can update the right row's button and
+# watch for the right cmdlet name without re-parsing the rendered list.
 function New-StepRow([string]$CommandLine) {
     $panel = New-Object System.Windows.Controls.DockPanel
     $panel.Margin = '2,0,2,0'
@@ -16402,7 +16440,7 @@ function New-StepRow([string]$CommandLine) {
     [System.Windows.Controls.DockPanel]::SetDock($runButton, [System.Windows.Controls.Dock]::Right)
     $runButton.Add_Click({
         try {
-            Invoke-Step $dot $CommandLine
+            Invoke-Step $dot $runButton $cmdletName $CommandLine
         } catch {
             $statusTextBlock.Text = "Run button failed: $($_.Exception.Message)"
         }
@@ -16416,7 +16454,7 @@ function New-StepRow([string]$CommandLine) {
     [void]$panel.Children.Add($dot)
     [void]$panel.Children.Add($runButton)
     [void]$panel.Children.Add($label)
-    return [PSCustomObject]@{ Panel = $panel; Dot = $dot; CommandLine = $CommandLine }
+    return [PSCustomObject]@{ Panel = $panel; Dot = $dot; CommandLine = $CommandLine; Button = $runButton; CmdletName = $cmdletName }
 }
 
 # Variable names referenced across $CommandLines (e.g. "$targetFqdn"), in order of first
@@ -16474,18 +16512,53 @@ function Start-TerminalReadyWatcher {
         # returned, so its local $timer variable is out of scope and resolves to $null here.
         # $this is bound to the DispatcherTimer instance automatically by Add_Tick.
         #
-        # No command is sent to the console once it's ready: the module is installed on
+        # No Import-Module is sent to the console once it's ready: the module is installed on
         # $env:PSModulePath, so PowerShell auto-loads it the first time a Step's cmdlet actually
         # runs -- an explicit Import-Module here would just be a redundant, race-prone extra step.
+        # Starting the transcript here IS needed, though: it's how step completion gets detected
+        # (see Add-StepWatch/Start-StepCompletionWatcher) without touching the terminal control at
+        # all -- Start-Transcript just writes host output to a plain text file on disk as it happens.
         $script:terminalReadyAttempts++
         if ($null -ne $term.ConPTYTerm) {
             $this.Stop()
+            $escapedTranscriptPath = Protect-SingleQuotes $global:transcriptPath
+            Send-ToConsole "Start-Transcript -Path '$escapedTranscriptPath' -Force"
         } elseif ($script:terminalReadyAttempts -gt 50) {
             $this.Stop()
             $statusTextBlock.Text = 'Embedded console did not start in time.'
         }
     })
     $timer.Start()
+}
+
+# Checks each actively-watched row's slice of the transcript (everything written since its Run was
+# clicked) for its own "Completed Task <cmdlet>" line. A row is only in this list between being
+# Run and being found Done (see Add-StepWatch) -- once found, it's removed, which is what stops the
+# monitor for that row until Run is clicked again.
+function Start-StepCompletionWatcher {
+    $checkTimer = New-Object System.Windows.Threading.DispatcherTimer
+    $checkTimer.Interval = [TimeSpan]::FromMilliseconds(500)
+    $checkTimer.Add_Tick({
+        if ($global:activeStepWatches.Count -eq 0 -or -not (Test-Path $global:transcriptPath)) { return }
+        try {
+            $transcriptText = Get-Content -Path $global:transcriptPath -Raw -ErrorAction Stop
+        } catch {
+            return
+        }
+        if ($null -eq $transcriptText) { return }
+        $stillWatching = [System.Collections.Generic.List[object]]::new()
+        foreach ($watch in $global:activeStepWatches) {
+            $newText = if ($transcriptText.Length -gt $watch.StartOffset) { $transcriptText.Substring($watch.StartOffset) } else { '' }
+            if ($newText.Contains($watch.TargetText)) {
+                $watch.Button.Content = 'Done'
+                $watch.Button.Background = [System.Windows.Media.Brushes]::Green
+            } else {
+                $stillWatching.Add($watch)
+            }
+        }
+        $global:activeStepWatches = $stillWatching
+    })
+    $checkTimer.Start()
 }
 
 $browseButton.Add_Click({
@@ -16674,7 +16747,7 @@ $domainsListBox.Add_SelectionChanged({
 $runAllManagementDomainRestoresButton.Add_Click({
     try {
         foreach ($row in $global:managementDomainRestoresStepRows) {
-            Invoke-Step $row.Dot $row.CommandLine
+            Invoke-Step $row.Dot $row.Button $row.CmdletName $row.CommandLine
         }
     } catch {
         $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
@@ -16684,7 +16757,7 @@ $runAllManagementDomainRestoresButton.Add_Click({
 $runAllRecoverDefaultClusterButton.Add_Click({
     try {
         foreach ($row in $global:recoverDefaultClusterStepRows) {
-            Invoke-Step $row.Dot $row.CommandLine
+            Invoke-Step $row.Dot $row.Button $row.CmdletName $row.CommandLine
         }
     } catch {
         $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
@@ -16692,6 +16765,7 @@ $runAllRecoverDefaultClusterButton.Add_Click({
 }.GetNewClosure())
 
 Start-TerminalReadyWatcher
+Start-StepCompletionWatcher
 
 [void]$app.Run($window)
 '@
