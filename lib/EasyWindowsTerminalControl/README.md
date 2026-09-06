@@ -1,6 +1,6 @@
 # Vendored: EasyWindowsTerminalControl
 
-Pre-built binaries used by `Start-InstanceRecoveryUI` (in the module's `.psm1`) to embed a
+Pre-built binaries used by `Start-VCFIBROrchestrator` (in the module's `.psm1`) to embed a
 real-terminal-fidelity console in the orchestrator UI, loaded at runtime via `Add-Type -Path` — no
 build step or .NET SDK required by end users of the module.
 
