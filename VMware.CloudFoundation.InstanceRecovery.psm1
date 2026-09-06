@@ -16244,6 +16244,52 @@ Export-ModuleMember -Function Invoke-SupervisorRestore
 
 #EndRegion Supervisor
 
+#Region Recovery Variables
+
+Function Import-RecoveryVariables {
+    <#
+    .SYNOPSIS
+    Loads a flat JSON answers file into the current session as variables
+
+    .DESCRIPTION
+    The Import-RecoveryVariables cmdlet reads a flat JSON object (e.g. { "targetFqdn": "...",
+    "targetAdminPassword": "..." }) and sets each property as a variable in the caller's session, so
+    the other Instance Recovery cmdlets in this module can reference them directly (e.g. $targetFqdn)
+    without every value having to be passed explicitly on the command line.
+
+    .PARAMETER Path
+    Path to the JSON variable answers file.
+
+    .EXAMPLE
+    Import-RecoveryVariables -Path 'C:\VCFIR\answers.json'
+    #>
+    Param(
+        [Parameter (Mandatory = $true)][String] $Path
+    )
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+
+    LogMessage -type INFO -message "[$jumpboxName] Loading variables from '$Path'"
+    $answers = Get-Content -Path $Path -Raw | ConvertFrom-Json
+    foreach ($property in $answers.PSObject.Properties) {
+        # extractedSDDCDataFile comes from the orchestrator UI's own Data Source selection, not the
+        # answers file -- an answer file that happens to also define it must not overwrite that value.
+        if ($property.Name -eq 'extractedSDDCDataFile') {
+            continue
+        }
+        Set-Variable -Name $property.Name -Value ([string]$property.Value) -Scope Global
+    }
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+Export-ModuleMember -Function Import-RecoveryVariables
+
+#EndRegion Recovery Variables
+
 #Region UI Orchestrator
 
 Function Start-VCFIBROrchestrator {
@@ -16656,12 +16702,12 @@ $browseButton.Add_Click({
 }.GetNewClosure())
 
 # Answer file is a flat JSON object, e.g. { "targetFqdn": "sfo-m01-vc02...", "targetAdminPassword": "..." }.
-# Each entry is sent to the console once, immediately, as "$name = 'value'" -- from then on every
-# step's Run button can reference $targetFqdn etc. directly, the same way $extractedSDDCDataFile
-# already works. Rows are ordered by first use across the selected domain's steps (Management
-# Domain Restores, then Recover Default Cluster) so they read top-to-bottom in the order you'll
-# need them; any answer-file entries not referenced by any step are appended afterward, in file
-# order, so nothing loaded is ever silently dropped from view.
+# Parsed here purely to populate the Variables tab's rows in the order they'll be needed (first use
+# across the selected domain's steps -- Management Domain Restores, then Recover Default Cluster --
+# with anything not referenced by any step appended afterward, in file order, so nothing loaded is
+# ever silently dropped from view). The console itself never sees these values directly; it's handed
+# the answers file path and reads it itself via Import-RecoveryVariables, below, so every step's Run
+# button can reference $targetFqdn etc. directly, the same way $extractedSDDCDataFile already works.
 #
 # Shared by the Load Variables button and Resume, same reasoning as Import-ExtractedSddcDataFile.
 function Import-VariablesAnswersFile([string]$Path) {
@@ -16687,25 +16733,18 @@ function Import-VariablesAnswersFile([string]$Path) {
         $orderedNames = @(Get-ReferencedVariableNames $global:allStepCommandLines | Where-Object { $answerMap.Contains($_) })
         $orderedNames += @($answerMap.Keys | Where-Object { $orderedNames -notcontains $_ })
 
-        # Written to a temp file and dot-sourced with a single short command, rather than typed into
-        # the console one "$name = 'value'" at a time -- typing each one echoed every value, including
-        # plaintext passwords, into both the visible console and the transcript. A dot-sourced file is
-        # never echoed at all; PowerShell just runs it. This also means none of these values can hit
-        # the line-wrap corruption fixed for RC6, no matter how long they are.
-        $varsScriptPath = Join-Path $env:TEMP "vcfir-vars-$PID-$([guid]::NewGuid().ToString('N')).ps1"
-        $varsScriptLines = foreach ($name in $orderedNames) {
-            "`$$name = '$(Protect-SingleQuotes $answerMap[$name])'"
-        }
-        Set-Content -LiteralPath $varsScriptPath -Value $varsScriptLines -Encoding utf8
-
         foreach ($name in $orderedNames) {
             [void]$variablesItemsPanel.Children.Add((New-VariableRow $name $answerMap[$name]))
         }
 
-        $escapedVarsScriptPath = Protect-SingleQuotes $varsScriptPath
-        # Deleted in the same command that dot-sources it, so the plaintext values don't sit on disk
-        # any longer than it takes the console to consume them.
-        Send-ToConsole ". '$escapedVarsScriptPath'; Remove-Item -LiteralPath '$escapedVarsScriptPath' -Force"
+        # Import-RecoveryVariables (a real, exported module cmdlet -- see the "Recovery Variables"
+        # region) reads the answers file itself and sets each value as a global variable. Sending just
+        # this one call, rather than typing "$name = 'value'" once per variable, means none of the
+        # values (including plaintext passwords) are ever echoed into the console or the transcript,
+        # and it logs via LogMessage the same way every other step does, instead of looking like ad hoc
+        # plumbing.
+        $escapedAnswersPath = Protect-SingleQuotes $Path
+        Send-ToConsole "Import-RecoveryVariables -Path '$escapedAnswersPath'"
 
         $loadedVariablesTextBlock.Text = "Loaded $($orderedNames.Count) variable(s) from $Path."
         $global:variablesAnswersFilePath = $Path
