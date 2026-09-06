@@ -78,28 +78,77 @@ function Remove-AnsiCodes([string]$Text) {
     return $Text -replace "`e\[[0-9;]*m", ''
 }
 
-# Appends one line to the console output. $ForcedType is used for lines we generate ourselves (the
-# command echo, below) that don't carry their own [type] tag; otherwise the type -- and therefore the
-# color -- is read from the line's own "[INFO]"/"[ERROR]"/etc. tag, matching LogMessage's format.
-# Must run on the UI thread; callers on a background thread (the process output handlers, below) wrap
-# this in $window.Dispatcher.BeginInvoke themselves.
+function Get-ConsoleLineColor([string]$CleanText, [string]$ForcedType) {
+    $type = $ForcedType
+    if (-not $type) {
+        $match = [regex]::Match($CleanText, '\[(INFO|ERROR|WARNING|EXCEPTION|ADVISORY|NOTE|QUESTION|WAIT)\]')
+        if ($match.Success) { $type = $match.Groups[1].Value }
+    }
+    if ($type -and $logTypeColors.ContainsKey($type)) {
+        return [System.Windows.Media.ColorConverter]::ConvertFromString($logTypeColors[$type])
+    }
+    return $defaultConsoleColor
+}
+
+# Text read from the console process that hasn't reached a newline yet, and the Run currently
+# displaying it. Prompts like "Enter the desired number of disk groups...: " or "PS C:\path>" are
+# deliberately never newline-terminated -- the answer is meant to continue right after them on the
+# same line -- so waiting for a newline before showing them would mean never showing them at all.
+# Add-ConsoleChunk displays this partial text immediately and grows it in place as more arrives,
+# exactly like a real terminal renders characters as they arrive rather than waiting for whole lines.
+$script:consolePendingText = ''
+$script:consolePendingRun = $null
+
+# Handles raw text as it arrives from the console process, which may contain zero, one, or several
+# newlines and may end mid-line. Complete (newline-terminated) lines are colored and closed off with
+# a real line break as soon as they're found; any trailing partial text is shown right away too.
+function Add-ConsoleChunk {
+    param([string]$Chunk, [string]$ForcedType)
+
+    $remaining = $Chunk
+    while ($remaining.Length -gt 0) {
+        $newlineIndex = $remaining.IndexOf("`n")
+        if ($newlineIndex -lt 0) {
+            $piece = $remaining
+            $remaining = ''
+        } else {
+            $piece = $remaining.Substring(0, $newlineIndex).TrimEnd("`r")
+            $remaining = $remaining.Substring($newlineIndex + 1)
+        }
+
+        $script:consolePendingText += $piece
+        if ($null -eq $script:consolePendingRun) {
+            $script:consolePendingRun = New-Object System.Windows.Documents.Run
+            [void]$consoleOutputParagraph.Inlines.Add($script:consolePendingRun)
+        }
+        $clean = Remove-AnsiCodes $script:consolePendingText
+        $script:consolePendingRun.Text = $clean
+        $script:consolePendingRun.Foreground = New-Object System.Windows.Media.SolidColorBrush((Get-ConsoleLineColor $clean $ForcedType))
+
+        if ($newlineIndex -ge 0) {
+            [void]$consoleOutputParagraph.Inlines.Add((New-Object System.Windows.Documents.LineBreak))
+            $script:consolePendingText = ''
+            $script:consolePendingRun = $null
+        }
+    }
+    $consoleOutput.ScrollToEnd()
+}
+
+# Adds a complete line we generated ourselves (the command echo, below) -- always its own fresh Run,
+# never partial. Closes off anything still pending from the console process's own output first, so
+# our line never ends up visually glued onto the end of an unfinished prompt.
 function Add-ConsoleLine {
     param([string]$Text, [string]$ForcedType)
 
-    $clean = Remove-AnsiCodes $Text
-    $type = $ForcedType
-    if (-not $type) {
-        $match = [regex]::Match($clean, '\[(INFO|ERROR|WARNING|EXCEPTION|ADVISORY|NOTE|QUESTION|WAIT)\]')
-        if ($match.Success) { $type = $match.Groups[1].Value }
-    }
-    $color = if ($type -and $logTypeColors.ContainsKey($type)) {
-        [System.Windows.Media.ColorConverter]::ConvertFromString($logTypeColors[$type])
-    } else {
-        $defaultConsoleColor
+    if ($script:consolePendingRun) {
+        [void]$consoleOutputParagraph.Inlines.Add((New-Object System.Windows.Documents.LineBreak))
+        $script:consolePendingText = ''
+        $script:consolePendingRun = $null
     }
 
+    $clean = Remove-AnsiCodes $Text
     $run = New-Object System.Windows.Documents.Run($clean)
-    $run.Foreground = New-Object System.Windows.Media.SolidColorBrush($color)
+    $run.Foreground = New-Object System.Windows.Media.SolidColorBrush((Get-ConsoleLineColor $clean $ForcedType))
     [void]$consoleOutputParagraph.Inlines.Add($run)
     [void]$consoleOutputParagraph.Inlines.Add((New-Object System.Windows.Documents.LineBreak))
     $consoleOutput.ScrollToEnd()
@@ -169,11 +218,23 @@ $consoleProcess.StartInfo = $consoleStartInfo
 # other .Add_EventName({...}) in this file (Button.Click, Window.Closing, DispatcherTimer.Tick) is
 # safe only because WPF itself guarantees those specific events fire on the UI thread; this one
 # doesn't. Polled asynchronously instead, entirely from the UI thread via a DispatcherTimer, the same
-# proven pattern Start-StepCompletionWatcher already uses: ReadLineAsync() does the actual blocking
-# wait on a plain .NET-managed thread, but nothing PowerShell-side ever touches it off the UI thread --
-# each tick only checks whether the pending read has already completed, and never blocks itself.
-$script:pendingConsoleOutputRead = $consoleProcess.StandardOutput.ReadLineAsync()
-$script:pendingConsoleErrorRead = $consoleProcess.StandardError.ReadLineAsync()
+# proven pattern Start-StepCompletionWatcher already uses.
+#
+# Reading raw bytes off the BaseStream, not ReadLineAsync(): a line-based read would never return a
+# prompt that doesn't end in a newline (every interactive Read-Host-style prompt, and the "PS
+# C:\path>" prompt itself, is written exactly that way, since the answer is meant to continue on the
+# same line) -- it would just sit there waiting for a newline that's never coming. ReadAsync() on a
+# pipe's BaseStream returns as soon as any data at all is available, letting Add-ConsoleChunk display
+# partial, not-yet-terminated text immediately. Decoding each chunk independently as UTF8, rather than
+# through a stateful incremental decoder, means a multi-byte character split exactly across two reads
+# could in principle render as one wrong character; harmless and exceedingly unlikely given this
+# app's actual traffic (hostnames, paths, plain English messages), and not worth the extra complexity.
+$script:consoleOutputStream = $consoleProcess.StandardOutput.BaseStream
+$script:consoleErrorStream = $consoleProcess.StandardError.BaseStream
+$script:consoleOutputBuffer = New-Object byte[] 4096
+$script:consoleErrorBuffer = New-Object byte[] 4096
+$script:pendingConsoleOutputRead = $script:consoleOutputStream.ReadAsync($script:consoleOutputBuffer, 0, $script:consoleOutputBuffer.Length)
+$script:pendingConsoleErrorRead = $script:consoleErrorStream.ReadAsync($script:consoleErrorBuffer, 0, $script:consoleErrorBuffer.Length)
 
 function Start-ConsoleOutputPump {
     $pumpTimer = New-Object System.Windows.Threading.DispatcherTimer
@@ -181,19 +242,19 @@ function Start-ConsoleOutputPump {
     $pumpTimer.Add_Tick({
         try {
             if ($script:pendingConsoleOutputRead.IsCompleted) {
-                $line = $script:pendingConsoleOutputRead.Result
-                if ($null -ne $line) {
-                    Add-ConsoleLine $line
-                    $script:pendingConsoleOutputRead = $consoleProcess.StandardOutput.ReadLineAsync()
+                $bytesRead = $script:pendingConsoleOutputRead.Result
+                if ($bytesRead -gt 0) {
+                    Add-ConsoleChunk ([System.Text.Encoding]::UTF8.GetString($script:consoleOutputBuffer, 0, $bytesRead))
+                    $script:pendingConsoleOutputRead = $script:consoleOutputStream.ReadAsync($script:consoleOutputBuffer, 0, $script:consoleOutputBuffer.Length)
                 }
-                # $null means the stream hit EOF (the console process's stdout closed) --
+                # 0 bytes read means the stream hit EOF (the console process's stdout closed) --
                 # deliberately not starting another read, since there's never anything more to read.
             }
             if ($script:pendingConsoleErrorRead.IsCompleted) {
-                $line = $script:pendingConsoleErrorRead.Result
-                if ($null -ne $line) {
-                    Add-ConsoleLine $line 'ERROR'
-                    $script:pendingConsoleErrorRead = $consoleProcess.StandardError.ReadLineAsync()
+                $bytesRead = $script:pendingConsoleErrorRead.Result
+                if ($bytesRead -gt 0) {
+                    Add-ConsoleChunk ([System.Text.Encoding]::UTF8.GetString($script:consoleErrorBuffer, 0, $bytesRead)) 'ERROR'
+                    $script:pendingConsoleErrorRead = $script:consoleErrorStream.ReadAsync($script:consoleErrorBuffer, 0, $script:consoleErrorBuffer.Length)
                 }
             }
         } catch {
