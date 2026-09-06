@@ -1,12 +1,14 @@
 {
   "permissions": {
-    "defaultMode": "bypassPermissions",
     "allow": [
-      "Read(//c/Users/Administrator/.claude/projects/C--Users-Administrator/**)"
+      "Read(//c/Users/Administrator/.claude/projects/C--Users-Administrator/**)",
+      "Read(//c/patch/decompiled-wpf/**)",
+      "Read(//c/patch/decompiled-wpf/Microsoft.Terminal.Wpf/**)"
     ],
+    "defaultMode": "bypassPermissions",
+    "blockReadsOutsideWorkingDirectories": false,
     "additionalDirectories": [
       "C:\\Users\\Administrator\\AppData\\Local\\Temp\\2\\claude"
-    ],
-    "blockReadsOutsideWorkingDirectories": false
+    ]
   }
 }

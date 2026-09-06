@@ -1,9 +1,9 @@
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:term="clr-namespace:EasyWindowsTerminalControl;assembly=EasyWindowsTerminalControl"
-        Title="VCF Instance Recovery Orchestrator" Height="820" Width="1100" WindowState="Maximized">
+        Title="VCF Instance Backup &amp; Restore Orchestrator" Height="820" Width="1100" WindowState="Maximized">
     <!--
-        Loaded via XamlReader.Load from Start-InstanceRecoveryUI (see the .psm1).
+        Loaded via XamlReader.Load from Start-VCFIBROrchestrator (see the .psm1).
         There is no code-behind class, so this file deliberately has no x:Class, no inline event
         handler attributes (Click=/SelectionChanged=), and no data-binding markup on the list
         boxes. All wiring and list population happens imperatively in the PowerShell loader script.
@@ -166,7 +166,13 @@
 
         <!-- Header bar, modeled on the vSphere Client dark top bar -->
         <Border Grid.Row="0" Background="{StaticResource HeaderBarBrush}" Padding="18,12">
-            <TextBlock Text="VCF Instance Recovery Orchestrator" Foreground="White" FontSize="16" FontWeight="SemiBold" />
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button x:Name="ResumeButton" Content="Resume..." Width="90" Margin="0,0,8,0" />
+                    <Button x:Name="ExitButton" Content="Exit" Width="70" />
+                </StackPanel>
+                <TextBlock Text="VCF Instance Backup &amp; Restore Orchestrator" Foreground="White" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" />
+            </DockPanel>
         </Border>
 
         <!-- Left rail (30%) and console (70%) are two independent columns, not one big stacked

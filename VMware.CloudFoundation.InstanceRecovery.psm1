@@ -16246,13 +16246,13 @@ Export-ModuleMember -Function Invoke-SupervisorRestore
 
 #Region UI Orchestrator
 
-Function Start-InstanceRecoveryUI {
+Function Start-VCFIBROrchestrator {
     <#
     .SYNOPSIS
-    Launches the VCF Instance Recovery orchestrator UI
+    Launches the VCF IBR Orchestrator UI
 
     .DESCRIPTION
-    The Start-InstanceRecoveryUI cmdlet opens a WPF window -- loaded in-process from
+    The Start-VCFIBROrchestrator cmdlet opens a WPF window -- loaded in-process from
     xaml\InstanceRecoveryOrchestratorUI.xaml via XamlReader, no separate .exe or build step -- that
     lets you pick an extracted-sddc-data.json file, lists the workload domains it contains, and runs
     the recovery steps for the selected domain in an embedded, fully interactive PowerShell console
@@ -16262,7 +16262,7 @@ Function Start-InstanceRecoveryUI {
     immediately rather than blocking until the window is closed.
 
     .EXAMPLE
-    Start-InstanceRecoveryUI
+    Start-VCFIBROrchestrator
     #>
 
     Param()
@@ -16270,6 +16270,11 @@ Function Start-InstanceRecoveryUI {
     $moduleRoot = $PSScriptRoot
     $xamlPath = Join-Path $moduleRoot 'xaml\InstanceRecoveryOrchestratorUI.xaml'
     $libPath = Join-Path $moduleRoot 'lib\EasyWindowsTerminalControl'
+    # Captured here, not inside the UI runspace: that runspace never runs this cmdlet, so it has no
+    # notion of "the caller's current directory" of its own. The embedded console is started with
+    # this as its own working directory (see Set-Location in $term.StartupCommandLine, below), and
+    # transcripts are written here too, so both land wherever the user ran this cmdlet from.
+    $launchDirectory = (Get-Location).Path
 
     if (-not (Test-Path $xamlPath)) {
         LogMessage -type ERROR -message "Cannot find UI resource '$xamlPath'."
@@ -16285,7 +16290,8 @@ Function Start-InstanceRecoveryUI {
     $uiScript = @'
 param(
     [string]$XamlPath,
-    [string]$LibPath
+    [string]$LibPath,
+    [string]$WorkingDirectory
 )
 
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Xaml
@@ -16312,6 +16318,8 @@ $app = New-Object System.Windows.Application
 $xamlReader = New-Object System.Xml.XmlNodeReader $xamlDocument
 $window = [System.Windows.Markup.XamlReader]::Load($xamlReader)
 
+$resumeButton = $window.FindName('ResumeButton')
+$exitButton = $window.FindName('ExitButton')
 $extractRadio = $window.FindName('ExtractBackupRadio')
 $browseButton = $window.FindName('BrowseButton')
 $filePathTextBox = $window.FindName('FilePathTextBox')
@@ -16352,12 +16360,18 @@ $term.Theme = $terminalTheme
 # so Run All never sees $null before that happens.
 $global:managementDomainRestoresStepRows = @()
 $global:recoverDefaultClusterStepRows = @()
+# Path to the last-loaded variable answers file, if any -- tracked separately from the textbox-less
+# Load Variables flow so Exit can record it, and Resume can pass it straight back to the same loader.
+$global:variablesAnswersFilePath = $null
 
 # Completion tracking, attempt 5: a PowerShell transcript of the embedded console, read from disk.
 # This is fully decoupled from the terminal control itself -- no event subscription (confirmed to
 # collide with the control's own rendering), no reading the control's rendered text back. Just a
 # plain text file that PowerShell itself appends to, and a plain file read on a timer.
-$global:transcriptPath = Join-Path $env:TEMP "vcfir-transcript-$PID.log"
+#
+# Saved in the launch directory (not $env:TEMP) with a timestamp in the name so past runs can be
+# told apart and reviewed later instead of being overwritten or left to rot in a temp folder.
+$global:transcriptPath = Join-Path $WorkingDirectory "vcfir-transcript-$(Get-Date -Format 'yyyyMMdd-HHmmss')-$PID.log"
 # Steps currently being watched for their own "Completed Task <cmdlet>" line, one entry per Run
 # click; each is removed (stopping that row's watch) once its text is found. See Add-StepWatch.
 $global:activeStepWatches = [System.Collections.Generic.List[object]]::new()
@@ -16366,13 +16380,15 @@ function Protect-SingleQuotes([string]$Value) {
     return $Value.Replace("'", "''")
 }
 
-# Set here, not in the XAML, since it needs to embed the per-launch transcript path computed above.
-# Both PSReadLine's prediction fix and Start-Transcript run as part of the console's own process
-# startup (-Command), before the interactive session ever begins -- so neither is ever "typed" into
-# the visible console, unlike sending them afterward via WriteToTerm would be. Start-Transcript's own
-# confirmation output is piped to Out-Null so launching it leaves no trace in the console at all.
+# Set here, not in the XAML, since it needs to embed values computed above/passed in (the launch
+# directory, the per-launch transcript path). The Set-Location, PSReadLine prediction fix, and
+# Start-Transcript all run as part of the console's own process startup (-Command), before the
+# interactive session ever begins -- so none of them are ever "typed" into the visible console, the
+# way sending them afterward via WriteToTerm would be. Start-Transcript's own confirmation output is
+# piped to Out-Null so launching it leaves no trace in the console at all.
+$escapedWorkingDirectory = Protect-SingleQuotes $WorkingDirectory
 $escapedTranscriptPath = Protect-SingleQuotes $global:transcriptPath
-$term.StartupCommandLine = "pwsh.exe -NoLogo -NoExit -Command `"Set-PSReadLineOption -PredictionSource None; Start-Transcript -Path '$escapedTranscriptPath' -Force | Out-Null`""
+$term.StartupCommandLine = "pwsh.exe -NoLogo -NoExit -Command `"Set-Location -LiteralPath '$escapedWorkingDirectory'; Set-PSReadLineOption -PredictionSource None; Start-Transcript -Path '$escapedTranscriptPath' -Force | Out-Null`""
 
 function Send-ToConsole([string]$CommandLine) {
     if ($null -eq $term.ConPTYTerm) {
@@ -16575,6 +16591,45 @@ function Start-StepCompletionWatcher {
     $checkTimer.Start()
 }
 
+# Shared by the Browse button and Resume, so both end up driving the exact same domain-listing /
+# console-variable-setting logic instead of two copies drifting apart.
+function Import-ExtractedSddcDataFile([string]$Path) {
+    $domainsListBox.Items.Clear()
+    $managementDomainRestoresStepsListBox.Items.Clear()
+    $recoverDefaultClusterStepsListBox.Items.Clear()
+    $variablesItemsPanel.Children.Clear()
+    $loadedVariablesTextBlock.Text = 'No variables loaded yet.'
+    $stepsVariablesGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
+    $global:allStepCommandLines = @()
+    $statusTextBlock.Text = ''
+
+    try {
+        $extractedSddcData = Get-Content -Path $Path -Raw | ConvertFrom-Json
+    } catch {
+        $statusTextBlock.Text = "Failed to load extracted SDDC data: $($_.Exception.Message)"
+        return
+    }
+
+    if (-not $extractedSddcData.workloadDomains) {
+        $statusTextBlock.Text = "No 'workloadDomains' property found in the selected file."
+        return
+    }
+
+    foreach ($domain in $extractedSddcData.workloadDomains) {
+        $item = New-Object System.Windows.Controls.ListBoxItem
+        $item.Content = "$($domain.domainName) ($($domain.domainType))"
+        $item.Tag = $domain
+        [void]$domainsListBox.Items.Add($item)
+    }
+
+    # Switch focus to the Workload Domains tab now that there's something to pick from -- saves a
+    # manual click back and forth between the two tabs every time a data file is loaded.
+    $dataSourceDomainsTabControl.SelectedIndex = 1
+
+    $escapedPath = Protect-SingleQuotes $Path
+    Send-ToConsole "`$extractedSDDCDataFile = '$escapedPath'"
+}
+
 $browseButton.Add_Click({
     $extracting = $extractRadio.IsChecked -eq $true
     $dialog = New-Object Microsoft.Win32.OpenFileDialog
@@ -16597,40 +16652,7 @@ $browseButton.Add_Click({
         return
     }
 
-    $domainsListBox.Items.Clear()
-    $managementDomainRestoresStepsListBox.Items.Clear()
-    $recoverDefaultClusterStepsListBox.Items.Clear()
-    $variablesItemsPanel.Children.Clear()
-    $loadedVariablesTextBlock.Text = 'No variables loaded yet.'
-    $stepsVariablesGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
-    $global:allStepCommandLines = @()
-    $statusTextBlock.Text = ''
-
-    try {
-        $extractedSddcData = Get-Content -Path $dialog.FileName -Raw | ConvertFrom-Json
-    } catch {
-        $statusTextBlock.Text = "Failed to load extracted SDDC data: $($_.Exception.Message)"
-        return
-    }
-
-    if (-not $extractedSddcData.workloadDomains) {
-        $statusTextBlock.Text = "No 'workloadDomains' property found in the selected file."
-        return
-    }
-
-    foreach ($domain in $extractedSddcData.workloadDomains) {
-        $item = New-Object System.Windows.Controls.ListBoxItem
-        $item.Content = "$($domain.domainName) ($($domain.domainType))"
-        $item.Tag = $domain
-        [void]$domainsListBox.Items.Add($item)
-    }
-
-    # Switch focus to the Workload Domains tab now that there's something to pick from -- saves a
-    # manual click back and forth between the two tabs every time a data file is loaded.
-    $dataSourceDomainsTabControl.SelectedIndex = 1
-
-    $escapedPath = Protect-SingleQuotes $dialog.FileName
-    Send-ToConsole "`$extractedSDDCDataFile = '$escapedPath'"
+    Import-ExtractedSddcDataFile $dialog.FileName
 }.GetNewClosure())
 
 # Answer file is a flat JSON object, e.g. { "targetFqdn": "sfo-m01-vc02...", "targetAdminPassword": "..." }.
@@ -16640,16 +16662,11 @@ $browseButton.Add_Click({
 # Domain Restores, then Recover Default Cluster) so they read top-to-bottom in the order you'll
 # need them; any answer-file entries not referenced by any step are appended afterward, in file
 # order, so nothing loaded is ever silently dropped from view.
-$loadVariablesButton.Add_Click({
+#
+# Shared by the Load Variables button and Resume, same reasoning as Import-ExtractedSddcDataFile.
+function Import-VariablesAnswersFile([string]$Path) {
     try {
-        $dialog = New-Object Microsoft.Win32.OpenFileDialog
-        $dialog.Filter = 'JSON files (*.json)|*.json|All files (*.*)|*.*'
-        $dialog.Title = 'Select variable answers file'
-        if ($dialog.ShowDialog() -ne $true) {
-            return
-        }
-
-        $answers = Get-Content -Path $dialog.FileName -Raw | ConvertFrom-Json
+        $answers = Get-Content -Path $Path -Raw | ConvertFrom-Json
         $answerMap = [ordered]@{}
         foreach ($property in $answers.PSObject.Properties) {
             $answerMap[$property.Name] = [string]$property.Value
@@ -16663,7 +16680,7 @@ $loadVariablesButton.Add_Click({
         $variablesItemsPanel.Children.Clear()
 
         if ($answerMap.Count -eq 0) {
-            $loadedVariablesTextBlock.Text = "No variables found in '$($dialog.FileName)'."
+            $loadedVariablesTextBlock.Text = "No variables found in '$Path'."
             return
         }
 
@@ -16676,7 +16693,8 @@ $loadVariablesButton.Add_Click({
             [void]$variablesItemsPanel.Children.Add((New-VariableRow $name $value))
         }
 
-        $loadedVariablesTextBlock.Text = "Loaded $($orderedNames.Count) variable(s) from $($dialog.FileName)."
+        $loadedVariablesTextBlock.Text = "Loaded $($orderedNames.Count) variable(s) from $Path."
+        $global:variablesAnswersFilePath = $Path
 
         # Switch to the Steps tab now that variables are in place -- saves a manual click back and
         # forth, the same way picking a domain switches Setup to the Workload Domains tab.
@@ -16684,6 +16702,16 @@ $loadVariablesButton.Add_Click({
     } catch {
         $statusTextBlock.Text = "Load Variables failed: $($_.Exception.Message)"
     }
+}
+
+$loadVariablesButton.Add_Click({
+    $dialog = New-Object Microsoft.Win32.OpenFileDialog
+    $dialog.Filter = 'JSON files (*.json)|*.json|All files (*.*)|*.*'
+    $dialog.Title = 'Select variable answers file'
+    if ($dialog.ShowDialog() -ne $true) {
+        return
+    }
+    Import-VariablesAnswersFile $dialog.FileName
 }.GetNewClosure())
 
 $domainsListBox.Add_SelectionChanged({
@@ -16778,6 +16806,90 @@ $runAllRecoverDefaultClusterButton.Add_Click({
     }
 }.GetNewClosure())
 
+# Saves everything Resume needs to put the window back the way it was: the extracted data file, the
+# variable answers file, which domain was selected (by index into the just-reloaded domain list, the
+# only stable handle available since domains aren't otherwise named uniquely), and which steps had
+# already reached Done. Only the file paths and cmdlet names are saved, never variable values or
+# command lines themselves -- Resume re-derives everything else by re-running the exact same loaders
+# Browse/Load Variables use.
+$exitButton.Add_Click({
+    try {
+        $allRows = @($global:managementDomainRestoresStepRows) + @($global:recoverDefaultClusterStepRows)
+        $completedCmdlets = @($allRows | Where-Object { $_.Button.Content -eq 'Done' } | ForEach-Object { $_.CmdletName })
+
+        $state = [PSCustomObject]@{
+            ExtractedDataFilePath    = $filePathTextBox.Text
+            VariablesAnswersFilePath = $global:variablesAnswersFilePath
+            SelectedDomainIndex      = $domainsListBox.SelectedIndex
+            CompletedCmdlets         = $completedCmdlets
+        }
+
+        $dialog = New-Object Microsoft.Win32.SaveFileDialog
+        $dialog.Filter = 'JSON files (*.json)|*.json|All files (*.*)|*.*'
+        $dialog.Title = 'Save orchestrator state'
+        $dialog.InitialDirectory = $WorkingDirectory
+        $dialog.FileName = "vcfibr-state-$(Get-Date -Format 'yyyyMMdd-HHmmss').json"
+        if ($dialog.ShowDialog() -ne $true) {
+            return
+        }
+
+        $state | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $dialog.FileName -Encoding utf8
+
+        Send-ToConsole 'Stop-Transcript | Out-Null'
+        # Give Stop-Transcript a moment to actually run inside the console's own process before that
+        # process gets torn down by closing the window -- WriteToTerm only queues keystrokes, it
+        # doesn't wait for them to be processed.
+        Start-Sleep -Milliseconds 300
+
+        $window.Close()
+    } catch {
+        $statusTextBlock.Text = "Exit failed: $($_.Exception.Message)"
+    }
+}.GetNewClosure())
+
+# Replays the same three loaders a manual session would call (Import-ExtractedSddcDataFile, domain
+# selection, Import-VariablesAnswersFile), in the same order, then marks whichever steps were Done
+# last time as Done again -- without adding them to $global:activeStepWatches, since nothing is being
+# (re-)run for them here.
+$resumeButton.Add_Click({
+    try {
+        $dialog = New-Object Microsoft.Win32.OpenFileDialog
+        $dialog.Filter = 'JSON files (*.json)|*.json|All files (*.*)|*.*'
+        $dialog.Title = 'Select saved orchestrator state'
+        if ($dialog.ShowDialog() -ne $true) {
+            return
+        }
+
+        $state = Get-Content -Path $dialog.FileName -Raw | ConvertFrom-Json
+
+        if ($state.ExtractedDataFilePath) {
+            $filePathTextBox.Text = $state.ExtractedDataFilePath
+            Import-ExtractedSddcDataFile $state.ExtractedDataFilePath
+        }
+
+        if ($null -ne $state.SelectedDomainIndex -and $state.SelectedDomainIndex -ge 0 -and $state.SelectedDomainIndex -lt $domainsListBox.Items.Count) {
+            $domainsListBox.SelectedIndex = $state.SelectedDomainIndex
+        }
+
+        if ($state.VariablesAnswersFilePath) {
+            Import-VariablesAnswersFile $state.VariablesAnswersFilePath
+        }
+
+        $completedCmdlets = @($state.CompletedCmdlets)
+        $allRows = @($global:managementDomainRestoresStepRows) + @($global:recoverDefaultClusterStepRows)
+        foreach ($row in $allRows) {
+            if ($completedCmdlets -contains $row.CmdletName) {
+                $row.Button.Content = 'Done'
+                $row.Button.Background = [System.Windows.Media.Brushes]::Green
+            }
+        }
+
+        $statusTextBlock.Text = "Resumed state from '$($dialog.FileName)'."
+    } catch {
+        $statusTextBlock.Text = "Resume failed: $($_.Exception.Message)"
+    }
+}.GetNewClosure())
+
 Start-TerminalReadyWatcher
 Start-StepCompletionWatcher
 
@@ -16795,6 +16907,7 @@ Start-StepCompletionWatcher
     [void]$uiPowerShell.AddScript($uiScript)
     [void]$uiPowerShell.AddArgument($xamlPath)
     [void]$uiPowerShell.AddArgument($libPath)
+    [void]$uiPowerShell.AddArgument($launchDirectory)
 
     # Kept alive at module script scope so the async UI isn't torn down by GC while the window is open.
     $script:InstanceRecoveryOrchestratorUIRunspace = $uiRunspace
@@ -16803,6 +16916,6 @@ Start-StepCompletionWatcher
 
     LogMessage -type NOTE -message "Instance Recovery Orchestrator UI launched."
 }
-Export-ModuleMember -Function Start-InstanceRecoveryUI
+Export-ModuleMember -Function Start-VCFIBROrchestrator
 
 #EndRegion UI Orchestrator
