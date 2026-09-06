@@ -16392,7 +16392,10 @@ function Add-StepWatch($Button, [string]$CmdletName) {
         if ($null -eq $currentText) { $currentText = '' }
     }
     # Drop any earlier watch for this same button first, rather than stacking duplicates on a re-run.
-    $global:activeStepWatches = [System.Collections.Generic.List[object]]($global:activeStepWatches | Where-Object { $_.Button -ne $Button })
+    # @(...) around the whole pipeline is required, not optional: Where-Object filtering everything
+    # out (as it always does on the very first-ever call, since the list starts empty) produces $null,
+    # not an empty collection, and List[object]'s constructor throws ArgumentNullException on $null.
+    $global:activeStepWatches = [System.Collections.Generic.List[object]]@($global:activeStepWatches | Where-Object { $_.Button -ne $Button })
     $global:activeStepWatches.Add([PSCustomObject]@{
         Button     = $Button
         TargetText = "Completed Task $CmdletName"
