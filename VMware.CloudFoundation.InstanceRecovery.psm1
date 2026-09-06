@@ -16704,54 +16704,14 @@ function Import-VariablesAnswersFile([string]$Path) {
     }
 }
 
-# BISECT STEP: this is RC4's handler verbatim, with the whole load done inline in the closure rather
-# than delegated to Import-VariablesAnswersFile. That function is still defined above and is still
-# what Resume calls; only this button's path has been put back to the RC4 code. If the garbling
-# survives this, the refactor is not the cause and the RC4/RC5 attribution needs revisiting.
 $loadVariablesButton.Add_Click({
-    try {
-        $dialog = New-Object Microsoft.Win32.OpenFileDialog
-        $dialog.Filter = 'JSON files (*.json)|*.json|All files (*.*)|*.*'
-        $dialog.Title = 'Select variable answers file'
-        if ($dialog.ShowDialog() -ne $true) {
-            return
-        }
-
-        $answers = Get-Content -Path $dialog.FileName -Raw | ConvertFrom-Json
-        $answerMap = [ordered]@{}
-        foreach ($property in $answers.PSObject.Properties) {
-            $answerMap[$property.Name] = [string]$property.Value
-        }
-
-        # extractedSDDCDataFile comes from the Data Source browse selection, not the answers file --
-        # an answer file that happens to also define it must not overwrite that value or show up as
-        # an editable row here.
-        $answerMap.Remove('extractedSDDCDataFile')
-
-        $variablesItemsPanel.Children.Clear()
-
-        if ($answerMap.Count -eq 0) {
-            $loadedVariablesTextBlock.Text = "No variables found in '$($dialog.FileName)'."
-            return
-        }
-
-        $orderedNames = @(Get-ReferencedVariableNames $global:allStepCommandLines | Where-Object { $answerMap.Contains($_) })
-        $orderedNames += @($answerMap.Keys | Where-Object { $orderedNames -notcontains $_ })
-
-        foreach ($name in $orderedNames) {
-            $value = $answerMap[$name]
-            Send-ToConsole "`$$name = '$(Protect-SingleQuotes $value)'"
-            [void]$variablesItemsPanel.Children.Add((New-VariableRow $name $value))
-        }
-
-        $loadedVariablesTextBlock.Text = "Loaded $($orderedNames.Count) variable(s) from $($dialog.FileName)."
-
-        # Switch to the Steps tab now that variables are in place -- saves a manual click back and
-        # forth, the same way picking a domain switches Setup to the Workload Domains tab.
-        $stepsVariablesTabControl.SelectedIndex = 1
-    } catch {
-        $statusTextBlock.Text = "Load Variables failed: $($_.Exception.Message)"
+    $dialog = New-Object Microsoft.Win32.OpenFileDialog
+    $dialog.Filter = 'JSON files (*.json)|*.json|All files (*.*)|*.*'
+    $dialog.Title = 'Select variable answers file'
+    if ($dialog.ShowDialog() -ne $true) {
+        return
     }
+    Import-VariablesAnswersFile $dialog.FileName
 }.GetNewClosure())
 
 $domainsListBox.Add_SelectionChanged({
