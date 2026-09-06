@@ -166,11 +166,19 @@
 
         <!-- Header bar, modeled on the vSphere Client dark top bar -->
         <Border Grid.Row="0" Background="{StaticResource HeaderBarBrush}" Padding="18,12">
-            <!-- Deliberately just the title, with no other content. The console sits directly below
-                 this bar, so anything added here changes the bar's height and therefore how many
-                 character rows the console gets. Resume/Exit live in the left rail instead, where
-                 their size cannot affect the console. -->
-            <TextBlock Text="VCF Instance Backup &amp; Restore Orchestrator" Foreground="White" FontSize="16" FontWeight="SemiBold" />
+            <DockPanel>
+                <!-- Height is capped below the title TextBlock's own height on purpose. The console
+                     sits directly beneath this bar, so anything that makes the bar taller makes the
+                     console shorter, changing how many character rows it has. Letting the buttons
+                     size themselves grew the bar by roughly 6px, which is the one rendering-relevant
+                     difference RC5 introduced. Keeping the TextBlock as the tallest element here
+                     leaves the bar, and therefore the console, exactly the size it was at RC4. -->
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button x:Name="ResumeButton" Content="Resume..." Width="90" Height="20" Padding="10,0" Margin="0,0,8,0" />
+                    <Button x:Name="ExitButton" Content="Exit" Width="70" Height="20" Padding="10,0" />
+                </StackPanel>
+                <TextBlock Text="VCF Instance Backup &amp; Restore Orchestrator" Foreground="White" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" />
+            </DockPanel>
         </Border>
 
         <!-- Left rail (30%) and console (70%) are two independent columns, not one big stacked
@@ -198,7 +206,6 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="*" />
-                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
                 <!-- Data Source and Workload Domains share one card as tabs (rather than two
@@ -258,15 +265,6 @@
                         </TabItem>
                     </TabControl>
                 </GroupBox>
-
-                <!-- Resume/Exit sit here rather than in the header bar specifically because this is
-                     inside the left column. Whatever height they take comes out of this column's
-                     own share, so the console in column 2 keeps exactly the size it would have had
-                     without them. -->
-                <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
-                    <Button x:Name="ResumeButton" Content="Resume..." Width="90" Margin="0,0,8,0" />
-                    <Button x:Name="ExitButton" Content="Exit" Width="70" />
-                </StackPanel>
             </Grid>
 
             <!-- Embedded console. StartupCommandLine is set programmatically in the .psm1, not here,
