@@ -16518,8 +16518,17 @@ function Start-TerminalReadyWatcher {
         # Starting the transcript here IS needed, though: it's how step completion gets detected
         # (see Add-StepWatch/Start-StepCompletionWatcher) without touching the terminal control at
         # all -- Start-Transcript just writes host output to a plain text file on disk as it happens.
+        #
+        # Gating on ConPTYTerm alone is not enough to safely call WriteToTerm: ConPTYTerm is
+        # non-null from the moment the control is constructed, well before the real child process
+        # has actually started -- calling WriteToTerm that early throws internally ("Object
+        # reference not set..."). TermProcIsStarted only becomes true once the process has actually
+        # started. This was already a latent race even before the transcript was added; it never
+        # surfaced because nothing was ever auto-sent immediately on "ready" -- the first real
+        # command always came from you clicking Browse and navigating a dialog, which took long
+        # enough that the real process had already started by the time anything was typed.
         $script:terminalReadyAttempts++
-        if ($null -ne $term.ConPTYTerm) {
+        if ($null -ne $term.ConPTYTerm -and $term.ConPTYTerm.TermProcIsStarted) {
             $this.Stop()
             $escapedTranscriptPath = Protect-SingleQuotes $global:transcriptPath
             Send-ToConsole "Start-Transcript -Path '$escapedTranscriptPath' -Force"
