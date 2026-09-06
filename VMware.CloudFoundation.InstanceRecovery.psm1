@@ -16329,24 +16329,11 @@ $loadedVariablesTextBlock = $window.FindName('LoadedVariablesTextBlock')
 $variablesItemsPanel = $window.FindName('VariablesItemsPanel')
 $term = $window.FindName('Term')
 
-# EasyTerminalControl.FontSizeWhenSettingTheme is a no-op by itself -- it's only ever read inside
-# SetTheme(), which the control skips entirely whenever its Theme property is null (the default,
-# since XAML never sets one). So the font size must be applied together with an explicit Theme;
-# otherwise the "smaller font" request silently does nothing. Colors below are the standard
-# Windows Terminal "Campbell" default scheme, matching what the control already renders without a
-# Theme, so this changes only the font size, not the look.
-$campbellColors = @(
-    '#0C0C0C', '#C50F1F', '#13A10E', '#C19C00', '#0037DA', '#881798', '#3A96DD', '#CCCCCC',
-    '#767676', '#E74856', '#16C60C', '#F9F1A5', '#3B78FF', '#B4009E', '#61D6D6', '#F2F2F2'
-)
-$toColorVal = { param([string]$Hex) [EasyWindowsTerminalControl.EasyTerminalControl]::ColorToVal([System.Windows.Media.ColorConverter]::ConvertFromString($Hex)) }
-$terminalTheme = New-Object Microsoft.Terminal.Wpf.TerminalTheme
-$terminalTheme.DefaultBackground = & $toColorVal '#0C0C0C'
-$terminalTheme.DefaultForeground = & $toColorVal '#CCCCCC'
-$terminalTheme.DefaultSelectionBackground = & $toColorVal '#FFFFFF'
-$terminalTheme.ColorTable = [uint32[]]($campbellColors | ForEach-Object { & $toColorVal $_ })
-$term.FontSizeWhenSettingTheme = 11
-$term.Theme = $terminalTheme
+# Deliberately not setting a custom Theme/FontSizeWhenSettingTheme: doing so is the confirmed
+# cause of a console line-wrapping/corruption bug (first appeared the moment this was added, before
+# any completion-tracking code existed, and reappeared every time it's been reintroduced since).
+# Left at the control's own built-in default rendering until a genuinely safe way to resize the
+# font is found.
 
 # Populated once a domain is selected (see the SelectionChanged handler below); initialized here
 # so Run All never sees $null before that happens.
