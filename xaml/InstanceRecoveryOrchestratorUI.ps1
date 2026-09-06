@@ -1,36 +1,28 @@
 # Builds and runs the VCF IBR Orchestrator window. Launched by Start-VCFIBROrchestrator (in the
-# module's .psm1) as its own detached pwsh.exe process -- not a runspace inside that process -- so
-# that WPF's one-Application-per-process limit never gets in the way of relaunching: each run of
-# this script gets a completely fresh CLR and WPF runtime, so closing the window and running
+# module's .psm1) as its own detached pwsh.exe process, not a runspace inside that process, so that
+# WPF's one-Application-per-process limit never gets in the way of relaunching: each run of this
+# script gets a completely fresh CLR and WPF runtime, so closing the window and running
 # Start-VCFIBROrchestrator again always starts over cleanly, with no shared state to worry about.
 #
-# Self-contained: has no dependency on the module's own functions (e.g. LogMessage) -- only .NET/WPF
-# and the vendored terminal control, since a separate process wouldn't have the module imported
-# anyway.
+# The console is a plain read-only output pane plus a single-line input box (see the XAML), fed by
+# a second pwsh.exe process run with plain redirected stdin/stdout/stderr -- not a ConPTY-backed
+# terminal emulator control. That control (EasyWindowsTerminalControl, wrapping an unpublished
+# CI/beta build of Microsoft's own terminal-hosting layer) was the source of most of this feature's
+# problems: a crash bug that needed a binary patch, and a rendering corruption bug that survived
+# every fix attempted at the PowerShell level, confirmed (by running the exact same commands in a
+# normal PowerShell console with no corruption) to be in that control's own rendering. This app's
+# actual console traffic is entirely line-based -- LogMessage output and single-line Read-Host-style
+# prompts -- nothing here ever needed real terminal emulation (cursor positioning, full-screen
+# redraws) in the first place.
+#
+# Self-contained: has no dependency on the module's own functions (e.g. LogMessage) -- only .NET/WPF.
 param(
     [string]$XamlPath,
-    [string]$LibPath,
     [string]$WorkingDirectory
 )
 
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Xaml
 
-# Prepend the vendored folder to the native search path -- EasyWindowsTerminalControl wraps native
-# C++/DirectX rendering components that need to resolve alongside its managed assembly.
-$env:PATH = "$LibPath;$env:PATH"
-Get-ChildItem -Path $LibPath -Filter '*.dll' | ForEach-Object {
-    try {
-        Add-Type -Path $_.FullName -ErrorAction Stop
-    } catch {
-        Write-Warning "Failed to load $($_.FullName): $($_.Exception.Message)"
-    }
-}
-
-# EasyWindowsTerminalControl's native rendering/ConPTY session appears to need
-# Application.Current to already exist by the time the control is constructed -- a normal
-# compiled WPF app's generated Main() always does "new Application(); app.Run();" before its
-# StartupUri window (and therefore any control inside it) is ever built. XamlReader.Load()
-# below constructs the Term control immediately, so the Application must be created first.
 $app = New-Object System.Windows.Application
 
 [xml]$xamlDocument = Get-Content -Path $XamlPath -Raw
@@ -54,26 +46,64 @@ $runAllRecoverDefaultClusterButton = $window.FindName('RunAllRecoverDefaultClust
 $loadVariablesButton = $window.FindName('LoadVariablesButton')
 $loadedVariablesTextBlock = $window.FindName('LoadedVariablesTextBlock')
 $variablesItemsPanel = $window.FindName('VariablesItemsPanel')
-$term = $window.FindName('Term')
+$consoleOutput = $window.FindName('ConsoleOutput')
+$consoleInput = $window.FindName('ConsoleInput')
 
-# EasyTerminalControl.FontSizeWhenSettingTheme is a no-op by itself -- it's only ever read inside
-# SetTheme(), which the control skips entirely whenever its Theme property is null (the default,
-# since XAML never sets one). So the font size must be applied together with an explicit Theme;
-# otherwise the "smaller font" request silently does nothing. Colors below are the standard
-# Windows Terminal "Campbell" default scheme, matching what the control already renders without a
-# Theme, so this changes only the font size, not the look.
-$campbellColors = @(
-    '#0C0C0C', '#C50F1F', '#13A10E', '#C19C00', '#0037DA', '#881798', '#3A96DD', '#CCCCCC',
-    '#767676', '#E74856', '#16C60C', '#F9F1A5', '#3B78FF', '#B4009E', '#61D6D6', '#F2F2F2'
-)
-$toColorVal = { param([string]$Hex) [EasyWindowsTerminalControl.EasyTerminalControl]::ColorToVal([System.Windows.Media.ColorConverter]::ConvertFromString($Hex)) }
-$terminalTheme = New-Object Microsoft.Terminal.Wpf.TerminalTheme
-$terminalTheme.DefaultBackground = & $toColorVal '#0C0C0C'
-$terminalTheme.DefaultForeground = & $toColorVal '#CCCCCC'
-$terminalTheme.DefaultSelectionBackground = & $toColorVal '#FFFFFF'
-$terminalTheme.ColorTable = [uint32[]]($campbellColors | ForEach-Object { & $toColorVal $_ })
-$term.FontSizeWhenSettingTheme = 11
-$term.Theme = $terminalTheme
+# Every line appended goes into ONE shared Paragraph as Run+LineBreak pairs, rather than one
+# Paragraph per line -- RichTextBox's default paragraph spacing would otherwise leave a visible gap
+# between every single line, which looks nothing like a console.
+$consoleOutputParagraph = New-Object System.Windows.Documents.Paragraph
+$consoleOutputParagraph.Margin = '0'
+$consoleOutput.Document.Blocks.Clear()
+$consoleOutput.Document.Blocks.Add($consoleOutputParagraph)
+
+# Colors matching LogMessage's own ANSI scheme (INFO green, ERROR/EXCEPTION red, WARNING/ADVISORY/
+# QUESTION yellow, NOTE/WAIT white) -- applied by us based on the [type] tag in each line, instead of
+# interpreting the ANSI escape codes LogMessage actually emits (stripped out entirely, see
+# Remove-AnsiCodes). PROMPT is our own pseudo-type for the command-echo lines Send-ToConsole adds.
+$logTypeColors = @{
+    INFO      = '#3DDC84'
+    ERROR     = '#FF5555'
+    EXCEPTION = '#FF5555'
+    WARNING   = '#FFD866'
+    ADVISORY  = '#FFD866'
+    QUESTION  = '#FFD866'
+    NOTE      = '#FFFFFF'
+    WAIT      = '#FFFFFF'
+    PROMPT    = '#5DB2FF'
+}
+$defaultConsoleColor = [System.Windows.Media.ColorConverter]::ConvertFromString('#CCCCCC')
+
+function Remove-AnsiCodes([string]$Text) {
+    return $Text -replace "`e\[[0-9;]*m", ''
+}
+
+# Appends one line to the console output. $ForcedType is used for lines we generate ourselves (the
+# command echo, below) that don't carry their own [type] tag; otherwise the type -- and therefore the
+# color -- is read from the line's own "[INFO]"/"[ERROR]"/etc. tag, matching LogMessage's format.
+# Must run on the UI thread; callers on a background thread (the process output handlers, below) wrap
+# this in $window.Dispatcher.BeginInvoke themselves.
+function Add-ConsoleLine {
+    param([string]$Text, [string]$ForcedType)
+
+    $clean = Remove-AnsiCodes $Text
+    $type = $ForcedType
+    if (-not $type) {
+        $match = [regex]::Match($clean, '\[(INFO|ERROR|WARNING|EXCEPTION|ADVISORY|NOTE|QUESTION|WAIT)\]')
+        if ($match.Success) { $type = $match.Groups[1].Value }
+    }
+    $color = if ($type -and $logTypeColors.ContainsKey($type)) {
+        [System.Windows.Media.ColorConverter]::ConvertFromString($logTypeColors[$type])
+    } else {
+        $defaultConsoleColor
+    }
+
+    $run = New-Object System.Windows.Documents.Run($clean)
+    $run.Foreground = New-Object System.Windows.Media.SolidColorBrush($color)
+    [void]$consoleOutputParagraph.Inlines.Add($run)
+    [void]$consoleOutputParagraph.Inlines.Add((New-Object System.Windows.Documents.LineBreak))
+    $consoleOutput.ScrollToEnd()
+}
 
 # Populated once a domain is selected (see the SelectionChanged handler below); initialized here
 # so Run All never sees $null before that happens.
@@ -83,10 +113,11 @@ $global:recoverDefaultClusterStepRows = @()
 # Load Variables flow so Exit can record it, and Resume can pass it straight back to the same loader.
 $global:variablesAnswersFilePath = $null
 
-# Completion tracking, attempt 5: a PowerShell transcript of the embedded console, read from disk.
-# This is fully decoupled from the terminal control itself -- no event subscription (confirmed to
-# collide with the control's own rendering), no reading the control's rendered text back. Just a
-# plain text file that PowerShell itself appends to, and a plain file read on a timer.
+# Completion tracking, attempt 5: a PowerShell transcript of the console, read from disk. Unaffected
+# by the move away from the terminal control -- it never depended on that control's own rendering
+# (that was the whole point of using a transcript in the first place: a plain text file that
+# PowerShell itself appends to, read back on a timer, confirmed correct even on builds where the
+# on-screen rendering was garbled).
 #
 # Saved in the launch directory (not $env:TEMP) with a timestamp in the name so past runs can be
 # told apart and reviewed later instead of being overwritten or left to rot in a temp folder.
@@ -99,27 +130,91 @@ function Protect-SingleQuotes([string]$Value) {
     return $Value.Replace("'", "''")
 }
 
-# Set here, not in the XAML, since it needs to embed values computed above/passed in (the launch
-# directory, the per-launch transcript path). The Set-Location, PSReadLine prediction fix, and
-# Start-Transcript all run as part of the console's own process startup (-Command), before the
-# interactive session ever begins -- so none of them are ever "typed" into the visible console, the
-# way sending them afterward via WriteToTerm would be. Start-Transcript's own confirmation output is
-# piped to Out-Null so launching it leaves no trace in the console at all.
+# The console process: an ordinary pwsh.exe with its stdin/stdout/stderr redirected to us, not a
+# ConPTY-backed pseudo-terminal. Set-Location, removing PSReadLine, and Start-Transcript all run as
+# part of its own startup -Command, before Send-ToConsole ever writes anything to its stdin, for the
+# same reason as before: none of them should appear as if a user typed them. PSReadLine is removed
+# defensively -- it should never engage at all against a redirected, non-terminal stdin/stdout, but
+# there's no cost to being certain, and it was the confirmed cause of a real corruption bug earlier
+# in this feature's life. -Encoding utf8 on Start-Transcript matches StandardOutputEncoding below.
 $escapedWorkingDirectory = Protect-SingleQuotes $WorkingDirectory
 $escapedTranscriptPath = Protect-SingleQuotes $global:transcriptPath
-$term.StartupCommandLine = "pwsh.exe -NoLogo -NoExit -Command `"Set-Location -LiteralPath '$escapedWorkingDirectory'; Remove-Module PSReadLine -Force -ErrorAction SilentlyContinue; Start-Transcript -Path '$escapedTranscriptPath' -Force | Out-Null`""
+$consoleStartupCommand = "Set-Location -LiteralPath '$escapedWorkingDirectory'; Remove-Module PSReadLine -Force -ErrorAction SilentlyContinue; Start-Transcript -Path '$escapedTranscriptPath' -Force -Encoding utf8 | Out-Null"
+
+$consoleStartInfo = New-Object System.Diagnostics.ProcessStartInfo
+$consoleStartInfo.FileName = (Get-Process -Id $PID).Path   # same pwsh.exe/powershell.exe running this launcher
+$consoleStartInfo.ArgumentList.Add('-NoLogo')
+$consoleStartInfo.ArgumentList.Add('-NoProfile')
+$consoleStartInfo.ArgumentList.Add('-NoExit')
+$consoleStartInfo.ArgumentList.Add('-Command')
+$consoleStartInfo.ArgumentList.Add($consoleStartupCommand)
+$consoleStartInfo.WorkingDirectory = $WorkingDirectory
+$consoleStartInfo.UseShellExecute = $false
+$consoleStartInfo.CreateNoWindow = $true
+$consoleStartInfo.RedirectStandardInput = $true
+$consoleStartInfo.RedirectStandardOutput = $true
+$consoleStartInfo.RedirectStandardError = $true
+$consoleStartInfo.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+$consoleStartInfo.StandardErrorEncoding = [System.Text.Encoding]::UTF8
+
+$consoleProcess = New-Object System.Diagnostics.Process
+$consoleProcess.StartInfo = $consoleStartInfo
+$consoleProcess.EnableRaisingEvents = $true
+
+# OutputDataReceived/ErrorDataReceived fire on a threadpool thread, not the UI thread -- touching a
+# WPF element directly from there throws, hence the Dispatcher.BeginInvoke wrapping. .GetNewClosure()
+# on the inner scriptblock captures this specific firing's $line by value before handing it to the
+# dispatcher queue -- without it, a burst of output arriving faster than the UI thread drains the
+# queue could have several queued callbacks all resolve $line however it happens to look by the time
+# each one actually runs, the same class of bug New-StepRow's Add_Click already has to guard against.
+$consoleProcess.Add_OutputDataReceived({
+    if ($null -eq $EventArgs.Data) { return }
+    $line = $EventArgs.Data
+    $window.Dispatcher.BeginInvoke([Action]({ Add-ConsoleLine $line }.GetNewClosure())) | Out-Null
+})
+$consoleProcess.Add_ErrorDataReceived({
+    if ($null -eq $EventArgs.Data) { return }
+    $line = $EventArgs.Data
+    $window.Dispatcher.BeginInvoke([Action]({ Add-ConsoleLine $line 'ERROR' }.GetNewClosure())) | Out-Null
+})
+
+[void]$consoleProcess.Start()
+$consoleProcess.BeginOutputReadLine()
+$consoleProcess.BeginErrorReadLine()
+
+# Kills the console process when the window actually closes, regardless of which path got it there
+# (the X button or Exit) -- a plain child process isn't torn down automatically just because this
+# process exits, so without this every close would leak an orphaned pwsh.exe.
+$window.Add_Closed({
+    if ($consoleProcess -and -not $consoleProcess.HasExited) {
+        try { $consoleProcess.Kill($true) } catch {}
+    }
+})
 
 function Send-ToConsole([string]$CommandLine) {
-    if ($null -eq $term.ConPTYTerm) {
-        $statusTextBlock.Text = "Console isn't ready yet (ConPTYTerm is null) -- try again in a moment."
+    if ($null -eq $consoleProcess -or $consoleProcess.HasExited) {
+        $statusTextBlock.Text = "Console process isn't running."
         return
     }
+    # Echoed ourselves: a redirected pipe, unlike a real terminal, never echoes typed input on its
+    # own -- without this, the command actually sent wouldn't be visible anywhere.
+    Add-ConsoleLine "PS $WorkingDirectory> $CommandLine" 'PROMPT'
     try {
-        $term.ConPTYTerm.WriteToTerm("$CommandLine`r")
+        $consoleProcess.StandardInput.WriteLine($CommandLine)
     } catch {
-        $statusTextBlock.Text = "WriteToTerm failed: $($_.Exception.Message)"
+        $statusTextBlock.Text = "Failed to send command: $($_.Exception.Message)"
     }
 }
+
+$consoleInput.Add_KeyDown({
+    if ($EventArgs.Key -eq [System.Windows.Input.Key]::Enter) {
+        $commandText = $consoleInput.Text
+        $consoleInput.Clear()
+        if ($commandText) {
+            Send-ToConsole $commandText
+        }
+    }
+})
 
 # Starts (or restarts) watching the transcript for this row's "Completed Task <cmdlet>" line, from
 # whatever the transcript's current length is right now -- so an OLDER completion line already in
@@ -247,37 +342,6 @@ function New-VariableRow([string]$Name, [string]$Value) {
     [void]$panel.Children.Add($label)
     [void]$panel.Children.Add($valueBox)
     return $panel
-}
-
-function Start-TerminalReadyWatcher {
-    $timer = New-Object System.Windows.Threading.DispatcherTimer
-    $timer.Interval = [TimeSpan]::FromMilliseconds(200)
-    $script:terminalReadyAttempts = 0
-    $timer.Add_Tick({
-        # $this, not $timer -- by the time this fires, Start-TerminalReadyWatcher has already
-        # returned, so its local $timer variable is out of scope and resolves to $null here.
-        # $this is bound to the DispatcherTimer instance automatically by Add_Tick.
-        #
-        # No command is sent to the console once it's ready: the module is installed on
-        # $env:PSModulePath, so PowerShell auto-loads it the first time a Step's cmdlet actually
-        # runs -- an explicit Import-Module here would just be a redundant, race-prone extra step.
-        # (The transcript now starts as part of the console's own process startup command line, not
-        # here -- see where $term.StartupCommandLine is set, above.)
-        #
-        # Gating on ConPTYTerm alone would not be enough to safely WriteToTerm here if this branch
-        # ever needs to send something in the future: ConPTYTerm is non-null from the moment the
-        # control is constructed, well before the real child process has actually started -- calling
-        # WriteToTerm that early throws internally ("Object reference not set..."). TermProcIsStarted
-        # only becomes true once the process has actually started.
-        $script:terminalReadyAttempts++
-        if ($null -ne $term.ConPTYTerm -and $term.ConPTYTerm.TermProcIsStarted) {
-            $this.Stop()
-        } elseif ($script:terminalReadyAttempts -gt 50) {
-            $this.Stop()
-            $statusTextBlock.Text = 'Embedded console did not start in time.'
-        }
-    })
-    $timer.Start()
 }
 
 # Checks each actively-watched row's slice of the transcript (everything written since its Run was
@@ -562,9 +626,9 @@ $exitButton.Add_Click({
         $state | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $dialog.FileName -Encoding utf8
 
         Send-ToConsole 'Stop-Transcript | Out-Null'
-        # Give Stop-Transcript a moment to actually run inside the console's own process before this
-        # window (and the console with it) is hidden -- WriteToTerm only queues keystrokes, it doesn't
-        # wait for them to be processed.
+        # Give Stop-Transcript a moment to actually run inside the console process before it gets
+        # killed by closing this window (see $window.Add_Closed, above) -- writing to StandardInput
+        # only queues the line, it doesn't wait for the console process to act on it.
         Start-Sleep -Milliseconds 300
 
         $window.Close()
@@ -616,7 +680,6 @@ $resumeButton.Add_Click({
     }
 }.GetNewClosure())
 
-Start-TerminalReadyWatcher
 Start-StepCompletionWatcher
 
 [void]$app.Run($window)

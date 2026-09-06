@@ -1,6 +1,5 @@
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:term="clr-namespace:EasyWindowsTerminalControl;assembly=EasyWindowsTerminalControl"
         Title="VCF Instance Backup &amp; Restore Orchestrator" Height="820" Width="1100" WindowState="Maximized">
     <!--
         Loaded via XamlReader.Load from InstanceRecoveryOrchestratorUI.ps1 (launched, as its own
@@ -262,10 +261,36 @@
                 </GroupBox>
             </Grid>
 
-            <!-- Embedded console. StartupCommandLine is set programmatically in the .psm1, not here,
-                 since it needs to embed a per-launch transcript file path computed at runtime. -->
+            <!-- Console: a plain read-only output pane plus a single-line input box, fed by a plain
+                 redirected-I/O child PowerShell process (see the .ps1), deliberately not a terminal
+                 emulator control. Every command this app runs is either single-line Read-Host-style
+                 input or line-by-line LogMessage output; nothing needs cursor-positioning or
+                 full-screen redraws, and a real terminal emulator's rendering is exactly what kept
+                 corrupting output before this. Both controls start empty; content and coloring are
+                 added imperatively from the loader script as output arrives. -->
             <GroupBox Grid.Column="2" Header="Console">
-                <term:EasyTerminalControl x:Name="Term" />
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <RichTextBox x:Name="ConsoleOutput"
+                                 Grid.Row="0"
+                                 IsReadOnly="True"
+                                 VerticalScrollBarVisibility="Auto"
+                                 HorizontalScrollBarVisibility="Auto"
+                                 Background="#0C0C0C"
+                                 Foreground="#CCCCCC"
+                                 FontFamily="Consolas"
+                                 FontSize="12"
+                                 BorderThickness="0"
+                                 Padding="6" />
+                    <TextBox x:Name="ConsoleInput"
+                             Grid.Row="1"
+                             Margin="0,6,0,0"
+                             FontFamily="Consolas"
+                             FontSize="12" />
+                </Grid>
             </GroupBox>
         </Grid>
     </Grid>

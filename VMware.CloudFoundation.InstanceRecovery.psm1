@@ -16334,10 +16334,15 @@ Function Start-VCFIBROrchestrator {
     The Start-VCFIBROrchestrator cmdlet opens a WPF window -- built by a standalone script
     (xaml\InstanceRecoveryOrchestratorUI.ps1) that lets you pick an extracted-sddc-data.json file,
     lists the workload domains it contains, and runs the recovery steps for the selected domain in an
-    embedded, fully interactive PowerShell console (via EasyWindowsTerminalControl, vendored under
-    lib\EasyWindowsTerminalControl).
+    embedded console. That console is a plain read-only output pane plus a single-line input box fed
+    by a second, ordinary pwsh.exe process with redirected stdin/stdout/stderr -- not a terminal
+    emulator control. This app's console traffic is entirely line-based (LogMessage output and
+    single-line Read-Host-style prompts), so it never needed real terminal emulation in the first
+    place, and the vendored terminal control that used to provide it was the source of most of this
+    feature's problems (a crash bug, and a rendering corruption bug confirmed to be in that control's
+    own rendering, not in PowerShell or anything this module does).
 
-    That script runs as its own separate, detached pwsh.exe process, not a runspace inside this one.
+    The UI script runs as its own separate, detached pwsh.exe process, not a runspace inside this one.
     That's deliberate: WPF allows only one Application object (and one Dispatcher/message loop) per
     process, and once that shuts down -- which happens automatically the moment its last window truly
     closes -- it can never run again for the rest of that process's life. Running the UI in-process
@@ -16382,11 +16387,10 @@ Function Start-VCFIBROrchestrator {
     $moduleRoot = $PSScriptRoot
     $xamlPath = Join-Path $moduleRoot 'xaml\InstanceRecoveryOrchestratorUI.xaml'
     $uiScriptPath = Join-Path $moduleRoot 'xaml\InstanceRecoveryOrchestratorUI.ps1'
-    $libPath = Join-Path $moduleRoot 'lib\EasyWindowsTerminalControl'
     # Captured here, not inside the UI script: that runs in a separate process which has no notion
-    # of "the caller's current directory" of its own. The embedded console is started with this as
-    # its own working directory (see Set-Location in $term.StartupCommandLine, in the UI script), and
-    # transcripts are written here too, so both land wherever the user ran this cmdlet from.
+    # of "the caller's current directory" of its own. The console process is started with this as
+    # its own working directory (see Set-Location in the UI script), and transcripts are written
+    # here too, so both land wherever the user ran this cmdlet from.
     $launchDirectory = (Get-Location).Path
 
     if (-not (Test-Path $xamlPath)) {
@@ -16395,10 +16399,6 @@ Function Start-VCFIBROrchestrator {
     }
     if (-not (Test-Path $uiScriptPath)) {
         LogMessage -type ERROR -message "Cannot find UI script '$uiScriptPath'."
-        return
-    }
-    if (-not (Test-Path $libPath)) {
-        LogMessage -type ERROR -message "Cannot find vendored EasyWindowsTerminalControl assemblies at '$libPath'."
         return
     }
 
@@ -16421,8 +16421,6 @@ Function Start-VCFIBROrchestrator {
     $startInfo.ArgumentList.Add($uiScriptPath)
     $startInfo.ArgumentList.Add('-XamlPath')
     $startInfo.ArgumentList.Add($xamlPath)
-    $startInfo.ArgumentList.Add('-LibPath')
-    $startInfo.ArgumentList.Add($libPath)
     $startInfo.ArgumentList.Add('-WorkingDirectory')
     $startInfo.ArgumentList.Add($launchDirectory)
 
