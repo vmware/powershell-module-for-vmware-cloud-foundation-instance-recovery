@@ -16687,11 +16687,25 @@ function Import-VariablesAnswersFile([string]$Path) {
         $orderedNames = @(Get-ReferencedVariableNames $global:allStepCommandLines | Where-Object { $answerMap.Contains($_) })
         $orderedNames += @($answerMap.Keys | Where-Object { $orderedNames -notcontains $_ })
 
-        foreach ($name in $orderedNames) {
-            $value = $answerMap[$name]
-            Send-ToConsole "`$$name = '$(Protect-SingleQuotes $value)'"
-            [void]$variablesItemsPanel.Children.Add((New-VariableRow $name $value))
+        # Written to a temp file and dot-sourced with a single short command, rather than typed into
+        # the console one "$name = 'value'" at a time -- typing each one echoed every value, including
+        # plaintext passwords, into both the visible console and the transcript. A dot-sourced file is
+        # never echoed at all; PowerShell just runs it. This also means none of these values can hit
+        # the line-wrap corruption fixed for RC6, no matter how long they are.
+        $varsScriptPath = Join-Path $env:TEMP "vcfir-vars-$PID-$([guid]::NewGuid().ToString('N')).ps1"
+        $varsScriptLines = foreach ($name in $orderedNames) {
+            "`$$name = '$(Protect-SingleQuotes $answerMap[$name])'"
         }
+        Set-Content -LiteralPath $varsScriptPath -Value $varsScriptLines -Encoding utf8
+
+        foreach ($name in $orderedNames) {
+            [void]$variablesItemsPanel.Children.Add((New-VariableRow $name $answerMap[$name]))
+        }
+
+        $escapedVarsScriptPath = Protect-SingleQuotes $varsScriptPath
+        # Deleted in the same command that dot-sources it, so the plaintext values don't sit on disk
+        # any longer than it takes the console to consume them.
+        Send-ToConsole ". '$escapedVarsScriptPath'; Remove-Item -LiteralPath '$escapedVarsScriptPath' -Force"
 
         $loadedVariablesTextBlock.Text = "Loaded $($orderedNames.Count) variable(s) from $Path."
         $global:variablesAnswersFilePath = $Path
