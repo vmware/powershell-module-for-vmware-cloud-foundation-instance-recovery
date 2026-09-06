@@ -16366,6 +16366,14 @@ function Protect-SingleQuotes([string]$Value) {
     return $Value.Replace("'", "''")
 }
 
+# Set here, not in the XAML, since it needs to embed the per-launch transcript path computed above.
+# Both PSReadLine's prediction fix and Start-Transcript run as part of the console's own process
+# startup (-Command), before the interactive session ever begins -- so neither is ever "typed" into
+# the visible console, unlike sending them afterward via WriteToTerm would be. Start-Transcript's own
+# confirmation output is piped to Out-Null so launching it leaves no trace in the console at all.
+$escapedTranscriptPath = Protect-SingleQuotes $global:transcriptPath
+$term.StartupCommandLine = "pwsh.exe -NoLogo -NoExit -Command `"Set-PSReadLineOption -PredictionSource None; Start-Transcript -Path '$escapedTranscriptPath' -Force | Out-Null`""
+
 function Send-ToConsole([string]$CommandLine) {
     if ($null -eq $term.ConPTYTerm) {
         $statusTextBlock.Text = "Console isn't ready yet (ConPTYTerm is null) -- try again in a moment."
@@ -16515,26 +16523,20 @@ function Start-TerminalReadyWatcher {
         # returned, so its local $timer variable is out of scope and resolves to $null here.
         # $this is bound to the DispatcherTimer instance automatically by Add_Tick.
         #
-        # No Import-Module is sent to the console once it's ready: the module is installed on
+        # No command is sent to the console once it's ready: the module is installed on
         # $env:PSModulePath, so PowerShell auto-loads it the first time a Step's cmdlet actually
         # runs -- an explicit Import-Module here would just be a redundant, race-prone extra step.
-        # Starting the transcript here IS needed, though: it's how step completion gets detected
-        # (see Add-StepWatch/Start-StepCompletionWatcher) without touching the terminal control at
-        # all -- Start-Transcript just writes host output to a plain text file on disk as it happens.
+        # (The transcript now starts as part of the console's own process startup command line, not
+        # here -- see where $term.StartupCommandLine is set, above.)
         #
-        # Gating on ConPTYTerm alone is not enough to safely call WriteToTerm: ConPTYTerm is
-        # non-null from the moment the control is constructed, well before the real child process
-        # has actually started -- calling WriteToTerm that early throws internally ("Object
-        # reference not set..."). TermProcIsStarted only becomes true once the process has actually
-        # started. This was already a latent race even before the transcript was added; it never
-        # surfaced because nothing was ever auto-sent immediately on "ready" -- the first real
-        # command always came from you clicking Browse and navigating a dialog, which took long
-        # enough that the real process had already started by the time anything was typed.
+        # Gating on ConPTYTerm alone would not be enough to safely WriteToTerm here if this branch
+        # ever needs to send something in the future: ConPTYTerm is non-null from the moment the
+        # control is constructed, well before the real child process has actually started -- calling
+        # WriteToTerm that early throws internally ("Object reference not set..."). TermProcIsStarted
+        # only becomes true once the process has actually started.
         $script:terminalReadyAttempts++
         if ($null -ne $term.ConPTYTerm -and $term.ConPTYTerm.TermProcIsStarted) {
             $this.Stop()
-            $escapedTranscriptPath = Protect-SingleQuotes $global:transcriptPath
-            Send-ToConsole "Start-Transcript -Path '$escapedTranscriptPath' -Force | Out-Null"
         } elseif ($script:terminalReadyAttempts -gt 50) {
             $this.Stop()
             $statusTextBlock.Text = 'Embedded console did not start in time.'
