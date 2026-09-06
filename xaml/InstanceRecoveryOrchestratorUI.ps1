@@ -136,10 +136,12 @@ function Protect-SingleQuotes([string]$Value) {
 # same reason as before: none of them should appear as if a user typed them. PSReadLine is removed
 # defensively -- it should never engage at all against a redirected, non-terminal stdin/stdout, but
 # there's no cost to being certain, and it was the confirmed cause of a real corruption bug earlier
-# in this feature's life. -Encoding utf8 on Start-Transcript matches StandardOutputEncoding below.
+# in this feature's life. No -Encoding on Start-Transcript: that parameter doesn't exist on every
+# PowerShell version, and Get-Content (used to read the transcript back) auto-detects the encoding
+# from its BOM regardless of which default Start-Transcript happened to use to write it.
 $escapedWorkingDirectory = Protect-SingleQuotes $WorkingDirectory
 $escapedTranscriptPath = Protect-SingleQuotes $global:transcriptPath
-$consoleStartupCommand = "Set-Location -LiteralPath '$escapedWorkingDirectory'; Remove-Module PSReadLine -Force -ErrorAction SilentlyContinue; Start-Transcript -Path '$escapedTranscriptPath' -Force -Encoding utf8 | Out-Null"
+$consoleStartupCommand = "Set-Location -LiteralPath '$escapedWorkingDirectory'; Remove-Module PSReadLine -Force -ErrorAction SilentlyContinue; Start-Transcript -Path '$escapedTranscriptPath' -Force | Out-Null"
 
 $consoleStartInfo = New-Object System.Diagnostics.ProcessStartInfo
 $consoleStartInfo.FileName = (Get-Process -Id $PID).Path   # same pwsh.exe/powershell.exe running this launcher
