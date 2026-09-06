@@ -16416,6 +16416,13 @@ Function Start-VCFIBROrchestrator {
     # showed one, and the orchestrator window is the only thing meant to be visible.
     $startInfo.UseShellExecute = $false
     $startInfo.CreateNoWindow = $true
+    # -STA must come before -File: anything after -File's own value is passed through as an argument
+    # to the script itself, not interpreted as a pwsh.exe switch. WPF requires an STA thread, and
+    # pwsh.exe's own usage text lists both -STA and -MTA as real switches -- meaning the apartment
+    # state a plain launch ends up with isn't something to assume. Without this, Application.Run()
+    # throws right after the window is constructed, which is invisible with CreateNoWindow set above:
+    # the whole process just exits, and the window vanishes with no error shown anywhere.
+    $startInfo.ArgumentList.Add('-STA')
     $startInfo.ArgumentList.Add('-NoProfile')
     $startInfo.ArgumentList.Add('-File')
     $startInfo.ArgumentList.Add($uiScriptPath)
@@ -16424,8 +16431,24 @@ Function Start-VCFIBROrchestrator {
     $startInfo.ArgumentList.Add('-WorkingDirectory')
     $startInfo.ArgumentList.Add($launchDirectory)
 
+    # Redirected only so a fast, unhandled failure (e.g. an exception thrown before Application.Run()
+    # ever starts pumping messages) has somewhere to be read back from below -- not read from at all
+    # while the process is still running, since that would block once its stderr's pipe buffer filled.
+    $startInfo.RedirectStandardError = $true
+
     $process = [System.Diagnostics.Process]::Start($startInfo)
     $script:InstanceRecoveryOrchestratorUIProcess = $process
+
+    # A real launch stays open indefinitely; this is only long enough to catch a launch that failed
+    # outright, so this cmdlet reports what actually happened instead of claiming success regardless,
+    # the way it used to when the old in-process approach's background-thread exceptions went unread.
+    Start-Sleep -Milliseconds 750
+    $process.Refresh()
+    if ($process.HasExited) {
+        $errorOutput = $process.StandardError.ReadToEnd()
+        LogMessage -type ERROR -message "Instance Recovery Orchestrator UI exited immediately (exit code $($process.ExitCode)). $errorOutput"
+        return
+    }
 
     LogMessage -type NOTE -message "Instance Recovery Orchestrator UI launched (PID $($process.Id))."
 }
