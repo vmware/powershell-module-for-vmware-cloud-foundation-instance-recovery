@@ -304,8 +304,11 @@ function Send-ToConsole([string]$CommandLine) {
     [void]$consoleInput.Focus()
 }
 
-$consoleInput.Add_KeyDown({
+# PreviewKeyDown (the tunneling-phase event, fired before the TextBox's own default key handling),
+# not KeyDown -- KeyDown is not reliable for catching Enter specifically in a TextBox in WPF.
+$consoleInput.Add_PreviewKeyDown({
     if ($EventArgs.Key -eq [System.Windows.Input.Key]::Enter) {
+        $EventArgs.Handled = $true
         $commandText = $consoleInput.Text
         $consoleInput.Clear()
         if ($commandText) {
