@@ -16353,13 +16353,6 @@ $term.Theme = $terminalTheme
 $global:managementDomainRestoresStepRows = @()
 $global:recoverDefaultClusterStepRows = @()
 
-# Raw console output, accumulated for step-completion detection (see Start-StepCompletionWatcher).
-# StringBuilder + lock, not plain string "+=": TerminalOutput can fire many times a second, and
-# repeated full-buffer-copy string concatenation was what previously created enough allocation
-# pressure to trigger an (already separately fixed) crash in the vendored terminal control.
-$global:consoleOutputBuffer = [System.Text.StringBuilder]::new()
-$global:consoleOutputBufferLock = [object]::new()
-
 function Protect-SingleQuotes([string]$Value) {
     return $Value.Replace("'", "''")
 }
@@ -16423,7 +16416,7 @@ function New-StepRow([string]$CommandLine) {
     [void]$panel.Children.Add($dot)
     [void]$panel.Children.Add($runButton)
     [void]$panel.Children.Add($label)
-    return [PSCustomObject]@{ Panel = $panel; Dot = $dot; CommandLine = $CommandLine; Button = $runButton; CmdletName = $cmdletName }
+    return [PSCustomObject]@{ Panel = $panel; Dot = $dot; CommandLine = $CommandLine }
 }
 
 # Variable names referenced across $CommandLines (e.g. "$targetFqdn"), in order of first
@@ -16487,57 +16480,12 @@ function Start-TerminalReadyWatcher {
         $script:terminalReadyAttempts++
         if ($null -ne $term.ConPTYTerm) {
             $this.Stop()
-            Start-StepCompletionWatcher
         } elseif ($script:terminalReadyAttempts -gt 50) {
             $this.Stop()
             $statusTextBlock.Text = 'Embedded console did not start in time.'
         }
     })
     $timer.Start()
-}
-
-# Watches console output for the module's own "Completed Task <cmdlet>" log line and marks the
-# matching Step row's button Done + green. TerminalOutput fires on the terminal's own read thread,
-# not the UI thread, so it only ever appends to the (locked) buffer -- no UI objects are touched
-# there. A separate, throttled DispatcherTimer (UI thread only) does the actual matching and button
-# updates, so UI work happens at a small fixed rate regardless of how much output streams through.
-function Start-StepCompletionWatcher {
-    $term.ConPTYTerm.Add_TerminalOutput({
-        param($sender, $e)
-        [System.Threading.Monitor]::Enter($global:consoleOutputBufferLock)
-        try {
-            [void]$global:consoleOutputBuffer.Append($e.Data)
-            $excess = $global:consoleOutputBuffer.Length - 50000
-            if ($excess -gt 0) {
-                [void]$global:consoleOutputBuffer.Remove(0, $excess)
-            }
-        } finally {
-            [System.Threading.Monitor]::Exit($global:consoleOutputBufferLock)
-        }
-    })
-
-    $checkTimer = New-Object System.Windows.Threading.DispatcherTimer
-    $checkTimer.Interval = [TimeSpan]::FromMilliseconds(500)
-    $checkTimer.Add_Tick({
-        $pendingRows = @(@($global:managementDomainRestoresStepRows) + @($global:recoverDefaultClusterStepRows) | Where-Object { $_.Button.Content -ne 'Done' })
-        if ($pendingRows.Count -eq 0) { return }
-        [System.Threading.Monitor]::Enter($global:consoleOutputBufferLock)
-        try {
-            # Collapse whitespace (including newlines from the console wrapping long lines at its
-            # width) so "Completed Task <cmdlet>" can still be found even if it got split mid-string
-            # across two wrapped rows.
-            $consoleText = $global:consoleOutputBuffer.ToString() -replace '\s+', ' '
-        } finally {
-            [System.Threading.Monitor]::Exit($global:consoleOutputBufferLock)
-        }
-        foreach ($row in $pendingRows) {
-            if ($consoleText.Contains("Completed Task $($row.CmdletName)")) {
-                $row.Button.Content = 'Done'
-                $row.Button.Background = [System.Windows.Media.Brushes]::Green
-            }
-        }
-    })
-    $checkTimer.Start()
 }
 
 $browseButton.Add_Click({
