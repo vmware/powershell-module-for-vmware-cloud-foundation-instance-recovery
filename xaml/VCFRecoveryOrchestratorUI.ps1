@@ -279,6 +279,53 @@ function Get-DisplayDatastoreType([string]$RawType) {
     }
 }
 
+# What has to be recovered before this additional (non-default) cluster, for the "Dependent On"
+# column -- purely informational, shown as a comma-separated list in recovery order:
+#   Management domain additional cluster: the management domain itself, then (if a compute
+#   cluster) its storage cluster.
+#   VI (workload) domain additional cluster: the management domain, then this cluster's own
+#   workload domain, then (if a compute cluster) its storage cluster.
+# A compute cluster (primaryDatastoreType 'VSAN_Remote', an HCI Mesh consumer with no local vSAN
+# datastore of its own) is resolved to its storage cluster by matching primaryDatastoreMoRef
+# against every other cluster across every domain: HCI Mesh mounts the exact same underlying vSAN
+# datastore object on both the storage cluster and every compute cluster that consumes it, so the
+# first non-remote cluster sharing that MoRef is the one actually providing it. Left unresolved
+# (silently omitted, not a placeholder) if no such cluster was captured in this extraction.
+function Get-ClusterDependencies($Domain, $Cluster, [object[]]$AllDomains) {
+    $dependencies = [System.Collections.Generic.List[string]]::new()
+    $managementDomain = $AllDomains | Where-Object { $_.domainType -eq 'MANAGEMENT' } | Select-Object -First 1
+
+    if ($Domain.domainType -eq 'MANAGEMENT') {
+        if ($Domain.domainName) {
+            $dependencies.Add($Domain.domainName)
+        }
+    } else {
+        if ($managementDomain.domainName) {
+            $dependencies.Add($managementDomain.domainName)
+        }
+        if ($Domain.domainName) {
+            $dependencies.Add($Domain.domainName)
+        }
+    }
+
+    if ($Cluster.primaryDatastoreType -eq 'VSAN_Remote' -and $Cluster.primaryDatastoreMoRef) {
+        $storageCluster = @(
+            foreach ($otherDomain in $AllDomains) {
+                foreach ($otherCluster in $otherDomain.vsphereClusterDetails) {
+                    if ($otherCluster.primaryDatastoreMoRef -eq $Cluster.primaryDatastoreMoRef -and $otherCluster.primaryDatastoreType -ne 'VSAN_Remote') {
+                        $otherCluster
+                    }
+                }
+            }
+        ) | Select-Object -First 1
+        if ($storageCluster.name) {
+            $dependencies.Add($storageCluster.name)
+        }
+    }
+
+    return ($dependencies -join ', ')
+}
+
 # Builds one table row (Workload Domains, Additional Clusters) as a plain Grid of TextBlocks.
 # $ColumnGroups must be the same SharedSizeGroup names, in the same order, as the table's own
 # static header Grid in the XAML -- that's what keeps a column's width in sync between the header
@@ -954,6 +1001,7 @@ function Import-ExtractedSddcDataFile([string]$Path) {
                         DomainName           = $domain.domainName
                         PrimaryDatastoreType = $cluster.primaryDatastoreType
                         IsStretched          = $cluster.isStretched
+                        DependentOn          = Get-ClusterDependencies $domain $cluster $extractedSddcData.workloadDomains
                     }
                 }
             }
@@ -965,8 +1013,8 @@ function Import-ExtractedSddcDataFile([string]$Path) {
         foreach ($cluster in $additionalClusters) {
             $stretchedText = if ($cluster.IsStretched -eq 't') { 'Y' } else { 'N' }
             $clusterNameText = if ($cluster.ClusterName) { $cluster.ClusterName } else { '(unknown)' }
-            $columnGroups = @('AdditionalClustersCol0', 'AdditionalClustersCol1', 'AdditionalClustersCol2', 'AdditionalClustersCol3')
-            $row = New-TableRow -Values @($clusterNameText, $cluster.DomainName, (Get-DisplayDatastoreType $cluster.PrimaryDatastoreType), $stretchedText) -ColumnGroups $columnGroups
+            $columnGroups = @('AdditionalClustersCol0', 'AdditionalClustersCol1', 'AdditionalClustersCol2', 'AdditionalClustersCol3', 'AdditionalClustersCol4')
+            $row = New-TableRow -Values @($clusterNameText, $cluster.DomainName, (Get-DisplayDatastoreType $cluster.PrimaryDatastoreType), $stretchedText, $cluster.DependentOn) -ColumnGroups $columnGroups
             # Wrapped in an explicit ListBoxItem (rather than adding $row directly) so selecting a
             # row is distinguishable from the "No additional clusters detected." placeholder above,
             # which is a plain string -- see Sync-AdditionalClusterSteps's ListBoxItem type check.

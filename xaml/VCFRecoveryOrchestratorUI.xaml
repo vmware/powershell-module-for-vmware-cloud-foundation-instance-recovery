@@ -291,11 +291,17 @@
                                         <ColumnDefinition Width="Auto" SharedSizeGroup="AdditionalClustersCol1" />
                                         <ColumnDefinition Width="Auto" SharedSizeGroup="AdditionalClustersCol2" />
                                         <ColumnDefinition Width="Auto" SharedSizeGroup="AdditionalClustersCol3" />
+                                        <ColumnDefinition Width="Auto" SharedSizeGroup="AdditionalClustersCol4" />
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Grid.Column="0" Text="Cluster Name" FontWeight="Bold" Margin="0,0,10,0" />
                                     <TextBlock Grid.Column="1" Text="Domain" FontWeight="Bold" Margin="0,0,10,0" />
                                     <TextBlock Grid.Column="2" Text="Storage" FontWeight="Bold" Margin="0,0,10,0" />
-                                    <TextBlock Grid.Column="3" Text="Stretched" FontWeight="Bold" />
+                                    <TextBlock Grid.Column="3" Text="Stretched" FontWeight="Bold" Margin="0,0,10,0" />
+                                    <!-- Comma-separated, in recovery order; see Get-ClusterDependencies in the
+                                         .ps1. Purely informational: nothing here feeds back into plan conditions
+                                         or Run All sequencing, it's a hint for whoever's deciding what order to
+                                         work through multiple additional clusters in by hand. -->
+                                    <TextBlock Grid.Column="4" Text="Dependent On" FontWeight="Bold" />
                                 </Grid>
                                 <ListBox x:Name="AdditionalClustersListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" VirtualizingPanel.IsVirtualizing="False" MaxHeight="160" />
                             </DockPanel>
