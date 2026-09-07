@@ -135,6 +135,10 @@ namespace VCFIRConsole {
         public const int SW_HIDE = 0;
         public const int SW_SHOW = 5;
         public const int STD_INPUT_HANDLE = -10;
+        public const uint RDW_INVALIDATE = 0x1;
+        public const uint RDW_ERASE = 0x4;
+        public const uint RDW_UPDATENOW = 0x100;
+        public const uint RDW_ALLCHILDREN = 0x80;
 
         [DllImport("user32.dll", EntryPoint = "GetWindowLongPtr", SetLastError = true)]
         private static extern IntPtr GetWindowLongPtr64(IntPtr hWnd, int nIndex);
@@ -162,6 +166,9 @@ namespace VCFIRConsole {
 
         [DllImport("user32.dll", SetLastError = true)]
         public static extern IntPtr SetFocus(IntPtr hWnd);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern bool RedrawWindow(IntPtr hWnd, IntPtr lprcUpdate, IntPtr hrgnUpdate, uint flags);
 
         [DllImport("kernel32.dll", SetLastError = true)]
         public static extern bool AttachConsole(uint dwProcessId);
@@ -281,6 +288,22 @@ $window.Add_Closed({
 $window.Add_Loaded({
     if ($consoleHwnd -ne [IntPtr]::Zero) {
         [VCFIRConsole.NativeMethods]::SetFocus($consoleHwnd) | Out-Null
+    }
+})
+
+# The window opens already maximized (see the XAML's WindowState), which means WPF first lays the
+# embedded console out at its declared (smaller) design-time size, then the OS applies the maximize
+# transform a moment later -- DWM composites a frame of the console mid-transition and never gets
+# told to redraw it against the final maximized bounds, leaving a stale strip/duplicate rectangle
+# behind until something (e.g. manually unmaximizing and remaximizing) forces a real repaint.
+# ContentRendered fires once the window has actually finished rendering at its current size/state,
+# which is the right moment to force that repaint ourselves rather than rely on DWM noticing on its
+# own. RDW_ALLCHILDREN matters here specifically -- the console is a child HWND (via ConsoleHwndHost),
+# not painted by this process, so the redraw has to be told to reach into it, not just this window.
+$window.Add_ContentRendered({
+    if ($consoleHwnd -ne [IntPtr]::Zero) {
+        $redrawFlags = [VCFIRConsole.NativeMethods]::RDW_INVALIDATE -bor [VCFIRConsole.NativeMethods]::RDW_ERASE -bor [VCFIRConsole.NativeMethods]::RDW_UPDATENOW -bor [VCFIRConsole.NativeMethods]::RDW_ALLCHILDREN
+        [VCFIRConsole.NativeMethods]::RedrawWindow($consoleHwnd, [IntPtr]::Zero, [IntPtr]::Zero, $redrawFlags) | Out-Null
     }
 })
 
