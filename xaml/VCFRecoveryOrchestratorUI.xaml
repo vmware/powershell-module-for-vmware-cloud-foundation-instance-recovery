@@ -196,12 +196,20 @@
                 "$variableName = 'value'" immediately on load, so every step's Run button can just
                 send its command line directly without per-step lookups.
             -->
-            <Grid Grid.Column="0">
+            <!-- Wrapped in its own ScrollViewer, separate from the console column, so a short window
+                 (a small screen, or a small RDP session, either is easy to end up with) still lets
+                 every card scroll into view instead of Execution's Steps just getting clipped off
+                 the bottom with no way to reach them. The last row below is Auto, not the Star it
+                 used to be, specifically so this ScrollViewer has something finite to measure and
+                 scroll: a Star row only makes sense when something else (the window) is already
+                 bounding it, which is exactly what no longer holds once this can scroll on its own. -->
+            <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
-                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
                 <!-- Leading question: which top-level recovery workflow is this session for. IBR
@@ -377,6 +385,7 @@
                 </GroupBox>
 
             </Grid>
+            </ScrollViewer>
 
             <!-- Console: a real, separate pwsh.exe console window, reparented into ConsoleHostBorder
                  by the loader script (see ConsoleHwndHost in the .ps1) rather than rendered by any
