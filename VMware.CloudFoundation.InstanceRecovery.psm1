@@ -9719,10 +9719,10 @@ Function Get-VcfOperationsRegisteredComponents {
     A VCF Operations token is obtained automatically via Get-VcfOperationsToken.
 
     .EXAMPLE
-    $result = Get-VcfOperationsRegisteredComponents -VcfOperationsFqdn "flt-ops01a.rainpole.io" -Password "VMw@re1!VMw@re1!"
+    Get-VcfOperationsRegisteredComponents -VcfOperationsFqdn "flt-ops01a.rainpole.io" -Password "VMw@re1!VMw@re1!" -OutputDir "F:\Recovery\"
 
     .EXAMPLE
-    $result = Get-VcfOperationsRegisteredComponents -VcfOperationsFqdn "flt-ops01a.rainpole.io" -Username "admin" -Password "VMw@re1!VMw@re1!" -AuthSource "local"
+    Get-VcfOperationsRegisteredComponents -VcfOperationsFqdn "flt-ops01a.rainpole.io" -Username "admin" -Password "VMw@re1!VMw@re1!" -AuthSource "local" -OutputDir "F:\Recovery\"
 
     .PARAMETER VcfOperationsFqdn
     FQDN of the VCF Operations instance (e.g. flt-ops01a.rainpole.io).
@@ -9735,14 +9735,20 @@ Function Get-VcfOperationsRegisteredComponents {
 
     .PARAMETER AuthSource
     Authentication source for the VCF Operations API. Default is "local".
+
+    .PARAMETER OutputDir
+    Path to the location where component-ids-versions.json will be created.
     #>
 
     Param(
         [Parameter(Mandatory = $true)][String] $VcfOperationsFqdn,
         [Parameter(Mandatory = $false)][String] $Username = "admin",
         [Parameter(Mandatory = $true)][String] $Password,
-        [Parameter(Mandatory = $false)][String] $AuthSource = "local"
+        [Parameter(Mandatory = $false)][String] $AuthSource = "local",
+        [Parameter(Mandatory = $true)][String] $OutputDir
     )
+
+    $outputFile = (Resolve-Path -Path $OutputDir).path + "\componented-ids-components.json"
 
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
@@ -9794,6 +9800,7 @@ Function Get-VcfOperationsRegisteredComponents {
                         fleetFqdn        = $_.properties.fleetFqdn
                         ip               = $ip
                         instanceName     = $_.vcfInstance.instanceName
+                        instanceFqdn    = $_.properties.instanceFqdn
                         vcfInstanceFqdn  = $_.vcfInstance.fqdn
                     }
                 } |
@@ -9835,15 +9842,12 @@ Function Get-VcfOperationsRegisteredComponents {
 
     LogMessage -type INFO -message "[$VcfOperationsFqdn] Found $($filtered.Count) filtered component(s) of types: $($targetTypes -join ', '); $($vspComponents.Count) VSP instance(s)"
 
-    $json = $result | ConvertTo-Json -Depth 10
-    Write-Host ""
-    Write-Host $json
+    $json = $result | ConvertTo-Json -Depth 10 | Out-File $outputFile
 
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
 }
-Export-ModuleMember -Function Get-VcfOperationsRegisteredComponents
 
 Function Get-RegisteredComponentIds {
     <#
