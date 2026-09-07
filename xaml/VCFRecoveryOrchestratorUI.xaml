@@ -187,18 +187,18 @@
             </Grid.ColumnDefinitions>
 
             <!--
-                Data Source / Discovered Infrastructure / Execution (Steps, Variables), stacked top
-                to bottom. Execution stays collapsed until a domain is picked (see the .ps1's domain
-                SelectionChanged handler). Steps show only the cmdlet name; the full command line
-                with its parameters lives in the plan file (see plans/*.txt) and is never rendered
-                here. Variable values come from a JSON answer file (flat {"variableName": "value",
-                ...}) loaded via the button below; each entry is sent to the console as
-                "$variableName = 'value'" immediately on load, so every step's Run button can just
-                send its command line directly without per-step lookups.
+                Data Source / Discovered Infrastructure / Recovery Tasks (Steps, Variables), stacked
+                top to bottom. Recovery Tasks stays collapsed until a domain is picked (see the
+                .ps1's domain SelectionChanged handler). Steps show only the cmdlet name; the full
+                command line with its parameters lives in the plan file (see plans/**/*.json) and is
+                never rendered here. Variable values come from a JSON answer file (flat
+                {"variableName": "value", ...}) loaded via the button below; each entry is sent to
+                the console as "$variableName = 'value'" immediately on load, so every step's Run
+                button can just send its command line directly without per-step lookups.
             -->
             <!-- Wrapped in its own ScrollViewer, separate from the console column, so a short window
                  (a small screen, or a small RDP session, either is easy to end up with) still lets
-                 every card scroll into view instead of Execution's Steps just getting clipped off
+                 every card scroll into view instead of Recovery Tasks' Steps just getting clipped off
                  the bottom with no way to reach them. The last row below is Auto, not the Star it
                  used to be, specifically so this ScrollViewer has something finite to measure and
                  scroll: a Star row only makes sense when something else (the window) is already
@@ -213,10 +213,10 @@
                 </Grid.RowDefinitions>
 
                 <!-- Leading question: which top-level recovery workflow is this session for. IBR
-                     drives Data Source/Discovered Infrastructure/Execution below by domain
+                     drives Data Source/Discovered Infrastructure/Recovery Tasks below by domain
                      selection; FDR has a single whole-fleet plan (Recover Fleet) that needs none
                      of that, so picking it collapses Data Source/Discovered Infrastructure and
-                     swaps the Steps tabs over. See the .ps1's Recovery Type Checked handlers. -->
+                     swaps the Steps panel over. See the .ps1's Recovery Type Checked handlers. -->
                 <GroupBox Grid.Row="0" Header="Recovery Type" Margin="0,0,0,12">
                     <StackPanel>
                         <RadioButton x:Name="IbrRecoveryTypeRadio" Content="Instance Backup &amp; Restore (IBR)" GroupName="RecoveryType" IsChecked="True" Margin="0,0,0,6" />
@@ -227,7 +227,7 @@
                 <!-- Just the choice of data source and the file that provides it. Extracting a
                      backup runs immediately once that file (plus the credentials file and
                      encryption password the .ps1 prompts for right there) is picked, and it isn't a
-                     Steps entry in Execution below, since there's nothing to sequence: it's one
+                     Steps entry in Recovery Tasks below, since there's nothing to sequence: it's one
                      action, not a plan. Loading already-extracted data instead populates Discovered
                      Infrastructure. -->
                 <GroupBox x:Name="DataSourceGroupBox" Grid.Row="1" Header="Data Source" Margin="0,0,0,12">
@@ -307,7 +307,7 @@
                 <!-- Steps and Variables share one card as tabs: each gets the whole remaining
                      pane's height instead of splitting it permanently, since you're typically
                      working in one or the other, not both at once. -->
-                <GroupBox x:Name="StepsVariablesGroupBox" Grid.Row="3" Header="Execution" Visibility="Collapsed">
+                <GroupBox x:Name="StepsVariablesGroupBox" Grid.Row="3" Header="Recovery Tasks" Visibility="Collapsed">
                     <TabControl x:Name="StepsVariablesTabControl" Background="Transparent" BorderThickness="0">
                         <TabItem Header="Variables">
                             <DockPanel Margin="0,8,0,0">
@@ -329,57 +329,40 @@
                             </DockPanel>
                         </TabItem>
                         <TabItem Header="Steps">
-                            <TabControl x:Name="StepsTabControl" Background="Transparent" BorderThickness="0" Margin="0,8,0,0">
-                                <!-- Same two tab labels for both domain types. Domain Restores and Recover
-                                     Default Cluster below both load a different pair of plan files depending
-                                     on the selected domain's type (see the .ps1's domain SelectionChanged
-                                     handler): management-domain-component-restore-plan.json/
-                                     management-domain-default-cluster-recovery-plan.json for a MANAGEMENT
-                                     domain, workload-domain-component-restore-plan.json/
-                                     workload-domain-default-cluster-recovery-plan.json for a VI domain.
-                                     Both are collapsed (not removed, so their content stays ready to
-                                     reappear) in favor of Recover Fleet when FDR is selected instead of
-                                     IBR; see the .ps1's Recovery Type Checked handlers. -->
-                                <!-- Domain Restores/Recover Default Cluster and Recover Additional Cluster
-                                     below are mutually exclusive: selecting a domain in Discovered
-                                     Infrastructure's Workload Domains tab shows these two and hides Recover
-                                     Additional Cluster; selecting a row in its Additional Clusters tab does
-                                     the reverse. Both start Collapsed; whichever applies is revealed by
-                                     Sync-DomainSteps/Sync-AdditionalClusterSteps in the .ps1 once something
-                                     is actually selected. -->
-                                <TabItem x:Name="DomainRestoresTabItem" Header="Domain Restores" Visibility="Collapsed">
-                                    <DockPanel Margin="0,8,0,0">
-                                        <Button x:Name="RunAllDomainRestoresButton" Content="Run All" DockPanel.Dock="Top" HorizontalAlignment="Left" Margin="0,0,0,8" />
-                                        <ListBox x:Name="DomainRestoresStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" />
-                                    </DockPanel>
-                                </TabItem>
-                                <TabItem x:Name="RecoverDefaultClusterTabItem" Header="Recover Default Cluster" Visibility="Collapsed">
-                                    <DockPanel Margin="0,8,0,0">
-                                        <Button x:Name="RunAllRecoverDefaultClusterButton" Content="Run All" DockPanel.Dock="Top" HorizontalAlignment="Left" Margin="0,0,0,8" />
-                                        <ListBox x:Name="RecoverDefaultClusterStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" />
-                                    </DockPanel>
-                                </TabItem>
+                            <!-- Plain Visibility-toggled siblings, not tabs. The management/workload domain
+                                 restore and default-cluster-recovery plans are now concatenated into one
+                                 combined plan each (management-domain-recovery-plan.json /
+                                 workload-domain-recovery-plan.json), so there's only ever one operation's
+                                 worth of steps to show for whichever selection is currently active (a domain,
+                                 an additional cluster, or FDR's whole-fleet plan) and a tab strip has nothing
+                                 left to switch between. All three start Collapsed; whichever applies is
+                                 revealed by Sync-DomainSteps/Sync-AdditionalClusterSteps/the Recovery Type
+                                 Checked handlers in the .ps1 once something is actually selected. Stacking
+                                 them in one plain Grid (rather than each getting its own row/cell) is what
+                                 lets them overlap in place: only the one that's actually Visible takes up
+                                 any space or renders at all. -->
+                            <Grid Margin="0,8,0,0">
+                                <DockPanel x:Name="DomainRecoveryPanel" Visibility="Collapsed">
+                                    <Button x:Name="RunAllDomainRecoveryButton" Content="Run All" DockPanel.Dock="Top" HorizontalAlignment="Left" Margin="0,0,0,8" />
+                                    <ListBox x:Name="DomainRecoveryStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                                </DockPanel>
                                 <!-- Populated by selecting a row in Discovered Infrastructure's Additional
                                      Clusters tab (plans/ibr/additional-cluster-recovery-plan.json). Mutually
-                                     exclusive with the two tabs above, per the comment there. IBR-only;
+                                     exclusive with the domain panel above, per the comment there. IBR-only;
                                      also collapsed for FDR the same way as the other two. -->
-                                <TabItem x:Name="AdditionalClusterRecoveryTabItem" Header="Recover Additional Cluster" Visibility="Collapsed">
-                                    <DockPanel Margin="0,8,0,0">
-                                        <Button x:Name="RunAllAdditionalClusterRecoveryButton" Content="Run All" DockPanel.Dock="Top" HorizontalAlignment="Left" Margin="0,0,0,8" />
-                                        <ListBox x:Name="AdditionalClusterRecoveryStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" />
-                                    </DockPanel>
-                                </TabItem>
+                                <DockPanel x:Name="AdditionalClusterRecoveryPanel" Visibility="Collapsed">
+                                    <Button x:Name="RunAllAdditionalClusterRecoveryButton" Content="Run All" DockPanel.Dock="Top" HorizontalAlignment="Left" Margin="0,0,0,8" />
+                                    <ListBox x:Name="AdditionalClusterRecoveryStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                                </DockPanel>
                                 <!-- FDR's single whole-fleet plan (plans/fdr/fdr-failover-plan.json), loaded as soon
                                      as FDR is selected, since there's no domain selection for it to wait on.
-                                     Collapsed by default; shown instead of the two tabs above when FDR is
+                                     Collapsed by default; shown instead of the two panels above when FDR is
                                      picked (see the .ps1's Recovery Type Checked handlers). -->
-                                <TabItem x:Name="RecoverFleetTabItem" Header="Recover Fleet" Visibility="Collapsed">
-                                    <DockPanel Margin="0,8,0,0">
-                                        <Button x:Name="RunAllRecoverFleetButton" Content="Run All" DockPanel.Dock="Top" HorizontalAlignment="Left" Margin="0,0,0,8" />
-                                        <ListBox x:Name="RecoverFleetStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" />
-                                    </DockPanel>
-                                </TabItem>
-                            </TabControl>
+                                <DockPanel x:Name="RecoverFleetPanel" Visibility="Collapsed">
+                                    <Button x:Name="RunAllRecoverFleetButton" Content="Run All" DockPanel.Dock="Top" HorizontalAlignment="Left" Margin="0,0,0,8" />
+                                    <ListBox x:Name="RecoverFleetStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                                </DockPanel>
+                            </Grid>
                         </TabItem>
                     </TabControl>
                 </GroupBox>

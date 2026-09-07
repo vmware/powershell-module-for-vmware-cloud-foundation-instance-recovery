@@ -51,17 +51,13 @@ $domainsListBox = $window.FindName('WorkloadDomainsListBox')
 $additionalClustersListBox = $window.FindName('AdditionalClustersListBox')
 $stepsVariablesGroupBox = $window.FindName('StepsVariablesGroupBox')
 $stepsVariablesTabControl = $window.FindName('StepsVariablesTabControl')
-$stepsTabControl = $window.FindName('StepsTabControl')
-$domainRestoresTabItem = $window.FindName('DomainRestoresTabItem')
-$recoverDefaultClusterTabItem = $window.FindName('RecoverDefaultClusterTabItem')
-$additionalClusterRecoveryTabItem = $window.FindName('AdditionalClusterRecoveryTabItem')
-$recoverFleetTabItem = $window.FindName('RecoverFleetTabItem')
-$domainRestoresStepsListBox = $window.FindName('DomainRestoresStepsListBox')
-$recoverDefaultClusterStepsListBox = $window.FindName('RecoverDefaultClusterStepsListBox')
+$domainRecoveryPanel = $window.FindName('DomainRecoveryPanel')
+$additionalClusterRecoveryPanel = $window.FindName('AdditionalClusterRecoveryPanel')
+$recoverFleetPanel = $window.FindName('RecoverFleetPanel')
+$domainRecoveryStepsListBox = $window.FindName('DomainRecoveryStepsListBox')
 $additionalClusterRecoveryStepsListBox = $window.FindName('AdditionalClusterRecoveryStepsListBox')
 $recoverFleetStepsListBox = $window.FindName('RecoverFleetStepsListBox')
-$runAllDomainRestoresButton = $window.FindName('RunAllDomainRestoresButton')
-$runAllRecoverDefaultClusterButton = $window.FindName('RunAllRecoverDefaultClusterButton')
+$runAllDomainRecoveryButton = $window.FindName('RunAllDomainRecoveryButton')
 $runAllAdditionalClusterRecoveryButton = $window.FindName('RunAllAdditionalClusterRecoveryButton')
 $runAllRecoverFleetButton = $window.FindName('RunAllRecoverFleetButton')
 $loadVariablesButton = $window.FindName('LoadVariablesButton')
@@ -73,17 +69,14 @@ $consoleHostBorder = $window.FindName('ConsoleHostBorder')
 # Populated once a domain is selected (see Sync-DomainSteps below), an additional cluster is picked
 # (see Sync-AdditionalClusterSteps), or FDR's own Recover Fleet plan is loaded (see the FDR
 # Recovery Type Checked handler); initialized here so Run All never sees $null before that happens.
-$global:domainRestoresStepRows = @()
-$global:recoverDefaultClusterStepRows = @()
+$global:domainRecoveryStepRows = @()
 $global:additionalClusterRecoveryStepRows = @()
 $global:recoverFleetStepRows = @()
-# The step objects (see Get-RecoveryPlanSteps) currently backing each of the three IBR Steps tabs,
-# kept separate because Domain Restores/Recover Default Cluster (domain-driven) and Additional
-# Cluster Recovery (Additional Clusters-table-driven) are independent selections that can each be
-# populated or empty regardless of the other. Update-AllSteps combines all three into
-# $global:allSteps, which is what the Variables tab actually reads from.
-$global:domainRestoresSteps = @()
-$global:recoverDefaultClusterSteps = @()
+# The step objects (see Get-RecoveryPlanSteps) currently backing each of the two IBR Steps panels,
+# kept separate because Domain Recovery (domain-driven) and Additional Cluster Recovery (Additional
+# Clusters-table-driven) are independent, mutually exclusive selections. Update-AllSteps combines
+# both into $global:allSteps, which is what the Variables tab actually reads from.
+$global:domainRecoverySteps = @()
 $global:additionalClusterRecoverySteps = @()
 # Facts about the currently selected domain's default cluster or the currently selected additional
 # cluster (isStretched, primaryDatastoreType -- see Update-DerivedStepVariables) that a plan's own
@@ -912,8 +905,7 @@ function Start-StepCompletionWatcher {
 function Import-ExtractedSddcDataFile([string]$Path) {
     $domainsListBox.Items.Clear()
     $additionalClustersListBox.Items.Clear()
-    $domainRestoresStepsListBox.Items.Clear()
-    $recoverDefaultClusterStepsListBox.Items.Clear()
+    $domainRecoveryStepsListBox.Items.Clear()
     $additionalClusterRecoveryStepsListBox.Items.Clear()
     $variablesItemsPanel.Children.Clear()
     $loadedVariablesTextBlock.Text = 'No variables loaded yet.'
@@ -923,8 +915,7 @@ function Import-ExtractedSddcDataFile([string]$Path) {
     # line at each one.
     $discoveredInfrastructureGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
     $global:extractedDataLoaded = $false
-    $global:domainRestoresSteps = @()
-    $global:recoverDefaultClusterSteps = @()
+    $global:domainRecoverySteps = @()
     $global:additionalClusterRecoverySteps = @()
     $global:allSteps = @()
     $global:derivedStepVariables = @{}
@@ -1005,7 +996,7 @@ $ibrRecoveryTypeRadio.Add_Checked({
     # Only reveal Discovered Infrastructure if data was actually loaded before switching away to
     # FDR -- not unconditionally, since nothing may have been loaded at all yet.
     $discoveredInfrastructureGroupBox.Visibility = if ($global:extractedDataLoaded) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
-    $recoverFleetTabItem.Visibility = [System.Windows.Visibility]::Collapsed
+    $recoverFleetPanel.Visibility = [System.Windows.Visibility]::Collapsed
     $global:recoverFleetStepRows = Set-PlanStepsListBox $recoverFleetStepsListBox @()
     Sync-DomainSteps
     Sync-AdditionalClusterSteps
@@ -1013,19 +1004,18 @@ $ibrRecoveryTypeRadio.Add_Checked({
 
 # FDR has one whole-fleet plan (plans/fdr/fdr-failover-plan.json) with no domain to select, so Data
 # Source/Discovered Infrastructure are irrelevant to it -- collapsing both (rather than covering
-# them with a placeholder) lets Execution's Auto-height rows collapse to zero and the Execution row
-# below take the freed space automatically. Loads and shows the plan immediately, same as picking
+# them with a placeholder) lets Recovery Tasks' Auto-height rows collapse to zero and the row below
+# take the freed space automatically. Loads and shows the plan immediately, same as picking
 # Extract SDDC Manager Backup runs immediately rather than waiting for a further action. No variable
 # values are known yet at this point, so conditional steps fail open (see Test-StepCondition) and
 # show unconditionally until Load Variables/New Variables File re-filters them for real.
 $fdrRecoveryTypeRadio.Add_Checked({
     $dataSourceGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
     $discoveredInfrastructureGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
-    $domainRestoresTabItem.Visibility = [System.Windows.Visibility]::Collapsed
-    $recoverDefaultClusterTabItem.Visibility = [System.Windows.Visibility]::Collapsed
-    $additionalClusterRecoveryTabItem.Visibility = [System.Windows.Visibility]::Collapsed
+    $domainRecoveryPanel.Visibility = [System.Windows.Visibility]::Collapsed
+    $additionalClusterRecoveryPanel.Visibility = [System.Windows.Visibility]::Collapsed
     $global:additionalClusterRecoveryStepRows = Set-PlanStepsListBox $additionalClusterRecoveryStepsListBox @()
-    $recoverFleetTabItem.Visibility = [System.Windows.Visibility]::Visible
+    $recoverFleetPanel.Visibility = [System.Windows.Visibility]::Visible
 
     $variablesItemsPanel.Children.Clear()
     $loadedVariablesTextBlock.Text = 'No variables loaded yet.'
@@ -1035,23 +1025,20 @@ $fdrRecoveryTypeRadio.Add_Checked({
     $global:allSteps = @($recoverFleetSteps)
 
     $stepsVariablesGroupBox.Visibility = [System.Windows.Visibility]::Visible
-    $stepsTabControl.SelectedItem = $recoverFleetTabItem
     $stepsVariablesTabControl.SelectedIndex = 1   # "Steps"
 })
 
 # Extracting a backup isn't a plan with steps to sequence -- it's one action, run immediately from
 # Browse below (see Invoke-ExtractSDDCManagerBackup). Picking this radio just clears any stale
-# Domain Restores / Recover Default Cluster rows left over from a previously selected domain, the
-# same "nothing to show yet" state a fresh launch starts in.
+# Domain Recovery rows left over from a previously selected domain, the same "nothing to show yet"
+# state a fresh launch starts in.
 $extractRadio.Add_Checked({
-    $global:domainRestoresStepRows = Set-PlanStepsListBox $domainRestoresStepsListBox @()
-    $global:recoverDefaultClusterStepRows = Set-PlanStepsListBox $recoverDefaultClusterStepsListBox @()
+    $global:domainRecoveryStepRows = Set-PlanStepsListBox $domainRecoveryStepsListBox @()
     $global:additionalClusterRecoveryStepRows = Set-PlanStepsListBox $additionalClusterRecoveryStepsListBox @()
     $variablesItemsPanel.Children.Clear()
     $loadedVariablesTextBlock.Text = 'No variables loaded yet.'
     $stepsVariablesGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
-    $global:domainRestoresSteps = @()
-    $global:recoverDefaultClusterSteps = @()
+    $global:domainRecoverySteps = @()
     $global:additionalClusterRecoverySteps = @()
     $global:allSteps = @()
     $global:derivedStepVariables = @{}
@@ -1269,89 +1256,79 @@ $newVariablesFileButton.Add_Click({
 # Recovery Type Checked handlers below) -- re-selecting the same domain doesn't refire
 # SelectionChanged, so switching recovery type has to be able to re-derive Execution's state from
 # whatever's currently selected on its own, not only react to an actual selection change.
-# Recomputes $global:allSteps as the union of every currently-populated IBR Steps tab (Domain
-# Restores, Recover Default Cluster, Additional Cluster Recovery) -- these are two independent
-# selections (a domain, and separately an additional cluster), so any combination of them can be
-# populated at once, and the Variables tab needs to see all of it together.
+# Recomputes $global:allSteps as the union of every currently-populated IBR Steps panel (Domain
+# Recovery, Additional Cluster Recovery) -- these are two independent, mutually exclusive
+# selections (a domain, or separately an additional cluster), so the Variables tab needs to see
+# whichever one is currently populated.
 function Update-AllSteps {
-    $global:allSteps = @($global:domainRestoresSteps) + @($global:recoverDefaultClusterSteps) + @($global:additionalClusterRecoverySteps)
+    $global:allSteps = @($global:domainRecoverySteps) + @($global:additionalClusterRecoverySteps)
 }
 
-# Execution has to stay visible if EITHER a domain or an additional cluster is currently selected
-# -- neither selection's own handler can safely collapse it just because it has nothing selected,
-# since the other one might.
+# Recovery Tasks has to stay visible if EITHER a domain or an additional cluster is currently
+# selected -- neither selection's own handler can safely collapse it just because it has nothing
+# selected, since the other one might.
 function Update-ExecutionVisibility {
     $hasDomainSelected = $null -ne $domainsListBox.SelectedItem
     $hasClusterSelected = $additionalClustersListBox.SelectedItem -is [System.Windows.Controls.ListBoxItem]
     $stepsVariablesGroupBox.Visibility = if ($hasDomainSelected -or $hasClusterSelected) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
 }
 
-# Populates the Domain Restores/Recover Default Cluster/Recover Additional Cluster ListBoxes from
-# whatever Sync-DomainSteps/Sync-AdditionalClusterSteps already resolved into $global:domainRestoresSteps
+# Populates the Domain Recovery/Additional Cluster Recovery ListBoxes from whatever
+# Sync-DomainSteps/Sync-AdditionalClusterSteps already resolved into $global:domainRecoverySteps
 # etc, filtered by each step's own condition against $Variables -- called only once variables have
 # actually been loaded or created (Import-VariablesAnswersFile/New-VariablesFile), never from
 # selection alone. Selecting a domain or cluster still resolves which plan applies (so Variables can
 # list the right names), but must not itself put Run buttons in front of anyone before values exist
 # for them to use.
 function Update-RevealedSteps([System.Collections.IDictionary]$Variables) {
-    $global:domainRestoresStepRows = Set-PlanStepsListBox $domainRestoresStepsListBox (Get-ApplicableSteps $global:domainRestoresSteps $Variables)
-    $global:recoverDefaultClusterStepRows = Set-PlanStepsListBox $recoverDefaultClusterStepsListBox (Get-ApplicableSteps $global:recoverDefaultClusterSteps $Variables)
+    $global:domainRecoveryStepRows = Set-PlanStepsListBox $domainRecoveryStepsListBox (Get-ApplicableSteps $global:domainRecoverySteps $Variables)
     $global:additionalClusterRecoveryStepRows = Set-PlanStepsListBox $additionalClusterRecoveryStepsListBox (Get-ApplicableSteps $global:additionalClusterRecoverySteps $Variables)
 }
 
 function Sync-DomainSteps {
-    $domainRestoresStepsListBox.Items.Clear()
-    $recoverDefaultClusterStepsListBox.Items.Clear()
+    $domainRecoveryStepsListBox.Items.Clear()
     $variablesItemsPanel.Children.Clear()
     $loadedVariablesTextBlock.Text = 'No variables loaded yet.'
-    $global:domainRestoresSteps = @()
-    $global:recoverDefaultClusterSteps = @()
+    $global:domainRecoverySteps = @()
 
     $selected = $domainsListBox.SelectedItem
     if ($null -ne $selected) {
         # A domain and an additional cluster are mutually exclusive selections -- picking a domain
         # always deselects whichever additional cluster was picked before, which (via
-        # Sync-AdditionalClusterSteps) collapses its tab so only the domain's own tabs show.
+        # Sync-AdditionalClusterSteps) collapses its panel so only the domain's own panel shows.
         if ($null -ne $additionalClustersListBox.SelectedItem) {
             $additionalClustersListBox.SelectedItem = $null
         }
-        $domainRestoresTabItem.Visibility = [System.Windows.Visibility]::Visible
-        $recoverDefaultClusterTabItem.Visibility = [System.Windows.Visibility]::Visible
-        # A TabItem's own Visibility only hides its header in the tab strip -- if it's still
-        # $stepsTabControl's SelectedItem from an earlier selection, WPF keeps rendering its content
-        # in the content area regardless (confirmed by direct testing), so switching back to a domain
-        # after having picked an additional cluster has to explicitly reclaim the selection here,
-        # rather than leaving whatever tab a prior selection left behind silently showing through.
-        $stepsTabControl.SelectedItem = $domainRestoresTabItem
+        $domainRecoveryPanel.Visibility = [System.Windows.Visibility]::Visible
 
-        # Same two tab labels regardless of domain type -- only which plan files back them changes.
+        # Same plan for both domain types -- only which file backs it changes. The former separate
+        # "restore" and "recover default cluster" plans are concatenated into one combined plan per
+        # domain type (management-domain-recovery-plan.json / workload-domain-recovery-plan.json),
+        # since restoring components and then recovering the default cluster is always exactly one
+        # sequence, never two independently-runnable ones.
         if ($selected.Tag.domainType -eq 'MANAGEMENT') {
-            $global:domainRestoresSteps = Get-RecoveryPlanSteps 'ibr' 'management-domain-component-restore-plan.json'
-            $global:recoverDefaultClusterSteps = Get-RecoveryPlanSteps 'ibr' 'management-domain-default-cluster-recovery-plan.json'
+            $global:domainRecoverySteps = Get-RecoveryPlanSteps 'ibr' 'management-domain-recovery-plan.json'
         } else {
-            $global:domainRestoresSteps = Get-RecoveryPlanSteps 'ibr' 'workload-domain-component-restore-plan.json'
-            $global:recoverDefaultClusterSteps = Get-RecoveryPlanSteps 'ibr' 'workload-domain-default-cluster-recovery-plan.json'
+            $global:domainRecoverySteps = Get-RecoveryPlanSteps 'ibr' 'workload-domain-recovery-plan.json'
         }
 
-        # Recover Default Cluster's own steps run against the domain's default cluster (isDefault
-        # 't'), not any of the "additional" ones -- see Sync-AdditionalClusterSteps for the other
-        # half of this same mechanism.
+        # The default-cluster-recovery portion of the combined plan runs against the domain's
+        # default cluster (isDefault 't'), not any of the "additional" ones -- see
+        # Sync-AdditionalClusterSteps for the other half of this same mechanism.
         $defaultCluster = $selected.Tag.vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' } | Select-Object -First 1
         $global:derivedStepVariables = @{
             isStretched          = [string]$defaultCluster.isStretched
             primaryDatastoreType = [string]$defaultCluster.primaryDatastoreType
         }
     } else {
-        $domainRestoresTabItem.Visibility = [System.Windows.Visibility]::Collapsed
-        $recoverDefaultClusterTabItem.Visibility = [System.Windows.Visibility]::Collapsed
+        $domainRecoveryPanel.Visibility = [System.Windows.Visibility]::Collapsed
         $global:derivedStepVariables = @{}
     }
 
     # Deliberately not populated here -- Update-RevealedSteps does that, only once variables have
-    # actually been loaded or created for this selection (see its own comment). Both ListBoxes were
+    # actually been loaded or created for this selection (see its own comment). The ListBox was
     # already cleared above, so a domain change with no variables loaded yet leaves Steps empty.
-    $global:domainRestoresStepRows = @()
-    $global:recoverDefaultClusterStepRows = @()
+    $global:domainRecoveryStepRows = @()
     Update-AllSteps
     Update-ExecutionVisibility
 }
@@ -1365,7 +1342,7 @@ $domainsListBox.Add_SelectionChanged({
 }.GetNewClosure())
 
 # Mutually exclusive with a domain selection above -- picking a real additional cluster always
-# deselects whichever domain was picked before, which (via Sync-DomainSteps) collapses its tabs so
+# deselects whichever domain was picked before, which (via Sync-DomainSteps) collapses its panel so
 # only Recover Additional Cluster shows. The "No additional clusters detected." placeholder row (a
 # plain string, not a ListBoxItem -- see Import-ExtractedSddcDataFile) is deliberately not treated
 # as a real selection here.
@@ -1381,11 +1358,7 @@ function Sync-AdditionalClusterSteps {
         if ($null -ne $domainsListBox.SelectedItem) {
             $domainsListBox.SelectedItem = $null
         }
-        $additionalClusterRecoveryTabItem.Visibility = [System.Windows.Visibility]::Visible
-        # Same reasoning as Sync-DomainSteps: reclaim $stepsTabControl's selection explicitly rather
-        # than leave it sitting on Domain Restores/Recover Default Cluster from a prior domain pick,
-        # whose content would otherwise keep rendering even though its own tab header is now hidden.
-        $stepsTabControl.SelectedItem = $additionalClusterRecoveryTabItem
+        $additionalClusterRecoveryPanel.Visibility = [System.Windows.Visibility]::Visible
         $global:additionalClusterRecoverySteps = Get-RecoveryPlanSteps 'ibr' 'additional-cluster-recovery-plan.json'
         # See the matching comment in Sync-DomainSteps -- $selected.Tag here is the cluster
         # PSCustomObject built in Import-ExtractedSddcDataFile, not a raw domain object, so no
@@ -1395,7 +1368,7 @@ function Sync-AdditionalClusterSteps {
             primaryDatastoreType = [string]$selected.Tag.PrimaryDatastoreType
         }
     } else {
-        $additionalClusterRecoveryTabItem.Visibility = [System.Windows.Visibility]::Collapsed
+        $additionalClusterRecoveryPanel.Visibility = [System.Windows.Visibility]::Collapsed
         $global:derivedStepVariables = @{}
     }
 
@@ -1413,17 +1386,9 @@ $additionalClustersListBox.Add_SelectionChanged({
   }
 }.GetNewClosure())
 
-$runAllDomainRestoresButton.Add_Click({
+$runAllDomainRecoveryButton.Add_Click({
     try {
-        Invoke-StepChain $global:domainRestoresStepRows
-    } catch {
-        $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
-    }
-}.GetNewClosure())
-
-$runAllRecoverDefaultClusterButton.Add_Click({
-    try {
-        Invoke-StepChain $global:recoverDefaultClusterStepRows
+        Invoke-StepChain $global:domainRecoveryStepRows
     } catch {
         $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
     }
@@ -1453,7 +1418,7 @@ $runAllRecoverFleetButton.Add_Click({
 # Browse/Load Variables use.
 $exitButton.Add_Click({
     try {
-        $allRows = @($global:domainRestoresStepRows) + @($global:recoverDefaultClusterStepRows) + @($global:additionalClusterRecoveryStepRows) + @($global:recoverFleetStepRows)
+        $allRows = @($global:domainRecoveryStepRows) + @($global:additionalClusterRecoveryStepRows) + @($global:recoverFleetStepRows)
         $completedCmdlets = @($allRows | Where-Object { $_.Button.Content -eq 'Done' } | ForEach-Object { $_.CmdletName })
 
         $state = [PSCustomObject]@{
@@ -1515,7 +1480,7 @@ $resumeButton.Add_Click({
         }
 
         $completedCmdlets = @($state.CompletedCmdlets)
-        $allRows = @($global:domainRestoresStepRows) + @($global:recoverDefaultClusterStepRows) + @($global:additionalClusterRecoveryStepRows) + @($global:recoverFleetStepRows)
+        $allRows = @($global:domainRecoveryStepRows) + @($global:additionalClusterRecoveryStepRows) + @($global:recoverFleetStepRows)
         foreach ($row in $allRows) {
             if ($completedCmdlets -contains $row.CmdletName) {
                 $row.Button.Content = 'Done'

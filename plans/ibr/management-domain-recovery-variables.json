@@ -28,5 +28,15 @@
   "sddcManagerFQDN": "",
   "sddcManagerAdmin": "",
   "sddcManagerAdminPassword": "",
-  "restoredVcenterFqdn": ""
+  "restoredVcenterFqdn": "",
+  "clusterName": "",
+  "restoredVcenterAdmin": "",
+  "restoredVcenterAdminPassword": "",
+  "restoredNsxManagerFqdn": "",
+  "restoredNsxManagerAdmin": "",
+  "restoredNsxManagerAdminPassword": "",
+  "restoredNsxManagerRootPassword": "",
+  "vCenterFqdn": "",
+  "RootPassword": "",
+  "svcAccountPassword": ""
 }
