@@ -579,14 +579,32 @@ function Send-ToConsole([string]$CommandLine) {
     }
 }
 
+# A step's transcript slice is "unclean" -- even once its own "Completed Task" line has appeared --
+# if it contains LogMessage's own [WARNING]/[ERROR]/[EXCEPTION] tags, or "+ CategoryInfo", the one
+# near-universal marker of PowerShell's own default terminating-error record formatting (for
+# exceptions that were never caught and logged via LogMessage at all -- several cmdlets in the
+# module have no try/catch around risky calls). Matched as literal bracketed tags, not bare words,
+# so an ordinary INFO message that happens to mention "error" in passing can't false-positive.
+# This can never be airtight -- a handful of cmdlets swallow failures with -ErrorAction/
+# -WarningAction SilentlyContinue and never display anything at all -- but it catches everything
+# that actually reaches the screen, which today includes real failures (e.g. Invoke-vCenterRestore's
+# own "Restore failed" branch still logs Completed Task right after its [ERROR] lines).
+function Test-StepTranscriptClean([string]$TranscriptSlice) {
+    foreach ($marker in '[WARNING]', '[ERROR]', '[EXCEPTION]', '+ CategoryInfo') {
+        if ($TranscriptSlice.Contains($marker)) {
+            return $false
+        }
+    }
+    return $true
+}
+
 # Starts (or restarts) watching the transcript for this row's "Completed Task <cmdlet>" line, from
 # whatever the transcript's current length is right now -- so an OLDER completion line already in
 # the transcript from a previous run of the same cmdlet can't cause an immediate false-positive
-# match on a re-run. Kept as its own function, separate from Invoke-Step, so a future "Run All"
-# sequencer can call it the same way an individual Run does when it's ready to wait for step N to
-# finish before starting step N+1 (not wired up yet -- Run All still just fires every step's command
-# immediately, same as today).
-function Add-StepWatch($Button, [string]$CmdletName) {
+# match on a re-run. $OnComplete (optional) is called with one argument -- $isClean, per
+# Test-StepTranscriptClean -- once "Completed Task" is found; Invoke-StepChain uses this to gate
+# starting the next step on the previous one actually having gone cleanly, not just having finished.
+function Add-StepWatch($Button, [string]$CmdletName, [scriptblock]$OnComplete) {
     $currentText = ''
     if (Test-Path $global:transcriptPath) {
         $currentText = Get-Content -Path $global:transcriptPath -Raw -ErrorAction SilentlyContinue
@@ -601,14 +619,15 @@ function Add-StepWatch($Button, [string]$CmdletName) {
         Button     = $Button
         TargetText = "Completed Task $CmdletName"
         StartOffset = $currentText.Length
-        OnComplete = $null
+        OnComplete = $OnComplete
     })
 }
 
 # Same idea as Add-StepWatch, for actions that run immediately rather than through a Steps row --
-# there's no Button to flip to Done, so $OnComplete runs instead once the cmdlet's own "Completed
-# Task" line appears. Used by Invoke-ExtractSDDCManagerBackup to auto-load the resulting
-# extracted-sddc-data.json once extraction actually finishes, not as soon as the command is sent.
+# there's no Button to flip to Done/Failed, so $OnComplete (called with $isClean, same as
+# Add-StepWatch) is the only signal. Used by Invoke-ExtractSDDCManagerBackup to auto-load the
+# resulting extracted-sddc-data.json once extraction actually finishes, not as soon as the command
+# is sent; that caller ignores $isClean since a failed extraction simply won't produce a loadable file.
 function Add-CompletionWatch([string]$CmdletName, [scriptblock]$OnComplete) {
     $currentText = ''
     if (Test-Path $global:transcriptPath) {
@@ -623,15 +642,38 @@ function Add-CompletionWatch([string]$CmdletName, [scriptblock]$OnComplete) {
     })
 }
 
-# Resets a row to its "in progress" look (undoing any earlier Done state -- re-running a step that
-# previously completed should stop showing it as done until it completes again) and starts watching
-# for its completion.
-function Invoke-Step($Dot, $Button, [string]$CmdletName, [string]$CommandLine) {
+# Resets a row to its "in progress" look (undoing any earlier Done/Failed state -- re-running a step
+# that previously completed should stop showing that until it completes again) and starts watching
+# for its completion. $OnStepComplete (optional) is threaded straight through to Add-StepWatch --
+# see Invoke-StepChain, the only caller that currently uses it.
+function Invoke-Step($Dot, $Button, [string]$CmdletName, [string]$CommandLine, [scriptblock]$OnStepComplete) {
     $Dot.Fill = [System.Windows.Media.Brushes]::DodgerBlue
     $Button.Content = 'Run'
     $Button.ClearValue([System.Windows.Controls.Control]::BackgroundProperty)
-    Add-StepWatch $Button $CmdletName
+    Add-StepWatch $Button $CmdletName $OnStepComplete
     Send-ToConsole $CommandLine
+}
+
+# Run All's sequencer: runs $Rows one at a time, only starting the next once the previous one has
+# passed all three gates -- (1) its own "Completed Task" line found in the transcript, (2) no
+# LogMessage [WARNING]/[ERROR]/[EXCEPTION] tag anywhere in its transcript slice, (3) no raw
+# PowerShell error record either (see Test-StepTranscriptClean for both). A step that finishes but
+# fails any of those stops the whole chain right there instead of sending the next step's command
+# into a plan that assumed the previous one actually worked.
+function Invoke-StepChain([object[]]$Rows) {
+    if ($Rows.Count -eq 0) {
+        return
+    }
+    $row = $Rows[0]
+    $remainingRows = @($Rows | Select-Object -Skip 1)
+    Invoke-Step $row.Dot $row.Button $row.CmdletName $row.CommandLine {
+        param($isClean)
+        if ($isClean) {
+            Invoke-StepChain $remainingRows
+        } else {
+            $statusTextBlock.Text = "Run All stopped: $($row.CmdletName) did not complete cleanly -- check the console/transcript for warnings, errors, or a PowerShell error record before retrying."
+        }
+    }.GetNewClosure()
 }
 
 # Returns [PSCustomObject]@{ Panel; Dot; CommandLine; Button; CmdletName; GroupingId }, not just the
@@ -766,22 +808,34 @@ function Start-StepCompletionWatcher {
             return
         }
         if ($null -eq $transcriptText) { return }
-        $stillWatching = [System.Collections.Generic.List[object]]::new()
-        foreach ($watch in $global:activeStepWatches) {
+        # Snapshotting which watches are due BEFORE any of them run, then removing each one from
+        # whatever $global:activeStepWatches -is- right before invoking its own OnComplete --
+        # rather than replacing the whole list wholesale once at the end -- matters because
+        # Invoke-StepChain's OnComplete callback calls Add-StepWatch itself to start the next step,
+        # which reassigns $global:activeStepWatches to a brand-new list. A wholesale replacement
+        # here would silently wipe that reentrant addition out the instant this tick finished,
+        # since it was never part of the snapshot this tick started with.
+        $dueWatches = @($global:activeStepWatches | Where-Object {
+            $newText = if ($transcriptText.Length -gt $_.StartOffset) { $transcriptText.Substring($_.StartOffset) } else { '' }
+            $newText.Contains($_.TargetText)
+        })
+        foreach ($watch in $dueWatches) {
             $newText = if ($transcriptText.Length -gt $watch.StartOffset) { $transcriptText.Substring($watch.StartOffset) } else { '' }
-            if ($newText.Contains($watch.TargetText)) {
-                if ($watch.Button) {
+            $isClean = Test-StepTranscriptClean $newText
+            if ($watch.Button) {
+                if ($isClean) {
                     $watch.Button.Content = 'Done'
                     $watch.Button.Background = [System.Windows.Media.Brushes]::Green
+                } else {
+                    $watch.Button.Content = 'Failed'
+                    $watch.Button.Background = [System.Windows.Media.Brushes]::Firebrick
                 }
-                if ($watch.OnComplete) {
-                    & $watch.OnComplete
-                }
-            } else {
-                $stillWatching.Add($watch)
+            }
+            $global:activeStepWatches = [System.Collections.Generic.List[object]]@($global:activeStepWatches | Where-Object { $_ -ne $watch })
+            if ($watch.OnComplete) {
+                & $watch.OnComplete $isClean
             }
         }
-        $global:activeStepWatches = $stillWatching
     })
     $checkTimer.Start()
 }
@@ -1294,9 +1348,7 @@ $additionalClustersListBox.Add_SelectionChanged({
 
 $runAllDomainRestoresButton.Add_Click({
     try {
-        foreach ($row in $global:domainRestoresStepRows) {
-            Invoke-Step $row.Dot $row.Button $row.CmdletName $row.CommandLine
-        }
+        Invoke-StepChain $global:domainRestoresStepRows
     } catch {
         $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
     }
@@ -1304,9 +1356,7 @@ $runAllDomainRestoresButton.Add_Click({
 
 $runAllRecoverDefaultClusterButton.Add_Click({
     try {
-        foreach ($row in $global:recoverDefaultClusterStepRows) {
-            Invoke-Step $row.Dot $row.Button $row.CmdletName $row.CommandLine
-        }
+        Invoke-StepChain $global:recoverDefaultClusterStepRows
     } catch {
         $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
     }
@@ -1314,9 +1364,7 @@ $runAllRecoverDefaultClusterButton.Add_Click({
 
 $runAllAdditionalClusterRecoveryButton.Add_Click({
     try {
-        foreach ($row in $global:additionalClusterRecoveryStepRows) {
-            Invoke-Step $row.Dot $row.Button $row.CmdletName $row.CommandLine
-        }
+        Invoke-StepChain $global:additionalClusterRecoveryStepRows
     } catch {
         $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
     }
@@ -1324,9 +1372,7 @@ $runAllAdditionalClusterRecoveryButton.Add_Click({
 
 $runAllRecoverFleetButton.Add_Click({
     try {
-        foreach ($row in $global:recoverFleetStepRows) {
-            Invoke-Step $row.Dot $row.Button $row.CmdletName $row.CommandLine
-        }
+        Invoke-StepChain $global:recoverFleetStepRows
     } catch {
         $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
     }
