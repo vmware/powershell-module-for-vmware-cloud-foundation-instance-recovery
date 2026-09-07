@@ -1,0 +1,19 @@
+{
+  "clusterName": "",
+  "restoredVcenterFqdn": "",
+  "restoredVcenterAdmin": "",
+  "restoredVcenterAdminPassword": "",
+  "restoredNsxManagerFqdn": "",
+  "restoredNsxManagerAdmin": "",
+  "restoredNsxManagerAdminPassword": "",
+  "restoredNsxManagerRootPassword": "",
+  "sddcManagerFqdn": "",
+  "sddcManagerAdmin": "",
+  "sddcManagerAdminPassword": "",
+  "extractedSDDCDataFile": "",
+  "vCenterFqdn": "",
+  "VcfUserPassword": "",
+  "RootPassword": "",
+  "workloadDomain": "",
+  "svcAccountPassword": ""
+}

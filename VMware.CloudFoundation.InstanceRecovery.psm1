@@ -6393,6 +6393,20 @@ Function New-ReconfiguredVsanStretchedCluster {
         Return
     }
 
+    # This cmdlet reconfigures the stretched cluster against whatever witness host it finds recorded/
+    # discoverable at the time -- it has no way to tell an old, no-longer-valid witness apart from a
+    # correctly redeployed one, so it has to ask rather than assume.
+    LogMessage -type QUESTION -message "[$clusterName] Has old vSAN witness been removed from inventory and new witness deployed and added to inventory? (Y/N): " -nonewline
+    Do {
+        $witnessReadyAccepted = Read-Host
+    } Until ($witnessReadyAccepted -in "Y", "N")
+    If ($witnessReadyAccepted -eq "N") {
+        LogMessage -type INFO -message "[$jumpboxName] User cancelled. No changes made."
+        $StopWatch.Stop()
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+        Return
+    }
+
     LogMessage -type INFO -message "[$vCenterFQDN] Connecting to vCenter"
     Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop | Out-Null
 
@@ -16325,14 +16339,14 @@ Export-ModuleMember -Function Set-ExportedSDDCDataFilePath
 
 #Region UI Orchestrator
 
-Function Start-VCFIBROrchestrator {
+Function Start-VCFRecoveryCoordinator {
     <#
     .SYNOPSIS
-    Launches the VCF IBR Orchestrator UI
+    Launches the VCF Recovery Coordinator UI
 
     .DESCRIPTION
-    The Start-VCFIBROrchestrator cmdlet opens a WPF window -- built by a standalone script
-    (xaml\InstanceRecoveryOrchestratorUI.ps1) that lets you pick an extracted-sddc-data.json file,
+    The Start-VCFRecoveryCoordinator cmdlet opens a WPF window -- built by a standalone script
+    (xaml\VCFRecoveryOrchestratorUI.ps1) that lets you pick an extracted-sddc-data.json file,
     lists the workload domains it contains, and runs the recovery steps for the selected domain in an
     embedded console. That console is a plain read-only output pane plus a single-line input box fed
     by a second, ordinary pwsh.exe process with redirected stdin/stdout/stderr -- not a terminal
@@ -16356,7 +16370,7 @@ Function Start-VCFIBROrchestrator {
     open, it's brought to the front instead of starting a second one.
 
     .EXAMPLE
-    Start-VCFIBROrchestrator
+    Start-VCFRecoveryCoordinator
     #>
 
     Param()
@@ -16364,15 +16378,15 @@ Function Start-VCFIBROrchestrator {
     # If a previous launch is still running, bring its window to the front instead of starting a
     # second one. SetForegroundWindow/ShowWindowAsync are ordinary, well-established Win32 calls --
     # nothing like the ConPTY/WPF internals this UI otherwise has to work around.
-    if ($script:InstanceRecoveryOrchestratorUIProcess) {
-        $script:InstanceRecoveryOrchestratorUIProcess.Refresh()
-        if (-not $script:InstanceRecoveryOrchestratorUIProcess.HasExited) {
-            $hwnd = $script:InstanceRecoveryOrchestratorUIProcess.MainWindowHandle
+    if ($script:VCFRecoveryOrchestratorUIProcess) {
+        $script:VCFRecoveryOrchestratorUIProcess.Refresh()
+        if (-not $script:VCFRecoveryOrchestratorUIProcess.HasExited) {
+            $hwnd = $script:VCFRecoveryOrchestratorUIProcess.MainWindowHandle
             if ($hwnd -ne [IntPtr]::Zero) {
                 [VCFIR.NativeMethods]::ShowWindowAsync($hwnd, 9) | Out-Null   # SW_RESTORE
                 [VCFIR.NativeMethods]::SetForegroundWindow($hwnd) | Out-Null
             }
-            LogMessage -type NOTE -message "Instance Recovery Orchestrator UI is already open; brought to the front."
+            LogMessage -type NOTE -message "VCF Recovery Coordinator UI is already open; brought to the front."
             return
         }
     }
@@ -16385,8 +16399,14 @@ Function Start-VCFIBROrchestrator {
     }
 
     $moduleRoot = $PSScriptRoot
-    $xamlPath = Join-Path $moduleRoot 'xaml\InstanceRecoveryOrchestratorUI.xaml'
-    $uiScriptPath = Join-Path $moduleRoot 'xaml\InstanceRecoveryOrchestratorUI.ps1'
+    $xamlPath = Join-Path $moduleRoot 'xaml\VCFRecoveryOrchestratorUI.xaml'
+    $uiScriptPath = Join-Path $moduleRoot 'xaml\VCFRecoveryOrchestratorUI.ps1'
+    # Recovery plans (Management Domain Restores, Recover Default Cluster, etc) live here as a JSON
+    # array of step objects (commandLine/condition/groupingId) per plan file -- see
+    # Get-RecoveryPlanSteps in the UI script. Kept outside both the .psm1 and the UI script so
+    # editing a plan never requires recompiling the module or restarting anything: the UI script
+    # re-reads these files every time a domain is (re)selected.
+    $plansPath = Join-Path $moduleRoot 'plans'
     # Captured here, not inside the UI script: that runs in a separate process which has no notion
     # of "the caller's current directory" of its own. The console process is started with this as
     # its own working directory (see Set-Location in the UI script), and transcripts are written
@@ -16399,6 +16419,10 @@ Function Start-VCFIBROrchestrator {
     }
     if (-not (Test-Path $uiScriptPath)) {
         LogMessage -type ERROR -message "Cannot find UI script '$uiScriptPath'."
+        return
+    }
+    if (-not (Test-Path $plansPath)) {
+        LogMessage -type ERROR -message "Cannot find plans folder '$plansPath'."
         return
     }
 
@@ -16430,6 +16454,8 @@ Function Start-VCFIBROrchestrator {
     $startInfo.ArgumentList.Add($xamlPath)
     $startInfo.ArgumentList.Add('-WorkingDirectory')
     $startInfo.ArgumentList.Add($launchDirectory)
+    $startInfo.ArgumentList.Add('-PlansPath')
+    $startInfo.ArgumentList.Add($plansPath)
 
     # Redirected only so a fast, unhandled failure (e.g. an exception thrown before Application.Run()
     # ever starts pumping messages) has somewhere to be read back from below -- not read from at all
@@ -16437,7 +16463,7 @@ Function Start-VCFIBROrchestrator {
     $startInfo.RedirectStandardError = $true
 
     $process = [System.Diagnostics.Process]::Start($startInfo)
-    $script:InstanceRecoveryOrchestratorUIProcess = $process
+    $script:VCFRecoveryOrchestratorUIProcess = $process
 
     # A real launch stays open indefinitely; this is only long enough to catch a launch that failed
     # outright, so this cmdlet reports what actually happened instead of claiming success regardless,
@@ -16446,12 +16472,12 @@ Function Start-VCFIBROrchestrator {
     $process.Refresh()
     if ($process.HasExited) {
         $errorOutput = $process.StandardError.ReadToEnd()
-        LogMessage -type ERROR -message "Instance Recovery Orchestrator UI exited immediately (exit code $($process.ExitCode)). $errorOutput"
+        LogMessage -type ERROR -message "VCF Recovery Coordinator UI exited immediately (exit code $($process.ExitCode)). $errorOutput"
         return
     }
 
-    LogMessage -type NOTE -message "Instance Recovery Orchestrator UI launched (PID $($process.Id))."
+    LogMessage -type NOTE -message "VCF Recovery Coordinator UI launched (PID $($process.Id))."
 }
-Export-ModuleMember -Function Start-VCFIBROrchestrator
+Export-ModuleMember -Function Start-VCFRecoveryCoordinator
 
 #EndRegion UI Orchestrator

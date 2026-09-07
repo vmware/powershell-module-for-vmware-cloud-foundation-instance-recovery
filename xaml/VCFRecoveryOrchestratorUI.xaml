@@ -1,0 +1,393 @@
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="VCF Recovery Coordinator" Height="820" Width="1100" WindowState="Maximized">
+    <!--
+        Loaded via XamlReader.Load from VCFRecoveryOrchestratorUI.ps1 (launched, as its own
+        detached process, by Start-VCFRecoveryCoordinator in the module's .psm1).
+        There is no code-behind class, so this file deliberately has no x:Class, no inline event
+        handler attributes (Click=/SelectionChanged=), and no data-binding markup on the list
+        boxes. All wiring and list population happens imperatively in the PowerShell loader script.
+
+        Visual language is modeled on VMware's Clarity design system (as seen in vSphere Client):
+        dark header bar, light gray canvas, plain white cards with a bold title (no separate header
+        strip), flat underline tabs. This is a visual approximation, not certified brand colors.
+    -->
+    <Window.Resources>
+        <SolidColorBrush x:Key="HeaderBarBrush" Color="#1D2731" />
+        <SolidColorBrush x:Key="AccentBrush" Color="#0095D3" />
+        <SolidColorBrush x:Key="AccentHoverBrush" Color="#0077AA" />
+        <SolidColorBrush x:Key="PanelBackgroundBrush" Color="#FFFFFF" />
+        <SolidColorBrush x:Key="WindowBackgroundBrush" Color="#F5F5F5" />
+        <SolidColorBrush x:Key="PanelBorderBrush" Color="#E0E0E0" />
+        <SolidColorBrush x:Key="HeaderTextBrush" Color="#22313F" />
+        <SolidColorBrush x:Key="SubtleTextBrush" Color="#6B7280" />
+        <SolidColorBrush x:Key="InactiveTabTextBrush" Color="#565656" />
+        <SolidColorBrush x:Key="HoverBackgroundBrush" Color="#EAF6FC" />
+
+        <Style TargetType="Window">
+            <Setter Property="Background" Value="{StaticResource WindowBackgroundBrush}" />
+            <Setter Property="FontFamily" Value="Segoe UI" />
+            <Setter Property="FontSize" Value="13" />
+        </Style>
+
+        <Style TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource HeaderTextBrush}" />
+        </Style>
+
+        <!-- Plain white card with a bold title directly on it (no separate header-bar strip),
+             matching Clarity's dashboard card style (e.g. "Folder Details", "Usage" panels). -->
+        <Style TargetType="GroupBox">
+            <Setter Property="Padding" Value="10" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="GroupBox">
+                        <Border Background="{StaticResource PanelBackgroundBrush}"
+                                BorderBrush="{StaticResource PanelBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="4"
+                                SnapsToDevicePixels="True">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+                                <TextBlock Grid.Row="0"
+                                           Text="{TemplateBinding Header}"
+                                           Foreground="{StaticResource HeaderTextBrush}"
+                                           FontWeight="Bold"
+                                           FontSize="15"
+                                           Margin="{TemplateBinding Padding}"
+                                           Padding="0,0,0,8" />
+                                <ContentPresenter Grid.Row="1" Margin="{TemplateBinding Padding}" />
+                            </Grid>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="Button">
+            <Setter Property="Background" Value="{StaticResource AccentBrush}" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="10,5" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="ButtonBorder" Background="{TemplateBinding Background}" CornerRadius="3">
+                            <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="{StaticResource AccentHoverBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.5" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="TextBox">
+            <Setter Property="Padding" Value="6,4" />
+            <Setter Property="BorderBrush" Value="{StaticResource PanelBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Background" Value="White" />
+        </Style>
+
+        <Style TargetType="PasswordBox">
+            <Setter Property="Padding" Value="6,4" />
+            <Setter Property="BorderBrush" Value="{StaticResource PanelBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Background" Value="White" />
+        </Style>
+
+        <Style TargetType="ListBox">
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+
+        <!-- Flat hover/selected highlight instead of the default gray selection box + dotted
+             focus rectangle. -->
+        <Style TargetType="ListBoxItem">
+            <Setter Property="Padding" Value="3,1" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="ItemBorder" Background="Transparent" CornerRadius="3">
+                            <ContentPresenter Margin="{TemplateBinding Padding}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ItemBorder" Property="Background" Value="{StaticResource HoverBackgroundBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="ItemBorder" Property="Background" Value="{StaticResource HoverBackgroundBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Flat underline tabs, blue-when-active/gray-when-inactive text, matching the
+             Summary/Monitor/Configure... tab strip style. -->
+        <Style TargetType="TabItem">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border x:Name="TabBorder" Background="Transparent" BorderBrush="{StaticResource AccentBrush}" BorderThickness="0,0,0,2" Margin="0,0,16,0">
+                            <ContentPresenter x:Name="TabContent" ContentSource="Header" Margin="2,6,2,8" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="TabContent" Property="TextElement.Foreground" Value="{StaticResource AccentBrush}" />
+                                <Setter TargetName="TabContent" Property="TextElement.FontWeight" Value="SemiBold" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="False">
+                                <Setter TargetName="TabBorder" Property="BorderThickness" Value="0" />
+                                <Setter TargetName="TabContent" Property="TextElement.Foreground" Value="{StaticResource InactiveTabTextBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Header bar, modeled on the vSphere Client dark top bar -->
+        <Border Grid.Row="0" Background="{StaticResource HeaderBarBrush}" Padding="18,12">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button x:Name="ResumeButton" Content="Resume..." Width="90" Margin="0,0,8,0" />
+                    <Button x:Name="ExitButton" Content="Exit" Width="70" />
+                </StackPanel>
+                <TextBlock Text="VCF Recovery Coordinator" Foreground="White" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" />
+            </DockPanel>
+        </Border>
+
+        <!-- Left rail (30%) and console (70%) are two independent columns, not one big stacked
+             column including the console, specifically so the console's size never depends on how
+             tall the left rail's panes get (that coupling used to push the console off the bottom
+             of the window once Steps/Variables appeared). -->
+        <Grid Grid.Row="1" Margin="14">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="3*" />
+                <ColumnDefinition Width="12" />
+                <ColumnDefinition Width="7*" />
+            </Grid.ColumnDefinitions>
+
+            <!--
+                Data Source / Discovered Infrastructure / Execution (Steps, Variables), stacked top
+                to bottom. Execution stays collapsed until a domain is picked (see the .ps1's domain
+                SelectionChanged handler). Steps show only the cmdlet name; the full command line
+                with its parameters lives in the plan file (see plans/*.txt) and is never rendered
+                here. Variable values come from a JSON answer file (flat {"variableName": "value",
+                ...}) loaded via the button below; each entry is sent to the console as
+                "$variableName = 'value'" immediately on load, so every step's Run button can just
+                send its command line directly without per-step lookups.
+            -->
+            <Grid Grid.Column="0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <!-- Leading question: which top-level recovery workflow is this session for. IBR
+                     drives Data Source/Discovered Infrastructure/Execution below by domain
+                     selection; FDR has a single whole-fleet plan (Recover Fleet) that needs none
+                     of that, so picking it collapses Data Source/Discovered Infrastructure and
+                     swaps the Steps tabs over. See the .ps1's Recovery Type Checked handlers. -->
+                <GroupBox Grid.Row="0" Header="Recovery Type" Margin="0,0,0,12">
+                    <StackPanel>
+                        <RadioButton x:Name="IbrRecoveryTypeRadio" Content="Instance Backup &amp; Restore (IBR)" GroupName="RecoveryType" IsChecked="True" Margin="0,0,0,6" />
+                        <RadioButton x:Name="FdrRecoveryTypeRadio" Content="Fleet Disaster Recovery (FDR)" GroupName="RecoveryType" />
+                    </StackPanel>
+                </GroupBox>
+
+                <!-- Just the choice of data source and the file that provides it. Extracting a
+                     backup runs immediately once that file (plus the credentials file and
+                     encryption password the .ps1 prompts for right there) is picked, and it isn't a
+                     Steps entry in Execution below, since there's nothing to sequence: it's one
+                     action, not a plan. Loading already-extracted data instead populates Discovered
+                     Infrastructure. -->
+                <GroupBox x:Name="DataSourceGroupBox" Grid.Row="1" Header="Data Source" Margin="0,0,0,12">
+                    <StackPanel>
+                        <RadioButton x:Name="ExtractBackupRadio" Content="Extract SDDC Manager Backup" GroupName="DataSource" IsChecked="True" Margin="0,0,0,6" />
+                        <RadioButton x:Name="UseExtractedDataRadio" Content="Load Extracted SDDC Data" GroupName="DataSource" Margin="0,0,0,6" />
+                        <DockPanel Margin="0,4,0,0">
+                            <Button x:Name="BrowseButton" Content="Browse..." Width="80" DockPanel.Dock="Right" />
+                            <TextBox x:Name="FilePathTextBox" IsReadOnly="True" Margin="0,0,8,0" VerticalContentAlignment="Center" />
+                        </DockPanel>
+                        <TextBlock x:Name="StatusTextBlock" Margin="0,8,0,0" TextWrapping="Wrap" Foreground="#C0392B" />
+                    </StackPanel>
+                </GroupBox>
+
+                <!-- Split out of Data Source into its own card: this is what loading an
+                     extracted-sddc-data.json actually reveals, not part of choosing where that
+                     file comes from. Workload Domains and Additional Clusters share it as tabs
+                     since both are just different views over the same loaded data. -->
+                <!-- Collapsed until extracted-sddc-data is actually loaded (see
+                     Import-ExtractedSddcDataFile in the .ps1); there's nothing meaningful to
+                     show in either tab before then. -->
+                <GroupBox x:Name="DiscoveredInfrastructureGroupBox" Grid.Row="2" Header="Discovered Infrastructure" Margin="0,0,0,12" Visibility="Collapsed">
+                    <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" Text="Select element to recover" FontWeight="Normal" Foreground="{StaticResource SubtleTextBrush}" Margin="0,0,0,8" />
+                    <TabControl x:Name="DiscoveredInfrastructureTabControl" Background="Transparent" BorderThickness="0">
+                        <!-- Column headers are static markup; the ListBox's own rows are built to
+                             match, using the same SharedSizeGroup names, in the .ps1 (see
+                             New-TableRow). Width="Auto" plus a shared group is what makes a
+                             column hug its own content instead of stretching to fill the card,
+                             which is what "tight" columns actually requires: Star widths always
+                             fill 100% of the row regardless of their ratio, so no amount of
+                             re-weighting alone would have tightened anything. IsSharedSizeScope
+                             is set per tab, not on the whole TabControl, so the two tables' column
+                             groups never influence each other. Virtualization is switched off on
+                             the ListBox so every row (not just the currently-visible ones)
+                             contributes to that measurement, since otherwise column widths could
+                             visibly jump while scrolling. -->
+                        <TabItem Header="Workload Domains">
+                            <DockPanel Margin="0,8,0,0" Grid.IsSharedSizeScope="True">
+                                <Grid DockPanel.Dock="Top" Margin="3,0,3,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" SharedSizeGroup="WorkloadDomainsCol0" />
+                                        <ColumnDefinition Width="Auto" SharedSizeGroup="WorkloadDomainsCol1" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="Domain Name" FontWeight="Bold" Margin="0,0,10,0" />
+                                    <TextBlock Grid.Column="1" Text="Domain Type" FontWeight="Bold" />
+                                </Grid>
+                                <ListBox x:Name="WorkloadDomainsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" VirtualizingPanel.IsVirtualizing="False" MaxHeight="160" />
+                            </DockPanel>
+                        </TabItem>
+                        <!-- Any cluster (in any workload domain) beyond a domain's own default
+                             cluster (isDefault 'f' in the raw extracted data). These need the
+                             same recovery attention as the default cluster but aren't covered by
+                             the Recover Default Cluster plan, so surfacing them here is what tells
+                             you whether there's extra work to plan for at all. -->
+                        <TabItem Header="Additional Clusters">
+                            <DockPanel Margin="0,8,0,0" Grid.IsSharedSizeScope="True">
+                                <Grid DockPanel.Dock="Top" Margin="3,0,3,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" SharedSizeGroup="AdditionalClustersCol0" />
+                                        <ColumnDefinition Width="Auto" SharedSizeGroup="AdditionalClustersCol1" />
+                                        <ColumnDefinition Width="Auto" SharedSizeGroup="AdditionalClustersCol2" />
+                                        <ColumnDefinition Width="Auto" SharedSizeGroup="AdditionalClustersCol3" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="Cluster Name" FontWeight="Bold" Margin="0,0,10,0" />
+                                    <TextBlock Grid.Column="1" Text="Domain" FontWeight="Bold" Margin="0,0,10,0" />
+                                    <TextBlock Grid.Column="2" Text="Storage" FontWeight="Bold" Margin="0,0,10,0" />
+                                    <TextBlock Grid.Column="3" Text="Stretched" FontWeight="Bold" />
+                                </Grid>
+                                <ListBox x:Name="AdditionalClustersListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" VirtualizingPanel.IsVirtualizing="False" MaxHeight="160" />
+                            </DockPanel>
+                        </TabItem>
+                    </TabControl>
+                    </DockPanel>
+                </GroupBox>
+
+                <!-- Steps and Variables share one card as tabs: each gets the whole remaining
+                     pane's height instead of splitting it permanently, since you're typically
+                     working in one or the other, not both at once. -->
+                <GroupBox x:Name="StepsVariablesGroupBox" Grid.Row="3" Header="Execution" Visibility="Collapsed">
+                    <TabControl x:Name="StepsVariablesTabControl" Background="Transparent" BorderThickness="0">
+                        <TabItem Header="Variables">
+                            <DockPanel Margin="0,8,0,0">
+                                <!-- New Variables File starts from the variables the currently-loaded
+                                     plan(s) actually reference (see Get-ReferencedVariableNames), not a
+                                     fixed template file, so it's always in sync with whatever's on the
+                                     Steps tab right now, IBR domain-specific or FDR's Recover Fleet alike.
+                                     It reuses this same panel/rows (New-VariableRow) to capture values, and
+                                     saves to the chosen file automatically as each field loses focus, so
+                                     there's no separate "Save" step to remember. -->
+                                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+                                    <Button x:Name="LoadVariablesButton" Content="Load Variables File" Margin="0,0,8,0" />
+                                    <Button x:Name="NewVariablesFileButton" Content="New Variables File" />
+                                </StackPanel>
+                                <TextBlock x:Name="LoadedVariablesTextBlock" DockPanel.Dock="Top" Margin="0,0,0,8" TextWrapping="Wrap" Foreground="{StaticResource SubtleTextBrush}" Text="No variables loaded yet." />
+                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                    <StackPanel x:Name="VariablesItemsPanel" />
+                                </ScrollViewer>
+                            </DockPanel>
+                        </TabItem>
+                        <TabItem Header="Steps">
+                            <TabControl x:Name="StepsTabControl" Background="Transparent" BorderThickness="0" Margin="0,8,0,0">
+                                <!-- Same two tab labels for both domain types. Domain Restores and Recover
+                                     Default Cluster below both load a different pair of plan files depending
+                                     on the selected domain's type (see the .ps1's domain SelectionChanged
+                                     handler): management-domain-component-restore-plan.json/
+                                     management-domain-default-cluster-recovery-plan.json for a MANAGEMENT
+                                     domain, workload-domain-component-restore-plan.json/
+                                     workload-domain-default-cluster-recovery-plan.json for a VI domain.
+                                     Both are collapsed (not removed, so their content stays ready to
+                                     reappear) in favor of Recover Fleet when FDR is selected instead of
+                                     IBR; see the .ps1's Recovery Type Checked handlers. -->
+                                <!-- Domain Restores/Recover Default Cluster and Recover Additional Cluster
+                                     below are mutually exclusive: selecting a domain in Discovered
+                                     Infrastructure's Workload Domains tab shows these two and hides Recover
+                                     Additional Cluster; selecting a row in its Additional Clusters tab does
+                                     the reverse. Both start Collapsed; whichever applies is revealed by
+                                     Sync-DomainSteps/Sync-AdditionalClusterSteps in the .ps1 once something
+                                     is actually selected. -->
+                                <TabItem x:Name="DomainRestoresTabItem" Header="Domain Restores" Visibility="Collapsed">
+                                    <DockPanel Margin="0,8,0,0">
+                                        <Button x:Name="RunAllDomainRestoresButton" Content="Run All" DockPanel.Dock="Top" HorizontalAlignment="Left" Margin="0,0,0,8" />
+                                        <ListBox x:Name="DomainRestoresStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                                    </DockPanel>
+                                </TabItem>
+                                <TabItem x:Name="RecoverDefaultClusterTabItem" Header="Recover Default Cluster" Visibility="Collapsed">
+                                    <DockPanel Margin="0,8,0,0">
+                                        <Button x:Name="RunAllRecoverDefaultClusterButton" Content="Run All" DockPanel.Dock="Top" HorizontalAlignment="Left" Margin="0,0,0,8" />
+                                        <ListBox x:Name="RecoverDefaultClusterStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                                    </DockPanel>
+                                </TabItem>
+                                <!-- Populated by selecting a row in Discovered Infrastructure's Additional
+                                     Clusters tab (plans/ibr/additional-cluster-recovery-plan.json). Mutually
+                                     exclusive with the two tabs above, per the comment there. IBR-only;
+                                     also collapsed for FDR the same way as the other two. -->
+                                <TabItem x:Name="AdditionalClusterRecoveryTabItem" Header="Recover Additional Cluster" Visibility="Collapsed">
+                                    <DockPanel Margin="0,8,0,0">
+                                        <Button x:Name="RunAllAdditionalClusterRecoveryButton" Content="Run All" DockPanel.Dock="Top" HorizontalAlignment="Left" Margin="0,0,0,8" />
+                                        <ListBox x:Name="AdditionalClusterRecoveryStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                                    </DockPanel>
+                                </TabItem>
+                                <!-- FDR's single whole-fleet plan (plans/fdr/fdr-failover-plan.json), loaded as soon
+                                     as FDR is selected, since there's no domain selection for it to wait on.
+                                     Collapsed by default; shown instead of the two tabs above when FDR is
+                                     picked (see the .ps1's Recovery Type Checked handlers). -->
+                                <TabItem x:Name="RecoverFleetTabItem" Header="Recover Fleet" Visibility="Collapsed">
+                                    <DockPanel Margin="0,8,0,0">
+                                        <Button x:Name="RunAllRecoverFleetButton" Content="Run All" DockPanel.Dock="Top" HorizontalAlignment="Left" Margin="0,0,0,8" />
+                                        <ListBox x:Name="RecoverFleetStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                                    </DockPanel>
+                                </TabItem>
+                            </TabControl>
+                        </TabItem>
+                    </TabControl>
+                </GroupBox>
+
+            </Grid>
+
+            <!-- Console: a real, separate pwsh.exe console window, reparented into ConsoleHostBorder
+                 by the loader script (see ConsoleHwndHost in the .ps1) rather than rendered by any
+                 control of ours. Nothing here draws a single character of it; Windows' own console
+                 host does that, exactly as reliably as it always has, and we only relocate that
+                 already-correct window to sit inside this layout position instead of floating
+                 separately. Starts empty; the loader script attaches the reparented window as the
+                 Border's Child once the console process is up. -->
+            <GroupBox Grid.Column="2" Header="Console">
+                <Border x:Name="ConsoleHostBorder" Background="#0C0C0C" />
+            </GroupBox>
+        </Grid>
+    </Grid>
+</Window>
