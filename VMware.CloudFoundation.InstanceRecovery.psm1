@@ -9848,6 +9848,8 @@ Function Get-VcfOperationsRegisteredComponents {
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
 }
+Export-ModuleMember -Function Get-VcfOperationsRegisteredComponents
+
 
 Function Get-RegisteredComponentIds {
     <#
