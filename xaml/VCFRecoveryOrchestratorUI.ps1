@@ -60,6 +60,9 @@ $recoverFleetStepsListBox = $window.FindName('RecoverFleetStepsListBox')
 $runAllDomainRecoveryButton = $window.FindName('RunAllDomainRecoveryButton')
 $runAllAdditionalClusterRecoveryButton = $window.FindName('RunAllAdditionalClusterRecoveryButton')
 $runAllRecoverFleetButton = $window.FindName('RunAllRecoverFleetButton')
+$runAllDomainRecoveryParallelCheckBox = $window.FindName('RunAllDomainRecoveryParallelCheckBox')
+$runAllAdditionalClusterRecoveryParallelCheckBox = $window.FindName('RunAllAdditionalClusterRecoveryParallelCheckBox')
+$runAllRecoverFleetParallelCheckBox = $window.FindName('RunAllRecoverFleetParallelCheckBox')
 $loadVariablesButton = $window.FindName('LoadVariablesButton')
 $newVariablesFileButton = $window.FindName('NewVariablesFileButton')
 $loadedVariablesTextBlock = $window.FindName('LoadedVariablesTextBlock')
@@ -620,35 +623,42 @@ function New-EmbeddedConsole([string]$TabHeader, [switch]$Bootstrap) {
 # started before either happened simply gets neither command, same as Main itself would have none
 # to send at that point.
 #
-# Blocks (bounded) until a sentinel line actually appears in the console's own transcript before
-# returning, whenever something was sent -- Send-ToConsole only queues keystrokes via
-# WriteConsoleInput, it does not wait for the target process to have consumed and run them yet.
-# Invoke-StepGroup calls Add-StepWatch immediately after this returns, and Add-StepWatch's baseline
-# offset has to be taken from AFTER these priming commands have actually finished executing; captured
-# any earlier, their own transcript output would land inside the group step's own watched slice once
-# it does run, and could fail that step's clean-transcript gate for something it never did itself.
+# Blocks (bounded) until the last priming command sent actually finishes running, before returning,
+# whenever something was sent -- Send-ToConsole only queues keystrokes via WriteConsoleInput, it does
+# not wait for the target process to have consumed and run them yet. Invoke-StepGroup calls
+# Add-StepWatch immediately after this returns, and Add-StepWatch's baseline offset has to be taken
+# from AFTER these priming commands have actually finished executing; captured any earlier, their own
+# transcript output would land inside the group step's own watched slice once it does run, and could
+# fail that step's clean-transcript gate for something it never did itself.
+#
+# Both priming commands are real, exported module cmdlets that already log their own "Completed
+# Task" line (see LogMessage) -- waiting for whichever was sent LAST to report that confirms
+# everything queued before it has finished too, since console input is always processed strictly in
+# the order it was queued. This is deliberately not a synthetic marker command of its own (an earlier
+# version injected a "Write-Host 'VCFIR-BOOTSTRAP-COMPLETE-...'" for this) -- that line had no purpose
+# other than this internal bookkeeping, so every parallel console showed it, uselessly, to anyone
+# actually looking at the console pane.
 function Initialize-ConsoleVariables($Console) {
-    $sentAnything = $false
+    $lastCmdletSent = $null
     if ($global:extractedDataLoaded -and $filePathTextBox.Text) {
         $escapedPath = Protect-SingleQuotes $filePathTextBox.Text
         Send-ToConsole "Set-ExportedSDDCDataFilePath -Path '$escapedPath'" $Console
-        $sentAnything = $true
+        $lastCmdletSent = 'Set-ExportedSDDCDataFilePath'
     }
     if ($global:variablesAnswersFilePath) {
         $escapedAnswersPath = Protect-SingleQuotes $global:variablesAnswersFilePath
         Send-ToConsole "Import-RecoveryVariables -Path '$escapedAnswersPath'" $Console
-        $sentAnything = $true
+        $lastCmdletSent = 'Import-RecoveryVariables'
     }
-    if (-not $sentAnything) {
+    if (-not $lastCmdletSent) {
         return
     }
 
-    $sentinel = "VCFIR-BOOTSTRAP-COMPLETE-$([Guid]::NewGuid().ToString('N'))"
-    Send-ToConsole "Write-Host '$sentinel'" $Console
+    $targetText = "Completed Task $lastCmdletSent"
     $deadline = (Get-Date).AddSeconds(10)
     while ((Get-Date) -lt $deadline) {
         $transcriptText = Get-Content -Path $Console.TranscriptPath -Raw -ErrorAction SilentlyContinue
-        if ($transcriptText -and $transcriptText.Contains($sentinel)) {
+        if ($transcriptText -and $transcriptText.Contains($targetText)) {
             return
         }
         Start-Sleep -Milliseconds 50
@@ -696,6 +706,17 @@ function Set-ConsoleFocus {
     if ($null -eq $console -or $console.Hwnd -eq [IntPtr]::Zero) {
         return
     }
+    # A tab being selected for the very first time (a parallel console's tab, almost always -- Main
+    # is selected before the window is even shown) hasn't actually been embedded yet: TabControl only
+    # realizes a TabItem's Content -- which is what runs ConsoleHwndHost.BuildWindowCore, the SetParent/
+    # ShowWindow call that turns this from a separate hidden top-level window into a true child of our
+    # own -- on the next layout pass, not synchronously as part of SelectedItem changing. Called from
+    # the SelectionChanged handler (the common case) with no pump in between, SetFocus below would
+    # otherwise run against a window that's still a hidden top-level window, silently do nothing useful,
+    # and leave every keystroke the user types going nowhere -- confirmed directly: GetParent on the
+    # console's hwnd was still Zero, and focus still elsewhere, at that exact point without this call.
+    # UpdateLayout is a no-op cost-wise once a tab's content is already realized, so this is always safe.
+    $consoleTabControl.UpdateLayout()
     $consoleThreadId = [VCFIRConsole.NativeMethods]::GetWindowThreadProcessId($console.Hwnd, [IntPtr]::Zero)
     $currentThreadId = [VCFIRConsole.NativeMethods]::GetCurrentThreadId()
     $attached = $false
@@ -768,7 +789,26 @@ function Send-ToConsole([string]$CommandLine, $Console) {
     }
     try {
         [VCFIRConsole.NativeMethods]::FreeConsole() | Out-Null
-        if (-not [VCFIRConsole.NativeMethods]::AttachConsole([uint32]$Console.Process.Id)) {
+        # A console that was JUST created (New-EmbeddedConsole -Bootstrap calling straight into this,
+        # the moment its own window handle first appears) can still fail AttachConsole for a beat
+        # afterward -- the window existing doesn't guarantee the process's own console subsystem has
+        # finished initializing enough to accept another process attaching to it yet. Retrying a few
+        # times a beat apart, rather than failing outright on the first attempt, is what makes a
+        # freshly bootstrapped parallel console's very first injected command (typically
+        # Set-ExportedSDDCDataFilePath) reliably land instead of silently vanishing -- observed for
+        # real: that exact command missing from a parallel console's transcript with no trace of it
+        # having ever been typed, while a later command sent moments afterward (once the race window
+        # had passed) worked fine. Main is never subject to this since nothing sends it a command
+        # this soon after creation.
+        $attachDeadline = (Get-Date).AddSeconds(2)
+        $attached = $false
+        do {
+            $attached = [VCFIRConsole.NativeMethods]::AttachConsole([uint32]$Console.Process.Id)
+            if (-not $attached) {
+                Start-Sleep -Milliseconds 100
+            }
+        } while (-not $attached -and (Get-Date) -lt $attachDeadline)
+        if (-not $attached) {
             throw "AttachConsole failed (Win32 error $([System.Runtime.InteropServices.Marshal]::GetLastWin32Error()))."
         }
         try {
@@ -906,12 +946,16 @@ function Invoke-Step($Dot, $Button, [string]$CmdletName, [string]$CommandLine, [
 # time; the chain only continues past the whole group once every member has finished cleanly. Rows
 # must be consecutive in the plan file to be bundled -- a GroupingId reappearing later, separated by
 # an ungrouped or differently-grouped row, starts a new group rather than joining the earlier one.
-function Invoke-StepChain([object[]]$Rows) {
+# -IgnoreGrouping (driven by each panel's own "Run parallel operations where possible" checkbox --
+# unchecked means this) skips that dispatch entirely, running every row one at a time regardless of
+# GroupingId; it's threaded through every recursive call so unchecking it stays in effect for the
+# rest of that particular Run All run, not just its first row.
+function Invoke-StepChain([object[]]$Rows, [switch]$IgnoreGrouping) {
     if ($Rows.Count -eq 0) {
         return
     }
     $row = $Rows[0]
-    if ($row.GroupingId) {
+    if ($row.GroupingId -and -not $IgnoreGrouping) {
         $groupEnd = 1
         while ($groupEnd -lt $Rows.Count -and $Rows[$groupEnd].GroupingId -eq $row.GroupingId) {
             $groupEnd++
@@ -927,22 +971,24 @@ function Invoke-StepChain([object[]]$Rows) {
     Invoke-Step $row.Dot $row.Button $row.CmdletName $row.CommandLine {
         param($isClean)
         if ($isClean) {
-            Invoke-StepChain $remainingRows
+            Invoke-StepChain $remainingRows -IgnoreGrouping:$IgnoreGrouping
         } else {
             $statusTextBlock.Text = "Run All stopped: $($row.CmdletName) did not complete cleanly -- check the console/transcript for warnings, errors, or a PowerShell error record before retrying."
         }
     }.GetNewClosure()
 }
 
-# Runs every row in $GroupRows at once -- the first in $global:mainConsole (implicit default), each
-# remaining one in its own freshly bootstrapped console (New-EmbeddedConsole -Bootstrap, which
-# imports the extracted-data path and answers file so the new console's session has the same
-# variables as Main) -- and only resumes the chain with $AfterGroupRows once every member has
-# reported back. $state is a shared, mutated-in-place hashtable captured by every member's
-# OnComplete closure (via .GetNewClosure()) -- safe because it's a reference type and none of the
-# closures ever reassign $state itself, only its .Remaining/.AllClean entries. Per the confirmed
-# design, a member finishing uncleanly does not attempt to stop its still-running siblings; the
-# chain simply refuses to continue once they've all finished if any of them were unclean.
+# Runs every row in $GroupRows at once, each in its own freshly bootstrapped console
+# (New-EmbeddedConsole -Bootstrap, which imports the extracted-data path and answers file so the new
+# console's session has the same variables as Main) -- none of them run in Main, including the
+# first, so Main stays free rather than being tied up by whichever group member happened to be listed
+# first in the plan file. Only resumes the chain with $AfterGroupRows once every member has reported
+# back. $state is a shared, mutated-in-place hashtable captured by every member's OnComplete closure
+# (via .GetNewClosure()) -- safe because it's a reference type and none of the closures ever reassign
+# $state itself, only its .Remaining/.AllClean entries. Per the confirmed design, a member finishing
+# uncleanly does not attempt to stop its still-running siblings; the chain simply refuses to continue
+# once they've all finished if any of them were unclean. Only ever reached with grouping enabled (see
+# Invoke-StepChain), so its own continuation into $AfterGroupRows never needs -IgnoreGrouping itself.
 function Invoke-StepGroup([object[]]$GroupRows, [object[]]$AfterGroupRows) {
     $state = @{ Remaining = $GroupRows.Count; AllClean = $true }
     $onMemberComplete = {
@@ -960,15 +1006,10 @@ function Invoke-StepGroup([object[]]$GroupRows, [object[]]$AfterGroupRows) {
         }
     }.GetNewClosure()
 
-    for ($i = 0; $i -lt $GroupRows.Count; $i++) {
-        $row = $GroupRows[$i]
-        if ($i -eq 0) {
-            Invoke-Step $row.Dot $row.Button $row.CmdletName $row.CommandLine $onMemberComplete
-        } else {
-            $console = New-EmbeddedConsole -TabHeader $row.CmdletName -Bootstrap
-            $global:parallelConsoles.Add($console)
-            Invoke-Step $row.Dot $row.Button $row.CmdletName $row.CommandLine $onMemberComplete $console
-        }
+    foreach ($row in $GroupRows) {
+        $console = New-EmbeddedConsole -TabHeader $row.CmdletName -Bootstrap
+        $global:parallelConsoles.Add($console)
+        Invoke-Step $row.Dot $row.Button $row.CmdletName $row.CommandLine $onMemberComplete $console
     }
 }
 
@@ -1018,9 +1059,8 @@ function New-StepRow([string]$CommandLine, [string]$GroupingId, [string]$Descrip
         $groupBadge.Foreground = [System.Windows.Media.Brushes]::Gray
         $groupBadge.FontStyle = 'Italic'
         $groupBadge.VerticalAlignment = 'Center'
-        $groupBadge.Margin = '8,0,0,0'
+        $groupBadge.Margin = '8,0,6,0'
         [System.Windows.Controls.DockPanel]::SetDock($groupBadge, [System.Windows.Controls.Dock]::Right)
-        [void]$panel.Children.Add($groupBadge)
     }
 
     $label = New-Object System.Windows.Controls.TextBlock
@@ -1028,8 +1068,15 @@ function New-StepRow([string]$CommandLine, [string]$GroupingId, [string]$Descrip
     $label.FontFamily = New-Object System.Windows.Media.FontFamily('Consolas')
     $label.VerticalAlignment = 'Center'
 
+    # DockPanel stacks same-side children in the order they're added -- the first Right-docked
+    # child added ends up rightmost, and each one after lands just to its left. Adding runButton
+    # before groupBadge (rather than after) is what keeps Run pinned to the far-right edge with the
+    # group badge immediately to its left, not the other way around.
     [void]$panel.Children.Add($dot)
     [void]$panel.Children.Add($runButton)
+    if ($groupBadge) {
+        [void]$panel.Children.Add($groupBadge)
+    }
     [void]$panel.Children.Add($label)
     return [PSCustomObject]@{ Panel = $panel; Dot = $dot; CommandLine = $CommandLine; Button = $runButton; CmdletName = $cmdletName; GroupingId = $GroupingId }
 }
@@ -1638,7 +1685,7 @@ $additionalClustersListBox.Add_SelectionChanged({
 
 $runAllDomainRecoveryButton.Add_Click({
         try {
-            Invoke-StepChain $global:domainRecoveryStepRows
+            Invoke-StepChain $global:domainRecoveryStepRows -IgnoreGrouping:(-not $runAllDomainRecoveryParallelCheckBox.IsChecked)
         } catch {
             $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
         }
@@ -1646,7 +1693,7 @@ $runAllDomainRecoveryButton.Add_Click({
 
 $runAllAdditionalClusterRecoveryButton.Add_Click({
         try {
-            Invoke-StepChain $global:additionalClusterRecoveryStepRows
+            Invoke-StepChain $global:additionalClusterRecoveryStepRows -IgnoreGrouping:(-not $runAllAdditionalClusterRecoveryParallelCheckBox.IsChecked)
         } catch {
             $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
         }
@@ -1654,7 +1701,7 @@ $runAllAdditionalClusterRecoveryButton.Add_Click({
 
 $runAllRecoverFleetButton.Add_Click({
         try {
-            Invoke-StepChain $global:recoverFleetStepRows
+            Invoke-StepChain $global:recoverFleetStepRows -IgnoreGrouping:(-not $runAllRecoverFleetParallelCheckBox.IsChecked)
         } catch {
             $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
         }

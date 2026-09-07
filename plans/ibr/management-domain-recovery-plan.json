@@ -67,7 +67,7 @@
   },
   {
     "description": "Record the Cluster Settings from the Restored vCenter",
-    "commandLine": "Connect-VIServer -server $restoredVcenterFqdn -user $restoredVcenterAdmin -password $restoredVcenterAdminPassword",
+    "commandLine": "Connect-RestoredVCenterServer -Server $restoredVcenterFqdn -User $restoredVcenterAdmin -Password $restoredVcenterAdminPassword",
     "condition": [],
     "groupingId": ""
   },
@@ -97,7 +97,7 @@
   },
   {
     "description": "",
-    "commandLine": "Disconnect-VIServer * -confirm:$false",
+    "commandLine": "Disconnect-RestoredVCenterServer",
     "condition": [],
     "groupingId": ""
   },

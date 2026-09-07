@@ -373,7 +373,10 @@
                                  any space or renders at all. -->
                             <Grid Margin="0,8,0,0">
                                 <DockPanel x:Name="DomainRecoveryPanel" Visibility="Collapsed">
-                                    <Button x:Name="RunAllDomainRecoveryButton" Content="Run All" DockPanel.Dock="Top" HorizontalAlignment="Left" Margin="0,0,0,8" />
+                                    <StackPanel Orientation="Horizontal" DockPanel.Dock="Top" Margin="0,0,0,8">
+                                        <Button x:Name="RunAllDomainRecoveryButton" Content="Run All" HorizontalAlignment="Left" />
+                                        <CheckBox x:Name="RunAllDomainRecoveryParallelCheckBox" Content="Run parallel operations where possible" IsChecked="True" VerticalAlignment="Center" Margin="12,0,0,0" />
+                                    </StackPanel>
                                     <ListBox x:Name="DomainRecoveryStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" />
                                 </DockPanel>
                                 <!-- Populated by selecting a row in Discovered Infrastructure's Additional
@@ -381,7 +384,10 @@
                                      exclusive with the domain panel above, per the comment there. IBR-only;
                                      also collapsed for FDR the same way as the other two. -->
                                 <DockPanel x:Name="AdditionalClusterRecoveryPanel" Visibility="Collapsed">
-                                    <Button x:Name="RunAllAdditionalClusterRecoveryButton" Content="Run All" DockPanel.Dock="Top" HorizontalAlignment="Left" Margin="0,0,0,8" />
+                                    <StackPanel Orientation="Horizontal" DockPanel.Dock="Top" Margin="0,0,0,8">
+                                        <Button x:Name="RunAllAdditionalClusterRecoveryButton" Content="Run All" HorizontalAlignment="Left" />
+                                        <CheckBox x:Name="RunAllAdditionalClusterRecoveryParallelCheckBox" Content="Run parallel operations where possible" IsChecked="True" VerticalAlignment="Center" Margin="12,0,0,0" />
+                                    </StackPanel>
                                     <ListBox x:Name="AdditionalClusterRecoveryStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" />
                                 </DockPanel>
                                 <!-- FDR's single whole-fleet plan (plans/fdr/fdr-failover-plan.json), loaded as soon
@@ -389,7 +395,10 @@
                                      Collapsed by default; shown instead of the two panels above when FDR is
                                      picked (see the .ps1's Recovery Type Checked handlers). -->
                                 <DockPanel x:Name="RecoverFleetPanel" Visibility="Collapsed">
-                                    <Button x:Name="RunAllRecoverFleetButton" Content="Run All" DockPanel.Dock="Top" HorizontalAlignment="Left" Margin="0,0,0,8" />
+                                    <StackPanel Orientation="Horizontal" DockPanel.Dock="Top" Margin="0,0,0,8">
+                                        <Button x:Name="RunAllRecoverFleetButton" Content="Run All" HorizontalAlignment="Left" />
+                                        <CheckBox x:Name="RunAllRecoverFleetParallelCheckBox" Content="Run parallel operations where possible" IsChecked="True" VerticalAlignment="Center" Margin="12,0,0,0" />
+                                    </StackPanel>
                                     <ListBox x:Name="RecoverFleetStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" />
                                 </DockPanel>
                             </Grid>

@@ -1446,7 +1446,7 @@ Function Update-ExtractedSDDCData {
                 $witnessObject | Add-Member -NotePropertyName "addresses" -NotePropertyValue $witnessVmkernels
                 $witnessObject | Add-Member -NotePropertyName "version" -NotePropertyValue $witnessVersion
                 LogMessage -type INFO -message "Injecting Witness Details for $clusterName"
-                $cluster | Add-Member -NotePropertyName "witness" -NotePropertyValue $witnessObject
+                $cluster | Add-Member -NotePropertyName "witness" -NotePropertyValue $witnessObject -force
             }
         }
         Disconnect-VIServer * -confirm:$false
@@ -2944,6 +2944,80 @@ Export-ModuleMember -Function Invoke-SddcManagerBundleDownload
 #EndRegion SDDC Manager Functions
 
 #Region vCenter Functions
+
+Function Connect-RestoredVCenterServer {
+    <#
+    .SYNOPSIS
+    Connects to a vCenter Server, tracked to a Done state the same way every other recovery plan step is
+
+    .DESCRIPTION
+    The Connect-RestoredVCenterServer cmdlet wraps Connect-VIServer with the Starting Task/Completed
+    Task logging that the VCF Recovery Coordinator UI watches a plan step's transcript for to mark it
+    Done -- calling Connect-VIServer directly as a plan step never emits either line, so it can never
+    be detected as complete there.
+
+    .EXAMPLE
+    Connect-RestoredVCenterServer -Server sfo-m01-vc01.sfo.rainpole.io -User administrator@vsphere.local -Password VMw@re1!
+
+    .PARAMETER Server
+    FQDN or IP address of the vCenter Server to connect to
+
+    .PARAMETER User
+    Username to authenticate to the vCenter Server with
+
+    .PARAMETER Password
+    Password to authenticate to the vCenter Server with
+    #>
+
+    Param(
+        [Parameter (Mandatory = $true)][String] $Server,
+        [Parameter (Mandatory = $true)][String] $User,
+        [Parameter (Mandatory = $true)][String] $Password
+    )
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+    Try {
+        LogMessage -type INFO -message "[$Server] Connecting to vCenter Server"
+        Connect-VIServer -Server $Server -User $User -Password $Password -ErrorAction Stop | Out-Null
+    } Catch {
+        catchWriter -object $_
+    }
+    $StopWatch.Stop()
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+}
+Export-ModuleMember -Function Connect-RestoredVCenterServer
+
+Function Disconnect-RestoredVCenterServer {
+    <#
+    .SYNOPSIS
+    Disconnects every currently connected vCenter Server session, tracked to a Done state the same way every other recovery plan step is
+
+    .DESCRIPTION
+    The Disconnect-RestoredVCenterServer cmdlet wraps "Disconnect-VIServer * -Confirm:$false" with the
+    Starting Task/Completed Task logging that the VCF Recovery Coordinator UI watches a plan step's
+    transcript for to mark it Done -- calling Disconnect-VIServer directly as a plan step never emits
+    either line, so it can never be detected as complete there.
+
+    .EXAMPLE
+    Disconnect-RestoredVCenterServer
+    #>
+
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+    Try {
+        LogMessage -type INFO -message "[$jumpboxName] Disconnecting all connected vCenter Server sessions"
+        Disconnect-VIServer * -Confirm:$false -ErrorAction Stop
+    } Catch {
+        catchWriter -object $_
+    }
+    $StopWatch.Stop()
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+}
+Export-ModuleMember -Function Disconnect-RestoredVCenterServer
 
 Function Invoke-vCenterRestore {
     <#
