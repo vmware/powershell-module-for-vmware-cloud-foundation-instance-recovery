@@ -64,7 +64,7 @@ $loadVariablesButton = $window.FindName('LoadVariablesButton')
 $newVariablesFileButton = $window.FindName('NewVariablesFileButton')
 $loadedVariablesTextBlock = $window.FindName('LoadedVariablesTextBlock')
 $variablesItemsPanel = $window.FindName('VariablesItemsPanel')
-$consoleHostBorder = $window.FindName('ConsoleHostBorder')
+$consoleTabControl = $window.FindName('ConsoleTabControl')
 
 # Populated once a domain is selected (see Sync-DomainSteps below), an additional cluster is picked
 # (see Sync-AdditionalClusterSteps), or FDR's own Recover Fleet plan is loaded (see the FDR
@@ -97,14 +97,21 @@ $global:variablesAnswersFilePath = $null
 # by the move away from the terminal control -- it never depended on that control's own rendering
 # (that was the whole point of using a transcript in the first place: a plain text file that
 # PowerShell itself appends to, read back on a timer, confirmed correct even on builds where the
-# on-screen rendering was garbled).
-#
-# Saved in the launch directory (not $env:TEMP) with a timestamp in the name so past runs can be
-# told apart and reviewed later instead of being overwritten or left to rot in a temp folder.
-$global:transcriptPath = Join-Path $WorkingDirectory "vcfir-transcript-$(Get-Date -Format 'yyyyMMdd-HHmmss')-$PID.log"
+# on-screen rendering was garbled). Every console (Main, and every parallel one Run All spawns --
+# see New-EmbeddedConsole) gets its own transcript file, saved in the launch directory (not
+# $env:TEMP) with a timestamp and a per-console sequence number in the name, so past runs -- and
+# every console within a single run -- can be told apart and reviewed later instead of being
+# overwritten or left to rot in a temp folder.
+$global:consoleSequence = 0
 # Steps currently being watched for their own "Completed Task <cmdlet>" line, one entry per Run
 # click; each is removed (stopping that row's watch) once its text is found. See Add-StepWatch.
 $global:activeStepWatches = [System.Collections.Generic.List[object]]::new()
+# The console this app starts with (see New-EmbeddedConsole), plus zero or more Run All has spawned
+# on demand to run a parallel group's non-first members concurrently -- see Invoke-StepGroup. Every
+# other console-aware function (Send-ToConsole, Set-ConsoleFocus, Add-StepWatch, Invoke-Step, the
+# Exit/Closed handlers) defaults to or iterates these rather than assuming there's only ever one.
+$global:mainConsole = $null
+$global:parallelConsoles = [System.Collections.Generic.List[object]]::new()
 
 function Protect-SingleQuotes([string]$Value) {
     return $Value.Replace("'", "''")
@@ -176,9 +183,10 @@ function Show-PasswordPromptDialog([string]$Title, [string]$Message) {
 # see Test-StepConditions. An array (not a single string) is what lets a step depend on more than
 # one fact at once (e.g. isStretched AND primaryDatastoreType) without cramming both into one
 # expression. groupingId (empty = must run on its own) marks steps that could safely run in parallel
-# with any other step sharing the same non-empty groupingId; it's a data/display attribute only for
-# now -- Run All still replays steps strictly in file order, one at a time. $RecoveryType selects
-# the plans\ibr or plans\fdr subfolder.
+# with any other step sharing the same non-empty groupingId; Run All bundles a CONSECUTIVE run of
+# rows sharing one into a single parallel group (see Invoke-StepGroup) -- the same id reappearing
+# later, separated by a different row, starts a new group rather than joining the earlier one.
+# $RecoveryType selects the plans\ibr or plans\fdr subfolder.
 function Get-RecoveryPlanSteps([string]$RecoveryType, [string]$PlanFileName) {
     $planFilePath = Join-Path (Join-Path $PlansPath $RecoveryType) $PlanFileName
     if (-not (Test-Path -LiteralPath $planFilePath)) {
@@ -502,99 +510,209 @@ namespace VCFIRConsole {
 }
 '@
 
-# The console process: a completely ordinary pwsh.exe, given a real console window by Windows.
-# PSReadLine is removed here -- confirmed by testing, not assumed: WriteConsoleInput reports success
-# writing every record regardless, but with PSReadLine active the console never actually acts on any
-# of them (an injected "exit`r" left the process running); with PSReadLine removed, the identical
-# injection reliably exits it. PSReadLine owns line-editing (history, tab completion, syntax
-# coloring) but has nothing to do with output rendering -- that's the console host's job, always
-# was, and was never the source of the corruption bugs earlier designs hit. Losing PSReadLine here
-# costs those editing niceties for anyone typing directly into the window; it doesn't reintroduce any
-# of that risk, and it's the only way the Run/Run All buttons work at all.
-# Set-Location and Start-Transcript still run as part of the startup -Command, before anything is
-# typed into the console, so neither ever appears as if a user typed them. No -Encoding on
-# Start-Transcript: that parameter doesn't exist on every PowerShell version, and Get-Content (used
-# to read the transcript back) auto-detects the encoding from its BOM regardless of which default
-# Start-Transcript happened to use to write it.
-$escapedWorkingDirectory = Protect-SingleQuotes $WorkingDirectory
-$escapedTranscriptPath = Protect-SingleQuotes $global:transcriptPath
-$consoleStartupCommand = "Set-Location -LiteralPath '$escapedWorkingDirectory'; Remove-Module PSReadLine -Force -ErrorAction SilentlyContinue; Start-Transcript -Path '$escapedTranscriptPath' -Force | Out-Null"
+# Every console (Main, and every parallel one Run All spawns) is a completely ordinary pwsh.exe,
+# given a real console window by Windows. PSReadLine is removed here -- confirmed by testing, not
+# assumed: WriteConsoleInput reports success writing every record regardless, but with PSReadLine
+# active the console never actually acts on any of them (an injected "exit`r" left the process
+# running); with PSReadLine removed, the identical injection reliably exits it. PSReadLine owns
+# line-editing (history, tab completion, syntax coloring) but has nothing to do with output
+# rendering -- that's the console host's job, always was, and was never the source of the corruption
+# bugs earlier designs hit. Losing PSReadLine here costs those editing niceties for anyone typing
+# directly into the window; it doesn't reintroduce any of that risk, and it's the only way the
+# Run/Run All buttons work at all. Set-Location and Start-Transcript still run as part of the
+# startup -Command, before anything is typed into the console, so neither ever appears as if a user
+# typed them. No -Encoding on Start-Transcript: that parameter doesn't exist on every PowerShell
+# version, and Get-Content (used to read the transcript back) auto-detects the encoding from its
+# BOM regardless of which default Start-Transcript happened to use to write it.
+#
+# $Bootstrap (the parallel-console case; Main never passes it) re-sends this new console exactly
+# what Main's own session already has -- the extracted-data file path and whatever variables file
+# was last loaded/created -- since a brand new pwsh.exe starts with neither, and the whole point of
+# spawning it is to run a plan step that likely needs both.
+function New-EmbeddedConsole([string]$TabHeader, [switch]$Bootstrap) {
+    $global:consoleSequence++
+    $transcriptPath = Join-Path $WorkingDirectory "vcfir-transcript-$(Get-Date -Format 'yyyyMMdd-HHmmss')-$PID-$($global:consoleSequence).log"
+    $escapedWorkingDirectory = Protect-SingleQuotes $WorkingDirectory
+    $escapedTranscriptPath = Protect-SingleQuotes $transcriptPath
+    # $ErrorView = 'NormalView' matters, not just cosmetics: PowerShell 7's default, ConciseView,
+    # renders an uncaught error as a single terse "<name>: <message>" line with no "+ CategoryInfo"
+    # anywhere in it, which is exactly the marker Test-StepTranscriptClean's gate 3 looks for -- on
+    # ConciseView a real, uncaught error would silently pass every gate. NormalView is the one that
+    # always includes it.
+    $consoleStartupCommand = "Set-Location -LiteralPath '$escapedWorkingDirectory'; Remove-Module PSReadLine -Force -ErrorAction SilentlyContinue; `$ErrorView = 'NormalView'; Start-Transcript -Path '$escapedTranscriptPath' -Force | Out-Null"
 
-# Launched via the Start-Process cmdlet, not System.Diagnostics.ProcessStartInfo + Process.Start().
-# This isn't a style choice -- it's the actual fix for "console window never appears". Confirmed by
-# a direct A/B test: raw ProcessStartInfo+Process.Start() (UseShellExecute=$false,
-# CreateNoWindow=$false, no explicit console-creation flag) makes the child INHERIT this launcher's
-# own console rather than allocate a new one -- MainWindowHandle stays 0 forever (that's why no
-# timeout, however long, ever helped) and the child's output was observed leaking into the parent's
-# own console instead. .NET's base Process API has no public property for the Win32
-# CREATE_NEW_CONSOLE flag; Start-Process (the cmdlet) reliably allocates a real, separate console
-# window, verified with the exact same arguments. Argument/path quoting with spaces (the original
-# reason this launcher moved off Start-Process) was re-verified separately and is fine here: -Command
-# is a single array element regardless of the spaces inside it.
-$consoleProcess = Start-Process -FilePath (Get-Process -Id $PID).Path -ArgumentList @('-NoLogo', '-NoProfile', '-NoExit', '-Command', $consoleStartupCommand) -WorkingDirectory $WorkingDirectory -PassThru
+    # Launched via the Start-Process cmdlet, not System.Diagnostics.ProcessStartInfo + Process.Start().
+    # This isn't a style choice -- it's the actual fix for "console window never appears". Confirmed
+    # by a direct A/B test: raw ProcessStartInfo+Process.Start() (UseShellExecute=$false,
+    # CreateNoWindow=$false, no explicit console-creation flag) makes the child INHERIT this
+    # launcher's own console rather than allocate a new one -- MainWindowHandle stays 0 forever
+    # (that's why no timeout, however long, ever helped) and the child's output was observed leaking
+    # into the parent's own console instead. .NET's base Process API has no public property for the
+    # Win32 CREATE_NEW_CONSOLE flag; Start-Process (the cmdlet) reliably allocates a real, separate
+    # console window, verified with the exact same arguments. Argument/path quoting with spaces (the
+    # original reason this launcher moved off Start-Process) was re-verified separately and is fine
+    # here: -Command is a single array element regardless of the spaces inside it.
+    $process = Start-Process -FilePath (Get-Process -Id $PID).Path -ArgumentList @('-NoLogo', '-NoProfile', '-NoExit', '-Command', $consoleStartupCommand) -WorkingDirectory $WorkingDirectory -PassThru
 
-# Bounded wait for the console's own window to exist -- this happens well before the main window is
-# shown (Application.Run() hasn't been called yet), so blocking briefly here is fine, the same way
-# Start-VCFRecoveryCoordinator briefly waits for this whole process to start. Hidden immediately once
-# found, so it never visibly flashes as a free-floating window before ConsoleHwndHost embeds it.
-$consoleHwnd = [IntPtr]::Zero
-$deadline = (Get-Date).AddSeconds(10)
-while ((Get-Date) -lt $deadline) {
-    $consoleProcess.Refresh()
-    if ($consoleProcess.HasExited) {
-        $statusTextBlock.Text = "Console process exited before its window appeared."
-        break
+    # Bounded wait for the console's own window to exist -- Main's own creation happens well before
+    # the main window is shown (Application.Run() hasn't been called yet), so blocking briefly there
+    # is fine, the same way Start-VCFRecoveryCoordinator briefly waits for this whole process to
+    # start; a parallel console's creation happens on a UI-thread event handler instead, so this
+    # briefly blocks the UI too, same trade-off Send-ToConsole already accepts elsewhere. Hidden
+    # immediately once found, so it never visibly flashes as a free-floating window before
+    # ConsoleHwndHost embeds it.
+    $hwnd = [IntPtr]::Zero
+    $deadline = (Get-Date).AddSeconds(10)
+    while ((Get-Date) -lt $deadline) {
+        $process.Refresh()
+        if ($process.HasExited) {
+            $statusTextBlock.Text = "Console process exited before its window appeared."
+            break
+        }
+        $hwnd = $process.MainWindowHandle
+        if ($hwnd -ne [IntPtr]::Zero) { break }
+        Start-Sleep -Milliseconds 50
     }
-    $consoleHwnd = $consoleProcess.MainWindowHandle
-    if ($consoleHwnd -ne [IntPtr]::Zero) { break }
-    Start-Sleep -Milliseconds 50
-}
-if ($consoleHwnd -ne [IntPtr]::Zero) {
-    [VCFIRConsole.NativeMethods]::ShowWindow($consoleHwnd, [VCFIRConsole.NativeMethods]::SW_HIDE) | Out-Null
-    $consoleHwndHost = New-Object VCFIRConsole.ConsoleHwndHost($consoleHwnd)
-    $consoleHostBorder.Child = $consoleHwndHost
-} else {
-    $statusTextBlock.Text = "Console window did not appear within 10 seconds."
+
+    $tabItem = New-Object System.Windows.Controls.TabItem
+    $tabItem.Header = $TabHeader
+    $hostBorder = New-Object System.Windows.Controls.Border
+    $hostBorder.Background = [System.Windows.Media.Brushes]::Black
+    $tabItem.Content = $hostBorder
+    [void]$consoleTabControl.Items.Add($tabItem)
+
+    if ($hwnd -ne [IntPtr]::Zero) {
+        [VCFIRConsole.NativeMethods]::ShowWindow($hwnd, [VCFIRConsole.NativeMethods]::SW_HIDE) | Out-Null
+        $hwndHost = New-Object VCFIRConsole.ConsoleHwndHost($hwnd)
+        $hostBorder.Child = $hwndHost
+    } else {
+        $statusTextBlock.Text = "Console window did not appear within 10 seconds."
+    }
+
+    $console = [PSCustomObject]@{
+        Process        = $process
+        Hwnd           = $hwnd
+        TranscriptPath = $transcriptPath
+        TabItem        = $tabItem
+        HostBorder     = $hostBorder
+    }
+
+    # ConsoleHwndHost doesn't implement IKeyboardInputSink, so WPF's own keyboard-focus tracking has
+    # no real notion of an embedded console ever "having focus" the way it does for an ordinary WPF
+    # control -- a plain click into one otherwise does nothing (WPF's own hit-testing/focus handling
+    # can end up owning the click instead of the native child actually receiving real keyboard
+    # focus). Every console needs this, not just the one this app starts with.
+    $hostBorder.Add_PreviewMouseDown({
+            Set-ConsoleFocus
+        })
+
+    if ($Bootstrap) {
+        Initialize-ConsoleVariables $console
+    }
+
+    return $console
 }
 
-# Kills the console process when the window actually closes, regardless of which path got it there
-# (the X button or Exit) -- a plain child process isn't torn down automatically just because this
-# process exits, so without this every close would leak an orphaned pwsh.exe. Reparenting doesn't
-# change this: the console window being a child of ours now makes it even less discoverable/
-# manageable on its own if left behind, not more.
+# Re-sends a freshly spawned parallel console exactly what Main's own session already has -- the
+# extracted-data file path and the last-loaded/created variables answers file -- so a plan step run
+# there sees the same variables it would if it had been run in Main. Both are conditional on
+# something actually having been loaded/created yet in this run of the app; a brand-new console
+# started before either happened simply gets neither command, same as Main itself would have none
+# to send at that point.
+#
+# Blocks (bounded) until a sentinel line actually appears in the console's own transcript before
+# returning, whenever something was sent -- Send-ToConsole only queues keystrokes via
+# WriteConsoleInput, it does not wait for the target process to have consumed and run them yet.
+# Invoke-StepGroup calls Add-StepWatch immediately after this returns, and Add-StepWatch's baseline
+# offset has to be taken from AFTER these priming commands have actually finished executing; captured
+# any earlier, their own transcript output would land inside the group step's own watched slice once
+# it does run, and could fail that step's clean-transcript gate for something it never did itself.
+function Initialize-ConsoleVariables($Console) {
+    $sentAnything = $false
+    if ($global:extractedDataLoaded -and $filePathTextBox.Text) {
+        $escapedPath = Protect-SingleQuotes $filePathTextBox.Text
+        Send-ToConsole "Set-ExportedSDDCDataFilePath -Path '$escapedPath'" $Console
+        $sentAnything = $true
+    }
+    if ($global:variablesAnswersFilePath) {
+        $escapedAnswersPath = Protect-SingleQuotes $global:variablesAnswersFilePath
+        Send-ToConsole "Import-RecoveryVariables -Path '$escapedAnswersPath'" $Console
+        $sentAnything = $true
+    }
+    if (-not $sentAnything) {
+        return
+    }
+
+    $sentinel = "VCFIR-BOOTSTRAP-COMPLETE-$([Guid]::NewGuid().ToString('N'))"
+    Send-ToConsole "Write-Host '$sentinel'" $Console
+    $deadline = (Get-Date).AddSeconds(10)
+    while ((Get-Date) -lt $deadline) {
+        $transcriptText = Get-Content -Path $Console.TranscriptPath -Raw -ErrorAction SilentlyContinue
+        if ($transcriptText -and $transcriptText.Contains($sentinel)) {
+            return
+        }
+        Start-Sleep -Milliseconds 50
+    }
+    $statusTextBlock.Text = "Console '$($Console.TabItem.Header)' did not confirm its bootstrap variables within 10 seconds."
+}
+
+# Resolves to whichever console's tab is currently selected, for the benefit of anything that
+# doesn't itself know (or care) which console it's about -- Set-ConsoleFocus, mainly. Falls back to
+# Main if nothing matches (e.g. called before any tab has ever been selected).
+function Get-ActiveConsole {
+    $allConsoles = @($global:mainConsole) + @($global:parallelConsoles)
+    $match = $allConsoles | Where-Object { $_.TabItem -eq $consoleTabControl.SelectedItem } | Select-Object -First 1
+    if ($match) {
+        return $match
+    }
+    return $global:mainConsole
+}
+
+# Kills every console process (Main and every parallel one) when the window actually closes,
+# regardless of which path got it there (the X button or Exit) -- a plain child process isn't torn
+# down automatically just because this process exits, so without this every close would leak
+# orphaned pwsh.exe instances. Reparenting doesn't change this: a console window being a child of
+# ours now makes it even less discoverable/manageable on its own if left behind, not more.
 $window.Add_Closed({
-        if ($consoleProcess -and -not $consoleProcess.HasExited) {
-            try { $consoleProcess.Kill($true) } catch {}
+        foreach ($console in (@($global:mainConsole) + @($global:parallelConsoles))) {
+            if ($console -and $console.Process -and -not $console.Process.HasExited) {
+                try { $console.Process.Kill($true) } catch {}
+            }
         }
     })
 
-# Plain SetFocus is unreliable across a process boundary -- the console is a genuinely separate
+# Plain SetFocus is unreliable across a process boundary -- a console is a genuinely separate
 # process (and therefore thread) from this one, and Win32 only guarantees a SetFocus call actually
 # moves real keyboard focus onto a window owned by another thread if that thread's input queue has
 # first been joined to the caller's via AttachThreadInput; otherwise the call can silently do nothing
 # even though it reports success. Attached only for the instant it takes to call SetFocus, then
 # immediately detached again -- this only needs to be true for that one call, not for the whole
-# app's lifetime. Used everywhere this app ever wants to give the console real keyboard focus: once
-# at Loaded, once whenever the window regains activation or the console area is clicked (both below),
-# and once after Send-ToConsole injects a command.
+# app's lifetime. Always acts on Get-ActiveConsole (whichever tab is currently selected), never a
+# specific console passed in -- switching tabs, clicking a console, the window regaining activation,
+# and Send-ToConsole injecting a command should all give focus to whatever's actually on screen,
+# never silently steal it onto some other tab.
 function Set-ConsoleFocus {
-    if ($consoleHwnd -eq [IntPtr]::Zero) {
+    $console = Get-ActiveConsole
+    if ($null -eq $console -or $console.Hwnd -eq [IntPtr]::Zero) {
         return
     }
-    $consoleThreadId = [VCFIRConsole.NativeMethods]::GetWindowThreadProcessId($consoleHwnd, [IntPtr]::Zero)
+    $consoleThreadId = [VCFIRConsole.NativeMethods]::GetWindowThreadProcessId($console.Hwnd, [IntPtr]::Zero)
     $currentThreadId = [VCFIRConsole.NativeMethods]::GetCurrentThreadId()
     $attached = $false
     if ($consoleThreadId -ne 0 -and $consoleThreadId -ne $currentThreadId) {
         $attached = [VCFIRConsole.NativeMethods]::AttachThreadInput($currentThreadId, $consoleThreadId, $true)
     }
     try {
-        [VCFIRConsole.NativeMethods]::SetFocus($consoleHwnd) | Out-Null
+        [VCFIRConsole.NativeMethods]::SetFocus($console.Hwnd) | Out-Null
     } finally {
         if ($attached) {
             [VCFIRConsole.NativeMethods]::AttachThreadInput($currentThreadId, $consoleThreadId, $false) | Out-Null
         }
     }
 }
+
+$global:mainConsole = New-EmbeddedConsole -TabHeader 'Main'
+$consoleTabControl.SelectedIndex = 0
 
 # WPF's own default (focus the first focusable control in the visual tree) would land on something
 # in the left rail, not the console -- Set-ConsoleFocus puts the initial keyboard focus on the
@@ -603,22 +721,18 @@ $window.Add_Loaded({
         Set-ConsoleFocus
     })
 
-# ConsoleHwndHost doesn't implement IKeyboardInputSink, so WPF's own keyboard-focus tracking has no
-# real notion of the embedded console ever "having focus" the way it does for an ordinary WPF
-# control -- Set-ConsoleFocus is otherwise only ever called right after Loaded and right after a Run
-# button injects a command (see Send-ToConsole). Neither of those covers a plain click into the
-# console itself doing nothing (WPF's own hit-testing/focus handling can end up owning the click
-# instead of the native child actually receiving real keyboard focus), or this window regaining
-# activation after having lost it for a while (screen lock, RDP disconnect/reconnect, alt-tabbing
-# away and back) -- exactly the kind of gap that would leave a step's own interactive prompt
-# (Read-Host) visibly sitting on screen but genuinely unable to receive anything typed at it,
-# indefinitely, with nothing to indicate why. Both reassert real OS focus explicitly rather than
-# assuming Windows/WPF already restored it correctly on their own.
-$consoleHostBorder.Add_PreviewMouseDown({
+# Window activation and tab switching are the two other moments Set-ConsoleFocus's own comment
+# describes as needing an explicit re-assertion -- this window regaining activation after having
+# lost it for a while (screen lock, RDP disconnect/reconnect, alt-tabbing away and back), or
+# switching to a different console's tab, both leave real OS keyboard focus wherever it already was
+# rather than automatically following either. Exactly the kind of gap that would leave a step's own
+# interactive prompt (Read-Host) visibly sitting on screen but genuinely unable to receive anything
+# typed at it, indefinitely, with nothing to indicate why.
+$window.Add_Activated({
         Set-ConsoleFocus
     })
 
-$window.Add_Activated({
+$consoleTabControl.Add_SelectionChanged({
         Set-ConsoleFocus
     })
 
@@ -632,24 +746,29 @@ $window.Add_Activated({
 # own. RDW_ALLCHILDREN matters here specifically -- the console is a child HWND (via ConsoleHwndHost),
 # not painted by this process, so the redraw has to be told to reach into it, not just this window.
 $window.Add_ContentRendered({
-        if ($consoleHwnd -ne [IntPtr]::Zero) {
+        if ($global:mainConsole -and $global:mainConsole.Hwnd -ne [IntPtr]::Zero) {
             $redrawFlags = [VCFIRConsole.NativeMethods]::RDW_INVALIDATE -bor [VCFIRConsole.NativeMethods]::RDW_ERASE -bor [VCFIRConsole.NativeMethods]::RDW_UPDATENOW -bor [VCFIRConsole.NativeMethods]::RDW_ALLCHILDREN
-            [VCFIRConsole.NativeMethods]::RedrawWindow($consoleHwnd, [IntPtr]::Zero, [IntPtr]::Zero, $redrawFlags) | Out-Null
+            [VCFIRConsole.NativeMethods]::RedrawWindow($global:mainConsole.Hwnd, [IntPtr]::Zero, [IntPtr]::Zero, $redrawFlags) | Out-Null
         }
     })
 
 # Injects a command by simulating real keystrokes into the embedded console (WriteConsoleInput),
 # indistinguishable to PowerShell from someone typing them -- no echo of our own to add, no pipe to
 # write to; the real console echoes what's "typed" exactly as it always does, because as far as it
-# knows, that's exactly what happened.
-function Send-ToConsole([string]$CommandLine) {
-    if ($null -eq $consoleProcess -or $consoleProcess.HasExited) {
+# knows, that's exactly what happened. $Console defaults to Main, so every existing call site (a
+# lone Run button, Load Variables, the extraction flow, ...) keeps targeting it without having to
+# say so; only Invoke-StepGroup ever passes a specific (parallel) console.
+function Send-ToConsole([string]$CommandLine, $Console) {
+    if ($null -eq $Console) {
+        $Console = $global:mainConsole
+    }
+    if ($null -eq $Console -or $null -eq $Console.Process -or $Console.Process.HasExited) {
         $statusTextBlock.Text = "Console process isn't running."
         return
     }
     try {
         [VCFIRConsole.NativeMethods]::FreeConsole() | Out-Null
-        if (-not [VCFIRConsole.NativeMethods]::AttachConsole([uint32]$consoleProcess.Id)) {
+        if (-not [VCFIRConsole.NativeMethods]::AttachConsole([uint32]$Console.Process.Id)) {
             throw "AttachConsole failed (Win32 error $([System.Runtime.InteropServices.Marshal]::GetLastWin32Error()))."
         }
         try {
@@ -705,16 +824,20 @@ function Test-StepTranscriptClean([string]$TranscriptSlice) {
     return $true
 }
 
-# Starts (or restarts) watching the transcript for this row's "Completed Task <cmdlet>" line, from
-# whatever the transcript's current length is right now -- so an OLDER completion line already in
-# the transcript from a previous run of the same cmdlet can't cause an immediate false-positive
-# match on a re-run. $OnComplete (optional) is called with one argument -- $isClean, per
-# Test-StepTranscriptClean -- once "Completed Task" is found; Invoke-StepChain uses this to gate
-# starting the next step on the previous one actually having gone cleanly, not just having finished.
-function Add-StepWatch($Button, [string]$CmdletName, [scriptblock]$OnComplete) {
+# Starts (or restarts) watching a console's transcript for this row's "Completed Task <cmdlet>"
+# line, from whatever that transcript's current length is right now -- so an OLDER completion line
+# already in it from a previous run of the same cmdlet can't cause an immediate false-positive match
+# on a re-run. $OnComplete (optional) is called with one argument -- $isClean, per
+# Test-StepTranscriptClean -- once "Completed Task" is found; Invoke-StepChain/Invoke-StepGroup use
+# this to gate starting the next step (or continuing past a parallel group) on the previous one(s)
+# actually having gone cleanly, not just having finished. $Console defaults to Main.
+function Add-StepWatch($Button, [string]$CmdletName, [scriptblock]$OnComplete, $Console) {
+    if ($null -eq $Console) {
+        $Console = $global:mainConsole
+    }
     $currentText = ''
-    if (Test-Path $global:transcriptPath) {
-        $currentText = Get-Content -Path $global:transcriptPath -Raw -ErrorAction SilentlyContinue
+    if (Test-Path $Console.TranscriptPath) {
+        $currentText = Get-Content -Path $Console.TranscriptPath -Raw -ErrorAction SilentlyContinue
         if ($null -eq $currentText) { $currentText = '' }
     }
     # Drop any earlier watch for this same button first, rather than stacking duplicates on a re-run.
@@ -723,10 +846,11 @@ function Add-StepWatch($Button, [string]$CmdletName, [scriptblock]$OnComplete) {
     # not an empty collection, and List[object]'s constructor throws ArgumentNullException on $null.
     $global:activeStepWatches = [System.Collections.Generic.List[object]]@($global:activeStepWatches | Where-Object { $_.Button -ne $Button })
     $global:activeStepWatches.Add([PSCustomObject]@{
-            Button      = $Button
-            TargetText  = "Completed Task $CmdletName"
-            StartOffset = $currentText.Length
-            OnComplete  = $OnComplete
+            Button         = $Button
+            TargetText     = "Completed Task $CmdletName"
+            StartOffset    = $currentText.Length
+            OnComplete     = $OnComplete
+            TranscriptPath = $Console.TranscriptPath
         })
 }
 
@@ -734,31 +858,40 @@ function Add-StepWatch($Button, [string]$CmdletName, [scriptblock]$OnComplete) {
 # there's no Button to flip to Done/Failed, so $OnComplete (called with $isClean, same as
 # Add-StepWatch) is the only signal. Used by Invoke-ExtractSDDCManagerBackup to auto-load the
 # resulting extracted-sddc-data.json once extraction actually finishes, not as soon as the command
-# is sent; that caller ignores $isClean since a failed extraction simply won't produce a loadable file.
-function Add-CompletionWatch([string]$CmdletName, [scriptblock]$OnComplete) {
+# is sent; that caller ignores $isClean since a failed extraction simply won't produce a loadable
+# file. $Console defaults to Main -- extraction only ever runs there.
+function Add-CompletionWatch([string]$CmdletName, [scriptblock]$OnComplete, $Console) {
+    if ($null -eq $Console) {
+        $Console = $global:mainConsole
+    }
     $currentText = ''
-    if (Test-Path $global:transcriptPath) {
-        $currentText = Get-Content -Path $global:transcriptPath -Raw -ErrorAction SilentlyContinue
+    if (Test-Path $Console.TranscriptPath) {
+        $currentText = Get-Content -Path $Console.TranscriptPath -Raw -ErrorAction SilentlyContinue
         if ($null -eq $currentText) { $currentText = '' }
     }
     $global:activeStepWatches.Add([PSCustomObject]@{
-            Button      = $null
-            TargetText  = "Completed Task $CmdletName"
-            StartOffset = $currentText.Length
-            OnComplete  = $OnComplete
+            Button         = $null
+            TargetText     = "Completed Task $CmdletName"
+            StartOffset    = $currentText.Length
+            OnComplete     = $OnComplete
+            TranscriptPath = $Console.TranscriptPath
         })
 }
 
 # Resets a row to its "in progress" look (undoing any earlier Done/Failed state -- re-running a step
 # that previously completed should stop showing that until it completes again) and starts watching
 # for its completion. $OnStepComplete (optional) is threaded straight through to Add-StepWatch --
-# see Invoke-StepChain, the only caller that currently uses it.
-function Invoke-Step($Dot, $Button, [string]$CmdletName, [string]$CommandLine, [scriptblock]$OnStepComplete) {
+# see Invoke-StepChain/Invoke-StepGroup. $Console (optional, defaults to Main) is which console the
+# command actually runs in -- only a parallel group's non-first members ever pass a different one.
+function Invoke-Step($Dot, $Button, [string]$CmdletName, [string]$CommandLine, [scriptblock]$OnStepComplete, $Console) {
+    if ($null -eq $Console) {
+        $Console = $global:mainConsole
+    }
     $Dot.Fill = [System.Windows.Media.Brushes]::DodgerBlue
     $Button.Content = 'Run'
     $Button.ClearValue([System.Windows.Controls.Control]::BackgroundProperty)
-    Add-StepWatch $Button $CmdletName $OnStepComplete
-    Send-ToConsole $CommandLine
+    Add-StepWatch $Button $CmdletName $OnStepComplete $Console
+    Send-ToConsole $CommandLine $Console
 }
 
 # Run All's sequencer: runs $Rows one at a time, only starting the next once the previous one has
@@ -767,11 +900,29 @@ function Invoke-Step($Dot, $Button, [string]$CmdletName, [string]$CommandLine, [
 # PowerShell error record either (see Test-StepTranscriptClean for both). A step that finishes but
 # fails any of those stops the whole chain right there instead of sending the next step's command
 # into a plan that assumed the previous one actually worked.
+#
+# A run of two or more consecutive rows sharing the same non-empty GroupingId is dispatched to
+# Invoke-StepGroup instead, so they run in parallel (each in its own console) rather than one at a
+# time; the chain only continues past the whole group once every member has finished cleanly. Rows
+# must be consecutive in the plan file to be bundled -- a GroupingId reappearing later, separated by
+# an ungrouped or differently-grouped row, starts a new group rather than joining the earlier one.
 function Invoke-StepChain([object[]]$Rows) {
     if ($Rows.Count -eq 0) {
         return
     }
     $row = $Rows[0]
+    if ($row.GroupingId) {
+        $groupEnd = 1
+        while ($groupEnd -lt $Rows.Count -and $Rows[$groupEnd].GroupingId -eq $row.GroupingId) {
+            $groupEnd++
+        }
+        if ($groupEnd -gt 1) {
+            $groupRows = @($Rows | Select-Object -First $groupEnd)
+            $remainingRows = @($Rows | Select-Object -Skip $groupEnd)
+            Invoke-StepGroup $groupRows $remainingRows
+            return
+        }
+    }
     $remainingRows = @($Rows | Select-Object -Skip 1)
     Invoke-Step $row.Dot $row.Button $row.CmdletName $row.CommandLine {
         param($isClean)
@@ -781,6 +932,44 @@ function Invoke-StepChain([object[]]$Rows) {
             $statusTextBlock.Text = "Run All stopped: $($row.CmdletName) did not complete cleanly -- check the console/transcript for warnings, errors, or a PowerShell error record before retrying."
         }
     }.GetNewClosure()
+}
+
+# Runs every row in $GroupRows at once -- the first in $global:mainConsole (implicit default), each
+# remaining one in its own freshly bootstrapped console (New-EmbeddedConsole -Bootstrap, which
+# imports the extracted-data path and answers file so the new console's session has the same
+# variables as Main) -- and only resumes the chain with $AfterGroupRows once every member has
+# reported back. $state is a shared, mutated-in-place hashtable captured by every member's
+# OnComplete closure (via .GetNewClosure()) -- safe because it's a reference type and none of the
+# closures ever reassign $state itself, only its .Remaining/.AllClean entries. Per the confirmed
+# design, a member finishing uncleanly does not attempt to stop its still-running siblings; the
+# chain simply refuses to continue once they've all finished if any of them were unclean.
+function Invoke-StepGroup([object[]]$GroupRows, [object[]]$AfterGroupRows) {
+    $state = @{ Remaining = $GroupRows.Count; AllClean = $true }
+    $onMemberComplete = {
+        param($isClean)
+        if (-not $isClean) {
+            $state.AllClean = $false
+        }
+        $state.Remaining--
+        if ($state.Remaining -eq 0) {
+            if ($state.AllClean) {
+                Invoke-StepChain $AfterGroupRows
+            } else {
+                $statusTextBlock.Text = "Run All stopped: one or more steps in group '$($GroupRows[0].GroupingId)' did not complete cleanly -- check each console/transcript before retrying."
+            }
+        }
+    }.GetNewClosure()
+
+    for ($i = 0; $i -lt $GroupRows.Count; $i++) {
+        $row = $GroupRows[$i]
+        if ($i -eq 0) {
+            Invoke-Step $row.Dot $row.Button $row.CmdletName $row.CommandLine $onMemberComplete
+        } else {
+            $console = New-EmbeddedConsole -TabHeader $row.CmdletName -Bootstrap
+            $global:parallelConsoles.Add($console)
+            Invoke-Step $row.Dot $row.Button $row.CmdletName $row.CommandLine $onMemberComplete $console
+        }
+    }
 }
 
 # Returns [PSCustomObject]@{ Panel; Dot; CommandLine; Button; CmdletName; GroupingId }, not just the
@@ -821,8 +1010,8 @@ function New-StepRow([string]$CommandLine, [string]$GroupingId, [string]$Descrip
             }
         }.GetNewClosure())
 
-    # groupingId is a display/data attribute only for now (see Get-RecoveryPlanSteps) -- Run All
-    # still replays every row strictly in file order, one at a time, regardless of this badge.
+    # Run All groups consecutive rows sharing this GroupingId into a parallel batch (see
+    # Invoke-StepGroup); manually clicking Run on a single row never does, even if it's grouped.
     if ($GroupingId) {
         $groupBadge = New-Object System.Windows.Controls.TextBlock
         $groupBadge.Text = "[$GroupingId]"
@@ -900,21 +1089,31 @@ function New-VariableRow([string]$Name, [string]$Value, [scriptblock]$OnValueCha
     return $panel
 }
 
-# Checks each actively-watched row's slice of the transcript (everything written since its Run was
-# clicked) for its own "Completed Task <cmdlet>" line. A row is only in this list between being
-# Run and being found Done (see Add-StepWatch) -- once found, it's removed, which is what stops the
-# monitor for that row until Run is clicked again.
+# Checks each actively-watched row's slice of ITS OWN console's transcript (everything written
+# since its Run was clicked) for its own "Completed Task <cmdlet>" line. A row is only in this list
+# between being Run and being found Done (see Add-StepWatch) -- once found, it's removed, which is
+# what stops the monitor for that row until Run is clicked again. Watches on different rows can
+# share the same TranscriptPath (Main, most of the time) or each have their own (a parallel group's
+# non-first members) -- $transcriptCache reads each distinct path at most once per tick regardless
+# of how many watches point at it.
 function Start-StepCompletionWatcher {
     $checkTimer = New-Object System.Windows.Threading.DispatcherTimer
     $checkTimer.Interval = [TimeSpan]::FromMilliseconds(500)
     $checkTimer.Add_Tick({
-            if ($global:activeStepWatches.Count -eq 0 -or -not (Test-Path $global:transcriptPath)) { return }
-            try {
-                $transcriptText = Get-Content -Path $global:transcriptPath -Raw -ErrorAction Stop
-            } catch {
-                return
+            if ($global:activeStepWatches.Count -eq 0) { return }
+            $transcriptCache = @{}
+            foreach ($path in ($global:activeStepWatches | Select-Object -ExpandProperty TranscriptPath -Unique)) {
+                if (-not (Test-Path $path)) { continue }
+                try {
+                    $text = Get-Content -Path $path -Raw -ErrorAction Stop
+                } catch {
+                    continue
+                }
+                if ($null -ne $text) {
+                    $transcriptCache[$path] = $text
+                }
             }
-            if ($null -eq $transcriptText) { return }
+            if ($transcriptCache.Count -eq 0) { return }
             # Snapshotting which watches are due BEFORE any of them run, then removing each one from
             # whatever $global:activeStepWatches -is- right before invoking its own OnComplete --
             # rather than replacing the whole list wholesale once at the end -- matters because
@@ -923,10 +1122,13 @@ function Start-StepCompletionWatcher {
             # here would silently wipe that reentrant addition out the instant this tick finished,
             # since it was never part of the snapshot this tick started with.
             $dueWatches = @($global:activeStepWatches | Where-Object {
+                    $transcriptText = $transcriptCache[$_.TranscriptPath]
+                    if ($null -eq $transcriptText) { return $false }
                     $newText = if ($transcriptText.Length -gt $_.StartOffset) { $transcriptText.Substring($_.StartOffset) } else { '' }
                     $newText.Contains($_.TargetText)
                 })
             foreach ($watch in $dueWatches) {
+                $transcriptText = $transcriptCache[$watch.TranscriptPath]
                 $newText = if ($transcriptText.Length -gt $watch.StartOffset) { $transcriptText.Substring($watch.StartOffset) } else { '' }
                 $isClean = Test-StepTranscriptClean $newText
                 if ($watch.Button) {
@@ -1487,8 +1689,12 @@ $exitButton.Add_Click({
 
             $state | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $dialog.FileName -Encoding utf8
 
-            Send-ToConsole 'Stop-Transcript | Out-Null'
-            # Give Stop-Transcript a moment to actually run inside the console process before it gets
+            # Every console has its own transcript running, not just Main -- any parallel consoles
+            # spawned by a Run All group need Stop-Transcript too, or their log stays unflushed/open.
+            foreach ($console in (@($global:mainConsole) + @($global:parallelConsoles))) {
+                Send-ToConsole 'Stop-Transcript | Out-Null' $console
+            }
+            # Give Stop-Transcript a moment to actually run inside each console process before they get
             # killed by closing this window (see $window.Add_Closed, above) -- writing to StandardInput
             # only queues the line, it doesn't wait for the console process to act on it.
             Start-Sleep -Milliseconds 300

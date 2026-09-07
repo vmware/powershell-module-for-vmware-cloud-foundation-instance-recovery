@@ -400,15 +400,16 @@
             </Grid>
             </ScrollViewer>
 
-            <!-- Console: a real, separate pwsh.exe console window, reparented into ConsoleHostBorder
-                 by the loader script (see ConsoleHwndHost in the .ps1) rather than rendered by any
-                 control of ours. Nothing here draws a single character of it; Windows' own console
-                 host does that, exactly as reliably as it always has, and we only relocate that
-                 already-correct window to sit inside this layout position instead of floating
-                 separately. Starts empty; the loader script attaches the reparented window as the
-                 Border's Child once the console process is up. -->
+            <!-- Console: one tab per real, separate pwsh.exe console window, each reparented into its
+                 own Border (see ConsoleHwndHost/New-EmbeddedConsole in the .ps1) rather than rendered
+                 by any control of ours. Nothing here draws a single character of any of them;
+                 Windows' own console host does that, exactly as reliably as it always has, and we
+                 only relocate each already-correct window to sit inside its own tab instead of
+                 floating separately. Starts empty; the loader script adds the "Main" tab at startup
+                 and further tabs on demand, one per additional console Run All spawns to run a
+                 parallel group's non-first members concurrently with everything else. -->
             <GroupBox Grid.Column="2" Header="Console">
-                <Border x:Name="ConsoleHostBorder" Background="#0C0C0C" />
+                <TabControl x:Name="ConsoleTabControl" Background="Transparent" BorderThickness="0" />
             </GroupBox>
         </Grid>
     </Grid>
