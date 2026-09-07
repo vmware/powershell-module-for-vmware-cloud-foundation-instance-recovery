@@ -271,11 +271,11 @@ function Set-PlanStepsListBox([System.Windows.Controls.ListBox]$ListBox, [object
 # unrecognized type passes through unchanged rather than disappearing.
 function Get-DisplayDatastoreType([string]$RawType) {
     switch ($RawType) {
-        'VSAN'        { 'vSAN HCI (OSA)' }
-        'VSAN_ESA'    { 'vSAN HCA (ESA)' }
-        'VSAN_MAX'    { 'vSAN Storage Cluster' }
-        'VSAN_Remote' { 'vSAN Compute Cluster' }
-        default       { $RawType }
+        'VSAN' { 'HCI (OSA)' }
+        'VSAN_ESA' { 'HCI (ESA)' }
+        'VSAN_MAX' { 'Storage Cluster' }
+        'VSAN_Remote' { 'Compute Cluster' }
+        default { $RawType }
     }
 }
 
@@ -563,10 +563,10 @@ if ($consoleHwnd -ne [IntPtr]::Zero) {
 # change this: the console window being a child of ours now makes it even less discoverable/
 # manageable on its own if left behind, not more.
 $window.Add_Closed({
-    if ($consoleProcess -and -not $consoleProcess.HasExited) {
-        try { $consoleProcess.Kill($true) } catch {}
-    }
-})
+        if ($consoleProcess -and -not $consoleProcess.HasExited) {
+            try { $consoleProcess.Kill($true) } catch {}
+        }
+    })
 
 # Plain SetFocus is unreliable across a process boundary -- the console is a genuinely separate
 # process (and therefore thread) from this one, and Win32 only guarantees a SetFocus call actually
@@ -600,8 +600,8 @@ function Set-ConsoleFocus {
 # in the left rail, not the console -- Set-ConsoleFocus puts the initial keyboard focus on the
 # embedded console instead, so typing works immediately without clicking into it first.
 $window.Add_Loaded({
-    Set-ConsoleFocus
-})
+        Set-ConsoleFocus
+    })
 
 # ConsoleHwndHost doesn't implement IKeyboardInputSink, so WPF's own keyboard-focus tracking has no
 # real notion of the embedded console ever "having focus" the way it does for an ordinary WPF
@@ -615,12 +615,12 @@ $window.Add_Loaded({
 # indefinitely, with nothing to indicate why. Both reassert real OS focus explicitly rather than
 # assuming Windows/WPF already restored it correctly on their own.
 $consoleHostBorder.Add_PreviewMouseDown({
-    Set-ConsoleFocus
-})
+        Set-ConsoleFocus
+    })
 
 $window.Add_Activated({
-    Set-ConsoleFocus
-})
+        Set-ConsoleFocus
+    })
 
 # The window opens already maximized (see the XAML's WindowState), which means WPF first lays the
 # embedded console out at its declared (smaller) design-time size, then the OS applies the maximize
@@ -632,11 +632,11 @@ $window.Add_Activated({
 # own. RDW_ALLCHILDREN matters here specifically -- the console is a child HWND (via ConsoleHwndHost),
 # not painted by this process, so the redraw has to be told to reach into it, not just this window.
 $window.Add_ContentRendered({
-    if ($consoleHwnd -ne [IntPtr]::Zero) {
-        $redrawFlags = [VCFIRConsole.NativeMethods]::RDW_INVALIDATE -bor [VCFIRConsole.NativeMethods]::RDW_ERASE -bor [VCFIRConsole.NativeMethods]::RDW_UPDATENOW -bor [VCFIRConsole.NativeMethods]::RDW_ALLCHILDREN
-        [VCFIRConsole.NativeMethods]::RedrawWindow($consoleHwnd, [IntPtr]::Zero, [IntPtr]::Zero, $redrawFlags) | Out-Null
-    }
-})
+        if ($consoleHwnd -ne [IntPtr]::Zero) {
+            $redrawFlags = [VCFIRConsole.NativeMethods]::RDW_INVALIDATE -bor [VCFIRConsole.NativeMethods]::RDW_ERASE -bor [VCFIRConsole.NativeMethods]::RDW_UPDATENOW -bor [VCFIRConsole.NativeMethods]::RDW_ALLCHILDREN
+            [VCFIRConsole.NativeMethods]::RedrawWindow($consoleHwnd, [IntPtr]::Zero, [IntPtr]::Zero, $redrawFlags) | Out-Null
+        }
+    })
 
 # Injects a command by simulating real keystrokes into the embedded console (WriteConsoleInput),
 # indistinguishable to PowerShell from someone typing them -- no echo of our own to add, no pipe to
@@ -723,11 +723,11 @@ function Add-StepWatch($Button, [string]$CmdletName, [scriptblock]$OnComplete) {
     # not an empty collection, and List[object]'s constructor throws ArgumentNullException on $null.
     $global:activeStepWatches = [System.Collections.Generic.List[object]]@($global:activeStepWatches | Where-Object { $_.Button -ne $Button })
     $global:activeStepWatches.Add([PSCustomObject]@{
-        Button     = $Button
-        TargetText = "Completed Task $CmdletName"
-        StartOffset = $currentText.Length
-        OnComplete = $OnComplete
-    })
+            Button      = $Button
+            TargetText  = "Completed Task $CmdletName"
+            StartOffset = $currentText.Length
+            OnComplete  = $OnComplete
+        })
 }
 
 # Same idea as Add-StepWatch, for actions that run immediately rather than through a Steps row --
@@ -742,11 +742,11 @@ function Add-CompletionWatch([string]$CmdletName, [scriptblock]$OnComplete) {
         if ($null -eq $currentText) { $currentText = '' }
     }
     $global:activeStepWatches.Add([PSCustomObject]@{
-        Button     = $null
-        TargetText = "Completed Task $CmdletName"
-        StartOffset = $currentText.Length
-        OnComplete = $OnComplete
-    })
+            Button      = $null
+            TargetText  = "Completed Task $CmdletName"
+            StartOffset = $currentText.Length
+            OnComplete  = $OnComplete
+        })
 }
 
 # Resets a row to its "in progress" look (undoing any earlier Done/Failed state -- re-running a step
@@ -814,12 +814,12 @@ function New-StepRow([string]$CommandLine, [string]$GroupingId, [string]$Descrip
     $runButton.Margin = '6,0,0,0'
     [System.Windows.Controls.DockPanel]::SetDock($runButton, [System.Windows.Controls.Dock]::Right)
     $runButton.Add_Click({
-        try {
-            Invoke-Step $dot $runButton $cmdletName $CommandLine
-        } catch {
-            $statusTextBlock.Text = "Run button failed: $($_.Exception.Message)"
-        }
-    }.GetNewClosure())
+            try {
+                Invoke-Step $dot $runButton $cmdletName $CommandLine
+            } catch {
+                $statusTextBlock.Text = "Run button failed: $($_.Exception.Message)"
+            }
+        }.GetNewClosure())
 
     # groupingId is a display/data attribute only for now (see Get-RecoveryPlanSteps) -- Run All
     # still replays every row strictly in file order, one at a time, regardless of this badge.
@@ -889,11 +889,11 @@ function New-VariableRow([string]$Name, [string]$Value, [scriptblock]$OnValueCha
     # Edits only take effect on LostFocus (not per-keystroke) -- re-sends the updated value to the
     # console so a value changed after loading still reaches the running session.
     $valueBox.Add_LostFocus({
-        Send-ToConsole "`$$Name = '$(Protect-SingleQuotes $valueBox.Text)'"
-        if ($OnValueChanged) {
-            & $OnValueChanged $Name $valueBox.Text
-        }
-    }.GetNewClosure())
+            Send-ToConsole "`$$Name = '$(Protect-SingleQuotes $valueBox.Text)'"
+            if ($OnValueChanged) {
+                & $OnValueChanged $Name $valueBox.Text
+            }
+        }.GetNewClosure())
 
     [void]$panel.Children.Add($label)
     [void]$panel.Children.Add($valueBox)
@@ -908,42 +908,42 @@ function Start-StepCompletionWatcher {
     $checkTimer = New-Object System.Windows.Threading.DispatcherTimer
     $checkTimer.Interval = [TimeSpan]::FromMilliseconds(500)
     $checkTimer.Add_Tick({
-        if ($global:activeStepWatches.Count -eq 0 -or -not (Test-Path $global:transcriptPath)) { return }
-        try {
-            $transcriptText = Get-Content -Path $global:transcriptPath -Raw -ErrorAction Stop
-        } catch {
-            return
-        }
-        if ($null -eq $transcriptText) { return }
-        # Snapshotting which watches are due BEFORE any of them run, then removing each one from
-        # whatever $global:activeStepWatches -is- right before invoking its own OnComplete --
-        # rather than replacing the whole list wholesale once at the end -- matters because
-        # Invoke-StepChain's OnComplete callback calls Add-StepWatch itself to start the next step,
-        # which reassigns $global:activeStepWatches to a brand-new list. A wholesale replacement
-        # here would silently wipe that reentrant addition out the instant this tick finished,
-        # since it was never part of the snapshot this tick started with.
-        $dueWatches = @($global:activeStepWatches | Where-Object {
-            $newText = if ($transcriptText.Length -gt $_.StartOffset) { $transcriptText.Substring($_.StartOffset) } else { '' }
-            $newText.Contains($_.TargetText)
-        })
-        foreach ($watch in $dueWatches) {
-            $newText = if ($transcriptText.Length -gt $watch.StartOffset) { $transcriptText.Substring($watch.StartOffset) } else { '' }
-            $isClean = Test-StepTranscriptClean $newText
-            if ($watch.Button) {
-                if ($isClean) {
-                    $watch.Button.Content = 'Done'
-                    $watch.Button.Background = [System.Windows.Media.Brushes]::Green
-                } else {
-                    $watch.Button.Content = 'Failed'
-                    $watch.Button.Background = [System.Windows.Media.Brushes]::Firebrick
+            if ($global:activeStepWatches.Count -eq 0 -or -not (Test-Path $global:transcriptPath)) { return }
+            try {
+                $transcriptText = Get-Content -Path $global:transcriptPath -Raw -ErrorAction Stop
+            } catch {
+                return
+            }
+            if ($null -eq $transcriptText) { return }
+            # Snapshotting which watches are due BEFORE any of them run, then removing each one from
+            # whatever $global:activeStepWatches -is- right before invoking its own OnComplete --
+            # rather than replacing the whole list wholesale once at the end -- matters because
+            # Invoke-StepChain's OnComplete callback calls Add-StepWatch itself to start the next step,
+            # which reassigns $global:activeStepWatches to a brand-new list. A wholesale replacement
+            # here would silently wipe that reentrant addition out the instant this tick finished,
+            # since it was never part of the snapshot this tick started with.
+            $dueWatches = @($global:activeStepWatches | Where-Object {
+                    $newText = if ($transcriptText.Length -gt $_.StartOffset) { $transcriptText.Substring($_.StartOffset) } else { '' }
+                    $newText.Contains($_.TargetText)
+                })
+            foreach ($watch in $dueWatches) {
+                $newText = if ($transcriptText.Length -gt $watch.StartOffset) { $transcriptText.Substring($watch.StartOffset) } else { '' }
+                $isClean = Test-StepTranscriptClean $newText
+                if ($watch.Button) {
+                    if ($isClean) {
+                        $watch.Button.Content = 'Done'
+                        $watch.Button.Background = [System.Windows.Media.Brushes]::Green
+                    } else {
+                        $watch.Button.Content = 'Failed'
+                        $watch.Button.Background = [System.Windows.Media.Brushes]::Firebrick
+                    }
+                }
+                $global:activeStepWatches = [System.Collections.Generic.List[object]]@($global:activeStepWatches | Where-Object { $_ -ne $watch })
+                if ($watch.OnComplete) {
+                    & $watch.OnComplete $isClean
                 }
             }
-            $global:activeStepWatches = [System.Collections.Generic.List[object]]@($global:activeStepWatches | Where-Object { $_ -ne $watch })
-            if ($watch.OnComplete) {
-                & $watch.OnComplete $isClean
-            }
-        }
-    })
+        })
     $checkTimer.Start()
 }
 
@@ -1040,15 +1040,15 @@ function Import-ExtractedSddcDataFile([string]$Path) {
 # Execution's state from whatever's currently selected in Discovered Infrastructure (re-picking the
 # same domain/cluster wouldn't refire SelectionChanged, so this can't just rely on that).
 $ibrRecoveryTypeRadio.Add_Checked({
-    $dataSourceGroupBox.Visibility = [System.Windows.Visibility]::Visible
-    # Only reveal Discovered Infrastructure if data was actually loaded before switching away to
-    # FDR -- not unconditionally, since nothing may have been loaded at all yet.
-    $discoveredInfrastructureGroupBox.Visibility = if ($global:extractedDataLoaded) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
-    $recoverFleetPanel.Visibility = [System.Windows.Visibility]::Collapsed
-    $global:recoverFleetStepRows = Set-PlanStepsListBox $recoverFleetStepsListBox @()
-    Sync-DomainSteps
-    Sync-AdditionalClusterSteps
-})
+        $dataSourceGroupBox.Visibility = [System.Windows.Visibility]::Visible
+        # Only reveal Discovered Infrastructure if data was actually loaded before switching away to
+        # FDR -- not unconditionally, since nothing may have been loaded at all yet.
+        $discoveredInfrastructureGroupBox.Visibility = if ($global:extractedDataLoaded) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
+        $recoverFleetPanel.Visibility = [System.Windows.Visibility]::Collapsed
+        $global:recoverFleetStepRows = Set-PlanStepsListBox $recoverFleetStepsListBox @()
+        Sync-DomainSteps
+        Sync-AdditionalClusterSteps
+    })
 
 # FDR has one whole-fleet plan (plans/fdr/fdr-failover-plan.json) with no domain to select, so Data
 # Source/Discovered Infrastructure are irrelevant to it -- collapsing both (rather than covering
@@ -1058,39 +1058,39 @@ $ibrRecoveryTypeRadio.Add_Checked({
 # values are known yet at this point, so conditional steps fail open (see Test-StepCondition) and
 # show unconditionally until Load Variables/New Variables File re-filters them for real.
 $fdrRecoveryTypeRadio.Add_Checked({
-    $dataSourceGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
-    $discoveredInfrastructureGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
-    $domainRecoveryPanel.Visibility = [System.Windows.Visibility]::Collapsed
-    $additionalClusterRecoveryPanel.Visibility = [System.Windows.Visibility]::Collapsed
-    $global:additionalClusterRecoveryStepRows = Set-PlanStepsListBox $additionalClusterRecoveryStepsListBox @()
-    $recoverFleetPanel.Visibility = [System.Windows.Visibility]::Visible
+        $dataSourceGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
+        $discoveredInfrastructureGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
+        $domainRecoveryPanel.Visibility = [System.Windows.Visibility]::Collapsed
+        $additionalClusterRecoveryPanel.Visibility = [System.Windows.Visibility]::Collapsed
+        $global:additionalClusterRecoveryStepRows = Set-PlanStepsListBox $additionalClusterRecoveryStepsListBox @()
+        $recoverFleetPanel.Visibility = [System.Windows.Visibility]::Visible
 
-    $variablesItemsPanel.Children.Clear()
-    $loadedVariablesTextBlock.Text = 'No variables loaded yet.'
+        $variablesItemsPanel.Children.Clear()
+        $loadedVariablesTextBlock.Text = 'No variables loaded yet.'
 
-    $recoverFleetSteps = Get-ApplicableSteps (Get-RecoveryPlanSteps 'fdr' 'fdr-failover-plan.json') @{}
-    $global:recoverFleetStepRows = Set-PlanStepsListBox $recoverFleetStepsListBox $recoverFleetSteps
-    $global:allSteps = @($recoverFleetSteps)
+        $recoverFleetSteps = Get-ApplicableSteps (Get-RecoveryPlanSteps 'fdr' 'fdr-failover-plan.json') @{}
+        $global:recoverFleetStepRows = Set-PlanStepsListBox $recoverFleetStepsListBox $recoverFleetSteps
+        $global:allSteps = @($recoverFleetSteps)
 
-    $stepsVariablesGroupBox.Visibility = [System.Windows.Visibility]::Visible
-    $stepsVariablesTabControl.SelectedIndex = 1   # "Steps"
-})
+        $stepsVariablesGroupBox.Visibility = [System.Windows.Visibility]::Visible
+        $stepsVariablesTabControl.SelectedIndex = 1   # "Steps"
+    })
 
 # Extracting a backup isn't a plan with steps to sequence -- it's one action, run immediately from
 # Browse below (see Invoke-ExtractSDDCManagerBackup). Picking this radio just clears any stale
 # Domain Recovery rows left over from a previously selected domain, the same "nothing to show yet"
 # state a fresh launch starts in.
 $extractRadio.Add_Checked({
-    $global:domainRecoveryStepRows = Set-PlanStepsListBox $domainRecoveryStepsListBox @()
-    $global:additionalClusterRecoveryStepRows = Set-PlanStepsListBox $additionalClusterRecoveryStepsListBox @()
-    $variablesItemsPanel.Children.Clear()
-    $loadedVariablesTextBlock.Text = 'No variables loaded yet.'
-    $stepsVariablesGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
-    $global:domainRecoverySteps = @()
-    $global:additionalClusterRecoverySteps = @()
-    $global:allSteps = @()
-    $global:derivedStepVariables = @{}
-})
+        $global:domainRecoveryStepRows = Set-PlanStepsListBox $domainRecoveryStepsListBox @()
+        $global:additionalClusterRecoveryStepRows = Set-PlanStepsListBox $additionalClusterRecoveryStepsListBox @()
+        $variablesItemsPanel.Children.Clear()
+        $loadedVariablesTextBlock.Text = 'No variables loaded yet.'
+        $stepsVariablesGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
+        $global:domainRecoverySteps = @()
+        $global:additionalClusterRecoverySteps = @()
+        $global:allSteps = @()
+        $global:derivedStepVariables = @{}
+    })
 
 # Prompts for the backup's credentials file and encryption password right here (rather than via
 # the Variables tab -- there's no plan/Execution context for this action at all) and runs it
@@ -1126,29 +1126,29 @@ function Invoke-ExtractSDDCManagerBackup([string]$BackupFilePath) {
 }
 
 $browseButton.Add_Click({
-    $extracting = $extractRadio.IsChecked -eq $true
-    $dialog = New-Object Microsoft.Win32.OpenFileDialog
-    if ($extracting) {
-        $dialog.Filter = 'All files (*.*)|*.*'
-        $dialog.Title = 'Select backup file'
-    } else {
-        $dialog.Filter = 'JSON files (*.json)|*.json|All files (*.*)|*.*'
-        $dialog.Title = 'Select extracted-sddc-data.json'
-    }
+        $extracting = $extractRadio.IsChecked -eq $true
+        $dialog = New-Object Microsoft.Win32.OpenFileDialog
+        if ($extracting) {
+            $dialog.Filter = 'All files (*.*)|*.*'
+            $dialog.Title = 'Select backup file'
+        } else {
+            $dialog.Filter = 'JSON files (*.json)|*.json|All files (*.*)|*.*'
+            $dialog.Title = 'Select extracted-sddc-data.json'
+        }
 
-    if ($dialog.ShowDialog() -ne $true) {
-        return
-    }
+        if ($dialog.ShowDialog() -ne $true) {
+            return
+        }
 
-    $filePathTextBox.Text = $dialog.FileName
+        $filePathTextBox.Text = $dialog.FileName
 
-    if ($extracting) {
-        Invoke-ExtractSDDCManagerBackup $dialog.FileName
-        return
-    }
+        if ($extracting) {
+            Invoke-ExtractSDDCManagerBackup $dialog.FileName
+            return
+        }
 
-    Import-ExtractedSddcDataFile $dialog.FileName
-}.GetNewClosure())
+        Import-ExtractedSddcDataFile $dialog.FileName
+    }.GetNewClosure())
 
 # Answer file is a flat JSON object, e.g. { "targetFqdn": "sfo-m01-vc02...", "targetAdminPassword": "..." }.
 # Parsed here purely to populate the Variables tab's rows in the order they'll be needed (first use
@@ -1223,14 +1223,14 @@ function Import-VariablesAnswersFile([string]$Path) {
 }
 
 $loadVariablesButton.Add_Click({
-    $dialog = New-Object Microsoft.Win32.OpenFileDialog
-    $dialog.Filter = 'JSON files (*.json)|*.json|All files (*.*)|*.*'
-    $dialog.Title = 'Select variable answers file'
-    if ($dialog.ShowDialog() -ne $true) {
-        return
-    }
-    Import-VariablesAnswersFile $dialog.FileName
-}.GetNewClosure())
+        $dialog = New-Object Microsoft.Win32.OpenFileDialog
+        $dialog.Filter = 'JSON files (*.json)|*.json|All files (*.*)|*.*'
+        $dialog.Title = 'Select variable answers file'
+        if ($dialog.ShowDialog() -ne $true) {
+            return
+        }
+        Import-VariablesAnswersFile $dialog.FileName
+    }.GetNewClosure())
 
 # Starts from whatever variables the currently-loaded plan(s) actually reference -- the same
 # Get-ReferencedVariableNames call Import-VariablesAnswersFile already uses to order its rows --
@@ -1284,21 +1284,21 @@ function New-VariablesFile([string]$Path) {
 }
 
 $newVariablesFileButton.Add_Click({
-    # Checked here too, before showing a dialog only to fail right after picking a location --
-    # New-VariablesFile also checks on its own, so it's still safe if ever called another way.
-    if (@(Get-ReferencedVariableNames (Get-StepReferenceText $global:allSteps)).Count -eq 0) {
-        $statusTextBlock.Text = 'No steps are currently loaded, so there are no variables to create a file for.'
-        return
-    }
-    $dialog = New-Object Microsoft.Win32.SaveFileDialog
-    $dialog.Filter = 'JSON files (*.json)|*.json|All files (*.*)|*.*'
-    $dialog.Title = 'Save new variables file'
-    $dialog.FileName = 'variables.json'
-    if ($dialog.ShowDialog() -ne $true) {
-        return
-    }
-    New-VariablesFile $dialog.FileName
-}.GetNewClosure())
+        # Checked here too, before showing a dialog only to fail right after picking a location --
+        # New-VariablesFile also checks on its own, so it's still safe if ever called another way.
+        if (@(Get-ReferencedVariableNames (Get-StepReferenceText $global:allSteps)).Count -eq 0) {
+            $statusTextBlock.Text = 'No steps are currently loaded, so there are no variables to create a file for.'
+            return
+        }
+        $dialog = New-Object Microsoft.Win32.SaveFileDialog
+        $dialog.Filter = 'JSON files (*.json)|*.json|All files (*.*)|*.*'
+        $dialog.Title = 'Save new variables file'
+        $dialog.FileName = 'variables.json'
+        if ($dialog.ShowDialog() -ne $true) {
+            return
+        }
+        New-VariablesFile $dialog.FileName
+    }.GetNewClosure())
 
 # Shared by the domain SelectionChanged handler and by switching back to IBR from FDR (see the
 # Recovery Type Checked handlers below) -- re-selecting the same domain doesn't refire
@@ -1382,12 +1382,12 @@ function Sync-DomainSteps {
 }
 
 $domainsListBox.Add_SelectionChanged({
-  try {
-    Sync-DomainSteps
-  } catch {
-    $statusTextBlock.Text = "Domain selection handler failed: $($_.Exception.Message)"
-  }
-}.GetNewClosure())
+        try {
+            Sync-DomainSteps
+        } catch {
+            $statusTextBlock.Text = "Domain selection handler failed: $($_.Exception.Message)"
+        }
+    }.GetNewClosure())
 
 # Mutually exclusive with a domain selection above -- picking a real additional cluster always
 # deselects whichever domain was picked before, which (via Sync-DomainSteps) collapses its panel so
@@ -1427,36 +1427,36 @@ function Sync-AdditionalClusterSteps {
 }
 
 $additionalClustersListBox.Add_SelectionChanged({
-  try {
-    Sync-AdditionalClusterSteps
-  } catch {
-    $statusTextBlock.Text = "Additional cluster selection handler failed: $($_.Exception.Message)"
-  }
-}.GetNewClosure())
+        try {
+            Sync-AdditionalClusterSteps
+        } catch {
+            $statusTextBlock.Text = "Additional cluster selection handler failed: $($_.Exception.Message)"
+        }
+    }.GetNewClosure())
 
 $runAllDomainRecoveryButton.Add_Click({
-    try {
-        Invoke-StepChain $global:domainRecoveryStepRows
-    } catch {
-        $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
-    }
-}.GetNewClosure())
+        try {
+            Invoke-StepChain $global:domainRecoveryStepRows
+        } catch {
+            $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
+        }
+    }.GetNewClosure())
 
 $runAllAdditionalClusterRecoveryButton.Add_Click({
-    try {
-        Invoke-StepChain $global:additionalClusterRecoveryStepRows
-    } catch {
-        $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
-    }
-}.GetNewClosure())
+        try {
+            Invoke-StepChain $global:additionalClusterRecoveryStepRows
+        } catch {
+            $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
+        }
+    }.GetNewClosure())
 
 $runAllRecoverFleetButton.Add_Click({
-    try {
-        Invoke-StepChain $global:recoverFleetStepRows
-    } catch {
-        $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
-    }
-}.GetNewClosure())
+        try {
+            Invoke-StepChain $global:recoverFleetStepRows
+        } catch {
+            $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
+        }
+    }.GetNewClosure())
 
 # Saves everything Resume needs to put the window back the way it was: the extracted data file, the
 # variable answers file, which domain was selected (by index into the just-reloaded domain list, the
@@ -1465,82 +1465,82 @@ $runAllRecoverFleetButton.Add_Click({
 # command lines themselves -- Resume re-derives everything else by re-running the exact same loaders
 # Browse/Load Variables use.
 $exitButton.Add_Click({
-    try {
-        $allRows = @($global:domainRecoveryStepRows) + @($global:additionalClusterRecoveryStepRows) + @($global:recoverFleetStepRows)
-        $completedCmdlets = @($allRows | Where-Object { $_.Button.Content -eq 'Done' } | ForEach-Object { $_.CmdletName })
+        try {
+            $allRows = @($global:domainRecoveryStepRows) + @($global:additionalClusterRecoveryStepRows) + @($global:recoverFleetStepRows)
+            $completedCmdlets = @($allRows | Where-Object { $_.Button.Content -eq 'Done' } | ForEach-Object { $_.CmdletName })
 
-        $state = [PSCustomObject]@{
-            ExtractedDataFilePath    = $filePathTextBox.Text
-            VariablesAnswersFilePath = $global:variablesAnswersFilePath
-            SelectedDomainIndex      = $domainsListBox.SelectedIndex
-            CompletedCmdlets         = $completedCmdlets
+            $state = [PSCustomObject]@{
+                ExtractedDataFilePath    = $filePathTextBox.Text
+                VariablesAnswersFilePath = $global:variablesAnswersFilePath
+                SelectedDomainIndex      = $domainsListBox.SelectedIndex
+                CompletedCmdlets         = $completedCmdlets
+            }
+
+            $dialog = New-Object Microsoft.Win32.SaveFileDialog
+            $dialog.Filter = 'JSON files (*.json)|*.json|All files (*.*)|*.*'
+            $dialog.Title = 'Save orchestrator state'
+            $dialog.InitialDirectory = $WorkingDirectory
+            $dialog.FileName = "vcfibr-state-$(Get-Date -Format 'yyyyMMdd-HHmmss').json"
+            if ($dialog.ShowDialog() -ne $true) {
+                return
+            }
+
+            $state | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $dialog.FileName -Encoding utf8
+
+            Send-ToConsole 'Stop-Transcript | Out-Null'
+            # Give Stop-Transcript a moment to actually run inside the console process before it gets
+            # killed by closing this window (see $window.Add_Closed, above) -- writing to StandardInput
+            # only queues the line, it doesn't wait for the console process to act on it.
+            Start-Sleep -Milliseconds 300
+
+            $window.Close()
+        } catch {
+            $statusTextBlock.Text = "Exit failed: $($_.Exception.Message)"
         }
-
-        $dialog = New-Object Microsoft.Win32.SaveFileDialog
-        $dialog.Filter = 'JSON files (*.json)|*.json|All files (*.*)|*.*'
-        $dialog.Title = 'Save orchestrator state'
-        $dialog.InitialDirectory = $WorkingDirectory
-        $dialog.FileName = "vcfibr-state-$(Get-Date -Format 'yyyyMMdd-HHmmss').json"
-        if ($dialog.ShowDialog() -ne $true) {
-            return
-        }
-
-        $state | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $dialog.FileName -Encoding utf8
-
-        Send-ToConsole 'Stop-Transcript | Out-Null'
-        # Give Stop-Transcript a moment to actually run inside the console process before it gets
-        # killed by closing this window (see $window.Add_Closed, above) -- writing to StandardInput
-        # only queues the line, it doesn't wait for the console process to act on it.
-        Start-Sleep -Milliseconds 300
-
-        $window.Close()
-    } catch {
-        $statusTextBlock.Text = "Exit failed: $($_.Exception.Message)"
-    }
-}.GetNewClosure())
+    }.GetNewClosure())
 
 # Replays the same three loaders a manual session would call (Import-ExtractedSddcDataFile, domain
 # selection, Import-VariablesAnswersFile), in the same order, then marks whichever steps were Done
 # last time as Done again -- without adding them to $global:activeStepWatches, since nothing is being
 # (re-)run for them here.
 $resumeButton.Add_Click({
-    try {
-        $dialog = New-Object Microsoft.Win32.OpenFileDialog
-        $dialog.Filter = 'JSON files (*.json)|*.json|All files (*.*)|*.*'
-        $dialog.Title = 'Select saved orchestrator state'
-        if ($dialog.ShowDialog() -ne $true) {
-            return
-        }
-
-        $state = Get-Content -Path $dialog.FileName -Raw | ConvertFrom-Json
-
-        if ($state.ExtractedDataFilePath) {
-            $filePathTextBox.Text = $state.ExtractedDataFilePath
-            Import-ExtractedSddcDataFile $state.ExtractedDataFilePath
-        }
-
-        if ($null -ne $state.SelectedDomainIndex -and $state.SelectedDomainIndex -ge 0 -and $state.SelectedDomainIndex -lt $domainsListBox.Items.Count) {
-            $domainsListBox.SelectedIndex = $state.SelectedDomainIndex
-        }
-
-        if ($state.VariablesAnswersFilePath) {
-            Import-VariablesAnswersFile $state.VariablesAnswersFilePath
-        }
-
-        $completedCmdlets = @($state.CompletedCmdlets)
-        $allRows = @($global:domainRecoveryStepRows) + @($global:additionalClusterRecoveryStepRows) + @($global:recoverFleetStepRows)
-        foreach ($row in $allRows) {
-            if ($completedCmdlets -contains $row.CmdletName) {
-                $row.Button.Content = 'Done'
-                $row.Button.Background = [System.Windows.Media.Brushes]::Green
+        try {
+            $dialog = New-Object Microsoft.Win32.OpenFileDialog
+            $dialog.Filter = 'JSON files (*.json)|*.json|All files (*.*)|*.*'
+            $dialog.Title = 'Select saved orchestrator state'
+            if ($dialog.ShowDialog() -ne $true) {
+                return
             }
-        }
 
-        $statusTextBlock.Text = "Resumed state from '$($dialog.FileName)'."
-    } catch {
-        $statusTextBlock.Text = "Resume failed: $($_.Exception.Message)"
-    }
-}.GetNewClosure())
+            $state = Get-Content -Path $dialog.FileName -Raw | ConvertFrom-Json
+
+            if ($state.ExtractedDataFilePath) {
+                $filePathTextBox.Text = $state.ExtractedDataFilePath
+                Import-ExtractedSddcDataFile $state.ExtractedDataFilePath
+            }
+
+            if ($null -ne $state.SelectedDomainIndex -and $state.SelectedDomainIndex -ge 0 -and $state.SelectedDomainIndex -lt $domainsListBox.Items.Count) {
+                $domainsListBox.SelectedIndex = $state.SelectedDomainIndex
+            }
+
+            if ($state.VariablesAnswersFilePath) {
+                Import-VariablesAnswersFile $state.VariablesAnswersFilePath
+            }
+
+            $completedCmdlets = @($state.CompletedCmdlets)
+            $allRows = @($global:domainRecoveryStepRows) + @($global:additionalClusterRecoveryStepRows) + @($global:recoverFleetStepRows)
+            foreach ($row in $allRows) {
+                if ($completedCmdlets -contains $row.CmdletName) {
+                    $row.Button.Content = 'Done'
+                    $row.Button.Background = [System.Windows.Media.Brushes]::Green
+                }
+            }
+
+            $statusTextBlock.Text = "Resumed state from '$($dialog.FileName)'."
+        } catch {
+            $statusTextBlock.Text = "Resume failed: $($_.Exception.Message)"
+        }
+    }.GetNewClosure())
 
 Start-StepCompletionWatcher
 

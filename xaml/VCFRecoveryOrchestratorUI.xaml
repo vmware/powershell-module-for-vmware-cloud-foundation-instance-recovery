@@ -264,18 +264,38 @@
                              groups never influence each other. Virtualization is switched off on
                              the ListBox so every row (not just the currently-visible ones)
                              contributes to that measurement, since otherwise column widths could
-                             visibly jump while scrolling. -->
+                             visibly jump while scrolling.
+
+                             The header Grid and the ListBox both sit inside one shared horizontal
+                             ScrollViewer, rather than each scrolling independently, so a header
+                             cell always stays lined up with its own column instead of staying put
+                             while the rows underneath it scroll out from beneath it (which would
+                             make the header meaningless the moment horizontal scrolling was ever
+                             needed, e.g. once "Dependent On" made a row wider than the card).
+                             HorizontalScrollBarVisibility="Disabled" on the ListBox itself is what
+                             makes this work: Disabled (unlike the default Hidden) doesn't just hide
+                             the bar, it stops the ListBox from constraining/clipping its content to
+                             its own width at all, so its true, possibly-wider-than-the-card desired
+                             width reaches the outer ScrollViewer for it to actually scroll against.
+                             The outer ScrollViewer's own VerticalScrollBarVisibility is Disabled for
+                             the same reason in the other axis: vertical scrolling of the rows stays
+                             owned entirely by the ListBox's own MaxHeight+VerticalScrollBarVisibility
+                             below, not duplicated by the outer ScrollViewer as well. -->
                         <TabItem Header="Workload Domains">
                             <DockPanel Margin="0,8,0,0" Grid.IsSharedSizeScope="True">
-                                <Grid DockPanel.Dock="Top" Margin="3,0,3,4">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" SharedSizeGroup="WorkloadDomainsCol0" />
-                                        <ColumnDefinition Width="Auto" SharedSizeGroup="WorkloadDomainsCol1" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="Domain Name" FontWeight="Bold" Margin="0,0,10,0" />
-                                    <TextBlock Grid.Column="1" Text="Domain Type" FontWeight="Bold" />
-                                </Grid>
-                                <ListBox x:Name="WorkloadDomainsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" VirtualizingPanel.IsVirtualizing="False" MaxHeight="160" />
+                                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                                    <StackPanel>
+                                        <Grid Margin="3,0,3,4">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" SharedSizeGroup="WorkloadDomainsCol0" />
+                                                <ColumnDefinition Width="Auto" SharedSizeGroup="WorkloadDomainsCol1" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="Domain Name" FontWeight="Bold" Margin="0,0,10,0" />
+                                            <TextBlock Grid.Column="1" Text="Domain Type" FontWeight="Bold" />
+                                        </Grid>
+                                        <ListBox x:Name="WorkloadDomainsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" MaxHeight="160" />
+                                    </StackPanel>
+                                </ScrollViewer>
                             </DockPanel>
                         </TabItem>
                         <!-- Any cluster (in any workload domain) beyond a domain's own default
@@ -285,25 +305,29 @@
                              you whether there's extra work to plan for at all. -->
                         <TabItem Header="Additional Clusters">
                             <DockPanel Margin="0,8,0,0" Grid.IsSharedSizeScope="True">
-                                <Grid DockPanel.Dock="Top" Margin="3,0,3,4">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" SharedSizeGroup="AdditionalClustersCol0" />
-                                        <ColumnDefinition Width="Auto" SharedSizeGroup="AdditionalClustersCol1" />
-                                        <ColumnDefinition Width="Auto" SharedSizeGroup="AdditionalClustersCol2" />
-                                        <ColumnDefinition Width="Auto" SharedSizeGroup="AdditionalClustersCol3" />
-                                        <ColumnDefinition Width="Auto" SharedSizeGroup="AdditionalClustersCol4" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="Cluster Name" FontWeight="Bold" Margin="0,0,10,0" />
-                                    <TextBlock Grid.Column="1" Text="Domain" FontWeight="Bold" Margin="0,0,10,0" />
-                                    <TextBlock Grid.Column="2" Text="Storage" FontWeight="Bold" Margin="0,0,10,0" />
-                                    <TextBlock Grid.Column="3" Text="Stretched" FontWeight="Bold" Margin="0,0,10,0" />
-                                    <!-- Comma-separated, in recovery order; see Get-ClusterDependencies in the
-                                         .ps1. Purely informational: nothing here feeds back into plan conditions
-                                         or Run All sequencing, it's a hint for whoever's deciding what order to
-                                         work through multiple additional clusters in by hand. -->
-                                    <TextBlock Grid.Column="4" Text="Dependent On" FontWeight="Bold" />
-                                </Grid>
-                                <ListBox x:Name="AdditionalClustersListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" VirtualizingPanel.IsVirtualizing="False" MaxHeight="160" />
+                                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                                    <StackPanel>
+                                        <Grid Margin="3,0,3,4">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" SharedSizeGroup="AdditionalClustersCol0" />
+                                                <ColumnDefinition Width="Auto" SharedSizeGroup="AdditionalClustersCol1" />
+                                                <ColumnDefinition Width="Auto" SharedSizeGroup="AdditionalClustersCol2" />
+                                                <ColumnDefinition Width="Auto" SharedSizeGroup="AdditionalClustersCol3" />
+                                                <ColumnDefinition Width="Auto" SharedSizeGroup="AdditionalClustersCol4" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="Cluster Name" FontWeight="Bold" Margin="0,0,10,0" />
+                                            <TextBlock Grid.Column="1" Text="Domain" FontWeight="Bold" Margin="0,0,10,0" />
+                                            <TextBlock Grid.Column="2" Text="Storage" FontWeight="Bold" Margin="0,0,10,0" />
+                                            <TextBlock Grid.Column="3" Text="Stretched" FontWeight="Bold" Margin="0,0,10,0" />
+                                            <!-- Comma-separated, in recovery order; see Get-ClusterDependencies in
+                                                 the .ps1. Purely informational: nothing here feeds back into plan
+                                                 conditions or Run All sequencing, it's a hint for whoever's deciding
+                                                 what order to work through multiple additional clusters in by hand. -->
+                                            <TextBlock Grid.Column="4" Text="Dependent On" FontWeight="Bold" />
+                                        </Grid>
+                                        <ListBox x:Name="AdditionalClustersListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" MaxHeight="160" />
+                                    </StackPanel>
+                                </ScrollViewer>
                             </DockPanel>
                         </TabItem>
                     </TabControl>
