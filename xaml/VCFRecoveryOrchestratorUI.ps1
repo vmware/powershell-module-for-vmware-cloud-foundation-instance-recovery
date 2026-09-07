@@ -271,6 +271,21 @@ function Set-PlanStepsListBox([System.Windows.Controls.ListBox]$ListBox, [object
     return $rows
 }
 
+# Maps a cluster's raw primaryDatastoreType (as recorded in the extracted SDDC data, and used
+# verbatim in plan conditions like "$primaryDatastoreType -eq 'VSAN'" -- see
+# Update-DerivedStepVariables) to a human-friendly label for display only. The raw value itself is
+# never touched, so conditions keep matching the real extracted data regardless of this mapping. An
+# unrecognized type passes through unchanged rather than disappearing.
+function Get-DisplayDatastoreType([string]$RawType) {
+    switch ($RawType) {
+        'VSAN'        { 'vSAN HCI (OSA)' }
+        'VSAN_ESA'    { 'vSAN HCA (ESA)' }
+        'VSAN_MAX'    { 'vSAN Storage Cluster' }
+        'VSAN_Remote' { 'vSAN Compute Cluster' }
+        default       { $RawType }
+    }
+}
+
 # Builds one table row (Workload Domains, Additional Clusters) as a plain Grid of TextBlocks.
 # $ColumnGroups must be the same SharedSizeGroup names, in the same order, as the table's own
 # static header Grid in the XAML -- that's what keeps a column's width in sync between the header
@@ -392,6 +407,15 @@ namespace VCFIRConsole {
         [DllImport("user32.dll", SetLastError = true)]
         public static extern bool RedrawWindow(IntPtr hWnd, IntPtr lprcUpdate, IntPtr hrgnUpdate, uint flags);
 
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern uint GetWindowThreadProcessId(IntPtr hWnd, IntPtr lpdwProcessId);
+
+        [DllImport("kernel32.dll")]
+        public static extern uint GetCurrentThreadId();
+
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+
         [DllImport("kernel32.dll", SetLastError = true)]
         public static extern bool AttachConsole(uint dwProcessId);
 
@@ -504,13 +528,58 @@ $window.Add_Closed({
     }
 })
 
-# WPF's own default (focus the first focusable control in the visual tree) would land on something
-# in the left rail, not the console -- SetFocus puts the initial keyboard focus on the embedded
-# console instead, so typing works immediately without clicking into it first.
-$window.Add_Loaded({
-    if ($consoleHwnd -ne [IntPtr]::Zero) {
-        [VCFIRConsole.NativeMethods]::SetFocus($consoleHwnd) | Out-Null
+# Plain SetFocus is unreliable across a process boundary -- the console is a genuinely separate
+# process (and therefore thread) from this one, and Win32 only guarantees a SetFocus call actually
+# moves real keyboard focus onto a window owned by another thread if that thread's input queue has
+# first been joined to the caller's via AttachThreadInput; otherwise the call can silently do nothing
+# even though it reports success. Attached only for the instant it takes to call SetFocus, then
+# immediately detached again -- this only needs to be true for that one call, not for the whole
+# app's lifetime. Used everywhere this app ever wants to give the console real keyboard focus: once
+# at Loaded, once whenever the window regains activation or the console area is clicked (both below),
+# and once after Send-ToConsole injects a command.
+function Set-ConsoleFocus {
+    if ($consoleHwnd -eq [IntPtr]::Zero) {
+        return
     }
+    $consoleThreadId = [VCFIRConsole.NativeMethods]::GetWindowThreadProcessId($consoleHwnd, [IntPtr]::Zero)
+    $currentThreadId = [VCFIRConsole.NativeMethods]::GetCurrentThreadId()
+    $attached = $false
+    if ($consoleThreadId -ne 0 -and $consoleThreadId -ne $currentThreadId) {
+        $attached = [VCFIRConsole.NativeMethods]::AttachThreadInput($currentThreadId, $consoleThreadId, $true)
+    }
+    try {
+        [VCFIRConsole.NativeMethods]::SetFocus($consoleHwnd) | Out-Null
+    } finally {
+        if ($attached) {
+            [VCFIRConsole.NativeMethods]::AttachThreadInput($currentThreadId, $consoleThreadId, $false) | Out-Null
+        }
+    }
+}
+
+# WPF's own default (focus the first focusable control in the visual tree) would land on something
+# in the left rail, not the console -- Set-ConsoleFocus puts the initial keyboard focus on the
+# embedded console instead, so typing works immediately without clicking into it first.
+$window.Add_Loaded({
+    Set-ConsoleFocus
+})
+
+# ConsoleHwndHost doesn't implement IKeyboardInputSink, so WPF's own keyboard-focus tracking has no
+# real notion of the embedded console ever "having focus" the way it does for an ordinary WPF
+# control -- Set-ConsoleFocus is otherwise only ever called right after Loaded and right after a Run
+# button injects a command (see Send-ToConsole). Neither of those covers a plain click into the
+# console itself doing nothing (WPF's own hit-testing/focus handling can end up owning the click
+# instead of the native child actually receiving real keyboard focus), or this window regaining
+# activation after having lost it for a while (screen lock, RDP disconnect/reconnect, alt-tabbing
+# away and back) -- exactly the kind of gap that would leave a step's own interactive prompt
+# (Read-Host) visibly sitting on screen but genuinely unable to receive anything typed at it,
+# indefinitely, with nothing to indicate why. Both reassert real OS focus explicitly rather than
+# assuming Windows/WPF already restored it correctly on their own.
+$consoleHostBorder.Add_PreviewMouseDown({
+    Set-ConsoleFocus
+})
+
+$window.Add_Activated({
+    Set-ConsoleFocus
 })
 
 # The window opens already maximized (see the XAML's WindowState), which means WPF first lays the
@@ -574,9 +643,7 @@ function Send-ToConsole([string]$CommandLine) {
     } catch {
         $statusTextBlock.Text = "Failed to send command: $($_.Exception.Message)"
     }
-    if ($consoleHwnd -ne [IntPtr]::Zero) {
-        [VCFIRConsole.NativeMethods]::SetFocus($consoleHwnd) | Out-Null
-    }
+    Set-ConsoleFocus
 }
 
 # A step's transcript slice is "unclean" -- even once its own "Completed Task" line has appeared --
@@ -908,7 +975,7 @@ function Import-ExtractedSddcDataFile([string]$Path) {
             $stretchedText = if ($cluster.IsStretched -eq 't') { 'Y' } else { 'N' }
             $clusterNameText = if ($cluster.ClusterName) { $cluster.ClusterName } else { '(unknown)' }
             $columnGroups = @('AdditionalClustersCol0', 'AdditionalClustersCol1', 'AdditionalClustersCol2', 'AdditionalClustersCol3')
-            $row = New-TableRow -Values @($clusterNameText, $cluster.DomainName, $cluster.PrimaryDatastoreType, $stretchedText) -ColumnGroups $columnGroups
+            $row = New-TableRow -Values @($clusterNameText, $cluster.DomainName, (Get-DisplayDatastoreType $cluster.PrimaryDatastoreType), $stretchedText) -ColumnGroups $columnGroups
             # Wrapped in an explicit ListBoxItem (rather than adding $row directly) so selecting a
             # row is distinguishable from the "No additional clusters detected." placeholder above,
             # which is a plain string -- see Sync-AdditionalClusterSteps's ListBoxItem type check.
