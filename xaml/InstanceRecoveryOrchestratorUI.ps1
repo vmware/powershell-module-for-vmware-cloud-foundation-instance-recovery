@@ -227,29 +227,25 @@ $escapedWorkingDirectory = Protect-SingleQuotes $WorkingDirectory
 $escapedTranscriptPath = Protect-SingleQuotes $global:transcriptPath
 $consoleStartupCommand = "Set-Location -LiteralPath '$escapedWorkingDirectory'; Remove-Module PSReadLine -Force -ErrorAction SilentlyContinue; Start-Transcript -Path '$escapedTranscriptPath' -Force | Out-Null"
 
-$consoleStartInfo = New-Object System.Diagnostics.ProcessStartInfo
-$consoleStartInfo.FileName = (Get-Process -Id $PID).Path   # same pwsh.exe/powershell.exe running this launcher
-$consoleStartInfo.ArgumentList.Add('-NoLogo')
-$consoleStartInfo.ArgumentList.Add('-NoProfile')
-$consoleStartInfo.ArgumentList.Add('-NoExit')
-$consoleStartInfo.ArgumentList.Add('-Command')
-$consoleStartInfo.ArgumentList.Add($consoleStartupCommand)
-$consoleStartInfo.WorkingDirectory = $WorkingDirectory
-$consoleStartInfo.UseShellExecute = $false
-$consoleStartInfo.CreateNoWindow = $false   # a real, visible console window is exactly the point
-
-$consoleProcess = New-Object System.Diagnostics.Process
-$consoleProcess.StartInfo = $consoleStartInfo
-[void]$consoleProcess.Start()
+# Launched via the Start-Process cmdlet, not System.Diagnostics.ProcessStartInfo + Process.Start().
+# This isn't a style choice -- it's the actual fix for "console window never appears". Confirmed by
+# a direct A/B test: raw ProcessStartInfo+Process.Start() (UseShellExecute=$false,
+# CreateNoWindow=$false, no explicit console-creation flag) makes the child INHERIT this launcher's
+# own console rather than allocate a new one -- MainWindowHandle stays 0 forever (that's why no
+# timeout, however long, ever helped) and the child's output was observed leaking into the parent's
+# own console instead. .NET's base Process API has no public property for the Win32
+# CREATE_NEW_CONSOLE flag; Start-Process (the cmdlet) reliably allocates a real, separate console
+# window, verified with the exact same arguments. Argument/path quoting with spaces (the original
+# reason this launcher moved off Start-Process) was re-verified separately and is fine here: -Command
+# is a single array element regardless of the spaces inside it.
+$consoleProcess = Start-Process -FilePath (Get-Process -Id $PID).Path -ArgumentList @('-NoLogo', '-NoProfile', '-NoExit', '-Command', $consoleStartupCommand) -WorkingDirectory $WorkingDirectory -PassThru
 
 # Bounded wait for the console's own window to exist -- this happens well before the main window is
 # shown (Application.Run() hasn't been called yet), so blocking briefly here is fine, the same way
 # Start-VCFIBROrchestrator briefly waits for this whole process to start. Hidden immediately once
 # found, so it never visibly flashes as a free-floating window before ConsoleHwndHost embeds it.
-# 30 seconds, not 10: measured launches on this environment taking noticeably longer than that under
-# load (RDP session, VM overhead), so 10 was tripping this timeout on otherwise-successful launches.
 $consoleHwnd = [IntPtr]::Zero
-$deadline = (Get-Date).AddSeconds(30)
+$deadline = (Get-Date).AddSeconds(10)
 while ((Get-Date) -lt $deadline) {
     $consoleProcess.Refresh()
     if ($consoleProcess.HasExited) {
@@ -265,7 +261,7 @@ if ($consoleHwnd -ne [IntPtr]::Zero) {
     $consoleHwndHost = New-Object VCFIRConsole.ConsoleHwndHost($consoleHwnd)
     $consoleHostBorder.Child = $consoleHwndHost
 } else {
-    $statusTextBlock.Text = "Console window did not appear within 30 seconds."
+    $statusTextBlock.Text = "Console window did not appear within 10 seconds."
 }
 
 # Kills the console process when the window actually closes, regardless of which path got it there
@@ -802,7 +798,6 @@ $resumeButton.Add_Click({
     }
 }.GetNewClosure())
 
-Start-ConsoleOutputPump
 Start-StepCompletionWatcher
 
 [void]$app.Run($window)
