@@ -85,6 +85,23 @@
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.5" />
                             </Trigger>
+                            <!-- A step row's own Run button is disabled for the whole app while a Run All
+                                 chain is in progress (see Set-AllStepButtonsEnabled), including rows that
+                                 are already Running/Done/Failed - those three states are real status
+                                 indicators, not idle "can't click this" buttons, so they must stay full
+                                 color even while disabled. Declared after the IsEnabled trigger above so
+                                 they win over its dimming (later same-property setters take precedence);
+                                 harmless for every other button in the app (Run All, Load Variables, etc.)
+                                 since none of them ever show these exact Content values. -->
+                            <Trigger Property="Content" Value="Running">
+                                <Setter TargetName="ButtonBorder" Property="Opacity" Value="1" />
+                            </Trigger>
+                            <Trigger Property="Content" Value="Done">
+                                <Setter TargetName="ButtonBorder" Property="Opacity" Value="1" />
+                            </Trigger>
+                            <Trigger Property="Content" Value="Failed">
+                                <Setter TargetName="ButtonBorder" Property="Opacity" Value="1" />
+                            </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
