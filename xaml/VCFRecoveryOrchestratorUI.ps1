@@ -99,6 +99,9 @@ $runAllRecoverFleetButton = $window.FindName('RunAllRecoverFleetButton')
 $runAllDomainRecoveryParallelCheckBox = $window.FindName('RunAllDomainRecoveryParallelCheckBox')
 $runAllAdditionalClusterRecoveryParallelCheckBox = $window.FindName('RunAllAdditionalClusterRecoveryParallelCheckBox')
 $runAllRecoverFleetParallelCheckBox = $window.FindName('RunAllRecoverFleetParallelCheckBox')
+$domainRecoveryRunTimerTextBlock = $window.FindName('DomainRecoveryRunTimerTextBlock')
+$additionalClusterRecoveryRunTimerTextBlock = $window.FindName('AdditionalClusterRecoveryRunTimerTextBlock')
+$recoverFleetRunTimerTextBlock = $window.FindName('RecoverFleetRunTimerTextBlock')
 $loadVariablesButton = $window.FindName('LoadVariablesButton')
 $newVariablesFileButton = $window.FindName('NewVariablesFileButton')
 $loadedVariablesTextBlock = $window.FindName('LoadedVariablesTextBlock')
@@ -1152,6 +1155,36 @@ function Set-AllStepButtonsEnabled([bool]$Enabled) {
     $runAllRecoverFleetButton.IsEnabled = $Enabled
 }
 
+# Elapsed-time display for a Run All run -- hidden and not running the rest of the time, per its
+# own panel's TextBlock (DomainRecoveryRunTimerTextBlock etc.), positioned above the Steps list's
+# own Run-button column. Ticks once a second via a DispatcherTimer rather than comparing wall-clock
+# time only when something else happens to redraw, since nothing else in this row changes while a
+# run is in progress. Returns the running DispatcherTimer so the caller can stop it again in
+# Stop-RunTimer once the whole Run All chain finishes (see each Run All button's own Add_Click).
+function Start-RunTimer([System.Windows.Controls.TextBlock]$TimerTextBlock) {
+    $startTime = Get-Date
+    $TimerTextBlock.Text = '00:00:00'
+    $TimerTextBlock.Visibility = 'Visible'
+    $timer = New-Object System.Windows.Threading.DispatcherTimer
+    $timer.Interval = [TimeSpan]::FromSeconds(1)
+    $timer.Add_Tick({
+            $elapsed = (Get-Date) - $startTime
+            $TimerTextBlock.Text = '{0:00}:{1:00}:{2:00}' -f [int]$elapsed.TotalHours, $elapsed.Minutes, $elapsed.Seconds
+        }.GetNewClosure())
+    $timer.Start()
+    return $timer
+}
+
+# Stops the DispatcherTimer Start-RunTimer returned and hides its TextBlock again. $Timer may be
+# $null (e.g. Invoke-StepChain threw before Start-RunTimer was ever called) -- tolerated so the
+# catch block in each Run All handler can call this unconditionally.
+function Stop-RunTimer($Timer, [System.Windows.Controls.TextBlock]$TimerTextBlock) {
+    if ($Timer) {
+        $Timer.Stop()
+    }
+    $TimerTextBlock.Visibility = 'Collapsed'
+}
+
 # Resets a row to its "in progress" look (undoing any earlier Done/Failed state -- re-running a step
 # that previously completed should stop showing that until it completes again) and starts watching
 # for its completion. $OnStepComplete (optional) is threaded straight through to Add-StepWatch --
@@ -2110,30 +2143,45 @@ $additionalClustersListBox.Add_SelectionChanged({
 $runAllDomainRecoveryButton.Add_Click({
         try {
             Set-AllStepButtonsEnabled $false
-            Invoke-StepChain $global:domainRecoveryStepRows -IgnoreThreads:(-not $runAllDomainRecoveryParallelCheckBox.IsChecked) -OnChainComplete { Set-AllStepButtonsEnabled $true }.GetNewClosure()
+            $domainRecoveryRunTimer = Start-RunTimer $domainRecoveryRunTimerTextBlock
+            Invoke-StepChain $global:domainRecoveryStepRows -IgnoreThreads:(-not $runAllDomainRecoveryParallelCheckBox.IsChecked) -OnChainComplete {
+                Set-AllStepButtonsEnabled $true
+                Stop-RunTimer $domainRecoveryRunTimer $domainRecoveryRunTimerTextBlock
+            }.GetNewClosure()
         } catch {
             $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
             Set-AllStepButtonsEnabled $true
+            Stop-RunTimer $domainRecoveryRunTimer $domainRecoveryRunTimerTextBlock
         }
     }.GetNewClosure())
 
 $runAllAdditionalClusterRecoveryButton.Add_Click({
         try {
             Set-AllStepButtonsEnabled $false
-            Invoke-StepChain $global:additionalClusterRecoveryStepRows -IgnoreThreads:(-not $runAllAdditionalClusterRecoveryParallelCheckBox.IsChecked) -OnChainComplete { Set-AllStepButtonsEnabled $true }.GetNewClosure()
+            $additionalClusterRecoveryRunTimer = Start-RunTimer $additionalClusterRecoveryRunTimerTextBlock
+            Invoke-StepChain $global:additionalClusterRecoveryStepRows -IgnoreThreads:(-not $runAllAdditionalClusterRecoveryParallelCheckBox.IsChecked) -OnChainComplete {
+                Set-AllStepButtonsEnabled $true
+                Stop-RunTimer $additionalClusterRecoveryRunTimer $additionalClusterRecoveryRunTimerTextBlock
+            }.GetNewClosure()
         } catch {
             $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
             Set-AllStepButtonsEnabled $true
+            Stop-RunTimer $additionalClusterRecoveryRunTimer $additionalClusterRecoveryRunTimerTextBlock
         }
     }.GetNewClosure())
 
 $runAllRecoverFleetButton.Add_Click({
         try {
             Set-AllStepButtonsEnabled $false
-            Invoke-StepChain $global:recoverFleetStepRows -IgnoreThreads:(-not $runAllRecoverFleetParallelCheckBox.IsChecked) -OnChainComplete { Set-AllStepButtonsEnabled $true }.GetNewClosure()
+            $recoverFleetRunTimer = Start-RunTimer $recoverFleetRunTimerTextBlock
+            Invoke-StepChain $global:recoverFleetStepRows -IgnoreThreads:(-not $runAllRecoverFleetParallelCheckBox.IsChecked) -OnChainComplete {
+                Set-AllStepButtonsEnabled $true
+                Stop-RunTimer $recoverFleetRunTimer $recoverFleetRunTimerTextBlock
+            }.GetNewClosure()
         } catch {
             $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
             Set-AllStepButtonsEnabled $true
+            Stop-RunTimer $recoverFleetRunTimer $recoverFleetRunTimerTextBlock
         }
     }.GetNewClosure())
 

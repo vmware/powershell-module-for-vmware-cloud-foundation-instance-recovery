@@ -139,7 +139,7 @@
       "$primaryDatastoreType -eq 'VSAN'"
     ],
     "threadId": "",
-    "interactive": false
+    "interactive": true
   },
   {
     "description": "",
