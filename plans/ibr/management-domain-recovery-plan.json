@@ -143,19 +143,19 @@
   },
   {
     "description": "",
-    "commandLine": "Set-ManagementDatastorePolicy -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile",
-    "condition": [],
-    "threadId": "",
-    "interactive": false
-  },
-  {
-    "description": "",
     "commandLine": "New-ReconfiguredVsanStretchedCluster -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile",
     "condition": [
       "$isStretched -eq 't'"
     ],
     "threadId": "",
     "interactive": true
+  },
+  {
+    "description": "",
+    "commandLine": "Set-ManagementDatastorePolicy -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile",
+    "condition": [],
+    "threadId": "",
+    "interactive": false
   },
   {
     "description": "",
