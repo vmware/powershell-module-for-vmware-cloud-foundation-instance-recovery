@@ -511,6 +511,32 @@ namespace VCFIRConsole {
 
     public delegate IntPtr LowLevelMouseProc(int nCode, IntPtr wParam, IntPtr lParam);
 
+    // For Send-ToConsole's own text-color save/restore around a simulated-typed command -- only
+    // wAttributes is ever read/written, but GetConsoleScreenBufferInfo requires the full struct
+    // shape to marshal correctly.
+    [StructLayout(LayoutKind.Sequential)]
+    public struct COORD {
+        public short X;
+        public short Y;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct SMALL_RECT {
+        public short Left;
+        public short Top;
+        public short Right;
+        public short Bottom;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct CONSOLE_SCREEN_BUFFER_INFO {
+        public COORD dwSize;
+        public COORD dwCursorPosition;
+        public ushort wAttributes;
+        public SMALL_RECT srWindow;
+        public COORD dwMaximumWindowSize;
+    }
+
     public static class NativeMethods {
         public const int GWL_STYLE = -16;
         public const long WS_CHILD = 0x40000000L;
@@ -522,6 +548,12 @@ namespace VCFIRConsole {
         public const int SW_HIDE = 0;
         public const int SW_SHOW = 5;
         public const int STD_INPUT_HANDLE = -10;
+        public const int STD_OUTPUT_HANDLE = -11;
+        // FOREGROUND_BLUE | FOREGROUND_GREEN | FOREGROUND_INTENSITY -- matches PowerShell's own
+        // ConsoleColor.Cyan (the intensity bit is required; without it this is the darker
+        // "DarkCyan" instead), the same shade already used for the relay header/footer text (see
+        // Close-ParallelConsoleAndFeedBack's own "-ForegroundColor Cyan").
+        public const ushort FOREGROUND_CYAN = 0x000B;
         public const uint RDW_INVALIDATE = 0x1;
         public const uint RDW_ERASE = 0x4;
         public const uint RDW_UPDATENOW = 0x100;
@@ -580,6 +612,12 @@ namespace VCFIRConsole {
 
         [DllImport("kernel32.dll", SetLastError = true)]
         public static extern bool WriteConsoleInput(IntPtr hConsoleInput, INPUT_RECORD[] lpBuffer, uint nLength, out uint lpNumberOfEventsWritten);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern bool SetConsoleTextAttribute(IntPtr hConsoleOutput, ushort wAttributes);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern bool GetConsoleScreenBufferInfo(IntPtr hConsoleOutput, out CONSOLE_SCREEN_BUFFER_INFO lpConsoleScreenBufferInfo);
 
         public const int WH_MOUSE_LL = 14;
         public const int WM_LBUTTONDOWN = 0x0201;
@@ -999,6 +1037,7 @@ function Send-ToConsole([string]$CommandLine, $Console) {
         }
         try {
             $inputHandle = [VCFIRConsole.NativeMethods]::GetStdHandle([VCFIRConsole.NativeMethods]::STD_INPUT_HANDLE)
+            $outputHandle = [VCFIRConsole.NativeMethods]::GetStdHandle([VCFIRConsole.NativeMethods]::STD_OUTPUT_HANDLE)
             $records = [System.Collections.Generic.List[VCFIRConsole.INPUT_RECORD]]::new()
             foreach ($character in ($CommandLine + "`r").ToCharArray()) {
                 $keyDown = New-Object VCFIRConsole.KEY_EVENT_RECORD
@@ -1021,7 +1060,27 @@ function Send-ToConsole([string]$CommandLine, $Console) {
             }
             $recordsArray = $records.ToArray()
             [uint32]$written = 0
+            # The console's basic (non-PSReadLine -- see New-EmbeddedConsole's own bootstrap comment)
+            # line-editing echoes each typed character using whatever text attribute is CURRENT on the
+            # screen buffer at that instant, so the command has to actually be cyan at the moment the
+            # OTHER process (whichever one is attached and reading this input) gets around to
+            # processing these records, not just at the moment they're queued here -- WriteConsoleInput
+            # only enqueues them and returns immediately, it does not wait for them to be read/echoed.
+            # Saving/restoring the real prior attribute (not assuming a fixed "default") keeps this from
+            # ever clobbering whatever color scheme is otherwise in effect.
+            $bufferInfo = New-Object VCFIRConsole.CONSOLE_SCREEN_BUFFER_INFO
+            $gotBufferInfo = [VCFIRConsole.NativeMethods]::GetConsoleScreenBufferInfo($outputHandle, [ref]$bufferInfo)
+            if ($gotBufferInfo) {
+                [VCFIRConsole.NativeMethods]::SetConsoleTextAttribute($outputHandle, [VCFIRConsole.NativeMethods]::FOREGROUND_CYAN) | Out-Null
+            }
             [void][VCFIRConsole.NativeMethods]::WriteConsoleInput($inputHandle, $recordsArray, [uint32]$recordsArray.Length, [ref]$written)
+            if ($gotBufferInfo) {
+                # Long enough for even a lengthy, parameter-heavy command line to have been echoed by
+                # the other process before the color reverts -- the same kind of short, pragmatic wait
+                # AttachConsole's own retry loop above already relies on for this console's timing.
+                Start-Sleep -Milliseconds 150
+                [VCFIRConsole.NativeMethods]::SetConsoleTextAttribute($outputHandle, $bufferInfo.wAttributes) | Out-Null
+            }
         } finally {
             [VCFIRConsole.NativeMethods]::FreeConsole() | Out-Null
         }
