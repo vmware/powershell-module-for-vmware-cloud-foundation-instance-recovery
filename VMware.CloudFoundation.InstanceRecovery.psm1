@@ -16433,8 +16433,9 @@ Function Start-VCFRecoveryCoordinator {
     has no such constraint -- closing the window ends that process cleanly, and the next launch starts
     a genuinely fresh one, every time.
 
-    This cmdlet returns control to your console immediately. If a previous launch's window is still
-    open, it's brought to the front instead of starting a second one.
+    This cmdlet returns control to your console immediately. Each call starts a genuinely new,
+    separate instance -- calling it again while an earlier window is still open opens another one
+    alongside it rather than reusing or focusing the existing window.
 
     .EXAMPLE
     Start-VCFRecoveryCoordinator
@@ -16442,34 +16443,11 @@ Function Start-VCFRecoveryCoordinator {
 
     Param()
 
-    # If a previous launch is still running, bring its window to the front instead of starting a
-    # second one. SetForegroundWindow/ShowWindowAsync are ordinary, well-established Win32 calls --
-    # nothing like the ConPTY/WPF internals this UI otherwise has to work around.
-    if ($script:VCFRecoveryOrchestratorUIProcess) {
-        $script:VCFRecoveryOrchestratorUIProcess.Refresh()
-        if (-not $script:VCFRecoveryOrchestratorUIProcess.HasExited) {
-            $hwnd = $script:VCFRecoveryOrchestratorUIProcess.MainWindowHandle
-            if ($hwnd -ne [IntPtr]::Zero) {
-                [VCFIR.NativeMethods]::ShowWindowAsync($hwnd, 9) | Out-Null   # SW_RESTORE
-                [VCFIR.NativeMethods]::SetForegroundWindow($hwnd) | Out-Null
-            }
-            LogMessage -type NOTE -message "VCF Recovery Coordinator UI is already open; brought to the front."
-            return
-        }
-    }
-
-    if (-not ([System.Management.Automation.PSTypeName]'VCFIR.NativeMethods').Type) {
-        Add-Type -Namespace VCFIR -Name NativeMethods -MemberDefinition '
-            [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
-            [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
-        '
-    }
-
     $moduleRoot = $PSScriptRoot
     $xamlPath = Join-Path $moduleRoot 'xaml\VCFRecoveryOrchestratorUI.xaml'
     $uiScriptPath = Join-Path $moduleRoot 'xaml\VCFRecoveryOrchestratorUI.ps1'
     # Recovery plans (Management Domain Restores, Recover Default Cluster, etc) live here as a JSON
-    # array of step objects (commandLine/condition/groupingId) per plan file -- see
+    # array of step objects (commandLine/condition/threadId) per plan file -- see
     # Get-RecoveryPlanSteps in the UI script. Kept outside both the .psm1 and the UI script so
     # editing a plan never requires recompiling the module or restarting anything: the UI script
     # re-reads these files every time a domain is (re)selected.
@@ -16530,7 +16508,6 @@ Function Start-VCFRecoveryCoordinator {
     $startInfo.RedirectStandardError = $true
 
     $process = [System.Diagnostics.Process]::Start($startInfo)
-    $script:VCFRecoveryOrchestratorUIProcess = $process
 
     # A real launch stays open indefinitely; this is only long enough to catch a launch that failed
     # outright, so this cmdlet reports what actually happened instead of claiming success regardless,
