@@ -99,9 +99,8 @@ $runAllRecoverFleetButton = $window.FindName('RunAllRecoverFleetButton')
 $runAllDomainRecoveryParallelCheckBox = $window.FindName('RunAllDomainRecoveryParallelCheckBox')
 $runAllAdditionalClusterRecoveryParallelCheckBox = $window.FindName('RunAllAdditionalClusterRecoveryParallelCheckBox')
 $runAllRecoverFleetParallelCheckBox = $window.FindName('RunAllRecoverFleetParallelCheckBox')
-$domainRecoveryRunTimerTextBlock = $window.FindName('DomainRecoveryRunTimerTextBlock')
-$additionalClusterRecoveryRunTimerTextBlock = $window.FindName('AdditionalClusterRecoveryRunTimerTextBlock')
-$recoverFleetRunTimerTextBlock = $window.FindName('RecoverFleetRunTimerTextBlock')
+$overallRecoveryTimeTextBlock = $window.FindName('OverallRecoveryTimeTextBlock')
+$actualTaskTimeTextBlock = $window.FindName('ActualTaskTimeTextBlock')
 $loadVariablesButton = $window.FindName('LoadVariablesButton')
 $newVariablesFileButton = $window.FindName('NewVariablesFileButton')
 $loadedVariablesTextBlock = $window.FindName('LoadedVariablesTextBlock')
@@ -141,6 +140,15 @@ $global:variablesAnswersFilePath = $null
 # UI alone -- Lock-ElementSelection disables both list boxes outright once this flips true, so
 # picking a different element requires Exit + a fresh launch instead.
 $global:recoveryRunStarted = $false
+
+# Actual Task Time accumulation (see Start-StepCompletionWatcher's own tick and Start-RunTimer) --
+# $actualTaskTimeSeconds is the running total, $actualTaskTimeScannedLength is how much of Main's
+# transcript has already been scanned for "Completed Task ... in N minutes and M seconds" lines, so
+# the same line is never counted twice. Initialized here (not left to implicit $null-as-zero
+# coercion) since the tick that reads them starts running from app startup, before any Run All
+# (and therefore before Start-RunTimer's own reset) has ever happened.
+$global:actualTaskTimeSeconds = 0
+$global:actualTaskTimeScannedLength = 0
 
 # Completion tracking, attempt 5: a PowerShell transcript of the console, read from disk. Unaffected
 # by the move away from the terminal control -- it never depended on that control's own rendering
@@ -1214,34 +1222,57 @@ function Set-AllStepButtonsEnabled([bool]$Enabled) {
     $runAllRecoverFleetButton.IsEnabled = $Enabled
 }
 
-# Elapsed-time display for a Run All run -- hidden and not running the rest of the time, per its
-# own panel's TextBlock (DomainRecoveryRunTimerTextBlock etc.), positioned above the Steps list's
-# own Run-button column. Ticks once a second via a DispatcherTimer rather than comparing wall-clock
-# time only when something else happens to redraw, since nothing else in this row changes while a
-# run is in progress. Returns the running DispatcherTimer so the caller can stop it again in
-# Stop-RunTimer once the whole Run All chain finishes (see each Run All button's own Add_Click).
-function Start-RunTimer([System.Windows.Controls.TextBlock]$TimerTextBlock) {
+# Elapsed-time display for a Run All run -- hidden and not running the rest of the time. Shared
+# across all three Steps panels (Domain Recovery / Additional Cluster Recovery / Recover Fleet)
+# rather than one per panel, since only one Run All can ever be active across the whole app at a
+# time anyway (see Set-AllStepButtonsEnabled) -- positioned in the XAML above the Steps/Variables
+# tab strip, right-aligned to share the same edge as the Steps ListBoxes' own Run-button column.
+# Ticks once a second via a DispatcherTimer rather than comparing wall-clock time only when
+# something else happens to redraw, since nothing else in this row changes while a run is in
+# progress. Returns the running DispatcherTimer so the caller can stop it again in Stop-RunTimer
+# once the whole Run All chain finishes (see each Run All button's own Add_Click).
+#
+# Also resets and (re)starts the Actual Task Time accumulation (see Start-StepCompletionWatcher's
+# own tick, which does the actual scanning/summing) -- $global:actualTaskTimeSeconds starts back at
+# zero and $global:actualTaskTimeScannedLength is pinned to Main's transcript length AT THIS EXACT
+# MOMENT, so only "Completed Task ... in N minutes and M seconds" lines produced by THIS run ever
+# count, never stale ones already sitting in Main's long-lived, append-only transcript from an
+# earlier run.
+function Start-RunTimer {
     $startTime = Get-Date
-    $TimerTextBlock.Text = '00:00:00'
-    $TimerTextBlock.Visibility = 'Visible'
+    $overallRecoveryTimeTextBlock.Text = 'Overall Recovery Time: 00:00:00'
+    $overallRecoveryTimeTextBlock.Visibility = 'Visible'
     $timer = New-Object System.Windows.Threading.DispatcherTimer
     $timer.Interval = [TimeSpan]::FromSeconds(1)
     $timer.Add_Tick({
             $elapsed = (Get-Date) - $startTime
-            $TimerTextBlock.Text = '{0:00}:{1:00}:{2:00}' -f [int]$elapsed.TotalHours, $elapsed.Minutes, $elapsed.Seconds
+            $overallRecoveryTimeTextBlock.Text = 'Overall Recovery Time: {0:00}:{1:00}:{2:00}' -f [int]$elapsed.TotalHours, $elapsed.Minutes, $elapsed.Seconds
         }.GetNewClosure())
     $timer.Start()
+
+    $global:actualTaskTimeSeconds = 0
+    $global:actualTaskTimeScannedLength = 0
+    if ($global:mainConsole -and (Test-Path $global:mainConsole.TranscriptPath)) {
+        $existingText = Get-Content -Path $global:mainConsole.TranscriptPath -Raw -ErrorAction SilentlyContinue
+        if ($existingText) {
+            $global:actualTaskTimeScannedLength = $existingText.Length
+        }
+    }
+    $actualTaskTimeTextBlock.Text = 'Actual Task Time: 00:00:00'
+    $actualTaskTimeTextBlock.Visibility = 'Visible'
+
     return $timer
 }
 
-# Stops the DispatcherTimer Start-RunTimer returned and hides its TextBlock again. $Timer may be
-# $null (e.g. Invoke-StepChain threw before Start-RunTimer was ever called) -- tolerated so the
+# Stops the DispatcherTimer Start-RunTimer returned and hides both timer badges again. $Timer may
+# be $null (e.g. Invoke-StepChain threw before Start-RunTimer was ever called) -- tolerated so the
 # catch block in each Run All handler can call this unconditionally.
-function Stop-RunTimer($Timer, [System.Windows.Controls.TextBlock]$TimerTextBlock) {
+function Stop-RunTimer($Timer) {
     if ($Timer) {
         $Timer.Stop()
     }
-    $TimerTextBlock.Visibility = 'Collapsed'
+    $overallRecoveryTimeTextBlock.Visibility = 'Collapsed'
+    $actualTaskTimeTextBlock.Visibility = 'Collapsed'
 }
 
 # Resets a row to its "in progress" look (undoing any earlier Done/Failed state -- re-running a step
@@ -1658,6 +1689,32 @@ function Start-StepCompletionWatcher {
     $checkTimer = New-Object System.Windows.Threading.DispatcherTimer
     $checkTimer.Interval = [TimeSpan]::FromMilliseconds(500)
     $checkTimer.Add_Tick({
+            # Actual Task Time: sums every "Completed Task <cmdlet> in N minutes and M seconds" line
+            # (LogMessage's own per-cmdlet timing, e.g. "[host] Completed Task Invoke-vCenterRestore
+            # in 4 minutes and 12 seconds") that has newly appeared in Main's transcript since the
+            # last tick -- covers steps that ran directly in Main AND relayed background-thread
+            # output alike, since Close-ParallelConsoleAndFeedBack copies a finished thread's entire
+            # transcript into Main's own before this ever sees it. Runs unconditionally, before the
+            # activeStepWatches early-return below, so the very last task of a whole Run All run
+            # (whose own watch is removed by THIS SAME tick, once found clean/unclean) still gets its
+            # own duration counted rather than being skipped because the watch list is now empty for
+            # any later tick.
+            if ($global:mainConsole -and (Test-Path $global:mainConsole.TranscriptPath)) {
+                $mainTranscriptText = Get-Content -Path $global:mainConsole.TranscriptPath -Raw -ErrorAction SilentlyContinue
+                if ($mainTranscriptText -and $mainTranscriptText.Length -gt $global:actualTaskTimeScannedLength) {
+                    $newTranscriptText = $mainTranscriptText.Substring($global:actualTaskTimeScannedLength)
+                    $global:actualTaskTimeScannedLength = $mainTranscriptText.Length
+                    $durationMatches = [regex]::Matches($newTranscriptText, 'Completed Task \S+ in (\d+) minutes and (\d+) seconds')
+                    if ($durationMatches.Count -gt 0) {
+                        foreach ($durationMatch in $durationMatches) {
+                            $global:actualTaskTimeSeconds += ([int]$durationMatch.Groups[1].Value * 60) + [int]$durationMatch.Groups[2].Value
+                        }
+                        $actualElapsed = [TimeSpan]::FromSeconds($global:actualTaskTimeSeconds)
+                        $actualTaskTimeTextBlock.Text = 'Actual Task Time: {0:00}:{1:00}:{2:00}' -f [int]$actualElapsed.TotalHours, $actualElapsed.Minutes, $actualElapsed.Seconds
+                    }
+                }
+            }
+
             if ($global:activeStepWatches.Count -eq 0) { return }
             $transcriptCache = @{}
             foreach ($path in ($global:activeStepWatches | Select-Object -ExpandProperty TranscriptPath -Unique)) {
@@ -2202,45 +2259,45 @@ $additionalClustersListBox.Add_SelectionChanged({
 $runAllDomainRecoveryButton.Add_Click({
         try {
             Set-AllStepButtonsEnabled $false
-            $domainRecoveryRunTimer = Start-RunTimer $domainRecoveryRunTimerTextBlock
+            $runTimer = Start-RunTimer
             Invoke-StepChain $global:domainRecoveryStepRows -IgnoreThreads:(-not $runAllDomainRecoveryParallelCheckBox.IsChecked) -OnChainComplete {
                 Set-AllStepButtonsEnabled $true
-                Stop-RunTimer $domainRecoveryRunTimer $domainRecoveryRunTimerTextBlock
+                Stop-RunTimer $runTimer
             }.GetNewClosure()
         } catch {
             $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
             Set-AllStepButtonsEnabled $true
-            Stop-RunTimer $domainRecoveryRunTimer $domainRecoveryRunTimerTextBlock
+            Stop-RunTimer $runTimer
         }
     }.GetNewClosure())
 
 $runAllAdditionalClusterRecoveryButton.Add_Click({
         try {
             Set-AllStepButtonsEnabled $false
-            $additionalClusterRecoveryRunTimer = Start-RunTimer $additionalClusterRecoveryRunTimerTextBlock
+            $runTimer = Start-RunTimer
             Invoke-StepChain $global:additionalClusterRecoveryStepRows -IgnoreThreads:(-not $runAllAdditionalClusterRecoveryParallelCheckBox.IsChecked) -OnChainComplete {
                 Set-AllStepButtonsEnabled $true
-                Stop-RunTimer $additionalClusterRecoveryRunTimer $additionalClusterRecoveryRunTimerTextBlock
+                Stop-RunTimer $runTimer
             }.GetNewClosure()
         } catch {
             $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
             Set-AllStepButtonsEnabled $true
-            Stop-RunTimer $additionalClusterRecoveryRunTimer $additionalClusterRecoveryRunTimerTextBlock
+            Stop-RunTimer $runTimer
         }
     }.GetNewClosure())
 
 $runAllRecoverFleetButton.Add_Click({
         try {
             Set-AllStepButtonsEnabled $false
-            $recoverFleetRunTimer = Start-RunTimer $recoverFleetRunTimerTextBlock
+            $runTimer = Start-RunTimer
             Invoke-StepChain $global:recoverFleetStepRows -IgnoreThreads:(-not $runAllRecoverFleetParallelCheckBox.IsChecked) -OnChainComplete {
                 Set-AllStepButtonsEnabled $true
-                Stop-RunTimer $recoverFleetRunTimer $recoverFleetRunTimerTextBlock
+                Stop-RunTimer $runTimer
             }.GetNewClosure()
         } catch {
             $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
             Set-AllStepButtonsEnabled $true
-            Stop-RunTimer $recoverFleetRunTimer $recoverFleetRunTimerTextBlock
+            Stop-RunTimer $runTimer
         }
     }.GetNewClosure())
 
