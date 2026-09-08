@@ -59,14 +59,14 @@
     "description": "",
     "commandLine": "New-UploadAndModifySDDCManagerBackup -targetType $targetType -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -rootUserPassword $rootUserPassword -vcfUserPassword $vcfUserPassword -backupFilePath $vcfbackupFilePath -encryptionPassword $encryptionPassword -extractedSDDCDataFile $extractedSDDCDataFile",
     "condition": [],
-    "threadId": "",
+    "threadId": "4",
     "interactive": false
   },
   {
     "description": "",
     "commandLine": "Invoke-SDDCManagerRestore -extractedSDDCDataFile $extractedSDDCDataFile -backupFilePath $vcfbackupFilePath -vcfUserPassword $vcfUserPassword -localUserPassword $localUserPassword -rootUserPassword $rootUserPassword -encryptionPassword $encryptionPassword",
     "condition": [],
-    "threadId": "",
+    "threadId": "4",
     "interactive": false
   },
   {

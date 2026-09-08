@@ -2098,7 +2098,18 @@ Function New-UploadAndModifySDDCManagerBackup {
 
         #Perform KeyScan
         LogMessage -type INFO -message "[$sddcManagerFQDN] Performing Keyscan on SDDC Manager Appliance"
-        $result = (Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command "ssh-keyscan $mgmtVcenterFqdn").output
+        $result = $null
+        Do {
+            Try {
+                $result = (Invoke-SSHCommand -timeout 30 -sessionid $sshSession.SessionId -command "ssh-keyscan $mgmtVcenterFqdn").output
+            } Catch {
+                $result = $null
+            }
+            If (-not ($result -match "ecdsa-sha2-nistp256|ssh-rsa")) {
+                LogMessage -type INFO -message "[$sddcManagerFQDN] $mgmtVcenterFqdn not yet responding to keyscan, retrying in 10 seconds"
+                Start-Sleep -Seconds 10
+            }
+        } Until ($result -match "ecdsa-sha2-nistp256|ssh-rsa")
 
         #Determine new SSH Keys
         $newNistKey = '"' + (($result | Where-Object { $_ -like "*ecdsa-sha2-nistp256*" }).split("ecdsa-sha2-nistp256 "))[1] + '"'
