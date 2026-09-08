@@ -82,6 +82,7 @@ $browseButton = $window.FindName('BrowseButton')
 $filePathTextBox = $window.FindName('FilePathTextBox')
 $statusTextBlock = $window.FindName('StatusTextBlock')
 $discoveredInfrastructureGroupBox = $window.FindName('DiscoveredInfrastructureGroupBox')
+$discoveredInfrastructureTabControl = $window.FindName('DiscoveredInfrastructureTabControl')
 $domainsListBox = $window.FindName('WorkloadDomainsListBox')
 $additionalClustersListBox = $window.FindName('AdditionalClustersListBox')
 $stepsVariablesGroupBox = $window.FindName('StepsVariablesGroupBox')
@@ -130,8 +131,8 @@ $global:extractedDataLoaded = $false
 # Path to the last-loaded variable answers file, if any -- tracked separately from the textbox-less
 # Load Variables flow so Exit can record it, and Resume can pass it straight back to the same loader.
 $global:variablesAnswersFilePath = $null
-# Set the instant any step's Run is first clicked (manually, or via Run All/a parallel group -- see
-# Invoke-Step) and never cleared for the rest of this process's life. Switching Discovered
+# Set the instant any step's Run is first clicked (manually, or via Run All/a background thread --
+# see Invoke-Step) and never cleared for the rest of this process's life. Switching Discovered
 # Infrastructure's domain/cluster selection mid-run would leave whatever's already running (or
 # already Done) pointed at a target that's no longer the one selected, with no way to tell from the
 # UI alone -- Lock-ElementSelection disables both list boxes outright once this flips true, so
@@ -152,9 +153,10 @@ $global:consoleSequence = 0
 # click; each is removed (stopping that row's watch) once its text is found. See Add-StepWatch.
 $global:activeStepWatches = [System.Collections.Generic.List[object]]::new()
 # The console this app starts with (see New-EmbeddedConsole), plus zero or more Run All has spawned
-# on demand to run a parallel group's non-first members concurrently -- see Invoke-StepGroup. Every
-# other console-aware function (Send-ToConsole, Set-ConsoleFocus, Add-StepWatch, Invoke-Step, the
-# Exit/Closed handlers) defaults to or iterates these rather than assuming there's only ever one.
+# on demand to run a background thread's own steps concurrently with everything else -- see
+# Invoke-StepThread. Every other console-aware function (Send-ToConsole, Set-ConsoleFocus,
+# Add-StepWatch, Invoke-Step, the Exit/Closed handlers) defaults to or iterates these rather than
+# assuming there's only ever one.
 $global:mainConsole = $null
 $global:parallelConsoles = [System.Collections.Generic.List[object]]::new()
 
@@ -221,19 +223,22 @@ function Show-PasswordPromptDialog([string]$Title, [string]$Message) {
 # Reads a plan file fresh from disk every time it's called (no caching) -- the whole point is that
 # editing a plan file and re-selecting the domain (or relaunching) picks the change up immediately,
 # with no recompiling or restarting anything else. Plan files are a JSON array of step objects:
-# [{ "description": "...", "commandLine": "...", "condition": [...], "groupingId": "...",
-# "interactive": false }, ...]. description/condition/groupingId/interactive are all optional and
+# [{ "description": "...", "commandLine": "...", "condition": [...], "threadId": "...",
+# "interactive": false }, ...]. description/condition/threadId/interactive are all optional and
 # default to ''/@()/$false when absent or null. condition (empty array = always run) is an array of
 # PowerShell boolean expressions, ALL of which must be true for the step to run, each evaluated
 # against the currently loaded variable values -- see Test-StepConditions. An array (not a single
 # string) is what lets a step depend on more than one fact at once (e.g. isStretched AND
-# primaryDatastoreType) without cramming both into one expression. groupingId (empty = must run on
-# its own) marks steps that could safely run in parallel with any other step sharing the same
-# non-empty groupingId; Run All bundles a CONSECUTIVE run of rows sharing one into a single parallel
-# group (see Invoke-StepGroup) -- the same id reappearing later, separated by a different row, starts
-# a new group rather than joining the earlier one. interactive (true) marks a step that stops partway
-# through to prompt for real keyboard input (a Read-Host confirmation, a menu choice, ...) rather than
-# running unattended end to end -- New-StepRow shows this as a trailing "*" on the row so Run All
+# primaryDatastoreType) without cramming both into one expression. threadId (empty = runs on the main
+# sequence) marks a step that belongs to a background thread: Run All bundles a CONSECUTIVE run of
+# rows carrying ANY non-empty threadId into one block, starts a fresh console per DISTINCT threadId
+# within it (so several different threads in the same block run concurrently), runs each thread's own
+# rows through that one console in file order, and only continues the main sequence past the whole
+# block once every thread in it has finished -- see Invoke-StepChain/Invoke-StepThread. A threadId
+# reappearing later, separated by a row with no threadId at all, starts a new block/console rather
+# than resuming the earlier one. interactive (true) marks a step that stops partway through to prompt
+# for real keyboard input (a Read-Host confirmation, a menu choice, ...) rather than running
+# unattended end to end -- New-StepRow shows this as a "Requires Input" badge on the row so Run All
 # doesn't look stalled on something that's actually just waiting on the user. $RecoveryType selects
 # the plans\ibr or plans\fdr subfolder.
 function Get-RecoveryPlanSteps([string]$RecoveryType, [string]$PlanFileName) {
@@ -244,11 +249,26 @@ function Get-RecoveryPlanSteps([string]$RecoveryType, [string]$PlanFileName) {
     $rawSteps = @(Get-Content -LiteralPath $planFilePath -Raw | ConvertFrom-Json)
     return @(
         foreach ($rawStep in $rawSteps) {
+            # $condition is set via a plain "$condition = @(...)" assignment INSIDE the if block, not
+            # by using the if/else construct itself as the value ("$condition = if (...) {@(...)} else
+            # {@()}", an earlier version of this) -- confirmed as a real, reproducible PowerShell quirk:
+            # when an if/else is used as a value-producing expression, its result passes through
+            # PowerShell's output stream on the way to the assignment, which silently unwraps a single-
+            # element array back into a bare scalar string. A plain "$var = @(...)" assignment inside the
+            # block is a direct assignment, not pipeline output, so it isn't subject to that unwrapping.
+            # A plan's "isStretched" condition is always exactly one expression, so this hit every single-
+            # condition step in every plan file -- Test-StepCondition would have iterated the resulting
+            # string's individual CHARACTERS as if each were its own condition expression, not the one
+            # real expression it actually is.
+            $condition = @()
+            if ($rawStep.condition) {
+                $condition = @($rawStep.condition | ForEach-Object { [string]$_ })
+            }
             [PSCustomObject]@{
                 Description = if ($rawStep.description) { [string]$rawStep.description } else { '' }
                 CommandLine = [string]$rawStep.commandLine
-                Condition   = if ($rawStep.condition) { @($rawStep.condition | ForEach-Object { [string]$_ }) } else { @() }
-                GroupingId  = if ($rawStep.groupingId) { [string]$rawStep.groupingId } else { '' }
+                Condition   = $condition
+                ThreadId    = if ($rawStep.threadId) { [string]$rawStep.threadId } else { '' }
                 Interactive = [bool]$rawStep.interactive
             }
         }
@@ -314,10 +334,20 @@ function Get-StepReferenceText([object[]]$Steps) {
 function Set-PlanStepsListBox([System.Windows.Controls.ListBox]$ListBox, [object[]]$Steps) {
     $ListBox.Items.Clear()
     $rows = @()
+    # Flips every time a new consecutive run of same-ThreadId rows starts (including a ThreadId
+    # value repeating later, non-consecutively -- that is a distinct thread block, not a
+    # continuation of the earlier one, exactly matching Invoke-StepThreadChain's own grouping) so
+    # New-StepRow's thread circle can alternate colors between blocks.
+    $previousThreadId = $null
+    $colorAlt = $false
     foreach ($step in $Steps) {
-        $row = New-StepRow $step.CommandLine $step.GroupingId $step.Description $step.Interactive
+        if ($step.ThreadId -and $step.ThreadId -ne $previousThreadId) {
+            $colorAlt = -not $colorAlt
+        }
+        $row = New-StepRow $step.CommandLine $step.ThreadId $step.Description $step.Interactive $colorAlt
         [void]$ListBox.Items.Add($row.Panel)
         $rows += $row
+        $previousThreadId = $step.ThreadId
     }
     return $rows
 }
@@ -459,6 +489,25 @@ namespace VCFIRConsole {
         [FieldOffset(4)] public KEY_EVENT_RECORD KeyEvent;
     }
 
+    // For the WH_MOUSE_LL hook -- see Set-ConsoleFocus's own comment on why a hook, not a WPF routed
+    // event, is what's needed to notice a click landing on a reparented console at all.
+    [StructLayout(LayoutKind.Sequential)]
+    public struct POINT {
+        public int X;
+        public int Y;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MSLLHOOKSTRUCT {
+        public POINT pt;
+        public uint mouseData;
+        public uint flags;
+        public uint time;
+        public IntPtr dwExtraInfo;
+    }
+
+    public delegate IntPtr LowLevelMouseProc(int nCode, IntPtr wParam, IntPtr lParam);
+
     public static class NativeMethods {
         public const int GWL_STYLE = -16;
         public const long WS_CHILD = 0x40000000L;
@@ -528,6 +577,25 @@ namespace VCFIRConsole {
 
         [DllImport("kernel32.dll", SetLastError = true)]
         public static extern bool WriteConsoleInput(IntPtr hConsoleInput, INPUT_RECORD[] lpBuffer, uint nLength, out uint lpNumberOfEventsWritten);
+
+        public const int WH_MOUSE_LL = 14;
+        public const int WM_LBUTTONDOWN = 0x0201;
+
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern IntPtr SetWindowsHookEx(int idHook, LowLevelMouseProc lpfn, IntPtr hMod, uint dwThreadId);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool UnhookWindowsHookEx(IntPtr hhk);
+
+        [DllImport("user32.dll")]
+        public static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+        public static extern IntPtr GetModuleHandle(string lpModuleName);
+
+        [DllImport("user32.dll")]
+        public static extern IntPtr WindowFromPoint(POINT p);
 
         // Strips the console window's own title bar/border/system menu so it reads as embedded
         // content rather than a window-within-a-window, and marks it WS_CHILD, which SetParent
@@ -675,11 +743,11 @@ function New-EmbeddedConsole([string]$TabHeader, [switch]$Bootstrap) {
 #
 # Blocks (bounded) until the last priming command sent actually finishes running, before returning,
 # whenever something was sent -- Send-ToConsole only queues keystrokes via WriteConsoleInput, it does
-# not wait for the target process to have consumed and run them yet. Invoke-StepGroup calls
+# not wait for the target process to have consumed and run them yet. Invoke-StepThreadChain calls
 # Add-StepWatch immediately after this returns, and Add-StepWatch's baseline offset has to be taken
 # from AFTER these priming commands have actually finished executing; captured any earlier, their own
-# transcript output would land inside the group step's own watched slice once it does run, and could
-# fail that step's clean-transcript gate for something it never did itself.
+# transcript output would land inside that thread's own first watched step's slice once it does run,
+# and could fail that step's clean-transcript gate for something it never did itself.
 #
 # Both priming commands are real, exported module cmdlets that already log their own "Completed
 # Task" line (see LogMessage) -- waiting for whichever was sent LAST to report that confirms
@@ -728,12 +796,60 @@ function Get-ActiveConsole {
     return $global:mainConsole
 }
 
+# hostBorder's own PreviewMouseDown (see New-EmbeddedConsole) never actually fires for a real
+# physical click landing on a console's on-screen area -- confirmed directly, with a real click, not
+# a simulated one: the reparented console is a genuine, separate child HWND, and Win32 hit-tests and
+# delivers raw mouse input to it directly, entirely bypassing WPF's own routed-event system, which
+# only ever sees clicks that land on WPF-rendered pixels. WPF has no visibility into a click that
+# never reaches it at all -- there's no routed event to listen for here, at any ancestor, no matter
+# how it's wired.
+#
+# A low-level mouse hook is the standard fix for exactly this: it observes raw input system-wide,
+# before per-window routing happens, so it sees a click on the console exactly the same way it would
+# see a click anywhere else. WH_MOUSE_LL specifically runs entirely on the thread that installed it
+# (no DLL injection into other processes involved), which for us is this same UI thread, driven by
+# the same message loop the WPF Dispatcher already pumps -- so calling back into Set-ConsoleFocus
+# from here is safe, provided the callback itself stays fast and never throws (Windows can silently
+# drop a hook that misbehaves, and a hung hook stalls mouse input system-wide, not just for this app).
+# The actual focus-restoring work is deferred via Dispatcher.BeginInvoke rather than done inline, and
+# the whole body is wrapped in try/catch, specifically to keep this callback's own execution trivial
+# and never-throwing.
+#
+# $global:mouseHookProc has to be kept alive in a script-scoped variable, not just handed to
+# SetWindowsHookEx and forgotten -- otherwise .NET's GC is free to collect the delegate while the
+# unmanaged hook still holds a reference to it, which crashes the process the next time Windows tries
+# to call back into freed memory. Always passes the click through untouched (CallNextHookEx) -- this
+# only ever observes clicks, never consumes or alters one, for our own app or any other window.
+$global:mouseHookProc = [VCFIRConsole.LowLevelMouseProc] {
+    param($nCode, $wParam, $lParam)
+    try {
+        if ($nCode -ge 0 -and $wParam.ToInt64() -eq [VCFIRConsole.NativeMethods]::WM_LBUTTONDOWN) {
+            $hookStruct = [System.Runtime.InteropServices.Marshal]::PtrToStructure($lParam, [type][VCFIRConsole.MSLLHOOKSTRUCT])
+            $clickedHwnd = [VCFIRConsole.NativeMethods]::WindowFromPoint($hookStruct.pt)
+            $allConsoles = @($global:mainConsole) + @($global:parallelConsoles)
+            if ($allConsoles | Where-Object { $_ -and $_.Hwnd -eq $clickedHwnd }) {
+                $window.Dispatcher.BeginInvoke([System.Windows.Threading.DispatcherPriority]::Background, [System.Action] { Set-ConsoleFocus }) | Out-Null
+            }
+        }
+    } catch {}
+    return [VCFIRConsole.NativeMethods]::CallNextHookEx([IntPtr]::Zero, $nCode, $wParam, $lParam)
+}
+$global:mouseHookHandle = [VCFIRConsole.NativeMethods]::SetWindowsHookEx([VCFIRConsole.NativeMethods]::WH_MOUSE_LL, $global:mouseHookProc, [VCFIRConsole.NativeMethods]::GetModuleHandle($null), 0)
+if ($global:mouseHookHandle -eq [IntPtr]::Zero) {
+    $statusTextBlock.Text = "Warning: could not install the console click-focus hook (Win32 error $([System.Runtime.InteropServices.Marshal]::GetLastWin32Error())). Clicking directly on a console may not restore keyboard focus to it."
+}
+
 # Kills every console process (Main and every parallel one) when the window actually closes,
 # regardless of which path got it there (the X button or Exit) -- a plain child process isn't torn
 # down automatically just because this process exits, so without this every close would leak
 # orphaned pwsh.exe instances. Reparenting doesn't change this: a console window being a child of
-# ours now makes it even less discoverable/manageable on its own if left behind, not more.
+# ours now makes it even less discoverable/manageable on its own if left behind, not more. Unhooking
+# the mouse hook here too, even though the OS would also clean it up once this process actually
+# exits -- no reason to leave a system-wide hook installed a moment longer than this window exists.
 $window.Add_Closed({
+        if ($global:mouseHookHandle -and $global:mouseHookHandle -ne [IntPtr]::Zero) {
+            [VCFIRConsole.NativeMethods]::UnhookWindowsHookEx($global:mouseHookHandle) | Out-Null
+        }
         foreach ($console in (@($global:mainConsole) + @($global:parallelConsoles))) {
             if ($console -and $console.Process -and -not $console.Process.HasExited) {
                 try { $console.Process.Kill($true) } catch {}
@@ -798,7 +914,7 @@ function Set-ConsoleFocus {
     }
 }
 
-$global:mainConsole = New-EmbeddedConsole -TabHeader 'Main'
+$global:mainConsole = New-EmbeddedConsole -TabHeader 'Main Thread'
 $consoleTabControl.SelectedIndex = 0
 
 # WPF's own default (focus the first focusable control in the visual tree) would land on something
@@ -823,6 +939,7 @@ $consoleTabControl.Add_SelectionChanged({
         Set-ConsoleFocus
     })
 
+
 # The window opens already maximized (see the XAML's WindowState), which means WPF first lays the
 # embedded console out at its declared (smaller) design-time size, then the OS applies the maximize
 # transform a moment later -- DWM composites a frame of the console mid-transition and never gets
@@ -844,7 +961,7 @@ $window.Add_ContentRendered({
 # write to; the real console echoes what's "typed" exactly as it always does, because as far as it
 # knows, that's exactly what happened. $Console defaults to Main, so every existing call site (a
 # lone Run button, Load Variables, the extraction flow, ...) keeps targeting it without having to
-# say so; only Invoke-StepGroup ever passes a specific (parallel) console.
+# say so; only a background thread's own steps (see Invoke-StepThreadChain) ever pass a specific one.
 function Send-ToConsole([string]$CommandLine, $Console) {
     if ($null -eq $Console) {
         $Console = $global:mainConsole
@@ -934,9 +1051,9 @@ function Test-StepTranscriptClean([string]$TranscriptSlice) {
 # line, from whatever that transcript's current length is right now -- so an OLDER completion line
 # already in it from a previous run of the same cmdlet can't cause an immediate false-positive match
 # on a re-run. $OnComplete (optional) is called with one argument -- $isClean, per
-# Test-StepTranscriptClean -- once "Completed Task" is found; Invoke-StepChain/Invoke-StepGroup use
-# this to gate starting the next step (or continuing past a parallel group) on the previous one(s)
-# actually having gone cleanly, not just having finished. $Console defaults to Main.
+# Test-StepTranscriptClean -- once "Completed Task" is found; Invoke-StepChain/Invoke-StepThreadChain
+# use this to gate starting the next step (or continuing past a block of background threads) on the
+# previous one(s) actually having gone cleanly, not just having finished. $Console defaults to Main.
 function Add-StepWatch($Button, [string]$CmdletName, [scriptblock]$OnComplete, $Console) {
     if ($null -eq $Console) {
         $Console = $global:mainConsole
@@ -985,28 +1102,53 @@ function Add-CompletionWatch([string]$CmdletName, [scriptblock]$OnComplete, $Con
         })
 }
 
-# Disables both Discovered Infrastructure list boxes the instant the very first step ever actually
-# starts running, regardless of whether that step belongs to a domain or an additional cluster --
-# switching which element is selected mid-run would leave whatever's already running (or already
-# Done) pointed at a target the UI no longer shows as selected, with no way to tell from looking at
-# it. Idempotent (only sets $global:recoveryRunStarted and updates the status text once) since
+# Disables the WHOLE Discovered Infrastructure tab control -- not just the two list boxes inside it
+# -- the instant the very first step ever actually starts running, regardless of whether that step
+# belongs to a domain or an additional cluster. Switching which element is selected mid-run would
+# leave whatever's already running (or already Done) pointed at a target the UI no longer shows as
+# selected, with no way to tell from looking at it.
+#
+# Disabling only the two ListBoxes (an earlier version of this) left the tab strip around them still
+# fully interactive -- clicking a tab header is a normal, enabled WPF interaction, and WPF's own
+# keyboard focus has nothing to do with the embedded console's real Win32 focus (that's what
+# Set-ConsoleFocus/AttachThreadInput exist for at all): confirmed for real, clicking there moved real
+# keyboard focus onto the tab header, silently stranding a console mid-prompt with no way to type into
+# it again -- nothing about clicking a tab header is one of Set-ConsoleFocus's own trigger points.
+# WPF's focus system refuses to focus a disabled element by any means (mouse, Tab key, or a
+# programmatic Focus() call), so disabling the TabControl itself -- IsEnabled cascades to every
+# descendant, tab headers included -- closes that off at the source instead of chasing every
+# individual focusable thing inside it.
+#
+# Idempotent (only sets $global:recoveryRunStarted and updates the status text once) since
 # Invoke-Step calls this unconditionally on every single Run, not just the first.
 function Lock-ElementSelection {
     if ($global:recoveryRunStarted) {
         return
     }
     $global:recoveryRunStarted = $true
-    $domainsListBox.IsEnabled = $false
-    $additionalClustersListBox.IsEnabled = $false
-    $statusTextBlock.Text = 'A run has started -- domain/cluster selection is now locked. Exit and relaunch to recover a different element.'
+    $discoveredInfrastructureTabControl.IsEnabled = $false
+    $statusTextBlock.Text = 'Run Started. Navigation to other domains/clusters disabled.'
 }
 
 # Resets a row to its "in progress" look (undoing any earlier Done/Failed state -- re-running a step
 # that previously completed should stop showing that until it completes again) and starts watching
 # for its completion. $OnStepComplete (optional) is threaded straight through to Add-StepWatch --
-# see Invoke-StepChain/Invoke-StepGroup. $Console (optional, defaults to Main) is which console the
-# command actually runs in -- only a parallel group's non-first members ever pass a different one.
-function Invoke-Step($Button, [string]$CmdletName, [string]$CommandLine, [scriptblock]$OnStepComplete, $Console) {
+# see Invoke-StepChain/Invoke-StepThreadChain. $Console (optional, defaults to Main) is which console
+# the command actually runs in -- only a background thread's own steps ever pass a different one.
+#
+# $Interactive (see the "interactive" plan-step property, and New-StepRow's "Requires Input" badge)
+# switches straight to $Console's own tab and re-asserts real focus on it BEFORE the command is even
+# sent -- proactively, not waiting for the user to notice a stalled prompt and click something. This
+# matters most for a background thread: an interactive step can be running in a console that isn't
+# the one currently on screen, and nothing else would ever bring it to the front on its own -- without
+# this, the prompt would sit there looking identical to any other console output, with nothing to
+# make the user look at that specific tab at all.
+# Deliberately untyped (not [bool]) -- PowerShell throws when an explicit $null argument is bound to
+# a [bool]-typed parameter (a real, confirmed quirk: a [bool] CAST handles $null fine and yields
+# $false, but parameter-binding's own conversion path does not), and a row missing an Interactive
+# property entirely (as any hand-built row not created via New-StepRow would) supplies exactly that.
+# A plain "if ($Interactive)" below treats $null the same as $false, with no such trap.
+function Invoke-Step($Button, [string]$CmdletName, [string]$CommandLine, [scriptblock]$OnStepComplete, $Console, $Interactive) {
     if ($null -eq $Console) {
         $Console = $global:mainConsole
     }
@@ -1014,6 +1156,10 @@ function Invoke-Step($Button, [string]$CmdletName, [string]$CommandLine, [script
     $Button.Content = 'Running'
     $Button.Background = [System.Windows.Media.Brushes]::Orange
     Add-StepWatch $Button $CmdletName $OnStepComplete $Console
+    if ($Interactive) {
+        $consoleTabControl.SelectedItem = $Console.TabItem
+        Set-ConsoleFocus
+    }
     Send-ToConsole $CommandLine $Console
 }
 
@@ -1024,97 +1170,167 @@ function Invoke-Step($Button, [string]$CmdletName, [string]$CommandLine, [script
 # fails any of those stops the whole chain right there instead of sending the next step's command
 # into a plan that assumed the previous one actually worked.
 #
-# A run of two or more consecutive rows sharing the same non-empty GroupingId is dispatched to
-# Invoke-StepGroup instead, so they run in parallel (each in its own console) rather than one at a
-# time; the chain only continues past the whole group once every member has finished cleanly. Rows
-# must be consecutive in the plan file to be bundled -- a GroupingId reappearing later, separated by
-# an ungrouped or differently-grouped row, starts a new group rather than joining the earlier one.
-# -IgnoreGrouping (driven by each panel's own "Run parallel operations where possible" checkbox --
-# unchecked means this) skips that dispatch entirely, running every row one at a time regardless of
-# GroupingId; it's threaded through every recursive call so unchecking it stays in effect for the
-# rest of that particular Run All run, not just its first row.
-function Invoke-StepChain([object[]]$Rows, [switch]$IgnoreGrouping) {
+# A run of two or more consecutive rows carrying ANY non-empty ThreadId is dispatched as a block of
+# background threads instead of one at a time -- see Invoke-StepThread. Rows must be consecutive in
+# the plan file to be part of the same block -- a ThreadId reappearing later, separated by a row with
+# no ThreadId at all, starts a new block (and a fresh console) rather than resuming the earlier one.
+# -IgnoreThreads (driven by each panel's own "Run steps in parallel threads where possible" checkbox
+# -- unchecked means this) skips that dispatch entirely, running every row one at a time regardless of
+# ThreadId; it's threaded through every recursive call so unchecking it stays in effect for the rest
+# of that particular Run All run, not just its first row.
+function Invoke-StepChain([object[]]$Rows, [switch]$IgnoreThreads) {
     if ($Rows.Count -eq 0) {
         return
     }
     $row = $Rows[0]
-    if ($row.GroupingId -and -not $IgnoreGrouping) {
-        $groupEnd = 1
-        while ($groupEnd -lt $Rows.Count -and $Rows[$groupEnd].GroupingId -eq $row.GroupingId) {
-            $groupEnd++
+    if ($row.ThreadId -and -not $IgnoreThreads) {
+        $blockEnd = 1
+        while ($blockEnd -lt $Rows.Count -and $Rows[$blockEnd].ThreadId) {
+            $blockEnd++
         }
-        if ($groupEnd -gt 1) {
-            $groupRows = @($Rows | Select-Object -First $groupEnd)
-            $remainingRows = @($Rows | Select-Object -Skip $groupEnd)
-            Invoke-StepGroup $groupRows $remainingRows
-            return
+        $threadBlockRows = @($Rows | Select-Object -First $blockEnd)
+        $remainingRows = @($Rows | Select-Object -Skip $blockEnd)
+
+        # A block can carry more than one DISTINCT ThreadId (e.g. two unrelated threads' steps
+        # interleaved in the plan file) -- bucketing by ThreadId, preserving each thread's own file
+        # order, is what lets "start every thread in this block at once, each running its own rows in
+        # sequence" and "one thread, several sequential steps" both fall out of the same logic.
+        $threadOrder = [System.Collections.Generic.List[string]]::new()
+        $threadRowsById = @{}
+        foreach ($blockRow in $threadBlockRows) {
+            if (-not $threadRowsById.ContainsKey($blockRow.ThreadId)) {
+                $threadRowsById[$blockRow.ThreadId] = [System.Collections.Generic.List[object]]::new()
+                [void]$threadOrder.Add($blockRow.ThreadId)
+            }
+            $threadRowsById[$blockRow.ThreadId].Add($blockRow)
         }
+
+        # $state is a shared, mutated-in-place hashtable captured by every thread's own OnComplete
+        # closure (via .GetNewClosure()) -- safe because it's a reference type and none of the
+        # closures ever reassign $state itself, only its .Remaining/.AllClean entries. A thread
+        # finishing uncleanly does not attempt to stop the other still-running threads in this same
+        # block; the chain simply refuses to continue past the block once they've ALL finished if any
+        # of them were unclean.
+        $state = @{ Remaining = $threadOrder.Count; AllClean = $true }
+        $onThreadComplete = {
+            param($isClean)
+            if (-not $isClean) {
+                $state.AllClean = $false
+            }
+            $state.Remaining--
+            if ($state.Remaining -eq 0) {
+                if ($state.AllClean) {
+                    Invoke-StepChain $remainingRows -IgnoreThreads:$IgnoreThreads
+                } else {
+                    $statusTextBlock.Text = 'Run All stopped: one or more threads did not complete cleanly -- check each console/transcript before retrying.'
+                }
+            }
+        }.GetNewClosure()
+
+        foreach ($threadId in $threadOrder) {
+            Invoke-StepThread @($threadRowsById[$threadId]) $onThreadComplete
+        }
+        return
     }
     $remainingRows = @($Rows | Select-Object -Skip 1)
     Invoke-Step $row.Button $row.CmdletName $row.CommandLine {
         param($isClean)
         if ($isClean) {
-            Invoke-StepChain $remainingRows -IgnoreGrouping:$IgnoreGrouping
+            Invoke-StepChain $remainingRows -IgnoreThreads:$IgnoreThreads
         } else {
             $statusTextBlock.Text = "Run All stopped: $($row.CmdletName) did not complete cleanly -- check the console/transcript for warnings, errors, or a PowerShell error record before retrying."
         }
-    }.GetNewClosure()
+    }.GetNewClosure() $null $row.Interactive
 }
 
-# Runs every row in $GroupRows at once, each in its own freshly bootstrapped console
-# (New-EmbeddedConsole -Bootstrap, which imports the extracted-data path and answers file so the new
-# console's session has the same variables as Main) -- none of them run in Main, including the
-# first, so Main stays free rather than being tied up by whichever group member happened to be listed
-# first in the plan file. Only resumes the chain with $AfterGroupRows once every member has reported
-# back. $state is a shared, mutated-in-place hashtable captured by every member's OnComplete closure
-# (via .GetNewClosure()) -- safe because it's a reference type and none of the closures ever reassign
-# $state itself, only its .Remaining/.AllClean entries. Per the confirmed design, a member finishing
-# uncleanly does not attempt to stop its still-running siblings; the chain simply refuses to continue
-# once they've all finished if any of them were unclean. Only ever reached with grouping enabled (see
-# Invoke-StepChain), so its own continuation into $AfterGroupRows never needs -IgnoreGrouping itself.
-function Invoke-StepGroup([object[]]$GroupRows, [object[]]$AfterGroupRows) {
-    $state = @{ Remaining = $GroupRows.Count; AllClean = $true }
-    $onMemberComplete = {
-        param($isClean)
-        if (-not $isClean) {
-            $state.AllClean = $false
-        }
-        $state.Remaining--
-        if ($state.Remaining -eq 0) {
-            if ($state.AllClean) {
-                Invoke-StepChain $AfterGroupRows
-            } else {
-                $statusTextBlock.Text = "Run All stopped: one or more steps in group '$($GroupRows[0].GroupingId)' did not complete cleanly -- check each console/transcript before retrying."
-            }
-        }
-    }.GetNewClosure()
+# One background thread: a freshly bootstrapped console (New-EmbeddedConsole -Bootstrap, which
+# imports the extracted-data path and answers file so the new console's session has the same
+# variables as Main) that runs $ThreadRows through it IN SEQUENCE, exactly like the main sequence
+# does but scoped to this one console -- see Invoke-StepThreadChain. None of a thread's own rows ever
+# run in Main, so Main stays free rather than being tied up by whichever thread happened to be listed
+# first in the plan file. Relays everything the thread printed back into Main and tears the console
+# down (Close-ParallelConsoleAndFeedBack) the moment its OWN sequence finishes, whether that's because
+# every row in it completed cleanly or because one of them failed and stopped the rest of this
+# thread's rows -- either way, $OnThreadComplete (Invoke-StepChain's own per-block join) only fires
+# after that relay/teardown has already happened, so this thread's tab and output are gone/relayed by
+# the time anything reacts to it finishing.
+function Invoke-StepThread([object[]]$ThreadRows, [scriptblock]$OnThreadComplete) {
+    $console = New-EmbeddedConsole -TabHeader $ThreadRows[0].CmdletName -Bootstrap
+    $global:parallelConsoles.Add($console)
 
-    foreach ($row in $GroupRows) {
-        $console = New-EmbeddedConsole -TabHeader $row.CmdletName -Bootstrap
-        $global:parallelConsoles.Add($console)
-        Invoke-Step $row.Button $row.CmdletName $row.CommandLine $onMemberComplete $console
+    $threadStartOffset = 0
+    if (Test-Path $console.TranscriptPath) {
+        $existingText = Get-Content -Path $console.TranscriptPath -Raw -ErrorAction SilentlyContinue
+        if ($existingText) {
+            $threadStartOffset = $existingText.Length
+        }
     }
+
+    Invoke-StepThreadChain $ThreadRows $console {
+        param($isClean)
+        $fullTranscriptText = Get-Content -Path $console.TranscriptPath -Raw -ErrorAction SilentlyContinue
+        $relayText = if ($fullTranscriptText -and $fullTranscriptText.Length -gt $threadStartOffset) { $fullTranscriptText.Substring($threadStartOffset) } else { '' }
+        Close-ParallelConsoleAndFeedBack $console $relayText
+        & $OnThreadComplete $isClean
+    }.GetNewClosure()
 }
 
-# Returns [PSCustomObject]@{ Panel; CommandLine; Button; CmdletName; GroupingId; Interactive }, not
+# Runs $Rows one at a time in $Console, in file order -- the same three-gate logic Invoke-StepChain
+# itself uses for the main sequence, just bound to one specific (non-Main) console throughout instead
+# of resolving $Console fresh for every row. A row that finishes uncleanly stops the REST OF THIS
+# THREAD's own rows (mirroring how an unclean row already stops everything after it on the main
+# sequence) without touching any other concurrently running thread. $OnComplete fires exactly once,
+# with $true once every row has run cleanly or $false the moment one doesn't.
+function Invoke-StepThreadChain([object[]]$Rows, $Console, [scriptblock]$OnComplete) {
+    if ($Rows.Count -eq 0) {
+        & $OnComplete $true
+        return
+    }
+    $row = $Rows[0]
+    $remainingRows = @($Rows | Select-Object -Skip 1)
+    Invoke-Step $row.Button $row.CmdletName $row.CommandLine {
+        param($isClean)
+        if ($isClean) {
+            Invoke-StepThreadChain $remainingRows $Console $OnComplete
+        } else {
+            & $OnComplete $false
+        }
+    }.GetNewClosure() $Console $row.Interactive
+}
+
+# Returns [PSCustomObject]@{ Panel; CommandLine; Button; CmdletName; ThreadId; Interactive }, not
 # just the row's visual Panel -- the other fields are needed separately so a tab's "Run All" button
 # can replay every row's Run action, and so Invoke-Step/Add-StepWatch can update the right row's
 # button and watch for the right cmdlet name without re-parsing the rendered list.
-function New-StepRow([string]$CommandLine, [string]$GroupingId, [string]$Description, [bool]$Interactive) {
-    $panel = New-Object System.Windows.Controls.DockPanel
+function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Description, $Interactive, [bool]$ThreadColorAlt = $false) {
+    # A Grid with fixed-width columns, not a DockPanel -- a DockPanel only stacks whichever badges a
+    # given row actually has, so a row with just one badge (or none) leaves the other badge's spot
+    # collapsed and everything shifts to fill the gap. Every row gets the same 4 columns (name /
+    # thread circle / interactive pill / Run) whether or not it has content for a given column, so
+    # every column's contents line up vertically down the whole list like a real table.
+    $panel = New-Object System.Windows.Controls.Grid
     $panel.Margin = '2,0,2,0'
     if ($Description) {
         $panel.ToolTip = $Description
     }
+    $nameColumn = New-Object System.Windows.Controls.ColumnDefinition
+    $nameColumn.Width = New-Object System.Windows.GridLength(1, [System.Windows.GridUnitType]::Star)
+    $threadColumn = New-Object System.Windows.Controls.ColumnDefinition
+    $threadColumn.Width = New-Object System.Windows.GridLength(30)
+    $interactiveColumn = New-Object System.Windows.Controls.ColumnDefinition
+    $interactiveColumn.Width = New-Object System.Windows.GridLength(100)
+    $runColumn = New-Object System.Windows.Controls.ColumnDefinition
+    $runColumn.Width = New-Object System.Windows.GridLength(71)
+    [void]$panel.ColumnDefinitions.Add($nameColumn)
+    [void]$panel.ColumnDefinitions.Add($threadColumn)
+    [void]$panel.ColumnDefinitions.Add($interactiveColumn)
+    [void]$panel.ColumnDefinitions.Add($runColumn)
 
     # Only the cmdlet name is shown; the full command line (with its parameters) stays in the
     # module and is only ever sent to the console, never rendered in the Steps list. Variable
     # values referenced in it (e.g. $targetFqdn) come from whatever was loaded via "Load
-    # Variables..." -- they're already set in the console session by the time Run is clicked. A
-    # trailing "*" (see the Steps panel's own legend text in the XAML) is appended here, on the
-    # label itself, rather than as some separate badge, since it needs to read as part of the name.
+    # Variables..." -- they're already set in the console session by the time Run is clicked.
     $cmdletName = ($CommandLine -split '\s+', 2)[0]
-    $displayName = if ($Interactive) { "$cmdletName*" } else { $cmdletName }
 
     $runButton = New-Object System.Windows.Controls.Button
     $runButton.Content = 'Run'
@@ -1123,42 +1339,82 @@ function New-StepRow([string]$CommandLine, [string]$GroupingId, [string]$Descrip
     $runButton.Width = 65
     $runButton.Padding = '6,2'
     $runButton.Margin = '6,0,0,0'
-    [System.Windows.Controls.DockPanel]::SetDock($runButton, [System.Windows.Controls.Dock]::Right)
+    $runButton.HorizontalAlignment = 'Right'
+    [System.Windows.Controls.Grid]::SetColumn($runButton, 3)
     $runButton.Add_Click({
             try {
-                Invoke-Step $runButton $cmdletName $CommandLine
+                Invoke-Step $runButton $cmdletName $CommandLine $null $null $Interactive
             } catch {
                 $statusTextBlock.Text = "Run button failed: $($_.Exception.Message)"
             }
         }.GetNewClosure())
 
-    # Run All groups consecutive rows sharing this GroupingId into a parallel batch (see
-    # Invoke-StepGroup); manually clicking Run on a single row never does, even if it's grouped.
-    if ($GroupingId) {
-        $groupBadge = New-Object System.Windows.Controls.TextBlock
-        $groupBadge.Text = "[$GroupingId]"
-        $groupBadge.Foreground = [System.Windows.Media.Brushes]::Gray
-        $groupBadge.FontStyle = 'Italic'
-        $groupBadge.VerticalAlignment = 'Center'
-        $groupBadge.Margin = '8,0,6,0'
-        [System.Windows.Controls.DockPanel]::SetDock($groupBadge, [System.Windows.Controls.Dock]::Right)
+    # Run All bundles a consecutive run of rows carrying a ThreadId into background threads (see
+    # Invoke-StepThread); manually clicking Run on a single row never does, even if it has one. A
+    # numbered circle, not a "[1]" text badge -- easier to scan at a glance, and its background
+    # alternates between two colors (set by the caller, Set-PlanStepsListBox, via $ThreadColorAlt)
+    # each time a new consecutive run of same-ThreadId rows starts, so where one thread's block of
+    # steps ends and the next begins is visible without having to read the numbers themselves.
+    if ($ThreadId) {
+        $threadCircleText = New-Object System.Windows.Controls.TextBlock
+        $threadCircleText.Text = $ThreadId
+        $threadCircleText.Foreground = [System.Windows.Media.Brushes]::White
+        $threadCircleText.FontSize = 10
+        $threadCircleText.FontWeight = 'Bold'
+        $threadCircleText.HorizontalAlignment = 'Center'
+        $threadCircleText.VerticalAlignment = 'Center'
+        $threadCircle = New-Object System.Windows.Controls.Border
+        $threadCircle.Width = 22
+        $threadCircle.Height = 22
+        $threadCircle.CornerRadius = 11
+        $threadCircle.Background = if ($ThreadColorAlt) {
+            [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.Color]::FromRgb(0x2F, 0x9E, 0x8C))
+        } else {
+            [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.Color]::FromRgb(0x3E, 0x6B, 0xB8))
+        }
+        $threadCircle.HorizontalAlignment = 'Center'
+        $threadCircle.VerticalAlignment = 'Center'
+        $threadCircle.Child = $threadCircleText
+        [System.Windows.Controls.Grid]::SetColumn($threadCircle, 1)
+    }
+
+    # A pill-style badge, not a trailing "*" on the name (an earlier version of this) -- the user's
+    # own feedback was that a bare asterisk read as too subtle to actually notice. Slate grey with
+    # white text is deliberately neutral -- distinct from every runtime state color already in use
+    # here (Orange/Green/Firebrick for Running/Done/Failed) since this marks a fixed property of the
+    # step, not something that changes as it runs.
+    if ($Interactive) {
+        $interactiveBadgeText = New-Object System.Windows.Controls.TextBlock
+        $interactiveBadgeText.Text = 'Requires Input'
+        $interactiveBadgeText.Foreground = [System.Windows.Media.Brushes]::White
+        $interactiveBadgeText.FontSize = 10.5
+        $interactiveBadgeText.FontWeight = 'SemiBold'
+        $interactiveBadge = New-Object System.Windows.Controls.Border
+        $interactiveBadge.Background = [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.Color]::FromRgb(0x70, 0x80, 0x90))
+        $interactiveBadge.CornerRadius = 8
+        $interactiveBadge.Padding = '6,1'
+        $interactiveBadge.Margin = '8,0,6,0'
+        $interactiveBadge.HorizontalAlignment = 'Left'
+        $interactiveBadge.VerticalAlignment = 'Center'
+        $interactiveBadge.Child = $interactiveBadgeText
+        [System.Windows.Controls.Grid]::SetColumn($interactiveBadge, 2)
     }
 
     $label = New-Object System.Windows.Controls.TextBlock
-    $label.Text = $displayName
+    $label.Text = $cmdletName
     $label.FontFamily = New-Object System.Windows.Media.FontFamily('Consolas')
     $label.VerticalAlignment = 'Center'
+    [System.Windows.Controls.Grid]::SetColumn($label, 0)
 
-    # DockPanel stacks same-side children in the order they're added -- the first Right-docked
-    # child added ends up rightmost, and each one after lands just to its left. Adding runButton
-    # before groupBadge (rather than after) is what keeps Run pinned to the far-right edge with the
-    # group badge immediately to its left, not the other way around.
-    [void]$panel.Children.Add($runButton)
-    if ($groupBadge) {
-        [void]$panel.Children.Add($groupBadge)
-    }
     [void]$panel.Children.Add($label)
-    return [PSCustomObject]@{ Panel = $panel; CommandLine = $CommandLine; Button = $runButton; CmdletName = $cmdletName; GroupingId = $GroupingId; Interactive = $Interactive }
+    if ($threadCircle) {
+        [void]$panel.Children.Add($threadCircle)
+    }
+    if ($interactiveBadge) {
+        [void]$panel.Children.Add($interactiveBadge)
+    }
+    [void]$panel.Children.Add($runButton)
+    return [PSCustomObject]@{ Panel = $panel; CommandLine = $CommandLine; Button = $runButton; CmdletName = $cmdletName; ThreadId = $ThreadId; Interactive = $Interactive }
 }
 
 # Variable names referenced across $CommandLines (e.g. "$targetFqdn"), in order of first
@@ -1216,12 +1472,13 @@ function New-VariableRow([string]$Name, [string]$Value, [scriptblock]$OnValueCha
     return $panel
 }
 
-# A parallel console only ever runs one step in its whole lifetime (Invoke-StepGroup spawns a brand
-# new one per group member, never reuses one) -- so once that step is done, whether clean or not,
-# there's nothing left for that console to do. This relays everything it printed for that step
-# ($OutputText -- the same StartOffset-anchored slice Test-StepTranscriptClean already checked) back
-# into Main, then tears the console down: Stop-Transcript, kill the process, drop its tab, and drop
-# it from $global:parallelConsoles.
+# A parallel console belongs to exactly one background thread for its whole lifetime (Invoke-
+# StepThread spawns a brand new one per thread, never reuses one across threads) -- so once that
+# thread's own sequence of steps is done, whether every one of them was clean or not, there's nothing
+# left for that console to do. This relays everything the WHOLE thread printed ($OutputText -- from
+# right after its bootstrap priming finished, through its last step, built by Invoke-StepThread
+# itself) back into Main, then tears the console down: Stop-Transcript, kill the process, drop its
+# tab, and drop it from $global:parallelConsoles.
 #
 # The relay goes through a plain temp file rather than embedding $OutputText straight into a typed
 # command -- a step's real output can be arbitrarily long and contain quotes, backticks, `$`, anything
@@ -1229,14 +1486,20 @@ function New-VariableRow([string]$Name, [string]$Value, [scriptblock]$OnValueCha
 # to run in Main's session. Piping a short, fixed "Get-Content -LiteralPath '...'" command through
 # instead sidesteps all of that: the only thing that ever varies is a file path, escaped the same way
 # every other Send-ToConsole call in this file already does.
+#
+# The header/footer text itself uses square brackets around the console's name, not single quotes --
+# with no embedded quote to escape, Protect-SingleQuotes never has anything to double, so what's
+# actually typed (and therefore echoed) in Main stays readable instead of showing doubled ''quote''
+# marks. -ForegroundColor Cyan on just the header/footer (never used by LogMessage's own palette --
+# Green/White/Yellow/Red) makes the relay boundary visually distinct from the real recovery output
+# it's wrapping, closer to how Main's own console already reads, rather than a plain uncolored dump.
 function Close-ParallelConsoleAndFeedBack($Console, [string]$OutputText) {
     try {
         $relayFilePath = Join-Path $WorkingDirectory "vcfir-parallel-output-$(Get-Date -Format 'yyyyMMdd-HHmmss')-$($Console.Process.Id).log"
         Set-Content -LiteralPath $relayFilePath -Value $OutputText -Encoding utf8
         $escapedRelayPath = Protect-SingleQuotes $relayFilePath
-        $header = Protect-SingleQuotes "----- Output from parallel console '$($Console.TabItem.Header)' -----"
-        $footer = Protect-SingleQuotes "----- End of output from '$($Console.TabItem.Header)' -----"
-        Send-ToConsole "Write-Host '$header'; Get-Content -LiteralPath '$escapedRelayPath' -Raw; Write-Host '$footer'"
+        $consoleName = $Console.TabItem.Header
+        Send-ToConsole "Write-Host `"===== Output from [$consoleName] =====`" -ForegroundColor Cyan; Get-Content -LiteralPath '$escapedRelayPath' -Raw; Write-Host `"===== End of output from [$consoleName] =====`" -ForegroundColor Cyan"
     } catch {
         $statusTextBlock.Text = "Failed to relay parallel console output to Main: $($_.Exception.Message)"
     }
@@ -1259,9 +1522,9 @@ function Close-ParallelConsoleAndFeedBack($Console, [string]$OutputText) {
 # since its Run was clicked) for its own "Completed Task <cmdlet>" line. A row is only in this list
 # between being Run and being found Done (see Add-StepWatch) -- once found, it's removed, which is
 # what stops the monitor for that row until Run is clicked again. Watches on different rows can
-# share the same TranscriptPath (Main, most of the time) or each have their own (a parallel group's
-# non-first members) -- $transcriptCache reads each distinct path at most once per tick regardless
-# of how many watches point at it.
+# share the same TranscriptPath (Main, most of the time, or a thread's own console across that
+# thread's several rows) or each have their own -- $transcriptCache reads each distinct path at most
+# once per tick regardless of how many watches point at it.
 function Start-StepCompletionWatcher {
     $checkTimer = New-Object System.Windows.Threading.DispatcherTimer
     $checkTimer.Interval = [TimeSpan]::FromMilliseconds(500)
@@ -1307,13 +1570,11 @@ function Start-StepCompletionWatcher {
                     }
                 }
                 $global:activeStepWatches = [System.Collections.Generic.List[object]]@($global:activeStepWatches | Where-Object { $_ -ne $watch })
-                # Only ever a parallel console here -- Main's own watches carry $global:mainConsole,
-                # which never gets torn down mid-run. Relaying and closing before OnComplete fires
-                # means the tab and its output are already gone/relayed by the time anything reacts
-                # to this step finishing (e.g. Invoke-StepGroup deciding whether to continue the chain).
-                if ($watch.Console -and $watch.Console -ne $global:mainConsole) {
-                    Close-ParallelConsoleAndFeedBack $watch.Console $newText
-                }
+                # No per-watch console teardown here -- a background thread's console runs several
+                # rows in sequence now, not just one, so closing/relaying it has to wait until the
+                # WHOLE thread finishes, not just its first row. Invoke-StepThread does that itself,
+                # inside the OnComplete it passes to Invoke-StepThreadChain, once that thread's own
+                # last row (clean or not) reports back here.
                 if ($watch.OnComplete) {
                     & $watch.OnComplete $isClean
                 }
@@ -1811,7 +2072,7 @@ $additionalClustersListBox.Add_SelectionChanged({
 
 $runAllDomainRecoveryButton.Add_Click({
         try {
-            Invoke-StepChain $global:domainRecoveryStepRows -IgnoreGrouping:(-not $runAllDomainRecoveryParallelCheckBox.IsChecked)
+            Invoke-StepChain $global:domainRecoveryStepRows -IgnoreThreads:(-not $runAllDomainRecoveryParallelCheckBox.IsChecked)
         } catch {
             $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
         }
@@ -1819,7 +2080,7 @@ $runAllDomainRecoveryButton.Add_Click({
 
 $runAllAdditionalClusterRecoveryButton.Add_Click({
         try {
-            Invoke-StepChain $global:additionalClusterRecoveryStepRows -IgnoreGrouping:(-not $runAllAdditionalClusterRecoveryParallelCheckBox.IsChecked)
+            Invoke-StepChain $global:additionalClusterRecoveryStepRows -IgnoreThreads:(-not $runAllAdditionalClusterRecoveryParallelCheckBox.IsChecked)
         } catch {
             $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
         }
@@ -1827,7 +2088,7 @@ $runAllAdditionalClusterRecoveryButton.Add_Click({
 
 $runAllRecoverFleetButton.Add_Click({
         try {
-            Invoke-StepChain $global:recoverFleetStepRows -IgnoreGrouping:(-not $runAllRecoverFleetParallelCheckBox.IsChecked)
+            Invoke-StepChain $global:recoverFleetStepRows -IgnoreThreads:(-not $runAllRecoverFleetParallelCheckBox.IsChecked)
         } catch {
             $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
         }

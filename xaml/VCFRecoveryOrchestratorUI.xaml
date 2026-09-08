@@ -408,9 +408,8 @@
                                 <DockPanel x:Name="DomainRecoveryPanel" Visibility="Collapsed">
                                     <StackPanel Orientation="Horizontal" DockPanel.Dock="Top" Margin="0,0,0,8">
                                         <Button x:Name="RunAllDomainRecoveryButton" Content="Run All" HorizontalAlignment="Left" />
-                                        <CheckBox x:Name="RunAllDomainRecoveryParallelCheckBox" Content="Run parallel operations where possible" IsChecked="True" VerticalAlignment="Center" Margin="12,0,0,0" />
+                                        <CheckBox x:Name="RunAllDomainRecoveryParallelCheckBox" Content="Run parallel tasks using multiple threads (numbered circles)" IsChecked="True" VerticalAlignment="Center" Margin="12,0,0,0" />
                                     </StackPanel>
-                                    <TextBlock DockPanel.Dock="Top" Text="* indicates a step that requires user interaction" FontStyle="Italic" FontSize="11" Foreground="{StaticResource SubtleTextBrush}" Margin="0,0,0,6" />
                                     <ListBox x:Name="DomainRecoveryStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" />
                                 </DockPanel>
                                 <!-- Populated by selecting a row in Discovered Infrastructure's Additional
@@ -420,9 +419,8 @@
                                 <DockPanel x:Name="AdditionalClusterRecoveryPanel" Visibility="Collapsed">
                                     <StackPanel Orientation="Horizontal" DockPanel.Dock="Top" Margin="0,0,0,8">
                                         <Button x:Name="RunAllAdditionalClusterRecoveryButton" Content="Run All" HorizontalAlignment="Left" />
-                                        <CheckBox x:Name="RunAllAdditionalClusterRecoveryParallelCheckBox" Content="Run parallel operations where possible" IsChecked="True" VerticalAlignment="Center" Margin="12,0,0,0" />
+                                        <CheckBox x:Name="RunAllAdditionalClusterRecoveryParallelCheckBox" Content="Run parallel tasks using multiple threads (numbered circles)" IsChecked="True" VerticalAlignment="Center" Margin="12,0,0,0" />
                                     </StackPanel>
-                                    <TextBlock DockPanel.Dock="Top" Text="* indicates a step that requires user interaction" FontStyle="Italic" FontSize="11" Foreground="{StaticResource SubtleTextBrush}" Margin="0,0,0,6" />
                                     <ListBox x:Name="AdditionalClusterRecoveryStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" />
                                 </DockPanel>
                                 <!-- FDR's single whole-fleet plan (plans/fdr/fdr-failover-plan.json), loaded as soon
@@ -432,9 +430,8 @@
                                 <DockPanel x:Name="RecoverFleetPanel" Visibility="Collapsed">
                                     <StackPanel Orientation="Horizontal" DockPanel.Dock="Top" Margin="0,0,0,8">
                                         <Button x:Name="RunAllRecoverFleetButton" Content="Run All" HorizontalAlignment="Left" />
-                                        <CheckBox x:Name="RunAllRecoverFleetParallelCheckBox" Content="Run parallel operations where possible" IsChecked="True" VerticalAlignment="Center" Margin="12,0,0,0" />
+                                        <CheckBox x:Name="RunAllRecoverFleetParallelCheckBox" Content="Run parallel tasks using multiple threads (numbered circles)" IsChecked="True" VerticalAlignment="Center" Margin="12,0,0,0" />
                                     </StackPanel>
-                                    <TextBlock DockPanel.Dock="Top" Text="* indicates a step that requires user interaction" FontStyle="Italic" FontSize="11" Foreground="{StaticResource SubtleTextBrush}" Margin="0,0,0,6" />
                                     <ListBox x:Name="RecoverFleetStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" />
                                 </DockPanel>
                             </Grid>
@@ -451,8 +448,8 @@
                  Windows' own console host does that, exactly as reliably as it always has, and we
                  only relocate each already-correct window to sit inside its own tab instead of
                  floating separately. Starts empty; the loader script adds the "Main" tab at startup
-                 and further tabs on demand, one per additional console Run All spawns to run a
-                 parallel group's non-first members concurrently with everything else. -->
+                 and further tabs on demand, one per background thread Run All spawns to run that
+                 thread's own steps concurrently with everything else. -->
             <!-- Padding's bottom component trimmed to 0 (from the shared GroupBox style's default of
                  10 on every side) and a small negative top margin on the TabControl itself together
                  close up the header-to-content gap that's appropriate for a card full of prose or a

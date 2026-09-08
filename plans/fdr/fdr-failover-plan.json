@@ -3,49 +3,49 @@
     "description": "Retrieve Component Details from VCF Operations",
     "commandLine": "Get-VcfOperationsRegisteredComponents -VcfOperationsFqdn $VcfOperationsFqdn -Username $Username -Password $Password -AuthSource $AuthSource",
     "condition": [],
-    "groupingId": "",
+    "threadId": "",
     "interactive": false
   },
   {
     "description": "Extract Fleet VIP Address Configuration from the Source Services Runtime Backup",
     "commandLine": "New-ExtractVcfmsBackup -LocalArchivePath $LocalArchivePath -EncryptionPassphrase $EncryptionPassphrase -OutputDir $OutputDir -ServicesRuntimeFqdn $ServicesRuntimeFqdn -ServicesRuntimePassword $ServicesRuntimePassword",
     "condition": [],
-    "groupingId": "",
+    "threadId": "",
     "interactive": false
   },
   {
     "description": "Apply Fleet VIP on Recovery VCF Management Services Instance",
     "commandLine": "Set-VcfmsFleetIdentity -BackupYamlDir $BackupYamlDir -KubeconfigPath $KubeconfigPath -ServicesRuntimeFqdn $ServicesRuntimeFqdn -ServicesRuntimePassword $ServicesRuntimePassword -FleetFqdn $FleetFqdn -FleetVip $FleetVip",
     "condition": [],
-    "groupingId": "",
+    "threadId": "",
     "interactive": false
   },
   {
     "description": "Update SFTP Settings on a new Services Runtime Instance",
     "commandLine": "Set-ServicesRuntimeSftpBackupSettings -ServicesRuntimeFqdn $ServicesRuntimeFqdn -ServicesRuntimePassword $ServicesRuntimePassword -ComponentId $ComponentId -SftpHost $SftpHost -SftpUsername $SftpUsername -SftpPassword $SftpPassword -SftpDirectory $SftpDirectory -EncryptionPassphrase $EncryptionPassphrase",
     "condition": [],
-    "groupingId": "",
+    "threadId": "",
     "interactive": false
   },
   {
     "description": "Retrieve a List of Backups for VCF Management Services Fleet Components ($vspId is the ID of the VCF Management Services instance from the \"Retrieve Component Details from VCF Operations\" step above)",
     "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpServer -sftpUser $sftpUser -sftpPassword $sftpPassword -sftpServerBackupPath $sftpServerBackupPath -vspId $vspId -componentNames $componentNames",
     "condition": [],
-    "groupingId": "",
+    "threadId": "",
     "interactive": false
   },
   {
     "description": "Restore the Fleet Components on the Recovery VCF Management Services Instance",
     "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $ServicesRuntimeFqdn -ServicesRuntimePassword $ServicesRuntimePassword -RestoreJsonFile $RestoreJsonFile",
     "condition": [],
-    "groupingId": "",
+    "threadId": "",
     "interactive": false
   },
   {
     "description": "Update the Identity Broker VIP Address",
     "commandLine": "Set-ServicesRuntimeComponentVips -ServicesRuntimeFqdn $ServicesRuntimeFqdn -ServicesRuntimePassword $ServicesRuntimePassword -ComponentType $ComponentType -Vips $vips",
     "condition": [],
-    "groupingId": "",
+    "threadId": "",
     "interactive": false
   }
 ]
