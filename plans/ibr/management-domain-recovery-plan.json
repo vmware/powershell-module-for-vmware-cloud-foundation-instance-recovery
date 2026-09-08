@@ -3,115 +3,134 @@
     "description": "",
     "commandLine": "New-PrepareManagementHostNetworking -extractedSDDCDataFile $extractedSDDCDataFile -mtu 8900",
     "condition": [],
-    "groupingId": ""
+    "groupingId": "",
+    "interactive": false
   },
   {
     "description": "",
     "commandLine": "Add-VMKernelsToManagementHosts -extractedSDDCDataFile $extractedSDDCDataFile",
     "condition": [],
-    "groupingId": ""
+    "groupingId": "",
+    "interactive": false
   },
   {
     "description": "",
     "commandLine": "New-SingleHostVsanDatastore -extractedSDDCDataFile $extractedSDDCDataFile",
     "condition": [],
-    "groupingId": ""
+    "groupingId": "",
+    "interactive": true
   },
   {
     "description": "",
     "commandLine": "New-vCenterOvaDeployment -targetType $targetType -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -restoredvCenterDeploymentSize $restoredvCenterDeploymentSize -vCenterOvaFile $vCenterOvaFile",
     "condition": [],
-    "groupingId": "1"
+    "groupingId": "1",
+    "interactive": false
   },
   {
     "description": "",
     "commandLine": "New-NSXManagerOvaDeployment -targetType $targetType -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -restoredNsxManagerDeploymentSize $restoredNsxManagerDeploymentSize -nsxManagerOvaFile $nsxManagerOvaFile",
     "condition": [],
-    "groupingId": "1"
+    "groupingId": "1",
+    "interactive": true
   },
   {
     "description": "",
     "commandLine": "New-SDDCManagerOvaDeployment -targetType $targetType -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -sddcManagerOvaFile $sddcManagerOvaFile -rootUserPassword $rootUserPassword -vcfUserPassword $vcfUserPassword -localUserPassword $localUserPassword -basicAuthUserPassword $basicAuthUserPassword",
     "condition": [],
-    "groupingId": "1"
+    "groupingId": "1",
+    "interactive": false
   },
   {
     "description": "",
     "commandLine": "Invoke-vCenterRestore -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -vCenterBackupPath $vCenterBackupPath -locationtype $locationtype -locationUser $locationUser -locationPassword $locationPassword",
     "condition": [],
-    "groupingId": "2"
+    "groupingId": "2",
+    "interactive": false
   },
   {
     "description": "",
     "commandLine": "Invoke-NSXManagerRestore -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -sftpServer $sftpServer -sftpUser $sftpUser -sftpPassword $sftpPassword -sftpServerBackupPath $sftpServerBackupPath -backupPassphrase $nsxBackupPassphrase",
     "condition": [],
-    "groupingId": "2"
+    "groupingId": "2",
+    "interactive": true
   },
   {
     "description": "",
     "commandLine": "New-UploadAndModifySDDCManagerBackup -targetType $targetType -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -rootUserPassword $rootUserPassword -vcfUserPassword $vcfUserPassword -backupFilePath $vcfbackupFilePath -encryptionPassword $encryptionPassword -extractedSDDCDataFile $extractedSDDCDataFile",
     "condition": [],
-    "groupingId": "2"
+    "groupingId": "2",
+    "interactive": false
   },
   {
     "description": "",
     "commandLine": "Invoke-SDDCManagerRestore -extractedSDDCDataFile $extractedSDDCDataFile -backupFilePath $vcfbackupFilePath -vcfUserPassword $vcfUserPassword -localUserPassword $localUserPassword -rootUserPassword $rootUserPassword -encryptionPassword $encryptionPassword",
     "condition": [],
-    "groupingId": ""
+    "groupingId": "",
+    "interactive": false
   },
   {
     "description": "",
     "commandLine": "Update-ExtractedSDDCData -extractedSDDCDataFile $extractedSDDCDataFile -sddcManagerFQDN $sddcManagerFQDN -sddcManagerAdmin $sddcManagerAdmin -sddcManagerAdminPassword $sddcManagerAdminPassword -vCenterFQDN $restoredVcenterFqdn",
     "condition": [],
-    "groupingId": ""
+    "groupingId": "",
+    "interactive": false
   },
   {
     "description": "Record the Cluster Settings from the Restored vCenter",
     "commandLine": "Backup-ClusterVMOverrides -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName",
     "condition": [],
-    "groupingId": ""
+    "groupingId": "",
+    "interactive": false
   },
   {
     "description": "",
     "commandLine": "Backup-ClusterVMLocations -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName",
     "condition": [],
-    "groupingId": ""
+    "groupingId": "",
+    "interactive": false
   },
   {
     "description": "",
     "commandLine": "Backup-ClusterDRSGroupsAndRules -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName",
     "condition": [],
-    "groupingId": ""
+    "groupingId": "",
+    "interactive": false
   },
   {
     "description": "",
     "commandLine": "Backup-ClusterVMTags -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName",
     "condition": [],
-    "groupingId": ""
+    "groupingId": "",
+    "interactive": false
   },
   {
     "description": "",
     "commandLine": "Remove-NonResponsiveHosts -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -NsxManagerFQDN $restoredNsxManagerFqdn -NsxManagerAdmin $restoredNsxManagerAdmin -NsxManagerAdminPassword $restoredNsxManagerAdminPassword -NsxManagerRootPassword $restoredNsxManagerRootPassword",
     "condition": [],
-    "groupingId": ""
+    "groupingId": "",
+    "interactive": false
   },
   {
     "description": "",
     "commandLine": "Add-HostsToCluster -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -sddcManagerFqdn $sddcManagerFqdn -sddcManagerAdmin $sddcManagerAdmin -sddcManagerAdminPassword $sddcManagerAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile",
     "condition": [],
-    "groupingId": ""
+    "groupingId": "",
+    "interactive": false
   },
   {
     "description": "",
     "commandLine": "New-RebuiltVdsConfiguration -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile",
     "condition": [],
-    "groupingId": ""
+    "groupingId": "",
+    "interactive": true
   },
   {
     "description": "",
     "commandLine": "Watch-NsxHostTransportNodeInstallation -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile",
     "condition": [],
-    "groupingId": ""
+    "groupingId": "",
+    "interactive": false
   },
   {
     "description": "",
@@ -119,13 +138,15 @@
     "condition": [
       "$primaryDatastoreType -eq 'VSAN'"
     ],
-    "groupingId": ""
+    "groupingId": "",
+    "interactive": false
   },
   {
     "description": "",
     "commandLine": "Set-ManagementDatastorePolicy -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile",
     "condition": [],
-    "groupingId": ""
+    "groupingId": "",
+    "interactive": false
   },
   {
     "description": "",
@@ -133,42 +154,49 @@
     "condition": [
       "$isStretched -eq 't'"
     ],
-    "groupingId": ""
+    "groupingId": "",
+    "interactive": true
   },
   {
     "description": "",
     "commandLine": "Clear-vCenterAlarms -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword",
     "condition": [],
-    "groupingId": ""
+    "groupingId": "",
+    "interactive": false
   },
   {
     "description": "",
     "commandLine": "Update-DomainDatastoreID -extractedSDDCDataFile $extractedSDDCDataFile -vCenterFqdn $vCenterFqdn -clusterName $clusterName -VcfUserPassword $VcfUserPassword -RootPassword $RootPassword",
     "condition": [],
-    "groupingId": ""
+    "groupingId": "",
+    "interactive": false
   },
   {
     "description": "",
     "commandLine": "Update-ClusterHostSourceIDs -extractedSDDCDataFile $extractedSDDCDataFile -vCenterFqdn $vCenterFqdn -clusterName $clusterName -VcfUserPassword $VcfUserPassword -RootPassword $RootPassword",
     "condition": [],
-    "groupingId": ""
+    "groupingId": "",
+    "interactive": false
   },
   {
     "description": "",
     "commandLine": "Invoke-SddcManagerSSHKeyRefresh -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -clusterName $clusterName -workloadDomain $workloadDomain -VcfUserPassword $VcfUserPassword",
     "condition": [],
-    "groupingId": ""
+    "groupingId": "",
+    "interactive": false
   },
   {
     "description": "",
     "commandLine": "Resolve-PhysicalHostServiceAccounts -targetFQDN $restoredVcenterFqdn -targetAdmin $restoredVcenterAdmin -targetAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -svcAccountPassword $svcAccountPassword -sddcManagerFqdn $sddcManagerFqdn -sddcManagerAdmin $sddcManagerAdmin -sddcManagerAdminPassword $sddcManagerAdminPassword",
     "condition": [],
-    "groupingId": ""
+    "groupingId": "",
+    "interactive": false
   },
   {
     "description": "",
     "commandLine": "Invoke-NSXEdgeClusterRecoverySelective -nsxManagerFqdn $restoredNsxManagerFqdn -nsxManagerAdmin $restoredNsxManagerAdmin -nsxManagerAdminPassword $restoredNsxManagerAdminPassword -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredvCenterAdmin -vCenterAdminPassword $restoredvCenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile",
     "condition": [],
-    "groupingId": ""
+    "groupingId": "",
+    "interactive": false
   }
 ]

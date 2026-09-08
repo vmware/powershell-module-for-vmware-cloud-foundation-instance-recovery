@@ -3,102 +3,119 @@
     "description": "Record the Cluster Settings from the Restored vCenter",
     "commandLine": "Backup-ClusterVMOverrides -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName",
     "condition": [],
-    "groupingId": ""
+    "groupingId": "",
+    "interactive": false
   },
   {
     "description": "",
     "commandLine": "Backup-ClusterVMLocations -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName",
     "condition": [],
-    "groupingId": ""
+    "groupingId": "",
+    "interactive": false
   },
   {
     "description": "",
     "commandLine": "Backup-ClusterDRSGroupsAndRules -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName",
     "condition": [],
-    "groupingId": ""
+    "groupingId": "",
+    "interactive": false
   },
   {
     "description": "",
     "commandLine": "Backup-ClusterVMTags -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName",
     "condition": [],
-    "groupingId": ""
+    "groupingId": "",
+    "interactive": false
   },
   {
     "description": "Remove Non-Responsive ESX Hosts from the Inventory",
     "commandLine": "Remove-NonResponsiveHosts -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -NsxManagerFQDN $restoredNsxManagerFqdn -NsxManagerAdmin $restoredNsxManagerAdmin -NsxManagerAdminPassword $restoredNsxManagerAdminPassword -NsxManagerRootPassword $restoredNsxManagerRootPassword",
     "condition": [],
-    "groupingId": ""
+    "groupingId": "",
+    "interactive": false
   },
   {
     "description": "Add New Hosts to the Cluster in the Restored vCenter",
     "commandLine": "Add-HostsToCluster -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -sddcManagerFqdn $sddcManagerFqdn -sddcManagerAdmin $sddcManagerAdmin -sddcManagerAdminPassword $sddcManagerAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile",
     "condition": [],
-    "groupingId": ""
+    "groupingId": "",
+    "interactive": false
   },
   {
     "description": "Migrate the ESX Hosts and VMkernel Adapters to the vSphere Distributed Switch on the Restored vCenter",
     "commandLine": "New-RebuiltVdsConfiguration -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile",
     "condition": [],
-    "groupingId": ""
+    "groupingId": "",
+    "interactive": false
   },
   {
     "description": "Wait for NSX Installation to Complete on Hosts",
     "commandLine": "Watch-NsxHostTransportNodeInstallation -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile",
     "condition": [],
-    "groupingId": ""
+    "groupingId": "",
+    "interactive": false
   },
   {
     "description": "Add VMkernel Adapters to the ESX Hosts",
     "commandLine": "Add-VMKernelsToHost -targetFqdn $restoredvCenterFQDN -targetAdmin $restoredvCenterAdmin -targetAdminPassword $restoredvCenterAdminPassword -clusterName $clusterName -sddcManagerFqdn $sddcManagerFqdn -sddcManagerAdmin $sddcManagerAdmin -sddcManagerAdminPassword $sddcManagerAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile",
     "condition": [],
-    "groupingId": ""
+    "groupingId": "",
+    "interactive": false
   },
   {
     "description": "Reconfigure Stretched Cluster",
     "commandLine": "New-ReconfiguredVsanStretchedCluster -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile",
     "condition": ["$isStretched -eq 't'"],
-    "groupingId": ""
+    "groupingId": "",
+    "interactive": false
   },
   {
     "description": "Recreate a vSAN Datastore",
     "commandLine": "New-RebuiltVsanDatastore -targetFqdn $restoredVcenterFqdn -targetAdmin $restoredVcenterAdmin -targetAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile",
     "condition": [],
-    "groupingId": ""
+    "groupingId": "",
+    "interactive": false
   },
   {
     "description": "Update Datastore ID",
     "commandLine": "Update-DomainDatastoreID -extractedSDDCDataFile $extractedSDDCDataFile -vCenterFqdn $vCenterFqdn -clusterName $clusterName -VcfUserPassword $VcfUserPassword -RootPassword $RootPassword",
     "condition": [],
-    "groupingId": ""
+    "groupingId": "",
+    "interactive": false
   },
   {
     "description": "Update Host IDs",
     "commandLine": "Update-ClusterHostSourceIDs -extractedSDDCDataFile $extractedSDDCDataFile -vCenterFqdn $vCenterFqdn -clusterName $clusterName -VcfUserPassword $VcfUserPassword -RootPassword $RootPassword",
     "condition": [],
-    "groupingId": ""
+    "groupingId": "",
+    "interactive": false
   },
   {
     "description": "Update SSH Keys for Hosts",
     "commandLine": "Invoke-SddcManagerSSHKeyRefresh -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -clusterName $clusterName -VcfUserPassword $VcfUserPassword",
     "condition": [],
-    "groupingId": ""
+    "groupingId": "",
+    "interactive": false
   },
   {
     "description": "Synchronize the SDDC Manager Service Accounts on the ESX Host",
     "commandLine": "Resolve-PhysicalHostServiceAccounts -targetFqdn $restoredVcenterFqdn -targetAdmin $restoredVcenterAdmin -targetAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -svcAccountPassword $svcAccountPassword -sddcManagerFqdn $sddcManagerFqdn -sddcManagerAdmin $sddcManagerAdmin -sddcManagerAdminPassword $sddcManagerAdminPassword",
     "condition": [],
-    "groupingId": ""
+    "groupingId": "",
+    "interactive": false
   },
   {
     "description": "Redeploy NSX Edge Cluster (selective recovery)",
     "commandLine": "Invoke-NSXEdgeClusterRecoverySelective -nsxManagerFqdn $restoredNsxManagerFqdn -nsxManagerAdmin $restoredNsxManagerAdmin -nsxManagerAdminPassword $restoredNsxManagerAdminPassword -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredvCenterAdmin -vCenterAdminPassword $restoredvCenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile",
     "condition": [],
-    "groupingId": ""
+    "groupingId": "",
+    "interactive": false
   },
   {
     "description": "Wait for NSX-T Edge Deployment to Complete",
     "commandLine": "Wait-NSXTEdgeDeployment -nsxtManagerFqdn $restoredNsxManagerFqdn -nsxtUsername $restoredNsxManagerAdmin -nsxtPassword $restoredNsxManagerAdminPassword -edgeNamePattern $workloadDomain -expectedEdgeCount 2 -pollIntervalSeconds 30 -timeoutMinutes 30",
     "condition": [],
-    "groupingId": ""
+    "groupingId": "",
+    "interactive": false
   }
 ]

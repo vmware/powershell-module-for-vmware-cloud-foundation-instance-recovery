@@ -130,6 +130,13 @@ $global:extractedDataLoaded = $false
 # Path to the last-loaded variable answers file, if any -- tracked separately from the textbox-less
 # Load Variables flow so Exit can record it, and Resume can pass it straight back to the same loader.
 $global:variablesAnswersFilePath = $null
+# Set the instant any step's Run is first clicked (manually, or via Run All/a parallel group -- see
+# Invoke-Step) and never cleared for the rest of this process's life. Switching Discovered
+# Infrastructure's domain/cluster selection mid-run would leave whatever's already running (or
+# already Done) pointed at a target that's no longer the one selected, with no way to tell from the
+# UI alone -- Lock-ElementSelection disables both list boxes outright once this flips true, so
+# picking a different element requires Exit + a fresh launch instead.
+$global:recoveryRunStarted = $false
 
 # Completion tracking, attempt 5: a PowerShell transcript of the console, read from disk. Unaffected
 # by the move away from the terminal control -- it never depended on that control's own rendering
@@ -214,17 +221,21 @@ function Show-PasswordPromptDialog([string]$Title, [string]$Message) {
 # Reads a plan file fresh from disk every time it's called (no caching) -- the whole point is that
 # editing a plan file and re-selecting the domain (or relaunching) picks the change up immediately,
 # with no recompiling or restarting anything else. Plan files are a JSON array of step objects:
-# [{ "description": "...", "commandLine": "...", "condition": [...], "groupingId": "..." }, ...].
-# description/condition/groupingId are all optional and default to ''/@() when absent or null.
-# condition (empty array = always run) is an array of PowerShell boolean expressions, ALL of which
-# must be true for the step to run, each evaluated against the currently loaded variable values --
-# see Test-StepConditions. An array (not a single string) is what lets a step depend on more than
-# one fact at once (e.g. isStretched AND primaryDatastoreType) without cramming both into one
-# expression. groupingId (empty = must run on its own) marks steps that could safely run in parallel
-# with any other step sharing the same non-empty groupingId; Run All bundles a CONSECUTIVE run of
-# rows sharing one into a single parallel group (see Invoke-StepGroup) -- the same id reappearing
-# later, separated by a different row, starts a new group rather than joining the earlier one.
-# $RecoveryType selects the plans\ibr or plans\fdr subfolder.
+# [{ "description": "...", "commandLine": "...", "condition": [...], "groupingId": "...",
+# "interactive": false }, ...]. description/condition/groupingId/interactive are all optional and
+# default to ''/@()/$false when absent or null. condition (empty array = always run) is an array of
+# PowerShell boolean expressions, ALL of which must be true for the step to run, each evaluated
+# against the currently loaded variable values -- see Test-StepConditions. An array (not a single
+# string) is what lets a step depend on more than one fact at once (e.g. isStretched AND
+# primaryDatastoreType) without cramming both into one expression. groupingId (empty = must run on
+# its own) marks steps that could safely run in parallel with any other step sharing the same
+# non-empty groupingId; Run All bundles a CONSECUTIVE run of rows sharing one into a single parallel
+# group (see Invoke-StepGroup) -- the same id reappearing later, separated by a different row, starts
+# a new group rather than joining the earlier one. interactive (true) marks a step that stops partway
+# through to prompt for real keyboard input (a Read-Host confirmation, a menu choice, ...) rather than
+# running unattended end to end -- New-StepRow shows this as a trailing "*" on the row so Run All
+# doesn't look stalled on something that's actually just waiting on the user. $RecoveryType selects
+# the plans\ibr or plans\fdr subfolder.
 function Get-RecoveryPlanSteps([string]$RecoveryType, [string]$PlanFileName) {
     $planFilePath = Join-Path (Join-Path $PlansPath $RecoveryType) $PlanFileName
     if (-not (Test-Path -LiteralPath $planFilePath)) {
@@ -238,6 +249,7 @@ function Get-RecoveryPlanSteps([string]$RecoveryType, [string]$PlanFileName) {
                 CommandLine = [string]$rawStep.commandLine
                 Condition   = if ($rawStep.condition) { @($rawStep.condition | ForEach-Object { [string]$_ }) } else { @() }
                 GroupingId  = if ($rawStep.groupingId) { [string]$rawStep.groupingId } else { '' }
+                Interactive = [bool]$rawStep.interactive
             }
         }
     )
@@ -303,7 +315,7 @@ function Set-PlanStepsListBox([System.Windows.Controls.ListBox]$ListBox, [object
     $ListBox.Items.Clear()
     $rows = @()
     foreach ($step in $Steps) {
-        $row = New-StepRow $step.CommandLine $step.GroupingId $step.Description
+        $row = New-StepRow $step.CommandLine $step.GroupingId $step.Description $step.Interactive
         [void]$ListBox.Items.Add($row.Panel)
         $rows += $row
     }
@@ -973,6 +985,22 @@ function Add-CompletionWatch([string]$CmdletName, [scriptblock]$OnComplete, $Con
         })
 }
 
+# Disables both Discovered Infrastructure list boxes the instant the very first step ever actually
+# starts running, regardless of whether that step belongs to a domain or an additional cluster --
+# switching which element is selected mid-run would leave whatever's already running (or already
+# Done) pointed at a target the UI no longer shows as selected, with no way to tell from looking at
+# it. Idempotent (only sets $global:recoveryRunStarted and updates the status text once) since
+# Invoke-Step calls this unconditionally on every single Run, not just the first.
+function Lock-ElementSelection {
+    if ($global:recoveryRunStarted) {
+        return
+    }
+    $global:recoveryRunStarted = $true
+    $domainsListBox.IsEnabled = $false
+    $additionalClustersListBox.IsEnabled = $false
+    $statusTextBlock.Text = 'A run has started -- domain/cluster selection is now locked. Exit and relaunch to recover a different element.'
+}
+
 # Resets a row to its "in progress" look (undoing any earlier Done/Failed state -- re-running a step
 # that previously completed should stop showing that until it completes again) and starts watching
 # for its completion. $OnStepComplete (optional) is threaded straight through to Add-StepWatch --
@@ -982,6 +1010,7 @@ function Invoke-Step($Button, [string]$CmdletName, [string]$CommandLine, [script
     if ($null -eq $Console) {
         $Console = $global:mainConsole
     }
+    Lock-ElementSelection
     $Button.Content = 'Running'
     $Button.Background = [System.Windows.Media.Brushes]::Orange
     Add-StepWatch $Button $CmdletName $OnStepComplete $Console
@@ -1067,11 +1096,11 @@ function Invoke-StepGroup([object[]]$GroupRows, [object[]]$AfterGroupRows) {
     }
 }
 
-# Returns [PSCustomObject]@{ Panel; CommandLine; Button; CmdletName; GroupingId }, not just the row's
-# visual Panel -- the other fields are needed separately so a tab's "Run All" button can replay every
-# row's Run action, and so Invoke-Step/Add-StepWatch can update the right row's button and watch for
-# the right cmdlet name without re-parsing the rendered list.
-function New-StepRow([string]$CommandLine, [string]$GroupingId, [string]$Description) {
+# Returns [PSCustomObject]@{ Panel; CommandLine; Button; CmdletName; GroupingId; Interactive }, not
+# just the row's visual Panel -- the other fields are needed separately so a tab's "Run All" button
+# can replay every row's Run action, and so Invoke-Step/Add-StepWatch can update the right row's
+# button and watch for the right cmdlet name without re-parsing the rendered list.
+function New-StepRow([string]$CommandLine, [string]$GroupingId, [string]$Description, [bool]$Interactive) {
     $panel = New-Object System.Windows.Controls.DockPanel
     $panel.Margin = '2,0,2,0'
     if ($Description) {
@@ -1081,8 +1110,11 @@ function New-StepRow([string]$CommandLine, [string]$GroupingId, [string]$Descrip
     # Only the cmdlet name is shown; the full command line (with its parameters) stays in the
     # module and is only ever sent to the console, never rendered in the Steps list. Variable
     # values referenced in it (e.g. $targetFqdn) come from whatever was loaded via "Load
-    # Variables..." -- they're already set in the console session by the time Run is clicked.
+    # Variables..." -- they're already set in the console session by the time Run is clicked. A
+    # trailing "*" (see the Steps panel's own legend text in the XAML) is appended here, on the
+    # label itself, rather than as some separate badge, since it needs to read as part of the name.
     $cmdletName = ($CommandLine -split '\s+', 2)[0]
+    $displayName = if ($Interactive) { "$cmdletName*" } else { $cmdletName }
 
     $runButton = New-Object System.Windows.Controls.Button
     $runButton.Content = 'Run'
@@ -1113,7 +1145,7 @@ function New-StepRow([string]$CommandLine, [string]$GroupingId, [string]$Descrip
     }
 
     $label = New-Object System.Windows.Controls.TextBlock
-    $label.Text = $cmdletName
+    $label.Text = $displayName
     $label.FontFamily = New-Object System.Windows.Media.FontFamily('Consolas')
     $label.VerticalAlignment = 'Center'
 
@@ -1126,7 +1158,7 @@ function New-StepRow([string]$CommandLine, [string]$GroupingId, [string]$Descrip
         [void]$panel.Children.Add($groupBadge)
     }
     [void]$panel.Children.Add($label)
-    return [PSCustomObject]@{ Panel = $panel; CommandLine = $CommandLine; Button = $runButton; CmdletName = $cmdletName; GroupingId = $GroupingId }
+    return [PSCustomObject]@{ Panel = $panel; CommandLine = $CommandLine; Button = $runButton; CmdletName = $cmdletName; GroupingId = $GroupingId; Interactive = $Interactive }
 }
 
 # Variable names referenced across $CommandLines (e.g. "$targetFqdn"), in order of first

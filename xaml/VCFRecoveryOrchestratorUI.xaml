@@ -245,8 +245,13 @@
                      selection; FDR has a single whole-fleet plan (Recover Fleet) that needs none
                      of that, so picking it collapses Data Source/Discovered Infrastructure and
                      swaps the Steps panel over. See the .ps1's Recovery Type Checked handlers. -->
+                <!-- Only a negative top margin on the content here, not the Console pane's extra
+                     Padding-bottom-to-0 trick as well, since these are Auto-height cards stacked in
+                     a scrolling list, where the card's own bottom padding is still doing real work
+                     (breathing room before the next card), unlike Console, which fills all the
+                     vertical space its column has. -->
                 <GroupBox Grid.Row="0" Header="Recovery Type" Margin="0,0,0,12">
-                    <StackPanel>
+                    <StackPanel Margin="0,-8,0,0">
                         <RadioButton x:Name="IbrRecoveryTypeRadio" Content="Instance Backup &amp; Restore (IBR)" GroupName="RecoveryType" IsChecked="True" Margin="0,0,0,6" />
                         <RadioButton x:Name="FdrRecoveryTypeRadio" Content="Fleet Disaster Recovery (FDR)" GroupName="RecoveryType" />
                     </StackPanel>
@@ -259,7 +264,7 @@
                      action, not a plan. Loading already-extracted data instead populates Discovered
                      Infrastructure. -->
                 <GroupBox x:Name="DataSourceGroupBox" Grid.Row="1" Header="Data Source" Margin="0,0,0,12">
-                    <StackPanel>
+                    <StackPanel Margin="0,-8,0,0">
                         <RadioButton x:Name="ExtractBackupRadio" Content="Extract SDDC Manager Backup" GroupName="DataSource" IsChecked="True" Margin="0,0,0,6" />
                         <RadioButton x:Name="UseExtractedDataRadio" Content="Load Extracted SDDC Data" GroupName="DataSource" Margin="0,0,0,6" />
                         <DockPanel Margin="0,4,0,0">
@@ -278,8 +283,8 @@
                      Import-ExtractedSddcDataFile in the .ps1); there's nothing meaningful to
                      show in either tab before then. -->
                 <GroupBox x:Name="DiscoveredInfrastructureGroupBox" Grid.Row="2" Header="Discovered Infrastructure" Margin="0,0,0,12" Visibility="Collapsed">
-                    <DockPanel>
-                    <TextBlock DockPanel.Dock="Top" Text="Select element to recover" FontWeight="Normal" Foreground="{StaticResource SubtleTextBrush}" Margin="0,0,0,8" />
+                    <DockPanel Margin="0,-8,0,0">
+                    <TextBlock DockPanel.Dock="Top" Text="Click on the element you wish to recover" FontWeight="Normal" Foreground="{StaticResource SubtleTextBrush}" Margin="0,0,0,8" />
                     <TabControl x:Name="DiscoveredInfrastructureTabControl" Background="Transparent" BorderThickness="0">
                         <!-- Column headers are static markup; the ListBox's own rows are built to
                              match, using the same SharedSizeGroup names, in the .ps1 (see
@@ -366,7 +371,7 @@
                      pane's height instead of splitting it permanently, since you're typically
                      working in one or the other, not both at once. -->
                 <GroupBox x:Name="StepsVariablesGroupBox" Grid.Row="3" Header="Recovery Tasks" Visibility="Collapsed">
-                    <TabControl x:Name="StepsVariablesTabControl" Background="Transparent" BorderThickness="0">
+                    <TabControl x:Name="StepsVariablesTabControl" Background="Transparent" BorderThickness="0" Margin="0,-8,0,0">
                         <TabItem Header="Variables">
                             <DockPanel Margin="0,8,0,0">
                                 <!-- New Variables File starts from the variables the currently-loaded
@@ -405,6 +410,7 @@
                                         <Button x:Name="RunAllDomainRecoveryButton" Content="Run All" HorizontalAlignment="Left" />
                                         <CheckBox x:Name="RunAllDomainRecoveryParallelCheckBox" Content="Run parallel operations where possible" IsChecked="True" VerticalAlignment="Center" Margin="12,0,0,0" />
                                     </StackPanel>
+                                    <TextBlock DockPanel.Dock="Top" Text="* indicates a step that requires user interaction" FontStyle="Italic" FontSize="11" Foreground="{StaticResource SubtleTextBrush}" Margin="0,0,0,6" />
                                     <ListBox x:Name="DomainRecoveryStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" />
                                 </DockPanel>
                                 <!-- Populated by selecting a row in Discovered Infrastructure's Additional
@@ -416,6 +422,7 @@
                                         <Button x:Name="RunAllAdditionalClusterRecoveryButton" Content="Run All" HorizontalAlignment="Left" />
                                         <CheckBox x:Name="RunAllAdditionalClusterRecoveryParallelCheckBox" Content="Run parallel operations where possible" IsChecked="True" VerticalAlignment="Center" Margin="12,0,0,0" />
                                     </StackPanel>
+                                    <TextBlock DockPanel.Dock="Top" Text="* indicates a step that requires user interaction" FontStyle="Italic" FontSize="11" Foreground="{StaticResource SubtleTextBrush}" Margin="0,0,0,6" />
                                     <ListBox x:Name="AdditionalClusterRecoveryStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" />
                                 </DockPanel>
                                 <!-- FDR's single whole-fleet plan (plans/fdr/fdr-failover-plan.json), loaded as soon
@@ -427,6 +434,7 @@
                                         <Button x:Name="RunAllRecoverFleetButton" Content="Run All" HorizontalAlignment="Left" />
                                         <CheckBox x:Name="RunAllRecoverFleetParallelCheckBox" Content="Run parallel operations where possible" IsChecked="True" VerticalAlignment="Center" Margin="12,0,0,0" />
                                     </StackPanel>
+                                    <TextBlock DockPanel.Dock="Top" Text="* indicates a step that requires user interaction" FontStyle="Italic" FontSize="11" Foreground="{StaticResource SubtleTextBrush}" Margin="0,0,0,6" />
                                     <ListBox x:Name="RecoverFleetStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" />
                                 </DockPanel>
                             </Grid>
