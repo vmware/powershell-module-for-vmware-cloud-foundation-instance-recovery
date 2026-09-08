@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Read(//c/Users/Administrator/.claude/projects/C--Users-Administrator/**)",
-      "Read(//f/PlatformTools/**)"
+      "Read(//f/PlatformTools/**)",
+      "Read(//c/Program Files/PowerShell/Modules/VMware.CloudFoundation.InstanceRecovery/9.1.1.1001/**)"
     ],
     "defaultMode": "bypassPermissions",
     "blockReadsOutsideWorkingDirectories": false,

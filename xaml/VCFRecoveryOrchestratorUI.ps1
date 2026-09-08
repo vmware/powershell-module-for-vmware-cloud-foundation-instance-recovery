@@ -31,11 +31,46 @@ param(
 
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Xaml
 
+# Without this, Windows groups this window's taskbar button under whatever AppUserModelID pwsh.exe
+# itself carries (its own icon and every other running PowerShell window) -- taskbar grouping keys
+# off the PROCESS's AppUserModelID, not a window's own Icon property, so setting Window.Icon alone
+# (further down) fixes the icon shown but not which group it lands in. Has to run this early --
+# before any window of this process is created/shown -- or Windows has already committed to the
+# default grouping by the time a later call would take effect.
+Add-Type -TypeDefinition @'
+using System.Runtime.InteropServices;
+public static class VCFIRTaskbar {
+    [DllImport("shell32.dll", SetLastError = true)]
+    public static extern int SetCurrentProcessExplicitAppUserModelID([MarshalAs(UnmanagedType.LPWStr)] string AppID);
+}
+'@
+[void][VCFIRTaskbar]::SetCurrentProcessExplicitAppUserModelID('VMware.CloudFoundation.InstanceRecovery.RecoveryCoordinator')
+
 $app = New-Object System.Windows.Application
 
 [xml]$xamlDocument = Get-Content -Path $XamlPath -Raw
 $xamlReader = New-Object System.Xml.XmlNodeReader $xamlDocument
 $window = [System.Windows.Markup.XamlReader]::Load($xamlReader)
+
+# Without this, the taskbar button for this window shows pwsh.exe's own icon -- Windows uses the
+# window's own icon (set here via WM_SETICON, which assigning Window.Icon triggers) for its taskbar
+# button, not the hosting process's icon, as long as nothing else overrides the icon association.
+# Rendered from the "VmwLogoImage" vector resource (shared with the small header badge below) rather
+# than a bundled .ico file, so there's only one definition of the mark to ever keep in sync.
+$vmwLogoImage = $window.TryFindResource('VmwLogoImage')
+if ($vmwLogoImage) {
+    $iconSize = 256
+    $iconSourceImage = New-Object System.Windows.Controls.Image
+    $iconSourceImage.Source = $vmwLogoImage
+    $iconSourceImage.Width = $iconSize
+    $iconSourceImage.Height = $iconSize
+    $iconSourceImage.Measure((New-Object System.Windows.Size($iconSize, $iconSize)))
+    $iconSourceImage.Arrange((New-Object System.Windows.Rect(0, 0, $iconSize, $iconSize)))
+    $windowIconBitmap = New-Object System.Windows.Media.Imaging.RenderTargetBitmap($iconSize, $iconSize, 96, 96, [System.Windows.Media.PixelFormats]::Pbgra32)
+    $windowIconBitmap.Render($iconSourceImage)
+    $windowIconBitmap.Freeze()
+    $window.Icon = $windowIconBitmap
+}
 
 $resumeButton = $window.FindName('ResumeButton')
 $exitButton = $window.FindName('ExitButton')
@@ -456,6 +491,9 @@ namespace VCFIRConsole {
         public static extern IntPtr SetFocus(IntPtr hWnd);
 
         [DllImport("user32.dll", SetLastError = true)]
+        public static extern IntPtr GetFocus();
+
+        [DllImport("user32.dll", SetLastError = true)]
         public static extern bool RedrawWindow(IntPtr hWnd, IntPtr lprcUpdate, IntPtr hrgnUpdate, uint flags);
 
         [DllImport("user32.dll", SetLastError = true)]
@@ -724,7 +762,23 @@ function Set-ConsoleFocus {
         $attached = [VCFIRConsole.NativeMethods]::AttachThreadInput($currentThreadId, $consoleThreadId, $true)
     }
     try {
-        [VCFIRConsole.NativeMethods]::SetFocus($console.Hwnd) | Out-Null
+        # SetFocus reporting success doesn't guarantee the target thread actually processed the
+        # focus change yet -- if that thread is busy at that exact instant (mid output, mid a
+        # network wait finally returning, anything), the change can silently not take, and detaching
+        # right after (the very next line, previously) tears down the joined queue before it ever
+        # would have. Verified for real: a console that had already taken real keystrokes once
+        # stopped accepting them after a long wait, and only started working again once a completely
+        # different console's own focus cycle ran -- consistent with exactly this race, not a dead
+        # process. GetFocus is only meaningful for OUR OWN thread's queue, which is why this check has
+        # to happen here, still attached, rather than after detaching.
+        $focusDeadline = (Get-Date).AddMilliseconds(300)
+        do {
+            [VCFIRConsole.NativeMethods]::SetFocus($console.Hwnd) | Out-Null
+            if ([VCFIRConsole.NativeMethods]::GetFocus() -eq $console.Hwnd) {
+                break
+            }
+            Start-Sleep -Milliseconds 20
+        } while ((Get-Date) -lt $focusDeadline)
     } finally {
         if ($attached) {
             [VCFIRConsole.NativeMethods]::AttachThreadInput($currentThreadId, $consoleThreadId, $false) | Out-Null
@@ -891,6 +945,7 @@ function Add-StepWatch($Button, [string]$CmdletName, [scriptblock]$OnComplete, $
             StartOffset    = $currentText.Length
             OnComplete     = $OnComplete
             TranscriptPath = $Console.TranscriptPath
+            Console        = $Console
         })
 }
 
@@ -923,13 +978,12 @@ function Add-CompletionWatch([string]$CmdletName, [scriptblock]$OnComplete, $Con
 # for its completion. $OnStepComplete (optional) is threaded straight through to Add-StepWatch --
 # see Invoke-StepChain/Invoke-StepGroup. $Console (optional, defaults to Main) is which console the
 # command actually runs in -- only a parallel group's non-first members ever pass a different one.
-function Invoke-Step($Dot, $Button, [string]$CmdletName, [string]$CommandLine, [scriptblock]$OnStepComplete, $Console) {
+function Invoke-Step($Button, [string]$CmdletName, [string]$CommandLine, [scriptblock]$OnStepComplete, $Console) {
     if ($null -eq $Console) {
         $Console = $global:mainConsole
     }
-    $Dot.Fill = [System.Windows.Media.Brushes]::DodgerBlue
-    $Button.Content = 'Run'
-    $Button.ClearValue([System.Windows.Controls.Control]::BackgroundProperty)
+    $Button.Content = 'Running'
+    $Button.Background = [System.Windows.Media.Brushes]::Orange
     Add-StepWatch $Button $CmdletName $OnStepComplete $Console
     Send-ToConsole $CommandLine $Console
 }
@@ -968,7 +1022,7 @@ function Invoke-StepChain([object[]]$Rows, [switch]$IgnoreGrouping) {
         }
     }
     $remainingRows = @($Rows | Select-Object -Skip 1)
-    Invoke-Step $row.Dot $row.Button $row.CmdletName $row.CommandLine {
+    Invoke-Step $row.Button $row.CmdletName $row.CommandLine {
         param($isClean)
         if ($isClean) {
             Invoke-StepChain $remainingRows -IgnoreGrouping:$IgnoreGrouping
@@ -1009,27 +1063,20 @@ function Invoke-StepGroup([object[]]$GroupRows, [object[]]$AfterGroupRows) {
     foreach ($row in $GroupRows) {
         $console = New-EmbeddedConsole -TabHeader $row.CmdletName -Bootstrap
         $global:parallelConsoles.Add($console)
-        Invoke-Step $row.Dot $row.Button $row.CmdletName $row.CommandLine $onMemberComplete $console
+        Invoke-Step $row.Button $row.CmdletName $row.CommandLine $onMemberComplete $console
     }
 }
 
-# Returns [PSCustomObject]@{ Panel; Dot; CommandLine; Button; CmdletName; GroupingId }, not just the
-# row's visual Panel -- the other fields are needed separately so a tab's "Run All" button can
-# replay every row's Run action, and so Invoke-Step/Add-StepWatch can update the right row's button
-# and watch for the right cmdlet name without re-parsing the rendered list.
+# Returns [PSCustomObject]@{ Panel; CommandLine; Button; CmdletName; GroupingId }, not just the row's
+# visual Panel -- the other fields are needed separately so a tab's "Run All" button can replay every
+# row's Run action, and so Invoke-Step/Add-StepWatch can update the right row's button and watch for
+# the right cmdlet name without re-parsing the rendered list.
 function New-StepRow([string]$CommandLine, [string]$GroupingId, [string]$Description) {
     $panel = New-Object System.Windows.Controls.DockPanel
     $panel.Margin = '2,0,2,0'
     if ($Description) {
         $panel.ToolTip = $Description
     }
-
-    $dot = New-Object System.Windows.Shapes.Ellipse
-    $dot.Width = 8
-    $dot.Height = 8
-    $dot.Fill = [System.Windows.Media.Brushes]::LightGray
-    $dot.Margin = '0,0,6,0'
-    $dot.VerticalAlignment = 'Center'
 
     # Only the cmdlet name is shown; the full command line (with its parameters) stays in the
     # module and is only ever sent to the console, never rendered in the Steps list. Variable
@@ -1039,13 +1086,15 @@ function New-StepRow([string]$CommandLine, [string]$GroupingId, [string]$Descrip
 
     $runButton = New-Object System.Windows.Controls.Button
     $runButton.Content = 'Run'
-    $runButton.Width = 50
+    # Wide enough for 'Running' -- the longest of the states this button ever shows (Run/Running/
+    # Done/Failed) -- so it doesn't visibly resize as a step starts and finishes.
+    $runButton.Width = 65
     $runButton.Padding = '6,2'
     $runButton.Margin = '6,0,0,0'
     [System.Windows.Controls.DockPanel]::SetDock($runButton, [System.Windows.Controls.Dock]::Right)
     $runButton.Add_Click({
             try {
-                Invoke-Step $dot $runButton $cmdletName $CommandLine
+                Invoke-Step $runButton $cmdletName $CommandLine
             } catch {
                 $statusTextBlock.Text = "Run button failed: $($_.Exception.Message)"
             }
@@ -1072,13 +1121,12 @@ function New-StepRow([string]$CommandLine, [string]$GroupingId, [string]$Descrip
     # child added ends up rightmost, and each one after lands just to its left. Adding runButton
     # before groupBadge (rather than after) is what keeps Run pinned to the far-right edge with the
     # group badge immediately to its left, not the other way around.
-    [void]$panel.Children.Add($dot)
     [void]$panel.Children.Add($runButton)
     if ($groupBadge) {
         [void]$panel.Children.Add($groupBadge)
     }
     [void]$panel.Children.Add($label)
-    return [PSCustomObject]@{ Panel = $panel; Dot = $dot; CommandLine = $CommandLine; Button = $runButton; CmdletName = $cmdletName; GroupingId = $GroupingId }
+    return [PSCustomObject]@{ Panel = $panel; CommandLine = $CommandLine; Button = $runButton; CmdletName = $cmdletName; GroupingId = $GroupingId }
 }
 
 # Variable names referenced across $CommandLines (e.g. "$targetFqdn"), in order of first
@@ -1136,6 +1184,45 @@ function New-VariableRow([string]$Name, [string]$Value, [scriptblock]$OnValueCha
     return $panel
 }
 
+# A parallel console only ever runs one step in its whole lifetime (Invoke-StepGroup spawns a brand
+# new one per group member, never reuses one) -- so once that step is done, whether clean or not,
+# there's nothing left for that console to do. This relays everything it printed for that step
+# ($OutputText -- the same StartOffset-anchored slice Test-StepTranscriptClean already checked) back
+# into Main, then tears the console down: Stop-Transcript, kill the process, drop its tab, and drop
+# it from $global:parallelConsoles.
+#
+# The relay goes through a plain temp file rather than embedding $OutputText straight into a typed
+# command -- a step's real output can be arbitrarily long and contain quotes, backticks, `$`, anything
+# LogMessage or the cmdlet itself printed, none of which is safe to splice into a command line meant
+# to run in Main's session. Piping a short, fixed "Get-Content -LiteralPath '...'" command through
+# instead sidesteps all of that: the only thing that ever varies is a file path, escaped the same way
+# every other Send-ToConsole call in this file already does.
+function Close-ParallelConsoleAndFeedBack($Console, [string]$OutputText) {
+    try {
+        $relayFilePath = Join-Path $WorkingDirectory "vcfir-parallel-output-$(Get-Date -Format 'yyyyMMdd-HHmmss')-$($Console.Process.Id).log"
+        Set-Content -LiteralPath $relayFilePath -Value $OutputText -Encoding utf8
+        $escapedRelayPath = Protect-SingleQuotes $relayFilePath
+        $header = Protect-SingleQuotes "----- Output from parallel console '$($Console.TabItem.Header)' -----"
+        $footer = Protect-SingleQuotes "----- End of output from '$($Console.TabItem.Header)' -----"
+        Send-ToConsole "Write-Host '$header'; Get-Content -LiteralPath '$escapedRelayPath' -Raw; Write-Host '$footer'"
+    } catch {
+        $statusTextBlock.Text = "Failed to relay parallel console output to Main: $($_.Exception.Message)"
+    }
+
+    try {
+        if (-not $Console.Process.HasExited) {
+            Send-ToConsole 'Stop-Transcript | Out-Null' $Console
+            Start-Sleep -Milliseconds 300
+            if (-not $Console.Process.HasExited) {
+                Stop-Process -Id $Console.Process.Id -Force -ErrorAction SilentlyContinue
+            }
+        }
+    } catch {}
+
+    [void]$consoleTabControl.Items.Remove($Console.TabItem)
+    $global:parallelConsoles = [System.Collections.Generic.List[object]]@($global:parallelConsoles | Where-Object { $_ -ne $Console })
+}
+
 # Checks each actively-watched row's slice of ITS OWN console's transcript (everything written
 # since its Run was clicked) for its own "Completed Task <cmdlet>" line. A row is only in this list
 # between being Run and being found Done (see Add-StepWatch) -- once found, it's removed, which is
@@ -1188,6 +1275,13 @@ function Start-StepCompletionWatcher {
                     }
                 }
                 $global:activeStepWatches = [System.Collections.Generic.List[object]]@($global:activeStepWatches | Where-Object { $_ -ne $watch })
+                # Only ever a parallel console here -- Main's own watches carry $global:mainConsole,
+                # which never gets torn down mid-run. Relaying and closing before OnComplete fires
+                # means the tab and its output are already gone/relayed by the time anything reacts
+                # to this step finishing (e.g. Invoke-StepGroup deciding whether to continue the chain).
+                if ($watch.Console -and $watch.Console -ne $global:mainConsole) {
+                    Close-ParallelConsoleAndFeedBack $watch.Console $newText
+                }
                 if ($watch.OnComplete) {
                     & $watch.OnComplete $isClean
                 }

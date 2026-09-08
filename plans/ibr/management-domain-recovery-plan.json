@@ -67,37 +67,25 @@
   },
   {
     "description": "Record the Cluster Settings from the Restored vCenter",
-    "commandLine": "Connect-RestoredVCenterServer -Server $restoredVcenterFqdn -User $restoredVcenterAdmin -Password $restoredVcenterAdminPassword",
+    "commandLine": "Backup-ClusterVMOverrides -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName",
     "condition": [],
     "groupingId": ""
   },
   {
     "description": "",
-    "commandLine": "Backup-ClusterVMOverrides -clusterName $clusterName",
+    "commandLine": "Backup-ClusterVMLocations -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName",
     "condition": [],
     "groupingId": ""
   },
   {
     "description": "",
-    "commandLine": "Backup-ClusterVMLocations -clusterName $clusterName",
+    "commandLine": "Backup-ClusterDRSGroupsAndRules -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName",
     "condition": [],
     "groupingId": ""
   },
   {
     "description": "",
-    "commandLine": "Backup-ClusterDRSGroupsAndRules -clusterName $clusterName",
-    "condition": [],
-    "groupingId": ""
-  },
-  {
-    "description": "",
-    "commandLine": "Backup-ClusterVMTags -clusterName $clusterName",
-    "condition": [],
-    "groupingId": ""
-  },
-  {
-    "description": "",
-    "commandLine": "Disconnect-RestoredVCenterServer",
+    "commandLine": "Backup-ClusterVMTags -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName",
     "condition": [],
     "groupingId": ""
   },

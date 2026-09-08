@@ -2945,80 +2945,6 @@ Export-ModuleMember -Function Invoke-SddcManagerBundleDownload
 
 #Region vCenter Functions
 
-Function Connect-RestoredVCenterServer {
-    <#
-    .SYNOPSIS
-    Connects to a vCenter Server, tracked to a Done state the same way every other recovery plan step is
-
-    .DESCRIPTION
-    The Connect-RestoredVCenterServer cmdlet wraps Connect-VIServer with the Starting Task/Completed
-    Task logging that the VCF Recovery Coordinator UI watches a plan step's transcript for to mark it
-    Done -- calling Connect-VIServer directly as a plan step never emits either line, so it can never
-    be detected as complete there.
-
-    .EXAMPLE
-    Connect-RestoredVCenterServer -Server sfo-m01-vc01.sfo.rainpole.io -User administrator@vsphere.local -Password VMw@re1!
-
-    .PARAMETER Server
-    FQDN or IP address of the vCenter Server to connect to
-
-    .PARAMETER User
-    Username to authenticate to the vCenter Server with
-
-    .PARAMETER Password
-    Password to authenticate to the vCenter Server with
-    #>
-
-    Param(
-        [Parameter (Mandatory = $true)][String] $Server,
-        [Parameter (Mandatory = $true)][String] $User,
-        [Parameter (Mandatory = $true)][String] $Password
-    )
-    $jumpboxName = hostname
-    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
-    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
-    $StopWatch.Start()
-    Try {
-        LogMessage -type INFO -message "[$Server] Connecting to vCenter Server"
-        Connect-VIServer -Server $Server -User $User -Password $Password -ErrorAction Stop | Out-Null
-    } Catch {
-        catchWriter -object $_
-    }
-    $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
-}
-Export-ModuleMember -Function Connect-RestoredVCenterServer
-
-Function Disconnect-RestoredVCenterServer {
-    <#
-    .SYNOPSIS
-    Disconnects every currently connected vCenter Server session, tracked to a Done state the same way every other recovery plan step is
-
-    .DESCRIPTION
-    The Disconnect-RestoredVCenterServer cmdlet wraps "Disconnect-VIServer * -Confirm:$false" with the
-    Starting Task/Completed Task logging that the VCF Recovery Coordinator UI watches a plan step's
-    transcript for to mark it Done -- calling Disconnect-VIServer directly as a plan step never emits
-    either line, so it can never be detected as complete there.
-
-    .EXAMPLE
-    Disconnect-RestoredVCenterServer
-    #>
-
-    $jumpboxName = hostname
-    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
-    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
-    $StopWatch.Start()
-    Try {
-        LogMessage -type INFO -message "[$jumpboxName] Disconnecting all connected vCenter Server sessions"
-        Disconnect-VIServer * -Confirm:$false -ErrorAction Stop
-    } Catch {
-        catchWriter -object $_
-    }
-    $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
-}
-Export-ModuleMember -Function Disconnect-RestoredVCenterServer
-
 Function Invoke-vCenterRestore {
     <#
     .SYNOPSIS
@@ -6740,20 +6666,33 @@ Function Backup-ClusterVMOverrides {
     The Backup-ClusterVMOverrides cmdlet backs up the VM Overrides for the specified cluster
 
     .EXAMPLE
-    Backup-ClusterVMOverrides -clusterName "sfo-m01-cl01"
+    Backup-ClusterVMOverrides -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01"
+
+    .PARAMETER vCenterFQDN
+    FQDN of the vCenter instance hosting the cluster
+
+    .PARAMETER vCenterAdmin
+    Admin user of the vCenter instance hosting the cluster
+
+    .PARAMETER vCenterAdminPassword
+    Admin password for the vCenter instance hosting the cluster
 
     .PARAMETER clusterName
     Cluster whose VM Overrides you wish to backup
     #>
 
     Param(
-        [Parameter(Mandatory = $true)]
-        [String]$clusterName
+        [Parameter(Mandatory = $true)][String]$vCenterFQDN,
+        [Parameter(Mandatory = $true)][String]$vCenterAdmin,
+        [Parameter(Mandatory = $true)][String]$vCenterAdminPassword,
+        [Parameter(Mandatory = $true)][String]$clusterName
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    LogMessage -type INFO -message "[$vCenterFQDN] Connecting to vCenter"
+    Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop | Out-Null
     $cluster = Get-Cluster -Name $clusterName
     #$overRiddenVMs = $cluster.ExtensionData.ConfigurationEx.DrsVmConfig
     $clusterVMs = Get-Cluster -name $clusterName | Get-VM | Select-Object Name, id, DrsAutomationLevel
@@ -6789,6 +6728,7 @@ Function Backup-ClusterVMOverrides {
         }
     }
     $overRiddenData | ConvertTo-Json -depth 10 | Out-File "$clusterName-vmOverrides.json"
+    Disconnect-VIServer -Server $vCenterFQDN -Force -Confirm:$false
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
@@ -6803,20 +6743,33 @@ Function Backup-ClusterVMLocations {
     The Backup-ClusterVMLocations cmdlet backs up the VM Locations for the specified cluster
 
     .EXAMPLE
-    Backup-ClusterVMLocations -clusterName "sfo-m01-cl01"
+    Backup-ClusterVMLocations -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01"
+
+    .PARAMETER vCenterFQDN
+    FQDN of the vCenter instance hosting the cluster
+
+    .PARAMETER vCenterAdmin
+    Admin user of the vCenter instance hosting the cluster
+
+    .PARAMETER vCenterAdminPassword
+    Admin password for the vCenter instance hosting the cluster
 
     .PARAMETER clusterName
     Cluster whose VM Locations you wish to backup
     #>
 
     Param(
-        [Parameter(Mandatory = $true)]
-        [String]$clusterName
+        [Parameter(Mandatory = $true)][String]$vCenterFQDN,
+        [Parameter(Mandatory = $true)][String]$vCenterAdmin,
+        [Parameter(Mandatory = $true)][String]$vCenterAdminPassword,
+        [Parameter(Mandatory = $true)][String]$clusterName
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    LogMessage -type INFO -message "[$vCenterFQDN] Connecting to vCenter"
+    Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop | Out-Null
     Try {
 
         $clusterVMs = Get-Cluster -Name $clusterName | Get-VM | Select-Object Name, id, folder, resourcePool
@@ -6835,6 +6788,7 @@ Function Backup-ClusterVMLocations {
     } Catch {
         catchWriter -object $_
     }
+    Disconnect-VIServer -Server $vCenterFQDN -Force -Confirm:$false
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
@@ -6849,20 +6803,33 @@ Function Backup-ClusterDRSGroupsAndRules {
     The Backup-ClusterDRSGroupsAndRules cmdlet backs up the DRS Groups and Rules for the specified cluster
 
     .EXAMPLE
-    Backup-ClusterDRSGroupsAndRules -clusterName "sfo-m01-cl01"
+    Backup-ClusterDRSGroupsAndRules -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01"
+
+    .PARAMETER vCenterFQDN
+    FQDN of the vCenter instance hosting the cluster
+
+    .PARAMETER vCenterAdmin
+    Admin user of the vCenter instance hosting the cluster
+
+    .PARAMETER vCenterAdminPassword
+    Admin password for the vCenter instance hosting the cluster
 
     .PARAMETER clusterName
     Cluster whose DRS Groups and Rules you wish to backup
     #>
 
     Param(
-        [Parameter(Mandatory = $true)]
-        [String]$clusterName
+        [Parameter(Mandatory = $true)][String]$vCenterFQDN,
+        [Parameter(Mandatory = $true)][String]$vCenterAdmin,
+        [Parameter(Mandatory = $true)][String]$vCenterAdminPassword,
+        [Parameter(Mandatory = $true)][String]$clusterName
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    LogMessage -type INFO -message "[$vCenterFQDN] Connecting to vCenter"
+    Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop | Out-Null
     Try {
         $retrievedVmDrsGroups = Get-DrsClusterGroup -cluster $clusterName
         $drsGroupsObject = @()
@@ -6934,6 +6901,7 @@ Function Backup-ClusterDRSGroupsAndRules {
     } Catch {
         catchWriter -object $_
     }
+    Disconnect-VIServer -Server $vCenterFQDN -Force -Confirm:$false
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
@@ -6948,20 +6916,33 @@ Function Backup-ClusterVMTags {
     The Backup-ClusterVMTags cmdlet backs up the VM tags for the specified cluster
 
     .EXAMPLE
-    Backup-ClusterVMTags -clusterName "sfo-m01-cl01"
+    Backup-ClusterVMTags -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01"
+
+    .PARAMETER vCenterFQDN
+    FQDN of the vCenter instance hosting the cluster
+
+    .PARAMETER vCenterAdmin
+    Admin user of the vCenter instance hosting the cluster
+
+    .PARAMETER vCenterAdminPassword
+    Admin password for the vCenter instance hosting the cluster
 
     .PARAMETER clusterName
     Cluster whose VM tags you wish to backup
     #>
 
     Param(
-        [Parameter(Mandatory = $true)]
-        [String]$clusterName
+        [Parameter(Mandatory = $true)][String]$vCenterFQDN,
+        [Parameter(Mandatory = $true)][String]$vCenterAdmin,
+        [Parameter(Mandatory = $true)][String]$vCenterAdminPassword,
+        [Parameter(Mandatory = $true)][String]$clusterName
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    LogMessage -type INFO -message "[$vCenterFQDN] Connecting to vCenter"
+    Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop | Out-Null
     Try {
 
         $clusterVMTags = Get-Cluster -Name $clusterName | Get-VM | Get-TagAssignment
@@ -6979,6 +6960,7 @@ Function Backup-ClusterVMTags {
     } Catch {
         catchWriter -object $_
     }
+    Disconnect-VIServer -Server $vCenterFQDN -Force -Confirm:$false
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
