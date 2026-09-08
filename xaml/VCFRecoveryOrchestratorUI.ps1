@@ -1130,6 +1130,28 @@ function Lock-ElementSelection {
     $statusTextBlock.Text = 'Run Started. Navigation to other domains/clusters disabled.'
 }
 
+# Prevents clicking an individual step's own Run button out of sequence while a Run All chain is
+# in progress -- without this, a manual click either injects a second, out-of-order command into
+# whichever console the chain's current step is already using (interleaving both steps' output in
+# one transcript and confusing Add-StepWatch's "find my own Completed Task line" parsing for both),
+# or simply starts a downstream step before its real prerequisite has actually finished, silently
+# breaking the plan's dependency order with nothing to warn about it. Reads $global:*StepRows fresh
+# every call rather than taking a snapshot, since a step reload (e.g. after "Load Variables...")
+# could replace those arrays with new row objects while a run from an earlier load is still active.
+# Disables every step's Run button across all three panels, plus all three Run All buttons
+# themselves (to also block starting a second, overlapping Run All while one is already running),
+# not just the panel the active run happens to be in -- Lock-ElementSelection already treats the
+# whole app as "one run in progress" rather than a per-panel thing, and this matches that.
+function Set-AllStepButtonsEnabled([bool]$Enabled) {
+    $allRows = @($global:domainRecoveryStepRows) + @($global:additionalClusterRecoveryStepRows) + @($global:recoverFleetStepRows)
+    foreach ($row in $allRows) {
+        $row.Button.IsEnabled = $Enabled
+    }
+    $runAllDomainRecoveryButton.IsEnabled = $Enabled
+    $runAllAdditionalClusterRecoveryButton.IsEnabled = $Enabled
+    $runAllRecoverFleetButton.IsEnabled = $Enabled
+}
+
 # Resets a row to its "in progress" look (undoing any earlier Done/Failed state -- re-running a step
 # that previously completed should stop showing that until it completes again) and starts watching
 # for its completion. $OnStepComplete (optional) is threaded straight through to Add-StepWatch --
@@ -1178,8 +1200,17 @@ function Invoke-Step($Button, [string]$CmdletName, [string]$CommandLine, [script
 # -- unchecked means this) skips that dispatch entirely, running every row one at a time regardless of
 # ThreadId; it's threaded through every recursive call so unchecking it stays in effect for the rest
 # of that particular Run All run, not just its first row.
-function Invoke-StepChain([object[]]$Rows, [switch]$IgnoreThreads) {
+# $OnChainComplete (optional), if given, fires exactly once, at whichever terminal point the whole
+# call tree actually ends at -- every row ran cleanly ($true), or some row/thread stopped the chain
+# early ($false) -- threaded through every recursive call the same way $IgnoreThreads is, so it
+# still only fires once no matter how many levels of recursion the chain actually goes through.
+# Currently used to re-enable every step's Run button (see Set-AllStepButtonsEnabled) once a Run
+# All run is fully finished, not before.
+function Invoke-StepChain([object[]]$Rows, [switch]$IgnoreThreads, [scriptblock]$OnChainComplete) {
     if ($Rows.Count -eq 0) {
+        if ($OnChainComplete) {
+            & $OnChainComplete $true
+        }
         return
     }
     $row = $Rows[0]
@@ -1220,9 +1251,12 @@ function Invoke-StepChain([object[]]$Rows, [switch]$IgnoreThreads) {
             $state.Remaining--
             if ($state.Remaining -eq 0) {
                 if ($state.AllClean) {
-                    Invoke-StepChain $remainingRows -IgnoreThreads:$IgnoreThreads
+                    Invoke-StepChain $remainingRows -IgnoreThreads:$IgnoreThreads -OnChainComplete $OnChainComplete
                 } else {
                     $statusTextBlock.Text = 'Run All stopped: one or more threads did not complete cleanly -- check each console/transcript before retrying.'
+                    if ($OnChainComplete) {
+                        & $OnChainComplete $false
+                    }
                 }
             }
         }.GetNewClosure()
@@ -1236,9 +1270,12 @@ function Invoke-StepChain([object[]]$Rows, [switch]$IgnoreThreads) {
     Invoke-Step $row.Button $row.CmdletName $row.CommandLine {
         param($isClean)
         if ($isClean) {
-            Invoke-StepChain $remainingRows -IgnoreThreads:$IgnoreThreads
+            Invoke-StepChain $remainingRows -IgnoreThreads:$IgnoreThreads -OnChainComplete $OnChainComplete
         } else {
             $statusTextBlock.Text = "Run All stopped: $($row.CmdletName) did not complete cleanly -- check the console/transcript for warnings, errors, or a PowerShell error record before retrying."
+            if ($OnChainComplete) {
+                & $OnChainComplete $false
+            }
         }
     }.GetNewClosure() $null $row.Interactive
 }
@@ -2072,25 +2109,31 @@ $additionalClustersListBox.Add_SelectionChanged({
 
 $runAllDomainRecoveryButton.Add_Click({
         try {
-            Invoke-StepChain $global:domainRecoveryStepRows -IgnoreThreads:(-not $runAllDomainRecoveryParallelCheckBox.IsChecked)
+            Set-AllStepButtonsEnabled $false
+            Invoke-StepChain $global:domainRecoveryStepRows -IgnoreThreads:(-not $runAllDomainRecoveryParallelCheckBox.IsChecked) -OnChainComplete { Set-AllStepButtonsEnabled $true }.GetNewClosure()
         } catch {
             $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
+            Set-AllStepButtonsEnabled $true
         }
     }.GetNewClosure())
 
 $runAllAdditionalClusterRecoveryButton.Add_Click({
         try {
-            Invoke-StepChain $global:additionalClusterRecoveryStepRows -IgnoreThreads:(-not $runAllAdditionalClusterRecoveryParallelCheckBox.IsChecked)
+            Set-AllStepButtonsEnabled $false
+            Invoke-StepChain $global:additionalClusterRecoveryStepRows -IgnoreThreads:(-not $runAllAdditionalClusterRecoveryParallelCheckBox.IsChecked) -OnChainComplete { Set-AllStepButtonsEnabled $true }.GetNewClosure()
         } catch {
             $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
+            Set-AllStepButtonsEnabled $true
         }
     }.GetNewClosure())
 
 $runAllRecoverFleetButton.Add_Click({
         try {
-            Invoke-StepChain $global:recoverFleetStepRows -IgnoreThreads:(-not $runAllRecoverFleetParallelCheckBox.IsChecked)
+            Set-AllStepButtonsEnabled $false
+            Invoke-StepChain $global:recoverFleetStepRows -IgnoreThreads:(-not $runAllRecoverFleetParallelCheckBox.IsChecked) -OnChainComplete { Set-AllStepButtonsEnabled $true }.GetNewClosure()
         } catch {
             $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
+            Set-AllStepButtonsEnabled $true
         }
     }.GetNewClosure())
 
