@@ -478,13 +478,9 @@
                          Additional Cluster Recovery / Recover Fleet) rather than one per panel,
                          since only one Run All can ever be active across the whole app at a time
                          anyway (see Set-AllStepButtonsEnabled). Overlaid top-right of the console
-                         pane, side by side in one row. Both start Collapsed; Start-RunTimer/
-                         Stop-RunTimer (in the .ps1) show and hide them together for the lifetime of
-                         one Run All chain. -->
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,4,4,0" Panel.ZIndex="1">
-                        <TextBlock x:Name="OverallRecoveryTimeTextBlock" Text="Overall Recovery Time: 00:00:00" FontFamily="Consolas" FontWeight="Bold" Foreground="White" Background="Black" Padding="8,3" Margin="0,0,6,0" Visibility="Collapsed" />
-                        <TextBlock x:Name="ActualTaskTimeTextBlock" Text="Actual Task Time: 00:00:00" FontFamily="Consolas" FontWeight="Bold" Foreground="White" Background="#3F3F3F" Padding="8,3" Visibility="Collapsed" />
-                    </StackPanel>
+                         pane. Starts Collapsed; Start-RunTimer/Stop-RunTimer (in the .ps1) show and
+                         hide it for the lifetime of one Run All chain. -->
+                    <TextBlock x:Name="OverallRecoveryTimeTextBlock" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,4,4,0" Panel.ZIndex="1" Text="Overall Recovery Time: 00:00:00" FontFamily="Consolas" FontWeight="Bold" Foreground="White" Background="Black" Padding="8,3" Visibility="Collapsed" />
                     <TabControl x:Name="ConsoleTabControl" Background="Transparent" BorderThickness="0" Margin="0,-8,0,0" />
                 </Grid>
             </GroupBox>

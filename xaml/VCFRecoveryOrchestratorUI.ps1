@@ -100,7 +100,6 @@ $runAllDomainRecoveryParallelCheckBox = $window.FindName('RunAllDomainRecoveryPa
 $runAllAdditionalClusterRecoveryParallelCheckBox = $window.FindName('RunAllAdditionalClusterRecoveryParallelCheckBox')
 $runAllRecoverFleetParallelCheckBox = $window.FindName('RunAllRecoverFleetParallelCheckBox')
 $overallRecoveryTimeTextBlock = $window.FindName('OverallRecoveryTimeTextBlock')
-$actualTaskTimeTextBlock = $window.FindName('ActualTaskTimeTextBlock')
 $loadVariablesButton = $window.FindName('LoadVariablesButton')
 $newVariablesFileButton = $window.FindName('NewVariablesFileButton')
 $loadedVariablesTextBlock = $window.FindName('LoadedVariablesTextBlock')
@@ -141,15 +140,6 @@ $global:variablesAnswersFilePath = $null
 # picking a different element requires Exit + a fresh launch instead.
 $global:recoveryRunStarted = $false
 
-# Actual Task Time accumulation (see Start-StepCompletionWatcher's own tick and Start-RunTimer) --
-# $actualTaskTimeSeconds is the running total, $actualTaskTimeScannedLength is how much of Main's
-# transcript has already been scanned for "Completed Task ... in N minutes and M seconds" lines, so
-# the same line is never counted twice. Initialized here (not left to implicit $null-as-zero
-# coercion) since the tick that reads them starts running from app startup, before any Run All
-# (and therefore before Start-RunTimer's own reset) has ever happened.
-$global:actualTaskTimeSeconds = 0
-$global:actualTaskTimeScannedLength = 0
-
 # Completion tracking, attempt 5: a PowerShell transcript of the console, read from disk. Unaffected
 # by the move away from the terminal control -- it never depended on that control's own rendering
 # (that was the whole point of using a transcript in the first place: a plain text file that
@@ -170,6 +160,10 @@ $global:activeStepWatches = [System.Collections.Generic.List[object]]::new()
 # assuming there's only ever one.
 $global:mainConsole = $null
 $global:parallelConsoles = [System.Collections.Generic.List[object]]::new()
+# Keyed by ThreadId (e.g. "2", "3") -- see Invoke-StepThread. Persists for the whole app session so
+# a later, non-consecutive block reusing the same ThreadId reuses the exact same console/session
+# instead of spawning a fresh one; nothing ever removes an entry from this once created.
+$global:threadConsoles = @{}
 
 function Protect-SingleQuotes([string]$Value) {
     return $Value.Replace("'", "''")
@@ -559,8 +553,7 @@ namespace VCFIRConsole {
         public const int STD_OUTPUT_HANDLE = -11;
         // FOREGROUND_BLUE | FOREGROUND_GREEN | FOREGROUND_INTENSITY -- matches PowerShell's own
         // ConsoleColor.Cyan (the intensity bit is required; without it this is the darker
-        // "DarkCyan" instead), the same shade already used for the relay header/footer text (see
-        // Close-ParallelConsoleAndFeedBack's own "-ForegroundColor Cyan").
+        // "DarkCyan" instead). Used by Send-ToConsole to color a command's own echoed/typed text.
         public const ushort FOREGROUND_CYAN = 0x000B;
         public const uint RDW_INVALIDATE = 0x1;
         public const uint RDW_ERASE = 0x4;
@@ -1231,13 +1224,6 @@ function Set-AllStepButtonsEnabled([bool]$Enabled) {
 # something else happens to redraw, since nothing else in this row changes while a run is in
 # progress. Returns the running DispatcherTimer so the caller can stop it again in Stop-RunTimer
 # once the whole Run All chain finishes (see each Run All button's own Add_Click).
-#
-# Also resets and (re)starts the Actual Task Time accumulation (see Start-StepCompletionWatcher's
-# own tick, which does the actual scanning/summing) -- $global:actualTaskTimeSeconds starts back at
-# zero and $global:actualTaskTimeScannedLength is pinned to Main's transcript length AT THIS EXACT
-# MOMENT, so only "Completed Task ... in N minutes and M seconds" lines produced by THIS run ever
-# count, never stale ones already sitting in Main's long-lived, append-only transcript from an
-# earlier run.
 function Start-RunTimer {
     $startTime = Get-Date
     $overallRecoveryTimeTextBlock.Text = 'Overall Recovery Time: 00:00:00'
@@ -1249,22 +1235,10 @@ function Start-RunTimer {
             $overallRecoveryTimeTextBlock.Text = 'Overall Recovery Time: {0:00}:{1:00}:{2:00}' -f [int]$elapsed.TotalHours, $elapsed.Minutes, $elapsed.Seconds
         }.GetNewClosure())
     $timer.Start()
-
-    $global:actualTaskTimeSeconds = 0
-    $global:actualTaskTimeScannedLength = 0
-    if ($global:mainConsole -and (Test-Path $global:mainConsole.TranscriptPath)) {
-        $existingText = Get-Content -Path $global:mainConsole.TranscriptPath -Raw -ErrorAction SilentlyContinue
-        if ($existingText) {
-            $global:actualTaskTimeScannedLength = $existingText.Length
-        }
-    }
-    $actualTaskTimeTextBlock.Text = 'Actual Task Time: 00:00:00'
-    $actualTaskTimeTextBlock.Visibility = 'Visible'
-
     return $timer
 }
 
-# Stops the DispatcherTimer Start-RunTimer returned and hides both timer badges again. $Timer may
+# Stops the DispatcherTimer Start-RunTimer returned and hides the timer badge again. $Timer may
 # be $null (e.g. Invoke-StepChain threw before Start-RunTimer was ever called) -- tolerated so the
 # catch block in each Run All handler can call this unconditionally.
 function Stop-RunTimer($Timer) {
@@ -1272,7 +1246,6 @@ function Stop-RunTimer($Timer) {
         $Timer.Stop()
     }
     $overallRecoveryTimeTextBlock.Visibility = 'Collapsed'
-    $actualTaskTimeTextBlock.Visibility = 'Collapsed'
 }
 
 # Resets a row to its "in progress" look (undoing any earlier Done/Failed state -- re-running a step
@@ -1317,8 +1290,11 @@ function Invoke-Step($Button, [string]$CmdletName, [string]$CommandLine, [script
 #
 # A run of two or more consecutive rows carrying ANY non-empty ThreadId is dispatched as a block of
 # background threads instead of one at a time -- see Invoke-StepThread. Rows must be consecutive in
-# the plan file to be part of the same block -- a ThreadId reappearing later, separated by a row with
-# no ThreadId at all, starts a new block (and a fresh console) rather than resuming the earlier one.
+# the plan file to be part of the same DISPATCH block -- a ThreadId reappearing later, separated by a
+# row with no ThreadId at all, starts a new block rather than being bundled into the earlier one's
+# own sequential run. The CONSOLE itself is a separate matter: Invoke-StepThread reuses the exact
+# same persistent console for every block that ever references a given ThreadId, however far apart
+# in the plan they are, rather than spawning a fresh one each time.
 # -IgnoreThreads (driven by each panel's own "Run steps in parallel threads where possible" checkbox
 # -- unchecked means this) skips that dispatch entirely, running every row one at a time regardless of
 # ThreadId; it's threaded through every recursive call so unchecking it stays in effect for the rest
@@ -1403,36 +1379,27 @@ function Invoke-StepChain([object[]]$Rows, [switch]$IgnoreThreads, [scriptblock]
     }.GetNewClosure() $null $row.Interactive
 }
 
-# One background thread: a freshly bootstrapped console (New-EmbeddedConsole -Bootstrap, which
-# imports the extracted-data path and answers file so the new console's session has the same
-# variables as Main) that runs $ThreadRows through it IN SEQUENCE, exactly like the main sequence
-# does but scoped to this one console -- see Invoke-StepThreadChain. None of a thread's own rows ever
-# run in Main, so Main stays free rather than being tied up by whichever thread happened to be listed
-# first in the plan file. Relays everything the thread printed back into Main and tears the console
-# down (Close-ParallelConsoleAndFeedBack) the moment its OWN sequence finishes, whether that's because
-# every row in it completed cleanly or because one of them failed and stopped the rest of this
-# thread's rows -- either way, $OnThreadComplete (Invoke-StepChain's own per-block join) only fires
-# after that relay/teardown has already happened, so this thread's tab and output are gone/relayed by
-# the time anything reacts to it finishing.
+# One background thread: a console keyed by ThreadId (not by whichever task happens to run in it),
+# created once via New-EmbeddedConsole -Bootstrap the FIRST time this ThreadId is ever seen, and
+# reused as-is for every later, non-consecutive block that references the same ThreadId again --
+# see $global:threadConsoles. Named "Thread <N>" (matching the plan's own threadId value, e.g. a
+# step with threadId "2" gets a tab literally named "Thread 2") rather than after whichever task
+# happened to run in it first, since that identity now outlives any single task and would
+# otherwise go stale the moment a second, unrelated task reuses it. Runs $ThreadRows through it IN
+# SEQUENCE, exactly like the main sequence does but scoped to this one console -- see
+# Invoke-StepThreadChain. Deliberately never closed and never relayed into Main once its own
+# sequence finishes (clean or not) -- it stays open and its output stays in its own tab, in case a
+# later, unrelated block in the plan reuses this same ThreadId and expects to keep working in the
+# same session (e.g. variables/state it already set up) rather than starting fresh.
 function Invoke-StepThread([object[]]$ThreadRows, [scriptblock]$OnThreadComplete) {
-    $console = New-EmbeddedConsole -TabHeader $ThreadRows[0].CmdletName -Bootstrap
-    $global:parallelConsoles.Add($console)
-
-    $threadStartOffset = 0
-    if (Test-Path $console.TranscriptPath) {
-        $existingText = Get-Content -Path $console.TranscriptPath -Raw -ErrorAction SilentlyContinue
-        if ($existingText) {
-            $threadStartOffset = $existingText.Length
-        }
+    $threadId = $ThreadRows[0].ThreadId
+    $console = $global:threadConsoles[$threadId]
+    if (-not $console) {
+        $console = New-EmbeddedConsole -TabHeader "Thread $threadId" -Bootstrap
+        $global:threadConsoles[$threadId] = $console
+        $global:parallelConsoles.Add($console)
     }
-
-    Invoke-StepThreadChain $ThreadRows $console {
-        param($isClean)
-        $fullTranscriptText = Get-Content -Path $console.TranscriptPath -Raw -ErrorAction SilentlyContinue
-        $relayText = if ($fullTranscriptText -and $fullTranscriptText.Length -gt $threadStartOffset) { $fullTranscriptText.Substring($threadStartOffset) } else { '' }
-        Close-ParallelConsoleAndFeedBack $console $relayText
-        & $OnThreadComplete $isClean
-    }.GetNewClosure()
+    Invoke-StepThreadChain $ThreadRows $console $OnThreadComplete
 }
 
 # Runs $Rows one at a time in $Console, in file order -- the same three-gate logic Invoke-StepChain
@@ -1632,52 +1599,6 @@ function New-VariableRow([string]$Name, [string]$Value, [scriptblock]$OnValueCha
     return $panel
 }
 
-# A parallel console belongs to exactly one background thread for its whole lifetime (Invoke-
-# StepThread spawns a brand new one per thread, never reuses one across threads) -- so once that
-# thread's own sequence of steps is done, whether every one of them was clean or not, there's nothing
-# left for that console to do. This relays everything the WHOLE thread printed ($OutputText -- from
-# right after its bootstrap priming finished, through its last step, built by Invoke-StepThread
-# itself) back into Main, then tears the console down: Stop-Transcript, kill the process, drop its
-# tab, and drop it from $global:parallelConsoles.
-#
-# The relay goes through a plain temp file rather than embedding $OutputText straight into a typed
-# command -- a step's real output can be arbitrarily long and contain quotes, backticks, `$`, anything
-# LogMessage or the cmdlet itself printed, none of which is safe to splice into a command line meant
-# to run in Main's session. Piping a short, fixed "Get-Content -LiteralPath '...'" command through
-# instead sidesteps all of that: the only thing that ever varies is a file path, escaped the same way
-# every other Send-ToConsole call in this file already does.
-#
-# The header/footer text itself uses square brackets around the console's name, not single quotes --
-# with no embedded quote to escape, Protect-SingleQuotes never has anything to double, so what's
-# actually typed (and therefore echoed) in Main stays readable instead of showing doubled ''quote''
-# marks. -ForegroundColor Cyan on just the header/footer (never used by LogMessage's own palette --
-# Green/White/Yellow/Red) makes the relay boundary visually distinct from the real recovery output
-# it's wrapping, closer to how Main's own console already reads, rather than a plain uncolored dump.
-function Close-ParallelConsoleAndFeedBack($Console, [string]$OutputText) {
-    try {
-        $relayFilePath = Join-Path $WorkingDirectory "vcfir-parallel-output-$(Get-Date -Format 'yyyyMMdd-HHmmss')-$($Console.Process.Id).log"
-        Set-Content -LiteralPath $relayFilePath -Value $OutputText -Encoding utf8
-        $escapedRelayPath = Protect-SingleQuotes $relayFilePath
-        $consoleName = $Console.TabItem.Header
-        Send-ToConsole "Write-Host `"===== Output from [$consoleName] =====`" -ForegroundColor Cyan; Get-Content -LiteralPath '$escapedRelayPath' -Raw; Write-Host `"===== End of output from [$consoleName] =====`" -ForegroundColor Cyan"
-    } catch {
-        $statusTextBlock.Text = "Failed to relay parallel console output to Main: $($_.Exception.Message)"
-    }
-
-    try {
-        if (-not $Console.Process.HasExited) {
-            Send-ToConsole 'Stop-Transcript | Out-Null' $Console
-            Start-Sleep -Milliseconds 300
-            if (-not $Console.Process.HasExited) {
-                Stop-Process -Id $Console.Process.Id -Force -ErrorAction SilentlyContinue
-            }
-        }
-    } catch {}
-
-    [void]$consoleTabControl.Items.Remove($Console.TabItem)
-    $global:parallelConsoles = [System.Collections.Generic.List[object]]@($global:parallelConsoles | Where-Object { $_ -ne $Console })
-}
-
 # Checks each actively-watched row's slice of ITS OWN console's transcript (everything written
 # since its Run was clicked) for its own "Completed Task <cmdlet>" line. A row is only in this list
 # between being Run and being found Done (see Add-StepWatch) -- once found, it's removed, which is
@@ -1689,32 +1610,6 @@ function Start-StepCompletionWatcher {
     $checkTimer = New-Object System.Windows.Threading.DispatcherTimer
     $checkTimer.Interval = [TimeSpan]::FromMilliseconds(500)
     $checkTimer.Add_Tick({
-            # Actual Task Time: sums every "Completed Task <cmdlet> in N minutes and M seconds" line
-            # (LogMessage's own per-cmdlet timing, e.g. "[host] Completed Task Invoke-vCenterRestore
-            # in 4 minutes and 12 seconds") that has newly appeared in Main's transcript since the
-            # last tick -- covers steps that ran directly in Main AND relayed background-thread
-            # output alike, since Close-ParallelConsoleAndFeedBack copies a finished thread's entire
-            # transcript into Main's own before this ever sees it. Runs unconditionally, before the
-            # activeStepWatches early-return below, so the very last task of a whole Run All run
-            # (whose own watch is removed by THIS SAME tick, once found clean/unclean) still gets its
-            # own duration counted rather than being skipped because the watch list is now empty for
-            # any later tick.
-            if ($global:mainConsole -and (Test-Path $global:mainConsole.TranscriptPath)) {
-                $mainTranscriptText = Get-Content -Path $global:mainConsole.TranscriptPath -Raw -ErrorAction SilentlyContinue
-                if ($mainTranscriptText -and $mainTranscriptText.Length -gt $global:actualTaskTimeScannedLength) {
-                    $newTranscriptText = $mainTranscriptText.Substring($global:actualTaskTimeScannedLength)
-                    $global:actualTaskTimeScannedLength = $mainTranscriptText.Length
-                    $durationMatches = [regex]::Matches($newTranscriptText, 'Completed Task \S+ in (\d+) minutes and (\d+) seconds')
-                    if ($durationMatches.Count -gt 0) {
-                        foreach ($durationMatch in $durationMatches) {
-                            $global:actualTaskTimeSeconds += ([int]$durationMatch.Groups[1].Value * 60) + [int]$durationMatch.Groups[2].Value
-                        }
-                        $actualElapsed = [TimeSpan]::FromSeconds($global:actualTaskTimeSeconds)
-                        $actualTaskTimeTextBlock.Text = 'Actual Task Time: {0:00}:{1:00}:{2:00}' -f [int]$actualElapsed.TotalHours, $actualElapsed.Minutes, $actualElapsed.Seconds
-                    }
-                }
-            }
-
             if ($global:activeStepWatches.Count -eq 0) { return }
             $transcriptCache = @{}
             foreach ($path in ($global:activeStepWatches | Select-Object -ExpandProperty TranscriptPath -Unique)) {
@@ -1756,11 +1651,6 @@ function Start-StepCompletionWatcher {
                     }
                 }
                 $global:activeStepWatches = [System.Collections.Generic.List[object]]@($global:activeStepWatches | Where-Object { $_ -ne $watch })
-                # No per-watch console teardown here -- a background thread's console runs several
-                # rows in sequence now, not just one, so closing/relaying it has to wait until the
-                # WHOLE thread finishes, not just its first row. Invoke-StepThread does that itself,
-                # inside the OnComplete it passes to Invoke-StepThreadChain, once that thread's own
-                # last row (clean or not) reports back here.
                 if ($watch.OnComplete) {
                     & $watch.OnComplete $isClean
                 }
