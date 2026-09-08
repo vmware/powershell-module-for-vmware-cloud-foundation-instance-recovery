@@ -409,7 +409,7 @@
                                     <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="0,0,0,8">
                                         <Button x:Name="RunAllDomainRecoveryButton" Content="Run All" HorizontalAlignment="Left" />
                                         <CheckBox x:Name="RunAllDomainRecoveryParallelCheckBox" Content="Run tasks using multiple threads (indicated by numbered circles)" IsChecked="True" VerticalAlignment="Center" Margin="12,0,0,0" />
-                                        <TextBlock x:Name="DomainRecoveryRunTimerTextBlock" DockPanel.Dock="Right" Text="00:00:00" FontFamily="Consolas" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,4,0" Visibility="Collapsed" />
+                                        <TextBlock x:Name="DomainRecoveryRunTimerTextBlock" DockPanel.Dock="Right" Text="00:00:00" FontFamily="Consolas" FontWeight="Bold" Foreground="White" Background="Green" TextAlignment="Center" Width="71" Padding="0,3" VerticalAlignment="Center" Visibility="Collapsed" />
                                     </DockPanel>
                                     <ListBox x:Name="DomainRecoveryStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" />
                                 </DockPanel>
@@ -421,7 +421,7 @@
                                     <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="0,0,0,8">
                                         <Button x:Name="RunAllAdditionalClusterRecoveryButton" Content="Run All" HorizontalAlignment="Left" />
                                         <CheckBox x:Name="RunAllAdditionalClusterRecoveryParallelCheckBox" Content="Run parallel tasks using multiple threads (numbered circles)" IsChecked="True" VerticalAlignment="Center" Margin="12,0,0,0" />
-                                        <TextBlock x:Name="AdditionalClusterRecoveryRunTimerTextBlock" DockPanel.Dock="Right" Text="00:00:00" FontFamily="Consolas" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,4,0" Visibility="Collapsed" />
+                                        <TextBlock x:Name="AdditionalClusterRecoveryRunTimerTextBlock" DockPanel.Dock="Right" Text="00:00:00" FontFamily="Consolas" FontWeight="Bold" Foreground="White" Background="Green" TextAlignment="Center" Width="71" Padding="0,3" VerticalAlignment="Center" Visibility="Collapsed" />
                                     </DockPanel>
                                     <ListBox x:Name="AdditionalClusterRecoveryStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" />
                                 </DockPanel>
@@ -433,7 +433,7 @@
                                     <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="0,0,0,8">
                                         <Button x:Name="RunAllRecoverFleetButton" Content="Run All" HorizontalAlignment="Left" />
                                         <CheckBox x:Name="RunAllRecoverFleetParallelCheckBox" Content="Run parallel tasks using multiple threads (numbered circles)" IsChecked="True" VerticalAlignment="Center" Margin="12,0,0,0" />
-                                        <TextBlock x:Name="RecoverFleetRunTimerTextBlock" DockPanel.Dock="Right" Text="00:00:00" FontFamily="Consolas" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,4,0" Visibility="Collapsed" />
+                                        <TextBlock x:Name="RecoverFleetRunTimerTextBlock" DockPanel.Dock="Right" Text="00:00:00" FontFamily="Consolas" FontWeight="Bold" Foreground="White" Background="Green" TextAlignment="Center" Width="71" Padding="0,3" VerticalAlignment="Center" Visibility="Collapsed" />
                                     </DockPanel>
                                     <ListBox x:Name="RecoverFleetStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" />
                                 </DockPanel>
