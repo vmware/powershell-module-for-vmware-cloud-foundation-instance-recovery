@@ -572,32 +572,6 @@ namespace VCFIRConsole {
 
     public delegate IntPtr LowLevelMouseProc(int nCode, IntPtr wParam, IntPtr lParam);
 
-    // For Send-ToConsole's own text-color save/restore around a simulated-typed command -- only
-    // wAttributes is ever read/written, but GetConsoleScreenBufferInfo requires the full struct
-    // shape to marshal correctly.
-    [StructLayout(LayoutKind.Sequential)]
-    public struct COORD {
-        public short X;
-        public short Y;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    public struct SMALL_RECT {
-        public short Left;
-        public short Top;
-        public short Right;
-        public short Bottom;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    public struct CONSOLE_SCREEN_BUFFER_INFO {
-        public COORD dwSize;
-        public COORD dwCursorPosition;
-        public ushort wAttributes;
-        public SMALL_RECT srWindow;
-        public COORD dwMaximumWindowSize;
-    }
-
     public static class NativeMethods {
         public const int GWL_STYLE = -16;
         public const long WS_CHILD = 0x40000000L;
@@ -610,10 +584,6 @@ namespace VCFIRConsole {
         public const int SW_SHOW = 5;
         public const int STD_INPUT_HANDLE = -10;
         public const int STD_OUTPUT_HANDLE = -11;
-        // FOREGROUND_BLUE | FOREGROUND_GREEN | FOREGROUND_INTENSITY -- matches PowerShell's own
-        // ConsoleColor.Cyan (the intensity bit is required; without it this is the darker
-        // "DarkCyan" instead). Used by Send-ToConsole to color a command's own echoed/typed text.
-        public const ushort FOREGROUND_CYAN = 0x000B;
         public const uint RDW_INVALIDATE = 0x1;
         public const uint RDW_ERASE = 0x4;
         public const uint RDW_UPDATENOW = 0x100;
@@ -672,18 +642,6 @@ namespace VCFIRConsole {
 
         [DllImport("kernel32.dll", SetLastError = true)]
         public static extern bool WriteConsoleInput(IntPtr hConsoleInput, INPUT_RECORD[] lpBuffer, uint nLength, out uint lpNumberOfEventsWritten);
-
-        [DllImport("kernel32.dll", SetLastError = true)]
-        public static extern bool SetConsoleTextAttribute(IntPtr hConsoleOutput, ushort wAttributes);
-
-        [DllImport("kernel32.dll", SetLastError = true)]
-        public static extern bool GetConsoleScreenBufferInfo(IntPtr hConsoleOutput, out CONSOLE_SCREEN_BUFFER_INFO lpConsoleScreenBufferInfo);
-
-        // TEMPORARY diagnostic-only P/Invoke -- lets Send-ToConsole read back the REAL attribute a
-        // just-echoed character actually ended up with, instead of only ever inferring color state
-        // from our own SetConsoleTextAttribute return values. Remove once the color bug is root-caused.
-        [DllImport("kernel32.dll", SetLastError = true)]
-        public static extern bool ReadConsoleOutputAttribute(IntPtr hConsoleOutput, [Out] ushort[] lpAttribute, uint nLength, COORD dwReadCoord, out uint lpNumberOfAttrsRead);
 
         public const int WH_MOUSE_LL = 14;
         public const int WM_LBUTTONDOWN = 0x0201;
@@ -767,7 +725,15 @@ function New-EmbeddedConsole([string]$TabHeader, [switch]$Bootstrap) {
     # anywhere in it, which is exactly the marker Test-StepTranscriptClean's gate 3 looks for -- on
     # ConciseView a real, uncaught error would silently pass every gate. NormalView is the one that
     # always includes it.
-    $consoleStartupCommand = "Set-Location -LiteralPath '$escapedWorkingDirectory'; Remove-Module PSReadLine -Force -ErrorAction SilentlyContinue; `$ErrorView = 'NormalView'; Start-Transcript -Path '$escapedTranscriptPath' -Force | Out-Null"
+    #
+    # ForegroundColor = 'Cyan' here makes cyan this console's STANDING/resting default -- not just
+    # something Send-ToConsole applies around an injected command -- because the "PS ...>" prompt
+    # itself is printed autonomously by this process whenever it returns to idle, on its own
+    # schedule, with no hook Send-ToConsole (running in a different process, only invoked on demand)
+    # could use to color it after the fact. See Send-ToConsole's own comment for how it keeps this
+    # from also recoloring a task's own uncolored Write-Host/Write-Output output -- it brackets each
+    # injected command with an explicit reset to Gray (this line's own true original default) first.
+    $consoleStartupCommand = "Set-Location -LiteralPath '$escapedWorkingDirectory'; Remove-Module PSReadLine -Force -ErrorAction SilentlyContinue; `$ErrorView = 'NormalView'; [Console]::ForegroundColor = 'Cyan'; Start-Transcript -Path '$escapedTranscriptPath' -Force | Out-Null"
 
     # Launched via the Start-Process cmdlet, not System.Diagnostics.ProcessStartInfo + Process.Start().
     # This isn't a style choice -- it's the actual fix for "console window never appears". Confirmed
@@ -985,11 +951,6 @@ $window.Add_Closed({
 # and Send-ToConsole injecting a command should all give focus to whatever's actually on screen,
 # never silently steal it onto some other tab.
 function Set-ConsoleFocus {
-    # TEMPORARY diagnostic instrumentation -- see Write-SendToConsoleDebugLog's own comment. Logs
-    # every call site, not just the one from Send-ToConsole, so a call arriving from
-    # $window.Add_Activated (a modal dialog closing) right around the same time as a Send-ToConsole
-    # call shows up in the same timestamped log.
-    Write-SendToConsoleDebugLog "Set-ConsoleFocus called (stack: $((Get-PSCallStack | Select-Object -Skip 1 -First 1).Command))"
     $console = Get-ActiveConsole
     if ($null -eq $console -or $console.Hwnd -eq [IntPtr]::Zero) {
         return
@@ -1084,17 +1045,6 @@ $window.Add_ContentRendered({
 # knows, that's exactly what happened. $Console defaults to Main, so every existing call site (a
 # lone Run button, Load Variables, the extraction flow, ...) keeps targeting it without having to
 # say so; only a background thread's own steps (see Invoke-StepThreadChain) ever pass a specific one.
-function Write-SendToConsoleDebugLog([string]$Line) {
-    # TEMPORARY diagnostic instrumentation -- added to pin down a real, reproducible-every-time
-    # report that the echoed command text isn't cyan, which every headless test built so far has
-    # failed to reproduce deterministically. Writes hard facts (attempt counts, timings, actual
-    # attribute values) from a REAL run instead of more guessing. Remove once root-caused.
-    try {
-        $logPath = Join-Path $WorkingDirectory 'vcfir-color-debug.log'
-        Add-Content -LiteralPath $logPath -Value "$(Get-Date -Format 'HH:mm:ss.fff') $Line" -Encoding utf8
-    } catch {}
-}
-
 function Send-ToConsole([string]$CommandLine, $Console) {
     if ($null -eq $Console) {
         $Console = $global:mainConsole
@@ -1103,8 +1053,6 @@ function Send-ToConsole([string]$CommandLine, $Console) {
         $statusTextBlock.Text = "Console process isn't running."
         return
     }
-    $debugLabel = "[$($Console.TabItem.Header)] '$($CommandLine.Substring(0, [Math]::Min(40, $CommandLine.Length)))'"
-    Write-SendToConsoleDebugLog "$debugLabel : begin"
     try {
         [VCFIRConsole.NativeMethods]::FreeConsole() | Out-Null
         # A console that was JUST created (New-EmbeddedConsole -Bootstrap calling straight into this,
@@ -1118,26 +1066,36 @@ function Send-ToConsole([string]$CommandLine, $Console) {
         # having ever been typed, while a later command sent moments afterward (once the race window
         # had passed) worked fine. Main is never subject to this since nothing sends it a command
         # this soon after creation.
-        $attachStart = Get-Date
-        $attachDeadline = $attachStart.AddSeconds(2)
+        $attachDeadline = (Get-Date).AddSeconds(2)
         $attached = $false
-        $attachAttempts = 0
         do {
-            $attachAttempts++
             $attached = [VCFIRConsole.NativeMethods]::AttachConsole([uint32]$Console.Process.Id)
             if (-not $attached) {
                 Start-Sleep -Milliseconds 100
             }
         } while (-not $attached -and (Get-Date) -lt $attachDeadline)
-        Write-SendToConsoleDebugLog "$debugLabel : AttachConsole attempts=$attachAttempts success=$attached elapsedMs=$(((Get-Date) - $attachStart).TotalMilliseconds)"
         if (-not $attached) {
             throw "AttachConsole failed (Win32 error $([System.Runtime.InteropServices.Marshal]::GetLastWin32Error()))."
         }
         try {
             $inputHandle = [VCFIRConsole.NativeMethods]::GetStdHandle([VCFIRConsole.NativeMethods]::STD_INPUT_HANDLE)
-            $outputHandle = [VCFIRConsole.NativeMethods]::GetStdHandle([VCFIRConsole.NativeMethods]::STD_OUTPUT_HANDLE)
+            # The console's own resting/idle color is cyan (see New-EmbeddedConsole's startup command),
+            # which is what makes both its own "PS ...>" prompt AND whatever gets typed after it show up
+            # cyan -- that prompt is printed autonomously by the target process whenever it returns to
+            # idle, on its own schedule, with no hook for us to color it retroactively or in step with a
+            # Send-ToConsole call, so making cyan the STANDING default (rather than something this
+            # function sets/restores around each command) is the only way the prompt itself is ever
+            # covered, not just the command text after it. That alone would also recolor every task's own
+            # UNCOLORED Write-Host/Write-Output text (anything without its own explicit -ForegroundColor)
+            # for the whole time it runs -- corrupting LogMessage's Green/White/Yellow/Red convention,
+            # confirmed for real and explicitly rejected once already. Bracketing the injected command
+            # itself with an explicit reset-then-recolor is what avoids that: color drops to Gray (this
+            # console's real original default -- see New-EmbeddedConsole) the instant the real command
+            # starts running, covering its own output, then flips back to Cyan right after so the NEXT
+            # prompt (and whatever gets typed at it) is cyan again too.
+            $coloredCommandLine = "[Console]::ForegroundColor = 'Gray'; $CommandLine; [Console]::ForegroundColor = 'Cyan'"
             $records = [System.Collections.Generic.List[VCFIRConsole.INPUT_RECORD]]::new()
-            foreach ($character in ($CommandLine + "`r").ToCharArray()) {
+            foreach ($character in ($coloredCommandLine + "`r").ToCharArray()) {
                 $keyDown = New-Object VCFIRConsole.KEY_EVENT_RECORD
                 $keyDown.bKeyDown = $true
                 $keyDown.wRepeatCount = 1
@@ -1158,126 +1116,14 @@ function Send-ToConsole([string]$CommandLine, $Console) {
             }
             $recordsArray = $records.ToArray()
             [uint32]$written = 0
-            # The console's basic (non-PSReadLine -- see New-EmbeddedConsole's own bootstrap comment)
-            # line-editing echoes each typed character using whatever text attribute is CURRENT on the
-            # screen buffer at that instant, so the command has to actually be cyan at the moment the
-            # OTHER process (whichever one is attached and reading this input) gets around to
-            # processing these records, not just at the moment they're queued here -- WriteConsoleInput
-            # only enqueues them and returns immediately, it does not wait for them to be read/echoed.
-            # Saving/restoring the real prior attribute (not assuming a fixed "default") keeps this from
-            # ever clobbering whatever color scheme is otherwise in effect -- a permanent default cyan
-            # (tried and reverted) bleeds into every task's own uncolored Write-Host/Write-Output text
-            # too, not just the echoed command line, corrupting the color scheme LogMessage relies on.
-            #
-            # A console that was JUST created (same root cause as AttachConsole's own retry loop
-            # above) can still fail GetConsoleScreenBufferInfo for a beat afterward even once
-            # AttachConsole itself has succeeded -- confirmed for real: the first couple of commands
-            # ever sent to a freshly created console echoed in the console's plain default color
-            # instead of cyan, while every later command on the same console colored correctly once
-            # it had "warmed up". This used to retry for only 100ms total (5 x 20ms) -- far short of
-            # the 2 FULL SECONDS AttachConsole's own retry loop above already budgets for this exact
-            # same root cause; on a real target slower than a dev box (disk/AV/CPU contention slowing
-            # a freshly spawned pwsh.exe's own startup), 100ms is nowhere near enough, and when this
-            # retry gives up early, $gotBufferInfo stays false and the whole cyan-color attempt below
-            # is silently skipped for that command (WriteConsoleInput below still runs regardless, so
-            # the command itself still executes correctly -- only its color silently never gets set).
-            # Matched to AttachConsole's own budget instead of guessing a shorter one that keeps
-            # turning out to be insufficient.
-            $bufferInfoStart = Get-Date
-            $bufferInfoDeadline = $bufferInfoStart.AddSeconds(2)
-            $bufferInfo = New-Object VCFIRConsole.CONSOLE_SCREEN_BUFFER_INFO
-            $gotBufferInfo = $false
-            $bufferInfoAttempts = 0
-            do {
-                $bufferInfoAttempts++
-                $gotBufferInfo = [VCFIRConsole.NativeMethods]::GetConsoleScreenBufferInfo($outputHandle, [ref]$bufferInfo)
-                if (-not $gotBufferInfo) {
-                    Start-Sleep -Milliseconds 50
-                }
-            } while (-not $gotBufferInfo -and (Get-Date) -lt $bufferInfoDeadline)
-            Write-SendToConsoleDebugLog "$debugLabel : GetConsoleScreenBufferInfo attempts=$bufferInfoAttempts success=$gotBufferInfo elapsedMs=$(((Get-Date) - $bufferInfoStart).TotalMilliseconds) originalAttributes=$($bufferInfo.wAttributes) cursorBefore=($($bufferInfo.dwCursorPosition.X),$($bufferInfo.dwCursorPosition.Y))"
-            $setCyanOk = $false
-            if ($gotBufferInfo) {
-                $setCyanOk = [VCFIRConsole.NativeMethods]::SetConsoleTextAttribute($outputHandle, [VCFIRConsole.NativeMethods]::FOREGROUND_CYAN)
-                Write-SendToConsoleDebugLog "$debugLabel : SetConsoleTextAttribute(cyan) success=$setCyanOk win32error=$(if (-not $setCyanOk) { [System.Runtime.InteropServices.Marshal]::GetLastWin32Error() } else { 0 })"
-            }
-            $writeInputOk = [VCFIRConsole.NativeMethods]::WriteConsoleInput($inputHandle, $recordsArray, [uint32]$recordsArray.Length, [ref]$written)
-            Write-SendToConsoleDebugLog "$debugLabel : WriteConsoleInput success=$writeInputOk written=$written of $($recordsArray.Length) win32error=$(if (-not $writeInputOk) { [System.Runtime.InteropServices.Marshal]::GetLastWin32Error() } else { 0 })"
-            if ($gotBufferInfo) {
-                # Wait for the target to actually START echoing (its cursor moving away from where it
-                # was when we queued the input) instead of a single fixed sleep -- confirmed for real:
-                # the first command or two ever sent to a console (Main included -- Browse/Load
-                # Variables can both happen within moments of the app launching, well before this
-                # module has finished importing into that console's own PowerShell host) can take far
-                # longer to reach its ReadConsole loop than any fixed budget sized for the normal case,
-                # so a fixed-length wait restores the color before the echo -- which only happens once
-                # the target actually reads these queued keystrokes -- has even started, leaving it in
-                # the console's plain default color instead of cyan. Bounded to 5 seconds so a console
-                # that never reads the input at all (e.g. its process died) doesn't hold cyan forever.
-                $initialCursor = $bufferInfo.dwCursorPosition
-                $echoWaitStart = Get-Date
-                $echoDeadline = $echoWaitStart.AddSeconds(5)
-                $echoBufferInfo = New-Object VCFIRConsole.CONSOLE_SCREEN_BUFFER_INFO
-                $cursorMoved = $false
-                while ((Get-Date) -lt $echoDeadline) {
-                    if (-not [VCFIRConsole.NativeMethods]::GetConsoleScreenBufferInfo($outputHandle, [ref]$echoBufferInfo)) {
-                        break
-                    }
-                    if ($echoBufferInfo.dwCursorPosition.X -ne $initialCursor.X -or $echoBufferInfo.dwCursorPosition.Y -ne $initialCursor.Y) {
-                        $cursorMoved = $true
-                        break
-                    }
-                    Start-Sleep -Milliseconds 20
-                }
-                Write-SendToConsoleDebugLog "$debugLabel : cursorMoved=$cursorMoved waitMs=$(((Get-Date) - $echoWaitStart).TotalMilliseconds) cursorAfter=($($echoBufferInfo.dwCursorPosition.X),$($echoBufferInfo.dwCursorPosition.Y))"
-                # Read back what attribute the echoed characters actually ended up with, at the exact
-                # row/column the command started at -- direct, ground-truth evidence of whether cyan
-                # really made it into the buffer for this specific run, rather than inferring it from
-                # earlier calls' return values alone.
-                try {
-                    $readLength = [Math]::Min($CommandLine.Length, 200)
-                    $echoedAttrs = New-Object 'uint16[]' $readLength
-                    [uint32]$attrsRead = 0
-                    $readOk = [VCFIRConsole.NativeMethods]::ReadConsoleOutputAttribute($outputHandle, $echoedAttrs, [uint32]$readLength, $initialCursor, [ref]$attrsRead)
-                    Write-SendToConsoleDebugLog "$debugLabel : ReadConsoleOutputAttribute success=$readOk read=$attrsRead attrs=$($echoedAttrs -join ',')"
-                } catch {
-                    Write-SendToConsoleDebugLog "$debugLabel : ReadConsoleOutputAttribute threw: $($_.Exception.Message)"
-                }
-                if ($cursorMoved) {
-                    # Once echoing has actually started, a further short, fixed wait covers the rest of
-                    # even a long, parameter-heavy command line finishing being echoed -- the same
-                    # pragmatic wait this already relied on before, just no longer gating the whole
-                    # thing on it happening within one fixed window measured from when the input was
-                    # merely queued.
-                    Start-Sleep -Milliseconds 150
-                }
-                # Root cause, confirmed via Write-SendToConsoleDebugLog's own ReadConsoleOutputAttribute
-                # evidence from a real run: the buffer genuinely holds cyan for every echoed character at
-                # this point (proven by direct memory read), yet the console visibly stayed its plain
-                # default color on screen -- same underlying gap $window.Add_ContentRendered's own
-                # RedrawWindow call already exists for (see its comment): this console is a reparented
-                # child HWND (via ConsoleHwndHost), and an in-place character write that doesn't scroll
-                # the buffer apparently doesn't reliably propagate through to WPF/DWM's own compositing
-                # of that child surface on its own. Forcing a repaint here, while the buffer still holds
-                # cyan (before restoring), is what actually gets that frame painted instead of silently
-                # never reaching the screen.
-                if ($Console.Hwnd -ne [IntPtr]::Zero) {
-                    $redrawFlags = [VCFIRConsole.NativeMethods]::RDW_INVALIDATE -bor [VCFIRConsole.NativeMethods]::RDW_ERASE -bor [VCFIRConsole.NativeMethods]::RDW_UPDATENOW
-                    [VCFIRConsole.NativeMethods]::RedrawWindow($Console.Hwnd, [IntPtr]::Zero, [IntPtr]::Zero, $redrawFlags) | Out-Null
-                }
-                [VCFIRConsole.NativeMethods]::SetConsoleTextAttribute($outputHandle, $bufferInfo.wAttributes) | Out-Null
-            }
+            [void][VCFIRConsole.NativeMethods]::WriteConsoleInput($inputHandle, $recordsArray, [uint32]$recordsArray.Length, [ref]$written)
         } finally {
             [VCFIRConsole.NativeMethods]::FreeConsole() | Out-Null
         }
-        Write-SendToConsoleDebugLog "$debugLabel : end (no exception)"
     } catch {
-        Write-SendToConsoleDebugLog "$debugLabel : EXCEPTION: $($_.Exception.Message)"
         $statusTextBlock.Text = "Failed to send command: $($_.Exception.Message)"
     }
-    $focusStart = Get-Date
     Set-ConsoleFocus
-    Write-SendToConsoleDebugLog "$debugLabel : Set-ConsoleFocus elapsedMs=$(((Get-Date) - $focusStart).TotalMilliseconds)"
 }
 
 # A step's transcript slice is "unclean" -- even once its own "Completed Task" line has appeared --
@@ -1854,7 +1700,6 @@ function Start-StepCompletionWatcher {
 # Shared by the Browse button and Resume, so both end up driving the exact same domain-listing /
 # console-variable-setting logic instead of two copies drifting apart.
 function Import-ExtractedSddcDataFile([string]$Path) {
-    Write-SendToConsoleDebugLog "Import-ExtractedSddcDataFile begin (Path='$Path')"
     $domainsListBox.Items.Clear()
     $additionalClustersListBox.Items.Clear()
     $domainRecoveryStepsListBox.Items.Clear()
@@ -2071,7 +1916,6 @@ $browseButton.Add_Click({
         if ($dialog.ShowDialog() -ne $true) {
             return
         }
-        Write-SendToConsoleDebugLog "browseButton dialog closed, window.IsActive=$($window.IsActive)"
 
         $filePathTextBox.Text = $dialog.FileName
 
@@ -2093,7 +1937,6 @@ $browseButton.Add_Click({
 #
 # Shared by the Load Variables button and Resume, same reasoning as Import-ExtractedSddcDataFile.
 function Import-VariablesAnswersFile([string]$Path) {
-    Write-SendToConsoleDebugLog "Import-VariablesAnswersFile begin (Path='$Path')"
     try {
         $answers = Get-Content -Path $Path -Raw | ConvertFrom-Json
         $answerMap = [ordered]@{}
@@ -2163,7 +2006,6 @@ $loadVariablesButton.Add_Click({
         if ($dialog.ShowDialog() -ne $true) {
             return
         }
-        Write-SendToConsoleDebugLog "loadVariablesButton dialog closed, window.IsActive=$($window.IsActive)"
         Import-VariablesAnswersFile $dialog.FileName
     }.GetNewClosure())
 
