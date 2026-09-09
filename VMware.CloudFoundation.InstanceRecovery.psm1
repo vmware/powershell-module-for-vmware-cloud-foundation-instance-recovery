@@ -4714,11 +4714,22 @@ Function Add-DiskgroupsToManagementHosts {
                 $sshSession = New-SSHSession -ComputerName $peer.Name -Credential $rootCreds -KnownHost $inmem
             } Until ($sshSession)
 
+            # esxcli errors (exit 1, "Already exists") if an entry for this IP is already present --
+            # harmless in practice (the mesh entry is already what we wanted), but logging it as a
+            # WARNING trips Test-StepTranscriptClean and marks the whole step Failed even though
+            # nothing is actually wrong. List the existing agents once per peer session and skip any
+            # otherPeer already present, rather than attempting (and warning on) a redundant add.
+            $existingAgents = (Invoke-SSHCommand -SessionId $sshSession.SessionId -Command 'esxcli vsan cluster unicastagent list' -TimeOut 30).Output -join "`n"
+
             Foreach ($otherPeer in $otherPeers) {
+                if ($existingAgents -match [regex]::Escape($otherPeer.VsanIp)) {
+                    LogMessage -type INFO -message "[$($peer.Name)] Unicast agent for $($otherPeer.Name) ($($otherPeer.VsanIp)) already present -- skipping"
+                    continue
+                }
                 $addCmd = "esxcli vsan cluster unicastagent add -t node -u $($otherPeer.NodeUuid) -U true -p 12321 -a $($otherPeer.VsanIp)"
                 $result = Invoke-SSHCommand -SessionId $sshSession.SessionId -Command $addCmd -TimeOut 30
                 if ($result.ExitStatus -eq 0) {
-                    LogMessage -type INFO -message "[$($peer.Name)] Added/confirmed unicast agent for $($otherPeer.Name) ($($otherPeer.VsanIp))"
+                    LogMessage -type INFO -message "[$($peer.Name)] Added unicast agent for $($otherPeer.Name) ($($otherPeer.VsanIp))"
                 } else {
                     LogMessage -type WARNING -message "[$($peer.Name)] unicastagent add for $($otherPeer.Name) exited $($result.ExitStatus): $(($result.Output + $result.Error) -join ' ')"
                 }
