@@ -217,7 +217,7 @@
             <DockPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                     <Button x:Name="ResumeButton" Content="Resume..." Width="90" Margin="0,0,8,0" />
-                    <Button x:Name="ExitButton" Content="Exit" Width="70" />
+                    <Button x:Name="ExitButton" Content="Save &amp; Exit" Width="90" />
                 </StackPanel>
                 <StackPanel Orientation="Horizontal">
                     <Image Source="{StaticResource VmwLogoImage}" Width="34" Height="34" Margin="0,0,10,0" VerticalAlignment="Center" />
