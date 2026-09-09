@@ -553,11 +553,12 @@
                          pane. Starts Collapsed; Start-RunTimer/Stop-RunTimer (in the .ps1) show and
                          hide the whole panel for the lifetime of one Run All chain. The label is
                          plain bold black text on the card's own white background, not part of the
-                         timer badge itself; only the value gets the charcoal, rounded-corner badge
-                         treatment, matching the Button style's own CornerRadius. -->
+                         timer badge itself; only the value gets the green, rounded-corner badge
+                         treatment (matching the Button style's own CornerRadius, and the same green
+                         used for a completed step's Button.Background). -->
                     <StackPanel x:Name="OverallRecoveryTimePanel" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,4,4,0" Panel.ZIndex="1" Visibility="Collapsed">
                         <TextBlock Text="Overall Recovery Time" FontWeight="Bold" Foreground="Black" VerticalAlignment="Center" Margin="0,0,6,0" />
-                        <Border Background="#333333" CornerRadius="3" Padding="8,3">
+                        <Border Background="Green" CornerRadius="3" Padding="8,3">
                             <TextBlock x:Name="OverallRecoveryTimeTextBlock" Text="00:00:00" FontFamily="Consolas" FontWeight="Bold" Foreground="White" VerticalAlignment="Center" />
                         </Border>
                     </StackPanel>
