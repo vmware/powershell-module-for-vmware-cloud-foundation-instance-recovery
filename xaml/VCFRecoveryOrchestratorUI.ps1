@@ -76,6 +76,11 @@ $resumeButton = $window.FindName('ResumeButton')
 $exitButton = $window.FindName('ExitButton')
 $ibrRecoveryTypeRadio = $window.FindName('IbrRecoveryTypeRadio')
 $fdrRecoveryTypeRadio = $window.FindName('FdrRecoveryTypeRadio')
+$ibrRecoveryScopeGroupBox = $window.FindName('IbrRecoveryScopeGroupBox')
+$managementDomainRecoveryRadio = $window.FindName('ManagementDomainRecoveryRadio')
+$fleetComponentRecoveryRadio = $window.FindName('FleetComponentRecoveryRadio')
+$workloadDomainRecoveryRadio = $window.FindName('WorkloadDomainRecoveryRadio')
+$additionalClusterRecoveryRadio = $window.FindName('AdditionalClusterRecoveryRadio')
 $dataSourceGroupBox = $window.FindName('DataSourceGroupBox')
 $extractRadio = $window.FindName('ExtractBackupRadio')
 $browseButton = $window.FindName('BrowseButton')
@@ -83,6 +88,8 @@ $filePathTextBox = $window.FindName('FilePathTextBox')
 $statusTextBlock = $window.FindName('StatusTextBlock')
 $discoveredInfrastructureGroupBox = $window.FindName('DiscoveredInfrastructureGroupBox')
 $discoveredInfrastructureTabControl = $window.FindName('DiscoveredInfrastructureTabControl')
+$workloadDomainsTabItem = $window.FindName('WorkloadDomainsTabItem')
+$additionalClustersTabItem = $window.FindName('AdditionalClustersTabItem')
 $domainsListBox = $window.FindName('WorkloadDomainsListBox')
 $additionalClustersListBox = $window.FindName('AdditionalClustersListBox')
 $stepsVariablesGroupBox = $window.FindName('StepsVariablesGroupBox')
@@ -107,14 +114,13 @@ $loadedVariablesTextBlock = $window.FindName('LoadedVariablesTextBlock')
 $variablesItemsPanel = $window.FindName('VariablesItemsPanel')
 $consoleTabControl = $window.FindName('ConsoleTabControl')
 
-# Shown instead of $stepsVariablesTabControl for a MANAGEMENT-type domain -- see
-# Set-StepsVariablesTabVisibility and $global:instanceComponentsGroup/$global:fleetComponentsGroup
-# below. Each of Instance/Fleet Components is a full, independent copy of the Variables+Steps
-# pairing above (own Load/New Variables buttons, own VariablesItemsPanel, own Run All/checkbox/
-# ListBox) rather than sharing one Variables tab the way Domain Recovery and Additional Cluster
-# Recovery do, since these two are genuinely separate plans/operations, not mutually exclusive
-# alternates of the same selection.
-$managementComponentsTabControl = $window.FindName('ManagementComponentsTabControl')
+# Shown instead of $stepsVariablesTabControl when Recovery Scope is Management Domain Recovery /
+# Fleet Component Recovery respectively -- see Set-ActiveStepsVariablesPane and
+# $global:instanceComponentsGroup/$global:fleetComponentsGroup below. Each is a full, independent
+# copy of the Variables+Steps pairing above (own Load/New Variables buttons, own
+# VariablesItemsPanel, own Run All/checkbox/ListBox) rather than sharing one Variables tab the way
+# Domain Recovery and Additional Cluster Recovery do, since these two are genuinely separate plans/
+# operations, not mutually exclusive alternates of the same selection.
 $instanceComponentsVariablesStepsTabControl = $window.FindName('InstanceComponentsVariablesStepsTabControl')
 $fleetComponentsVariablesStepsTabControl = $window.FindName('FleetComponentsVariablesStepsTabControl')
 $instanceComponentsLoadVariablesButton = $window.FindName('InstanceComponentsLoadVariablesButton')
@@ -144,6 +150,11 @@ $global:recoverFleetStepRows = @()
 # both into $global:allSteps, which is what the Variables tab actually reads from.
 $global:domainRecoverySteps = @()
 $global:additionalClusterRecoverySteps = @()
+# Raw, unfiltered domain list from the currently loaded extracted-sddc-data.json (see
+# Import-ExtractedSddcDataFile) -- Sync-IbrRecoveryScopeSelection re-filters this into
+# $domainsListBox every time Recovery Scope changes (MANAGEMENT-only for Management Domain
+# Recovery, non-MANAGEMENT for Workload Domain Recovery), without needing to re-read the file.
+$global:allDiscoveredDomains = @()
 # One state bundle per MANAGEMENT-domain sub-plan (Instance Components / Fleet Components) -- each
 # is a genuinely independent operation with its own Steps, its own Run All row-tracking, and (unlike
 # Domain Recovery/Additional Cluster Recovery, which share one Variables tab) its own separate
@@ -1734,7 +1745,7 @@ function Import-ExtractedSddcDataFile([string]$Path) {
         $group.StepRows = @()
         $group.AnswersFilePath = $null
     }
-    Set-StepsVariablesTabVisibility $false
+    Set-ActiveStepsVariablesPane $stepsVariablesTabControl
     # Nothing meaningful to show until a load actually succeeds below -- collapsed here covers
     # every early-return failure path (bad JSON, missing workloadDomains) without repeating this
     # line at each one.
@@ -1758,12 +1769,11 @@ function Import-ExtractedSddcDataFile([string]$Path) {
         return
     }
 
-    foreach ($domain in $extractedSddcData.workloadDomains) {
-        $item = New-Object System.Windows.Controls.ListBoxItem
-        $item.Content = New-TableRow -Values @($domain.domainName, $domain.domainType) -ColumnGroups @('WorkloadDomainsCol0', 'WorkloadDomainsCol1')
-        $item.Tag = $domain
-        [void]$domainsListBox.Items.Add($item)
-    }
+    # Cached raw/unfiltered -- Sync-IbrRecoveryScopeSelection (called at the end of this function,
+    # and again whenever Recovery Scope changes) re-filters this into $domainsListBox itself
+    # (MANAGEMENT-only for Management Domain Recovery, non-MANAGEMENT for Workload Domain Recovery),
+    # so this function no longer populates $domainsListBox directly.
+    $global:allDiscoveredDomains = @($extractedSddcData.workloadDomains)
 
     # Every domain's own default cluster (isDefault 't') is already the one the Recover Default
     # Cluster plan targets -- anything else (isDefault 'f') is scoped out of that plan entirely, so
@@ -1804,28 +1814,24 @@ function Import-ExtractedSddcDataFile([string]$Path) {
     }
 
     $global:extractedDataLoaded = $true
-    $discoveredInfrastructureGroupBox.Visibility = [System.Windows.Visibility]::Visible
+    Sync-IbrRecoveryScopeSelection
 
     $escapedPath = Protect-SingleQuotes $Path
     Send-ToConsole "Set-ExportedSDDCDataFilePath -Path '$escapedPath'"
 }
 
-# IBR is domain-driven: Data Source/Discovered Infrastructure come back, and Domain Restores /
-# Recover Default Cluster / Recover Additional Cluster replace Recover Fleet on the Steps tab strip.
-# Sync-DomainSteps/Sync-AdditionalClusterSteps own their own tabs' visibility (each shows only when
-# its own selection is real, and the two selections are mutually exclusive), so this handler doesn't
-# force any of the three visible/collapsed itself -- it only re-runs both syncs to re-derive
-# Execution's state from whatever's currently selected in Discovered Infrastructure (re-picking the
-# same domain/cluster wouldn't refire SelectionChanged, so this can't just rely on that).
+# IBR is domain-driven: Data Source/Recovery Scope/Discovered Infrastructure come back, and Domain
+# Restores/Recover Default Cluster/Recover Additional Cluster/the two MANAGEMENT-only panes replace
+# Recover Fleet on the Steps tab strip. Sync-IbrRecoveryScopeSelection owns Discovered
+# Infrastructure's own visibility/content and re-runs Sync-DomainSteps/Sync-AdditionalClusterSteps
+# itself (via clearing/rebuilding selection), so this handler doesn't need to call any of that
+# directly -- it just reveals Recovery Scope/Data Source and hands off to the dispatcher.
 $ibrRecoveryTypeRadio.Add_Checked({
+        $ibrRecoveryScopeGroupBox.Visibility = [System.Windows.Visibility]::Visible
         $dataSourceGroupBox.Visibility = [System.Windows.Visibility]::Visible
-        # Only reveal Discovered Infrastructure if data was actually loaded before switching away to
-        # FDR -- not unconditionally, since nothing may have been loaded at all yet.
-        $discoveredInfrastructureGroupBox.Visibility = if ($global:extractedDataLoaded) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
         $recoverFleetPanel.Visibility = [System.Windows.Visibility]::Collapsed
         $global:recoverFleetStepRows = Set-PlanStepsListBox $recoverFleetStepsListBox @()
-        Sync-DomainSteps
-        Sync-AdditionalClusterSteps
+        Sync-IbrRecoveryScopeSelection
     })
 
 # FDR has one whole-fleet plan (plans/fdr/fdr-failover-plan.json) with no domain to select, so Data
@@ -1836,6 +1842,7 @@ $ibrRecoveryTypeRadio.Add_Checked({
 # values are known yet at this point, so conditional steps fail open (see Test-StepCondition) and
 # show unconditionally until Load Variables/New Variables File re-filters them for real.
 $fdrRecoveryTypeRadio.Add_Checked({
+        $ibrRecoveryScopeGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
         $dataSourceGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
         $discoveredInfrastructureGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
         $domainRecoveryPanel.Visibility = [System.Windows.Visibility]::Collapsed
@@ -1853,7 +1860,7 @@ $fdrRecoveryTypeRadio.Add_Checked({
             $group.StepRows = @()
             $group.AnswersFilePath = $null
         }
-        Set-StepsVariablesTabVisibility $false
+        Set-ActiveStepsVariablesPane $stepsVariablesTabControl
 
         $recoverFleetSteps = Get-ApplicableSteps (Get-RecoveryPlanSteps 'fdr' 'fdr-failover-plan.json') @{}
         $global:recoverFleetStepRows = Set-PlanStepsListBox $recoverFleetStepsListBox $recoverFleetSteps
@@ -1881,7 +1888,7 @@ $extractRadio.Add_Checked({
             $group.StepRows = @()
             $group.AnswersFilePath = $null
         }
-        Set-StepsVariablesTabVisibility $false
+        Set-ActiveStepsVariablesPane $stepsVariablesTabControl
         $global:domainRecoverySteps = @()
         $global:additionalClusterRecoverySteps = @()
         $global:allSteps = @()
@@ -2182,7 +2189,10 @@ function Update-AllSteps {
 function Update-ExecutionVisibility {
     $hasDomainSelected = $null -ne $domainsListBox.SelectedItem
     $hasClusterSelected = $additionalClustersListBox.SelectedItem -is [System.Windows.Controls.ListBoxItem]
-    $stepsVariablesGroupBox.Visibility = if ($hasDomainSelected -or $hasClusterSelected) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
+    # Fleet Component Recovery has no domain/cluster selection at all to hang this off of -- its own
+    # Recovery Tasks pane is ready to show as soon as data is loaded and that scope is active.
+    $isFleetComponentReady = (Get-CurrentIbrRecoveryScope) -eq 'FleetComponent' -and $global:extractedDataLoaded
+    $stepsVariablesGroupBox.Visibility = if ($hasDomainSelected -or $hasClusterSelected -or $isFleetComponentReady) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
 }
 
 # Populates the Domain Recovery/Additional Cluster Recovery ListBoxes from whatever
@@ -2307,19 +2317,27 @@ function New-GroupVariablesFile($Group, [string]$Path) {
     $Group.VariablesStepsTabControl.SelectedIndex = 0
 }
 
-# Picks which of the two top-level Recovery Tasks TabControls is shown: the flat Variables/Steps
-# pair (VI domains, Additional Cluster Recovery, FDR) or the nested Instance/Fleet Components pair
-# (MANAGEMENT domains only). Called from Sync-DomainSteps, Sync-AdditionalClusterSteps, and both
-# Recovery Type Checked handlers -- centralized here, rather than repeating the if/else at each call
-# site, so those four places can never drift out of sync with each other about which one is shown.
-function Set-StepsVariablesTabVisibility([bool]$ShowManagementComponents) {
-    if ($ShowManagementComponents) {
-        $stepsVariablesTabControl.Visibility = 'Collapsed'
-        $managementComponentsTabControl.Visibility = 'Visible'
-    } else {
-        $managementComponentsTabControl.Visibility = 'Collapsed'
-        $stepsVariablesTabControl.Visibility = 'Visible'
+# Picks which ONE of the three top-level Recovery Tasks panes is shown: the flat Variables/Steps
+# pair ($stepsVariablesTabControl -- Workload Domain Recovery, Additional Cluster Recovery, FDR),
+# or one of the two independent panes Management Domain Recovery / Fleet Component Recovery each
+# keep to themselves ($instanceComponentsVariablesStepsTabControl /
+# $fleetComponentsVariablesStepsTabControl). $PaneToShow may be $null to hide all three (used for
+# "nothing to show yet" resets); centralized here, rather than repeating the if/else at each call
+# site, so every caller can never drift out of sync with the others about which one is shown.
+function Set-ActiveStepsVariablesPane($PaneToShow) {
+    foreach ($pane in @($stepsVariablesTabControl, $instanceComponentsVariablesStepsTabControl, $fleetComponentsVariablesStepsTabControl)) {
+        $pane.Visibility = if ($pane -eq $PaneToShow) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
     }
+}
+
+# Single source of truth for which of the 4 IBR Recovery Scope radios is currently checked -- used
+# by Sync-DomainSteps (to decide Management Domain vs Workload Domain) and
+# Sync-IbrRecoveryScopeSelection, rather than each repeating its own if/elseif chain.
+function Get-CurrentIbrRecoveryScope {
+    if ($managementDomainRecoveryRadio.IsChecked -eq $true) { return 'ManagementDomain' }
+    if ($fleetComponentRecoveryRadio.IsChecked -eq $true) { return 'FleetComponent' }
+    if ($additionalClusterRecoveryRadio.IsChecked -eq $true) { return 'AdditionalCluster' }
+    return 'WorkloadDomain'
 }
 
 function Sync-DomainSteps {
@@ -2350,19 +2368,21 @@ function Sync-DomainSteps {
             $additionalClustersListBox.SelectedItem = $null
         }
 
-        # A MANAGEMENT domain's recovery is really two independent operations -- restoring the
-        # domain's own instance components, and separately recovering the VCF Management Services
-        # fleet components -- each with its own Steps and its own Variables (see
+        # Management Domain Recovery is really two independent operations -- restoring the domain's
+        # own instance components, and separately recovering the VCF Management Services fleet
+        # components -- each with its own Steps and its own Variables (see
         # $global:instanceComponentsGroup/$global:fleetComponentsGroup and
-        # Set-StepsVariablesTabVisibility), not the single combined plan a VI domain uses.
-        if ($selected.Tag.domainType -eq 'MANAGEMENT') {
+        # Set-ActiveStepsVariablesPane), not the single combined plan Workload Domain Recovery uses.
+        # $domainsListBox is only ever populated with MANAGEMENT-type domains under this scope (see
+        # Sync-IbrRecoveryScopeSelection's own filtering), so checking the scope itself here is
+        # equivalent to (and doesn't depend on re-inspecting) $selected.Tag.domainType.
+        if ((Get-CurrentIbrRecoveryScope) -eq 'ManagementDomain') {
             $domainRecoveryPanel.Visibility = [System.Windows.Visibility]::Collapsed
-            Set-StepsVariablesTabVisibility $true
+            Set-ActiveStepsVariablesPane $instanceComponentsVariablesStepsTabControl
             $global:instanceComponentsGroup.Steps = Get-RecoveryPlanSteps 'ibr' 'management-domain-recovery-plan.json'
-            $global:fleetComponentsGroup.Steps = Get-RecoveryPlanSteps 'ibr' 'fleet-component-recovery-plan.json'
         } else {
             $domainRecoveryPanel.Visibility = [System.Windows.Visibility]::Visible
-            Set-StepsVariablesTabVisibility $false
+            Set-ActiveStepsVariablesPane $stepsVariablesTabControl
             $global:domainRecoverySteps = Get-RecoveryPlanSteps 'ibr' 'workload-domain-recovery-plan.json'
         }
 
@@ -2378,7 +2398,7 @@ function Sync-DomainSteps {
         }
     } else {
         $domainRecoveryPanel.Visibility = [System.Windows.Visibility]::Collapsed
-        Set-StepsVariablesTabVisibility $false
+        Set-ActiveStepsVariablesPane $stepsVariablesTabControl
         $global:derivedStepVariables = @{}
     }
 
@@ -2409,9 +2429,9 @@ function Sync-AdditionalClusterSteps {
     $variablesItemsPanel.Children.Clear()
     $loadedVariablesTextBlock.Text = 'No variables loaded yet.'
     $global:additionalClusterRecoverySteps = @()
-    # Additional Cluster Recovery always uses the flat Variables/Steps pair -- never the nested
-    # Instance/Fleet Components tabs, which are exclusive to a selected MANAGEMENT domain.
-    Set-StepsVariablesTabVisibility $false
+    # Additional Cluster Recovery always uses the flat Variables/Steps pair -- never the two
+    # independent panes exclusive to Management Domain Recovery / Fleet Component Recovery.
+    Set-ActiveStepsVariablesPane $stepsVariablesTabControl
 
     $selected = $additionalClustersListBox.SelectedItem
     $isRealClusterSelected = $selected -is [System.Windows.Controls.ListBoxItem]
@@ -2446,6 +2466,90 @@ $additionalClustersListBox.Add_SelectionChanged({
             $statusTextBlock.Text = "Additional cluster selection handler failed: $($_.Exception.Message)"
         }
     }.GetNewClosure())
+
+# Dispatcher for the 4 IBR Recovery Scope radios -- called whenever one is checked, and again at the
+# end of Import-ExtractedSddcDataFile (so loading/reloading data after a scope was already picked
+# re-applies its filtering correctly). Owns Discovered Infrastructure's own visibility/content;
+# actual Steps/Variables reveal for Workload Domain/Additional Cluster continues to come from their
+# existing SelectionChanged-driven Sync-DomainSteps/Sync-AdditionalClusterSteps (re-triggered here by
+# clearing/rebuilding selection) -- Fleet Component Recovery has no selection to hook at all, so this
+# function reveals its pane directly.
+function Sync-IbrRecoveryScopeSelection {
+    # Reset both MANAGEMENT-only groups unconditionally. Sync-DomainSteps already does this too
+    # whenever it runs (triggered below by clearing domain selection), but Fleet Component Recovery
+    # never triggers Sync-DomainSteps at all (no domain selection involved), so this is the only
+    # place that clears stale Instance/Fleet Components state when navigating away from them.
+    foreach ($group in @($global:instanceComponentsGroup, $global:fleetComponentsGroup)) {
+        $group.StepsListBox.Items.Clear()
+        $group.VariablesItemsPanel.Children.Clear()
+        $group.LoadedVariablesText.Text = 'No variables loaded yet.'
+        $group.Steps = @()
+        $group.StepRows = @()
+        $group.AnswersFilePath = $null
+    }
+
+    # Clearing selection (rather than leaving stale rows selected under a since-rebuilt list)
+    # re-triggers Sync-DomainSteps/Sync-AdditionalClusterSteps, which already reset their own flat
+    # state and hide their own panel when nothing is selected -- no need to duplicate that here.
+    if ($null -ne $domainsListBox.SelectedItem) { $domainsListBox.SelectedItem = $null }
+    if ($null -ne $additionalClustersListBox.SelectedItem) { $additionalClustersListBox.SelectedItem = $null }
+
+    $scope = Get-CurrentIbrRecoveryScope
+
+    if (-not $global:extractedDataLoaded) {
+        $discoveredInfrastructureGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
+        Update-ExecutionVisibility
+        return
+    }
+
+    if ($scope -eq 'FleetComponent') {
+        # No discovery/selection step at all -- fleet-component-recovery-plan.json never references
+        # $extractedSDDCDataFile, but Data Source is still shown beforehand for flow consistency
+        # across all 4 scopes (a deliberate choice, not an oversight).
+        $discoveredInfrastructureGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
+        $global:fleetComponentsGroup.Steps = Get-RecoveryPlanSteps 'ibr' 'fleet-component-recovery-plan.json'
+        Set-ActiveStepsVariablesPane $fleetComponentsVariablesStepsTabControl
+        Update-ExecutionVisibility
+        return
+    }
+
+    $discoveredInfrastructureGroupBox.Visibility = [System.Windows.Visibility]::Visible
+
+    if ($scope -eq 'AdditionalCluster') {
+        $workloadDomainsTabItem.Visibility = [System.Windows.Visibility]::Collapsed
+        $additionalClustersTabItem.Visibility = [System.Windows.Visibility]::Visible
+        $discoveredInfrastructureTabControl.SelectedItem = $additionalClustersTabItem
+        # AdditionalClustersListBox's own contents are unaffected by scope -- already populated by
+        # Import-ExtractedSddcDataFile.
+    } else {
+        $additionalClustersTabItem.Visibility = [System.Windows.Visibility]::Collapsed
+        $workloadDomainsTabItem.Visibility = [System.Windows.Visibility]::Visible
+        $discoveredInfrastructureTabControl.SelectedItem = $workloadDomainsTabItem
+        $workloadDomainsTabItem.Header = if ($scope -eq 'ManagementDomain') { 'Management Domain' } else { 'Workload Domains' }
+
+        $domainsListBox.Items.Clear()
+        $filteredDomains = @($global:allDiscoveredDomains | Where-Object {
+                if ($scope -eq 'ManagementDomain') { $_.domainType -eq 'MANAGEMENT' } else { $_.domainType -ne 'MANAGEMENT' }
+            })
+        foreach ($domain in $filteredDomains) {
+            $item = New-Object System.Windows.Controls.ListBoxItem
+            $item.Content = New-TableRow -Values @($domain.domainName, $domain.domainType) -ColumnGroups @('WorkloadDomainsCol0', 'WorkloadDomainsCol1')
+            $item.Tag = $domain
+            [void]$domainsListBox.Items.Add($item)
+        }
+        # There's only ever at most one MANAGEMENT domain -- auto-select it rather than making the
+        # user click the sole row in an otherwise-empty-feeling list.
+        if ($scope -eq 'ManagementDomain' -and $domainsListBox.Items.Count -gt 0) {
+            $domainsListBox.SelectedIndex = 0
+        }
+    }
+    Update-ExecutionVisibility
+}
+
+$managementDomainRecoveryRadio.Add_Checked({ Sync-IbrRecoveryScopeSelection })
+$fleetComponentRecoveryRadio.Add_Checked({ Sync-IbrRecoveryScopeSelection })
+$workloadDomainRecoveryRadio.Add_Checked({ Sync-IbrRecoveryScopeSelection })
+$additionalClusterRecoveryRadio.Add_Checked({ Sync-IbrRecoveryScopeSelection })
 
 $runAllDomainRecoveryButton.Add_Click({
         try {
@@ -2536,6 +2640,7 @@ $exitButton.Add_Click({
 
             $state = [PSCustomObject]@{
                 ExtractedDataFilePath     = $filePathTextBox.Text
+                IbrRecoveryScope          = Get-CurrentIbrRecoveryScope
                 VariablesAnswersFilePaths = [PSCustomObject]@{
                     Shared              = $global:variablesAnswersFilePath
                     InstanceComponents  = $global:instanceComponentsGroup.AnswersFilePath
@@ -2586,6 +2691,22 @@ $resumeButton.Add_Click({
             }
 
             $state = Get-Content -Path $dialog.FileName -Raw | ConvertFrom-Json
+
+            # Restored BEFORE Import-ExtractedSddcDataFile (which itself calls
+            # Sync-IbrRecoveryScopeSelection once data loads) so that first real filter/populate pass
+            # already uses the correct scope, instead of running once under whatever was checked
+            # before Resume and then a second time once corrected. An older saved state with no
+            # IbrRecoveryScope field, or an unrecognized value, just leaves whatever's currently
+            # checked (the default, Workload Domain Recovery) alone.
+            $scopeRadioByName = @{
+                ManagementDomain = $managementDomainRecoveryRadio
+                FleetComponent   = $fleetComponentRecoveryRadio
+                WorkloadDomain   = $workloadDomainRecoveryRadio
+                AdditionalCluster = $additionalClusterRecoveryRadio
+            }
+            if ($state.IbrRecoveryScope -and $scopeRadioByName.ContainsKey([string]$state.IbrRecoveryScope)) {
+                $scopeRadioByName[[string]$state.IbrRecoveryScope].IsChecked = $true
+            }
 
             if ($state.ExtractedDataFilePath) {
                 $filePathTextBox.Text = $state.ExtractedDataFilePath

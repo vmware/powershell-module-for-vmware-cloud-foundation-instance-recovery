@@ -264,6 +264,7 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
                 <!-- Leading question: which top-level recovery workflow is this session for. IBR
@@ -283,13 +284,31 @@
                     </StackPanel>
                 </GroupBox>
 
+                <!-- IBR-only: which of the four independent recovery operations this session is for,
+                     chosen BEFORE Data Source - each one drives a different combination of
+                     Discovered Infrastructure content (or none, for Fleet Component) and a different
+                     Recovery Tasks pane below (see Sync-IbrRecoveryScopeSelection in the .ps1).
+                     Management Domain Recovery and Fleet Component Recovery used to be one combined
+                     "pick a MANAGEMENT domain" flow with both shown as nested tabs together; they're
+                     now two fully independent top-level choices, each with its own Steps/Variables/
+                     answers file, matching Workload Domain Recovery and Additional Cluster Recovery's
+                     own existing independence from each other. -->
+                <GroupBox x:Name="IbrRecoveryScopeGroupBox" Grid.Row="1" Header="Recovery Scope" Margin="0,0,0,12">
+                    <StackPanel Margin="0,-8,0,0">
+                        <RadioButton x:Name="ManagementDomainRecoveryRadio" Content="Management Domain Recovery" GroupName="IbrRecoveryScope" Margin="0,0,0,6" />
+                        <RadioButton x:Name="FleetComponentRecoveryRadio" Content="Fleet Component Recovery" GroupName="IbrRecoveryScope" Margin="0,0,0,6" />
+                        <RadioButton x:Name="WorkloadDomainRecoveryRadio" Content="Workload Domain Recovery" GroupName="IbrRecoveryScope" IsChecked="True" Margin="0,0,0,6" />
+                        <RadioButton x:Name="AdditionalClusterRecoveryRadio" Content="Additional Cluster Recovery" GroupName="IbrRecoveryScope" />
+                    </StackPanel>
+                </GroupBox>
+
                 <!-- Just the choice of data source and the file that provides it. Extracting a
                      backup runs immediately once that file (plus the credentials file and
                      encryption password the .ps1 prompts for right there) is picked, and it isn't a
                      Steps entry in Recovery Tasks below, since there's nothing to sequence: it's one
                      action, not a plan. Loading already-extracted data instead populates Discovered
                      Infrastructure. -->
-                <GroupBox x:Name="DataSourceGroupBox" Grid.Row="1" Header="Data Source" Margin="0,0,0,12">
+                <GroupBox x:Name="DataSourceGroupBox" Grid.Row="2" Header="Data Source" Margin="0,0,0,12">
                     <StackPanel Margin="0,-8,0,0">
                         <RadioButton x:Name="ExtractBackupRadio" Content="Extract SDDC Manager Backup" GroupName="DataSource" IsChecked="True" Margin="0,0,0,6" />
                         <RadioButton x:Name="UseExtractedDataRadio" Content="Load Extracted SDDC Data" GroupName="DataSource" Margin="0,0,0,6" />
@@ -308,7 +327,7 @@
                 <!-- Collapsed until extracted-sddc-data is actually loaded (see
                      Import-ExtractedSddcDataFile in the .ps1); there's nothing meaningful to
                      show in either tab before then. -->
-                <GroupBox x:Name="DiscoveredInfrastructureGroupBox" Grid.Row="2" Header="Discovered Infrastructure" Margin="0,0,0,12" Visibility="Collapsed">
+                <GroupBox x:Name="DiscoveredInfrastructureGroupBox" Grid.Row="3" Header="Discovered Infrastructure" Margin="0,0,0,12" Visibility="Collapsed">
                     <DockPanel Margin="0,-8,0,0">
                     <TextBlock DockPanel.Dock="Top" Text="Click on the element you wish to recover" FontWeight="Normal" Foreground="{StaticResource SubtleTextBrush}" Margin="0,0,0,8" />
                     <TabControl x:Name="DiscoveredInfrastructureTabControl" Background="Transparent" BorderThickness="0">
@@ -340,7 +359,7 @@
                              the same reason in the other axis: vertical scrolling of the rows stays
                              owned entirely by the ListBox's own MaxHeight+VerticalScrollBarVisibility
                              below, not duplicated by the outer ScrollViewer as well. -->
-                        <TabItem Header="Workload Domains">
+                        <TabItem x:Name="WorkloadDomainsTabItem" Header="Workload Domains">
                             <DockPanel Margin="0,8,0,0" Grid.IsSharedSizeScope="True">
                                 <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
                                     <StackPanel>
@@ -362,7 +381,7 @@
                              same recovery attention as the default cluster but aren't covered by
                              the Recover Default Cluster plan, so surfacing them here is what tells
                              you whether there's extra work to plan for at all. -->
-                        <TabItem Header="Additional Clusters">
+                        <TabItem x:Name="AdditionalClustersTabItem" Header="Additional Clusters">
                             <DockPanel Margin="0,8,0,0" Grid.IsSharedSizeScope="True">
                                 <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
                                     <StackPanel>
@@ -396,7 +415,7 @@
                 <!-- Steps and Variables share one card as tabs: each gets the whole remaining
                      pane's height instead of splitting it permanently, since you're typically
                      working in one or the other, not both at once. -->
-                <GroupBox x:Name="StepsVariablesGroupBox" Grid.Row="3" Header="Recovery Tasks" Visibility="Collapsed">
+                <GroupBox x:Name="StepsVariablesGroupBox" Grid.Row="4" Header="Recovery Tasks" Visibility="Collapsed">
                     <Grid>
                     <TabControl x:Name="StepsVariablesTabControl" Background="Transparent" BorderThickness="0" Margin="0,-8,0,0">
                         <TabItem Header="Variables">
@@ -465,64 +484,61 @@
                         </TabItem>
                     </TabControl>
                     <!-- Shown INSTEAD of StepsVariablesTabControl (see the .ps1's
-                         Set-StepsVariablesTabVisibility) when the selected domain's domainType is
-                         MANAGEMENT - a management domain recovery is really two independent
-                         operations (its own instance components, and separately the VCF Management
-                         Services fleet components), each needing its own Steps AND its own
-                         Variables, not one shared pair like VI domains/Additional Cluster/FDR keep
-                         using. "Fleet Components" here is an IBR, MANAGEMENT-domain sub-plan
-                         (fleet-component-recovery-plan.json) - unrelated to the FDR "Recover
-                         Fleet" feature (RecoverFleetPanel above) despite the similar name. -->
-                    <TabControl x:Name="ManagementComponentsTabControl" Background="Transparent" BorderThickness="0" Margin="0,-8,0,0" Visibility="Collapsed">
-                        <TabItem Header="Instance Components">
-                            <TabControl x:Name="InstanceComponentsVariablesStepsTabControl" Background="Transparent" BorderThickness="0" Margin="0,8,0,0">
-                                <TabItem Header="Variables">
-                                    <DockPanel Margin="0,8,0,0">
-                                        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
-                                            <Button x:Name="InstanceComponentsLoadVariablesButton" Content="Load Variables File" Margin="0,0,8,0" />
-                                            <Button x:Name="InstanceComponentsNewVariablesFileButton" Content="New Variables File" />
-                                        </StackPanel>
-                                        <TextBlock x:Name="InstanceComponentsLoadedVariablesTextBlock" DockPanel.Dock="Top" Margin="0,0,0,8" TextWrapping="Wrap" Foreground="{StaticResource SubtleTextBrush}" Text="No variables loaded yet." />
-                                        <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                            <StackPanel x:Name="InstanceComponentsVariablesItemsPanel" />
-                                        </ScrollViewer>
-                                    </DockPanel>
-                                </TabItem>
-                                <TabItem Header="Steps">
-                                    <DockPanel Margin="0,8,0,0">
-                                        <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="0,0,0,8">
-                                            <Button x:Name="RunAllInstanceComponentsButton" Content="Run All" HorizontalAlignment="Left" />
-                                            <CheckBox x:Name="RunAllInstanceComponentsParallelCheckBox" Content="Run parallel tasks using multiple threads (numbered circles)" IsChecked="True" VerticalAlignment="Center" Margin="12,0,0,0" />
-                                        </DockPanel>
-                                        <ListBox x:Name="InstanceComponentsStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
-                                    </DockPanel>
-                                </TabItem>
-                            </TabControl>
+                         Set-ActiveStepsVariablesPane) when Recovery Scope is Management Domain
+                         Recovery / Fleet Component Recovery respectively - these were originally one
+                         combined "MANAGEMENT domain selected" flow with both nested together as tabs
+                         under one shared container; they're now two fully independent top-level
+                         panes (picked directly via Recovery Scope, not inferred from a selected
+                         domain's type), each keeping its own Steps AND its own Variables/answers
+                         file, same as Workload Domain Recovery and Additional Cluster Recovery
+                         already keep from each other. "Fleet Components" here is an IBR, Fleet
+                         Component Recovery sub-plan (fleet-component-recovery-plan.json) - unrelated
+                         to the FDR "Recover Fleet" feature (RecoverFleetPanel above) despite the
+                         similar name. -->
+                    <TabControl x:Name="InstanceComponentsVariablesStepsTabControl" Background="Transparent" BorderThickness="0" Margin="0,-8,0,0" Visibility="Collapsed">
+                        <TabItem Header="Variables">
+                            <DockPanel Margin="0,8,0,0">
+                                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+                                    <Button x:Name="InstanceComponentsLoadVariablesButton" Content="Load Variables File" Margin="0,0,8,0" />
+                                    <Button x:Name="InstanceComponentsNewVariablesFileButton" Content="New Variables File" />
+                                </StackPanel>
+                                <TextBlock x:Name="InstanceComponentsLoadedVariablesTextBlock" DockPanel.Dock="Top" Margin="0,0,0,8" TextWrapping="Wrap" Foreground="{StaticResource SubtleTextBrush}" Text="No variables loaded yet." />
+                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                    <StackPanel x:Name="InstanceComponentsVariablesItemsPanel" />
+                                </ScrollViewer>
+                            </DockPanel>
                         </TabItem>
-                        <TabItem Header="Fleet Components">
-                            <TabControl x:Name="FleetComponentsVariablesStepsTabControl" Background="Transparent" BorderThickness="0" Margin="0,8,0,0">
-                                <TabItem Header="Variables">
-                                    <DockPanel Margin="0,8,0,0">
-                                        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
-                                            <Button x:Name="FleetComponentsLoadVariablesButton" Content="Load Variables File" Margin="0,0,8,0" />
-                                            <Button x:Name="FleetComponentsNewVariablesFileButton" Content="New Variables File" />
-                                        </StackPanel>
-                                        <TextBlock x:Name="FleetComponentsLoadedVariablesTextBlock" DockPanel.Dock="Top" Margin="0,0,0,8" TextWrapping="Wrap" Foreground="{StaticResource SubtleTextBrush}" Text="No variables loaded yet." />
-                                        <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                            <StackPanel x:Name="FleetComponentsVariablesItemsPanel" />
-                                        </ScrollViewer>
-                                    </DockPanel>
-                                </TabItem>
-                                <TabItem Header="Steps">
-                                    <DockPanel Margin="0,8,0,0">
-                                        <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="0,0,0,8">
-                                            <Button x:Name="RunAllFleetComponentsButton" Content="Run All" HorizontalAlignment="Left" />
-                                            <CheckBox x:Name="RunAllFleetComponentsParallelCheckBox" Content="Run parallel tasks using multiple threads (numbered circles)" IsChecked="True" VerticalAlignment="Center" Margin="12,0,0,0" />
-                                        </DockPanel>
-                                        <ListBox x:Name="FleetComponentsStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
-                                    </DockPanel>
-                                </TabItem>
-                            </TabControl>
+                        <TabItem Header="Steps">
+                            <DockPanel Margin="0,8,0,0">
+                                <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="0,0,0,8">
+                                    <Button x:Name="RunAllInstanceComponentsButton" Content="Run All" HorizontalAlignment="Left" />
+                                    <CheckBox x:Name="RunAllInstanceComponentsParallelCheckBox" Content="Run parallel tasks using multiple threads (numbered circles)" IsChecked="True" VerticalAlignment="Center" Margin="12,0,0,0" />
+                                </DockPanel>
+                                <ListBox x:Name="InstanceComponentsStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
+                            </DockPanel>
+                        </TabItem>
+                    </TabControl>
+                    <TabControl x:Name="FleetComponentsVariablesStepsTabControl" Background="Transparent" BorderThickness="0" Margin="0,-8,0,0" Visibility="Collapsed">
+                        <TabItem Header="Variables">
+                            <DockPanel Margin="0,8,0,0">
+                                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+                                    <Button x:Name="FleetComponentsLoadVariablesButton" Content="Load Variables File" Margin="0,0,8,0" />
+                                    <Button x:Name="FleetComponentsNewVariablesFileButton" Content="New Variables File" />
+                                </StackPanel>
+                                <TextBlock x:Name="FleetComponentsLoadedVariablesTextBlock" DockPanel.Dock="Top" Margin="0,0,0,8" TextWrapping="Wrap" Foreground="{StaticResource SubtleTextBrush}" Text="No variables loaded yet." />
+                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                    <StackPanel x:Name="FleetComponentsVariablesItemsPanel" />
+                                </ScrollViewer>
+                            </DockPanel>
+                        </TabItem>
+                        <TabItem Header="Steps">
+                            <DockPanel Margin="0,8,0,0">
+                                <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="0,0,0,8">
+                                    <Button x:Name="RunAllFleetComponentsButton" Content="Run All" HorizontalAlignment="Left" />
+                                    <CheckBox x:Name="RunAllFleetComponentsParallelCheckBox" Content="Run parallel tasks using multiple threads (numbered circles)" IsChecked="True" VerticalAlignment="Center" Margin="12,0,0,0" />
+                                </DockPanel>
+                                <ListBox x:Name="FleetComponentsStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
+                            </DockPanel>
                         </TabItem>
                     </TabControl>
                     </Grid>
