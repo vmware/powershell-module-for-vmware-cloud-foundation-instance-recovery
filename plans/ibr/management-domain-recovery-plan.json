@@ -153,7 +153,7 @@
   },
   {
     "description": "",
-    "commandLine": "Add-DiskgroupsToManagementHosts -targetFqdn $restoredVcenterFqdn -targetAdmin $restoredVcenterAdmin -targetAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile -serial",
+    "commandLine": "Add-DiskgroupsToManagementHosts -targetFqdn $restoredVcenterFqdn -targetAdmin $restoredVcenterAdmin -targetAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile -serial -autoConfirm",
     "displayName": "Add Diskgroups to Management Hosts",
     "condition": [
       {
@@ -164,7 +164,7 @@
       }
     ],
     "threadId": "",
-    "interactive": true
+    "interactive": false
   },
   {
     "description": "",
@@ -179,7 +179,7 @@
       }
     ],
     "threadId": "",
-    "interactive": true
+    "interactive": false
   },
   {
     "description": "",

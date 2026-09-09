@@ -4349,6 +4349,9 @@ Function Add-DiskgroupsToManagementHosts {
 
     .PARAMETER serial
     If specified, disk groups are created on each host one at a time in the current session instead of launching a parallel background job per host
+
+    .PARAMETER autoConfirm
+    If specified, creates the proposed disk groups without prompting for confirmation
     #>
 
     Param(
@@ -4357,7 +4360,8 @@ Function Add-DiskgroupsToManagementHosts {
         [Parameter (Mandatory = $true)][String] $targetAdminPassword,
         [Parameter (Mandatory = $true)][String] $clusterName,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
-        [Parameter (Mandatory = $false)][Switch] $serial
+        [Parameter (Mandatory = $false)][Switch] $serial,
+        [Parameter (Mandatory = $false)][Switch] $autoConfirm
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
@@ -4568,17 +4572,19 @@ Function Add-DiskgroupsToManagementHosts {
         Write-Host ""
         $proposedDisplayRows | Format-Table -Property @{Expression = " " }, Host, DG, Status, CTL, Type, Role, CapacityGB -AutoSize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
         Write-Host ""
-        Write-Host " Do you wish to proceed? (Y/N): " -ForegroundColor Yellow -nonewline
-        Do {
-            $proceedAccepted = Read-Host
-        } Until ($proceedAccepted -in "Y", "N")
+        If (-not $autoConfirm) {
+            Write-Host " Do you wish to proceed? (Y/N): " -ForegroundColor Yellow -nonewline
+            Do {
+                $proceedAccepted = Read-Host
+            } Until ($proceedAccepted -in "Y", "N")
 
-        If ($proceedAccepted -eq "N") {
-            LogMessage -type INFO -message "[$clusterName] User cancelled. No changes made."
-            Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
-            $StopWatch.Stop()
-            LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
-            return
+            If ($proceedAccepted -eq "N") {
+                LogMessage -type INFO -message "[$clusterName] User cancelled. No changes made."
+                Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+                $StopWatch.Stop()
+                LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+                return
+            }
         }
 
         $diskGroupNumber = $referenceConfig.Count
@@ -6450,22 +6456,21 @@ Function New-ReconfiguredVsanStretchedCluster {
         Return
     }
 
-    # This cmdlet reconfigures the stretched cluster against whatever witness host it finds recorded/
-    # discoverable at the time -- it has no way to tell an old, no-longer-valid witness apart from a
-    # correctly redeployed one, so it has to ask rather than assume.
-    LogMessage -type QUESTION -message "[$clusterName] Has old vSAN witness been removed from inventory and new witness deployed and added to inventory? (Y/N): " -nonewline
-    Do {
-        $witnessReadyAccepted = Read-Host
-    } Until ($witnessReadyAccepted -in "Y", "N")
-    If ($witnessReadyAccepted -eq "N") {
-        LogMessage -type INFO -message "[$jumpboxName] User cancelled. No changes made."
-        $StopWatch.Stop()
-        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
-        Return
-    }
-
     LogMessage -type INFO -message "[$vCenterFQDN] Connecting to vCenter"
     Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop | Out-Null
+
+    # This cmdlet reconfigures the stretched cluster against whatever witness host it finds registered
+    # and connected at the time -- rather than asking the operator to self-report that the old witness
+    # was removed and the new one deployed/added (easy to get wrong or to answer too early), check the
+    # actual vCenter inventory state directly and only proceed once it's genuinely true, re-checking
+    # after every prompt rather than trusting a single confirmation.
+    $witnessVMHost = Get-VMHost -Name $witnessFqdn -ErrorAction SilentlyContinue
+    While (-not $witnessVMHost -or $witnessVMHost.ConnectionState -ne 'Connected') {
+        LogMessage -type INFO -message "[$witnessFqdn] Witness host is not registered and connected in $vCenterFQDN. Register/reconnect the witness host, then press Enter to continue."
+        Read-Host "Press Enter once the witness host is registered and connected" | Out-Null
+        $witnessVMHost = Get-VMHost -Name $witnessFqdn -ErrorAction SilentlyContinue
+    }
+    LogMessage -type INFO -message "[$witnessFqdn] Witness host is registered and connected in $vCenterFQDN"
 
     $clusterObj = Get-Cluster -Name $clusterName -ErrorAction Stop
 
@@ -6528,15 +6533,6 @@ Function New-ReconfiguredVsanStretchedCluster {
                 LogMessage -type ERROR -message "[$($dataHost.Name)] Failed to configure vSAN Witness Traffic Separation on vmk0: $($_.Exception.Message)"
             }
         }
-    }
-
-    $witnessVMHost = Get-VMHost -Name $witnessFqdn -ErrorAction SilentlyContinue
-    if (!$witnessVMHost) {
-        LogMessage -type WARNING -message "[$witnessFqdn] Witness host not found in the vCenter inventory. Ensure the witness has been restored/redeployed and registered with $vCenterFQDN before running this cmdlet."
-        Disconnect-VIServer -Server $vCenterFQDN -Force -Confirm:$false
-        $StopWatch.Stop()
-        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
-        Return
     }
 
     $az1FaultDomain = Get-VsanFaultDomain -Cluster $clusterObj -Name "$($clustername)_primary-az-faultdomain (preferred)" -ErrorAction SilentlyContinue

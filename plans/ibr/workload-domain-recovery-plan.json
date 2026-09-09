@@ -124,7 +124,7 @@
       }
     ],
     "threadId": "",
-    "interactive": true
+    "interactive": false
   },
   {
     "description": "Recreate a vSAN Datastore",
