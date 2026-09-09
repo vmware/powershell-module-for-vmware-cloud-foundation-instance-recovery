@@ -295,9 +295,9 @@
                      own existing independence from each other. -->
                 <GroupBox x:Name="IbrRecoveryScopeGroupBox" Grid.Row="1" Header="Recovery Scope" Margin="0,0,0,12">
                     <StackPanel Margin="0,-8,0,0">
-                        <RadioButton x:Name="ManagementDomainRecoveryRadio" Content="Management Domain Recovery" GroupName="IbrRecoveryScope" Margin="0,0,0,6" />
+                        <RadioButton x:Name="ManagementDomainRecoveryRadio" Content="Management Domain Recovery" GroupName="IbrRecoveryScope" IsChecked="True" Margin="0,0,0,6" />
                         <RadioButton x:Name="FleetComponentRecoveryRadio" Content="Fleet Component Recovery" GroupName="IbrRecoveryScope" Margin="0,0,0,6" />
-                        <RadioButton x:Name="WorkloadDomainRecoveryRadio" Content="Workload Domain Recovery" GroupName="IbrRecoveryScope" IsChecked="True" Margin="0,0,0,6" />
+                        <RadioButton x:Name="WorkloadDomainRecoveryRadio" Content="Workload Domain Recovery" GroupName="IbrRecoveryScope" Margin="0,0,0,6" />
                         <RadioButton x:Name="AdditionalClusterRecoveryRadio" Content="Additional Cluster Recovery" GroupName="IbrRecoveryScope" />
                     </StackPanel>
                 </GroupBox>

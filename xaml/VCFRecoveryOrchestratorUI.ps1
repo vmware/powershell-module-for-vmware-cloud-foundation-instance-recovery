@@ -2324,9 +2324,20 @@ function New-GroupVariablesFile($Group, [string]$Path) {
 # $fleetComponentsVariablesStepsTabControl). $PaneToShow may be $null to hide all three (used for
 # "nothing to show yet" resets); centralized here, rather than repeating the if/else at each call
 # site, so every caller can never drift out of sync with the others about which one is shown.
+#
+# Also resets the newly-shown pane's own SelectedIndex back to 0 ("Variables") -- each of the three
+# is a separate TabControl instance that remembers its own last-selected tab even while Collapsed,
+# so without this, switching Recovery Scope could land on a "Steps" tab left over from an earlier
+# variables load in THIS SAME pane, showing a blank Steps list (nothing's been loaded yet for the
+# newly-activated scope) instead of the Variables tab there's actually something to do on. Callers
+# that immediately have real Steps to show already override this right after (e.g. FDR's own
+# handler explicitly re-selects "Steps" once its plan is loaded).
 function Set-ActiveStepsVariablesPane($PaneToShow) {
     foreach ($pane in @($stepsVariablesTabControl, $instanceComponentsVariablesStepsTabControl, $fleetComponentsVariablesStepsTabControl)) {
         $pane.Visibility = if ($pane -eq $PaneToShow) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
+    }
+    if ($null -ne $PaneToShow) {
+        $PaneToShow.SelectedIndex = 0
     }
 }
 
