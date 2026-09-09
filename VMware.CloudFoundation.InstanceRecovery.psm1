@@ -4346,6 +4346,9 @@ Function Add-DiskgroupsToManagementHosts {
 
     .PARAMETER extractedSDDCDataFile
     Relative or absolute path to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup) somewhere on the local filesystem
+
+    .PARAMETER serial
+    If specified, disk groups are created on each host one at a time in the current session instead of launching a parallel background job per host
     #>
 
     Param(
@@ -4353,7 +4356,8 @@ Function Add-DiskgroupsToManagementHosts {
         [Parameter (Mandatory = $true)][String] $targetAdmin,
         [Parameter (Mandatory = $true)][String] $targetAdminPassword,
         [Parameter (Mandatory = $true)][String] $clusterName,
-        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
+        [Parameter (Mandatory = $false)][Switch] $serial
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
@@ -4577,21 +4581,17 @@ Function Add-DiskgroupsToManagementHosts {
             return
         }
 
-        LogMessage -type INFO -message "[$clusterName] Starting parallel disk group creation across hosts requiring configuration"
         $diskGroupNumber = $referenceConfig.Count
-        Foreach ($vmHost in $hostsNeedingDiskGroups) {
-            $scriptBlock = {
-                $moduleFunctions = Import-Module VMware.CloudFoundation.InstanceRecovery -PassThru
-                $restoredvCenterConnection = Connect-ViServer $using:targetFQDN -user $using:targetAdmin -password $using:targetAdminPassword
-                $vmhost = Get-VMHost -Name $using:vmHost.Name
 
+        If ($serial) {
+            LogMessage -type INFO -message "[$clusterName] Starting serial disk group creation across hosts requiring configuration"
+            Foreach ($vmHost in $hostsNeedingDiskGroups) {
                 # Get this host's eligible disks (VsanStatus = Eligible) sorted by runtime name.
                 # Canonical names are matched positionally against the reference config, which was
                 # also sorted by runtime name — so disk layout must be standardized across all hosts.
-                $hostEligibleDisks = $vmhost | Get-VMHostDisk | Where-Object { $_.ScsiLun.VsanStatus -eq 'Eligible' } | Sort-Object -Property @{e = { $_.ScsiLun.RuntimeName } }
+                $hostEligibleDisks = $vmHost | Get-VMHostDisk | Where-Object { $_.ScsiLun.VsanStatus -eq 'Eligible' } | Sort-Object -Property @{e = { $_.ScsiLun.RuntimeName } }
 
-                $referenceConfig = $using:referenceConfig
-                For ($i = 1; $i -le $using:diskGroupNumber; $i++) {
+                For ($i = 1; $i -le $diskGroupNumber; $i++) {
                     $diskGroupConfigurationIndex = ($i - 1)
                     $config = $referenceConfig[$diskGroupConfigurationIndex]
 
@@ -4607,14 +4607,49 @@ Function Add-DiskgroupsToManagementHosts {
                         $capacityDiskCanonicalNames += ($hostEligibleDisks[$capacityPositionIndex]).ScsiLun.CanonicalName
                     }
 
-                    & $moduleFunctions { LogMessage -type INFO -message "[$($vmhost.Name)] Creating vSAN OSA Disk Group $i (cache: $cacheDiskCanonicalName)" }
-                    New-VsanDiskGroup -VMHost $vmhost -SsdCanonicalName $cacheDiskCanonicalName -DataDiskCanonicalName $capacityDiskCanonicalNames | Out-Null
+                    LogMessage -type INFO -message "[$($vmHost.Name)] Creating vSAN OSA Disk Group $i (cache: $cacheDiskCanonicalName)"
+                    New-VsanDiskGroup -VMHost $vmHost -SsdCanonicalName $cacheDiskCanonicalName -DataDiskCanonicalName $capacityDiskCanonicalNames | Out-Null
                 }
-                Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
             }
-            Start-Job -ScriptBlock $scriptBlock -ArgumentList ($diskGroupNumber, $referenceConfig, $vmHost, $targetFQDN, $targetAdmin, $targetAdminPassword) | Out-Null
+        } Else {
+            LogMessage -type INFO -message "[$clusterName] Starting parallel disk group creation across hosts requiring configuration"
+            Foreach ($vmHost in $hostsNeedingDiskGroups) {
+                $scriptBlock = {
+                    $moduleFunctions = Import-Module VMware.CloudFoundation.InstanceRecovery -PassThru
+                    $restoredvCenterConnection = Connect-ViServer $using:targetFQDN -user $using:targetAdmin -password $using:targetAdminPassword
+                    $vmhost = Get-VMHost -Name $using:vmHost.Name
+
+                    # Get this host's eligible disks (VsanStatus = Eligible) sorted by runtime name.
+                    # Canonical names are matched positionally against the reference config, which was
+                    # also sorted by runtime name — so disk layout must be standardized across all hosts.
+                    $hostEligibleDisks = $vmhost | Get-VMHostDisk | Where-Object { $_.ScsiLun.VsanStatus -eq 'Eligible' } | Sort-Object -Property @{e = { $_.ScsiLun.RuntimeName } }
+
+                    $referenceConfig = $using:referenceConfig
+                    For ($i = 1; $i -le $using:diskGroupNumber; $i++) {
+                        $diskGroupConfigurationIndex = ($i - 1)
+                        $config = $referenceConfig[$diskGroupConfigurationIndex]
+
+                        # The reference config stores canonical names from the reference host sorted by
+                        # runtime name. We use the same positional index to pick disks on this host.
+                        $allRefCanonicalNames = ($referenceConfig | ForEach-Object { @($_.cacheDiskCanonicalName) + @($_.capacityDiskCanonicalNames) })
+                        $cachePositionIndex = [Array]::IndexOf($allRefCanonicalNames, $config.cacheDiskCanonicalName)
+                        $cacheDiskCanonicalName = ($hostEligibleDisks[$cachePositionIndex]).ScsiLun.CanonicalName
+
+                        $capacityDiskCanonicalNames = @()
+                        Foreach ($refCapacityCanonicalName in $config.capacityDiskCanonicalNames) {
+                            $capacityPositionIndex = [Array]::IndexOf($allRefCanonicalNames, $refCapacityCanonicalName)
+                            $capacityDiskCanonicalNames += ($hostEligibleDisks[$capacityPositionIndex]).ScsiLun.CanonicalName
+                        }
+
+                        & $moduleFunctions { LogMessage -type INFO -message "[$($vmhost.Name)] Creating vSAN OSA Disk Group $i (cache: $cacheDiskCanonicalName)" }
+                        New-VsanDiskGroup -VMHost $vmhost -SsdCanonicalName $cacheDiskCanonicalName -DataDiskCanonicalName $capacityDiskCanonicalNames | Out-Null
+                    }
+                    Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+                }
+                Start-Job -ScriptBlock $scriptBlock -ArgumentList ($diskGroupNumber, $referenceConfig, $vmHost, $targetFQDN, $targetAdmin, $targetAdminPassword) | Out-Null
+            }
+            Get-Job | Receive-Job -Wait -AutoRemoveJob
         }
-        Get-Job | Receive-Job -Wait -AutoRemoveJob
     }
 
     # -------------------------------------------------------------------------
