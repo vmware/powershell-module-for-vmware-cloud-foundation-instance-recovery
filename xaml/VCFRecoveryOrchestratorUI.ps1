@@ -99,6 +99,7 @@ $runAllRecoverFleetButton = $window.FindName('RunAllRecoverFleetButton')
 $runAllDomainRecoveryParallelCheckBox = $window.FindName('RunAllDomainRecoveryParallelCheckBox')
 $runAllAdditionalClusterRecoveryParallelCheckBox = $window.FindName('RunAllAdditionalClusterRecoveryParallelCheckBox')
 $runAllRecoverFleetParallelCheckBox = $window.FindName('RunAllRecoverFleetParallelCheckBox')
+$overallRecoveryTimePanel = $window.FindName('OverallRecoveryTimePanel')
 $overallRecoveryTimeTextBlock = $window.FindName('OverallRecoveryTimeTextBlock')
 $loadVariablesButton = $window.FindName('LoadVariablesButton')
 $newVariablesFileButton = $window.FindName('NewVariablesFileButton')
@@ -513,6 +514,32 @@ namespace VCFIRConsole {
 
     public delegate IntPtr LowLevelMouseProc(int nCode, IntPtr wParam, IntPtr lParam);
 
+    // For Send-ToConsole's own text-color save/restore around a simulated-typed command -- only
+    // wAttributes is ever read/written, but GetConsoleScreenBufferInfo requires the full struct
+    // shape to marshal correctly.
+    [StructLayout(LayoutKind.Sequential)]
+    public struct COORD {
+        public short X;
+        public short Y;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct SMALL_RECT {
+        public short Left;
+        public short Top;
+        public short Right;
+        public short Bottom;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct CONSOLE_SCREEN_BUFFER_INFO {
+        public COORD dwSize;
+        public COORD dwCursorPosition;
+        public ushort wAttributes;
+        public SMALL_RECT srWindow;
+        public COORD dwMaximumWindowSize;
+    }
+
     public static class NativeMethods {
         public const int GWL_STYLE = -16;
         public const long WS_CHILD = 0x40000000L;
@@ -524,6 +551,11 @@ namespace VCFIRConsole {
         public const int SW_HIDE = 0;
         public const int SW_SHOW = 5;
         public const int STD_INPUT_HANDLE = -10;
+        public const int STD_OUTPUT_HANDLE = -11;
+        // FOREGROUND_BLUE | FOREGROUND_GREEN | FOREGROUND_INTENSITY -- matches PowerShell's own
+        // ConsoleColor.Cyan (the intensity bit is required; without it this is the darker
+        // "DarkCyan" instead). Used by Send-ToConsole to color a command's own echoed/typed text.
+        public const ushort FOREGROUND_CYAN = 0x000B;
         public const uint RDW_INVALIDATE = 0x1;
         public const uint RDW_ERASE = 0x4;
         public const uint RDW_UPDATENOW = 0x100;
@@ -582,6 +614,12 @@ namespace VCFIRConsole {
 
         [DllImport("kernel32.dll", SetLastError = true)]
         public static extern bool WriteConsoleInput(IntPtr hConsoleInput, INPUT_RECORD[] lpBuffer, uint nLength, out uint lpNumberOfEventsWritten);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern bool SetConsoleTextAttribute(IntPtr hConsoleOutput, ushort wAttributes);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern bool GetConsoleScreenBufferInfo(IntPtr hConsoleOutput, out CONSOLE_SCREEN_BUFFER_INFO lpConsoleScreenBufferInfo);
 
         public const int WH_MOUSE_LL = 14;
         public const int WM_LBUTTONDOWN = 0x0201;
@@ -665,18 +703,7 @@ function New-EmbeddedConsole([string]$TabHeader, [switch]$Bootstrap) {
     # anywhere in it, which is exactly the marker Test-StepTranscriptClean's gate 3 looks for -- on
     # ConciseView a real, uncaught error would silently pass every gate. NormalView is the one that
     # always includes it.
-    #
-    # [Console]::ForegroundColor = 'Cyan' set once, here, rather than toggled per-command in
-    # Send-ToConsole: this console's basic (non-PSReadLine) line-editing always echoes typed
-    # characters in whatever the CURRENT default foreground color is, so setting the default itself,
-    # before anything is ever typed, makes every command line this console ever echoes come out
-    # cyan with no save/set/restore dance (and no race around a save/restore step failing on a
-    # freshly created console -- confirmed for real: that approach intermittently left a console's
-    # first command or two in the wrong color). LogMessage's own output already sets its own
-    # explicit -ForegroundColor per line (Green/White/Yellow/Red), so real task output is unaffected
-    # -- only the echoed command line itself, and anything else with no explicit color of its own,
-    # ever shows this default.
-    $consoleStartupCommand = "Set-Location -LiteralPath '$escapedWorkingDirectory'; Remove-Module PSReadLine -Force -ErrorAction SilentlyContinue; `$ErrorView = 'NormalView'; [Console]::ForegroundColor = 'Cyan'; Start-Transcript -Path '$escapedTranscriptPath' -Force | Out-Null"
+    $consoleStartupCommand = "Set-Location -LiteralPath '$escapedWorkingDirectory'; Remove-Module PSReadLine -Force -ErrorAction SilentlyContinue; `$ErrorView = 'NormalView'; Start-Transcript -Path '$escapedTranscriptPath' -Force | Out-Null"
 
     # Launched via the Start-Process cmdlet, not System.Diagnostics.ProcessStartInfo + Process.Start().
     # This isn't a style choice -- it's the actual fix for "console window never appears". Confirmed
@@ -1012,6 +1039,7 @@ function Send-ToConsole([string]$CommandLine, $Console) {
         }
         try {
             $inputHandle = [VCFIRConsole.NativeMethods]::GetStdHandle([VCFIRConsole.NativeMethods]::STD_INPUT_HANDLE)
+            $outputHandle = [VCFIRConsole.NativeMethods]::GetStdHandle([VCFIRConsole.NativeMethods]::STD_OUTPUT_HANDLE)
             $records = [System.Collections.Generic.List[VCFIRConsole.INPUT_RECORD]]::new()
             foreach ($character in ($CommandLine + "`r").ToCharArray()) {
                 $keyDown = New-Object VCFIRConsole.KEY_EVENT_RECORD
@@ -1034,7 +1062,43 @@ function Send-ToConsole([string]$CommandLine, $Console) {
             }
             $recordsArray = $records.ToArray()
             [uint32]$written = 0
+            # The console's basic (non-PSReadLine -- see New-EmbeddedConsole's own bootstrap comment)
+            # line-editing echoes each typed character using whatever text attribute is CURRENT on the
+            # screen buffer at that instant, so the command has to actually be cyan at the moment the
+            # OTHER process (whichever one is attached and reading this input) gets around to
+            # processing these records, not just at the moment they're queued here -- WriteConsoleInput
+            # only enqueues them and returns immediately, it does not wait for them to be read/echoed.
+            # Saving/restoring the real prior attribute (not assuming a fixed "default") keeps this from
+            # ever clobbering whatever color scheme is otherwise in effect -- a permanent default cyan
+            # (tried and reverted) bleeds into every task's own uncolored Write-Host/Write-Output text
+            # too, not just the echoed command line, corrupting the color scheme LogMessage relies on.
+            #
+            # A console that was JUST created (same root cause as AttachConsole's own retry loop
+            # above) can still fail GetConsoleScreenBufferInfo for a beat afterward even once
+            # AttachConsole itself has succeeded -- confirmed for real: the first couple of commands
+            # ever sent to a freshly created console echoed in the console's plain default color
+            # instead of cyan, while every later command on the same console colored correctly once
+            # it had "warmed up". A handful of quick retries covers that beat without meaningfully
+            # slowing down the overwhelmingly common case where it just works first try.
+            $bufferInfo = New-Object VCFIRConsole.CONSOLE_SCREEN_BUFFER_INFO
+            $gotBufferInfo = $false
+            for ($attempt = 0; $attempt -lt 5 -and -not $gotBufferInfo; $attempt++) {
+                $gotBufferInfo = [VCFIRConsole.NativeMethods]::GetConsoleScreenBufferInfo($outputHandle, [ref]$bufferInfo)
+                if (-not $gotBufferInfo) {
+                    Start-Sleep -Milliseconds 20
+                }
+            }
+            if ($gotBufferInfo) {
+                [VCFIRConsole.NativeMethods]::SetConsoleTextAttribute($outputHandle, [VCFIRConsole.NativeMethods]::FOREGROUND_CYAN) | Out-Null
+            }
             [void][VCFIRConsole.NativeMethods]::WriteConsoleInput($inputHandle, $recordsArray, [uint32]$recordsArray.Length, [ref]$written)
+            if ($gotBufferInfo) {
+                # Long enough for even a lengthy, parameter-heavy command line to have been echoed by
+                # the other process before the color reverts -- the same kind of short, pragmatic wait
+                # AttachConsole's own retry loop above already relies on for this console's timing.
+                Start-Sleep -Milliseconds 150
+                [VCFIRConsole.NativeMethods]::SetConsoleTextAttribute($outputHandle, $bufferInfo.wAttributes) | Out-Null
+            }
         } finally {
             [VCFIRConsole.NativeMethods]::FreeConsole() | Out-Null
         }
@@ -1179,26 +1243,26 @@ function Set-AllStepButtonsEnabled([bool]$Enabled) {
 # once the whole Run All chain finishes (see each Run All button's own Add_Click).
 function Start-RunTimer {
     $startTime = Get-Date
-    $overallRecoveryTimeTextBlock.Text = 'Overall Recovery Time: 00:00:00'
-    $overallRecoveryTimeTextBlock.Visibility = 'Visible'
+    $overallRecoveryTimeTextBlock.Text = '00:00:00'
+    $overallRecoveryTimePanel.Visibility = 'Visible'
     $timer = New-Object System.Windows.Threading.DispatcherTimer
     $timer.Interval = [TimeSpan]::FromSeconds(1)
     $timer.Add_Tick({
             $elapsed = (Get-Date) - $startTime
-            $overallRecoveryTimeTextBlock.Text = 'Overall Recovery Time: {0:00}:{1:00}:{2:00}' -f [int]$elapsed.TotalHours, $elapsed.Minutes, $elapsed.Seconds
+            $overallRecoveryTimeTextBlock.Text = '{0:00}:{1:00}:{2:00}' -f [int]$elapsed.TotalHours, $elapsed.Minutes, $elapsed.Seconds
         }.GetNewClosure())
     $timer.Start()
     return $timer
 }
 
-# Stops the DispatcherTimer Start-RunTimer returned and hides the timer badge again. $Timer may
-# be $null (e.g. Invoke-StepChain threw before Start-RunTimer was ever called) -- tolerated so the
-# catch block in each Run All handler can call this unconditionally.
+# Stops the DispatcherTimer Start-RunTimer returned and hides the timer panel (label + badge)
+# again. $Timer may be $null (e.g. Invoke-StepChain threw before Start-RunTimer was ever called) --
+# tolerated so the catch block in each Run All handler can call this unconditionally.
 function Stop-RunTimer($Timer) {
     if ($Timer) {
         $Timer.Stop()
     }
-    $overallRecoveryTimeTextBlock.Visibility = 'Collapsed'
+    $overallRecoveryTimePanel.Visibility = 'Collapsed'
 }
 
 # Resets a row to its "in progress" look (undoing any earlier Done/Failed state -- re-running a step

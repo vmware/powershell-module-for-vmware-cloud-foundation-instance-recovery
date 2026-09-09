@@ -488,8 +488,16 @@
                          since only one Run All can ever be active across the whole app at a time
                          anyway (see Set-AllStepButtonsEnabled). Overlaid top-right of the console
                          pane. Starts Collapsed; Start-RunTimer/Stop-RunTimer (in the .ps1) show and
-                         hide it for the lifetime of one Run All chain. -->
-                    <TextBlock x:Name="OverallRecoveryTimeTextBlock" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,4,4,0" Panel.ZIndex="1" Text="Overall Recovery Time: 00:00:00" FontFamily="Consolas" FontWeight="Bold" Foreground="White" Background="Black" Padding="8,3" Visibility="Collapsed" />
+                         hide the whole panel for the lifetime of one Run All chain. The label is
+                         plain bold black text on the card's own white background, not part of the
+                         timer badge itself; only the value gets the charcoal, rounded-corner badge
+                         treatment, matching the Button style's own CornerRadius. -->
+                    <StackPanel x:Name="OverallRecoveryTimePanel" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,4,4,0" Panel.ZIndex="1" Visibility="Collapsed">
+                        <TextBlock Text="Overall Recovery Time" FontWeight="Bold" Foreground="Black" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <Border Background="#333333" CornerRadius="3" Padding="8,3">
+                            <TextBlock x:Name="OverallRecoveryTimeTextBlock" Text="00:00:00" FontFamily="Consolas" FontWeight="Bold" Foreground="White" VerticalAlignment="Center" />
+                        </Border>
+                    </StackPanel>
                     <TabControl x:Name="ConsoleTabControl" Background="Transparent" BorderThickness="0" Margin="0,-8,0,0" />
                 </Grid>
             </GroupBox>
