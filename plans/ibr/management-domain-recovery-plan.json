@@ -136,7 +136,7 @@
     "description": "",
     "commandLine": "Add-DiskgroupsToManagementHosts -targetFqdn $restoredVcenterFqdn -targetAdmin $restoredVcenterAdmin -targetAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile -serial",
     "condition": [
-      "$primaryDatastoreType -eq 'VSAN'"
+      { "type": "dataPath", "path": "selectedCluster.primaryDatastoreType", "operator": "eq", "value": "VSAN" }
     ],
     "threadId": "",
     "interactive": true
@@ -145,7 +145,7 @@
     "description": "",
     "commandLine": "New-ReconfiguredVsanStretchedCluster -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile",
     "condition": [
-      "$isStretched -eq 't'"
+      { "type": "dataPath", "path": "selectedCluster.isStretched", "operator": "eq", "value": "t" }
     ],
     "threadId": "",
     "interactive": true

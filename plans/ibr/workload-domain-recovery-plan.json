@@ -101,7 +101,7 @@
     "description": "Reconfigure Stretched Cluster",
     "commandLine": "New-ReconfiguredVsanStretchedCluster -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile",
     "condition": [
-      "$isStretched -eq 't'"
+      { "type": "dataPath", "path": "selectedCluster.isStretched", "operator": "eq", "value": "t" }
     ],
     "threadId": "",
     "interactive": true

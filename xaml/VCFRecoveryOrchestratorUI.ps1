@@ -195,6 +195,25 @@ $global:fleetComponentsGroup = @{
 # are evaluated and before the Variables tab is built, so a referenced fact shows up pre-filled --
 # still an ordinary editable row, in case the extracted value is ever wrong or needs overriding.
 $global:derivedStepVariables = @{}
+# The live "selectedDomain"/"selectedCluster" data a "dataPath" condition (see Test-DataPathCondition)
+# can walk into generically, e.g. "selectedCluster.isStretched" -- set alongside
+# $global:derivedStepVariables at the same two places (Sync-DomainSteps/Sync-AdditionalClusterSteps),
+# with the same reset points, but exposing the WHOLE selected object rather than a hand-picked pair of
+# scalars, so a new plan condition can reference a fact nobody thought to wire into
+# $global:derivedStepVariables ahead of time. Both source shapes (raw domain-cluster JSON, camelCase;
+# the synthesized additional-cluster summary object, PascalCase) are normalized into one consistent
+# camelCase "selectedCluster" shape here so a dataPath expression works the same regardless of scope.
+$global:conditionDataContext = @{}
+# Run-scoped ledger a "stepStatus" condition (see Test-StepStatusGate) reads to gate whether a step
+# actually executes, keyed by each step's own optional "id" -- 'Success'/'Failed'/'Skipped', stamped
+# by Start-StepCompletionWatcher/Invoke-Step as steps actually run; a step id that hasn't run yet this
+# selection reads as 'NotRun'. Deliberately mirrors Button.Content's own persistence -- nothing resets
+# it on its own timer, only the same "a fresh domain/cluster selection starts over" points that already
+# reset $global:derivedStepVariables/$global:conditionDataContext (plus, unlike those two, an explicit
+# unconditional clear at the TOP of Sync-DomainSteps/Sync-AdditionalClusterSteps -- a step id is only
+# unique within one plan file, and the very same plan is legitimately re-run against a different
+# domain/cluster later in the same session, which must not see stale status from the previous one).
+$global:stepRunStatus = @{}
 # Whether Import-ExtractedSddcDataFile has ever successfully loaded data -- tracked separately
 # from Discovered Infrastructure's own Visibility so switching from FDR back to IBR (see the
 # Recovery Type Checked handlers) knows whether to reveal it again or leave it collapsed.
@@ -299,12 +318,29 @@ function Show-PasswordPromptDialog([string]$Title, [string]$Message) {
 # editing a plan file and re-selecting the domain (or relaunching) picks the change up immediately,
 # with no recompiling or restarting anything else. Plan files are a JSON array of step objects:
 # [{ "description": "...", "commandLine": "...", "condition": [...], "threadId": "...",
-# "interactive": false }, ...]. description/condition/threadId/interactive are all optional and
-# default to ''/@()/$false when absent or null. condition (empty array = always run) is an array of
-# PowerShell boolean expressions, ALL of which must be true for the step to run, each evaluated
-# against the currently loaded variable values -- see Test-StepConditions. An array (not a single
-# string) is what lets a step depend on more than one fact at once (e.g. isStretched AND
-# primaryDatastoreType) without cramming both into one expression. threadId (empty = runs on the main
+# "interactive": false, "id": "..." }, ...]. description/condition/threadId/interactive/id are all
+# optional and default to ''/@()/$false/''/'' when absent or null. condition (empty array = always
+# run) is an array, ALL of whose entries must be true for the step to run, each evaluated against the
+# currently loaded variable values -- see Test-StepConditions. An array (not a single value) is what
+# lets a step depend on more than one fact at once (e.g. isStretched AND primaryDatastoreType) without
+# cramming both into one expression. Each entry is either:
+#   - a raw PowerShell boolean expression STRING (legacy form, e.g. "$isStretched -eq 't'") -- kept
+#     working unchanged as an escape hatch for anything the typed kinds below don't cover.
+#   - a typed condition OBJECT, one of:
+#       { "type": "variable", "name": "...", "operator": "eq|ne|in|notIn|exists|notExists|match", "value": ... }
+#         -- looks up an operator-typed-in value from the Variables tab/answers file.
+#       { "type": "dataPath", "path": "selectedCluster.isStretched", "operator": "...", "value": ... }
+#         -- looks up a live fact from the currently selected domain/cluster (see
+#         $global:conditionDataContext) without needing a hand-coded fact wired into this file first.
+#       { "type": "stepStatus", "stepId": "...", "operator": "...", "value": "Success|Failed|Skipped|NotRun" }
+#         -- gates on whether another step (matched by its own "id") already ran and how it went (see
+#         $global:stepRunStatus). Only ever affects RUNNING a step, never whether it's shown in the
+#         Steps list -- see Test-StepStatusGate.
+#       { "type": "expression", "value": "..." } -- the object-spelled form of the legacy string, for
+#         completeness.
+# id (optional) names a step so a stepStatus condition elsewhere can reference it; only needed on a
+# step that's actually referenced this way. No uniqueness is enforced -- a duplicate id is last-write-
+# wins in the runtime status ledger, author's responsibility. threadId (empty = runs on the main
 # sequence) marks a step that belongs to a background thread: Run All bundles a CONSECUTIVE run of
 # rows carrying ANY non-empty threadId into one block, starts a fresh console per DISTINCT threadId
 # within it (so several different threads in the same block run concurrently), runs each thread's own
@@ -331,15 +367,15 @@ function Get-RecoveryPlanSteps([string]$RecoveryType, [string]$PlanFileName) {
             # PowerShell's output stream on the way to the assignment, which silently unwraps a single-
             # element array back into a bare scalar string. A plain "$var = @(...)" assignment inside the
             # block is a direct assignment, not pipeline output, so it isn't subject to that unwrapping.
-            # A plan's "isStretched" condition is always exactly one expression, so this hit every single-
-            # condition step in every plan file -- Test-StepCondition would have iterated the resulting
-            # string's individual CHARACTERS as if each were its own condition expression, not the one
-            # real expression it actually is.
+            # Entries are passed through AS-IS (no [string] cast) -- a typed condition entry arrives
+            # from ConvertFrom-Json as a PSCustomObject, and forcing it to [string] here would mangle it
+            # into a useless stringified form before Test-StepCondition ever gets to dispatch on it.
             $condition = @()
             if ($rawStep.condition) {
-                $condition = @($rawStep.condition | ForEach-Object { [string]$_ })
+                $condition = @($rawStep.condition)
             }
             [PSCustomObject]@{
+                Id          = if ($rawStep.id) { [string]$rawStep.id } else { '' }
                 Description = if ($rawStep.description) { [string]$rawStep.description } else { '' }
                 CommandLine = [string]$rawStep.commandLine
                 Condition   = $condition
@@ -350,21 +386,87 @@ function Get-RecoveryPlanSteps([string]$RecoveryType, [string]$PlanFileName) {
     )
 }
 
-# A single condition expression, evaluated with the currently known variable values (from
-# Import-VariablesAnswersFile/New-VariablesFile) bound as local variables -- e.g. "$isStretched -eq
-# 't'" sees $isStretched exactly as if it had been set with Set-Variable. Runs inside this process
-# only, never sent to the console/transcript. A condition that fails to evaluate (typo, references a
-# variable nobody supplied yet) fails open -- counts as true, since hiding a real recovery step
-# because of a condition bug is worse than showing one that turns out to be unnecessary.
-function Test-StepCondition([string]$Condition, [System.Collections.IDictionary]$Variables) {
+# A single legacy raw-expression condition string, evaluated with the currently known variable
+# values (from Import-VariablesAnswersFile/New-VariablesFile) bound as local variables -- e.g.
+# "$isStretched -eq 't'" sees $isStretched exactly as if it had been set with Set-Variable. Runs
+# inside this process only, never sent to the console/transcript. A condition that fails to evaluate
+# (typo, malformed expression) fails open -- counts as true, since hiding a real recovery step because
+# of a condition bug is worse than showing one that turns out to be unnecessary. Shared by the legacy
+# string form and the object-spelled "expression" type (see Test-StepCondition).
+function Test-StepExpressionCondition([string]$Expression, [System.Collections.IDictionary]$Variables) {
+    $scriptBlock = [scriptblock]::Create($Expression)
+    $variableList = [System.Collections.Generic.List[System.Management.Automation.PSVariable]]::new()
+    foreach ($name in $Variables.Keys) {
+        $variableList.Add((New-Object System.Management.Automation.PSVariable($name, $Variables[$name])))
+    }
+    $result = $scriptBlock.InvokeWithContext($null, $variableList)
+    return [bool]$result[0]
+}
+
+# Shared comparison logic for every typed condition kind (variable/dataPath/stepStatus). Unknown
+# operators fail open (return true) for the same reason a malformed expression does above.
+function Test-ConditionOperator([string]$Operator, $Actual, $Expected) {
+    switch ($Operator) {
+        'eq' { return [string]$Actual -eq [string]$Expected }
+        'ne' { return [string]$Actual -ne [string]$Expected }
+        'in' { return @($Expected) -contains $Actual }
+        'notIn' { return -not (@($Expected) -contains $Actual) }
+        'exists' { return -not [string]::IsNullOrEmpty($Actual) }
+        'notExists' { return [string]::IsNullOrEmpty($Actual) }
+        'match' { return $Actual -match $Expected }
+        default { return $true }
+    }
+}
+
+# Walks a dotted path (e.g. "selectedCluster.isStretched") against a root object/hashtable, one
+# property/key per segment. Returns $null the moment any hop is missing/null rather than throwing --
+# a dataPath referencing a fact that isn't known yet (nothing selected) is a normal, expected state,
+# not an error.
+function Resolve-ConditionDataPath([string]$Path, $Root) {
+    $current = $Root
+    foreach ($segment in ($Path -split '\.')) {
+        if ($null -eq $current) { return $null }
+        $current = if ($current -is [System.Collections.IDictionary]) { $current[$segment] } else { $current.$segment }
+    }
+    return $current
+}
+
+# Resolves a "dataPath" condition. An explicit, non-blank operator-typed value (present in
+# $Variables under the path's own last segment name) always wins over the live extracted-data value
+# -- this is what preserves today's "pre-filled but overridable" UX for isStretched/
+# primaryDatastoreType (see Get-StepReferenceText): the fact is still shown as an ordinary editable
+# Variables-tab row, and typing a real value into it still overrides the extracted data, exactly as
+# before. A blank/absent entry (nothing typed yet) falls through to $global:conditionDataContext
+# instead of shadowing it with an empty string. A path that resolves to $null there (nothing selected
+# yet) compares false via Test-ConditionOperator like any other real comparison -- not a new
+# regression, since a legacy string condition referencing an unset variable already resolves to
+# $null/false the same way, without throwing.
+function Test-DataPathCondition($Condition, [System.Collections.IDictionary]$Variables) {
+    $leafName = ($Condition.path -split '\.')[-1]
+    $override = if ($Variables.Contains($leafName)) { $Variables[$leafName] } else { $null }
+    $actual = if (-not [string]::IsNullOrEmpty($override)) { $override } else { Resolve-ConditionDataPath $Condition.path $global:conditionDataContext }
+    return Test-ConditionOperator $Condition.operator $actual $Condition.value
+}
+
+# Dispatches a single condition entry -- either a legacy raw-expression string, or one of the typed
+# condition objects (variable/dataPath/stepStatus/expression). "stepStatus" always passes HERE
+# unconditionally: nothing has actually run yet at the point conditions are evaluated for display
+# (Get-ApplicableSteps, called whenever the Variables tab is loaded/edited), so treating it as
+# "unknown" would wrongly hide a step before any run even starts. stepStatus only ever gates actual
+# execution, via the separate Test-StepStatusGate pre-flight check in Invoke-Step. The outer try/catch
+# keeps the same fail-open philosophy as before for genuine evaluation errors.
+function Test-StepCondition($Condition, [System.Collections.IDictionary]$Variables) {
     try {
-        $scriptBlock = [scriptblock]::Create($Condition)
-        $variableList = [System.Collections.Generic.List[System.Management.Automation.PSVariable]]::new()
-        foreach ($name in $Variables.Keys) {
-            $variableList.Add((New-Object System.Management.Automation.PSVariable($name, $Variables[$name])))
+        if ($Condition -is [string]) {
+            return Test-StepExpressionCondition $Condition $Variables
         }
-        $result = $scriptBlock.InvokeWithContext($null, $variableList)
-        return [bool]$result[0]
+        switch ($Condition.type) {
+            'variable' { return Test-ConditionOperator $Condition.operator $Variables[$Condition.name] $Condition.value }
+            'dataPath' { return Test-DataPathCondition $Condition $Variables }
+            'expression' { return Test-StepExpressionCondition ([string]$Condition.value) $Variables }
+            'stepStatus' { return $true }
+            default { return $true }
+        }
     } catch {
         return $true
     }
@@ -372,7 +474,7 @@ function Test-StepCondition([string]$Condition, [System.Collections.IDictionary]
 
 # A step's own Condition is an array -- ALL of them must be true (empty array = no conditions = runs
 # unconditionally) for the step to be considered applicable.
-function Test-StepConditions([string[]]$Conditions, [System.Collections.IDictionary]$Variables) {
+function Test-StepConditions([object[]]$Conditions, [System.Collections.IDictionary]$Variables) {
     foreach ($condition in $Conditions) {
         if (-not (Test-StepCondition $condition $Variables)) {
             return $false
@@ -386,17 +488,49 @@ function Get-ApplicableSteps([object[]]$Steps, [System.Collections.IDictionary]$
     return @($Steps | Where-Object { Test-StepConditions $_.Condition $Variables })
 }
 
-# Every $CommandLine plus every condition expression across $Steps, flattened into one flat string
-# array -- used to find every variable name a plan's steps could possibly reference (see
-# Get-ReferencedVariableNames), including ones that only ever appear inside a condition. A plain
-# `$Steps.Condition` member-access here would collect each step's own condition array as a nested
-# element rather than flattening it, so this walks $Steps explicitly instead.
+# Only the "stepStatus"-typed entries in $Condition, checked against the live run ledger
+# ($global:stepRunStatus) -- called ONLY from Invoke-Step, as a pre-flight execution gate, never from
+# display-time filtering (see Test-StepCondition's own "stepStatus" branch). A stepId that hasn't run
+# yet this session reads as 'NotRun'.
+function Test-StepStatusGate([object[]]$Condition) {
+    foreach ($c in $Condition) {
+        if ($c -isnot [string] -and $c.type -eq 'stepStatus') {
+            $actualStatus = if ($global:stepRunStatus.ContainsKey($c.stepId)) { $global:stepRunStatus[$c.stepId] } else { 'NotRun' }
+            if (-not (Test-ConditionOperator $c.operator $actualStatus $c.value)) {
+                return $false
+            }
+        }
+    }
+    return $true
+}
+
+# Every $CommandLine plus every condition's own referenced-variable text across $Steps, flattened
+# into one flat string array -- used to find every variable name a plan's steps could possibly
+# reference (see Get-ReferencedVariableNames), including ones that only ever appear inside a
+# condition. A plain `$Steps.Condition` member-access here would collect each step's own condition
+# array as a nested element rather than flattening it, so this walks $Steps explicitly instead.
+# Each condition entry is converted to its referenced-variable text BEFORE being added -- $lines is a
+# strongly-typed list of strings, so a raw typed-condition object must never be added directly. A
+# legacy string is used as-is; "variable"/"dataPath" synthesize a "$<name>" fragment so
+# Get-ReferencedVariableNames' own regex still picks it up (dataPath's last path segment is included
+# deliberately, not just "variable" -- see Test-DataPathCondition's own comment on why
+# isStretched/primaryDatastoreType still need to show up as ordinary, pre-filled Variables-tab rows);
+# "expression" contributes its wrapped value string; "stepStatus" contributes nothing, since it names
+# another step, not an operator-supplied variable.
 function Get-StepReferenceText([object[]]$Steps) {
     $lines = [System.Collections.Generic.List[string]]::new()
     foreach ($step in $Steps) {
         $lines.Add($step.CommandLine)
         foreach ($condition in $step.Condition) {
-            $lines.Add($condition)
+            if ($condition -is [string]) {
+                $lines.Add($condition)
+            } elseif ($condition.type -eq 'variable') {
+                $lines.Add('$' + [string]$condition.name)
+            } elseif ($condition.type -eq 'dataPath') {
+                $lines.Add('$' + (([string]$condition.path) -split '\.')[-1])
+            } elseif ($condition.type -eq 'expression') {
+                $lines.Add([string]$condition.value)
+            }
         }
     }
     return $lines.ToArray()
@@ -419,7 +553,7 @@ function Set-PlanStepsListBox([System.Windows.Controls.ListBox]$ListBox, [object
         if ($step.ThreadId -and $step.ThreadId -ne $previousThreadId) {
             $colorAlt = -not $colorAlt
         }
-        $row = New-StepRow $step.CommandLine $step.ThreadId $step.Description $step.Interactive $colorAlt
+        $row = New-StepRow $step.CommandLine $step.ThreadId $step.Description $step.Interactive $colorAlt $step.Id $step.Condition
         [void]$ListBox.Items.Add($row.Panel)
         $rows += $row
         $previousThreadId = $step.ThreadId
@@ -1153,7 +1287,7 @@ function Test-StepTranscriptClean([string]$TranscriptSlice) {
 # Test-StepTranscriptClean -- once "Completed Task" is found; Invoke-StepChain/Invoke-StepThreadChain
 # use this to gate starting the next step (or continuing past a block of background threads) on the
 # previous one(s) actually having gone cleanly, not just having finished. $Console defaults to Main.
-function Add-StepWatch($Button, [string]$CmdletName, [scriptblock]$OnComplete, $Console) {
+function Add-StepWatch($Button, [string]$CmdletName, [scriptblock]$OnComplete, $Console, [string]$Id) {
     if ($null -eq $Console) {
         $Console = $global:mainConsole
     }
@@ -1174,6 +1308,7 @@ function Add-StepWatch($Button, [string]$CmdletName, [scriptblock]$OnComplete, $
             OnComplete     = $OnComplete
             TranscriptPath = $Console.TranscriptPath
             Console        = $Console
+            Id             = $Id
         })
 }
 
@@ -1305,14 +1440,38 @@ function Stop-RunTimer($Timer) {
 # $false, but parameter-binding's own conversion path does not), and a row missing an Interactive
 # property entirely (as any hand-built row not created via New-StepRow would) supplies exactly that.
 # A plain "if ($Interactive)" below treats $null the same as $false, with no such trap.
-function Invoke-Step($Button, [string]$CmdletName, [string]$CommandLine, [scriptblock]$OnStepComplete, $Console, $Interactive) {
+# $Id/$Condition (both optional -- a hand-built row not created via New-StepRow simply omits them,
+# same tolerance as $Interactive above) let a "stepStatus" condition gate actual execution here,
+# regardless of whether this row was reached via a manual Run click or Run All/a thread chain -- see
+# Test-StepStatusGate. This is deliberately the ONLY place that check happens: display-time filtering
+# (Get-ApplicableSteps) never hides a row over a stepStatus condition, since nothing has run yet at
+# that point -- only whether the step actually EXECUTES is gated here.
+function Invoke-Step($Button, [string]$CmdletName, [string]$CommandLine, [scriptblock]$OnStepComplete, $Console, $Interactive, [string]$Id, [object[]]$Condition) {
     if ($null -eq $Console) {
         $Console = $global:mainConsole
+    }
+    if ($Condition -and -not (Test-StepStatusGate $Condition)) {
+        $Button.Content = 'Skipped'
+        $Button.Background = [System.Windows.Media.Brushes]::Gray
+        if ($Id) {
+            $global:stepRunStatus[$Id] = 'Skipped'
+        }
+        if ($OnStepComplete) {
+            # Dispatched via BeginInvoke rather than called inline: a skip is the first genuinely
+            # SYNCHRONOUS recursive path in this system (skip -> OnStepComplete -> next
+            # Invoke-StepChain call -> next Invoke-Step -> possibly another skip...). The real
+            # completion path is always async, via Start-StepCompletionWatcher's 500ms
+            # DispatcherTimer tick, so it never recurses synchronously like this. BeginInvoke turns a
+            # run of consecutive skipped steps into a stack-safe trampoline instead of unbounded call-
+            # stack growth.
+            $window.Dispatcher.BeginInvoke([System.Windows.Threading.DispatcherPriority]::Background, [System.Action] { & $OnStepComplete $true }.GetNewClosure()) | Out-Null
+        }
+        return
     }
     Lock-ElementSelection
     $Button.Content = 'Running'
     $Button.Background = [System.Windows.Media.Brushes]::Orange
-    Add-StepWatch $Button $CmdletName $OnStepComplete $Console
+    Add-StepWatch $Button $CmdletName $OnStepComplete $Console $Id
     if ($Interactive) {
         $consoleTabControl.SelectedItem = $Console.TabItem
         Set-ConsoleFocus
@@ -1415,7 +1574,7 @@ function Invoke-StepChain([object[]]$Rows, [switch]$IgnoreThreads, [scriptblock]
                 & $OnChainComplete $false
             }
         }
-    }.GetNewClosure() $null $row.Interactive
+    }.GetNewClosure() $null $row.Interactive $row.Id $row.Condition
 }
 
 # One background thread: a console keyed by ThreadId (not by whichever task happens to run in it),
@@ -1461,14 +1620,16 @@ function Invoke-StepThreadChain([object[]]$Rows, $Console, [scriptblock]$OnCompl
         } else {
             & $OnComplete $false
         }
-    }.GetNewClosure() $Console $row.Interactive
+    }.GetNewClosure() $Console $row.Interactive $row.Id $row.Condition
 }
 
-# Returns [PSCustomObject]@{ Panel; CommandLine; Button; CmdletName; ThreadId; Interactive }, not
-# just the row's visual Panel -- the other fields are needed separately so a tab's "Run All" button
-# can replay every row's Run action, and so Invoke-Step/Add-StepWatch can update the right row's
-# button and watch for the right cmdlet name without re-parsing the rendered list.
-function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Description, $Interactive, [bool]$ThreadColorAlt = $false) {
+# Returns [PSCustomObject]@{ Panel; CommandLine; Button; CmdletName; ThreadId; Interactive; Id;
+# Condition }, not just the row's visual Panel -- the other fields are needed separately so a tab's
+# "Run All" button can replay every row's Run action, and so Invoke-Step/Add-StepWatch can update the
+# right row's button and watch for the right cmdlet name without re-parsing the rendered list. Id/
+# Condition are carried through to Invoke-Step so its stepStatus pre-flight gate (Test-StepStatusGate)
+# applies identically whether a row's Run is clicked manually or reached via Run All/a thread chain.
+function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Description, $Interactive, [bool]$ThreadColorAlt = $false, [string]$Id = '', [object[]]$Condition = @()) {
     # A Grid with fixed-width columns, not a DockPanel -- a DockPanel only stacks whichever badges a
     # given row actually has, so a row with just one badge (or none) leaves the other badge's spot
     # collapsed and everything shifts to fill the gap. Every row gets the same 4 columns (name /
@@ -1509,7 +1670,7 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
     [System.Windows.Controls.Grid]::SetColumn($runButton, 3)
     $runButton.Add_Click({
             try {
-                Invoke-Step $runButton $cmdletName $CommandLine $null $null $Interactive
+                Invoke-Step $runButton $cmdletName $CommandLine $null $null $Interactive $Id $Condition
             } catch {
                 $statusTextBlock.Text = "Run button failed: $($_.Exception.Message)"
             }
@@ -1580,7 +1741,7 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
         [void]$panel.Children.Add($interactiveBadge)
     }
     [void]$panel.Children.Add($runButton)
-    return [PSCustomObject]@{ Panel = $panel; CommandLine = $CommandLine; Button = $runButton; CmdletName = $cmdletName; ThreadId = $ThreadId; Interactive = $Interactive }
+    return [PSCustomObject]@{ Panel = $panel; CommandLine = $CommandLine; Button = $runButton; CmdletName = $cmdletName; ThreadId = $ThreadId; Interactive = $Interactive; Id = $Id; Condition = $Condition }
 }
 
 # Variable names referenced across $CommandLines (e.g. "$targetFqdn"), in order of first
@@ -1718,6 +1879,9 @@ function Start-StepCompletionWatcher {
                         $watch.Button.Background = [System.Windows.Media.Brushes]::Firebrick
                     }
                 }
+                if ($watch.Id) {
+                    $global:stepRunStatus[$watch.Id] = if ($isClean) { 'Success' } else { 'Failed' }
+                }
                 $global:activeStepWatches = [System.Collections.Generic.List[object]]@($global:activeStepWatches | Where-Object { $_ -ne $watch })
                 if ($watch.OnComplete) {
                     & $watch.OnComplete $isClean
@@ -1755,6 +1919,8 @@ function Import-ExtractedSddcDataFile([string]$Path) {
     $global:additionalClusterRecoverySteps = @()
     $global:allSteps = @()
     $global:derivedStepVariables = @{}
+    $global:conditionDataContext = @{}
+    $global:stepRunStatus = @{}
     $statusTextBlock.Text = ''
 
     try {
@@ -1860,6 +2026,12 @@ $fdrRecoveryTypeRadio.Add_Checked({
             $group.StepRows = @()
             $group.AnswersFilePath = $null
         }
+        # A pre-existing gap for $global:derivedStepVariables too (harmless before now, since no FDR
+        # plan referenced either fact) -- closed here since stale $global:stepRunStatus surviving an
+        # IBR-to-FDR switch would be a real correctness concern, not just a latent one.
+        $global:derivedStepVariables = @{}
+        $global:conditionDataContext = @{}
+        $global:stepRunStatus = @{}
         Set-ActiveStepsVariablesPane $stepsVariablesTabControl
 
         $recoverFleetSteps = Get-ApplicableSteps (Get-RecoveryPlanSteps 'fdr' 'fdr-failover-plan.json') @{}
@@ -1893,6 +2065,8 @@ $extractRadio.Add_Checked({
         $global:additionalClusterRecoverySteps = @()
         $global:allSteps = @()
         $global:derivedStepVariables = @{}
+        $global:conditionDataContext = @{}
+        $global:stepRunStatus = @{}
     })
 
 # Prompts for the backup's credentials file and encryption password right here (rather than via
@@ -2356,6 +2530,11 @@ function Sync-DomainSteps {
     $variablesItemsPanel.Children.Clear()
     $loadedVariablesTextBlock.Text = 'No variables loaded yet.'
     $global:domainRecoverySteps = @()
+    # A step id is only unique within one plan file, and the very same plan legitimately re-runs
+    # against a different domain later in this same session -- clear unconditionally on every
+    # (re)selection, not just when nothing ends up selected, so a stepStatus condition never sees
+    # stale Success/Failed left over from a previous domain's run of an identically-id'd step.
+    $global:stepRunStatus = @{}
 
     # Reset both MANAGEMENT-only groups on every domain (re)selection, not just when a MANAGEMENT
     # domain happens to be picked -- otherwise switching from one MANAGEMENT domain to a VI domain
@@ -2407,10 +2586,24 @@ function Sync-DomainSteps {
             isStretched          = [string]$defaultCluster.isStretched
             primaryDatastoreType = [string]$defaultCluster.primaryDatastoreType
         }
+        # Normalized (camelCase) so a "dataPath" condition (e.g. "selectedCluster.isStretched")
+        # resolves identically here and in Sync-AdditionalClusterSteps, regardless of which raw shape
+        # the underlying data actually came in.
+        $global:conditionDataContext = @{
+            selectedDomain  = $selected.Tag
+            selectedCluster = [PSCustomObject]@{
+                name                 = $defaultCluster.name
+                isDefault            = $defaultCluster.isDefault
+                isStretched          = $defaultCluster.isStretched
+                primaryDatastoreType = $defaultCluster.primaryDatastoreType
+                domainName           = $selected.Tag.domainName
+            }
+        }
     } else {
         $domainRecoveryPanel.Visibility = [System.Windows.Visibility]::Collapsed
         Set-ActiveStepsVariablesPane $stepsVariablesTabControl
         $global:derivedStepVariables = @{}
+        $global:conditionDataContext = @{}
     }
 
     # Deliberately not populated here -- Update-RevealedSteps/Update-GroupRevealedSteps does that,
@@ -2440,6 +2633,9 @@ function Sync-AdditionalClusterSteps {
     $variablesItemsPanel.Children.Clear()
     $loadedVariablesTextBlock.Text = 'No variables loaded yet.'
     $global:additionalClusterRecoverySteps = @()
+    # See the matching comment in Sync-DomainSteps -- unconditional so switching directly between two
+    # additional clusters (not just to "nothing selected") never leaks stale stepStatus.
+    $global:stepRunStatus = @{}
     # Additional Cluster Recovery always uses the flat Variables/Steps pair -- never the two
     # independent panes exclusive to Management Domain Recovery / Fleet Component Recovery.
     Set-ActiveStepsVariablesPane $stepsVariablesTabControl
@@ -2459,9 +2655,24 @@ function Sync-AdditionalClusterSteps {
             isStretched          = [string]$selected.Tag.IsStretched
             primaryDatastoreType = [string]$selected.Tag.PrimaryDatastoreType
         }
+        # Normalized to the same camelCase shape Sync-DomainSteps builds -- the synthesized
+        # additional-cluster summary object (built in Import-ExtractedSddcDataFile) uses PascalCase
+        # property names, which would otherwise make a "dataPath" condition's path depend on which
+        # scope populated it.
+        $global:conditionDataContext = @{
+            selectedDomain  = $null
+            selectedCluster = [PSCustomObject]@{
+                name                 = $selected.Tag.ClusterName
+                isDefault            = 'f'
+                isStretched          = $selected.Tag.IsStretched
+                primaryDatastoreType = $selected.Tag.PrimaryDatastoreType
+                domainName           = $selected.Tag.DomainName
+            }
+        }
     } else {
         $additionalClusterRecoveryPanel.Visibility = [System.Windows.Visibility]::Collapsed
         $global:derivedStepVariables = @{}
+        $global:conditionDataContext = @{}
     }
 
     # Deliberately not populated here -- see the matching comment in Sync-DomainSteps.
