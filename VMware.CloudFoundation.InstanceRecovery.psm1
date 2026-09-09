@@ -4723,13 +4723,13 @@ Function Add-DiskgroupsToManagementHosts {
 
             Foreach ($otherPeer in $otherPeers) {
                 if ($existingAgents -match [regex]::Escape($otherPeer.VsanIp)) {
-                    LogMessage -type INFO -message "[$($peer.Name)] Unicast agent for $($otherPeer.Name) ($($otherPeer.VsanIp)) already present -- skipping"
+                    LogMessage -type INFO -message "[$($peer.Name)] Unicast agent for $($otherPeer.Name) already present"
                     continue
                 }
                 $addCmd = "esxcli vsan cluster unicastagent add -t node -u $($otherPeer.NodeUuid) -U true -p 12321 -a $($otherPeer.VsanIp)"
                 $result = Invoke-SSHCommand -SessionId $sshSession.SessionId -Command $addCmd -TimeOut 30
                 if ($result.ExitStatus -eq 0) {
-                    LogMessage -type INFO -message "[$($peer.Name)] Added unicast agent for $($otherPeer.Name) ($($otherPeer.VsanIp))"
+                    LogMessage -type INFO -message "[$($peer.Name)] Added unicast agent for $($otherPeer.Name)"
                 } else {
                     LogMessage -type WARNING -message "[$($peer.Name)] unicastagent add for $($otherPeer.Name) exited $($result.ExitStatus): $(($result.Output + $result.Error) -join ' ')"
                 }
