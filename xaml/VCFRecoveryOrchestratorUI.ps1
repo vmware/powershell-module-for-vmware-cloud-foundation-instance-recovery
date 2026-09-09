@@ -1069,8 +1069,22 @@ function Send-ToConsole([string]$CommandLine, $Console) {
             # only enqueues them and returns immediately, it does not wait for them to be read/echoed.
             # Saving/restoring the real prior attribute (not assuming a fixed "default") keeps this from
             # ever clobbering whatever color scheme is otherwise in effect.
+            #
+            # A console that was JUST created (same root cause as AttachConsole's own retry loop
+            # above) can still fail GetConsoleScreenBufferInfo for a beat afterward even once
+            # AttachConsole itself has succeeded -- confirmed for real: the first couple of commands
+            # ever sent to a freshly created console echoed in the console's plain default color
+            # instead of cyan, while every later command on the same console colored correctly once
+            # it had "warmed up". A handful of quick retries covers that beat without meaningfully
+            # slowing down the overwhelmingly common case where it just works first try.
             $bufferInfo = New-Object VCFIRConsole.CONSOLE_SCREEN_BUFFER_INFO
-            $gotBufferInfo = [VCFIRConsole.NativeMethods]::GetConsoleScreenBufferInfo($outputHandle, [ref]$bufferInfo)
+            $gotBufferInfo = $false
+            for ($attempt = 0; $attempt -lt 5 -and -not $gotBufferInfo; $attempt++) {
+                $gotBufferInfo = [VCFIRConsole.NativeMethods]::GetConsoleScreenBufferInfo($outputHandle, [ref]$bufferInfo)
+                if (-not $gotBufferInfo) {
+                    Start-Sleep -Milliseconds 20
+                }
+            }
             if ($gotBufferInfo) {
                 [VCFIRConsole.NativeMethods]::SetConsoleTextAttribute($outputHandle, [VCFIRConsole.NativeMethods]::FOREGROUND_CYAN) | Out-Null
             }

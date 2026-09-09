@@ -131,11 +131,20 @@
              focus rectangle. -->
         <Style TargetType="ListBoxItem">
             <Setter Property="Padding" Value="3,1" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ListBoxItem">
+                        <!-- HorizontalAlignment must be bound explicitly here - a ContentPresenter
+                             inside a fully custom template does NOT stretch to the item's available
+                             width on its own just because HorizontalContentAlignment is set to
+                             Stretch above; without this binding, each row's Grid (see New-StepRow)
+                             sizes itself to its own natural/widest content instead of shrinking its
+                             Star-width name column to fit, so in a narrow window the fixed-width Run
+                             button column gets pushed off the right edge, with no horizontal
+                             scrollbar on the ListBox to ever reach it. -->
                         <Border x:Name="ItemBorder" Background="Transparent" CornerRadius="3">
-                            <ContentPresenter Margin="{TemplateBinding Padding}" />
+                            <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" />
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
@@ -427,7 +436,7 @@
                                         <Button x:Name="RunAllDomainRecoveryButton" Content="Run All" HorizontalAlignment="Left" />
                                         <CheckBox x:Name="RunAllDomainRecoveryParallelCheckBox" Content="Run tasks using multiple threads (indicated by numbered circles)" IsChecked="True" VerticalAlignment="Center" Margin="12,0,0,0" />
                                     </DockPanel>
-                                    <ListBox x:Name="DomainRecoveryStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                                    <ListBox x:Name="DomainRecoveryStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
                                 </DockPanel>
                                 <!-- Populated by selecting a row in Discovered Infrastructure's Additional
                                      Clusters tab (plans/ibr/additional-cluster-recovery-plan.json). Mutually
@@ -438,7 +447,7 @@
                                         <Button x:Name="RunAllAdditionalClusterRecoveryButton" Content="Run All" HorizontalAlignment="Left" />
                                         <CheckBox x:Name="RunAllAdditionalClusterRecoveryParallelCheckBox" Content="Run parallel tasks using multiple threads (numbered circles)" IsChecked="True" VerticalAlignment="Center" Margin="12,0,0,0" />
                                     </DockPanel>
-                                    <ListBox x:Name="AdditionalClusterRecoveryStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                                    <ListBox x:Name="AdditionalClusterRecoveryStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
                                 </DockPanel>
                                 <!-- FDR's single whole-fleet plan (plans/fdr/fdr-failover-plan.json), loaded as soon
                                      as FDR is selected, since there's no domain selection for it to wait on.
@@ -449,7 +458,7 @@
                                         <Button x:Name="RunAllRecoverFleetButton" Content="Run All" HorizontalAlignment="Left" />
                                         <CheckBox x:Name="RunAllRecoverFleetParallelCheckBox" Content="Run parallel tasks using multiple threads (numbered circles)" IsChecked="True" VerticalAlignment="Center" Margin="12,0,0,0" />
                                     </DockPanel>
-                                    <ListBox x:Name="RecoverFleetStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" />
+                                    <ListBox x:Name="RecoverFleetStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
                                 </DockPanel>
                             </Grid>
                         </TabItem>
