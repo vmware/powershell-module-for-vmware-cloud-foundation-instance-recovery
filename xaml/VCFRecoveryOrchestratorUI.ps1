@@ -1146,16 +1146,24 @@ function Send-ToConsole([string]$CommandLine, $Console) {
             # AttachConsole itself has succeeded -- confirmed for real: the first couple of commands
             # ever sent to a freshly created console echoed in the console's plain default color
             # instead of cyan, while every later command on the same console colored correctly once
-            # it had "warmed up". A handful of quick retries covers that beat without meaningfully
-            # slowing down the overwhelmingly common case where it just works first try.
+            # it had "warmed up". This used to retry for only 100ms total (5 x 20ms) -- far short of
+            # the 2 FULL SECONDS AttachConsole's own retry loop above already budgets for this exact
+            # same root cause; on a real target slower than a dev box (disk/AV/CPU contention slowing
+            # a freshly spawned pwsh.exe's own startup), 100ms is nowhere near enough, and when this
+            # retry gives up early, $gotBufferInfo stays false and the whole cyan-color attempt below
+            # is silently skipped for that command (WriteConsoleInput below still runs regardless, so
+            # the command itself still executes correctly -- only its color silently never gets set).
+            # Matched to AttachConsole's own budget instead of guessing a shorter one that keeps
+            # turning out to be insufficient.
+            $bufferInfoDeadline = (Get-Date).AddSeconds(2)
             $bufferInfo = New-Object VCFIRConsole.CONSOLE_SCREEN_BUFFER_INFO
             $gotBufferInfo = $false
-            for ($attempt = 0; $attempt -lt 5 -and -not $gotBufferInfo; $attempt++) {
+            do {
                 $gotBufferInfo = [VCFIRConsole.NativeMethods]::GetConsoleScreenBufferInfo($outputHandle, [ref]$bufferInfo)
                 if (-not $gotBufferInfo) {
-                    Start-Sleep -Milliseconds 20
+                    Start-Sleep -Milliseconds 50
                 }
-            }
+            } while (-not $gotBufferInfo -and (Get-Date) -lt $bufferInfoDeadline)
             if ($gotBufferInfo) {
                 [VCFIRConsole.NativeMethods]::SetConsoleTextAttribute($outputHandle, [VCFIRConsole.NativeMethods]::FOREGROUND_CYAN) | Out-Null
             }

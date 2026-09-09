@@ -1,6 +1,6 @@
 {
-    "vcfBackupFilePath": "F:\\VCFIR\\current\\sddc-manager-backup\\vcf-backup-sfo-vcf01-sfo-rainpole-io-2026-08-31-12-48-28.tar.gz",
-    "credentialsFilePath": "F:\\VCFIR\\current\\credentials\\vcf-credentials-sfo-m01-20260831-135039.json",
+    "vcfBackupFilePath": "F:\\VCFIR\\vcf-backup-sfo-vcf01-sfo-rainpole-io-2026-08-31-12-48-28.tar.gz",
+    "credentialsFilePath": "F:\\VCFIR\\vcf-credentials-sfo-m01-20260831-135039.json",
     "encryptionPassword": "VMw@re1!VMw@re1!",
     "targetType": "esx",
     "targetFqdn": "sfo01-m01-r01-esx01.sfo.rainpole.io",
