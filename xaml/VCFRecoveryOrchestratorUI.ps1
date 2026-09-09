@@ -1161,10 +1161,38 @@ function Send-ToConsole([string]$CommandLine, $Console) {
             }
             [void][VCFIRConsole.NativeMethods]::WriteConsoleInput($inputHandle, $recordsArray, [uint32]$recordsArray.Length, [ref]$written)
             if ($gotBufferInfo) {
-                # Long enough for even a lengthy, parameter-heavy command line to have been echoed by
-                # the other process before the color reverts -- the same kind of short, pragmatic wait
-                # AttachConsole's own retry loop above already relies on for this console's timing.
-                Start-Sleep -Milliseconds 150
+                # Wait for the target to actually START echoing (its cursor moving away from where it
+                # was when we queued the input) instead of a single fixed sleep -- confirmed for real:
+                # the first command or two ever sent to a console (Main included -- Browse/Load
+                # Variables can both happen within moments of the app launching, well before this
+                # module has finished importing into that console's own PowerShell host) can take far
+                # longer to reach its ReadConsole loop than any fixed budget sized for the normal case,
+                # so a fixed-length wait restores the color before the echo -- which only happens once
+                # the target actually reads these queued keystrokes -- has even started, leaving it in
+                # the console's plain default color instead of cyan. Bounded to 5 seconds so a console
+                # that never reads the input at all (e.g. its process died) doesn't hold cyan forever.
+                $initialCursor = $bufferInfo.dwCursorPosition
+                $echoDeadline = (Get-Date).AddSeconds(5)
+                $echoBufferInfo = New-Object VCFIRConsole.CONSOLE_SCREEN_BUFFER_INFO
+                $cursorMoved = $false
+                while ((Get-Date) -lt $echoDeadline) {
+                    if (-not [VCFIRConsole.NativeMethods]::GetConsoleScreenBufferInfo($outputHandle, [ref]$echoBufferInfo)) {
+                        break
+                    }
+                    if ($echoBufferInfo.dwCursorPosition.X -ne $initialCursor.X -or $echoBufferInfo.dwCursorPosition.Y -ne $initialCursor.Y) {
+                        $cursorMoved = $true
+                        break
+                    }
+                    Start-Sleep -Milliseconds 20
+                }
+                if ($cursorMoved) {
+                    # Once echoing has actually started, a further short, fixed wait covers the rest of
+                    # even a long, parameter-heavy command line finishing being echoed -- the same
+                    # pragmatic wait this already relied on before, just no longer gating the whole
+                    # thing on it happening within one fixed window measured from when the input was
+                    # merely queued.
+                    Start-Sleep -Milliseconds 150
+                }
                 [VCFIRConsole.NativeMethods]::SetConsoleTextAttribute($outputHandle, $bufferInfo.wAttributes) | Out-Null
             }
         } finally {
