@@ -323,21 +323,17 @@ function Show-PasswordPromptDialog([string]$Title, [string]$Message) {
 # run) is an array, ALL of whose entries must be true for the step to run, each evaluated against the
 # currently loaded variable values -- see Test-StepConditions. An array (not a single value) is what
 # lets a step depend on more than one fact at once (e.g. isStretched AND primaryDatastoreType) without
-# cramming both into one expression. Each entry is either:
-#   - a raw PowerShell boolean expression STRING (legacy form, e.g. "$isStretched -eq 't'") -- kept
-#     working unchanged as an escape hatch for anything the typed kinds below don't cover.
-#   - a typed condition OBJECT, one of:
-#       { "type": "variable", "name": "...", "operator": "eq|ne|in|notIn|exists|notExists|match", "value": ... }
-#         -- looks up an operator-typed-in value from the Variables tab/answers file.
-#       { "type": "dataPath", "path": "selectedCluster.isStretched", "operator": "...", "value": ... }
-#         -- looks up a live fact from the currently selected domain/cluster (see
-#         $global:conditionDataContext) without needing a hand-coded fact wired into this file first.
-#       { "type": "stepStatus", "stepId": "...", "operator": "...", "value": "Success|Failed|Skipped|NotRun" }
-#         -- gates on whether another step (matched by its own "id") already ran and how it went (see
-#         $global:stepRunStatus). Only ever affects RUNNING a step, never whether it's shown in the
-#         Steps list -- see Test-StepStatusGate.
-#       { "type": "expression", "value": "..." } -- the object-spelled form of the legacy string, for
-#         completeness.
+# cramming both into one expression. There is no raw-PowerShell-expression escape hatch -- every entry
+# must be one of these typed condition OBJECTS:
+#   { "type": "variable", "name": "...", "operator": "eq|ne|in|notIn|exists|notExists|match", "value": ... }
+#     -- looks up an operator-typed-in value from the Variables tab/answers file.
+#   { "type": "dataPath", "path": "selectedCluster.isStretched", "operator": "...", "value": ... }
+#     -- looks up a live fact from the currently selected domain/cluster (see
+#     $global:conditionDataContext) without needing a hand-coded fact wired into this file first.
+#   { "type": "stepStatus", "stepId": "...", "operator": "...", "value": "Success|Failed|Skipped|NotRun" }
+#     -- gates on whether another step (matched by its own "id") already ran and how it went (see
+#     $global:stepRunStatus). Only ever affects RUNNING a step, never whether it's shown in the
+#     Steps list -- see Test-StepStatusGate.
 # id (optional) names a step so a stepStatus condition elsewhere can reference it; only needed on a
 # step that's actually referenced this way. No uniqueness is enforced -- a duplicate id is last-write-
 # wins in the runtime status ledger, author's responsibility. displayName is the label shown on the
@@ -392,25 +388,8 @@ function Get-RecoveryPlanSteps([string]$RecoveryType, [string]$PlanFileName) {
     )
 }
 
-# A single legacy raw-expression condition string, evaluated with the currently known variable
-# values (from Import-VariablesAnswersFile/New-VariablesFile) bound as local variables -- e.g.
-# "$isStretched -eq 't'" sees $isStretched exactly as if it had been set with Set-Variable. Runs
-# inside this process only, never sent to the console/transcript. A condition that fails to evaluate
-# (typo, malformed expression) fails open -- counts as true, since hiding a real recovery step because
-# of a condition bug is worse than showing one that turns out to be unnecessary. Shared by the legacy
-# string form and the object-spelled "expression" type (see Test-StepCondition).
-function Test-StepExpressionCondition([string]$Expression, [System.Collections.IDictionary]$Variables) {
-    $scriptBlock = [scriptblock]::Create($Expression)
-    $variableList = [System.Collections.Generic.List[System.Management.Automation.PSVariable]]::new()
-    foreach ($name in $Variables.Keys) {
-        $variableList.Add((New-Object System.Management.Automation.PSVariable($name, $Variables[$name])))
-    }
-    $result = $scriptBlock.InvokeWithContext($null, $variableList)
-    return [bool]$result[0]
-}
-
 # Shared comparison logic for every typed condition kind (variable/dataPath/stepStatus). Unknown
-# operators fail open (return true) for the same reason a malformed expression does above.
+# operators fail open (return true) -- see Test-StepCondition's own comment on why.
 function Test-ConditionOperator([string]$Operator, $Actual, $Expected) {
     switch ($Operator) {
         'eq' { return [string]$Actual -eq [string]$Expected }
@@ -444,9 +423,8 @@ function Resolve-ConditionDataPath([string]$Path, $Root) {
 # Variables-tab row, and typing a real value into it still overrides the extracted data, exactly as
 # before. A blank/absent entry (nothing typed yet) falls through to $global:conditionDataContext
 # instead of shadowing it with an empty string. A path that resolves to $null there (nothing selected
-# yet) compares false via Test-ConditionOperator like any other real comparison -- not a new
-# regression, since a legacy string condition referencing an unset variable already resolves to
-# $null/false the same way, without throwing.
+# yet) compares false via Test-ConditionOperator like any other real comparison -- a normal, expected
+# state, not an error.
 function Test-DataPathCondition($Condition, [System.Collections.IDictionary]$Variables) {
     $leafName = ($Condition.path -split '\.')[-1]
     $override = if ($Variables.Contains($leafName)) { $Variables[$leafName] } else { $null }
@@ -454,22 +432,20 @@ function Test-DataPathCondition($Condition, [System.Collections.IDictionary]$Var
     return Test-ConditionOperator $Condition.operator $actual $Condition.value
 }
 
-# Dispatches a single condition entry -- either a legacy raw-expression string, or one of the typed
-# condition objects (variable/dataPath/stepStatus/expression). "stepStatus" always passes HERE
-# unconditionally: nothing has actually run yet at the point conditions are evaluated for display
-# (Get-ApplicableSteps, called whenever the Variables tab is loaded/edited), so treating it as
-# "unknown" would wrongly hide a step before any run even starts. stepStatus only ever gates actual
-# execution, via the separate Test-StepStatusGate pre-flight check in Invoke-Step. The outer try/catch
-# keeps the same fail-open philosophy as before for genuine evaluation errors.
+# Dispatches a single typed condition entry (variable/dataPath/stepStatus -- there is no raw-
+# PowerShell-expression escape hatch). "stepStatus" always passes HERE unconditionally: nothing has
+# actually run yet at the point conditions are evaluated for display (Get-ApplicableSteps, called
+# whenever the Variables tab is loaded/edited), so treating it as "unknown" would wrongly hide a step
+# before any run even starts. stepStatus only ever gates actual execution, via the separate
+# Test-StepStatusGate pre-flight check in Invoke-Step. Anything that isn't a recognized typed object
+# -- a leftover legacy string, an unrecognized "type", a malformed entry -- fails open (counts as
+# true) via the outer catch or the default case below, same reasoning as an unknown operator: hiding a
+# real recovery step over a condition-authoring mistake is worse than showing one unnecessarily.
 function Test-StepCondition($Condition, [System.Collections.IDictionary]$Variables) {
     try {
-        if ($Condition -is [string]) {
-            return Test-StepExpressionCondition $Condition $Variables
-        }
         switch ($Condition.type) {
             'variable' { return Test-ConditionOperator $Condition.operator $Variables[$Condition.name] $Condition.value }
             'dataPath' { return Test-DataPathCondition $Condition $Variables }
-            'expression' { return Test-StepExpressionCondition ([string]$Condition.value) $Variables }
             'stepStatus' { return $true }
             default { return $true }
         }
@@ -516,26 +492,21 @@ function Test-StepStatusGate([object[]]$Condition) {
 # condition. A plain `$Steps.Condition` member-access here would collect each step's own condition
 # array as a nested element rather than flattening it, so this walks $Steps explicitly instead.
 # Each condition entry is converted to its referenced-variable text BEFORE being added -- $lines is a
-# strongly-typed list of strings, so a raw typed-condition object must never be added directly. A
-# legacy string is used as-is; "variable"/"dataPath" synthesize a "$<name>" fragment so
-# Get-ReferencedVariableNames' own regex still picks it up (dataPath's last path segment is included
-# deliberately, not just "variable" -- see Test-DataPathCondition's own comment on why
-# isStretched/primaryDatastoreType still need to show up as ordinary, pre-filled Variables-tab rows);
-# "expression" contributes its wrapped value string; "stepStatus" contributes nothing, since it names
+# strongly-typed list of strings, so a raw typed-condition object must never be added directly.
+# "variable"/"dataPath" synthesize a "$<name>" fragment so Get-ReferencedVariableNames' own regex
+# still picks it up (dataPath's last path segment is included deliberately, not just "variable" --
+# see Test-DataPathCondition's own comment on why isStretched/primaryDatastoreType still need to show
+# up as ordinary, pre-filled Variables-tab rows); "stepStatus" contributes nothing, since it names
 # another step, not an operator-supplied variable.
 function Get-StepReferenceText([object[]]$Steps) {
     $lines = [System.Collections.Generic.List[string]]::new()
     foreach ($step in $Steps) {
         $lines.Add($step.CommandLine)
         foreach ($condition in $step.Condition) {
-            if ($condition -is [string]) {
-                $lines.Add($condition)
-            } elseif ($condition.type -eq 'variable') {
+            if ($condition.type -eq 'variable') {
                 $lines.Add('$' + [string]$condition.name)
             } elseif ($condition.type -eq 'dataPath') {
                 $lines.Add('$' + (([string]$condition.path) -split '\.')[-1])
-            } elseif ($condition.type -eq 'expression') {
-                $lines.Add([string]$condition.value)
             }
         }
     }

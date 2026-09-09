@@ -19,7 +19,9 @@ Reference for anyone hand-authoring `"condition"` entries in a recovery plan JSO
 ```
 
 `condition` is an array. **Every entry must be true** for the step to run (empty array/absent =
-always runs). Each entry is either a legacy raw string, or one of four typed objects.
+always runs). Every entry must be one of the three typed objects below — there is no raw-
+PowerShell-expression form; that was removed deliberately, and every condition in the shipped plans
+has been migrated to one of these three kinds.
 
 `id` is optional — only add it to a step some other step's `stepStatus` condition needs to
 reference. No uniqueness is enforced across a plan file; a duplicate `id` is last-write-wins in the
@@ -29,18 +31,18 @@ runtime status ledger.
 
 | Form | Shape | Notes |
 |---|---|---|
-| Legacy expression (string) | `"$isStretched -eq 't'"` | Raw PowerShell boolean expression, evaluated against the Variables-tab answers dict. Still fully supported — this is the escape hatch for anything the typed kinds below don't cover. |
 | `variable` | `{ "type": "variable", "name": "...", "operator": "...", "value": ... }` | Looks up an operator-typed-in value from the Variables tab/answers file. |
 | `dataPath` | `{ "type": "dataPath", "path": "...", "operator": "...", "value": ... }` | Looks up a live fact from the currently selected domain/cluster — see [Data model](#data-model-dataPath-context-by-recovery-scope) below. |
 | `stepStatus` | `{ "type": "stepStatus", "stepId": "...", "operator": "...", "value": "..." }` | Gates on whether another step (by its `id`) already ran and how it went. **Only ever gates execution — never hides a step from the Steps list.** |
-| `expression` | `{ "type": "expression", "value": "..." }` | Object-spelled form of the legacy string. Functionally identical to the string form; exists for uniformity when authoring by hand as an object. |
 
-A step's `condition` array can freely mix any of the above forms in one list — all must pass.
+A step's `condition` array can freely mix any of the above forms in one list — all must pass. There
+is no `any`/`all`/`not` combinator across entries — the array is always an implicit AND. There is
+currently no way to express OR logic directly in a condition; if you need it, that's a gap to raise,
+not something to work around with a raw expression.
 
 ## Operators
 
-Shared by `variable`, `dataPath`, and `stepStatus` (the legacy string/`expression` forms don't use
-`operator` — they're raw PowerShell instead).
+Shared by all three condition kinds.
 
 | Operator | Meaning | `value` shape |
 |---|---|---|
@@ -52,8 +54,8 @@ Shared by `variable`, `dataPath`, and `stepStatus` (the legacy string/`expressio
 | `notExists` | Actual is null/empty | omit or `null` |
 | `match` | Actual matches value as a regex | regex string |
 
-An unrecognized operator name fails open (treated as `true`) — same reasoning as a malformed legacy
-expression, see [Fail-open vs. fail-closed](#fail-open-vs-fail-closed) below.
+An unrecognized operator name fails open (treated as `true`) — see
+[Fail-open vs. fail-closed](#fail-open-vs-fail-closed) below.
 
 ## `variable` — operator-typed-in values
 
@@ -143,32 +145,20 @@ switching directly from one domain/cluster to another, not just to "nothing sele
 `id` is only unique within one plan file and the same plan can legitimately run again for a
 different target in the same session.
 
-## `expression` — object-spelled raw condition
-
-```json
-{ "type": "expression", "value": "$isStretched -eq 't' -or $primaryDatastoreType -eq 'VSAN_ESA'" }
-```
-
-Identical evaluation to a plain legacy string (real PowerShell, evaluated against the answers dict).
-Useful when you want to combine facts with `-or`/`-and`/other PowerShell operators the typed kinds
-don't offer directly (there's no `any`/`all`/`not` combinator across array entries — the array is
-always an implicit AND, so OR logic currently has to be written as one PowerShell expression like
-this).
-
 ## Fail-open vs. fail-closed
 
 These look similar but are not the same thing — worth knowing which one you're looking at when a
 condition doesn't do what you expect:
 
-- **Fail-open (silently treated as `true`)**: a legacy string / `expression` that throws when
-  parsed/evaluated (typo, malformed syntax), or an unrecognized `type`/`operator` value. The
-  reasoning: hiding a real recovery step because of a condition-authoring bug is worse than showing
-  one that turns out to be unnecessary — but it also means a broken condition won't error loudly, it
-  will just always show/run.
+- **Fail-open (silently treated as `true`)**: a condition entry that isn't a recognized typed
+  object at all (e.g. a malformed entry, an unrecognized `type`, an unrecognized `operator`), or one
+  that throws during evaluation. The reasoning: hiding a real recovery step because of a condition-
+  authoring bug is worse than showing one that turns out to be unnecessary — but it also means a
+  broken condition won't error loudly, it will just always show/run.
 - **Fail-closed (a real, non-thrown `false`)**: a `variable`/`dataPath` whose value genuinely isn't
   known yet (nothing selected, nothing typed in) resolves to `$null`, and comparing `$null` against
-  an expected value is a legitimate `false`, not an error. This is not a bug — it's the same
-  behavior a legacy string referencing an unset variable already had.
+  an expected value is a legitimate `false`, not an error. This is a normal, expected state, not a
+  bug.
 
 ## Worked examples
 
