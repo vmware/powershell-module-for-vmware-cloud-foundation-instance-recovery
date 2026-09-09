@@ -340,7 +340,12 @@ function Show-PasswordPromptDialog([string]$Title, [string]$Message) {
 #         completeness.
 # id (optional) names a step so a stepStatus condition elsewhere can reference it; only needed on a
 # step that's actually referenced this way. No uniqueness is enforced -- a duplicate id is last-write-
-# wins in the runtime status ledger, author's responsibility. threadId (empty = runs on the main
+# wins in the runtime status ledger, author's responsibility. displayName is the label shown on the
+# step's row in the Steps list -- deliberately a SEPARATE field from the cmdlet name New-StepRow
+# derives from commandLine for its own internal purposes (matching "Completed Task <cmdlet>" in a
+# console's transcript -- see Add-StepWatch), so giving a step a friendlier display name later can
+# never break that matching. Falls back to the same cmdlet-name derivation if omitted. threadId
+# (empty = runs on the main
 # sequence) marks a step that belongs to a background thread: Run All bundles a CONSECUTIVE run of
 # rows carrying ANY non-empty threadId into one block, starts a fresh console per DISTINCT threadId
 # within it (so several different threads in the same block run concurrently), runs each thread's own
@@ -378,6 +383,7 @@ function Get-RecoveryPlanSteps([string]$RecoveryType, [string]$PlanFileName) {
                 Id          = if ($rawStep.id) { [string]$rawStep.id } else { '' }
                 Description = if ($rawStep.description) { [string]$rawStep.description } else { '' }
                 CommandLine = [string]$rawStep.commandLine
+                DisplayName = if ($rawStep.displayName) { [string]$rawStep.displayName } else { ([string]$rawStep.commandLine -split '\s+', 2)[0] }
                 Condition   = $condition
                 ThreadId    = if ($rawStep.threadId) { [string]$rawStep.threadId } else { '' }
                 Interactive = [bool]$rawStep.interactive
@@ -553,7 +559,7 @@ function Set-PlanStepsListBox([System.Windows.Controls.ListBox]$ListBox, [object
         if ($step.ThreadId -and $step.ThreadId -ne $previousThreadId) {
             $colorAlt = -not $colorAlt
         }
-        $row = New-StepRow $step.CommandLine $step.ThreadId $step.Description $step.Interactive $colorAlt $step.Id $step.Condition
+        $row = New-StepRow $step.CommandLine $step.ThreadId $step.Description $step.Interactive $colorAlt $step.Id $step.Condition $step.DisplayName
         [void]$ListBox.Items.Add($row.Panel)
         $rows += $row
         $previousThreadId = $step.ThreadId
@@ -1623,13 +1629,14 @@ function Invoke-StepThreadChain([object[]]$Rows, $Console, [scriptblock]$OnCompl
     }.GetNewClosure() $Console $row.Interactive $row.Id $row.Condition
 }
 
-# Returns [PSCustomObject]@{ Panel; CommandLine; Button; CmdletName; ThreadId; Interactive; Id;
-# Condition }, not just the row's visual Panel -- the other fields are needed separately so a tab's
-# "Run All" button can replay every row's Run action, and so Invoke-Step/Add-StepWatch can update the
-# right row's button and watch for the right cmdlet name without re-parsing the rendered list. Id/
-# Condition are carried through to Invoke-Step so its stepStatus pre-flight gate (Test-StepStatusGate)
-# applies identically whether a row's Run is clicked manually or reached via Run All/a thread chain.
-function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Description, $Interactive, [bool]$ThreadColorAlt = $false, [string]$Id = '', [object[]]$Condition = @()) {
+# Returns [PSCustomObject]@{ Panel; CommandLine; Button; CmdletName; DisplayName; ThreadId;
+# Interactive; Id; Condition }, not just the row's visual Panel -- the other fields are needed
+# separately so a tab's "Run All" button can replay every row's Run action, and so Invoke-Step/
+# Add-StepWatch can update the right row's button and watch for the right cmdlet name without
+# re-parsing the rendered list. Id/Condition are carried through to Invoke-Step so its stepStatus
+# pre-flight gate (Test-StepStatusGate) applies identically whether a row's Run is clicked manually
+# or reached via Run All/a thread chain.
+function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Description, $Interactive, [bool]$ThreadColorAlt = $false, [string]$Id = '', [object[]]$Condition = @(), [string]$DisplayName = '') {
     # A Grid with fixed-width columns, not a DockPanel -- a DockPanel only stacks whichever badges a
     # given row actually has, so a row with just one badge (or none) leaves the other badge's spot
     # collapsed and everything shifts to fill the gap. Every row gets the same 4 columns (name /
@@ -1653,11 +1660,17 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
     [void]$panel.ColumnDefinitions.Add($interactiveColumn)
     [void]$panel.ColumnDefinitions.Add($runColumn)
 
-    # Only the cmdlet name is shown; the full command line (with its parameters) stays in the
-    # module and is only ever sent to the console, never rendered in the Steps list. Variable
-    # values referenced in it (e.g. $targetFqdn) come from whatever was loaded via "Load
-    # Variables..." -- they're already set in the console session by the time Run is clicked.
+    # The full command line (with its parameters) stays in the module and is only ever sent to the
+    # console, never rendered in the Steps list. Variable values referenced in it (e.g. $targetFqdn)
+    # come from whatever was loaded via "Load Variables..." -- they're already set in the console
+    # session by the time Run is clicked.
+    # $cmdletName is deliberately kept separate from $DisplayName (the label shown below): this one
+    # feeds Add-StepWatch's "Completed Task <cmdlet>" transcript match, which must stay tied to the
+    # LITERAL cmdlet name regardless of whatever friendlier text a plan author puts in displayName.
     $cmdletName = ($CommandLine -split '\s+', 2)[0]
+    if (-not $DisplayName) {
+        $DisplayName = $cmdletName
+    }
 
     $runButton = New-Object System.Windows.Controls.Button
     $runButton.Content = 'Run'
@@ -1728,7 +1741,7 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
     }
 
     $label = New-Object System.Windows.Controls.TextBlock
-    $label.Text = $cmdletName
+    $label.Text = $DisplayName
     $label.FontFamily = New-Object System.Windows.Media.FontFamily('Consolas')
     $label.VerticalAlignment = 'Center'
     [System.Windows.Controls.Grid]::SetColumn($label, 0)
@@ -1741,7 +1754,7 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
         [void]$panel.Children.Add($interactiveBadge)
     }
     [void]$panel.Children.Add($runButton)
-    return [PSCustomObject]@{ Panel = $panel; CommandLine = $CommandLine; Button = $runButton; CmdletName = $cmdletName; ThreadId = $ThreadId; Interactive = $Interactive; Id = $Id; Condition = $Condition }
+    return [PSCustomObject]@{ Panel = $panel; CommandLine = $CommandLine; Button = $runButton; CmdletName = $cmdletName; DisplayName = $DisplayName; ThreadId = $ThreadId; Interactive = $Interactive; Id = $Id; Condition = $Condition }
 }
 
 # Variable names referenced across $CommandLines (e.g. "$targetFqdn"), in order of first
