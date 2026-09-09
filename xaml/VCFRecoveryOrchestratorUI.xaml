@@ -397,6 +397,7 @@
                      pane's height instead of splitting it permanently, since you're typically
                      working in one or the other, not both at once. -->
                 <GroupBox x:Name="StepsVariablesGroupBox" Grid.Row="3" Header="Recovery Tasks" Visibility="Collapsed">
+                    <Grid>
                     <TabControl x:Name="StepsVariablesTabControl" Background="Transparent" BorderThickness="0" Margin="0,-8,0,0">
                         <TabItem Header="Variables">
                             <DockPanel Margin="0,8,0,0">
@@ -463,6 +464,68 @@
                             </Grid>
                         </TabItem>
                     </TabControl>
+                    <!-- Shown INSTEAD of StepsVariablesTabControl (see the .ps1's
+                         Set-StepsVariablesTabVisibility) when the selected domain's domainType is
+                         MANAGEMENT - a management domain recovery is really two independent
+                         operations (its own instance components, and separately the VCF Management
+                         Services fleet components), each needing its own Steps AND its own
+                         Variables, not one shared pair like VI domains/Additional Cluster/FDR keep
+                         using. "Fleet Components" here is an IBR, MANAGEMENT-domain sub-plan
+                         (fleet-component-recovery-plan.json) - unrelated to the FDR "Recover
+                         Fleet" feature (RecoverFleetPanel above) despite the similar name. -->
+                    <TabControl x:Name="ManagementComponentsTabControl" Background="Transparent" BorderThickness="0" Margin="0,-8,0,0" Visibility="Collapsed">
+                        <TabItem Header="Instance Components">
+                            <TabControl x:Name="InstanceComponentsVariablesStepsTabControl" Background="Transparent" BorderThickness="0" Margin="0,8,0,0">
+                                <TabItem Header="Variables">
+                                    <DockPanel Margin="0,8,0,0">
+                                        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+                                            <Button x:Name="InstanceComponentsLoadVariablesButton" Content="Load Variables File" Margin="0,0,8,0" />
+                                            <Button x:Name="InstanceComponentsNewVariablesFileButton" Content="New Variables File" />
+                                        </StackPanel>
+                                        <TextBlock x:Name="InstanceComponentsLoadedVariablesTextBlock" DockPanel.Dock="Top" Margin="0,0,0,8" TextWrapping="Wrap" Foreground="{StaticResource SubtleTextBrush}" Text="No variables loaded yet." />
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                            <StackPanel x:Name="InstanceComponentsVariablesItemsPanel" />
+                                        </ScrollViewer>
+                                    </DockPanel>
+                                </TabItem>
+                                <TabItem Header="Steps">
+                                    <DockPanel Margin="0,8,0,0">
+                                        <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="0,0,0,8">
+                                            <Button x:Name="RunAllInstanceComponentsButton" Content="Run All" HorizontalAlignment="Left" />
+                                            <CheckBox x:Name="RunAllInstanceComponentsParallelCheckBox" Content="Run parallel tasks using multiple threads (numbered circles)" IsChecked="True" VerticalAlignment="Center" Margin="12,0,0,0" />
+                                        </DockPanel>
+                                        <ListBox x:Name="InstanceComponentsStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
+                                    </DockPanel>
+                                </TabItem>
+                            </TabControl>
+                        </TabItem>
+                        <TabItem Header="Fleet Components">
+                            <TabControl x:Name="FleetComponentsVariablesStepsTabControl" Background="Transparent" BorderThickness="0" Margin="0,8,0,0">
+                                <TabItem Header="Variables">
+                                    <DockPanel Margin="0,8,0,0">
+                                        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
+                                            <Button x:Name="FleetComponentsLoadVariablesButton" Content="Load Variables File" Margin="0,0,8,0" />
+                                            <Button x:Name="FleetComponentsNewVariablesFileButton" Content="New Variables File" />
+                                        </StackPanel>
+                                        <TextBlock x:Name="FleetComponentsLoadedVariablesTextBlock" DockPanel.Dock="Top" Margin="0,0,0,8" TextWrapping="Wrap" Foreground="{StaticResource SubtleTextBrush}" Text="No variables loaded yet." />
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                            <StackPanel x:Name="FleetComponentsVariablesItemsPanel" />
+                                        </ScrollViewer>
+                                    </DockPanel>
+                                </TabItem>
+                                <TabItem Header="Steps">
+                                    <DockPanel Margin="0,8,0,0">
+                                        <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="0,0,0,8">
+                                            <Button x:Name="RunAllFleetComponentsButton" Content="Run All" HorizontalAlignment="Left" />
+                                            <CheckBox x:Name="RunAllFleetComponentsParallelCheckBox" Content="Run parallel tasks using multiple threads (numbered circles)" IsChecked="True" VerticalAlignment="Center" Margin="12,0,0,0" />
+                                        </DockPanel>
+                                        <ListBox x:Name="FleetComponentsStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
+                                    </DockPanel>
+                                </TabItem>
+                            </TabControl>
+                        </TabItem>
+                    </TabControl>
+                    </Grid>
                 </GroupBox>
 
             </Grid>
