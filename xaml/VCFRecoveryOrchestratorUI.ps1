@@ -2433,6 +2433,36 @@ $runAllRecoverFleetButton.Add_Click({
         }
     }.GetNewClosure())
 
+$runAllInstanceComponentsButton.Add_Click({
+        try {
+            Set-AllStepButtonsEnabled $false
+            $runTimer = Start-RunTimer
+            Invoke-StepChain $global:instanceComponentsGroup.StepRows -IgnoreThreads:(-not $global:instanceComponentsGroup.ParallelCheckBox.IsChecked) -OnChainComplete {
+                Set-AllStepButtonsEnabled $true
+                Stop-RunTimer $runTimer
+            }.GetNewClosure()
+        } catch {
+            $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
+            Set-AllStepButtonsEnabled $true
+            Stop-RunTimer $runTimer
+        }
+    }.GetNewClosure())
+
+$runAllFleetComponentsButton.Add_Click({
+        try {
+            Set-AllStepButtonsEnabled $false
+            $runTimer = Start-RunTimer
+            Invoke-StepChain $global:fleetComponentsGroup.StepRows -IgnoreThreads:(-not $global:fleetComponentsGroup.ParallelCheckBox.IsChecked) -OnChainComplete {
+                Set-AllStepButtonsEnabled $true
+                Stop-RunTimer $runTimer
+            }.GetNewClosure()
+        } catch {
+            $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
+            Set-AllStepButtonsEnabled $true
+            Stop-RunTimer $runTimer
+        }
+    }.GetNewClosure())
+
 # Saves everything Resume needs to put the window back the way it was: the extracted data file, the
 # variable answers file, which domain was selected (by index into the just-reloaded domain list, the
 # only stable handle available since domains aren't otherwise named uniquely), and which steps had
