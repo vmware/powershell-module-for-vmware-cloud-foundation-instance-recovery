@@ -1,0 +1,135 @@
+[
+  {
+    "description": "Repoint SDDC Manager to the Offline Depot",
+    "commandLine": "Set-SDDCManagerOfflineDepot -sddcManagerFqdn $sddcManagerFqdn -sddcManagerUser $sddcManagerAdmin -sddcManagerPassword $sddcManagerAdminPassword -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort -offlineDepotUsername $offlineDepotUsername -offlineDepotPassword $offlineDepotPassword",
+    "condition": [],
+    "threadId": "",
+    "interactive": false
+  },
+  {
+    "description": "Trigger Download of Binaries Needed for Recovery",
+    "commandLine": "Invoke-SddcManagerBundleDownload -sddcManagerFqdn $sddcManagerFqdn -vcfUserPassword $vcfUserPassword -rootPassword $rootPassword -adminPassword $adminPassword -VcfVersion $VcfVersion -WaitForCompletion",
+    "condition": [],
+    "threadId": "",
+    "interactive": false
+  },
+  {
+    "description": "Retrieve Registered Operations Components",
+    "commandLine": "Get-VcfOperationsRegisteredComponents -VcfOperationsFqdn $vcfOperationsFqdn -Username $username -Password $password -AuthSource $authSource",
+    "condition": [],
+    "threadId": "",
+    "interactive": false
+  },
+  {
+    "description": "Extract Runtime Configuration from the Services Runtime Backup",
+    "commandLine": "New-ExtractVcfmsBackup -LocalArchivePath $LocalArchivePath -EncryptionPassphrase $encryptionPassphrase -OutputDir \".\\backup-yaml\"",
+    "condition": [],
+    "threadId": "",
+    "interactive": false
+  },
+  {
+    "description": "Prepare to Restore VCF Management Services (remove the existing VSP cluster entry)",
+    "commandLine": "Remove-SddcManagerVspClusterEntry -SddcManagerFqdn $sddcManagerFqdn -VcfUserPassword $vcfUserPassword -RootPassword $rootPassword -ClusterType $clusterType",
+    "condition": [],
+    "threadId": "",
+    "interactive": true
+  },
+  {
+    "description": "Redeploy VCF Management Services (VCFMS)",
+    "commandLine": "New-ServicesRuntime -SddcManagerFqdn $sddcManagerFqdn -SddcManagerUser $sddcManagerUser -SddcManagerPassword $sddcManagerPassword -PlatformFqdn $platformFqdn -InstanceFqdn $instanceFqdn -FleetFqdn $fleetFqdn -SystemUserPassword $systemUserPassword -Ipv4Addresses ($ipv4Addresses.Split(',').Trim()) -Size $size -NetworkMoId $networkMoId -GatewayCidrIpv4 $gatewayCidrIpv4 -ClusterId $clusterId -InternalClusterCidrIpv4 $internalClusterCidrIpv4 -type $type",
+    "condition": [],
+    "threadId": "",
+    "interactive": true
+  },
+  {
+    "description": "Set SFTP Backup Settings on the Redeployed Services Runtime",
+    "commandLine": "Set-ServicesRuntimeSftpBackupSettings -ServicesRuntimeFqdn $servicesRuntimeFqdn -ServicesRuntimePassword $servicesRuntimePassword -ComponentId $vspId -SftpHost $sftpHost -SftpUsername $sftpUsername -SftpPassword $sftpPassword -SftpDirectory $sftpDirectory -EncryptionPassphrase $encryptionPassphrase",
+    "condition": [],
+    "threadId": "",
+    "interactive": false
+  },
+  {
+    "description": "Trust the Installer Host Certificate",
+    "commandLine": "Add-VcfmsTrustedCertificate -ServicesRuntimeFqdn $servicesRuntimeFqdn -ServicesRuntimePassword $servicesRuntimePassword -RemoteHostFqdn $remoteHostFqdn",
+    "condition": [],
+    "threadId": "",
+    "interactive": false
+  },
+  {
+    "description": "Stage Binaries (manual step, no automation available -- complete outside this tool, then press Enter here to continue)",
+    "commandLine": "Read-Host 'Press Enter once this manual step is complete' | Out-Null; Write-Host 'Completed Task Read-Host'",
+    "condition": [],
+    "threadId": "",
+    "interactive": true
+  },
+  {
+    "description": "Retrieve a List of Backups for the VCF Management Services (vsp) Component",
+    "commandLine": "Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn $servicesRuntimeFqdn -ServicesRuntimePassword $servicesRuntimePassword -VspId $vspId -Components ($vspBackupComponents.Split(',').Trim())",
+    "condition": [],
+    "threadId": "",
+    "interactive": true
+  },
+  {
+    "description": "Restore VCF Management Services (VCFMS)",
+    "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $servicesRuntimeFqdn -ServicesRuntimePassword $servicesRuntimePassword -RestoreJsonFile \".\\restore-payload.json\"",
+    "condition": [],
+    "threadId": "",
+    "interactive": true
+  },
+  {
+    "description": "Apply Services Runtime Configuration (manual step): scp vmsp-platform.yaml to /tmp on the control plane node (10.11.10.33); ssh to the control plane; sudo su; export KUBECONFIG=/etc/kubernetes/admin.conf; kubectl apply -f /tmp/vmsp-platform.yaml. Press Enter here once complete.",
+    "commandLine": "Read-Host 'Press Enter once this manual step is complete' | Out-Null; Write-Host 'Completed Task Read-Host'",
+    "condition": [],
+    "threadId": "",
+    "interactive": true
+  },
+  {
+    "description": "Retrieve Backups for the Remaining Fleet Components (vcf-fleet-lcm, vcf-fleet-depot, vcf-sddc-lcm, salt, salt-raas, vidb)",
+    "commandLine": "Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn $servicesRuntimeFqdn -ServicesRuntimePassword $servicesRuntimePassword -VspId $vspId -Components ($fleetBackupComponents.Split(',').Trim())",
+    "condition": [],
+    "threadId": "",
+    "interactive": true
+  },
+  {
+    "description": "Restore the Remaining Fleet Components",
+    "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $servicesRuntimeFqdn -ServicesRuntimePassword $servicesRuntimePassword -RestoreJsonFile \".\\restore-payload.json\"",
+    "condition": [],
+    "threadId": "",
+    "interactive": true
+  },
+  {
+    "description": "Retrieve Backups for Log Management (ops-logs)",
+    "commandLine": "Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn $servicesRuntimeFqdn -ServicesRuntimePassword $servicesRuntimePassword -VspId $vspId -Components ($logBackupComponents.Split(',').Trim())",
+    "condition": [],
+    "threadId": "",
+    "interactive": true
+  },
+  {
+    "description": "Restore Log Management",
+    "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $servicesRuntimeFqdn -ServicesRuntimePassword $servicesRuntimePassword -RestoreJsonFile \".\\restore-payload.json\"",
+    "condition": [],
+    "threadId": "",
+    "interactive": true
+  },
+  {
+    "description": "Redeploy Telemetry and Real Time Metrics (manual step, no automation available)",
+    "commandLine": "Read-Host 'Press Enter once this manual step is complete' | Out-Null; Write-Host 'Completed Task Read-Host'",
+    "condition": [],
+    "threadId": "",
+    "interactive": true
+  },
+  {
+    "description": "Update Log Management State (manual step, no automation available)",
+    "commandLine": "Read-Host 'Press Enter once this manual step is complete' | Out-Null; Write-Host 'Completed Task Read-Host'",
+    "condition": [],
+    "threadId": "",
+    "interactive": true
+  },
+  {
+    "description": "Point SDDC Manager to the FDS Depot",
+    "commandLine": "Set-SDDCManagerFDSDepot -sddcManagerFqdn $sddcManagerFqdn -sddcManagerUser $sddcManagerAdmin -sddcManagerPassword $sddcManagerAdminPassword -originalConfigurationFile $originalConfigurationFile",
+    "condition": [],
+    "threadId": "",
+    "interactive": false
+  }
+]
