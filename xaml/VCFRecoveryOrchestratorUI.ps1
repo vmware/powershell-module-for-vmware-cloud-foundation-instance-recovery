@@ -735,6 +735,13 @@ namespace VCFIRConsole {
         public const int SW_SHOW = 5;
         public const int STD_INPUT_HANDLE = -10;
         public const int STD_OUTPUT_HANDLE = -11;
+        // QuickEdit lets a stray click/selection into a console pane pause its output (and, by
+        // extension, whatever step is actively running there) until Enter/right-click releases the
+        // selection -- see Disable-ConsoleQuickEditMode. ENABLE_EXTENDED_FLAGS must be included in every
+        // SetConsoleMode call that touches ENABLE_QUICK_EDIT_MODE, or the mode change is silently
+        // ignored (a real, documented Win32 quirk, not optional here).
+        public const uint ENABLE_QUICK_EDIT_MODE = 0x0040;
+        public const uint ENABLE_EXTENDED_FLAGS = 0x0080;
         public const uint RDW_INVALIDATE = 0x1;
         public const uint RDW_ERASE = 0x4;
         public const uint RDW_UPDATENOW = 0x100;
@@ -793,6 +800,12 @@ namespace VCFIRConsole {
 
         [DllImport("kernel32.dll", SetLastError = true)]
         public static extern bool WriteConsoleInput(IntPtr hConsoleInput, INPUT_RECORD[] lpBuffer, uint nLength, out uint lpNumberOfEventsWritten);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
 
         public const int WH_MOUSE_LL = 14;
         public const int WM_LBUTTONDOWN = 0x0201;
@@ -949,6 +962,11 @@ function New-EmbeddedConsole([string]$TabHeader, [switch]$Bootstrap) {
     if ($Bootstrap) {
         Initialize-ConsoleVariables $console
     }
+
+    # QuickEdit lets a stray click/selection into a console pane silently pause its output (and
+    # whatever step is actively running there) until Enter/right-click releases the selection --
+    # disabled unconditionally, once, for every console this app ever creates.
+    Disable-ConsoleQuickEditMode $console
 
     return $console
 }
@@ -1265,6 +1283,42 @@ function Send-ToConsole([string]$CommandLine, $Console) {
         $statusTextBlock.Text = "Failed to send command: $($_.Exception.Message)"
     }
     Set-ConsoleFocus
+}
+
+# Toggles QuickEdit mode on one console's own input buffer -- QuickEdit lets a stray click or
+# text selection into a console pane silently pause its output (and whatever step is actively
+# running there) until Enter or a right-click releases the selection, which is exactly the kind of
+# accidental-looking "it's just stuck" report this exists to prevent. Same AttachConsole/
+# GetStdHandle/FreeConsole dance Send-ToConsole already uses to reach a target console's own
+# handles from this process. Deliberately silent (no $statusTextBlock update) either way -- this is
+# a background safety toggle, not something the operator needs to be told is happening, and a
+# failure here (a console that's already exited, a transient attach failure) shouldn't interrupt or
+# alarm anyone either.
+function Disable-ConsoleQuickEditMode($Console) {
+    if ($null -eq $Console -or $null -eq $Console.Process -or $Console.Process.HasExited) {
+        return
+    }
+    try {
+        [VCFIRConsole.NativeMethods]::FreeConsole() | Out-Null
+        if (-not [VCFIRConsole.NativeMethods]::AttachConsole([uint32]$Console.Process.Id)) {
+            return
+        }
+        try {
+            $inputHandle = [VCFIRConsole.NativeMethods]::GetStdHandle([VCFIRConsole.NativeMethods]::STD_INPUT_HANDLE)
+            [uint32]$mode = 0
+            if (-not [VCFIRConsole.NativeMethods]::GetConsoleMode($inputHandle, [ref]$mode)) {
+                return
+            }
+            # ENABLE_EXTENDED_FLAGS must be present for a QuickEdit change to actually take effect
+            # (a real Win32 quirk, not optional).
+            $mode = ($mode -band (-bnot [VCFIRConsole.NativeMethods]::ENABLE_QUICK_EDIT_MODE)) -bor [VCFIRConsole.NativeMethods]::ENABLE_EXTENDED_FLAGS
+            [void][VCFIRConsole.NativeMethods]::SetConsoleMode($inputHandle, $mode)
+        } finally {
+            [VCFIRConsole.NativeMethods]::FreeConsole() | Out-Null
+        }
+    } catch {
+        # Best-effort safety toggle -- swallow and move on, never surface this to the operator.
+    }
 }
 
 # A step's transcript slice is "unclean" -- even once its own "Completed Task" line has appeared --
