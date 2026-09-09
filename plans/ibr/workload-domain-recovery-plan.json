@@ -136,14 +136,7 @@
   },
   {
     "description": "Redeploy NSX Edge Cluster (selective recovery)",
-    "commandLine": "Invoke-NSXEdgeClusterRecoverySelective -nsxManagerFqdn $restoredNsxManagerFqdn -nsxManagerAdmin $restoredNsxManagerAdmin -nsxManagerAdminPassword $restoredNsxManagerAdminPassword -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredvCenterAdmin -vCenterAdminPassword $restoredvCenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile",
-    "condition": [],
-    "threadId": "",
-    "interactive": false
-  },
-  {
-    "description": "Wait for NSX-T Edge Deployment to Complete",
-    "commandLine": "Wait-NSXTEdgeDeployment -nsxtManagerFqdn $restoredNsxManagerFqdn -nsxtUsername $restoredNsxManagerAdmin -nsxtPassword $restoredNsxManagerAdminPassword -edgeNamePattern $workloadDomain -expectedEdgeCount 2 -pollIntervalSeconds 30 -timeoutMinutes 30",
+    "commandLine": "Invoke-NSXEdgeClusterRecoverySelective -nsxManagerFqdn $restoredNsxManagerFqdn -nsxManagerAdmin $restoredNsxManagerAdmin -nsxManagerAdminPassword $restoredNsxManagerAdminPassword -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredvCenterAdmin -vCenterAdminPassword $restoredvCenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile -monitor",
     "condition": [],
     "threadId": "",
     "interactive": false

@@ -7786,6 +7786,15 @@ Function Invoke-NSXEdgeClusterRecoverySelective {
 
     .PARAMETER extractedSDDCDataFile
     Relative or absolute to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup) somewhere on the local filesystem
+
+    .PARAMETER monitor
+    If specified, after redeployment is initiated for the selected Edges, waits for each of THOSE specific Edges (not a name-pattern/count-based discovery) to report deployment status UP and control connection status UP before completing
+
+    .PARAMETER pollIntervalSeconds
+    Only used when -monitor is specified. Number of seconds to wait between status checks. Defaults to 30
+
+    .PARAMETER timeoutMinutes
+    Only used when -monitor is specified. Number of minutes to wait for the selected Edges to reach UP status before giving up. Defaults to 30
     #>
 
     Param(
@@ -7796,7 +7805,10 @@ Function Invoke-NSXEdgeClusterRecoverySelective {
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
         [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
         [Parameter (Mandatory = $true)][String] $clusterName,
-        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
+        [Parameter (Mandatory = $false)][Switch] $monitor,
+        [Parameter (Mandatory = $false)][Int] $pollIntervalSeconds = 30,
+        [Parameter (Mandatory = $false)][Int] $timeoutMinutes = 30
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
@@ -7976,8 +7988,57 @@ Function Invoke-NSXEdgeClusterRecoverySelective {
             }
         }
     }
-    LogMessage -type NOTE -message "[$jumpboxName] Selected Edge Redeployments have been initiated. Please monitor in NSX UI for completion"
     Disconnect-VIServer * -confirm:$false
+
+    If ($monitor) {
+        # Watches only the specific Edges that were actually selected above (by node_id, the stable
+        # NSX identifier already in hand from $selectedEdges) rather than rediscovering candidates by
+        # name pattern and expected count the way the standalone Wait-NSXTEdgeDeployment cmdlet does --
+        # this function already knows exactly which Edges it just redeployed, so there's no need to
+        # infer the set a second time from naming conventions.
+        LogMessage -Type WAIT -Message "[$nsxManagerFqdn] Waiting for $($selectedEdges.Count) selected Edge(s) to redeploy and reach UP status"
+        $startTime = Get-Date
+        $timeout = New-TimeSpan -Minutes $timeoutMinutes
+        $pendingEdges = @($selectedEdges)
+
+        Do {
+            $stillPendingEdges = @()
+            Foreach ($pendingEdge in $pendingEdges) {
+                $isUp = $false
+                Try {
+                    $statusUri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($pendingEdge.Edge.node_id)/status"
+                    $statusResponse = Invoke-WebRequest -Method GET -URI $statusUri -ContentType "application/json" -Headers $headers
+                    $status = $statusResponse.Content | ConvertFrom-Json
+                    If ($status.status -eq "UP" -and $status.control_connection_status.status -eq "UP") {
+                        $isUp = $true
+                    }
+                } Catch {
+                    # Edge status not yet available (e.g. still booting), continue polling
+                }
+                If (-not $isUp) {
+                    $stillPendingEdges += $pendingEdge
+                }
+            }
+            $pendingEdges = $stillPendingEdges
+
+            If ($pendingEdges.Count -eq 0) {
+                LogMessage -Type INFO -Message "[$nsxManagerFqdn] All $($selectedEdges.Count) selected Edge(s) deployed successfully and connectivity is UP"
+                Break
+            }
+
+            $currentTime = Get-Date
+            If (($currentTime - $startTime) -ge $timeout) {
+                $stillPendingNames = ($pendingEdges | ForEach-Object { $_.Edge.display_name }) -join ", "
+                LogMessage -Type ERROR -Message "[$nsxManagerFqdn] Timeout reached after $timeoutMinutes minutes waiting for Edge deployment. Still not up: $stillPendingNames"
+                Break
+            }
+
+            Start-Sleep -Seconds $pollIntervalSeconds
+        } While ($true)
+    } Else {
+        LogMessage -type NOTE -message "[$jumpboxName] Selected Edge Redeployments have been initiated. Please monitor in NSX UI for completion"
+    }
+
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
