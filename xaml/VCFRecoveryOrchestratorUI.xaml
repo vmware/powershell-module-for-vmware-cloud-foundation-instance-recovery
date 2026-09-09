@@ -216,7 +216,7 @@
         <Border Grid.Row="0" Background="{StaticResource HeaderBarBrush}" Padding="18,12">
             <DockPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                    <Button x:Name="ResumeButton" Content="Resume..." Width="90" Margin="0,0,8,0" />
+                    <Button x:Name="ResumeButton" Content="Resume" Width="90" Margin="0,0,8,0" />
                     <Button x:Name="ExitButton" Content="Save &amp; Exit" Width="90" />
                 </StackPanel>
                 <StackPanel Orientation="Horizontal">
