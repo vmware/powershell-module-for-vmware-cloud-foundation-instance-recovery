@@ -8535,7 +8535,8 @@ Function Update-DomainDatastoreID {
     finds the named cluster within that domain, reads its primary datastore name from the extracted SDDC data,
     queries vCenter for the current MoRef of that datastore, then connects to the SDDC Manager appliance via
     SSH and updates the primary_datastore_source_id column in the cluster table. If the value is already
-    correct no change is made. A confirmation prompt is shown before any change is written.
+    correct no change is made. A confirmation prompt is shown before any change is written, unless -autoConfirm
+    is specified.
 
     .EXAMPLE
     Update-DomainDatastoreID -extractedSDDCDataFile ".\extracted-sddc-data.json" -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -clusterName "sfo-m01-cl01" -VcfUserPassword "VMw@re1!VMw@re1!" -RootPassword "VMw@re1!VMw@re1!"
@@ -8554,6 +8555,9 @@ Function Update-DomainDatastoreID {
 
     .PARAMETER RootPassword
     Root password for the SDDC Manager appliance (used for su elevation).
+
+    .PARAMETER autoConfirm
+    If specified, applies the update without prompting for confirmation.
     #>
 
     Param(
@@ -8561,7 +8565,8 @@ Function Update-DomainDatastoreID {
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $clusterName,
         [Parameter (Mandatory = $true)][String] $VcfUserPassword,
-        [Parameter (Mandatory = $true)][String] $RootPassword
+        [Parameter (Mandatory = $true)][String] $RootPassword,
+        [Parameter (Mandatory = $false)][Switch] $autoConfirm
     )
 
     $jumpboxName = hostname
@@ -8686,15 +8691,17 @@ Function Update-DomainDatastoreID {
     Write-Host "   New datastore MoRef:       $newDatastoreMoRef"
     Write-Host "   Datastore name:            $datastoreName"
     Write-Host ""
-    Do {
-        Write-Host " Proceed with update? (Y/N): " -ForegroundColor Yellow -NoNewline
-        $confirmation = Read-Host
-    } Until ($confirmation -in @("Y", "y", "N", "n"))
+    if (-not $autoConfirm) {
+        Do {
+            Write-Host " Proceed with update? (Y/N): " -ForegroundColor Yellow -NoNewline
+            $confirmation = Read-Host
+        } Until ($confirmation -in @("Y", "y", "N", "n"))
 
-    if ($confirmation -in @("N", "n")) {
-        LogMessage -type INFO -message "[$SddcManagerFqdn] Operation cancelled by user."
-        Remove-SSHSession -SSHSession $sshSession | Out-Null
-        return
+        if ($confirmation -in @("N", "n")) {
+            LogMessage -type INFO -message "[$SddcManagerFqdn] Operation cancelled by user."
+            Remove-SSHSession -SSHSession $sshSession | Out-Null
+            return
+        }
     }
 
     # Execute the UPDATE
@@ -8737,8 +8744,8 @@ Function Update-ClusterHostSourceIDs {
     every host currently in that cluster along with its current MoRef, then connects to the SDDC
     Manager appliance via SSH and compares each host's persisted source_id (in the public.host table,
     keyed by hostname) against the live MoRef. Hosts already matching are skipped. A summary of all
-    planned changes is shown and confirmed once before any UPDATE is executed, then each change is
-    applied and verified individually.
+    planned changes is shown and confirmed once before any UPDATE is executed, unless -autoConfirm is
+    specified, then each change is applied and verified individually.
 
     This mirrors the same class of problem Update-DomainDatastoreID resolves for
     cluster.primary_datastore_source_id -- after a cluster's hosts are rebuilt (new vCenter, new
@@ -8764,6 +8771,9 @@ Function Update-ClusterHostSourceIDs {
 
     .PARAMETER RootPassword
     Root password for the SDDC Manager appliance (used for su elevation).
+
+    .PARAMETER autoConfirm
+    If specified, applies the update(s) without prompting for confirmation.
     #>
 
     Param(
@@ -8771,7 +8781,8 @@ Function Update-ClusterHostSourceIDs {
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $clusterName,
         [Parameter (Mandatory = $true)][String] $VcfUserPassword,
-        [Parameter (Mandatory = $true)][String] $RootPassword
+        [Parameter (Mandatory = $true)][String] $RootPassword,
+        [Parameter (Mandatory = $false)][Switch] $autoConfirm
     )
 
     $jumpboxName = hostname
@@ -8911,15 +8922,17 @@ Function Update-ClusterHostSourceIDs {
     Write-Host ""
     Write-Host " Summary - the following updates will be applied on $SddcManagerFqdn" -ForegroundColor Yellow
     $plannedChanges | Format-Table -Property Hostname, SddcManagerHostId, CurrentSourceId, NewSourceId -AutoSize | Out-String | Write-Host
-    Do {
-        Write-Host " Proceed with update of $($plannedChanges.Count) host(s)? (Y/N): " -ForegroundColor Yellow -NoNewline
-        $confirmation = Read-Host
-    } Until ($confirmation -in @("Y", "y", "N", "n"))
+    if (-not $autoConfirm) {
+        Do {
+            Write-Host " Proceed with update of $($plannedChanges.Count) host(s)? (Y/N): " -ForegroundColor Yellow -NoNewline
+            $confirmation = Read-Host
+        } Until ($confirmation -in @("Y", "y", "N", "n"))
 
-    if ($confirmation -in @("N", "n")) {
-        LogMessage -type INFO -message "[$SddcManagerFqdn] Operation cancelled by user."
-        Remove-SSHSession -SSHSession $sshSession | Out-Null
-        return
+        if ($confirmation -in @("N", "n")) {
+            LogMessage -type INFO -message "[$SddcManagerFqdn] Operation cancelled by user."
+            Remove-SSHSession -SSHSession $sshSession | Out-Null
+            return
+        }
     }
 
     # Execute and verify each UPDATE
