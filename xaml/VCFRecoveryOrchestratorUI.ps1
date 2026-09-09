@@ -1593,9 +1593,10 @@ function Get-ReferencedVariableNames([string[]]$CommandLines) {
     return $names
 }
 
-# $OnValueChanged (optional) fires alongside the existing console update below, given the edited
-# name/value -- used by New Variables File to persist every field to its chosen file as it's
-# filled in, without changing what Load Variables' own rows already do (they pass nothing).
+# $OnValueChanged (optional, but every real call site supplies one) is given the edited name/value
+# and is responsible for persisting it to that row's own answers file and re-applying it to the
+# console -- see this function's own comment on $applyEdit for why that's now the ONLY way an edit
+# ever reaches the console, not a direct assignment typed here.
 function New-VariableRow([string]$Name, [string]$Value, [scriptblock]$OnValueChanged) {
     $panel = New-Object System.Windows.Controls.DockPanel
     $panel.Margin = '0,0,0,3'
@@ -1609,16 +1610,44 @@ function New-VariableRow([string]$Name, [string]$Value, [scriptblock]$OnValueCha
     $label.TextTrimming = 'CharacterEllipsis'
     [System.Windows.Controls.DockPanel]::SetDock($label, [System.Windows.Controls.Dock]::Left)
 
-    $valueBox = New-Object System.Windows.Controls.TextBox
-    $valueBox.Text = $Value
+    # Password/passphrase-looking variable names (SDDC Manager admin password, root password,
+    # encryption passphrase, ...) get a real PasswordBox -- masked characters, never rendered as
+    # plaintext -- instead of a plain TextBox. These are real credentials, and this panel is on
+    # screen any time Variables is open, so showing them in the clear is an unnecessary shoulder-
+    # surfing/screenshot risk.
+    $isPassword = $Name -match '(?i)password|passphrase'
+    if ($isPassword) {
+        $valueBox = New-Object System.Windows.Controls.PasswordBox
+        $valueBox.Password = $Value
+    } else {
+        $valueBox = New-Object System.Windows.Controls.TextBox
+        $valueBox.Text = $Value
+    }
     $valueBox.Padding = '4,2'
 
-    # Edits only take effect on LostFocus (not per-keystroke) -- re-sends the updated value to the
-    # console so a value changed after loading still reaches the running session.
-    $valueBox.Add_LostFocus({
-            Send-ToConsole "`$$Name = '$(Protect-SingleQuotes $valueBox.Text)'"
-            if ($OnValueChanged) {
-                & $OnValueChanged $Name $valueBox.Text
+    # Applies an edit -- on LostFocus (tabbing/clicking away, as before) and now also immediately on
+    # Enter, which previously did nothing at all here since pressing Enter alone doesn't move focus.
+    # $OnValueChanged (every real call site supplies one) is what actually persists the edit to this
+    # row's own answers file and re-sends "Import-RecoveryVariables -Path <file>" to apply it to the
+    # running session -- the same safe, file-based mechanism the initial bulk load already uses,
+    # rather than ever typing "$name = 'value'" as a literal command, which would sit in that
+    # console's own transcript log in the clear forever for a password field. The fallback below
+    # (no $OnValueChanged given) preserves the old direct-assignment behavior for any future caller
+    # that doesn't need file persistence.
+    $applyEdit = {
+        $currentValue = if ($isPassword) { $valueBox.Password } else { $valueBox.Text }
+        if ($OnValueChanged) {
+            & $OnValueChanged $Name $currentValue
+        } else {
+            Send-ToConsole "`$$Name = '$(Protect-SingleQuotes $currentValue)'"
+        }
+    }.GetNewClosure()
+    $valueBox.Add_LostFocus($applyEdit)
+    $valueBox.Add_KeyDown({
+            param($eventSender, $keyArgs)
+            if ($keyArgs.Key -eq 'Return') {
+                & $applyEdit
+                $keyArgs.Handled = $true
             }
         }.GetNewClosure())
 
@@ -1960,7 +1989,19 @@ function Import-VariablesAnswersFile([string]$Path) {
         $orderedNames += @($answerMap.Keys | Where-Object { $orderedNames -notcontains $_ })
 
         foreach ($name in $orderedNames) {
-            [void]$variablesItemsPanel.Children.Add((New-VariableRow $name $answerMap[$name]))
+            # Edits made after loading now persist back to the SAME file this row's value came from,
+            # and re-apply live via the same safe Import-RecoveryVariables -Path mechanism used just
+            # below for the initial bulk load -- previously only New-VariablesFile's own rows saved
+            # anything on edit; Load Variables' rows just pushed a live, never-persisted assignment.
+            $onValueChanged = {
+                param($changedName, $changedValue)
+                $answerMap[$changedName] = $changedValue
+                $answerMap | ConvertTo-Json | Set-Content -LiteralPath $Path -Encoding utf8
+                $escapedAnswersPath = Protect-SingleQuotes $Path
+                Send-ToConsole "Import-RecoveryVariables -Path '$escapedAnswersPath'"
+                Update-RevealedSteps $answerMap
+            }.GetNewClosure()
+            [void]$variablesItemsPanel.Children.Add((New-VariableRow $name $answerMap[$name] $onValueChanged))
         }
 
         # Import-RecoveryVariables (a real, exported module cmdlet -- see the "Recovery Variables"
@@ -2028,6 +2069,12 @@ function New-VariablesFile([string]$Path) {
             param($changedName, $changedValue)
             $values[$changedName] = $changedValue
             $values | ConvertTo-Json | Set-Content -LiteralPath $Path -Encoding utf8
+            # Applies the edit to the running session via the same safe, file-based mechanism
+            # Import-VariablesAnswersFile's own bulk load uses -- never a literal "$name = 'value'"
+            # typed into the console, so a password field's plaintext never lands in that console's
+            # transcript log.
+            $escapedPath = Protect-SingleQuotes $Path
+            Send-ToConsole "Import-RecoveryVariables -Path '$escapedPath'"
             # Re-filters Steps by condition every time a field changes, not only once at creation --
             # a step gated on e.g. "$isStretched -eq 't'" starts pre-filled from extracted data when
             # known (see above), but should still react live if it's edited or was genuinely blank.
@@ -2041,7 +2088,7 @@ function New-VariablesFile([string]$Path) {
 
     # Reveals Steps in the background (see Update-RevealedSteps) even though every value here still
     # starts blank -- each field is already wired to push its value to the console the moment it's
-    # filled in (New-VariableRow's LostFocus handler), the same mechanism Import-VariablesAnswersFile
+    # filled in (New-VariableRow's own $applyEdit), the same mechanism Import-VariablesAnswersFile
     # uses, so this is the same "variables are now in play" moment for this flow too.
     Update-RevealedSteps $values
 
@@ -2197,7 +2244,17 @@ function Import-GroupVariablesAnswersFile($Group, [string]$Path) {
         $orderedNames += @($answerMap.Keys | Where-Object { $orderedNames -notcontains $_ })
 
         foreach ($name in $orderedNames) {
-            [void]$Group.VariablesItemsPanel.Children.Add((New-VariableRow $name $answerMap[$name]))
+            # See the matching comment in Import-VariablesAnswersFile -- edits persist back to this
+            # group's own answers file and re-apply live the same safe way the bulk load below does.
+            $onValueChanged = {
+                param($changedName, $changedValue)
+                $answerMap[$changedName] = $changedValue
+                $answerMap | ConvertTo-Json | Set-Content -LiteralPath $Path -Encoding utf8
+                $escapedAnswersPath = Protect-SingleQuotes $Path
+                Send-ToConsole "Import-RecoveryVariables -Path '$escapedAnswersPath'"
+                Update-GroupRevealedSteps $Group $answerMap
+            }.GetNewClosure()
+            [void]$Group.VariablesItemsPanel.Children.Add((New-VariableRow $name $answerMap[$name] $onValueChanged))
         }
 
         $escapedAnswersPath = Protect-SingleQuotes $Path
@@ -2235,6 +2292,8 @@ function New-GroupVariablesFile($Group, [string]$Path) {
             param($changedName, $changedValue)
             $values[$changedName] = $changedValue
             $values | ConvertTo-Json | Set-Content -LiteralPath $Path -Encoding utf8
+            $escapedPath = Protect-SingleQuotes $Path
+            Send-ToConsole "Import-RecoveryVariables -Path '$escapedPath'"
             Update-GroupRevealedSteps $Group $values
         }.GetNewClosure()
         [void]$Group.VariablesItemsPanel.Children.Add((New-VariableRow $name $values[$name] $onValueChanged))
