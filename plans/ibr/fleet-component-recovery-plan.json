@@ -57,7 +57,7 @@
   },
   {
     "description": "Stage Binaries (manual step, no automation available -- complete outside this tool, then press Enter here to continue)",
-    "commandLine": "Read-Host 'Press Enter once this manual step is complete' | Out-Null; Write-Host 'Completed Task Read-Host'",
+    "commandLine": "Read-Host 'Press Enter to confirm Binary Staging is complete' | Out-Null; Write-Host 'Completed Task Read-Host'",
     "condition": [],
     "threadId": "",
     "interactive": true
@@ -78,7 +78,7 @@
   },
   {
     "description": "Apply Services Runtime Configuration (manual step): scp vmsp-platform.yaml to /tmp on the control plane node (10.11.10.33); ssh to the control plane; sudo su; export KUBECONFIG=/etc/kubernetes/admin.conf; kubectl apply -f /tmp/vmsp-platform.yaml. Press Enter here once complete.",
-    "commandLine": "Read-Host 'Press Enter once this manual step is complete' | Out-Null; Write-Host 'Completed Task Read-Host'",
+    "commandLine": "Read-Host 'Press Enter to confirm Services Runtime Configuration has been applied' | Out-Null; Write-Host 'Completed Task Read-Host'",
     "condition": [],
     "threadId": "",
     "interactive": true
@@ -113,14 +113,14 @@
   },
   {
     "description": "Redeploy Telemetry and Real Time Metrics (manual step, no automation available)",
-    "commandLine": "Read-Host 'Press Enter once this manual step is complete' | Out-Null; Write-Host 'Completed Task Read-Host'",
+    "commandLine": "Read-Host 'Press Enter once Telemetry and Real Time Metrics are redeployed' | Out-Null; Write-Host 'Completed Task Read-Host'",
     "condition": [],
     "threadId": "",
     "interactive": true
   },
   {
     "description": "Update Log Management State (manual step, no automation available)",
-    "commandLine": "Read-Host 'Press Enter once this manual step is complete' | Out-Null; Write-Host 'Completed Task Read-Host'",
+    "commandLine": "Read-Host 'Press Enter once Log Management state is updated' | Out-Null; Write-Host 'Completed Task Read-Host'",
     "condition": [],
     "threadId": "",
     "interactive": true
