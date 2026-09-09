@@ -572,31 +572,6 @@ namespace VCFIRConsole {
 
     public delegate IntPtr LowLevelMouseProc(int nCode, IntPtr wParam, IntPtr lParam);
 
-    // For Send-ToConsole's own cursor-position polling -- only dwCursorPosition is ever read, but
-    // GetConsoleScreenBufferInfo requires the full struct shape to marshal correctly.
-    [StructLayout(LayoutKind.Sequential)]
-    public struct COORD {
-        public short X;
-        public short Y;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    public struct SMALL_RECT {
-        public short Left;
-        public short Top;
-        public short Right;
-        public short Bottom;
-    }
-
-    [StructLayout(LayoutKind.Sequential)]
-    public struct CONSOLE_SCREEN_BUFFER_INFO {
-        public COORD dwSize;
-        public COORD dwCursorPosition;
-        public ushort wAttributes;
-        public SMALL_RECT srWindow;
-        public COORD dwMaximumWindowSize;
-    }
-
     public static class NativeMethods {
         public const int GWL_STYLE = -16;
         public const long WS_CHILD = 0x40000000L;
@@ -609,13 +584,6 @@ namespace VCFIRConsole {
         public const int SW_SHOW = 5;
         public const int STD_INPUT_HANDLE = -10;
         public const int STD_OUTPUT_HANDLE = -11;
-        // The two attributes Send-ToConsole toggles a console's CURRENT (not per-character saved/
-        // restored) color between -- Gray is this console's real original default (confirmed for real:
-        // a freshly created console's own attribute before New-EmbeddedConsole ever touches it), Cyan
-        // is the standing default it sets instead (see New-EmbeddedConsole's startup command). Fixed
-        // constants, not queried per-call, since both values are already known and never vary.
-        public const ushort FOREGROUND_GRAY = 0x0007;
-        public const ushort FOREGROUND_CYAN = 0x000B;
         public const uint RDW_INVALIDATE = 0x1;
         public const uint RDW_ERASE = 0x4;
         public const uint RDW_UPDATENOW = 0x100;
@@ -674,12 +642,6 @@ namespace VCFIRConsole {
 
         [DllImport("kernel32.dll", SetLastError = true)]
         public static extern bool WriteConsoleInput(IntPtr hConsoleInput, INPUT_RECORD[] lpBuffer, uint nLength, out uint lpNumberOfEventsWritten);
-
-        [DllImport("kernel32.dll", SetLastError = true)]
-        public static extern bool SetConsoleTextAttribute(IntPtr hConsoleOutput, ushort wAttributes);
-
-        [DllImport("kernel32.dll", SetLastError = true)]
-        public static extern bool GetConsoleScreenBufferInfo(IntPtr hConsoleOutput, out CONSOLE_SCREEN_BUFFER_INFO lpConsoleScreenBufferInfo);
 
         public const int WH_MOUSE_LL = 14;
         public const int WM_LBUTTONDOWN = 0x0201;
@@ -763,16 +725,7 @@ function New-EmbeddedConsole([string]$TabHeader, [switch]$Bootstrap) {
     # anywhere in it, which is exactly the marker Test-StepTranscriptClean's gate 3 looks for -- on
     # ConciseView a real, uncaught error would silently pass every gate. NormalView is the one that
     # always includes it.
-    #
-    # ForegroundColor = 'Cyan' here makes cyan this console's STANDING/resting default -- not just
-    # something Send-ToConsole applies around an injected command -- because the "PS ...>" prompt
-    # itself is printed autonomously by this process whenever it returns to idle, on its own
-    # schedule, with no hook Send-ToConsole (running in a different process, only invoked on demand)
-    # could use to color it after the fact. See Send-ToConsole's own comment for how it keeps this
-    # from also recoloring a task's own uncolored Write-Host/Write-Output output -- it drops the
-    # attribute to Gray (this line's own true original default) from outside, invisibly, right before
-    # the real command starts running, then restores Cyan the same way once it finishes.
-    $consoleStartupCommand = "Set-Location -LiteralPath '$escapedWorkingDirectory'; Remove-Module PSReadLine -Force -ErrorAction SilentlyContinue; `$ErrorView = 'NormalView'; [Console]::ForegroundColor = 'Cyan'; Start-Transcript -Path '$escapedTranscriptPath' -Force | Out-Null"
+    $consoleStartupCommand = "Set-Location -LiteralPath '$escapedWorkingDirectory'; Remove-Module PSReadLine -Force -ErrorAction SilentlyContinue; `$ErrorView = 'NormalView'; Start-Transcript -Path '$escapedTranscriptPath' -Force | Out-Null"
 
     # Launched via the Start-Process cmdlet, not System.Diagnostics.ProcessStartInfo + Process.Start().
     # This isn't a style choice -- it's the actual fix for "console window never appears". Confirmed
@@ -828,6 +781,9 @@ function New-EmbeddedConsole([string]$TabHeader, [switch]$Bootstrap) {
         TranscriptPath = $transcriptPath
         TabItem        = $tabItem
         HostBorder     = $hostBorder
+        # Set-ToConsole's own leading-blank-line delimiter (see its comment) is skipped for whichever
+        # command is the first one ever sent to this specific console -- nothing to separate it from yet.
+        HasSentCommand = $false
     }
 
     # ConsoleHwndHost doesn't implement IKeyboardInputSink, so WPF's own keyboard-focus tracking has
@@ -1092,34 +1048,6 @@ function Send-ToConsole([string]$CommandLine, $Console) {
         $statusTextBlock.Text = "Console process isn't running."
         return
     }
-    # Registered BEFORE the command is ever typed, not after -- Add-CompletionWatch's own StartOffset
-    # is a snapshot of "how much transcript exists right now," and a fast-completing command (its own
-    # "Completed Task <name>" line can appear within milliseconds of Enter, well within this function's
-    # own attach/type/wait/detach time) could otherwise finish and print that line BEFORE the watch is
-    # registered -- at which point the watch would only ever match a LATER occurrence of that text, not
-    # the one that already happened, and Cyan would never get restored. Cmdlet name is always the
-    # injected line's own first token -- true for every real call site (a Steps row's own CommandLine,
-    # and the two "priming" commands Import-ExtractedSddcDataFile/Import-VariablesAnswersFile send
-    # directly), and every one of them already logs its own "Completed Task <name>" line via LogMessage
-    # (the same invariant Add-StepWatch/Add-CompletionWatch already depend on elsewhere).
-    $cmdletName = ($CommandLine -split '\s+', 2)[0]
-    Add-CompletionWatch -CmdletName $cmdletName -Console $Console -OnComplete {
-        # $Console is captured by this closure, not passed as a parameter -- Add-CompletionWatch's own
-        # OnComplete contract only ever passes $isClean. Restores this console's resting color to Cyan
-        # (see New-EmbeddedConsole/Send-ToConsole's own comments on why cyan is the standing default)
-        # now that this specific command has actually finished, invisibly (an attribute change, not
-        # typed text) and asynchronously -- not by blocking Send-ToConsole itself for however long the
-        # command takes to run.
-        try {
-            [VCFIRConsole.NativeMethods]::FreeConsole() | Out-Null
-            if ([VCFIRConsole.NativeMethods]::AttachConsole([uint32]$Console.Process.Id)) {
-                $restoreHandle = [VCFIRConsole.NativeMethods]::GetStdHandle([VCFIRConsole.NativeMethods]::STD_OUTPUT_HANDLE)
-                [VCFIRConsole.NativeMethods]::SetConsoleTextAttribute($restoreHandle, [VCFIRConsole.NativeMethods]::FOREGROUND_CYAN) | Out-Null
-            }
-        } finally {
-            [VCFIRConsole.NativeMethods]::FreeConsole() | Out-Null
-        }
-    }.GetNewClosure()
     try {
         [VCFIRConsole.NativeMethods]::FreeConsole() | Out-Null
         # A console that was JUST created (New-EmbeddedConsole -Bootstrap calling straight into this,
@@ -1146,12 +1074,18 @@ function Send-ToConsole([string]$CommandLine, $Console) {
         }
         try {
             $inputHandle = [VCFIRConsole.NativeMethods]::GetStdHandle([VCFIRConsole.NativeMethods]::STD_INPUT_HANDLE)
-            $outputHandle = [VCFIRConsole.NativeMethods]::GetStdHandle([VCFIRConsole.NativeMethods]::STD_OUTPUT_HANDLE)
-            $bufferInfo = New-Object VCFIRConsole.CONSOLE_SCREEN_BUFFER_INFO
-            $gotBufferInfo = [VCFIRConsole.NativeMethods]::GetConsoleScreenBufferInfo($outputHandle, [ref]$bufferInfo)
-            $initialCursor = $bufferInfo.dwCursorPosition
+            # A blank line ahead of every command but the first is a plain visual delimiter between one
+            # command's own output and the next command's prompt -- injected as a leading blank Enter
+            # press (typed input, same mechanism as the real command itself), not any kind of console
+            # coloring: that whole approach (bracketing text, invisible attribute toggling, all of it)
+            # was tried, worked technically, and still wasted real time for no visible benefit -- removed
+            # entirely, not to be revisited. $Console.HasSentCommand (set on the console object itself in
+            # New-EmbeddedConsole) is what distinguishes "first command this console has ever run" from
+            # every one after it.
+            $typedText = if ($Console.HasSentCommand) { "`r$CommandLine`r" } else { "$CommandLine`r" }
+            $Console.HasSentCommand = $true
             $records = [System.Collections.Generic.List[VCFIRConsole.INPUT_RECORD]]::new()
-            foreach ($character in ($CommandLine + "`r").ToCharArray()) {
+            foreach ($character in $typedText.ToCharArray()) {
                 $keyDown = New-Object VCFIRConsole.KEY_EVENT_RECORD
                 $keyDown.bKeyDown = $true
                 $keyDown.wRepeatCount = 1
@@ -1173,61 +1107,6 @@ function Send-ToConsole([string]$CommandLine, $Console) {
             $recordsArray = $records.ToArray()
             [uint32]$written = 0
             [void][VCFIRConsole.NativeMethods]::WriteConsoleInput($inputHandle, $recordsArray, [uint32]$recordsArray.Length, [ref]$written)
-            # The console's own resting/idle color is cyan (see New-EmbeddedConsole's startup command),
-            # which is what makes both its own "PS ...>" prompt AND whatever gets typed after it show up
-            # cyan -- that prompt is printed autonomously by the target process whenever it returns to
-            # idle, on its own schedule, with no hook for us to color it retroactively or in step with a
-            # Send-ToConsole call, so making cyan the STANDING default (rather than something set/restored
-            # around each command's own typed text) is the only way the prompt itself is ever covered, not
-            # just the command text after it.
-            #
-            # Left standing, that alone would also recolor every task's own UNCOLORED Write-Host/
-            # Write-Output text (anything without its own explicit -ForegroundColor) for the whole time it
-            # runs -- corrupting LogMessage's Green/White/Yellow/Red convention, confirmed for real and
-            # explicitly rejected once already. An earlier version of this fix bracketed the INJECTED TEXT
-            # itself with `[Console]::ForegroundColor = ...` statements -- technically correct (prompt,
-            # typing, and output all ended up the right color) but made every single command painfully
-            # unreadable in the console, since that literal wrapper text is exactly what gets echoed back.
-            # This version achieves the same coloring with nothing extra ever typed: poll for the
-            # just-queued keystrokes to actually finish being echoed (cursor moving to a new line --
-            # WriteConsoleInput only enqueues them, it doesn't wait for that, and a fixed sleep here
-            # would either lag a slow-to-warm-up console or, for a command that runs and produces its
-            # own output within milliseconds of Enter, arrive too LATE and let that first output line
-            # print in cyan too -- confirmed for real with a synthetic near-instant command). The
-            # instant the cursor moves, drop the attribute to Gray (this console's real original
-            # default) from OUTSIDE, invisibly, right as real execution is about to start -- covering
-            # the command's own output without ever appearing as typed text. Cyan is restored the same
-            # way, invisibly, once this specific command's own "Completed Task <name>" line shows up
-            # (see the Add-CompletionWatch call below) -- asynchronously, not by blocking here for
-            # however long the command itself takes to run.
-            if ($gotBufferInfo) {
-                # A long command line (several of these real ones exceed 80 columns) wraps across more
-                # than one row while being echoed, so "cursor moved at all" fires on the very first
-                # character -- nowhere near done. Waiting for the cursor to actually SETTLE (unchanged
-                # across two consecutive short polls), having moved at least once from where it
-                # started, correctly rides out however many wrapped rows a given command needs without
-                # having to calculate exact wrap arithmetic against the console's own width.
-                $echoDeadline = (Get-Date).AddSeconds(3)
-                $echoBufferInfo = New-Object VCFIRConsole.CONSOLE_SCREEN_BUFFER_INFO
-                $lastCursor = $initialCursor
-                $stableCount = 0
-                while ((Get-Date) -lt $echoDeadline -and $stableCount -lt 2) {
-                    Start-Sleep -Milliseconds 10
-                    if (-not [VCFIRConsole.NativeMethods]::GetConsoleScreenBufferInfo($outputHandle, [ref]$echoBufferInfo)) {
-                        break
-                    }
-                    $cursor = $echoBufferInfo.dwCursorPosition
-                    if ($cursor.X -eq $lastCursor.X -and $cursor.Y -eq $lastCursor.Y) {
-                        if ($cursor.X -ne $initialCursor.X -or $cursor.Y -ne $initialCursor.Y) {
-                            $stableCount++
-                        }
-                    } else {
-                        $stableCount = 0
-                    }
-                    $lastCursor = $cursor
-                }
-            }
-            [VCFIRConsole.NativeMethods]::SetConsoleTextAttribute($outputHandle, [VCFIRConsole.NativeMethods]::FOREGROUND_GRAY) | Out-Null
         } finally {
             [VCFIRConsole.NativeMethods]::FreeConsole() | Out-Null
         }
