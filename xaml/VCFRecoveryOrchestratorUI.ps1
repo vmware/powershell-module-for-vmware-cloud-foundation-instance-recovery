@@ -242,11 +242,14 @@ $global:variablesAnswersFilePath = $null
 # UI alone -- Lock-ElementSelection disables both list boxes outright once this flips true, so
 # picking a different element requires Exit + a fresh launch instead.
 $global:recoveryRunStarted = $false
-# The one DispatcherTimer driving the Overall Recovery Time badge, if any -- see Start-RunTimer,
-# started exactly once per session by Lock-ElementSelection and left running for the rest of the
-# session (there is no Stop-RunTimer/per-run reset any more -- see Start-RunTimer's comment for why
-# tying it to individual Run All chains produced a stale, unrelated reading for anyone working the
-# recovery one step at a time instead of via Run All).
+# The one DispatcherTimer currently driving the Overall Recovery Time badge, if any -- see
+# Start-RunTimer/Stop-RunTimer. Tracked globally (not just via each Run All button's own local
+# $runTimer closure variable) so Start-RunTimer can defensively stop a previous run's timer that,
+# for whatever reason, never got a matching Stop-RunTimer call, instead of leaving it running
+# forever alongside a new one -- two timers both writing the same elapsed-time TextBlock is what
+# actually produces an apparently-impossible reading mid-run, not any real accumulation across
+# parallel threads (the clock itself is a single Stopwatch-based diff, recomputed fresh on every
+# tick, so it can't compound like that on its own).
 $global:activeRunTimer = $null
 
 # Completion tracking, attempt 5: a PowerShell transcript of the console, read from disk. Unaffected
@@ -1426,14 +1429,8 @@ function Add-CompletionWatch([string]$CmdletName, [scriptblock]$OnComplete, $Con
 # descendant, tab headers included -- closes that off at the source instead of chasing every
 # individual focusable thing inside it.
 #
-# Idempotent (only sets $global:recoveryRunStarted, starts the Overall Recovery Time badge, and
-# updates the status text once) since Invoke-Step calls this unconditionally on every single Run,
-# not just the first -- this is also therefore the one place that starts the Overall Recovery Time
-# clock, since it fires on the very first step of the whole session regardless of whether that step
-# was reached via a Run All chain or a manual, one-off click on a single row's own Run button. See
-# Start-RunTimer: a clock that only started/reset on a Run All click showed a stale, unrelated
-# reading (the last Run All's own total, frozen) for anyone actually working the recovery one step
-# at a time instead.
+# Idempotent (only sets $global:recoveryRunStarted and updates the status text once) since
+# Invoke-Step calls this unconditionally on every single Run, not just the first.
 function Lock-ElementSelection {
     if ($global:recoveryRunStarted) {
         return
@@ -1441,7 +1438,6 @@ function Lock-ElementSelection {
     $global:recoveryRunStarted = $true
     $discoveredInfrastructureTabControl.IsEnabled = $false
     New-Advisory 'Run Started. Navigation to other domains/clusters disabled.'
-    Start-RunTimer | Out-Null
 }
 
 # Prevents clicking an individual step's own Run button out of sequence while a Run All chain is
@@ -1469,35 +1465,59 @@ function Set-AllStepButtonsEnabled([bool]$Enabled) {
     $global:fleetComponentsGroup.RunAllButton.IsEnabled = $Enabled
 }
 
-# Elapsed-time display for the whole recovery session -- hidden until Lock-ElementSelection's very
-# first call, then left running continuously for the rest of the session: "Overall Recovery Time" is
-# the total time since the first step of ANY kind started, not just whichever Run All chain happens
-# to be active right now, so it deliberately does not stop or reset between individual Run All runs
-# or manual, one-off step clicks. Shared across all Steps panels rather than one per panel, since
-# there's only ever one recovery session per running instance of this UI -- positioned in the XAML
-# above the Steps/Variables tab strip, right-aligned to share the same edge as the Steps ListBoxes'
-# own Run-button column.
+# Elapsed-time display for a Run All run -- hidden until the first run this session, then left
+# showing its last value (frozen, not running) between runs rather than disappearing; see
+# Stop-RunTimer. Shared across all three Steps panels (Domain Recovery / Additional Cluster Recovery / Recover Fleet)
+# rather than one per panel, since only one Run All can ever be active across the whole app at a
+# time anyway (see Set-AllStepButtonsEnabled) -- positioned in the XAML above the Steps/Variables
+# tab strip, right-aligned to share the same edge as the Steps ListBoxes' own Run-button column.
 # Ticks once a second via a DispatcherTimer rather than comparing wall-clock time only when
-# something else happens to redraw, since nothing else in this row changes on its own.
-# Guarded by Lock-ElementSelection's own idempotency check ($global:recoveryRunStarted), so this
-# only ever actually runs once per session -- the defensive re-stop of $global:activeRunTimer below
-# is just a second layer in case that ever changes, not the primary guard.
+# something else happens to redraw, since nothing else in this row changes while a run is in
+# progress. Measures elapsed time with a Stopwatch, not a Get-Date diff -- a Run All against real
+# infrastructure can easily run long enough to cross an NTP correction or a manual clock change on
+# whatever machine is hosting this console (nested lab jump hosts in particular are not always left
+# on a reliable time source), and Get-Date is read from the OS's own wall clock, so a diff against it
+# jumps by however much that clock just moved. Stopwatch is backed by a monotonic performance
+# counter that has nothing to do with the wall clock, so it keeps reporting genuine elapsed time
+# no matter what the system clock does mid-run. Returns the running DispatcherTimer so the caller
+# can stop it again in Stop-RunTimer once the whole Run All chain finishes (see each Run All
+# button's own Add_Click).
 function Start-RunTimer {
+    # Defensively stop whatever the previous run's timer was first, rather than assuming its own
+    # Stop-RunTimer call already ran -- if it didn't (some exception deep in an async completion
+    # callback bypassing the normal call site, for instance), the orphaned timer would otherwise
+    # keep ticking forever, writing an ever-growing elapsed time to the same TextBlock alongside
+    # this new one and occasionally winning the display race with a stale, larger reading.
     if ($global:activeRunTimer) {
         $global:activeRunTimer.Stop()
     }
-    $startTime = Get-Date
+    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
     $overallRecoveryTimeTextBlock.Text = '00:00:00'
     $overallRecoveryTimePanel.Visibility = 'Visible'
     $timer = New-Object System.Windows.Threading.DispatcherTimer
     $timer.Interval = [TimeSpan]::FromSeconds(1)
     $timer.Add_Tick({
-            $elapsed = (Get-Date) - $startTime
+            $elapsed = $stopwatch.Elapsed
             $overallRecoveryTimeTextBlock.Text = '{0:00}:{1:00}:{2:00}' -f [int]$elapsed.TotalHours, $elapsed.Minutes, $elapsed.Seconds
         }.GetNewClosure())
     $global:activeRunTimer = $timer
     $timer.Start()
     return $timer
+}
+
+# Stops the DispatcherTimer Start-RunTimer returned -- deliberately does NOT hide the timer panel
+# or reset its displayed value: the last elapsed time shown is exactly what a "simply stop, don't
+# disappear" clock should keep showing until the next Run All starts fresh (Start-RunTimer resets
+# both the text and visibility at that point). $Timer may be $null (e.g. Invoke-StepChain threw
+# before Start-RunTimer was ever called) -- tolerated so the catch block in each Run All handler
+# can call this unconditionally.
+function Stop-RunTimer($Timer) {
+    if ($Timer) {
+        $Timer.Stop()
+    }
+    if ($global:activeRunTimer -eq $Timer) {
+        $global:activeRunTimer = $null
+    }
 }
 
 # Resets a row to its "in progress" look (undoing any earlier Done/Failed state -- re-running a step
@@ -2887,60 +2907,75 @@ $additionalClusterRecoveryRadio.Add_Checked({ Sync-IbrRecoveryScopeSelection })
 $runAllDomainRecoveryButton.Add_Click({
         try {
             Set-AllStepButtonsEnabled $false
+            $runTimer = Start-RunTimer
             Invoke-StepChain $global:domainRecoveryStepRows -IgnoreThreads:(-not $runAllDomainRecoveryParallelCheckBox.IsChecked) -OnChainComplete {
                 Set-AllStepButtonsEnabled $true
+                Stop-RunTimer $runTimer
             }.GetNewClosure()
         } catch {
             New-Advisory "Run All failed: $($_.Exception.Message)"
             Set-AllStepButtonsEnabled $true
+            Stop-RunTimer $runTimer
         }
     }.GetNewClosure())
 
 $runAllAdditionalClusterRecoveryButton.Add_Click({
         try {
             Set-AllStepButtonsEnabled $false
+            $runTimer = Start-RunTimer
             Invoke-StepChain $global:additionalClusterRecoveryStepRows -IgnoreThreads:(-not $runAllAdditionalClusterRecoveryParallelCheckBox.IsChecked) -OnChainComplete {
                 Set-AllStepButtonsEnabled $true
+                Stop-RunTimer $runTimer
             }.GetNewClosure()
         } catch {
             New-Advisory "Run All failed: $($_.Exception.Message)"
             Set-AllStepButtonsEnabled $true
+            Stop-RunTimer $runTimer
         }
     }.GetNewClosure())
 
 $runAllRecoverFleetButton.Add_Click({
         try {
             Set-AllStepButtonsEnabled $false
+            $runTimer = Start-RunTimer
             Invoke-StepChain $global:recoverFleetStepRows -IgnoreThreads:(-not $runAllRecoverFleetParallelCheckBox.IsChecked) -OnChainComplete {
                 Set-AllStepButtonsEnabled $true
+                Stop-RunTimer $runTimer
             }.GetNewClosure()
         } catch {
             New-Advisory "Run All failed: $($_.Exception.Message)"
             Set-AllStepButtonsEnabled $true
+            Stop-RunTimer $runTimer
         }
     }.GetNewClosure())
 
 $runAllInstanceComponentsButton.Add_Click({
         try {
             Set-AllStepButtonsEnabled $false
+            $runTimer = Start-RunTimer
             Invoke-StepChain $global:instanceComponentsGroup.StepRows -IgnoreThreads:(-not $global:instanceComponentsGroup.ParallelCheckBox.IsChecked) -OnChainComplete {
                 Set-AllStepButtonsEnabled $true
+                Stop-RunTimer $runTimer
             }.GetNewClosure()
         } catch {
             New-Advisory "Run All failed: $($_.Exception.Message)"
             Set-AllStepButtonsEnabled $true
+            Stop-RunTimer $runTimer
         }
     }.GetNewClosure())
 
 $runAllFleetComponentsButton.Add_Click({
         try {
             Set-AllStepButtonsEnabled $false
+            $runTimer = Start-RunTimer
             Invoke-StepChain $global:fleetComponentsGroup.StepRows -IgnoreThreads:(-not $global:fleetComponentsGroup.ParallelCheckBox.IsChecked) -OnChainComplete {
                 Set-AllStepButtonsEnabled $true
+                Stop-RunTimer $runTimer
             }.GetNewClosure()
         } catch {
             New-Advisory "Run All failed: $($_.Exception.Message)"
             Set-AllStepButtonsEnabled $true
+            Stop-RunTimer $runTimer
         }
     }.GetNewClosure())
 
