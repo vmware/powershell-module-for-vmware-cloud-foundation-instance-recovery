@@ -880,6 +880,48 @@ namespace VCFIRConsole {
 # what Main's own session already has -- the extracted-data file path and whatever variables file
 # was last loaded/created -- since a brand new pwsh.exe starts with neither, and the whole point of
 # spawning it is to run a plan step that likely needs both.
+#
+# Toggles QuickEdit mode on one console's own input buffer -- QuickEdit lets a stray click or
+# text selection into a console pane silently pause its output (and whatever step is actively
+# running there) until Enter or a right-click releases the selection, which is exactly the kind of
+# accidental-looking "it's just stuck" report this exists to prevent. Same AttachConsole/
+# GetStdHandle/FreeConsole dance Send-ToConsole already uses to reach a target console's own
+# handles from this process. Deliberately silent (no advisory) either way -- this is
+# a background safety toggle, not something the operator needs to be told is happening, and a
+# failure here (a console that's already exited, a transient attach failure) shouldn't interrupt or
+# alarm anyone either. Defined here, ABOVE New-EmbeddedConsole (which calls it), and specifically
+# above the top-level "create Main at startup" call further down the file -- PowerShell only makes a
+# function callable once its own "function" statement has actually executed, so this previously sat
+# below that startup call and silently never ran for Main at all (a genuine, confirmed bug: Main's
+# own QuickEdit was never actually disabled, only later-created thread consoles got it, since by
+# then the whole script had already finished loading).
+function Disable-ConsoleQuickEditMode($Console) {
+    if ($null -eq $Console -or $null -eq $Console.Process -or $Console.Process.HasExited) {
+        return
+    }
+    try {
+        [VCFIRConsole.NativeMethods]::FreeConsole() | Out-Null
+        if (-not [VCFIRConsole.NativeMethods]::AttachConsole([uint32]$Console.Process.Id)) {
+            return
+        }
+        try {
+            $inputHandle = [VCFIRConsole.NativeMethods]::GetStdHandle([VCFIRConsole.NativeMethods]::STD_INPUT_HANDLE)
+            [uint32]$mode = 0
+            if (-not [VCFIRConsole.NativeMethods]::GetConsoleMode($inputHandle, [ref]$mode)) {
+                return
+            }
+            # ENABLE_EXTENDED_FLAGS must be present for a QuickEdit change to actually take effect
+            # (a real Win32 quirk, not optional).
+            $mode = ($mode -band (-bnot [VCFIRConsole.NativeMethods]::ENABLE_QUICK_EDIT_MODE)) -bor [VCFIRConsole.NativeMethods]::ENABLE_EXTENDED_FLAGS
+            [void][VCFIRConsole.NativeMethods]::SetConsoleMode($inputHandle, $mode)
+        } finally {
+            [VCFIRConsole.NativeMethods]::FreeConsole() | Out-Null
+        }
+    } catch {
+        # Best-effort safety toggle -- swallow and move on, never surface this to the operator.
+    }
+}
+
 function New-EmbeddedConsole([string]$TabHeader, [switch]$Bootstrap) {
     $global:consoleSequence++
     $transcriptPath = Join-Path $WorkingDirectory "vcfir-transcript-$(Get-Date -Format 'yyyyMMdd-HHmmss')-$PID-$($global:consoleSequence).log"
@@ -1286,42 +1328,6 @@ function Send-ToConsole([string]$CommandLine, $Console) {
     Set-ConsoleFocus
 }
 
-# Toggles QuickEdit mode on one console's own input buffer -- QuickEdit lets a stray click or
-# text selection into a console pane silently pause its output (and whatever step is actively
-# running there) until Enter or a right-click releases the selection, which is exactly the kind of
-# accidental-looking "it's just stuck" report this exists to prevent. Same AttachConsole/
-# GetStdHandle/FreeConsole dance Send-ToConsole already uses to reach a target console's own
-# handles from this process. Deliberately silent (no advisory) either way -- this is
-# a background safety toggle, not something the operator needs to be told is happening, and a
-# failure here (a console that's already exited, a transient attach failure) shouldn't interrupt or
-# alarm anyone either.
-function Disable-ConsoleQuickEditMode($Console) {
-    if ($null -eq $Console -or $null -eq $Console.Process -or $Console.Process.HasExited) {
-        return
-    }
-    try {
-        [VCFIRConsole.NativeMethods]::FreeConsole() | Out-Null
-        if (-not [VCFIRConsole.NativeMethods]::AttachConsole([uint32]$Console.Process.Id)) {
-            return
-        }
-        try {
-            $inputHandle = [VCFIRConsole.NativeMethods]::GetStdHandle([VCFIRConsole.NativeMethods]::STD_INPUT_HANDLE)
-            [uint32]$mode = 0
-            if (-not [VCFIRConsole.NativeMethods]::GetConsoleMode($inputHandle, [ref]$mode)) {
-                return
-            }
-            # ENABLE_EXTENDED_FLAGS must be present for a QuickEdit change to actually take effect
-            # (a real Win32 quirk, not optional).
-            $mode = ($mode -band (-bnot [VCFIRConsole.NativeMethods]::ENABLE_QUICK_EDIT_MODE)) -bor [VCFIRConsole.NativeMethods]::ENABLE_EXTENDED_FLAGS
-            [void][VCFIRConsole.NativeMethods]::SetConsoleMode($inputHandle, $mode)
-        } finally {
-            [VCFIRConsole.NativeMethods]::FreeConsole() | Out-Null
-        }
-    } catch {
-        # Best-effort safety toggle -- swallow and move on, never surface this to the operator.
-    }
-}
-
 # A step's transcript slice is "unclean" -- even once its own "Completed Task" line has appeared --
 # if it contains LogMessage's own [WARNING]/[ERROR]/[EXCEPTION] tags, or "+ CategoryInfo", the one
 # near-universal marker of PowerShell's own default terminating-error record formatting (for
@@ -1629,6 +1635,13 @@ function Invoke-StepChain([object[]]$Rows, [switch]$IgnoreThreads, [scriptblock]
             $state.Remaining--
             if ($state.Remaining -eq 0) {
                 if ($state.AllClean) {
+                    # The block's own steps may have left a thread's own tab selected/focused (an
+                    # Interactive step switches to whichever console IT runs on, same as any other
+                    # step) -- explicitly switch back to Main before continuing, rather than leaving
+                    # the chain's next (typically Main-thread) step to run invisibly under whatever
+                    # thread tab happens to still be showing.
+                    $consoleTabControl.SelectedItem = $global:mainConsole.TabItem
+                    Set-ConsoleFocus
                     Invoke-StepChain $remainingRows -IgnoreThreads:$IgnoreThreads -OnChainComplete $OnChainComplete
                 } else {
                     New-Advisory 'Run All stopped: one or more threads did not complete cleanly -- check each console/transcript before retrying.'
