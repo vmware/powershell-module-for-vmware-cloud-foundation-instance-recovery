@@ -9916,10 +9916,10 @@ Function Get-VcfOperationsRegisteredComponents {
     A VCF Operations token is obtained automatically via Get-VcfOperationsToken.
 
     .EXAMPLE
-    $result = Get-VcfOperationsRegisteredComponents -VcfOperationsFqdn "flt-ops01a.rainpole.io" -Password "VMw@re1!VMw@re1!"
+    Get-VcfOperationsRegisteredComponents -VcfOperationsFqdn "flt-ops01a.rainpole.io" -Password "VMw@re1!VMw@re1!" -OutputDir "F:\Recovery\"
 
     .EXAMPLE
-    $result = Get-VcfOperationsRegisteredComponents -VcfOperationsFqdn "flt-ops01a.rainpole.io" -Username "admin" -Password "VMw@re1!VMw@re1!" -AuthSource "local"
+    Get-VcfOperationsRegisteredComponents -VcfOperationsFqdn "flt-ops01a.rainpole.io" -Username "admin" -Password "VMw@re1!VMw@re1!" -AuthSource "local" -OutputDir "F:\Recovery\"
 
     .PARAMETER VcfOperationsFqdn
     FQDN of the VCF Operations instance (e.g. flt-ops01a.rainpole.io).
@@ -9932,14 +9932,20 @@ Function Get-VcfOperationsRegisteredComponents {
 
     .PARAMETER AuthSource
     Authentication source for the VCF Operations API. Default is "local".
+
+    .PARAMETER OutputDir
+    Path to the location where component-ids-versions.json will be created.
     #>
 
     Param(
         [Parameter(Mandatory = $true)][String] $VcfOperationsFqdn,
         [Parameter(Mandatory = $false)][String] $Username = "admin",
         [Parameter(Mandatory = $true)][String] $Password,
-        [Parameter(Mandatory = $false)][String] $AuthSource = "local"
+        [Parameter(Mandatory = $false)][String] $AuthSource = "local",
+        [Parameter(Mandatory = $true)][String] $OutputDir
     )
+
+    $outputFile = (Resolve-Path -Path $OutputDir).path + "\componented-ids-components.json"
 
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
@@ -9991,6 +9997,7 @@ Function Get-VcfOperationsRegisteredComponents {
                         fleetFqdn        = $_.properties.fleetFqdn
                         ip               = $ip
                         instanceName     = $_.vcfInstance.instanceName
+                        instanceFqdn    = $_.properties.instanceFqdn
                         vcfInstanceFqdn  = $_.vcfInstance.fqdn
                     }
                 } |
@@ -10032,15 +10039,14 @@ Function Get-VcfOperationsRegisteredComponents {
 
     LogMessage -type INFO -message "[$VcfOperationsFqdn] Found $($filtered.Count) filtered component(s) of types: $($targetTypes -join ', '); $($vspComponents.Count) VSP instance(s)"
 
-    $json = $result | ConvertTo-Json -Depth 10
-    Write-Host ""
-    Write-Host $json
+    $json = $result | ConvertTo-Json -Depth 10 | Out-File $outputFile
 
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
 }
 Export-ModuleMember -Function Get-VcfOperationsRegisteredComponents
+
 
 Function Get-RegisteredComponentIds {
     <#
@@ -14819,7 +14825,7 @@ Function Invoke-VcfmsFleetComponentRegistration {
     # -------------------------------------------------------------------------
     # Validate the local script exists
     # -------------------------------------------------------------------------
-    $localScript = Join-Path -Path $PSScriptRoot -ChildPath "scripts/9.1.0/update_fleet_component_registration.sh"
+    $localScript = Join-Path -Path $PSScriptRoot -ChildPath "scripts/update_fleet_component_registration.sh"
     if (-not (Test-Path $localScript)) {
         LogMessage -type ERROR -message "[$jumpboxName] Script not found: $localScript"
         $StopWatch.Stop(); return
@@ -14939,6 +14945,246 @@ Function Invoke-VcfmsFleetComponentRegistration {
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
 }
 Export-ModuleMember -Function Invoke-VcfmsFleetComponentRegistration
+
+Function Invoke-VcfmsVcfaRegistration {
+    <#
+    .SYNOPSIS
+    Re-creates VCFA and consumption VSP cluster registration on a target VCF instance's
+    Services Runtime control plane node.
+
+    .DESCRIPTION
+    The Invoke-VcfmsVcfaRegistration cmdlet performs the following steps:
+
+      1. Resolves the Services Runtime control plane node (handles worker-node redirect
+         via node-agent.conf automatically).
+      2. Base64-encodes the bundled create_vcfa_registration.sh script, along with its two
+         companion scripts (create_vcfa_service_account.sh and update_registration_in_ops.sh,
+         which it invokes internally via its own directory), and uploads all three to /tmp
+         on the control plane node via the existing SSH session — no SCP binary required.
+      3. Executes create_vcfa_registration.sh under sudo with
+         KUBECONFIG=/etc/kubernetes/admin.conf so that all kubectl calls use the local
+         cluster admin credentials. The three passwords are passed as environment
+         variables (VCFA_ADMIN_PASSWORD, VCFA_SYSTEM_PASSWORD, OPS_ADMIN_PASSWORD) to
+         avoid shell-quoting issues and keep them out of the process command line.
+      4. Streams script output to the console in real time.
+      5. Removes the temporary scripts from the remote node on completion.
+
+    The remote script purges stale VSP/VCFA inventory rows in both the SDDC LCM and Fleet
+    LCM databases, re-creates them from live consumption cluster API data, creates the
+    VCFA admin/adminextra service accounts, and re-registers VCFA with VCF Operations.
+
+    .EXAMPLE
+    Invoke-VcfmsVcfaRegistration `
+        -ServicesRuntimeFqdn     "lax-sr01.lax.rainpole.io" `
+        -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
+        -VcfaRuntimeFqdn         "lax-vsp01.lax.rainpole.io" `
+        -OpsFqdn                 "lax-ops01a.lax.rainpole.io" `
+        -VspPassword             "VMw@re1!VMw@re1!" `
+        -VcfaSystemPassword      "VMw@re1!VMw@re1!" `
+        -OpsPassword             "VMw@re1!VMw@re1!"
+
+    .EXAMPLE
+    # Dry run — show what would be changed without writing anything
+    Invoke-VcfmsVcfaRegistration `
+        -ServicesRuntimeFqdn     "lax-sr01.lax.rainpole.io" `
+        -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
+        -VcfaRuntimeFqdn         "lax-vsp01.lax.rainpole.io" `
+        -OpsFqdn                 "lax-ops01a.lax.rainpole.io" `
+        -VspPassword             "VMw@re1!VMw@re1!" `
+        -VcfaSystemPassword      "VMw@re1!VMw@re1!" `
+        -OpsPassword             "VMw@re1!VMw@re1!" `
+        -DryRun
+
+    .PARAMETER ServicesRuntimeFqdn
+    FQDN or IP of any Services Runtime cluster node. If a worker node is supplied the
+    function automatically resolves and connects to the control plane.
+
+    .PARAMETER ServicesRuntimePassword
+    Password for vmware-system-user (SSH login and sudo elevation).
+
+    .PARAMETER VcfaRuntimeFqdn
+    FQDN of the VCFA consumption ("VCF services runtime" / VSP) cluster. Passed as
+    --vcfa-runtime-fqdn to the script.
+
+    .PARAMETER OpsFqdn
+    FQDN or IP of the VCF Operations appliance to re-register VCFA with. Passed as
+    --ops-fqdn to the script.
+
+    .PARAMETER VspPassword
+    admin@vsp.local password for the consumption cluster. Passed to the remote script as
+    the VCFA_ADMIN_PASSWORD environment variable.
+
+    .PARAMETER VcfaSystemPassword
+    admin@System password for the VCFA application. Passed to the remote script as the
+    VCFA_SYSTEM_PASSWORD environment variable.
+
+    .PARAMETER OpsPassword
+    VCF Operations admin password. Passed to the remote script as the OPS_ADMIN_PASSWORD
+    environment variable.
+
+    .PARAMETER DryRun
+    When specified, passes --dry-run to the script. No database changes are made and no
+    service accounts or Ops registrations are created; the script shows what would be
+    done.
+
+    .PARAMETER RemoteScriptTimeout
+    Seconds to wait for the remote script to complete. Default is 600 (10 minutes).
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][String]  $ServicesRuntimeFqdn,
+        [Parameter(Mandatory = $true)][String]  $ServicesRuntimePassword,
+        [Parameter(Mandatory = $true)][String]  $VcfaRuntimeFqdn,
+        [Parameter(Mandatory = $true)][String]  $OpsFqdn,
+        [Parameter(Mandatory = $true)][String]  $VspPassword,
+        [Parameter(Mandatory = $true)][String]  $VcfaSystemPassword,
+        [Parameter(Mandatory = $true)][String]  $OpsPassword,
+        [Parameter(Mandatory = $false)][Switch] $DryRun,
+        [Parameter(Mandatory = $false)][Int]    $RemoteScriptTimeout = 600
+    )
+
+    $jumpboxName  = hostname
+    $StopWatch    = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    # -------------------------------------------------------------------------
+    # Validate the local scripts exist — the main script and the two companion
+    # scripts it invokes internally via its own directory
+    # -------------------------------------------------------------------------
+    $scriptNames = @(
+        "create_vcfa_registration.sh",
+        "create_vcfa_service_account.sh",
+        "update_registration_in_ops.sh"
+    )
+    $localScripts = @{}
+    foreach ($scriptName in $scriptNames) {
+        $localScript = Join-Path -Path $PSScriptRoot -ChildPath "scripts/$scriptName"
+        if (-not (Test-Path $localScript)) {
+            LogMessage -type ERROR -message "[$jumpboxName] Script not found: $localScript"
+            $StopWatch.Stop(); return
+        }
+        $localScripts[$scriptName] = $localScript
+    }
+
+    # -------------------------------------------------------------------------
+    # Resolve the control plane node
+    # Reuse Get-VcfmsServicesRuntimeKubeconfig which handles worker → CP redirect.
+    # The kubeconfig is written as a useful side effect; we primarily need ControlPlaneHost.
+    # -------------------------------------------------------------------------
+    LogMessage -type INFO -message "[$jumpboxName] Resolving control plane node from $ServicesRuntimeFqdn"
+    $kubeconfigResult = Get-VcfmsServicesRuntimeKubeconfig `
+        -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
+        -Password            $ServicesRuntimePassword `
+        -OutputDir           "."
+    if (-not $kubeconfigResult) {
+        LogMessage -type ERROR -message "[$jumpboxName] Could not resolve control plane node. Aborting."
+        $StopWatch.Stop(); return
+    }
+    $controlPlaneHost = $kubeconfigResult.ControlPlaneHost
+    LogMessage -type INFO -message "[$jumpboxName] Control plane node  : $controlPlaneHost"
+    LogMessage -type INFO -message "[$jumpboxName] VCFA runtime FQDN   : $VcfaRuntimeFqdn"
+    LogMessage -type INFO -message "[$jumpboxName] VCF Operations FQDN : $OpsFqdn"
+    if ($DryRun) {
+        LogMessage -type INFO -message "[$jumpboxName] Mode                : DRY RUN (no changes will be written)"
+    }
+
+    # -------------------------------------------------------------------------
+    # Open SSH session to the control plane node
+    # -------------------------------------------------------------------------
+    $SecurePassword = ConvertTo-SecureString -String $ServicesRuntimePassword -AsPlainText -Force
+    $creds          = New-Object System.Management.Automation.PSCredential ('vmware-system-user', $SecurePassword)
+    $session        = $null
+    $remotePaths    = $scriptNames | ForEach-Object { "/tmp/$_" }
+    $remoteMain     = "/tmp/create_vcfa_registration.sh"
+
+    try {
+        $session = Open-VcfmsSshSession -Fqdn $controlPlaneHost -Creds $creds
+
+        # -------------------------------------------------------------------------
+        # Upload all three scripts via base64 pipe — avoids any SCP binary
+        # dependency. All three land in /tmp alongside each other so the main
+        # script's "$(dirname "$0")/<companion>.sh" lookups resolve correctly.
+        # -------------------------------------------------------------------------
+        foreach ($scriptName in $scriptNames) {
+            $remotePath = "/tmp/$scriptName"
+            LogMessage -type INFO -message "[$controlPlaneHost] Uploading script to $remotePath"
+            $scriptBytes = [System.IO.File]::ReadAllBytes($localScripts[$scriptName])
+            # Strip CR bytes so the file always has Unix line endings on the remote node,
+            # regardless of how git checked it out on the local machine (Windows autocrlf etc.)
+            $scriptBytes = [byte[]]($scriptBytes | Where-Object { $_ -ne 0x0D })
+            $b64         = [System.Convert]::ToBase64String($scriptBytes)
+
+            # printf is used instead of echo to avoid an appended newline corrupting the decode
+            $uploadCmd    = "printf '%s' '$b64' | base64 -d > $remotePath && chmod +x $remotePath"
+            $uploadResult = Invoke-SSHCommand -SessionId $session.SessionId -Command $uploadCmd -TimeOut 60
+            if ($uploadResult.ExitStatus -ne 0) {
+                LogMessage -type ERROR -message "[$controlPlaneHost] Script upload failed (exit $($uploadResult.ExitStatus)): $($uploadResult.Error -join ' ')"
+                return
+            }
+        }
+        LogMessage -type INFO -message "[$controlPlaneHost] Scripts uploaded successfully"
+
+        # -------------------------------------------------------------------------
+        # Build and execute the remote command
+        # sudo -S reads the password from stdin; env preserves KUBECONFIG and the
+        # three secrets across the sudo boundary. Passwords are passed as
+        # environment variables rather than CLI args to keep them off the command
+        # line and avoid shell-quoting issues with special characters.
+        # -------------------------------------------------------------------------
+        $scriptArgs = "--vcfa-runtime-fqdn '$VcfaRuntimeFqdn' --ops-fqdn '$OpsFqdn'"
+        if ($DryRun) { $scriptArgs += " --dry-run" }
+
+        $execCmd = "echo '$ServicesRuntimePassword' | sudo -S env KUBECONFIG=/etc/kubernetes/admin.conf " +
+            "VCFA_ADMIN_PASSWORD='$VspPassword' VCFA_SYSTEM_PASSWORD='$VcfaSystemPassword' OPS_ADMIN_PASSWORD='$OpsPassword' " +
+            "bash $remoteMain $scriptArgs 2>&1"
+
+        LogMessage -type INFO -message "[$controlPlaneHost] Executing create_vcfa_registration.sh (timeout: ${RemoteScriptTimeout}s)"
+        Write-Host ""
+        Write-Host " ── create_vcfa_registration.sh output ──────────────────────────────" -ForegroundColor Cyan
+
+        $execResult = Invoke-SSHCommand -SessionId $session.SessionId -Command $execCmd -TimeOut $RemoteScriptTimeout
+
+        # Print all output (stdout + stderr merged via 2>&1); filter sudo prompt noise
+        $execResult.Output |
+            Where-Object { $_ -notmatch '^\[sudo\]' } |
+            ForEach-Object { Write-Host "  $_" }
+
+        # Belt-and-suspenders: if Posh-SSH still delivers anything on the Error channel
+        # split on newlines first so a single multi-line string is handled correctly
+        if ($execResult.Error) {
+            (($execResult.Error -join "`n") -split "`r?`n") |
+                Where-Object { $_ -notmatch '^\[sudo\]' -and $_ -ne '' } |
+                ForEach-Object { Write-Host "  $_" -ForegroundColor Yellow }
+        }
+
+        Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+        Write-Host ""
+
+        if ($execResult.ExitStatus -eq 0) {
+            LogMessage -type INFO -message "[$controlPlaneHost] Script completed successfully"
+        } else {
+            LogMessage -type ERROR -message "[$controlPlaneHost] Script exited with code $($execResult.ExitStatus)"
+        }
+
+    } catch {
+        LogMessage -type ERROR -message "[$jumpboxName] $($_.Exception.Message)"
+    } finally {
+        # Always remove the temporary scripts from the remote node
+        if ($session) {
+            $cleanupCmd = "rm -f $($remotePaths -join ' ')"
+            Invoke-SSHCommand -SessionId $session.SessionId `
+                -Command $cleanupCmd -TimeOut 15 | Out-Null
+            Remove-SSHSession -SSHSession $session | Out-Null
+            LogMessage -type INFO -message "[$controlPlaneHost] Temporary scripts removed"
+        }
+    }
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+Export-ModuleMember -Function Invoke-VcfmsVcfaRegistration
 
 Function Update-ServicesRuntimePackageDeployment {
     <#
@@ -15449,7 +15695,7 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
     # -------------------------------------------------------------------------
     # Validate the local script exists
     # -------------------------------------------------------------------------
-    $localScript = Join-Path -Path $PSScriptRoot -ChildPath "scripts/9.1.0/update-vidb-vcf-instance.sh"
+    $localScript = Join-Path -Path $PSScriptRoot -ChildPath "scripts/update-vidb-vcf-instance.sh"
     if (-not (Test-Path $localScript)) {
         LogMessage -type ERROR -message "[$jumpboxName] Script not found: $localScript"
         $StopWatch.Stop(); return
