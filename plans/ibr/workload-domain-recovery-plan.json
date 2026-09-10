@@ -167,16 +167,64 @@
     "visible": true
   },
   {
-    "description": "Update SSH Keys for Hosts",
-    "commandLine": "Invoke-SddcManagerSSHKeyRefresh -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -clusterName $clusterName -workloadDomain $workloadDomain -VcfUserPassword $VcfUserPassword",
-    "displayName": "Invoke SDDC Manager SSHKey Refresh",
+    "description": "",
+    "commandLine": "Invoke-NSXEdgeClusterRecoverySelective -nsxManagerFqdn $restoredNsxManagerFqdn -nsxManagerAdmin $restoredNsxManagerAdmin -nsxManagerAdminPassword $restoredNsxManagerAdminPassword -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredvCenterAdmin -vCenterAdminPassword $restoredvCenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile -monitor",
+    "displayName": "Invoke NSX Edge Cluster Recovery Selective",
     "condition": [],
     "threadId": "",
     "interactive": false,
     "visible": true
   },
   {
-    "description": "Synchronize the SDDC Manager Service Accounts on the ESX Host",
+    "description": "",
+    "commandLine": "New-NSXManagerOvaDeployment -targetType $targetType -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -restoredNsxManagerDeploymentSize $restoredNsxManagerDeploymentSize -nsxManagerOvaFile $nsxManagerOvaFile",
+    "displayName": "Second NSX Manager OVA Deployment",
+    "condition": [
+      {
+        "type": "dataPath",
+        "path": "selectedDomain.nsxNodeDetails.count",
+        "operator": "ne",
+        "value": "1"
+      }
+    ],
+    "threadId": "2",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "",
+    "commandLine": "New-NSXManagerOvaDeployment -targetType $targetType -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -restoredNsxManagerDeploymentSize $restoredNsxManagerDeploymentSize -nsxManagerOvaFile $nsxManagerOvaFile",
+    "displayName": "Third NSX Manager OVA Deployment",
+    "condition": [
+      {
+        "type": "dataPath",
+        "path": "selectedDomain.nsxNodeDetails.count",
+        "operator": "ne",
+        "value": "1"
+      }
+    ],
+    "threadId": "3",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "",
+    "commandLine": "Add-AdditionalNSXManagers -workloadDomain $workloadDomain -extractedSDDCDataFile $extractedSDDCDataFile",
+    "displayName": "Add NSX Managers to Cluster",
+    "condition": [
+      {
+        "type": "dataPath",
+        "path": "selectedDomain.nsxNodeDetails.count",
+        "operator": "ne",
+        "value": "1"
+      }
+    ],
+    "threadId": "",
+    "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "",
     "commandLine": "Resolve-PhysicalHostServiceAccounts -targetFQDN $restoredVcenterFqdn -targetAdmin $restoredVcenterAdmin -targetAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -svcAccountPassword $svcAccountPassword -sddcManagerFqdn $sddcManagerFqdn -sddcManagerAdmin $sddcManagerAdmin -sddcManagerAdminPassword $sddcManagerAdminPassword",
     "displayName": "Resolve Physical Host Service Accounts",
     "condition": [],
@@ -185,7 +233,16 @@
     "visible": true
   },
   {
-    "description": "Update Datastore ID",
+    "description": "",
+    "commandLine": "Invoke-SddcManagerSSHKeyRefresh -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -clusterName $clusterName -workloadDomain $workloadDomain -VcfUserPassword $VcfUserPassword",
+    "displayName": "Invoke SDDC Manager SSHKey Refresh",
+    "condition": [],
+    "threadId": "",
+    "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "",
     "commandLine": "Update-DomainDatastoreID -extractedSDDCDataFile $extractedSDDCDataFile -vCenterFqdn $vCenterFqdn -clusterName $clusterName -VcfUserPassword $VcfUserPassword -RootPassword $RootPassword -autoConfirm",
     "displayName": "Update Domain Datastore ID",
     "condition": [],
@@ -194,9 +251,18 @@
     "visible": true
   },
   {
-    "description": "Redeploy NSX Edge Cluster (selective recovery)",
-    "commandLine": "Invoke-NSXEdgeClusterRecoverySelective -nsxManagerFqdn $restoredNsxManagerFqdn -nsxManagerAdmin $restoredNsxManagerAdmin -nsxManagerAdminPassword $restoredNsxManagerAdminPassword -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredvCenterAdmin -vCenterAdminPassword $restoredvCenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile -monitor",
-    "displayName": "Invoke NSX Edge Cluster Recovery Selective",
+    "description": "",
+    "commandLine": "Update-ClusterHostSourceIDs -extractedSDDCDataFile $extractedSDDCDataFile -vCenterFqdn $vCenterFqdn -clusterName $clusterName -VcfUserPassword $VcfUserPassword -RootPassword $RootPassword -autoConfirm",
+    "displayName": "Update Cluster Host Source IDs",
+    "condition": [],
+    "threadId": "",
+    "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "",
+    "commandLine": "Clear-vCenterAlarms -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword",
+    "displayName": "Clear vCenter Alarms",
     "condition": [],
     "threadId": "",
     "interactive": false,
