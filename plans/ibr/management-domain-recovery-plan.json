@@ -29,7 +29,7 @@
   {
     "description": "",
     "commandLine": "New-vCenterOvaDeployment -targetType $targetType -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -restoredvCenterDeploymentSize $restoredvCenterDeploymentSize -vCenterOvaFile $vCenterOvaFile",
-    "displayName": "vCenter Ova Deployment",
+    "displayName": "vCenter OVA Deployment",
     "condition": [],
     "threadId": "2",
     "interactive": false,
@@ -47,7 +47,7 @@
   {
     "description": "",
     "commandLine": "New-NSXManagerOvaDeployment -targetType $targetType -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -restoredNsxManagerDeploymentSize $restoredNsxManagerDeploymentSize -nsxManagerOvaFile $nsxManagerOvaFile",
-    "displayName": "NSX Manager Ova Deployment",
+    "displayName": "NSX Manager OVA Deployment",
     "condition": [],
     "threadId": "3",
     "interactive": true,
@@ -65,7 +65,7 @@
   {
     "description": "",
     "commandLine": "New-SDDCManagerOvaDeployment -targetType $targetType -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -sddcManagerOvaFile $sddcManagerOvaFile -rootUserPassword $rootUserPassword -vcfUserPassword $vcfUserPassword -localUserPassword $localUserPassword -basicAuthUserPassword $basicAuthUserPassword",
-    "displayName": "SDDC Manager Ova Deployment",
+    "displayName": "SDDC Manager OVA Deployment",
     "condition": [],
     "threadId": "4",
     "interactive": false,
@@ -171,7 +171,7 @@
   {
     "description": "",
     "commandLine": "New-RebuiltVdsConfiguration -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile",
-    "displayName": "Rebuilt Vds Configuration",
+    "displayName": "Rebuild VDS Configuration",
     "condition": [],
     "threadId": "",
     "interactive": false,

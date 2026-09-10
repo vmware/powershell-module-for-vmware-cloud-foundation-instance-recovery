@@ -56,7 +56,7 @@
   {
     "description": "Migrate the ESX Hosts and VMkernel Adapters to the vSphere Distributed Switch on the Restored vCenter",
     "commandLine": "New-RebuiltVdsConfiguration -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile",
-    "displayName": "Rebuilt Vds Configuration",
+    "displayName": "Rebuild VDS Configuration",
     "condition": [],
     "threadId": "",
     "interactive": false,

@@ -2,7 +2,7 @@
   {
     "description": "",
     "commandLine": "New-vCenterOvaDeployment -targetType $targetType -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -restoredvCenterDeploymentSize $restoredvCenterDeploymentSize -vCenterOvaFile $vCenterOvaFile",
-    "displayName": "vCenter Ova Deployment",
+    "displayName": "vCenter OVA Deployment",
     "condition": [],
     "threadId": "2",
     "interactive": false,
@@ -20,7 +20,7 @@
   {
     "description": "",
     "commandLine": "New-NSXManagerOvaDeployment -targetType $targetType -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -restoredNsxManagerDeploymentSize $restoredNsxManagerDeploymentSize -nsxManagerOvaFile $nsxManagerOvaFile",
-    "displayName": "NSX Manager Ova Deployment",
+    "displayName": "NSX Manager OVA Deployment",
     "condition": [],
     "threadId": "3",
     "interactive": true,
@@ -117,7 +117,7 @@
   {
     "description": "Migrate the ESX Hosts and VMkernel Adapters to the vSphere Distributed Switch on the Restored vCenter",
     "commandLine": "New-RebuiltVdsConfiguration -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile",
-    "displayName": "Rebuilt Vds Configuration",
+    "displayName": "Rebuild VDS Configuration",
     "condition": [],
     "threadId": "",
     "interactive": true,
