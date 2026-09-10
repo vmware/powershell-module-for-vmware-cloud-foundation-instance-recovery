@@ -229,6 +229,15 @@
   },
   {
     "description": "",
+    "commandLine": "New-Advisory 'You may now commence the recovery of workload domains via additional VCF Recovery Coordinator sessions'",
+    "displayName": "New Advisory",
+    "condition": [],
+    "threadId": "",
+    "interactive": false,
+    "visible": false
+  },
+  {
+    "description": "",
     "commandLine": "Clear-vCenterAlarms -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword",
     "displayName": "Clear vCenter Alarms",
     "condition": [],
