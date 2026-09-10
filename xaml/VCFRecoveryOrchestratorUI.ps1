@@ -248,8 +248,8 @@ $global:recoveryRunStarted = $false
 # for whatever reason, never got a matching Stop-RunTimer call, instead of leaving it running
 # forever alongside a new one -- two timers both writing the same elapsed-time TextBlock is what
 # actually produces an apparently-impossible reading mid-run, not any real accumulation across
-# parallel threads (the clock itself is a single Stopwatch-based diff, recomputed fresh on every
-# tick, so it can't compound like that on its own).
+# parallel threads (the clock itself is a single wall-clock diff from one $startTime, recomputed
+# fresh on every tick, so it can't compound like that on its own).
 $global:activeRunTimer = $null
 
 # Completion tracking, attempt 5: a PowerShell transcript of the console, read from disk. Unaffected
@@ -1473,15 +1473,8 @@ function Set-AllStepButtonsEnabled([bool]$Enabled) {
 # tab strip, right-aligned to share the same edge as the Steps ListBoxes' own Run-button column.
 # Ticks once a second via a DispatcherTimer rather than comparing wall-clock time only when
 # something else happens to redraw, since nothing else in this row changes while a run is in
-# progress. Measures elapsed time with a Stopwatch, not a Get-Date diff -- a Run All against real
-# infrastructure can easily run long enough to cross an NTP correction or a manual clock change on
-# whatever machine is hosting this console (nested lab jump hosts in particular are not always left
-# on a reliable time source), and Get-Date is read from the OS's own wall clock, so a diff against it
-# jumps by however much that clock just moved. Stopwatch is backed by a monotonic performance
-# counter that has nothing to do with the wall clock, so it keeps reporting genuine elapsed time
-# no matter what the system clock does mid-run. Returns the running DispatcherTimer so the caller
-# can stop it again in Stop-RunTimer once the whole Run All chain finishes (see each Run All
-# button's own Add_Click).
+# progress. Returns the running DispatcherTimer so the caller can stop it again in Stop-RunTimer
+# once the whole Run All chain finishes (see each Run All button's own Add_Click).
 function Start-RunTimer {
     # Defensively stop whatever the previous run's timer was first, rather than assuming its own
     # Stop-RunTimer call already ran -- if it didn't (some exception deep in an async completion
@@ -1491,14 +1484,19 @@ function Start-RunTimer {
     if ($global:activeRunTimer) {
         $global:activeRunTimer.Stop()
     }
-    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $startTime = Get-Date
     $overallRecoveryTimeTextBlock.Text = '00:00:00'
     $overallRecoveryTimePanel.Visibility = 'Visible'
     $timer = New-Object System.Windows.Threading.DispatcherTimer
     $timer.Interval = [TimeSpan]::FromSeconds(1)
     $timer.Add_Tick({
-            $elapsed = $stopwatch.Elapsed
-            $overallRecoveryTimeTextBlock.Text = '{0:00}:{1:00}:{2:00}' -f [int]$elapsed.TotalHours, $elapsed.Minutes, $elapsed.Seconds
+            $elapsed = (Get-Date) - $startTime
+            # [Math]::Floor, not a plain [int] cast -- [int] ROUNDS, so 47 minutes in ([int]0.79)
+            # rendered as "01:47:xx", a full hour ahead of reality while the minutes and seconds
+            # beside it stayed correct, and the badge appeared to jump BACK an hour every time the
+            # rounding flipped direction on the half hour. Only TotalHours needs this; .Minutes and
+            # .Seconds are already whole-number components, not fractional totals.
+            $overallRecoveryTimeTextBlock.Text = '{0:00}:{1:00}:{2:00}' -f [Math]::Floor($elapsed.TotalHours), $elapsed.Minutes, $elapsed.Seconds
         }.GetNewClosure())
     $global:activeRunTimer = $timer
     $timer.Start()
