@@ -242,6 +242,15 @@ $global:variablesAnswersFilePath = $null
 # UI alone -- Lock-ElementSelection disables both list boxes outright once this flips true, so
 # picking a different element requires Exit + a fresh launch instead.
 $global:recoveryRunStarted = $false
+# The one DispatcherTimer currently driving the Overall Recovery Time badge, if any -- see
+# Start-RunTimer/Stop-RunTimer. Tracked globally (not just via each Run All button's own local
+# $runTimer closure variable) so Start-RunTimer can defensively stop a previous run's timer that,
+# for whatever reason, never got a matching Stop-RunTimer call, instead of leaving it running
+# forever alongside a new one -- two timers both writing the same elapsed-time TextBlock is what
+# actually produces an apparently-impossible reading mid-run, not any real accumulation across
+# parallel threads (the clock itself is a single wall-clock diff from one $startTime, recomputed
+# fresh on every tick, so it can't compound like that on its own).
+$global:activeRunTimer = $null
 
 # Completion tracking, attempt 5: a PowerShell transcript of the console, read from disk. Unaffected
 # by the move away from the terminal control -- it never depended on that control's own rendering
@@ -1456,8 +1465,9 @@ function Set-AllStepButtonsEnabled([bool]$Enabled) {
     $global:fleetComponentsGroup.RunAllButton.IsEnabled = $Enabled
 }
 
-# Elapsed-time display for a Run All run -- hidden and not running the rest of the time. Shared
-# across all three Steps panels (Domain Recovery / Additional Cluster Recovery / Recover Fleet)
+# Elapsed-time display for a Run All run -- hidden until the first run this session, then left
+# showing its last value (frozen, not running) between runs rather than disappearing; see
+# Stop-RunTimer. Shared across all three Steps panels (Domain Recovery / Additional Cluster Recovery / Recover Fleet)
 # rather than one per panel, since only one Run All can ever be active across the whole app at a
 # time anyway (see Set-AllStepButtonsEnabled) -- positioned in the XAML above the Steps/Variables
 # tab strip, right-aligned to share the same edge as the Steps ListBoxes' own Run-button column.
@@ -1466,6 +1476,14 @@ function Set-AllStepButtonsEnabled([bool]$Enabled) {
 # progress. Returns the running DispatcherTimer so the caller can stop it again in Stop-RunTimer
 # once the whole Run All chain finishes (see each Run All button's own Add_Click).
 function Start-RunTimer {
+    # Defensively stop whatever the previous run's timer was first, rather than assuming its own
+    # Stop-RunTimer call already ran -- if it didn't (some exception deep in an async completion
+    # callback bypassing the normal call site, for instance), the orphaned timer would otherwise
+    # keep ticking forever, writing an ever-growing elapsed time to the same TextBlock alongside
+    # this new one and occasionally winning the display race with a stale, larger reading.
+    if ($global:activeRunTimer) {
+        $global:activeRunTimer.Stop()
+    }
     $startTime = Get-Date
     $overallRecoveryTimeTextBlock.Text = '00:00:00'
     $overallRecoveryTimePanel.Visibility = 'Visible'
@@ -1475,18 +1493,24 @@ function Start-RunTimer {
             $elapsed = (Get-Date) - $startTime
             $overallRecoveryTimeTextBlock.Text = '{0:00}:{1:00}:{2:00}' -f [int]$elapsed.TotalHours, $elapsed.Minutes, $elapsed.Seconds
         }.GetNewClosure())
+    $global:activeRunTimer = $timer
     $timer.Start()
     return $timer
 }
 
-# Stops the DispatcherTimer Start-RunTimer returned and hides the timer panel (label + badge)
-# again. $Timer may be $null (e.g. Invoke-StepChain threw before Start-RunTimer was ever called) --
-# tolerated so the catch block in each Run All handler can call this unconditionally.
+# Stops the DispatcherTimer Start-RunTimer returned -- deliberately does NOT hide the timer panel
+# or reset its displayed value: the last elapsed time shown is exactly what a "simply stop, don't
+# disappear" clock should keep showing until the next Run All starts fresh (Start-RunTimer resets
+# both the text and visibility at that point). $Timer may be $null (e.g. Invoke-StepChain threw
+# before Start-RunTimer was ever called) -- tolerated so the catch block in each Run All handler
+# can call this unconditionally.
 function Stop-RunTimer($Timer) {
     if ($Timer) {
         $Timer.Stop()
     }
-    $overallRecoveryTimePanel.Visibility = 'Collapsed'
+    if ($global:activeRunTimer -eq $Timer) {
+        $global:activeRunTimer = $null
+    }
 }
 
 # Resets a row to its "in progress" look (undoing any earlier Done/Failed state -- re-running a step
