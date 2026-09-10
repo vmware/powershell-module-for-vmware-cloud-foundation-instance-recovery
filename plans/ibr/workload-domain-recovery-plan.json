@@ -163,7 +163,7 @@
     "displayName": "Rebuilt vSAN Datastore",
     "condition": [],
     "threadId": "",
-    "interactive": false,
+    "interactive": true,
     "visible": true
   },
   {
