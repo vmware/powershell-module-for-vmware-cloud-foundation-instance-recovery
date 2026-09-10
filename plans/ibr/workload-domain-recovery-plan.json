@@ -47,7 +47,7 @@
   {
     "description": "",
     "commandLine": "New-Advisory 'You may now removed failed vSAN witnesses from inventory, redeploy and reregister them in vCenter'",
-    "displayName": "Redeploy Failed vSAN Witnesses",
+    "displayName": "New Advisory",
     "condition": [
       {
         "type": "dataPath",
