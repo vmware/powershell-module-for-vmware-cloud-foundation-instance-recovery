@@ -100,7 +100,7 @@
   },
   {
     "description": "",
-    "commandLine": "New-Advisory 'You may now removed failed vSAN witnesses from management domain vCenter inventory, then redeploy and reregister them'",
+    "commandLine": "New-Advisory 'You may now remove failed vSAN witnesses from the management domain vCenter inventory, then redeploy and reregister them to vCenter'",
     "displayName": "New Advisory",
     "condition": [
       {
