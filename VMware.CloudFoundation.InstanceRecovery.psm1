@@ -9945,7 +9945,7 @@ Function Get-VcfOperationsRegisteredComponents {
         [Parameter(Mandatory = $true)][String] $OutputDir
     )
 
-    $outputFile = (Resolve-Path -Path $OutputDir).path + "\componented-ids-components.json"
+    $outputFile = (Resolve-Path -Path $OutputDir).path + "\VCFOps-Registered-Component-Details.json"
 
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
