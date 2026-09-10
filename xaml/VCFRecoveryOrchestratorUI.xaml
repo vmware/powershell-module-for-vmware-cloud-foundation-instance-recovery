@@ -593,11 +593,11 @@
                      multi-line, read-only TextBox rather than a TextBlock+ScrollViewer: it gets a
                      working, independently-scrollable vertical scrollbar for free, entirely separate
                      from the Console pane's own native console window/scrolling above - the two
-                     never interact. Height is sized for roughly 5 lines at the shared TextBox style's
+                     never interact. Height is sized for roughly 3 lines at the shared TextBox style's
                      default font/padding; VerticalScrollBarVisibility="Auto" only shows the bar once
                      there's actually more history than that to scroll through. -->
                 <GroupBox Grid.Row="1" Header="Advisories" Margin="0,12,0,0" Padding="10,10,10,10">
-                    <TextBox x:Name="AdvisoriesTextBox" IsReadOnly="True" IsReadOnlyCaretVisible="True" TextWrapping="Wrap" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Height="100" Foreground="#C0392B" />
+                    <TextBox x:Name="AdvisoriesTextBox" IsReadOnly="True" IsReadOnlyCaretVisible="True" TextWrapping="Wrap" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Height="60" Foreground="#C0392B" />
                 </GroupBox>
             </Grid>
         </Grid>
