@@ -5,7 +5,8 @@
     "displayName": "Get VCF Operations Registered Components",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "Extract Fleet VIP Address Configuration from the Source Services Runtime Backup",
@@ -13,7 +14,8 @@
     "displayName": "Extract VCFMS Backup",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "Apply Fleet VIP on Recovery VCF Management Services Instance",
@@ -21,7 +23,8 @@
     "displayName": "Set VCFMS Fleet Identity",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "Update SFTP Settings on a new Services Runtime Instance",
@@ -29,7 +32,8 @@
     "displayName": "Set Services Runtime SFTP Backup Settings",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "Retrieve a List of Backups for VCF Management Services Fleet Components ($vspId is the ID of the VCF Management Services instance from the \"Retrieve Component Details from VCF Operations\" step above)",
@@ -37,7 +41,8 @@
     "displayName": "Get Backups from SFTP Server",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "Restore the Fleet Components on the Recovery VCF Management Services Instance",
@@ -45,7 +50,8 @@
     "displayName": "Restore Services Runtime Component Backup",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "Update the Identity Broker VIP Address",
@@ -53,6 +59,7 @@
     "displayName": "Set Services Runtime Component VIPs",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   }
 ]

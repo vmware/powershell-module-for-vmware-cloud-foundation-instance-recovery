@@ -85,7 +85,7 @@ $dataSourceGroupBox = $window.FindName('DataSourceGroupBox')
 $extractRadio = $window.FindName('ExtractBackupRadio')
 $browseButton = $window.FindName('BrowseButton')
 $filePathTextBox = $window.FindName('FilePathTextBox')
-$statusTextBlock = $window.FindName('StatusTextBlock')
+$advisoriesTextBox = $window.FindName('AdvisoriesTextBox')
 $discoveredInfrastructureGroupBox = $window.FindName('DiscoveredInfrastructureGroupBox')
 $discoveredInfrastructureTabControl = $window.FindName('DiscoveredInfrastructureTabControl')
 $workloadDomainsTabItem = $window.FindName('WorkloadDomainsTabItem')
@@ -137,6 +137,20 @@ $fleetComponentsVariablesItemsPanel = $window.FindName('FleetComponentsVariables
 $runAllFleetComponentsButton = $window.FindName('RunAllFleetComponentsButton')
 $runAllFleetComponentsParallelCheckBox = $window.FindName('RunAllFleetComponentsParallelCheckBox')
 $fleetComponentsStepsListBox = $window.FindName('FleetComponentsStepsListBox')
+
+# Appends $Message as a new line to the Advisories pane (below the Console pane) and scrolls it into
+# view -- the single place every status/error/informational message in this app surfaces to the
+# operator now, replacing the old single-line StatusTextBlock that used to sit inside Data Source and
+# get silently overwritten by whatever ran next. Kept as a running history instead: nothing here ever
+# clears it, so an earlier warning stays visible (scroll up) even after something later succeeds.
+function New-Advisory([string]$Message) {
+    if ($advisoriesTextBox.Text) {
+        $advisoriesTextBox.Text += "`r`n$Message"
+    } else {
+        $advisoriesTextBox.Text = $Message
+    }
+    $advisoriesTextBox.ScrollToEnd()
+}
 
 # Populated once a domain is selected (see Sync-DomainSteps below), an additional cluster is picked
 # (see Sync-AdditionalClusterSteps), or FDR's own Recover Fleet plan is loaded (see the FDR
@@ -318,8 +332,12 @@ function Show-PasswordPromptDialog([string]$Title, [string]$Message) {
 # editing a plan file and re-selecting the domain (or relaunching) picks the change up immediately,
 # with no recompiling or restarting anything else. Plan files are a JSON array of step objects:
 # [{ "description": "...", "commandLine": "...", "condition": [...], "threadId": "...",
-# "interactive": false, "id": "..." }, ...]. description/condition/threadId/interactive/id are all
-# optional and default to ''/@()/$false/''/'' when absent or null. condition (empty array = always
+# "interactive": false, "id": "...", "visible": true }, ...]. description/condition/threadId/
+# interactive/id/visible are all optional and default to ''/@()/$false/''/'' /$true when absent or
+# null. visible (default true) controls only whether the step's row is shown in the Steps list --
+# set to false to keep a step out of the visible list while it still runs as part of Run All (see
+# Set-PlanStepsListBox); unlike condition, it has no bearing on whether the step actually executes.
+# condition (empty array = always
 # run) is an array, ALL of whose entries must be true for the step to run, each evaluated against the
 # currently loaded variable values -- see Test-StepConditions. An array (not a single value) is what
 # lets a step depend on more than one fact at once (e.g. isStretched AND primaryDatastoreType) without
@@ -383,6 +401,10 @@ function Get-RecoveryPlanSteps([string]$RecoveryType, [string]$PlanFileName) {
                 Condition   = $condition
                 ThreadId    = if ($rawStep.threadId) { [string]$rawStep.threadId } else { '' }
                 Interactive = [bool]$rawStep.interactive
+                # Explicit property-existence check, not "if ($rawStep.visible)" -- that would treat
+                # an explicit "visible": false exactly the same as the property being absent, and the
+                # whole point here is that absent must default to $true while explicit false must not.
+                Visible     = if ($rawStep.PSObject.Properties.Name -contains 'visible') { [bool]$rawStep.visible } else { $true }
             }
         }
     )
@@ -523,7 +545,9 @@ function Set-PlanStepsListBox([System.Windows.Controls.ListBox]$ListBox, [object
     # Flips every time a new consecutive run of same-ThreadId rows starts (including a ThreadId
     # value repeating later, non-consecutively -- that is a distinct thread block, not a
     # continuation of the earlier one, exactly matching Invoke-StepThreadChain's own grouping) so
-    # New-StepRow's thread circle can alternate colors between blocks.
+    # New-StepRow's thread circle can alternate colors between blocks. Applied to every step
+    # regardless of Visible, so an invisible step in the middle of a thread block doesn't throw off
+    # the alternation of the visible rows around it.
     $previousThreadId = $null
     $colorAlt = $false
     foreach ($step in $Steps) {
@@ -531,7 +555,13 @@ function Set-PlanStepsListBox([System.Windows.Controls.ListBox]$ListBox, [object
             $colorAlt = -not $colorAlt
         }
         $row = New-StepRow $step.CommandLine $step.ThreadId $step.Description $step.Interactive $colorAlt $step.Id $step.Condition $step.DisplayName
-        [void]$ListBox.Items.Add($row.Panel)
+        # Visible ($true unless a step explicitly sets "visible": false) governs only whether the
+        # row is ADDED to the ListBox -- it's still built and still included in $rows below, so Run
+        # All still runs it in sequence exactly like any other step. This is deliberately unlike
+        # Condition, which governs whether a step runs at all.
+        if ($step.Visible) {
+            [void]$ListBox.Items.Add($row.Panel)
+        }
         $rows += $row
         $previousThreadId = $step.ThreadId
     }
@@ -887,7 +917,7 @@ function New-EmbeddedConsole([string]$TabHeader, [switch]$Bootstrap) {
     while ((Get-Date) -lt $deadline) {
         $process.Refresh()
         if ($process.HasExited) {
-            $statusTextBlock.Text = "Console process exited before its window appeared."
+            New-Advisory "Console process exited before its window appeared."
             break
         }
         $hwnd = $process.MainWindowHandle
@@ -907,7 +937,7 @@ function New-EmbeddedConsole([string]$TabHeader, [switch]$Bootstrap) {
         $hwndHost = New-Object VCFIRConsole.ConsoleHwndHost($hwnd)
         $hostBorder.Child = $hwndHost
     } else {
-        $statusTextBlock.Text = "Console window did not appear within 10 seconds."
+        New-Advisory "Console window did not appear within 10 seconds."
     }
 
     $console = [PSCustomObject]@{
@@ -999,7 +1029,7 @@ function Initialize-ConsoleVariables($Console) {
         }
         Start-Sleep -Milliseconds 50
     }
-    $statusTextBlock.Text = "Console '$($Console.TabItem.Header)' did not confirm its bootstrap variables within 10 seconds."
+    New-Advisory "Console '$($Console.TabItem.Header)' did not confirm its bootstrap variables within 10 seconds."
 }
 
 # Resolves to whichever console's tab is currently selected, for the benefit of anything that
@@ -1054,7 +1084,7 @@ $global:mouseHookProc = [VCFIRConsole.LowLevelMouseProc] {
 }
 $global:mouseHookHandle = [VCFIRConsole.NativeMethods]::SetWindowsHookEx([VCFIRConsole.NativeMethods]::WH_MOUSE_LL, $global:mouseHookProc, [VCFIRConsole.NativeMethods]::GetModuleHandle($null), 0)
 if ($global:mouseHookHandle -eq [IntPtr]::Zero) {
-    $statusTextBlock.Text = "Warning: could not install the console click-focus hook (Win32 error $([System.Runtime.InteropServices.Marshal]::GetLastWin32Error())). Clicking directly on a console may not restore keyboard focus to it."
+    New-Advisory "Warning: could not install the console click-focus hook (Win32 error $([System.Runtime.InteropServices.Marshal]::GetLastWin32Error())). Clicking directly on a console may not restore keyboard focus to it."
 }
 
 # Kills every console process (Main and every parallel one) when the window actually closes,
@@ -1185,7 +1215,7 @@ function Send-ToConsole([string]$CommandLine, $Console) {
         $Console = $global:mainConsole
     }
     if ($null -eq $Console -or $null -eq $Console.Process -or $Console.Process.HasExited) {
-        $statusTextBlock.Text = "Console process isn't running."
+        New-Advisory "Console process isn't running."
         return
     }
     try {
@@ -1251,7 +1281,7 @@ function Send-ToConsole([string]$CommandLine, $Console) {
             [VCFIRConsole.NativeMethods]::FreeConsole() | Out-Null
         }
     } catch {
-        $statusTextBlock.Text = "Failed to send command: $($_.Exception.Message)"
+        New-Advisory "Failed to send command: $($_.Exception.Message)"
     }
     Set-ConsoleFocus
 }
@@ -1261,7 +1291,7 @@ function Send-ToConsole([string]$CommandLine, $Console) {
 # running there) until Enter or a right-click releases the selection, which is exactly the kind of
 # accidental-looking "it's just stuck" report this exists to prevent. Same AttachConsole/
 # GetStdHandle/FreeConsole dance Send-ToConsole already uses to reach a target console's own
-# handles from this process. Deliberately silent (no $statusTextBlock update) either way -- this is
+# handles from this process. Deliberately silent (no advisory) either way -- this is
 # a background safety toggle, not something the operator needs to be told is happening, and a
 # failure here (a console that's already exited, a transient attach failure) shouldn't interrupt or
 # alarm anyone either.
@@ -1392,7 +1422,7 @@ function Lock-ElementSelection {
     }
     $global:recoveryRunStarted = $true
     $discoveredInfrastructureTabControl.IsEnabled = $false
-    $statusTextBlock.Text = 'Run Started. Navigation to other domains/clusters disabled.'
+    New-Advisory 'Run Started. Navigation to other domains/clusters disabled.'
 }
 
 # Prevents clicking an individual step's own Run button out of sequence while a Run All chain is
@@ -1499,6 +1529,26 @@ function Invoke-Step($Button, [string]$CmdletName, [string]$CommandLine, [script
         }
         return
     }
+    # A "New-Advisory '...'" step is a pseudo-command handled entirely in this process, never sent to
+    # a console -- New-Advisory only exists here (it writes to this window's own Advisories pane), so
+    # there's no exported module cmdlet by that name for a console session to run; sending it there
+    # would just fail with "term not recognized" and mark the step Failed. Resolves immediately, the
+    # same way a skipped step does (no transcript to watch for), including the same BeginInvoke
+    # trampoline for $OnStepComplete.
+    $advisoryMatch = [regex]::Match($CommandLine, "^New-Advisory\s+'(.*)'\s*$", [System.Text.RegularExpressions.RegexOptions]::Singleline)
+    if ($advisoryMatch.Success) {
+        Lock-ElementSelection
+        New-Advisory ($advisoryMatch.Groups[1].Value -replace "''", "'")
+        $Button.Content = 'Done'
+        $Button.Background = [System.Windows.Media.Brushes]::Green
+        if ($Id) {
+            $global:stepRunStatus[$Id] = 'Success'
+        }
+        if ($OnStepComplete) {
+            $window.Dispatcher.BeginInvoke([System.Windows.Threading.DispatcherPriority]::Background, [System.Action] { & $OnStepComplete $true }.GetNewClosure()) | Out-Null
+        }
+        return
+    }
     Lock-ElementSelection
     $Button.Content = 'Running'
     $Button.Background = [System.Windows.Media.Brushes]::Orange
@@ -1581,7 +1631,7 @@ function Invoke-StepChain([object[]]$Rows, [switch]$IgnoreThreads, [scriptblock]
                 if ($state.AllClean) {
                     Invoke-StepChain $remainingRows -IgnoreThreads:$IgnoreThreads -OnChainComplete $OnChainComplete
                 } else {
-                    $statusTextBlock.Text = 'Run All stopped: one or more threads did not complete cleanly -- check each console/transcript before retrying.'
+                    New-Advisory 'Run All stopped: one or more threads did not complete cleanly -- check each console/transcript before retrying.'
                     if ($OnChainComplete) {
                         & $OnChainComplete $false
                     }
@@ -1600,7 +1650,7 @@ function Invoke-StepChain([object[]]$Rows, [switch]$IgnoreThreads, [scriptblock]
         if ($isClean) {
             Invoke-StepChain $remainingRows -IgnoreThreads:$IgnoreThreads -OnChainComplete $OnChainComplete
         } else {
-            $statusTextBlock.Text = "Run All stopped: $($row.CmdletName) did not complete cleanly -- check the console/transcript for warnings, errors, or a PowerShell error record before retrying."
+            New-Advisory "Run All stopped: $($row.CmdletName) did not complete cleanly -- check the console/transcript for warnings, errors, or a PowerShell error record before retrying."
             if ($OnChainComplete) {
                 & $OnChainComplete $false
             }
@@ -1710,7 +1760,7 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
             try {
                 Invoke-Step $runButton $cmdletName $CommandLine $null $null $Interactive $Id $Condition
             } catch {
-                $statusTextBlock.Text = "Run button failed: $($_.Exception.Message)"
+                New-Advisory "Run button failed: $($_.Exception.Message)"
             }
         }.GetNewClosure())
 
@@ -1959,17 +2009,16 @@ function Import-ExtractedSddcDataFile([string]$Path) {
     $global:derivedStepVariables = @{}
     $global:conditionDataContext = @{}
     $global:stepRunStatus = @{}
-    $statusTextBlock.Text = ''
 
     try {
         $extractedSddcData = Get-Content -Path $Path -Raw | ConvertFrom-Json
     } catch {
-        $statusTextBlock.Text = "Failed to load extracted SDDC data: $($_.Exception.Message)"
+        New-Advisory "Failed to load extracted SDDC data: $($_.Exception.Message)"
         return
     }
 
     if (-not $extractedSddcData.workloadDomains) {
-        $statusTextBlock.Text = "No 'workloadDomains' property found in the selected file."
+        New-Advisory "No 'workloadDomains' property found in the selected file."
         return
     }
 
@@ -2245,7 +2294,7 @@ function Import-VariablesAnswersFile([string]$Path) {
         # forth, the same way picking a domain switches Setup to the Workload Domains tab.
         $stepsVariablesTabControl.SelectedIndex = 1
     } catch {
-        $statusTextBlock.Text = "Load Variables failed: $($_.Exception.Message)"
+        New-Advisory "Load Variables failed: $($_.Exception.Message)"
     }
 }
 
@@ -2268,7 +2317,7 @@ $loadVariablesButton.Add_Click({
 function New-VariablesFile([string]$Path) {
     $variableNames = @(Get-ReferencedVariableNames (Get-StepReferenceText $global:allSteps))
     if ($variableNames.Count -eq 0) {
-        $statusTextBlock.Text = 'No steps are currently loaded, so there are no variables to create a file for.'
+        New-Advisory 'No steps are currently loaded, so there are no variables to create a file for.'
         return
     }
 
@@ -2320,7 +2369,7 @@ $newVariablesFileButton.Add_Click({
         # Checked here too, before showing a dialog only to fail right after picking a location --
         # New-VariablesFile also checks on its own, so it's still safe if ever called another way.
         if (@(Get-ReferencedVariableNames (Get-StepReferenceText $global:allSteps)).Count -eq 0) {
-            $statusTextBlock.Text = 'No steps are currently loaded, so there are no variables to create a file for.'
+            New-Advisory 'No steps are currently loaded, so there are no variables to create a file for.'
             return
         }
         $dialog = New-Object Microsoft.Win32.SaveFileDialog
@@ -2345,7 +2394,7 @@ $instanceComponentsLoadVariablesButton.Add_Click({
 
 $instanceComponentsNewVariablesFileButton.Add_Click({
         if (@(Get-ReferencedVariableNames (Get-StepReferenceText $global:instanceComponentsGroup.Steps)).Count -eq 0) {
-            $statusTextBlock.Text = 'No steps are currently loaded, so there are no variables to create a file for.'
+            New-Advisory 'No steps are currently loaded, so there are no variables to create a file for.'
             return
         }
         $dialog = New-Object Microsoft.Win32.SaveFileDialog
@@ -2370,7 +2419,7 @@ $fleetComponentsLoadVariablesButton.Add_Click({
 
 $fleetComponentsNewVariablesFileButton.Add_Click({
         if (@(Get-ReferencedVariableNames (Get-StepReferenceText $global:fleetComponentsGroup.Steps)).Count -eq 0) {
-            $statusTextBlock.Text = 'No steps are currently loaded, so there are no variables to create a file for.'
+            New-Advisory 'No steps are currently loaded, so there are no variables to create a file for.'
             return
         }
         $dialog = New-Object Microsoft.Win32.SaveFileDialog
@@ -2489,7 +2538,7 @@ function Import-GroupVariablesAnswersFile($Group, [string]$Path) {
 
         $Group.VariablesStepsTabControl.SelectedIndex = 1
     } catch {
-        $statusTextBlock.Text = "Load Variables failed: $($_.Exception.Message)"
+        New-Advisory "Load Variables failed: $($_.Exception.Message)"
     }
 }
 
@@ -2498,7 +2547,7 @@ function Import-GroupVariablesAnswersFile($Group, [string]$Path) {
 function New-GroupVariablesFile($Group, [string]$Path) {
     $variableNames = @(Get-ReferencedVariableNames (Get-StepReferenceText $Group.Steps))
     if ($variableNames.Count -eq 0) {
-        $statusTextBlock.Text = 'No steps are currently loaded, so there are no variables to create a file for.'
+        New-Advisory 'No steps are currently loaded, so there are no variables to create a file for.'
         return
     }
 
@@ -2657,7 +2706,7 @@ $domainsListBox.Add_SelectionChanged({
         try {
             Sync-DomainSteps
         } catch {
-            $statusTextBlock.Text = "Domain selection handler failed: $($_.Exception.Message)"
+            New-Advisory "Domain selection handler failed: $($_.Exception.Message)"
         }
     }.GetNewClosure())
 
@@ -2723,7 +2772,7 @@ $additionalClustersListBox.Add_SelectionChanged({
         try {
             Sync-AdditionalClusterSteps
         } catch {
-            $statusTextBlock.Text = "Additional cluster selection handler failed: $($_.Exception.Message)"
+            New-Advisory "Additional cluster selection handler failed: $($_.Exception.Message)"
         }
     }.GetNewClosure())
 
@@ -2820,7 +2869,7 @@ $runAllDomainRecoveryButton.Add_Click({
                 Stop-RunTimer $runTimer
             }.GetNewClosure()
         } catch {
-            $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
+            New-Advisory "Run All failed: $($_.Exception.Message)"
             Set-AllStepButtonsEnabled $true
             Stop-RunTimer $runTimer
         }
@@ -2835,7 +2884,7 @@ $runAllAdditionalClusterRecoveryButton.Add_Click({
                 Stop-RunTimer $runTimer
             }.GetNewClosure()
         } catch {
-            $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
+            New-Advisory "Run All failed: $($_.Exception.Message)"
             Set-AllStepButtonsEnabled $true
             Stop-RunTimer $runTimer
         }
@@ -2850,7 +2899,7 @@ $runAllRecoverFleetButton.Add_Click({
                 Stop-RunTimer $runTimer
             }.GetNewClosure()
         } catch {
-            $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
+            New-Advisory "Run All failed: $($_.Exception.Message)"
             Set-AllStepButtonsEnabled $true
             Stop-RunTimer $runTimer
         }
@@ -2865,7 +2914,7 @@ $runAllInstanceComponentsButton.Add_Click({
                 Stop-RunTimer $runTimer
             }.GetNewClosure()
         } catch {
-            $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
+            New-Advisory "Run All failed: $($_.Exception.Message)"
             Set-AllStepButtonsEnabled $true
             Stop-RunTimer $runTimer
         }
@@ -2880,7 +2929,7 @@ $runAllFleetComponentsButton.Add_Click({
                 Stop-RunTimer $runTimer
             }.GetNewClosure()
         } catch {
-            $statusTextBlock.Text = "Run All failed: $($_.Exception.Message)"
+            New-Advisory "Run All failed: $($_.Exception.Message)"
             Set-AllStepButtonsEnabled $true
             Stop-RunTimer $runTimer
         }
@@ -2933,7 +2982,7 @@ $exitButton.Add_Click({
 
             $window.Close()
         } catch {
-            $statusTextBlock.Text = "Exit failed: $($_.Exception.Message)"
+            New-Advisory "Exit failed: $($_.Exception.Message)"
         }
     }.GetNewClosure())
 
@@ -2997,9 +3046,9 @@ $resumeButton.Add_Click({
                 }
             }
 
-            $statusTextBlock.Text = "Resumed state from '$($dialog.FileName)'."
+            New-Advisory "Resumed state from '$($dialog.FileName)'."
         } catch {
-            $statusTextBlock.Text = "Resume failed: $($_.Exception.Message)"
+            New-Advisory "Resume failed: $($_.Exception.Message)"
         }
     }.GetNewClosure())
 

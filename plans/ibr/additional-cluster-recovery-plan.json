@@ -5,7 +5,8 @@
     "displayName": "Backup Cluster VM Overrides",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "",
@@ -13,7 +14,8 @@
     "displayName": "Backup Cluster VM Locations",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "",
@@ -21,7 +23,8 @@
     "displayName": "Backup Cluster DRS Groups and Rules",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "",
@@ -29,7 +32,8 @@
     "displayName": "Backup Cluster VM Tags",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "Remove Non-Responsive ESX Hosts from the Inventory",
@@ -37,7 +41,8 @@
     "displayName": "Remove Non Responsive Hosts",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "Add New Hosts to the Cluster in the Restored vCenter",
@@ -45,7 +50,8 @@
     "displayName": "Add Hosts to Cluster",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "Migrate the ESX Hosts and VMkernel Adapters to the vSphere Distributed Switch on the Restored vCenter",
@@ -53,7 +59,8 @@
     "displayName": "Rebuilt Vds Configuration",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "Wait for NSX Installation to Complete on Hosts",
@@ -61,7 +68,8 @@
     "displayName": "Monitor Nsx Host Transport Node Installation",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "Add VMkernel Adapters to the ESX Hosts",
@@ -69,7 +77,8 @@
     "displayName": "Add VMKernels to Hosts",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "Reconfigure Stretched Cluster",
@@ -84,7 +93,8 @@
       }
     ],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "Recreate a vSAN Datastore",
@@ -92,7 +102,8 @@
     "displayName": "Rebuilt vSAN Datastore",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "Update Datastore ID",
@@ -100,7 +111,8 @@
     "displayName": "Update Domain Datastore ID",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "Update Host IDs",
@@ -108,7 +120,8 @@
     "displayName": "Update Cluster Host Source IDs",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "Update SSH Keys for Hosts",
@@ -116,7 +129,8 @@
     "displayName": "Invoke SDDC Manager SSHKey Refresh",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "Synchronize the SDDC Manager Service Accounts on the ESX Host",
@@ -124,7 +138,8 @@
     "displayName": "Resolve Physical Host Service Accounts",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "Redeploy NSX Edge Cluster (selective recovery)",
@@ -132,6 +147,7 @@
     "displayName": "Invoke NSX Edge Cluster Recovery Selective",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   }
 ]

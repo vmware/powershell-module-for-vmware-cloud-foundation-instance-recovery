@@ -5,7 +5,8 @@
     "displayName": "Set SDDC Manager Offline Depot",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "Trigger Download of Binaries Needed for Recovery",
@@ -13,7 +14,8 @@
     "displayName": "Invoke SDDC Manager Bundle Download",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "Retrieve Registered Operations Components",
@@ -21,7 +23,8 @@
     "displayName": "Get VCF Operations Registered Components",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "Extract Runtime Configuration from the Services Runtime Backup",
@@ -29,7 +32,8 @@
     "displayName": "Extract VCFMS Backup",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "Prepare to Restore VCF Management Services (remove the existing VSP cluster entry)",
@@ -37,7 +41,8 @@
     "displayName": "Remove SDDC Manager Vsp Cluster Entry",
     "condition": [],
     "threadId": "",
-    "interactive": true
+    "interactive": true,
+    "visible": true
   },
   {
     "description": "Redeploy VCF Management Services (VCFMS)",
@@ -45,7 +50,8 @@
     "displayName": "Create New Services Runtime",
     "condition": [],
     "threadId": "",
-    "interactive": true
+    "interactive": true,
+    "visible": true
   },
   {
     "description": "Set SFTP Backup Settings on the Redeployed Services Runtime",
@@ -53,7 +59,8 @@
     "displayName": "Set Services Runtime SFTP Backup Settings",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "Trust the Installer Host Certificate",
@@ -61,7 +68,8 @@
     "displayName": "Add VCFMS Trusted Certificate",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "Stage Binaries (manual step, no automation available -- complete outside this tool, then press Enter here to continue)",
@@ -69,7 +77,8 @@
     "displayName": "Confirm Binary Staging is complete",
     "condition": [],
     "threadId": "",
-    "interactive": true
+    "interactive": true,
+    "visible": true
   },
   {
     "description": "Retrieve a List of Backups for the VCF Management Services (vsp) Component",
@@ -77,7 +86,8 @@
     "displayName": "Get Services Runtime Component Backups",
     "condition": [],
     "threadId": "",
-    "interactive": true
+    "interactive": true,
+    "visible": true
   },
   {
     "description": "Restore VCF Management Services (VCFMS)",
@@ -85,7 +95,8 @@
     "displayName": "Restore Services Runtime Component Backups",
     "condition": [],
     "threadId": "",
-    "interactive": true
+    "interactive": true,
+    "visible": true
   },
   {
     "description": "Apply Services Runtime Configuration (manual step): scp vmsp-platform.yaml to /tmp on the control plane node (10.11.10.33); ssh to the control plane; sudo su; export KUBECONFIG=/etc/kubernetes/admin.conf; kubectl apply -f /tmp/vmsp-platform.yaml. Press Enter here once complete.",
@@ -93,7 +104,8 @@
     "displayName": "Confirm Services Runtime Configuration has been applied",
     "condition": [],
     "threadId": "",
-    "interactive": true
+    "interactive": true,
+    "visible": true
   },
   {
     "description": "Retrieve Backups for the Remaining Fleet Components (vcf-fleet-lcm, vcf-fleet-depot, vcf-sddc-lcm, salt, salt-raas, vidb)",
@@ -101,7 +113,8 @@
     "displayName": "Get Services Runtime Component Backups",
     "condition": [],
     "threadId": "",
-    "interactive": true
+    "interactive": true,
+    "visible": true
   },
   {
     "description": "Restore the Remaining Fleet Components",
@@ -109,7 +122,8 @@
     "displayName": "Restore Services Runtime Component Backups",
     "condition": [],
     "threadId": "",
-    "interactive": true
+    "interactive": true,
+    "visible": true
   },
   {
     "description": "Retrieve Backups for Log Management (ops-logs)",
@@ -117,7 +131,8 @@
     "displayName": "Get Services Runtime Component Backups",
     "condition": [],
     "threadId": "",
-    "interactive": true
+    "interactive": true,
+    "visible": true
   },
   {
     "description": "Restore Log Management",
@@ -125,7 +140,8 @@
     "displayName": "Restore Services Runtime Component Backup",
     "condition": [],
     "threadId": "",
-    "interactive": true
+    "interactive": true,
+    "visible": true
   },
   {
     "description": "Redeploy Telemetry and Real Time Metrics (manual step, no automation available)",
@@ -133,7 +149,8 @@
     "displayName": "Confirm Telemetry and Real Time Metrics are redeployed",
     "condition": [],
     "threadId": "",
-    "interactive": true
+    "interactive": true,
+    "visible": true
   },
   {
     "description": "Update Log Management State (manual step, no automation available)",
@@ -141,7 +158,8 @@
     "displayName": "Confirm Log Management state is updated",
     "condition": [],
     "threadId": "",
-    "interactive": true
+    "interactive": true,
+    "visible": true
   },
   {
     "description": "Point SDDC Manager to the FDS Depot",
@@ -149,6 +167,7 @@
     "displayName": "Set SDDC Manager FDSDepot",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   }
 ]

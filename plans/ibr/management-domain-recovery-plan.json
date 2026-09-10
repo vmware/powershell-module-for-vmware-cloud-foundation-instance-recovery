@@ -5,7 +5,8 @@
     "displayName": "Prepare Management Host Networking",
     "condition": [],
     "threadId": "",
-    "interactive": true
+    "interactive": true,
+    "visible": true
   },
   {
     "description": "",
@@ -13,7 +14,8 @@
     "displayName": "Add VMKernels to Management Hosts",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "",
@@ -21,7 +23,8 @@
     "displayName": "Create Single Host Vsan Datastore",
     "condition": [],
     "threadId": "",
-    "interactive": true
+    "interactive": true,
+    "visible": true
   },
   {
     "description": "",
@@ -29,7 +32,8 @@
     "displayName": "vCenter Ova Deployment",
     "condition": [],
     "threadId": "2",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "",
@@ -37,7 +41,8 @@
     "displayName": "Invoke vCenter Restore",
     "condition": [],
     "threadId": "2",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "",
@@ -45,7 +50,8 @@
     "displayName": "NSX Manager Ova Deployment",
     "condition": [],
     "threadId": "3",
-    "interactive": true
+    "interactive": true,
+    "visible": true
   },
   {
     "description": "",
@@ -53,7 +59,8 @@
     "displayName": "Invoke NSX Manager Restore",
     "condition": [],
     "threadId": "3",
-    "interactive": true
+    "interactive": true,
+    "visible": true
   },
   {
     "description": "",
@@ -61,7 +68,8 @@
     "displayName": "SDDC Manager Ova Deployment",
     "condition": [],
     "threadId": "4",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "",
@@ -69,7 +77,8 @@
     "displayName": "Upload and Modify SDDC Manager Backup",
     "condition": [],
     "threadId": "4",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "",
@@ -77,7 +86,8 @@
     "displayName": "Invoke SDDC Manager Restore",
     "condition": [],
     "threadId": "4",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "",
@@ -85,7 +95,24 @@
     "displayName": "Update Extracted SDDC Data",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "",
+    "commandLine": "New-Advisory 'You may now removed failed vSAN witnesses from inventory, redeploy and reregister them in vCenter'",
+    "displayName": "Redeploy Failed vSAN Witnesses",
+    "condition": [
+      {
+        "type": "dataPath",
+        "path": "selectedCluster.isStretched",
+        "operator": "eq",
+        "value": "t"
+      }
+    ],
+    "threadId": "",
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "Record the Cluster Settings from the Restored vCenter",
@@ -93,7 +120,8 @@
     "displayName": "Backup Cluster VM Overrides",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "",
@@ -101,7 +129,8 @@
     "displayName": "Backup Cluster VM Locations",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "",
@@ -109,7 +138,8 @@
     "displayName": "Backup Cluster DRS Groups and Rules",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "",
@@ -117,7 +147,8 @@
     "displayName": "Backup Cluster VM Tags",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "",
@@ -125,7 +156,8 @@
     "displayName": "Remove Non Responsive Hosts",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "",
@@ -133,7 +165,8 @@
     "displayName": "Add Hosts to Cluster",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "",
@@ -141,7 +174,8 @@
     "displayName": "Rebuilt Vds Configuration",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "",
@@ -149,7 +183,8 @@
     "displayName": "Monitor Nsx Host Transport Node Installation",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "",
@@ -164,7 +199,8 @@
       }
     ],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "",
@@ -179,7 +215,8 @@
       }
     ],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "",
@@ -187,7 +224,8 @@
     "displayName": "Set Management Datastore Policy",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "",
@@ -195,7 +233,8 @@
     "displayName": "Clear vCenter Alarms",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "",
@@ -203,7 +242,8 @@
     "displayName": "Update Domain Datastore ID",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "",
@@ -211,7 +251,8 @@
     "displayName": "Update Cluster Host Source IDs",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "",
@@ -219,7 +260,8 @@
     "displayName": "Invoke SDDC Manager SSHKey Refresh",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "",
@@ -227,7 +269,8 @@
     "displayName": "Resolve Physical Host Service Accounts",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   },
   {
     "description": "",
@@ -235,6 +278,7 @@
     "displayName": "Invoke NSX Edge Cluster Recovery Selective",
     "condition": [],
     "threadId": "",
-    "interactive": false
+    "interactive": false,
+    "visible": true
   }
 ]

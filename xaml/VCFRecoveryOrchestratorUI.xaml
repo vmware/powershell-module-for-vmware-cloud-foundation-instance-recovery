@@ -319,7 +319,6 @@
                             <Button x:Name="BrowseButton" Content="Browse..." Width="80" DockPanel.Dock="Right" />
                             <TextBox x:Name="FilePathTextBox" IsReadOnly="True" Margin="0,0,8,0" VerticalContentAlignment="Center" />
                         </DockPanel>
-                        <TextBlock x:Name="StatusTextBlock" Margin="0,8,0,0" TextWrapping="Wrap" Foreground="#C0392B" />
                     </StackPanel>
                 </GroupBox>
 
@@ -563,27 +562,44 @@
                  close up the header-to-content gap that's appropriate for a card full of prose or a
                  table, but reads as wasted space directly above a tab strip. Left/top/right padding
                  stays the shared 10 so this still lines up with every other panel around it. -->
-            <GroupBox Grid.Column="2" Header="Console" Padding="10,10,10,0">
-                <Grid>
-                    <!-- Shared by all three Steps panels' Run All buttons (Domain Recovery /
-                         Additional Cluster Recovery / Recover Fleet) rather than one per panel,
-                         since only one Run All can ever be active across the whole app at a time
-                         anyway (see Set-AllStepButtonsEnabled). Overlaid top-right of the console
-                         pane. Starts Collapsed; Start-RunTimer/Stop-RunTimer (in the .ps1) show and
-                         hide the whole panel for the lifetime of one Run All chain. The label is
-                         plain bold black text on the card's own white background, not part of the
-                         timer badge itself; only the value gets the green, rounded-corner badge
-                         treatment (matching the Button style's own CornerRadius, and the same green
-                         used for a completed step's Button.Background). -->
-                    <StackPanel x:Name="OverallRecoveryTimePanel" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,4,4,0" Panel.ZIndex="1" Visibility="Collapsed">
-                        <TextBlock Text="Overall Recovery Time" FontWeight="Bold" Foreground="Black" VerticalAlignment="Center" Margin="0,0,6,0" />
-                        <Border Background="Green" CornerRadius="3" Padding="8,3">
-                            <TextBlock x:Name="OverallRecoveryTimeTextBlock" Text="00:00:00" FontFamily="Consolas" FontWeight="Bold" Foreground="White" VerticalAlignment="Center" />
-                        </Border>
-                    </StackPanel>
-                    <TabControl x:Name="ConsoleTabControl" Background="Transparent" BorderThickness="0" Margin="0,-8,0,0" />
-                </Grid>
-            </GroupBox>
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <GroupBox Grid.Row="0" Header="Console" Padding="10,10,10,0">
+                    <Grid>
+                        <!-- Shared by all three Steps panels' Run All buttons (Domain Recovery /
+                             Additional Cluster Recovery / Recover Fleet) rather than one per panel,
+                             since only one Run All can ever be active across the whole app at a time
+                             anyway (see Set-AllStepButtonsEnabled). Overlaid top-right of the console
+                             pane. Starts Collapsed; Start-RunTimer/Stop-RunTimer (in the .ps1) show and
+                             hide the whole panel for the lifetime of one Run All chain. The label is
+                             plain bold black text on the card's own white background, not part of the
+                             timer badge itself; only the value gets the green, rounded-corner badge
+                             treatment (matching the Button style's own CornerRadius, and the same green
+                             used for a completed step's Button.Background). -->
+                        <StackPanel x:Name="OverallRecoveryTimePanel" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,4,4,0" Panel.ZIndex="1" Visibility="Collapsed">
+                            <TextBlock Text="Overall Recovery Time" FontWeight="Bold" Foreground="Black" VerticalAlignment="Center" Margin="0,0,6,0" />
+                            <Border Background="Green" CornerRadius="3" Padding="8,3">
+                                <TextBlock x:Name="OverallRecoveryTimeTextBlock" Text="00:00:00" FontFamily="Consolas" FontWeight="Bold" Foreground="White" VerticalAlignment="Center" />
+                            </Border>
+                        </StackPanel>
+                        <TabControl x:Name="ConsoleTabControl" Background="Transparent" BorderThickness="0" Margin="0,-8,0,0" />
+                    </Grid>
+                </GroupBox>
+                <!-- Runs every message that used to be the single-line, overwritten StatusTextBlock
+                     (formerly sitting inside Data Source) - see New-Advisory in the .ps1. A plain
+                     multi-line, read-only TextBox rather than a TextBlock+ScrollViewer: it gets a
+                     working, independently-scrollable vertical scrollbar for free, entirely separate
+                     from the Console pane's own native console window/scrolling above - the two
+                     never interact. Height is sized for roughly 5 lines at the shared TextBox style's
+                     default font/padding; VerticalScrollBarVisibility="Auto" only shows the bar once
+                     there's actually more history than that to scroll through. -->
+                <GroupBox Grid.Row="1" Header="Advisories" Margin="0,12,0,0" Padding="10,10,10,10">
+                    <TextBox x:Name="AdvisoriesTextBox" IsReadOnly="True" IsReadOnlyCaretVisible="True" TextWrapping="Wrap" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Height="100" Foreground="#C0392B" />
+                </GroupBox>
+            </Grid>
         </Grid>
     </Grid>
 </Window>
