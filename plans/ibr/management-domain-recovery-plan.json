@@ -180,7 +180,7 @@
   {
     "description": "",
     "commandLine": "Watch-NsxHostTransportNodeInstallation -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile",
-    "displayName": "Monitor Nsx Host Transport Node Installation",
+    "displayName": "Monitor NSX Host Transport Node Installation",
     "condition": [],
     "threadId": "",
     "interactive": false,
