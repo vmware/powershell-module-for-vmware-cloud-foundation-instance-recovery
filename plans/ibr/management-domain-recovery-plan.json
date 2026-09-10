@@ -112,7 +112,7 @@
     ],
     "threadId": "",
     "interactive": false,
-    "visible": true
+    "visible": false
   },
   {
     "description": "Record the Cluster Settings from the Restored vCenter",
