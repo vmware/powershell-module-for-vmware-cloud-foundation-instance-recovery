@@ -4302,7 +4302,7 @@ Function New-RebuiltVsanDatastore {
                             $cacheDiskCanonicalName = (($disksDisplayObject | Where-Object { $_.id -eq $diskGroupConfiguration[$diskGroupConfigurationIndex].cacheDiskID }).canonicalName)
                             $capacityDiskCanonicalNames = (($disksDisplayObject | Where-Object { $_.id -in $diskGroupConfiguration[$diskGroupConfigurationIndex].capacityDiskIDs }).canonicalName)
                             & $moduleFunctions { LogMessage -type INFO -message "[$($vmhost.name)] Creating VSAN Disk Group $i" }
-                            New-VsanDiskGroup -VMHost $vmhost -SsdCanonicalName $cacheDiskCanonicalName -DataDiskCanonicalName $capacityDiskCanonicalNames | Out-Null
+                            New-VsanDiskGroup -VMHost $vmhost -SsdCanonicalName $cacheDiskCanonicalName -DataDiskCanonicalName $capacityDiskCanonicalNames -runAsync | Out-Null
                         }
                         Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
                     }
@@ -4614,7 +4614,7 @@ Function Add-DiskgroupsToManagementHosts {
                     }
 
                     LogMessage -type INFO -message "[$($vmHost.Name)] Creating vSAN OSA Disk Group $i (cache: $cacheDiskCanonicalName)"
-                    New-VsanDiskGroup -VMHost $vmHost -SsdCanonicalName $cacheDiskCanonicalName -DataDiskCanonicalName $capacityDiskCanonicalNames | Out-Null
+                    New-VsanDiskGroup -VMHost $vmHost -SsdCanonicalName $cacheDiskCanonicalName -DataDiskCanonicalName $capacityDiskCanonicalNames -runAsync | Out-Null
                 }
             }
         } Else {
@@ -4648,7 +4648,7 @@ Function Add-DiskgroupsToManagementHosts {
                         }
 
                         & $moduleFunctions { LogMessage -type INFO -message "[$($vmhost.Name)] Creating vSAN OSA Disk Group $i (cache: $cacheDiskCanonicalName)" }
-                        New-VsanDiskGroup -VMHost $vmhost -SsdCanonicalName $cacheDiskCanonicalName -DataDiskCanonicalName $capacityDiskCanonicalNames | Out-Null
+                        New-VsanDiskGroup -VMHost $vmhost -SsdCanonicalName $cacheDiskCanonicalName -DataDiskCanonicalName $capacityDiskCanonicalNames -runAsync | Out-Null
                     }
                     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
                 }
