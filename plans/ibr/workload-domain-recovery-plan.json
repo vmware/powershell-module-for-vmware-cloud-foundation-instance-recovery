@@ -225,15 +225,6 @@
   },
   {
     "description": "",
-    "commandLine": "Resolve-PhysicalHostServiceAccounts -targetFQDN $restoredVcenterFqdn -targetAdmin $restoredVcenterAdmin -targetAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -svcAccountPassword $svcAccountPassword -sddcManagerFqdn $sddcManagerFqdn -sddcManagerAdmin $sddcManagerAdmin -sddcManagerAdminPassword $sddcManagerAdminPassword",
-    "displayName": "Resolve Physical Host Service Accounts",
-    "condition": [],
-    "threadId": "",
-    "interactive": false,
-    "visible": true
-  },
-  {
-    "description": "",
     "commandLine": "Invoke-SddcManagerSSHKeyRefresh -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -clusterName $clusterName -workloadDomain $workloadDomain -VcfUserPassword $VcfUserPassword",
     "displayName": "Invoke SDDC Manager SSHKey Refresh",
     "condition": [],
@@ -254,6 +245,15 @@
     "description": "",
     "commandLine": "Update-ClusterHostSourceIDs -extractedSDDCDataFile $extractedSDDCDataFile -vCenterFqdn $vCenterFqdn -clusterName $clusterName -VcfUserPassword $VcfUserPassword -RootPassword $RootPassword -autoConfirm",
     "displayName": "Update Cluster Host Source IDs",
+    "condition": [],
+    "threadId": "",
+    "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "",
+    "commandLine": "Resolve-PhysicalHostServiceAccounts -targetFQDN $restoredVcenterFqdn -targetAdmin $restoredVcenterAdmin -targetAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -svcAccountPassword $svcAccountPassword -sddcManagerFqdn $sddcManagerFqdn -sddcManagerAdmin $sddcManagerAdmin -sddcManagerAdminPassword $sddcManagerAdminPassword",
+    "displayName": "Resolve Physical Host Service Accounts",
     "condition": [],
     "threadId": "",
     "interactive": false,
