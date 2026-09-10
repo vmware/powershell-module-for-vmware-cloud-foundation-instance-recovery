@@ -47,7 +47,7 @@
   {
     "description": "",
     "commandLine": "New-NSXManagerOvaDeployment -targetType $targetType -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -restoredNsxManagerDeploymentSize $restoredNsxManagerDeploymentSize -nsxManagerOvaFile $nsxManagerOvaFile",
-    "displayName": "NSX Manager OVA Deployment",
+    "displayName": "First NSX Manager OVA Deployment",
     "condition": [],
     "threadId": "3",
     "interactive": true,
@@ -209,7 +209,7 @@
     "condition": [
       {
         "type": "dataPath",
-        "path": "selectedCluster.isStretched",
+        "path": "selectedCluster.isStretchedseec",
         "operator": "eq",
         "value": "t"
       }
@@ -265,9 +265,57 @@
   },
   {
     "description": "",
-    "commandLine": "Invoke-SddcManagerSSHKeyRefresh -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -clusterName $clusterName -workloadDomain $workloadDomain -VcfUserPassword $VcfUserPassword",
-    "displayName": "Invoke SDDC Manager SSHKey Refresh",
+    "commandLine": "Invoke-NSXEdgeClusterRecoverySelective -nsxManagerFqdn $restoredNsxManagerFqdn -nsxManagerAdmin $restoredNsxManagerAdmin -nsxManagerAdminPassword $restoredNsxManagerAdminPassword -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredvCenterAdmin -vCenterAdminPassword $restoredvCenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile -monitor",
+    "displayName": "Invoke NSX Edge Cluster Recovery Selective",
     "condition": [],
+    "threadId": "",
+    "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "",
+    "commandLine": "New-NSXManagerOvaDeployment -targetType $targetType -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -restoredNsxManagerDeploymentSize $restoredNsxManagerDeploymentSize -nsxManagerOvaFile $nsxManagerOvaFile",
+    "displayName": "Second NSX Manager OVA Deployment",
+    "condition": [
+      {
+        "type": "dataPath",
+        "path": "selectedDomain.nsxNodeDetails.count",
+        "operator": "ne",
+        "value": "1"
+      }
+    ],
+    "threadId": "2",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "",
+    "commandLine": "New-NSXManagerOvaDeployment -targetType $targetType -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -restoredNsxManagerDeploymentSize $restoredNsxManagerDeploymentSize -nsxManagerOvaFile $nsxManagerOvaFile",
+    "displayName": "Third NSX Manager OVA Deployment",
+    "condition": [
+      {
+        "type": "dataPath",
+        "path": "selectedDomain.nsxNodeDetails.count",
+        "operator": "ne",
+        "value": "1"
+      }
+    ],
+    "threadId": "3",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "",
+    "commandLine": "Add-AdditionalNSXManagers -workloadDomain $workloadDomain -extractedSDDCDataFile $extractedSDDCDataFile",
+    "displayName": "Add NSX Managers to Cluster",
+    "condition": [
+      {
+        "type": "dataPath",
+        "path": "selectedDomain.nsxNodeDetails.count",
+        "operator": "ne",
+        "value": "1"
+      }
+    ],
     "threadId": "",
     "interactive": false,
     "visible": true
@@ -283,8 +331,8 @@
   },
   {
     "description": "",
-    "commandLine": "Invoke-NSXEdgeClusterRecoverySelective -nsxManagerFqdn $restoredNsxManagerFqdn -nsxManagerAdmin $restoredNsxManagerAdmin -nsxManagerAdminPassword $restoredNsxManagerAdminPassword -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredvCenterAdmin -vCenterAdminPassword $restoredvCenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile -monitor",
-    "displayName": "Invoke NSX Edge Cluster Recovery Selective",
+    "commandLine": "Invoke-SddcManagerSSHKeyRefresh -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -clusterName $clusterName -workloadDomain $workloadDomain -VcfUserPassword $VcfUserPassword",
+    "displayName": "Invoke SDDC Manager SSHKey Refresh",
     "condition": [],
     "threadId": "",
     "interactive": false,
