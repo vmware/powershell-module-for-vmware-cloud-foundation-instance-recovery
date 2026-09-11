@@ -10921,7 +10921,7 @@ Function Get-ServicesRuntimeComponentBackups {
         [Parameter(Mandatory = $true)][String] $ServicesRuntimeFqdn,
         [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
         [Parameter(Mandatory = $false)][String] $ServicesRuntimeUsername = "admin@vsp.local",
-        [Parameter(Mandatory = $false)][ValidateSet("vsp", "vcf-fleet-lcm", "vcf-fleet-depot", "vcf-sddc-lcm", "salt", "salt-raas", "vidb", "ops-logs", "vcfms-metrics-store", "vcf-obs-data-platform", "telemetry-acceptor", "vcfa")][String[]] $Components,
+        [Parameter(Mandatory = $false)][ValidateSet("vsp", "vcf-fleet-lcm", "vcf-fleet-depot", "vcf-sddc-lcm", "salt", "salt-raas", "vidb", "ops-logs", "vcfms-metrics-store", "vcf-obs-data-platform", "telemetry-acceptor", "vcfa", "vcd-migrator")][String[]] $Components,
         [Parameter(Mandatory = $false)][ValidateSet("vcfms", "vcfa", "opsLogs")][String] $Type,
         [Parameter(Mandatory = $false)][String] $VspId
     )
@@ -10944,7 +10944,7 @@ Function Get-ServicesRuntimeComponentBackups {
         $resolvedComponents = $Components
     } elseif ($PSBoundParameters.ContainsKey('Type')) {
         if ($Type -eq 'vcfms') {
-            $resolvedComponents = @("vsp", "vcf-fleet-lcm", "vcf-fleet-depot", "vcf-sddc-lcm", "salt", "salt-raas", "vidb", "vcfms-metrics-store", "vcf-obs-data-platform", "telemetry-acceptor")
+            $resolvedComponents = @("vsp", "vcf-fleet-lcm", "vcf-fleet-depot", "vcf-sddc-lcm", "salt", "salt-raas", "vidb", "vcfms-metrics-store", "vcf-obs-data-platform")
         } elseif ($Type -eq 'vcfa') {
             $resolvedComponents = @("vsp", "vcfa", "vcd-migrator")
         } elseif ($Type -eq 'opsLogs') {
