@@ -205,38 +205,34 @@ $global:fleetComponentsGroup = @{
     ParallelCheckBox         = $runAllFleetComponentsParallelCheckBox
     VariablesStepsTabControl = $fleetComponentsVariablesStepsTabControl
 }
-# Facts about the currently selected domain's default cluster or the currently selected additional
-# cluster (isStretched, primaryDatastoreType -- see Update-DerivedStepVariables) that a plan's own
-# condition can reference (e.g. "$isStretched -eq 't'") without asking the operator to type in
-# something the extracted SDDC data already knows. Merged into the answer values before conditions
-# are evaluated and before the Variables tab is built, so a referenced fact shows up pre-filled --
-# still an ordinary editable row, in case the extracted value is ever wrong or needs overriding.
-$global:derivedStepVariables = @{}
 # Variables the UI owns outright, so the operator never types them and they are never rendered as
 # editable rows: $extractedSDDCDataFile comes from the Data Source selection (pushed by
 # Set-ExportedSDDCDataFilePath), and $workloadDomain/$clusterName from the domain/additional-cluster
-# selection (pushed by Set-SelectedRecoveryTarget). Filtered out of every answers file this app generates AND out of every
-# one it loads, and Import-RecoveryVariables skips both names too -- together that means a stale
-# answers file can never quietly point a step at a different cluster or data file than the one
-# currently selected on screen. Deliberately NOT handled via $global:derivedStepVariables: that
-# mechanism produces a pre-filled but still-editable row, which for these two would be a control that
-# looks authoritative while the console ignores whatever is typed into it.
+# selection (pushed by Set-SelectedRecoveryTarget). Filtered out of every answers file this app
+# generates AND out of every one it loads, and Import-RecoveryVariables skips all three names too --
+# together that means a stale answers file can never quietly point a step at a different cluster or
+# data file than the one currently selected on screen.
+#
+# Facts a "dataPath" condition reads (isStretched, primaryDatastoreType, nsxNodeDetails.count) are
+# NOT in this list and do not need to be: they never become variables at all, because
+# Get-StepReferenceText no longer synthesizes a name for a dataPath condition. They are resolved
+# straight out of $global:conditionDataContext below.
 $script:selectionDrivenVariables = @('extractedSDDCDataFile', 'workloadDomain', 'clusterName')
 # The live "selectedDomain"/"selectedCluster" data a "dataPath" condition (see Test-DataPathCondition)
-# can walk into generically, e.g. "selectedCluster.isStretched" -- set alongside
-# $global:derivedStepVariables at the same two places (Sync-DomainSteps/Sync-AdditionalClusterSteps),
-# with the same reset points, but exposing the WHOLE selected object rather than a hand-picked pair of
-# scalars, so a new plan condition can reference a fact nobody thought to wire into
-# $global:derivedStepVariables ahead of time. Both source shapes (raw domain-cluster JSON, camelCase;
-# the synthesized additional-cluster summary object, PascalCase) are normalized into one consistent
-# camelCase "selectedCluster" shape here so a dataPath expression works the same regardless of scope.
+# walks into generically, e.g. "selectedCluster.isStretched" -- set in Sync-DomainSteps/
+# Sync-AdditionalClusterSteps, exposing the WHOLE selected object so a new plan condition can
+# reference a fact nobody wired in ahead of time. This is the ONLY source for such facts: they are
+# read from the selection, never supplied or overridden by the operator. Both source shapes (raw
+# domain-cluster JSON, camelCase; the synthesized additional-cluster summary object, PascalCase) are
+# normalized into one consistent camelCase "selectedCluster" shape so a dataPath expression works the
+# same regardless of scope.
 $global:conditionDataContext = @{}
 # Run-scoped ledger a "stepStatus" condition (see Test-StepStatusGate) reads to gate whether a step
 # actually executes, keyed by each step's own optional "id" -- 'Success'/'Failed'/'Skipped', stamped
 # by Start-StepCompletionWatcher/Invoke-Step as steps actually run; a step id that hasn't run yet this
 # selection reads as 'NotRun'. Deliberately mirrors Button.Content's own persistence -- nothing resets
 # it on its own timer, only the same "a fresh domain/cluster selection starts over" points that already
-# reset $global:derivedStepVariables/$global:conditionDataContext (plus, unlike those two, an explicit
+# reset $global:conditionDataContext (plus, unlike that one, an explicit
 # unconditional clear at the TOP of Sync-DomainSteps/Sync-AdditionalClusterSteps -- a step id is only
 # unique within one plan file, and the very same plan is legitimately re-run against a different
 # domain/cluster later in the same session, which must not see stale status from the previous one).
@@ -547,10 +543,14 @@ function Get-StepReferenceText([object[]]$Steps) {
     foreach ($step in $Steps) {
         $lines.Add($step.CommandLine)
         foreach ($condition in $step.Condition) {
+            # Only "variable" conditions contribute a name. A "dataPath" condition deliberately does
+            # NOT: its value is read exclusively from the selected domain/cluster in the extracted
+            # SDDC data (see Test-DataPathCondition/$global:conditionDataContext), so it is never an
+            # operator input. Synthesizing a name for it used to surface facts like isStretched/
+            # primaryDatastoreType/count as editable Variables-tab rows AND save them into the
+            # answers file -- values defined by a UI selection, presented as if typed by hand.
             if ($condition.type -eq 'variable') {
                 $lines.Add('$' + [string]$condition.name)
-            } elseif ($condition.type -eq 'dataPath') {
-                $lines.Add('$' + (([string]$condition.path) -split '\.')[-1])
             }
         }
     }
@@ -590,9 +590,9 @@ function Set-PlanStepsListBox([System.Windows.Controls.ListBox]$ListBox, [object
     return $rows
 }
 
-# Maps a cluster's raw primaryDatastoreType (as recorded in the extracted SDDC data, and used
-# verbatim in plan conditions like "$primaryDatastoreType -eq 'VSAN'" -- see
-# Update-DerivedStepVariables) to a human-friendly label for display only. The raw value itself is
+# Maps a cluster's raw primaryDatastoreType (as recorded in the extracted SDDC data, and matched
+# verbatim by a dataPath condition on "selectedCluster.primaryDatastoreType" -- see
+# $global:conditionDataContext) to a human-friendly label for display only. The raw value itself is
 # never touched, so conditions keep matching the real extracted data regardless of this mapping. An
 # unrecognized type passes through unchanged rather than disappearing.
 function Get-DisplayDatastoreType([string]$RawType) {
@@ -2062,7 +2062,6 @@ function Import-ExtractedSddcDataFile([string]$Path) {
     $global:domainRecoverySteps = @()
     $global:additionalClusterRecoverySteps = @()
     $global:allSteps = @()
-    $global:derivedStepVariables = @{}
     $global:conditionDataContext = @{}
     $global:stepRunStatus = @{}
 
@@ -2169,10 +2168,8 @@ $fdrRecoveryTypeRadio.Add_Checked({
             $group.StepRows = @()
             $group.AnswersFilePath = $null
         }
-        # A pre-existing gap for $global:derivedStepVariables too (harmless before now, since no FDR
-        # plan referenced either fact) -- closed here since stale $global:stepRunStatus surviving an
-        # IBR-to-FDR switch would be a real correctness concern, not just a latent one.
-        $global:derivedStepVariables = @{}
+        # Cleared on an IBR-to-FDR switch because stale $global:stepRunStatus surviving it would be a
+        # real correctness concern, not just a latent one.
         $global:conditionDataContext = @{}
         $global:stepRunStatus = @{}
         Set-ActiveStepsVariablesPane $stepsVariablesTabControl
@@ -2207,7 +2204,6 @@ $extractRadio.Add_Checked({
         $global:domainRecoverySteps = @()
         $global:additionalClusterRecoverySteps = @()
         $global:allSteps = @()
-        $global:derivedStepVariables = @{}
         $global:conditionDataContext = @{}
         $global:stepRunStatus = @{}
     })
@@ -2293,16 +2289,6 @@ function Import-VariablesAnswersFile([string]$Path) {
         # $script:selectionDrivenVariables.
         foreach ($ownedName in $script:selectionDrivenVariables) { $answerMap.Remove($ownedName) }
 
-        # Facts the extracted SDDC data already knows (isStretched, primaryDatastoreType -- see
-        # Update-DerivedStepVariables/Sync-DomainSteps/Sync-AdditionalClusterSteps) fill in any of
-        # these names the answer file doesn't already define -- an explicit value in the answer file
-        # always wins, since that's an intentional operator override.
-        foreach ($name in $global:derivedStepVariables.Keys) {
-            if (-not $answerMap.Contains($name)) {
-                $answerMap[$name] = [string]$global:derivedStepVariables[$name]
-            }
-        }
-
         $variablesItemsPanel.Children.Clear()
 
         if ($answerMap.Count -eq 0) {
@@ -2381,13 +2367,9 @@ function New-VariablesFile([string]$Path) {
         return
     }
 
-    # Facts the extracted SDDC data already knows (isStretched, primaryDatastoreType) start pre-filled
-    # from $global:derivedStepVariables rather than blank -- same override precedence as
-    # Import-VariablesAnswersFile: still an ordinary editable row, just not empty when there's no
-    # real reason to make someone retype something already known.
     $values = [ordered]@{}
     foreach ($name in $variableNames) {
-        $values[$name] = if ($global:derivedStepVariables.Contains($name)) { [string]$global:derivedStepVariables[$name] } else { '' }
+        $values[$name] = ''
     }
     $values | ConvertTo-Json | Set-Content -LiteralPath $Path -Encoding utf8
 
@@ -2606,12 +2588,6 @@ function Import-GroupVariablesAnswersFile($Group, [string]$Path) {
         }
         foreach ($ownedName in $script:selectionDrivenVariables) { $answerMap.Remove($ownedName) }
 
-        foreach ($name in $global:derivedStepVariables.Keys) {
-            if (-not $answerMap.Contains($name)) {
-                $answerMap[$name] = [string]$global:derivedStepVariables[$name]
-            }
-        }
-
         $Group.VariablesItemsPanel.Children.Clear()
 
         if ($answerMap.Count -eq 0) {
@@ -2666,7 +2642,7 @@ function New-GroupVariablesFile($Group, [string]$Path) {
 
     $values = [ordered]@{}
     foreach ($name in $variableNames) {
-        $values[$name] = if ($global:derivedStepVariables.Contains($name)) { [string]$global:derivedStepVariables[$name] } else { '' }
+        $values[$name] = ''
     }
     $values | ConvertTo-Json | Set-Content -LiteralPath $Path -Encoding utf8
 
@@ -2784,10 +2760,6 @@ function Sync-DomainSteps {
         # domain types (and both MANAGEMENT groups): Instance Components' own condition (e.g.
         # "$isStretched -eq 't'") needs exactly the same derived facts a VI domain's plan does.
         $defaultCluster = $selected.Tag.vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' } | Select-Object -First 1
-        $global:derivedStepVariables = @{
-            isStretched          = [string]$defaultCluster.isStretched
-            primaryDatastoreType = [string]$defaultCluster.primaryDatastoreType
-        }
         # Normalized (camelCase) so a "dataPath" condition (e.g. "selectedCluster.isStretched")
         # resolves identically here and in Sync-AdditionalClusterSteps, regardless of which raw shape
         # the underlying data actually came in.
@@ -2809,7 +2781,6 @@ function Sync-DomainSteps {
     } else {
         $domainRecoveryPanel.Visibility = [System.Windows.Visibility]::Collapsed
         Set-ActiveStepsVariablesPane $stepsVariablesTabControl
-        $global:derivedStepVariables = @{}
         $global:conditionDataContext = @{}
     }
 
@@ -2858,10 +2829,6 @@ function Sync-AdditionalClusterSteps {
         # See the matching comment in Sync-DomainSteps -- $selected.Tag here is the cluster
         # PSCustomObject built in Import-ExtractedSddcDataFile, not a raw domain object, so no
         # isDefault lookup is needed: this row already IS the one cluster in question.
-        $global:derivedStepVariables = @{
-            isStretched          = [string]$selected.Tag.IsStretched
-            primaryDatastoreType = [string]$selected.Tag.PrimaryDatastoreType
-        }
         # Normalized to the same camelCase shape Sync-DomainSteps builds -- the synthesized
         # additional-cluster summary object (built in Import-ExtractedSddcDataFile) uses PascalCase
         # property names, which would otherwise make a "dataPath" condition's path depend on which
@@ -2885,7 +2852,6 @@ function Sync-AdditionalClusterSteps {
         Set-SelectedTargetInConsole ([string]$selected.Tag.DomainName) ([string]$selected.Tag.ClusterName)
     } else {
         $additionalClusterRecoveryPanel.Visibility = [System.Windows.Visibility]::Collapsed
-        $global:derivedStepVariables = @{}
         $global:conditionDataContext = @{}
     }
 
