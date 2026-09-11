@@ -439,7 +439,50 @@
                                 </ScrollViewer>
                             </DockPanel>
                         </TabItem>
-                        <TabItem Header="Steps">
+                        <TabItem Header="Recovery Plan">
+                            <!-- Plain Visibility-toggled siblings, not tabs; see the matching comment on
+                                 the Manual Steps TabItem below for why (same reasoning, split across both
+                                 tabs now instead of one). Each panel here is the READ-ONLY, Run-All-driven
+                                 view of the exact same steps Manual Steps shows interactively: every row's
+                                 button starts as a disabled, grey "Pending" placeholder (see New-StepRow's
+                                 -ReadOnly variant) and is updated to Running/Done/Failed/Skipped by the very
+                                 same Invoke-Step/Add-StepWatch code that drives Manual Steps' own buttons;
+                                 both are just two Button references on one underlying row object (see
+                                 New-StepRow's PlanButton/ManualButton), always kept in sync regardless of
+                                 which tab (or Run All) actually triggered the change. -->
+                            <Grid Margin="0,8,0,0">
+                                <DockPanel x:Name="DomainRecoveryPlanPanel" Visibility="Collapsed">
+                                    <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="0,0,0,8">
+                                        <Button x:Name="RunAllDomainRecoveryButton" Content="Run All" HorizontalAlignment="Left" />
+                                        <CheckBox x:Name="RunAllDomainRecoveryParallelCheckBox" Content="Run tasks using multiple threads (indicated by numbered circles)" IsChecked="True" VerticalAlignment="Center" Margin="12,0,0,0" />
+                                    </DockPanel>
+                                    <ListBox x:Name="DomainRecoveryPlanStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
+                                </DockPanel>
+                                <!-- Populated by selecting a row in Discovered Infrastructure's Additional
+                                     Clusters tab (plans/ibr/additional-cluster-recovery-plan.json). Mutually
+                                     exclusive with the domain panel above, per the comment there. IBR-only;
+                                     also collapsed for FDR the same way as the other two. -->
+                                <DockPanel x:Name="AdditionalClusterRecoveryPlanPanel" Visibility="Collapsed">
+                                    <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="0,0,0,8">
+                                        <Button x:Name="RunAllAdditionalClusterRecoveryButton" Content="Run All" HorizontalAlignment="Left" />
+                                        <CheckBox x:Name="RunAllAdditionalClusterRecoveryParallelCheckBox" Content="Run parallel tasks using multiple threads (numbered circles)" IsChecked="True" VerticalAlignment="Center" Margin="12,0,0,0" />
+                                    </DockPanel>
+                                    <ListBox x:Name="AdditionalClusterRecoveryPlanStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
+                                </DockPanel>
+                                <!-- FDR's single whole-fleet plan (plans/fdr/fdr-failover-plan.json), loaded as soon
+                                     as FDR is selected, since there's no domain selection for it to wait on.
+                                     Collapsed by default; shown instead of the two panels above when FDR is
+                                     picked (see the .ps1's Recovery Type Checked handlers). -->
+                                <DockPanel x:Name="RecoverFleetPlanPanel" Visibility="Collapsed">
+                                    <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="0,0,0,8">
+                                        <Button x:Name="RunAllRecoverFleetButton" Content="Run All" HorizontalAlignment="Left" />
+                                        <CheckBox x:Name="RunAllRecoverFleetParallelCheckBox" Content="Run parallel tasks using multiple threads (numbered circles)" IsChecked="True" VerticalAlignment="Center" Margin="12,0,0,0" />
+                                    </DockPanel>
+                                    <ListBox x:Name="RecoverFleetPlanStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
+                                </DockPanel>
+                            </Grid>
+                        </TabItem>
+                        <TabItem Header="Manual Steps">
                             <!-- Plain Visibility-toggled siblings, not tabs. The management/workload domain
                                  restore and default-cluster-recovery plans are now concatenated into one
                                  combined plan each (management-domain-recovery-plan.json /
@@ -451,36 +494,27 @@
                                  Checked handlers in the .ps1 once something is actually selected. Stacking
                                  them in one plain Grid (rather than each getting its own row/cell) is what
                                  lets them overlap in place: only the one that's actually Visible takes up
-                                 any space or renders at all. -->
+                                 any space or renders at all. No Run All button or parallel checkbox here;
+                                 those live on Recovery Plan, since this tab is deliberately only ever
+                                 driven one row at a time, by hand. -->
                             <Grid Margin="0,8,0,0">
-                                <DockPanel x:Name="DomainRecoveryPanel" Visibility="Collapsed">
-                                    <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="0,0,0,8">
-                                        <Button x:Name="RunAllDomainRecoveryButton" Content="Run All" HorizontalAlignment="Left" />
-                                        <CheckBox x:Name="RunAllDomainRecoveryParallelCheckBox" Content="Run tasks using multiple threads (indicated by numbered circles)" IsChecked="True" VerticalAlignment="Center" Margin="12,0,0,0" />
-                                    </DockPanel>
-                                    <ListBox x:Name="DomainRecoveryStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
+                                <DockPanel x:Name="DomainRecoveryManualPanel" Visibility="Collapsed">
+                                    <Border DockPanel.Dock="Top" Background="#FFF3CD" BorderBrush="#E0A800" BorderThickness="1" CornerRadius="3" Padding="10,7" Margin="0,0,0,8">
+                                        <TextBlock TextWrapping="Wrap" FontWeight="SemiBold" Foreground="#664D03" Text="For advanced users. Steps here can be run individually, out of the plan's own order. Running a step out of sequence may leave the environment in an inconsistent state." />
+                                    </Border>
+                                    <ListBox x:Name="DomainRecoveryManualStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
                                 </DockPanel>
-                                <!-- Populated by selecting a row in Discovered Infrastructure's Additional
-                                     Clusters tab (plans/ibr/additional-cluster-recovery-plan.json). Mutually
-                                     exclusive with the domain panel above, per the comment there. IBR-only;
-                                     also collapsed for FDR the same way as the other two. -->
-                                <DockPanel x:Name="AdditionalClusterRecoveryPanel" Visibility="Collapsed">
-                                    <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="0,0,0,8">
-                                        <Button x:Name="RunAllAdditionalClusterRecoveryButton" Content="Run All" HorizontalAlignment="Left" />
-                                        <CheckBox x:Name="RunAllAdditionalClusterRecoveryParallelCheckBox" Content="Run parallel tasks using multiple threads (numbered circles)" IsChecked="True" VerticalAlignment="Center" Margin="12,0,0,0" />
-                                    </DockPanel>
-                                    <ListBox x:Name="AdditionalClusterRecoveryStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
+                                <DockPanel x:Name="AdditionalClusterRecoveryManualPanel" Visibility="Collapsed">
+                                    <Border DockPanel.Dock="Top" Background="#FFF3CD" BorderBrush="#E0A800" BorderThickness="1" CornerRadius="3" Padding="10,7" Margin="0,0,0,8">
+                                        <TextBlock TextWrapping="Wrap" FontWeight="SemiBold" Foreground="#664D03" Text="For advanced users. Steps here can be run individually, out of the plan's own order. Running a step out of sequence may leave the environment in an inconsistent state." />
+                                    </Border>
+                                    <ListBox x:Name="AdditionalClusterRecoveryManualStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
                                 </DockPanel>
-                                <!-- FDR's single whole-fleet plan (plans/fdr/fdr-failover-plan.json), loaded as soon
-                                     as FDR is selected, since there's no domain selection for it to wait on.
-                                     Collapsed by default; shown instead of the two panels above when FDR is
-                                     picked (see the .ps1's Recovery Type Checked handlers). -->
-                                <DockPanel x:Name="RecoverFleetPanel" Visibility="Collapsed">
-                                    <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="0,0,0,8">
-                                        <Button x:Name="RunAllRecoverFleetButton" Content="Run All" HorizontalAlignment="Left" />
-                                        <CheckBox x:Name="RunAllRecoverFleetParallelCheckBox" Content="Run parallel tasks using multiple threads (numbered circles)" IsChecked="True" VerticalAlignment="Center" Margin="12,0,0,0" />
-                                    </DockPanel>
-                                    <ListBox x:Name="RecoverFleetStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
+                                <DockPanel x:Name="RecoverFleetManualPanel" Visibility="Collapsed">
+                                    <Border DockPanel.Dock="Top" Background="#FFF3CD" BorderBrush="#E0A800" BorderThickness="1" CornerRadius="3" Padding="10,7" Margin="0,0,0,8">
+                                        <TextBlock TextWrapping="Wrap" FontWeight="SemiBold" Foreground="#664D03" Text="For advanced users. Steps here can be run individually, out of the plan's own order. Running a step out of sequence may leave the environment in an inconsistent state." />
+                                    </Border>
+                                    <ListBox x:Name="RecoverFleetManualStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
                                 </DockPanel>
                             </Grid>
                         </TabItem>
@@ -510,13 +544,21 @@
                                 </ScrollViewer>
                             </DockPanel>
                         </TabItem>
-                        <TabItem Header="Steps">
+                        <TabItem Header="Recovery Plan">
                             <DockPanel Margin="0,8,0,0">
                                 <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="0,0,0,8">
                                     <Button x:Name="RunAllInstanceComponentsButton" Content="Run All" HorizontalAlignment="Left" />
                                     <CheckBox x:Name="RunAllInstanceComponentsParallelCheckBox" Content="Run parallel tasks using multiple threads (numbered circles)" IsChecked="True" VerticalAlignment="Center" Margin="12,0,0,0" />
                                 </DockPanel>
-                                <ListBox x:Name="InstanceComponentsStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
+                                <ListBox x:Name="InstanceComponentsPlanStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
+                            </DockPanel>
+                        </TabItem>
+                        <TabItem Header="Manual Steps">
+                            <DockPanel Margin="0,8,0,0">
+                                <Border DockPanel.Dock="Top" Background="#FFF3CD" BorderBrush="#E0A800" BorderThickness="1" CornerRadius="3" Padding="10,7" Margin="0,0,0,8">
+                                    <TextBlock TextWrapping="Wrap" FontWeight="SemiBold" Foreground="#664D03" Text="For advanced users. Steps here can be run individually, out of the plan's own order. Running a step out of sequence may leave the environment in an inconsistent state." />
+                                </Border>
+                                <ListBox x:Name="InstanceComponentsManualStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
                             </DockPanel>
                         </TabItem>
                     </TabControl>
@@ -533,7 +575,7 @@
                                 </ScrollViewer>
                             </DockPanel>
                         </TabItem>
-                        <TabItem Header="Steps">
+                        <TabItem Header="Recovery Plan">
                             <DockPanel Margin="0,8,0,0">
                                 <!-- WrapPanel, not DockPanel: this row lives in the narrow 3* Recovery Tasks
                                      column, so all three controls only fit on one line on a wide display. A
@@ -546,7 +588,15 @@
                                     <CheckBox x:Name="RunAllFleetComponentsParallelCheckBox" Content="Run parallel tasks using multiple threads (numbered circles)" IsChecked="True" VerticalAlignment="Center" Margin="12,0,0,0" />
                                     <CheckBox x:Name="OriginalVcfInstallerAvailableCheckBox" Content="Original VCF Installer Available" IsChecked="True" VerticalAlignment="Center" Margin="12,0,0,0" />
                                 </WrapPanel>
-                                <ListBox x:Name="FleetComponentsStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
+                                <ListBox x:Name="FleetComponentsPlanStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
+                            </DockPanel>
+                        </TabItem>
+                        <TabItem Header="Manual Steps">
+                            <DockPanel Margin="0,8,0,0">
+                                <Border DockPanel.Dock="Top" Background="#FFF3CD" BorderBrush="#E0A800" BorderThickness="1" CornerRadius="3" Padding="10,7" Margin="0,0,0,8">
+                                    <TextBlock TextWrapping="Wrap" FontWeight="SemiBold" Foreground="#664D03" Text="For advanced users. Steps here can be run individually, out of the plan's own order. Running a step out of sequence may leave the environment in an inconsistent state." />
+                                </Border>
+                                <ListBox x:Name="FleetComponentsManualStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
                             </DockPanel>
                         </TabItem>
                     </TabControl>

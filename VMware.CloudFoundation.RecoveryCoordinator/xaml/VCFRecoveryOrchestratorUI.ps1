@@ -94,12 +94,29 @@ $domainsListBox = $window.FindName('WorkloadDomainsListBox')
 $additionalClustersListBox = $window.FindName('AdditionalClustersListBox')
 $stepsVariablesGroupBox = $window.FindName('StepsVariablesGroupBox')
 $stepsVariablesTabControl = $window.FindName('StepsVariablesTabControl')
-$domainRecoveryPanel = $window.FindName('DomainRecoveryPanel')
-$additionalClusterRecoveryPanel = $window.FindName('AdditionalClusterRecoveryPanel')
-$recoverFleetPanel = $window.FindName('RecoverFleetPanel')
-$domainRecoveryStepsListBox = $window.FindName('DomainRecoveryStepsListBox')
-$additionalClusterRecoveryStepsListBox = $window.FindName('AdditionalClusterRecoveryStepsListBox')
-$recoverFleetStepsListBox = $window.FindName('RecoverFleetStepsListBox')
+# Each of these three (Domain Recovery/Additional Cluster Recovery/Recover Fleet) now has TWO
+# panels, not one: …PlanPanel under the Recovery Plan tab (Run All/checkbox + read-only,
+# Run-All-driven buttons) and …ManualPanel under Manual Steps (no Run All, individually-clickable
+# buttons). Both panels of a pair are always shown/hidden together -- see
+# Set-DomainRecoveryPanelsVisibility/Set-AdditionalClusterRecoveryPanelsVisibility/
+# Set-RecoverFleetPanelsVisibility.
+$domainRecoveryPlanPanel = $window.FindName('DomainRecoveryPlanPanel')
+$domainRecoveryManualPanel = $window.FindName('DomainRecoveryManualPanel')
+$additionalClusterRecoveryPlanPanel = $window.FindName('AdditionalClusterRecoveryPlanPanel')
+$additionalClusterRecoveryManualPanel = $window.FindName('AdditionalClusterRecoveryManualPanel')
+$recoverFleetPlanPanel = $window.FindName('RecoverFleetPlanPanel')
+$recoverFleetManualPanel = $window.FindName('RecoverFleetManualPanel')
+# …PlanStepsListBox (Recovery Plan tab) holds read-only rows driven by Run All;
+# …ManualStepsListBox (Manual Steps tab) holds the same steps with real, individually-clickable Run
+# buttons. Both are populated together by Set-PlanStepsListBox from the same $rows -- see
+# New-StepRow's PlanButton/ManualButton for how one logical step ends up with two Button references
+# that are always kept in sync.
+$domainRecoveryPlanStepsListBox = $window.FindName('DomainRecoveryPlanStepsListBox')
+$domainRecoveryManualStepsListBox = $window.FindName('DomainRecoveryManualStepsListBox')
+$additionalClusterRecoveryPlanStepsListBox = $window.FindName('AdditionalClusterRecoveryPlanStepsListBox')
+$additionalClusterRecoveryManualStepsListBox = $window.FindName('AdditionalClusterRecoveryManualStepsListBox')
+$recoverFleetPlanStepsListBox = $window.FindName('RecoverFleetPlanStepsListBox')
+$recoverFleetManualStepsListBox = $window.FindName('RecoverFleetManualStepsListBox')
 $runAllDomainRecoveryButton = $window.FindName('RunAllDomainRecoveryButton')
 $runAllAdditionalClusterRecoveryButton = $window.FindName('RunAllAdditionalClusterRecoveryButton')
 $runAllRecoverFleetButton = $window.FindName('RunAllRecoverFleetButton')
@@ -129,14 +146,16 @@ $instanceComponentsLoadedVariablesTextBlock = $window.FindName('InstanceComponen
 $instanceComponentsVariablesItemsPanel = $window.FindName('InstanceComponentsVariablesItemsPanel')
 $runAllInstanceComponentsButton = $window.FindName('RunAllInstanceComponentsButton')
 $runAllInstanceComponentsParallelCheckBox = $window.FindName('RunAllInstanceComponentsParallelCheckBox')
-$instanceComponentsStepsListBox = $window.FindName('InstanceComponentsStepsListBox')
+$instanceComponentsPlanStepsListBox = $window.FindName('InstanceComponentsPlanStepsListBox')
+$instanceComponentsManualStepsListBox = $window.FindName('InstanceComponentsManualStepsListBox')
 $fleetComponentsLoadVariablesButton = $window.FindName('FleetComponentsLoadVariablesButton')
 $fleetComponentsNewVariablesFileButton = $window.FindName('FleetComponentsNewVariablesFileButton')
 $fleetComponentsLoadedVariablesTextBlock = $window.FindName('FleetComponentsLoadedVariablesTextBlock')
 $fleetComponentsVariablesItemsPanel = $window.FindName('FleetComponentsVariablesItemsPanel')
 $runAllFleetComponentsButton = $window.FindName('RunAllFleetComponentsButton')
 $runAllFleetComponentsParallelCheckBox = $window.FindName('RunAllFleetComponentsParallelCheckBox')
-$fleetComponentsStepsListBox = $window.FindName('FleetComponentsStepsListBox')
+$fleetComponentsPlanStepsListBox = $window.FindName('FleetComponentsPlanStepsListBox')
+$fleetComponentsManualStepsListBox = $window.FindName('FleetComponentsManualStepsListBox')
 $originalVcfInstallerAvailableCheckBox = $window.FindName('OriginalVcfInstallerAvailableCheckBox')
 
 # Posts $Message to the Advisories pane (below the Console pane) -- the single place every status/
@@ -211,7 +230,8 @@ $global:instanceComponentsGroup = @{
     StepRows                 = @()
     AnswersFilePath          = $null
     AnswerMap                = $null
-    StepsListBox             = $instanceComponentsStepsListBox
+    StepsListBox             = $instanceComponentsPlanStepsListBox
+    ManualStepsListBox       = $instanceComponentsManualStepsListBox
     VariablesItemsPanel      = $instanceComponentsVariablesItemsPanel
     LoadedVariablesText      = $instanceComponentsLoadedVariablesTextBlock
     RunAllButton             = $runAllInstanceComponentsButton
@@ -223,7 +243,8 @@ $global:fleetComponentsGroup = @{
     StepRows                 = @()
     AnswersFilePath          = $null
     AnswerMap                = $null
-    StepsListBox             = $fleetComponentsStepsListBox
+    StepsListBox             = $fleetComponentsPlanStepsListBox
+    ManualStepsListBox       = $fleetComponentsManualStepsListBox
     VariablesItemsPanel      = $fleetComponentsVariablesItemsPanel
     LoadedVariablesText      = $fleetComponentsLoadedVariablesTextBlock
     RunAllButton             = $runAllFleetComponentsButton
@@ -595,8 +616,15 @@ function Get-StepReferenceText([object[]]$Steps) {
 # Cluster) -- clears whatever rows it showed before (a stale row from a previous plan/domain must
 # never survive into a new selection) and returns the fresh row objects so Run All can replay them.
 # $Steps is expected to already be condition-filtered (see Get-ApplicableSteps) -- this only renders.
-function Set-PlanStepsListBox([System.Windows.Controls.ListBox]$ListBox, [object[]]$Steps) {
-    $ListBox.Items.Clear()
+# Populates BOTH of a workflow's ListBoxes ($PlanListBox on the Recovery Plan tab, $ManualListBox on
+# Manual Steps) from the one $Steps list, in lockstep -- each step becomes exactly one row object
+# (see New-StepRow) whose PlanPanel goes into $PlanListBox and ManualPanel into $ManualListBox. The
+# returned $rows array is what Run All/Set-AllStepButtonsEnabled/Exit/Resume all operate on; they
+# don't need to know or care that each row now has two visual representations, only that
+# $row.PlanButton/$row.ManualButton exist and are always updated together.
+function Set-PlanStepsListBox([System.Windows.Controls.ListBox]$PlanListBox, [System.Windows.Controls.ListBox]$ManualListBox, [object[]]$Steps) {
+    $PlanListBox.Items.Clear()
+    $ManualListBox.Items.Clear()
     $rows = @()
     # Flips every time a new consecutive run of same-ThreadId rows starts (including a ThreadId
     # value repeating later, non-consecutively -- that is a distinct thread block, not a
@@ -612,11 +640,12 @@ function Set-PlanStepsListBox([System.Windows.Controls.ListBox]$ListBox, [object
         }
         $row = New-StepRow $step.CommandLine $step.ThreadId $step.Description $step.Interactive $colorAlt $step.Id $step.Condition $step.DisplayName
         # Visible ($true unless a step explicitly sets "visible": false) governs only whether the
-        # row is ADDED to the ListBox -- it's still built and still included in $rows below, so Run
-        # All still runs it in sequence exactly like any other step. This is deliberately unlike
+        # row is ADDED to the ListBoxes -- it's still built and still included in $rows below, so
+        # Run All still runs it in sequence exactly like any other step. This is deliberately unlike
         # Condition, which governs whether a step runs at all.
         if ($step.Visible) {
-            [void]$ListBox.Items.Add($row.Panel)
+            [void]$PlanListBox.Items.Add($row.PlanPanel)
+            [void]$ManualListBox.Items.Add($row.ManualPanel)
         }
         $rows += $row
         $previousThreadId = $step.ThreadId
@@ -1421,7 +1450,7 @@ function Test-StepTranscriptClean([string]$TranscriptSlice) {
 # Test-StepTranscriptClean -- once "Completed Task" is found; Invoke-StepChain/Invoke-StepThreadChain
 # use this to gate starting the next step (or continuing past a block of background threads) on the
 # previous one(s) actually having gone cleanly, not just having finished. $Console defaults to Main.
-function Add-StepWatch($Button, [string]$CmdletName, [scriptblock]$OnComplete, $Console, [string]$Id) {
+function Add-StepWatch($Buttons, [string]$CmdletName, [scriptblock]$OnComplete, $Console, [string]$Id) {
     if ($null -eq $Console) {
         $Console = $global:mainConsole
     }
@@ -1430,13 +1459,16 @@ function Add-StepWatch($Button, [string]$CmdletName, [scriptblock]$OnComplete, $
         $currentText = Get-Content -Path $Console.TranscriptPath -Raw -ErrorAction SilentlyContinue
         if ($null -eq $currentText) { $currentText = '' }
     }
-    # Drop any earlier watch for this same button first, rather than stacking duplicates on a re-run.
+    # Drop any earlier watch for this same row first, rather than stacking duplicates on a re-run.
+    # $Buttons is the same @($row.PlanButton, $row.ManualButton) array reference every caller for
+    # this row passes (see New-StepRow/Invoke-StepChain/Invoke-StepThreadChain), so plain -ne here
+    # is reference-equality on that array, exactly like the single-Button comparison this replaced.
     # @(...) around the whole pipeline is required, not optional: Where-Object filtering everything
     # out (as it always does on the very first-ever call, since the list starts empty) produces $null,
     # not an empty collection, and List[object]'s constructor throws ArgumentNullException on $null.
-    $global:activeStepWatches = [System.Collections.Generic.List[object]]@($global:activeStepWatches | Where-Object { $_.Button -ne $Button })
+    $global:activeStepWatches = [System.Collections.Generic.List[object]]@($global:activeStepWatches | Where-Object { $_.Buttons -ne $Buttons })
     $global:activeStepWatches.Add([PSCustomObject]@{
-            Button         = $Button
+            Buttons        = $Buttons
             TargetText     = "Completed Task $CmdletName"
             StartOffset    = $currentText.Length
             OnComplete     = $OnComplete
@@ -1462,7 +1494,7 @@ function Add-CompletionWatch([string]$CmdletName, [scriptblock]$OnComplete, $Con
         if ($null -eq $currentText) { $currentText = '' }
     }
     $global:activeStepWatches.Add([PSCustomObject]@{
-            Button         = $null
+            Buttons        = $null
             TargetText     = "Completed Task $CmdletName"
             StartOffset    = $currentText.Length
             OnComplete     = $OnComplete
@@ -1513,8 +1545,12 @@ function Lock-ElementSelection {
 function Set-AllStepButtonsEnabled([bool]$Enabled) {
     $allRows = @($global:domainRecoveryStepRows) + @($global:additionalClusterRecoveryStepRows) + @($global:recoverFleetStepRows) +
         @($global:instanceComponentsGroup.StepRows) + @($global:fleetComponentsGroup.StepRows)
+    # Only ManualButton -- PlanButton is permanently IsEnabled=$false (see New-StepRow) regardless
+    # of Run All's own state, so it stays visually correct (its status colors render even while
+    # disabled -- see the shared Button style's ControlTemplate.Triggers) without ever needing to be
+    # toggled here.
     foreach ($row in $allRows) {
-        $row.Button.IsEnabled = $Enabled
+        $row.ManualButton.IsEnabled = $Enabled
     }
     $runAllDomainRecoveryButton.IsEnabled = $Enabled
     $runAllAdditionalClusterRecoveryButton.IsEnabled = $Enabled
@@ -1600,13 +1636,23 @@ function Stop-RunTimer($Timer) {
 # Test-StepStatusGate. This is deliberately the ONLY place that check happens: display-time filtering
 # (Get-ApplicableSteps) never hides a row over a stepStatus condition, since nothing has run yet at
 # that point -- only whether the step actually EXECUTES is gated here.
-function Invoke-Step($Button, [string]$CmdletName, [string]$CommandLine, [scriptblock]$OnStepComplete, $Console, $Interactive, [string]$Id, [object[]]$Condition) {
+# Applies the same Content/Background to every button in $Buttons at once (PlanButton and
+# ManualButton -- see New-StepRow) -- the single place that pairing is written out, reused here,
+# in Start-StepCompletionWatcher's Done/Failed path, and in the Resume handler's Done-restore path,
+# so those three can never drift into setting one button but not the other.
+function Set-StepButtonsState($Buttons, [string]$Content, $Background) {
+    foreach ($stepButton in $Buttons) {
+        $stepButton.Content = $Content
+        $stepButton.Background = $Background
+    }
+}
+
+function Invoke-Step($Buttons, [string]$CmdletName, [string]$CommandLine, [scriptblock]$OnStepComplete, $Console, $Interactive, [string]$Id, [object[]]$Condition) {
     if ($null -eq $Console) {
         $Console = $global:mainConsole
     }
     if ($Condition -and -not (Test-StepStatusGate $Condition)) {
-        $Button.Content = 'Skipped'
-        $Button.Background = [System.Windows.Media.Brushes]::Gray
+        Set-StepButtonsState $Buttons 'Skipped' ([System.Windows.Media.Brushes]::Gray)
         if ($Id) {
             $global:stepRunStatus[$Id] = 'Skipped'
         }
@@ -1632,8 +1678,7 @@ function Invoke-Step($Button, [string]$CmdletName, [string]$CommandLine, [script
     if ($advisoryMatch.Success) {
         Lock-ElementSelection
         New-Advisory ($advisoryMatch.Groups[1].Value -replace "''", "'")
-        $Button.Content = 'Done'
-        $Button.Background = [System.Windows.Media.Brushes]::Green
+        Set-StepButtonsState $Buttons 'Done' ([System.Windows.Media.Brushes]::Green)
         if ($Id) {
             $global:stepRunStatus[$Id] = 'Success'
         }
@@ -1643,9 +1688,8 @@ function Invoke-Step($Button, [string]$CmdletName, [string]$CommandLine, [script
         return
     }
     Lock-ElementSelection
-    $Button.Content = 'Running'
-    $Button.Background = [System.Windows.Media.Brushes]::Orange
-    Add-StepWatch $Button $CmdletName $OnStepComplete $Console $Id
+    Set-StepButtonsState $Buttons 'Running' ([System.Windows.Media.Brushes]::Orange)
+    Add-StepWatch $Buttons $CmdletName $OnStepComplete $Console $Id
     if ($Interactive) {
         $consoleTabControl.SelectedItem = $Console.TabItem
         Set-ConsoleFocus
@@ -1745,7 +1789,7 @@ function Invoke-StepChain([object[]]$Rows, [switch]$IgnoreThreads, [scriptblock]
         return
     }
     $remainingRows = @($Rows | Select-Object -Skip 1)
-    Invoke-Step $row.Button $row.CmdletName $row.CommandLine {
+    Invoke-Step @($row.PlanButton, $row.ManualButton) $row.CmdletName $row.CommandLine {
         param($isClean)
         if ($isClean) {
             Invoke-StepChain $remainingRows -IgnoreThreads:$IgnoreThreads -OnChainComplete $OnChainComplete
@@ -1794,7 +1838,7 @@ function Invoke-StepThreadChain([object[]]$Rows, $Console, [scriptblock]$OnCompl
     }
     $row = $Rows[0]
     $remainingRows = @($Rows | Select-Object -Skip 1)
-    Invoke-Step $row.Button $row.CmdletName $row.CommandLine {
+    Invoke-Step @($row.PlanButton, $row.ManualButton) $row.CmdletName $row.CommandLine {
         param($isClean)
         if ($isClean) {
             Invoke-StepThreadChain $remainingRows $Console $OnComplete
@@ -1804,37 +1848,26 @@ function Invoke-StepThreadChain([object[]]$Rows, $Console, [scriptblock]$OnCompl
     }.GetNewClosure() $Console $row.Interactive $row.Id $row.Condition
 }
 
-# Returns [PSCustomObject]@{ Panel; CommandLine; Button; CmdletName; DisplayName; ThreadId;
-# Interactive; Id; Condition }, not just the row's visual Panel -- the other fields are needed
-# separately so a tab's "Run All" button can replay every row's Run action, and so Invoke-Step/
-# Add-StepWatch can update the right row's button and watch for the right cmdlet name without
-# re-parsing the rendered list. Id/Condition are carried through to Invoke-Step so its stepStatus
-# pre-flight gate (Test-StepStatusGate) applies identically whether a row's Run is clicked manually
-# or reached via Run All/a thread chain.
+# Returns [PSCustomObject]@{ PlanPanel; PlanButton; ManualPanel; ManualButton; CommandLine;
+# CmdletName; DisplayName; ThreadId; Interactive; Id; Condition } -- ONE logical step, rendered as
+# TWO separate visual rows (a WPF element can only ever belong to one parent, so the name/thread
+# badge/interactive pill/button all have to be built twice, once per tab):
+#   - PlanPanel/PlanButton: the read-only "Recovery Plan" tab's row. The button starts disabled,
+#     grey, and reading "Pending" -- IsEnabled=$false blocks every form of interaction (click,
+#     keyboard Enter, Tab-focus) at once, and the shared Button style's own ControlTemplate.Triggers
+#     already force Opacity back to 1 (full color) whenever Content becomes Running/Done/Failed/
+#     Skipped even while disabled, so this button still shows every one of Run All's real status
+#     colors, it simply can never be clicked to START one.
+#   - ManualPanel/ManualButton: the interactive "Manual Steps" tab's row, functionally identical to
+#     this row's own previous single-panel design -- a real, clickable "Run" button wired straight
+#     to Invoke-Step.
+# Both buttons are always passed together (see @($row.PlanButton, $row.ManualButton) at every call
+# site) to Invoke-Step/Add-StepWatch, so whichever one actually triggered a run (Run All via
+# PlanButton, or a manual click via ManualButton), both update in lockstep -- there is no way for
+# the two tabs to show a different status for the same step. Id/Condition are carried through to
+# Invoke-Step so its stepStatus pre-flight gate (Test-StepStatusGate) applies identically regardless
+# of how a step's run was triggered.
 function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Description, $Interactive, [bool]$ThreadColorAlt = $false, [string]$Id = '', [object[]]$Condition = @(), [string]$DisplayName = '') {
-    # A Grid with fixed-width columns, not a DockPanel -- a DockPanel only stacks whichever badges a
-    # given row actually has, so a row with just one badge (or none) leaves the other badge's spot
-    # collapsed and everything shifts to fill the gap. Every row gets the same 4 columns (name /
-    # thread circle / interactive pill / Run) whether or not it has content for a given column, so
-    # every column's contents line up vertically down the whole list like a real table.
-    $panel = New-Object System.Windows.Controls.Grid
-    $panel.Margin = '2,0,2,0'
-    if ($Description) {
-        $panel.ToolTip = $Description
-    }
-    $nameColumn = New-Object System.Windows.Controls.ColumnDefinition
-    $nameColumn.Width = New-Object System.Windows.GridLength(1, [System.Windows.GridUnitType]::Star)
-    $threadColumn = New-Object System.Windows.Controls.ColumnDefinition
-    $threadColumn.Width = New-Object System.Windows.GridLength(30)
-    $interactiveColumn = New-Object System.Windows.Controls.ColumnDefinition
-    $interactiveColumn.Width = New-Object System.Windows.GridLength(100)
-    $runColumn = New-Object System.Windows.Controls.ColumnDefinition
-    $runColumn.Width = New-Object System.Windows.GridLength(71)
-    [void]$panel.ColumnDefinitions.Add($nameColumn)
-    [void]$panel.ColumnDefinitions.Add($threadColumn)
-    [void]$panel.ColumnDefinitions.Add($interactiveColumn)
-    [void]$panel.ColumnDefinitions.Add($runColumn)
-
     # The full command line (with its parameters) stays in the module and is only ever sent to the
     # console, never rendered in the Steps list. Variable values referenced in it (e.g. $targetFqdn)
     # come from whatever was loaded via "Load Variables..." -- they're already set in the console
@@ -1847,89 +1880,151 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
         $DisplayName = $cmdletName
     }
 
-    $runButton = New-Object System.Windows.Controls.Button
-    $runButton.Content = 'Run'
-    # Wide enough for 'Running' -- the longest of the states this button ever shows (Run/Running/
-    # Done/Failed) -- so it doesn't visibly resize as a step starts and finishes.
-    $runButton.Width = 65
-    $runButton.Padding = '6,2'
-    $runButton.Margin = '6,0,0,0'
-    $runButton.HorizontalAlignment = 'Right'
-    [System.Windows.Controls.Grid]::SetColumn($runButton, 3)
-    $runButton.Add_Click({
+    # Builds ONE visual variant of this row (called once for the read-only Plan panel, once for the
+    # interactive Manual panel) -- the two are identical (Grid columns/name/thread badge/interactive
+    # pill) except for the Run-column button itself, which this returns separately so the caller can
+    # wire its Add_Click (Manual only) or leave it alone (Plan). No .GetNewClosure() needed here:
+    # this scriptblock is invoked synchronously, twice, within this same function call, never stored
+    # for later -- normal PowerShell parent-scope variable capture already sees $ThreadId/
+    # $ThreadColorAlt/$Description/$Interactive/$DisplayName correctly without it.
+    $buildVariant = {
+        param([bool]$ReadOnly)
+
+        # A Grid with fixed-width columns, not a DockPanel -- a DockPanel only stacks whichever
+        # badges a given row actually has, so a row with just one badge (or none) leaves the other
+        # badge's spot collapsed and everything shifts to fill the gap. Every row gets the same 4
+        # columns (name / thread circle / interactive pill / Run) whether or not it has content for
+        # a given column, so every column's contents line up vertically down the whole list like a
+        # real table.
+        $variantPanel = New-Object System.Windows.Controls.Grid
+        $variantPanel.Margin = '2,0,2,0'
+        if ($Description) {
+            $variantPanel.ToolTip = $Description
+        }
+        $nameColumn = New-Object System.Windows.Controls.ColumnDefinition
+        $nameColumn.Width = New-Object System.Windows.GridLength(1, [System.Windows.GridUnitType]::Star)
+        $threadColumn = New-Object System.Windows.Controls.ColumnDefinition
+        $threadColumn.Width = New-Object System.Windows.GridLength(30)
+        $interactiveColumn = New-Object System.Windows.Controls.ColumnDefinition
+        $interactiveColumn.Width = New-Object System.Windows.GridLength(100)
+        $runColumn = New-Object System.Windows.Controls.ColumnDefinition
+        $runColumn.Width = New-Object System.Windows.GridLength(71)
+        [void]$variantPanel.ColumnDefinitions.Add($nameColumn)
+        [void]$variantPanel.ColumnDefinitions.Add($threadColumn)
+        [void]$variantPanel.ColumnDefinitions.Add($interactiveColumn)
+        [void]$variantPanel.ColumnDefinitions.Add($runColumn)
+
+        $variantButton = New-Object System.Windows.Controls.Button
+        # Wide enough for 'Running' -- the longest of the states this button ever shows (Pending/
+        # Run/Running/Done/Failed/Skipped) -- so it doesn't visibly resize as a step starts/finishes.
+        $variantButton.Width = 65
+        $variantButton.Padding = '6,2'
+        $variantButton.Margin = '6,0,0,0'
+        $variantButton.HorizontalAlignment = 'Right'
+        [System.Windows.Controls.Grid]::SetColumn($variantButton, 3)
+        if ($ReadOnly) {
+            $variantButton.Content = 'Pending'
+            $variantButton.Background = [System.Windows.Media.Brushes]::LightGray
+            $variantButton.Foreground = [System.Windows.Media.Brushes]::Black
+            $variantButton.IsEnabled = $false
+        } else {
+            $variantButton.Content = 'Run'
+        }
+
+        # Run All bundles a consecutive run of rows carrying a ThreadId into background threads (see
+        # Invoke-StepThread); manually clicking Run on a single row never does, even if it has one.
+        # A numbered circle, not a "[1]" text badge -- easier to scan at a glance, and its
+        # background alternates between two colors (set by the caller, Set-PlanStepsListBox, via
+        # $ThreadColorAlt) each time a new consecutive run of same-ThreadId rows starts, so where
+        # one thread's block of steps ends and the next begins is visible without having to read the
+        # numbers themselves.
+        $variantThreadCircle = $null
+        if ($ThreadId) {
+            $threadCircleText = New-Object System.Windows.Controls.TextBlock
+            $threadCircleText.Text = $ThreadId
+            $threadCircleText.Foreground = [System.Windows.Media.Brushes]::White
+            $threadCircleText.FontSize = 10
+            $threadCircleText.FontWeight = 'Bold'
+            $threadCircleText.HorizontalAlignment = 'Center'
+            $threadCircleText.VerticalAlignment = 'Center'
+            $variantThreadCircle = New-Object System.Windows.Controls.Border
+            $variantThreadCircle.Width = 22
+            $variantThreadCircle.Height = 22
+            $variantThreadCircle.CornerRadius = 11
+            $variantThreadCircle.Background = if ($ThreadColorAlt) {
+                [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.Color]::FromRgb(0x2F, 0x9E, 0x8C))
+            } else {
+                [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.Color]::FromRgb(0x3E, 0x6B, 0xB8))
+            }
+            $variantThreadCircle.HorizontalAlignment = 'Center'
+            $variantThreadCircle.VerticalAlignment = 'Center'
+            $variantThreadCircle.Child = $threadCircleText
+            [System.Windows.Controls.Grid]::SetColumn($variantThreadCircle, 1)
+        }
+
+        # A pill-style badge, not a trailing "*" on the name (an earlier version of this) -- the
+        # user's own feedback was that a bare asterisk read as too subtle to actually notice. Slate
+        # grey with white text is deliberately neutral -- distinct from every runtime state color
+        # already in use here (Orange/Green/Firebrick for Running/Done/Failed) since this marks a
+        # fixed property of the step, not something that changes as it runs.
+        $variantInteractiveBadge = $null
+        if ($Interactive) {
+            $interactiveBadgeText = New-Object System.Windows.Controls.TextBlock
+            $interactiveBadgeText.Text = 'Requires Input'
+            $interactiveBadgeText.Foreground = [System.Windows.Media.Brushes]::White
+            $interactiveBadgeText.FontSize = 10.5
+            $interactiveBadgeText.FontWeight = 'SemiBold'
+            $variantInteractiveBadge = New-Object System.Windows.Controls.Border
+            $variantInteractiveBadge.Background = [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.Color]::FromRgb(0x70, 0x80, 0x90))
+            $variantInteractiveBadge.CornerRadius = 8
+            $variantInteractiveBadge.Padding = '6,1'
+            $variantInteractiveBadge.Margin = '8,0,6,0'
+            $variantInteractiveBadge.HorizontalAlignment = 'Left'
+            $variantInteractiveBadge.VerticalAlignment = 'Center'
+            $variantInteractiveBadge.Child = $interactiveBadgeText
+            [System.Windows.Controls.Grid]::SetColumn($variantInteractiveBadge, 2)
+        }
+
+        $variantLabel = New-Object System.Windows.Controls.TextBlock
+        $variantLabel.Text = $DisplayName
+        $variantLabel.FontFamily = New-Object System.Windows.Media.FontFamily('Consolas')
+        $variantLabel.VerticalAlignment = 'Center'
+        [System.Windows.Controls.Grid]::SetColumn($variantLabel, 0)
+
+        [void]$variantPanel.Children.Add($variantLabel)
+        if ($variantThreadCircle) {
+            [void]$variantPanel.Children.Add($variantThreadCircle)
+        }
+        if ($variantInteractiveBadge) {
+            [void]$variantPanel.Children.Add($variantInteractiveBadge)
+        }
+        [void]$variantPanel.Children.Add($variantButton)
+        return [PSCustomObject]@{ Panel = $variantPanel; Button = $variantButton }
+    }
+
+    $planVariant = & $buildVariant $true
+    $manualVariant = & $buildVariant $false
+    $manualVariant.Button.Add_Click({
             try {
-                Invoke-Step $runButton $cmdletName $CommandLine $null $null $Interactive $Id $Condition
+                Invoke-Step @($planVariant.Button, $manualVariant.Button) $cmdletName $CommandLine $null $null $Interactive $Id $Condition
             } catch {
                 New-Advisory "Run button failed: $($_.Exception.Message)" -Failure
             }
         }.GetNewClosure())
 
-    # Run All bundles a consecutive run of rows carrying a ThreadId into background threads (see
-    # Invoke-StepThread); manually clicking Run on a single row never does, even if it has one. A
-    # numbered circle, not a "[1]" text badge -- easier to scan at a glance, and its background
-    # alternates between two colors (set by the caller, Set-PlanStepsListBox, via $ThreadColorAlt)
-    # each time a new consecutive run of same-ThreadId rows starts, so where one thread's block of
-    # steps ends and the next begins is visible without having to read the numbers themselves.
-    if ($ThreadId) {
-        $threadCircleText = New-Object System.Windows.Controls.TextBlock
-        $threadCircleText.Text = $ThreadId
-        $threadCircleText.Foreground = [System.Windows.Media.Brushes]::White
-        $threadCircleText.FontSize = 10
-        $threadCircleText.FontWeight = 'Bold'
-        $threadCircleText.HorizontalAlignment = 'Center'
-        $threadCircleText.VerticalAlignment = 'Center'
-        $threadCircle = New-Object System.Windows.Controls.Border
-        $threadCircle.Width = 22
-        $threadCircle.Height = 22
-        $threadCircle.CornerRadius = 11
-        $threadCircle.Background = if ($ThreadColorAlt) {
-            [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.Color]::FromRgb(0x2F, 0x9E, 0x8C))
-        } else {
-            [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.Color]::FromRgb(0x3E, 0x6B, 0xB8))
-        }
-        $threadCircle.HorizontalAlignment = 'Center'
-        $threadCircle.VerticalAlignment = 'Center'
-        $threadCircle.Child = $threadCircleText
-        [System.Windows.Controls.Grid]::SetColumn($threadCircle, 1)
+    return [PSCustomObject]@{
+        PlanPanel    = $planVariant.Panel
+        PlanButton   = $planVariant.Button
+        ManualPanel  = $manualVariant.Panel
+        ManualButton = $manualVariant.Button
+        CommandLine  = $CommandLine
+        CmdletName   = $cmdletName
+        DisplayName  = $DisplayName
+        ThreadId     = $ThreadId
+        Interactive  = $Interactive
+        Id           = $Id
+        Condition    = $Condition
     }
-
-    # A pill-style badge, not a trailing "*" on the name (an earlier version of this) -- the user's
-    # own feedback was that a bare asterisk read as too subtle to actually notice. Slate grey with
-    # white text is deliberately neutral -- distinct from every runtime state color already in use
-    # here (Orange/Green/Firebrick for Running/Done/Failed) since this marks a fixed property of the
-    # step, not something that changes as it runs.
-    if ($Interactive) {
-        $interactiveBadgeText = New-Object System.Windows.Controls.TextBlock
-        $interactiveBadgeText.Text = 'Requires Input'
-        $interactiveBadgeText.Foreground = [System.Windows.Media.Brushes]::White
-        $interactiveBadgeText.FontSize = 10.5
-        $interactiveBadgeText.FontWeight = 'SemiBold'
-        $interactiveBadge = New-Object System.Windows.Controls.Border
-        $interactiveBadge.Background = [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.Color]::FromRgb(0x70, 0x80, 0x90))
-        $interactiveBadge.CornerRadius = 8
-        $interactiveBadge.Padding = '6,1'
-        $interactiveBadge.Margin = '8,0,6,0'
-        $interactiveBadge.HorizontalAlignment = 'Left'
-        $interactiveBadge.VerticalAlignment = 'Center'
-        $interactiveBadge.Child = $interactiveBadgeText
-        [System.Windows.Controls.Grid]::SetColumn($interactiveBadge, 2)
-    }
-
-    $label = New-Object System.Windows.Controls.TextBlock
-    $label.Text = $DisplayName
-    $label.FontFamily = New-Object System.Windows.Media.FontFamily('Consolas')
-    $label.VerticalAlignment = 'Center'
-    [System.Windows.Controls.Grid]::SetColumn($label, 0)
-
-    [void]$panel.Children.Add($label)
-    if ($threadCircle) {
-        [void]$panel.Children.Add($threadCircle)
-    }
-    if ($interactiveBadge) {
-        [void]$panel.Children.Add($interactiveBadge)
-    }
-    [void]$panel.Children.Add($runButton)
-    return [PSCustomObject]@{ Panel = $panel; CommandLine = $CommandLine; Button = $runButton; CmdletName = $cmdletName; DisplayName = $DisplayName; ThreadId = $ThreadId; Interactive = $Interactive; Id = $Id; Condition = $Condition }
 }
 
 # Variable names referenced across $CommandLines (e.g. "$targetFqdn"), in order of first
@@ -2058,13 +2153,11 @@ function Start-StepCompletionWatcher {
                 $transcriptText = $transcriptCache[$watch.TranscriptPath]
                 $newText = if ($transcriptText.Length -gt $watch.StartOffset) { $transcriptText.Substring($watch.StartOffset) } else { '' }
                 $isClean = Test-StepTranscriptClean $newText
-                if ($watch.Button) {
+                if ($watch.Buttons) {
                     if ($isClean) {
-                        $watch.Button.Content = 'Done'
-                        $watch.Button.Background = [System.Windows.Media.Brushes]::Green
+                        Set-StepButtonsState $watch.Buttons 'Done' ([System.Windows.Media.Brushes]::Green)
                     } else {
-                        $watch.Button.Content = 'Failed'
-                        $watch.Button.Background = [System.Windows.Media.Brushes]::Firebrick
+                        Set-StepButtonsState $watch.Buttons 'Failed' ([System.Windows.Media.Brushes]::Firebrick)
                     }
                 }
                 if ($watch.Id) {
@@ -2084,13 +2177,16 @@ function Start-StepCompletionWatcher {
 function Import-ExtractedSddcDataFile([string]$Path) {
     $domainsListBox.Items.Clear()
     $additionalClustersListBox.Items.Clear()
-    $domainRecoveryStepsListBox.Items.Clear()
-    $additionalClusterRecoveryStepsListBox.Items.Clear()
+    $domainRecoveryPlanStepsListBox.Items.Clear()
+    $domainRecoveryManualStepsListBox.Items.Clear()
+    $additionalClusterRecoveryPlanStepsListBox.Items.Clear()
+    $additionalClusterRecoveryManualStepsListBox.Items.Clear()
     $variablesItemsPanel.Children.Clear()
     $loadedVariablesTextBlock.Text = 'No variables loaded yet.'
     $stepsVariablesGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
     foreach ($group in @($global:instanceComponentsGroup, $global:fleetComponentsGroup)) {
         $group.StepsListBox.Items.Clear()
+        $group.ManualStepsListBox.Items.Clear()
         $group.VariablesItemsPanel.Children.Clear()
         $group.LoadedVariablesText.Text = 'No variables loaded yet.'
         $group.Steps = @()
@@ -2182,8 +2278,8 @@ function Import-ExtractedSddcDataFile([string]$Path) {
 $ibrRecoveryTypeRadio.Add_Checked({
         $ibrRecoveryScopeGroupBox.Visibility = [System.Windows.Visibility]::Visible
         $dataSourceGroupBox.Visibility = [System.Windows.Visibility]::Visible
-        $recoverFleetPanel.Visibility = [System.Windows.Visibility]::Collapsed
-        $global:recoverFleetStepRows = Set-PlanStepsListBox $recoverFleetStepsListBox @()
+        Set-RecoverFleetPanelsVisibility ([System.Windows.Visibility]::Collapsed)
+        $global:recoverFleetStepRows = Set-PlanStepsListBox $recoverFleetPlanStepsListBox $recoverFleetManualStepsListBox @()
         Sync-IbrRecoveryScopeSelection
     })
 
@@ -2198,15 +2294,16 @@ $fdrRecoveryTypeRadio.Add_Checked({
         $ibrRecoveryScopeGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
         $dataSourceGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
         $discoveredInfrastructureGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
-        $domainRecoveryPanel.Visibility = [System.Windows.Visibility]::Collapsed
-        $additionalClusterRecoveryPanel.Visibility = [System.Windows.Visibility]::Collapsed
-        $global:additionalClusterRecoveryStepRows = Set-PlanStepsListBox $additionalClusterRecoveryStepsListBox @()
-        $recoverFleetPanel.Visibility = [System.Windows.Visibility]::Visible
+        Set-DomainRecoveryPanelsVisibility ([System.Windows.Visibility]::Collapsed)
+        Set-AdditionalClusterRecoveryPanelsVisibility ([System.Windows.Visibility]::Collapsed)
+        $global:additionalClusterRecoveryStepRows = Set-PlanStepsListBox $additionalClusterRecoveryPlanStepsListBox $additionalClusterRecoveryManualStepsListBox @()
+        Set-RecoverFleetPanelsVisibility ([System.Windows.Visibility]::Visible)
 
         $variablesItemsPanel.Children.Clear()
         $loadedVariablesTextBlock.Text = 'No variables loaded yet.'
         foreach ($group in @($global:instanceComponentsGroup, $global:fleetComponentsGroup)) {
             $group.StepsListBox.Items.Clear()
+            $group.ManualStepsListBox.Items.Clear()
             $group.VariablesItemsPanel.Children.Clear()
             $group.LoadedVariablesText.Text = 'No variables loaded yet.'
             $group.Steps = @()
@@ -2220,7 +2317,7 @@ $fdrRecoveryTypeRadio.Add_Checked({
         Set-ActiveStepsVariablesPane $stepsVariablesTabControl
 
         $recoverFleetSteps = Get-ApplicableSteps (Get-RecoveryPlanSteps 'fdr' 'fdr-failover-plan.json') @{}
-        $global:recoverFleetStepRows = Set-PlanStepsListBox $recoverFleetStepsListBox $recoverFleetSteps
+        $global:recoverFleetStepRows = Set-PlanStepsListBox $recoverFleetPlanStepsListBox $recoverFleetManualStepsListBox $recoverFleetSteps
         $global:allSteps = @($recoverFleetSteps)
 
         $stepsVariablesGroupBox.Visibility = [System.Windows.Visibility]::Visible
@@ -2232,13 +2329,14 @@ $fdrRecoveryTypeRadio.Add_Checked({
 # Domain Recovery rows left over from a previously selected domain, the same "nothing to show yet"
 # state a fresh launch starts in.
 $extractRadio.Add_Checked({
-        $global:domainRecoveryStepRows = Set-PlanStepsListBox $domainRecoveryStepsListBox @()
-        $global:additionalClusterRecoveryStepRows = Set-PlanStepsListBox $additionalClusterRecoveryStepsListBox @()
+        $global:domainRecoveryStepRows = Set-PlanStepsListBox $domainRecoveryPlanStepsListBox $domainRecoveryManualStepsListBox @()
+        $global:additionalClusterRecoveryStepRows = Set-PlanStepsListBox $additionalClusterRecoveryPlanStepsListBox $additionalClusterRecoveryManualStepsListBox @()
         $variablesItemsPanel.Children.Clear()
         $loadedVariablesTextBlock.Text = 'No variables loaded yet.'
         $stepsVariablesGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
         foreach ($group in @($global:instanceComponentsGroup, $global:fleetComponentsGroup)) {
             $group.StepsListBox.Items.Clear()
+            $group.ManualStepsListBox.Items.Clear()
             $group.VariablesItemsPanel.Children.Clear()
             $group.LoadedVariablesText.Text = 'No variables loaded yet.'
             $group.Steps = @()
@@ -2587,8 +2685,8 @@ function Update-ExecutionVisibility {
 # list the right names), but must not itself put Run buttons in front of anyone before values exist
 # for them to use.
 function Update-RevealedSteps([System.Collections.IDictionary]$Variables) {
-    $global:domainRecoveryStepRows = Set-PlanStepsListBox $domainRecoveryStepsListBox (Get-ApplicableSteps $global:domainRecoverySteps $Variables)
-    $global:additionalClusterRecoveryStepRows = Set-PlanStepsListBox $additionalClusterRecoveryStepsListBox (Get-ApplicableSteps $global:additionalClusterRecoverySteps $Variables)
+    $global:domainRecoveryStepRows = Set-PlanStepsListBox $domainRecoveryPlanStepsListBox $domainRecoveryManualStepsListBox (Get-ApplicableSteps $global:domainRecoverySteps $Variables)
+    $global:additionalClusterRecoveryStepRows = Set-PlanStepsListBox $additionalClusterRecoveryPlanStepsListBox $additionalClusterRecoveryManualStepsListBox (Get-ApplicableSteps $global:additionalClusterRecoverySteps $Variables)
 }
 
 # Single-listbox counterpart to Update-RevealedSteps, for Instance Components/Fleet Components (see
@@ -2613,7 +2711,7 @@ function Update-GroupRevealedSteps($Group, [System.Collections.IDictionary]$Vari
         $Variables = $cloned
         $Variables['originalVcfInstallerAvailable'] = if ($originalVcfInstallerAvailableCheckBox.IsChecked) { 'true' } else { 'false' }
     }
-    $Group.StepRows = Set-PlanStepsListBox $Group.StepsListBox (Get-ApplicableSteps $Group.Steps $Variables)
+    $Group.StepRows = Set-PlanStepsListBox $Group.StepsListBox $Group.ManualStepsListBox (Get-ApplicableSteps $Group.Steps $Variables)
 }
 
 # Group counterpart to Import-VariablesAnswersFile, used only by Instance Components/Fleet
@@ -2753,8 +2851,28 @@ function Get-CurrentIbrRecoveryScope {
     return 'WorkloadDomain'
 }
 
+# Each of Domain Recovery/Additional Cluster Recovery/Recover Fleet now has TWO panels (Recovery
+# Plan's read-only view and Manual Steps' interactive one -- see New-StepRow), not one, but they are
+# still shown/hidden as a single unit exactly like the old single panel was: whichever workflow is
+# active shows on BOTH tabs at once, never just one. These three tiny wrappers are the single place
+# that pairing is written out, so Sync-DomainSteps/Sync-AdditionalClusterSteps/the Recovery Type
+# Checked handlers never risk toggling one half of a pair and forgetting the other.
+function Set-DomainRecoveryPanelsVisibility([System.Windows.Visibility]$Visibility) {
+    $domainRecoveryPlanPanel.Visibility = $Visibility
+    $domainRecoveryManualPanel.Visibility = $Visibility
+}
+function Set-AdditionalClusterRecoveryPanelsVisibility([System.Windows.Visibility]$Visibility) {
+    $additionalClusterRecoveryPlanPanel.Visibility = $Visibility
+    $additionalClusterRecoveryManualPanel.Visibility = $Visibility
+}
+function Set-RecoverFleetPanelsVisibility([System.Windows.Visibility]$Visibility) {
+    $recoverFleetPlanPanel.Visibility = $Visibility
+    $recoverFleetManualPanel.Visibility = $Visibility
+}
+
 function Sync-DomainSteps {
-    $domainRecoveryStepsListBox.Items.Clear()
+    $domainRecoveryPlanStepsListBox.Items.Clear()
+    $domainRecoveryManualStepsListBox.Items.Clear()
     $variablesItemsPanel.Children.Clear()
     $loadedVariablesTextBlock.Text = 'No variables loaded yet.'
     $global:domainRecoverySteps = @()
@@ -2770,6 +2888,7 @@ function Sync-DomainSteps {
     # the previous domain sitting in $global:instanceComponentsGroup/$global:fleetComponentsGroup.
     foreach ($group in @($global:instanceComponentsGroup, $global:fleetComponentsGroup)) {
         $group.StepsListBox.Items.Clear()
+        $group.ManualStepsListBox.Items.Clear()
         $group.VariablesItemsPanel.Children.Clear()
         $group.LoadedVariablesText.Text = 'No variables loaded yet.'
         $group.Steps = @()
@@ -2796,11 +2915,11 @@ function Sync-DomainSteps {
         # Sync-IbrRecoveryScopeSelection's own filtering), so checking the scope itself here is
         # equivalent to (and doesn't depend on re-inspecting) $selected.Tag.domainType.
         if ((Get-CurrentIbrRecoveryScope) -eq 'ManagementDomain') {
-            $domainRecoveryPanel.Visibility = [System.Windows.Visibility]::Collapsed
+            Set-DomainRecoveryPanelsVisibility ([System.Windows.Visibility]::Collapsed)
             Set-ActiveStepsVariablesPane $instanceComponentsVariablesStepsTabControl
             $global:instanceComponentsGroup.Steps = Get-RecoveryPlanSteps 'ibr' 'management-domain-recovery-plan.json'
         } else {
-            $domainRecoveryPanel.Visibility = [System.Windows.Visibility]::Visible
+            Set-DomainRecoveryPanelsVisibility ([System.Windows.Visibility]::Visible)
             Set-ActiveStepsVariablesPane $stepsVariablesTabControl
             $global:domainRecoverySteps = Get-RecoveryPlanSteps 'ibr' 'workload-domain-recovery-plan.json'
         }
@@ -2830,7 +2949,7 @@ function Sync-DomainSteps {
         # while $workloadDomain is the selected domain itself.
         Set-SelectedTargetInConsole ([string]$selected.Tag.domainName) ([string]$defaultCluster.name)
     } else {
-        $domainRecoveryPanel.Visibility = [System.Windows.Visibility]::Collapsed
+        Set-DomainRecoveryPanelsVisibility ([System.Windows.Visibility]::Collapsed)
         Set-ActiveStepsVariablesPane $stepsVariablesTabControl
         $global:conditionDataContext = @{}
     }
@@ -2858,7 +2977,8 @@ $domainsListBox.Add_SelectionChanged({
 # plain string, not a ListBoxItem -- see Import-ExtractedSddcDataFile) is deliberately not treated
 # as a real selection here.
 function Sync-AdditionalClusterSteps {
-    $additionalClusterRecoveryStepsListBox.Items.Clear()
+    $additionalClusterRecoveryPlanStepsListBox.Items.Clear()
+    $additionalClusterRecoveryManualStepsListBox.Items.Clear()
     $variablesItemsPanel.Children.Clear()
     $loadedVariablesTextBlock.Text = 'No variables loaded yet.'
     $global:additionalClusterRecoverySteps = @()
@@ -2875,7 +2995,7 @@ function Sync-AdditionalClusterSteps {
         if ($null -ne $domainsListBox.SelectedItem) {
             $domainsListBox.SelectedItem = $null
         }
-        $additionalClusterRecoveryPanel.Visibility = [System.Windows.Visibility]::Visible
+        Set-AdditionalClusterRecoveryPanelsVisibility ([System.Windows.Visibility]::Visible)
         $global:additionalClusterRecoverySteps = Get-RecoveryPlanSteps 'ibr' 'additional-cluster-recovery-plan.json'
         # See the matching comment in Sync-DomainSteps -- $selected.Tag here is the cluster
         # PSCustomObject built in Import-ExtractedSddcDataFile, not a raw domain object, so no
@@ -2902,7 +3022,7 @@ function Sync-AdditionalClusterSteps {
         # screen. An additional-cluster row carries its owning domain, so both come from this one row.
         Set-SelectedTargetInConsole ([string]$selected.Tag.DomainName) ([string]$selected.Tag.ClusterName)
     } else {
-        $additionalClusterRecoveryPanel.Visibility = [System.Windows.Visibility]::Collapsed
+        Set-AdditionalClusterRecoveryPanelsVisibility ([System.Windows.Visibility]::Collapsed)
         $global:conditionDataContext = @{}
     }
 
@@ -2934,6 +3054,7 @@ function Sync-IbrRecoveryScopeSelection {
     # place that clears stale Instance/Fleet Components state when navigating away from them.
     foreach ($group in @($global:instanceComponentsGroup, $global:fleetComponentsGroup)) {
         $group.StepsListBox.Items.Clear()
+        $group.ManualStepsListBox.Items.Clear()
         $group.VariablesItemsPanel.Children.Clear()
         $group.LoadedVariablesText.Text = 'No variables loaded yet.'
         $group.Steps = @()
@@ -3090,7 +3211,9 @@ $exitButton.Add_Click({
         try {
             $allRows = @($global:domainRecoveryStepRows) + @($global:additionalClusterRecoveryStepRows) + @($global:recoverFleetStepRows) +
                 @($global:instanceComponentsGroup.StepRows) + @($global:fleetComponentsGroup.StepRows)
-            $completedCmdlets = @($allRows | Where-Object { $_.Button.Content -eq 'Done' } | ForEach-Object { $_.CmdletName })
+            # Checking PlanButton alone is enough -- PlanButton/ManualButton are always updated
+            # together (see Set-StepButtonsState), so they can never disagree on Content.
+            $completedCmdlets = @($allRows | Where-Object { $_.PlanButton.Content -eq 'Done' } | ForEach-Object { $_.CmdletName })
 
             $state = [PSCustomObject]@{
                 ExtractedDataFilePath     = $filePathTextBox.Text
@@ -3186,8 +3309,7 @@ $resumeButton.Add_Click({
                 @($global:instanceComponentsGroup.StepRows) + @($global:fleetComponentsGroup.StepRows)
             foreach ($row in $allRows) {
                 if ($completedCmdlets -contains $row.CmdletName) {
-                    $row.Button.Content = 'Done'
-                    $row.Button.Background = [System.Windows.Media.Brushes]::Green
+                    Set-StepButtonsState @($row.PlanButton, $row.ManualButton) 'Done' ([System.Windows.Media.Brushes]::Green)
                 }
             }
 
