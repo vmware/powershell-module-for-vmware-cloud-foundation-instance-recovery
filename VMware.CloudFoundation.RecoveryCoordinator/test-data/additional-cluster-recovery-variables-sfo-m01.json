@@ -1,0 +1,16 @@
+{
+  "restoredVcenterFqdn": "sfo-m01-vc01.sfo.rainpole.io",
+  "restoredVcenterAdmin": "administrator@vsphere.local",
+  "restoredVcenterAdminPassword": "VMw@re1!VMw@re1!",
+  "restoredNsxManagerFqdn": "sfo-m01-nsx01.sfo.rainpole.io",
+  "restoredNsxManagerAdmin": "admin",
+  "restoredNsxManagerAdminPassword": "VMw@re1!VMw@re1!",
+  "restoredNsxManagerRootPassword": "VMw@re1!VMw@re1!",
+  "sddcManagerFqdn": "sfo-vcf01.sfo.rainpole.io",
+  "sddcManagerAdmin": "administrator@vsphere.local",
+  "sddcManagerAdminPassword": "VMw@re1!VMw@re1!",
+  "vCenterFqdn": "sfo-m01-vc01.sfo.rainpole.io",
+  "VcfUserPassword": "VMw@re1!VMw@re1!",
+  "RootPassword": "VMw@re1!VMw@re1!",
+  "svcAccountPassword": "VMw@re123!"
+}
