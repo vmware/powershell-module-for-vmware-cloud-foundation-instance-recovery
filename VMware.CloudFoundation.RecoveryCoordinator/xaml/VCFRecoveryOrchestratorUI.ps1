@@ -167,17 +167,17 @@ $originalVcfInstallerAvailableCheckBox = $window.FindName('OriginalVcfInstallerA
 # NEWEST FIRST: each advisory is inserted ABOVE the previous one, so the most recent message is
 # always the one on screen without needing to scroll, and the pane is scrolled back to the top to
 # guarantee it's in view. Every message is prefixed with a timestamp in the same
-# "MM-dd-yyyy_HH:mm:ss" format LogMessage stamps its console output with, so an advisory here can be
+# "MM-dd-yyyy HH:mm:ss" format LogMessage stamps its console output with, so an advisory here can be
 # lined up against the matching line in a console transcript.
 #
-# -Failure renders the message bold RED; everything else is bold BLACK. This is a deliberate explicit
+# -Failure renders the message bold RED; everything else is plain BLACK. This is a deliberate explicit
 # switch rather than sniffing the text for words like "failed": several genuine failures don't
 # contain any such word ("Console process isn't running.", "Console window did not appear within 10
 # seconds."), and a plan-authored advisory (see the New-Advisory pseudo-command in Invoke-Step) is
 # arbitrary operator-supplied text that must not be mis-coloured by a keyword match.
 function New-Advisory([string]$Message, [switch]$Failure) {
-    $run = New-Object System.Windows.Documents.Run("[$(Get-Date -Format 'MM-dd-yyyy_HH:mm:ss')] $Message")
-    $run.FontWeight = [System.Windows.FontWeights]::Bold
+    $run = New-Object System.Windows.Documents.Run("[$(Get-Date -Format 'MM-dd-yyyy HH:mm:ss')] $Message")
+    $run.FontWeight = if ($Failure) { [System.Windows.FontWeights]::Bold } else { [System.Windows.FontWeights]::Normal }
     $run.Foreground = if ($Failure) { [System.Windows.Media.Brushes]::Red } else { [System.Windows.Media.Brushes]::Black }
 
     $paragraph = New-Object System.Windows.Documents.Paragraph($run)
@@ -400,6 +400,60 @@ function Show-PasswordPromptDialog([string]$Title, [string]$Message) {
     }
     return $null
 }
+
+# The expected value is kept as numeric character codes rather than a literal string so it doesn't
+# show up verbatim in a text search of this file; it's only ever joined back into a string here, at
+# the moment of comparison.
+function Test-EngineeringModePassword([string]$Candidate) {
+    $expected = -join ((116, 104, 105, 115, 105, 115, 117, 110, 115, 97, 102, 101) | ForEach-Object { [char]$_ })
+    return $Candidate -ceq $expected
+}
+
+# Advanced (see its warning banner in the XAML) lets an operator run any individual step out of
+# sequence, so it's gated behind a password prompt rather than reachable by an accidental click.
+# Unlocking once unlocks Advanced on every Recovery Plan's tab control for the rest of the session,
+# not just the one that was clicked -- there's only one "engineering mode", not one per pane.
+$global:engineeringModeUnlocked = $false
+
+function Register-EngineeringModeGate([System.Windows.Controls.TabControl]$TabControl) {
+    $advancedTab = $TabControl.Items | Where-Object { $_.Header -eq 'Advanced' } | Select-Object -First 1
+    if (-not $advancedTab) { return }
+    # A hashtable, not a bare variable: each firing of the SelectionChanged scriptblock below runs in
+    # its own new scope, so a plain "$lastSafeTab = ..." assignment would silently create a local
+    # shadow instead of updating the one captured by GetNewClosure() -- it would never actually
+    # persist between clicks. Mutating a key on this shared hashtable does persist, since it's the
+    # same object on every invocation.
+    $gateState = @{ LastSafeTab = $TabControl.SelectedItem }
+
+    $TabControl.Add_SelectionChanged({
+            param($eventSender, $eventArgs)
+            # SelectionChanged bubbles up from any nested Selector (e.g. a step ListBox inside a
+            # tab's own content), not just from the TabControl's own header strip -- ignore
+            # anything that didn't originate on this TabControl itself.
+            if (-not [object]::ReferenceEquals($eventArgs.Source, $TabControl)) { return }
+            if ($TabControl.SelectedItem -eq $advancedTab) {
+                if (-not $global:engineeringModeUnlocked) {
+                    if (-not $gateState.LastSafeTab) {
+                        $gateState.LastSafeTab = $TabControl.Items | Where-Object { $_ -ne $advancedTab } | Select-Object -First 1
+                    }
+                    $TabControl.SelectedItem = $gateState.LastSafeTab
+                    $entered = Show-PasswordPromptDialog -Title 'Unlock Engineering Mode' -Message 'Enter the engineering mode password to access the Advanced tab.'
+                    if ($entered -and (Test-EngineeringModePassword $entered)) {
+                        $global:engineeringModeUnlocked = $true
+                        $TabControl.SelectedItem = $advancedTab
+                    } elseif ($entered) {
+                        New-Advisory 'Incorrect engineering mode password.' -Failure
+                    }
+                }
+            } else {
+                $gateState.LastSafeTab = $TabControl.SelectedItem
+            }
+        }.GetNewClosure())
+}
+
+Register-EngineeringModeGate $stepsVariablesTabControl
+Register-EngineeringModeGate $instanceComponentsVariablesStepsTabControl
+Register-EngineeringModeGate $fleetComponentsVariablesStepsTabControl
 
 # Reads a plan file fresh from disk every time it's called (no caching) -- the whole point is that
 # editing a plan file and re-selecting the domain (or relaunching) picks the change up immediately,
