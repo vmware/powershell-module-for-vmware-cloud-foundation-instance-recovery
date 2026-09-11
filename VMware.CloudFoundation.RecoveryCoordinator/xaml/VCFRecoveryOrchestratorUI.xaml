@@ -500,19 +500,19 @@
                             <Grid Margin="0,8,0,0">
                                 <DockPanel x:Name="DomainRecoveryManualPanel" Visibility="Collapsed">
                                     <Border DockPanel.Dock="Top" Background="#FFF3CD" BorderBrush="#E0A800" BorderThickness="1" CornerRadius="3" Padding="10,7" Margin="0,0,0,8">
-                                        <TextBlock TextWrapping="Wrap" FontWeight="SemiBold" Foreground="#664D03" Text="FOR ADVANCED USE ONLY: Use on advice from Broadcom Support only. Running a step out of sequence may leave the environment in an inconsistent state." />
+                                        <TextBlock TextWrapping="Wrap" FontWeight="SemiBold" Foreground="#664D03" Text="FOR ADVANCED USE ONLY: Use only on advice from Broadcom Support. Running a step out of sequence may leave the environment in an inconsistent state." />
                                     </Border>
                                     <ListBox x:Name="DomainRecoveryManualStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
                                 </DockPanel>
                                 <DockPanel x:Name="AdditionalClusterRecoveryManualPanel" Visibility="Collapsed">
                                     <Border DockPanel.Dock="Top" Background="#FFF3CD" BorderBrush="#E0A800" BorderThickness="1" CornerRadius="3" Padding="10,7" Margin="0,0,0,8">
-                                        <TextBlock TextWrapping="Wrap" FontWeight="SemiBold" Foreground="#664D03" Text="FOR ADVANCED USE ONLY: Use on advice from Broadcom Support only. Running a step out of sequence may leave the environment in an inconsistent state." />
+                                        <TextBlock TextWrapping="Wrap" FontWeight="SemiBold" Foreground="#664D03" Text="FOR ADVANCED USE ONLY: Use only on advice from Broadcom Support. Running a step out of sequence may leave the environment in an inconsistent state." />
                                     </Border>
                                     <ListBox x:Name="AdditionalClusterRecoveryManualStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
                                 </DockPanel>
                                 <DockPanel x:Name="RecoverFleetManualPanel" Visibility="Collapsed">
                                     <Border DockPanel.Dock="Top" Background="#FFF3CD" BorderBrush="#E0A800" BorderThickness="1" CornerRadius="3" Padding="10,7" Margin="0,0,0,8">
-                                        <TextBlock TextWrapping="Wrap" FontWeight="SemiBold" Foreground="#664D03" Text="FOR ADVANCED USE ONLY: Use on advice from Broadcom Support only. Running a step out of sequence may leave the environment in an inconsistent state." />
+                                        <TextBlock TextWrapping="Wrap" FontWeight="SemiBold" Foreground="#664D03" Text="FOR ADVANCED USE ONLY: Use only on advice from Broadcom Support. Running a step out of sequence may leave the environment in an inconsistent state." />
                                     </Border>
                                     <ListBox x:Name="RecoverFleetManualStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
                                 </DockPanel>
@@ -556,7 +556,7 @@
                         <TabItem Header="Advanced">
                             <DockPanel Margin="0,8,0,0">
                                 <Border DockPanel.Dock="Top" Background="#FFF3CD" BorderBrush="#E0A800" BorderThickness="1" CornerRadius="3" Padding="10,7" Margin="0,0,0,8">
-                                    <TextBlock TextWrapping="Wrap" FontWeight="SemiBold" Foreground="#664D03" Text="FOR ADVANCED USE ONLY: Use on advice from Broadcom Support only. Running a step out of sequence may leave the environment in an inconsistent state." />
+                                    <TextBlock TextWrapping="Wrap" FontWeight="SemiBold" Foreground="#664D03" Text="FOR ADVANCED USE ONLY: Use only on advice from Broadcom Support. Running a step out of sequence may leave the environment in an inconsistent state." />
                                 </Border>
                                 <ListBox x:Name="InstanceComponentsManualStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
                             </DockPanel>
@@ -594,7 +594,7 @@
                         <TabItem Header="Advanced">
                             <DockPanel Margin="0,8,0,0">
                                 <Border DockPanel.Dock="Top" Background="#FFF3CD" BorderBrush="#E0A800" BorderThickness="1" CornerRadius="3" Padding="10,7" Margin="0,0,0,8">
-                                    <TextBlock TextWrapping="Wrap" FontWeight="SemiBold" Foreground="#664D03" Text="FOR ADVANCED USE ONLY: Use on advice from Broadcom Support only. Running a step out of sequence may leave the environment in an inconsistent state." />
+                                    <TextBlock TextWrapping="Wrap" FontWeight="SemiBold" Foreground="#664D03" Text="FOR ADVANCED USE ONLY: Use only on advice from Broadcom Support. Running a step out of sequence may leave the environment in an inconsistent state." />
                                 </Border>
                                 <ListBox x:Name="FleetComponentsManualStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
                             </DockPanel>
