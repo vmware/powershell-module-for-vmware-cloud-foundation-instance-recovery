@@ -10879,7 +10879,7 @@ Function Get-ServicesRuntimeComponentBackups {
     .DESCRIPTION
     The Get-ServicesRuntimeComponentBackups cmdlet queries the  Services Runtime GET /api/v1/system/backups endpoint and returns backup details for the specified component types, sorted by component type and age. Output includes component type, version, backup name, age, and path.
 
-    Exactly one of -Components or -Type must be supplied. -Components takes an explicit list of component types. -Type instead picks one of three built-in component lists (vcfms, vcfa, opsLogs) -- see -Type's own parameter help for what each currently contains.
+    Exactly one of -Components or -Type must be supplied. -Components takes an explicit list of component types. -Type instead picks one of four built-in component lists (vcfms, vcfa, opsLogs, fleet) -- see -Type's own parameter help for what each contains.
 
     When the resolved component list does not include "vsp" or "vcfa", the "Available Backup Groups" table includes an additional "Associated VSP Backup (UTC)" column showing the vsp backup whose timestamp is closest to each group, for reference when the vsp component itself is not part of the selection.
 
@@ -10907,7 +10907,12 @@ Function Get-ServicesRuntimeComponentBackups {
     One or more component types to display. Valid values: vsp, vcf-fleet-lcm, vcf-fleet-depot, vcf-sddc-lcm, salt, salt-raas, vidb, ops-logs, vcfa. Takes precedence over -Type if both are supplied. Exactly one of -Components or -Type is required.
 
     .PARAMETER Type
-    Picks one of three built-in component lists instead of an explicit -Components list: "vcfms", "vcfa", or "opsLogs". Ignored if -Components is also supplied. Exactly one of -Components or -Type is required. The three lists are placeholders pending confirmation of their real component membership.
+    Picks one of four built-in component lists instead of an explicit -Components list, and also names the generated restore JSON file:
+      vcfms   - vsp, vcf-fleet-lcm, vcf-fleet-depot, vcf-sddc-lcm, salt, salt-raas, vidb, vcfms-metrics-store, vcf-obs-data-platform, telemetry-acceptor
+      vcfa    - vsp, vcfa, vcd-migrator
+      opsLogs - ops-logs
+      fleet   - vcf-fleet-lcm, vcf-fleet-depot, salt-raas, vidb
+    Ignored if -Components is also supplied. Exactly one of -Components or -Type is required.
 
     .PARAMETER VspId
     When specified, only backups whose path contains /vcf/backups/<VspId>/ are returned. Use this to scope results to a specific VSP instance when multiple are present in the backup store.
@@ -10927,9 +10932,7 @@ Function Get-ServicesRuntimeComponentBackups {
     $StopWatch.Start()
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
-    # -Components wins if both are supplied. -Type's three lists are placeholders (real component
-    # membership still to be confirmed) -- callers using -Type today are expected to update them
-    # directly here once known, not to pass -Components as a workaround. Resolved into a SEPARATE
+    # -Components wins if both are supplied. Resolved into a SEPARATE
     # $resolvedComponents variable rather than reassigning $Components itself -- confirmed directly
     # that PowerShell re-checks a parameter's own [ValidateSet] on every later assignment within the
     # function, not just the initial binding, so assigning a placeholder string straight into
@@ -10997,285 +11000,286 @@ Function Get-ServicesRuntimeComponentBackups {
     $now = Get-Date
 
     foreach ($backup in $allBackups) {
-        if ($backup.component.type -notin $resolvedComponents) {
-            $backupName = $backup.name
-            $normalizedName = $backupName -replace 'T(\d{2})-(\d{2})-(\d{2})Z', 'T$1:$2:$3Z'
-            $backupDate = $null
-            $daysOld = $null
-            try {
-                $backupDate = [datetime]::Parse($normalizedName, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal)
-                $daysOld = [math]::Floor(($now - $backupDate).TotalDays)
-            } catch {}
-
-            $parsedBackups += [PSCustomObject]@{
-                ComponentType  = $backup.component.type
-                Version        = $backup.component.version
-                Name           = $backupName
-                NormalizedName = $normalizedName
-                BackupDate     = $backupDate
-                DaysOld        = $daysOld
-                Path           = $backup.path
-            }
-        }
-
-        if ($parsedBackups.Count -eq 0) {
-            LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] No backups found for components: $($Components -join ', ')"
-            return
-        }
-        LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] No backups found for components: $($resolvedComponents -join ', ')"
-        # Build rank-based backup groups: rank 1 = most recent backup of each component,
-        # rank 2 = second most recent, and so on. Components backed up at different times
-        # within the same scheduled window are still placed in the same rank group.
-        $byComponent = @{}
-        foreach ($b in $parsedBackups) {
-            if (-not $byComponent.ContainsKey($b.ComponentType)) {
-                $byComponent[$b.ComponentType] = [System.Collections.Generic.List[PSCustomObject]]::new()
-            }
-            $byComponent[$b.ComponentType].Add($b)
-        }
-        foreach ($key in @($byComponent.Keys)) {
-            $byComponent[$key] = @($byComponent[$key] | Sort-Object BackupDate -Descending)
-        }
-
-        $maxRank = ($byComponent.Values | ForEach-Object { $_.Count } | Measure-Object -Maximum).Maximum
-        $groupList = [System.Collections.Generic.List[PSCustomObject]]::new()
-
-        for ($rank = 0; $rank -lt $maxRank; $rank++) {
-            $entries = [System.Collections.Generic.List[PSCustomObject]]::new()
-            foreach ($componentType in ($byComponent.Keys | Sort-Object)) {
-                if ($rank -lt $byComponent[$componentType].Count) {
-                    $entries.Add($byComponent[$componentType][$rank])
-                }
-            }
-            if ($entries.Count -gt 0) {
-                $groupList.Add([PSCustomObject]@{ Index = ($rank + 1); Entries = $entries })
-            }
-        }
-
-        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Found $($parsedBackups.Count) backup(s) across $($groupList.Count) backup group(s)"
-
-        # Display numbered list of backup groups
-        $isSingleComponent = ($Components.Count -eq 1)
-
-        # When the selection doesn't include vsp (or vcfa) directly, surface the nearest vsp backup
-        $isSingleComponent = ($resolvedComponents.Count -eq 1)
-
-        # When the selection doesn't include vsp (or vcfa) directly, surface the nearest vsp backup
-        # alongside each group for reference -- vsp is the platform's own backup and its timing is
-        # useful context even when it wasn't explicitly requested. $allBackups is unfiltered by
-        # -Components/-Type (only by -VspId), so vsp entries are available here regardless of
-        # $resolvedComponents.
-        $showVspColumn = ($resolvedComponents -notcontains "vsp") -and ($resolvedComponents -notcontains "vcfa")
-        if ($backup.component.type -ne "vsp") { continue }
-        $vspNormalizedName = $backup.name -replace 'T(\d{2})-(\d{2})-(\d{2})Z', 'T$1:$2:$3Z'
-        $vspBackupDate = $null
+        if ($backup.component.type -notin $resolvedComponents) { continue }
+        $backupName = $backup.name
+        $normalizedName = $backupName -replace 'T(\d{2})-(\d{2})-(\d{2})Z', 'T$1:$2:$3Z'
+        $backupDate = $null
+        $daysOld = $null
         try {
-            $vspBackupDate = [datetime]::Parse($vspNormalizedName, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal)
+            $backupDate = [datetime]::Parse($normalizedName, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal)
+            $daysOld = [math]::Floor(($now - $backupDate).TotalDays)
         } catch {}
-        if ($vspBackupDate) {
-            $vspBackups += [PSCustomObject]@{ Name = $backup.name; BackupDate = $vspBackupDate }
+
+        $parsedBackups += [PSCustomObject]@{
+            ComponentType  = $backup.component.type
+            Version        = $backup.component.version
+            Name           = $backupName
+            NormalizedName = $normalizedName
+            BackupDate     = $backupDate
+            DaysOld        = $daysOld
+            Path           = $backup.path
         }
     }
-    if ($vspBackups.Count -eq 0) {
-        LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] No vsp backups found to correlate with the requested component(s). Associated VSP Backup column will be omitted."
-        $showVspColumn = $false
-    }
-}
 
-# Build every row up front so the separator can be sized to the widest row --
-# the Components column's length varies with how many component types share a group.
-$headerLine = if ($isSingleComponent) {
-    if ($showVspColumn) {
-        "  {0,3}  {1,-20}  {2,-10}  {3,-26}  {4}" -f "ID", "Backup Points", "Age", "Associated VSP Backup", "Components"
-    } else {
-        "  {0,3}  {1,-20}  {2,-10}  {3}" -f "ID", "Backup Points", "Age", "Components"
-    }
-} else {
-    if ($showVspColumn) {
-        "  {0,3}  {1,-18}  {2,-16}  {3,-10}  {4,-26}  {5}" -f "ID", "Backup Start", "Backup End", "Age", "Associated VSP Backup", "Components"
-    } else {
-        "  {0,3}  {1,-18}  {2,-16}  {3,-10}  {4}" -f "ID", "Backup Start", "Backup End", "Age", "Components"
-    }
-}
-
-$rowLines = [System.Collections.Generic.List[String]]::new()
-if (-not $isSingleComponent) {
-    if ($showVspColumn) {
-        $rowLines.Add(("  {0,3}  {1,-18}  {2,-16}  {3,-10}  {4,-26}  {5}" -f 0, "Custom", "-", "-", "-", "Choose a backup point per component"))
-    } else {
-        $rowLines.Add(("  {0,3}  {1,-18}  {2,-16}  {3,-10}  {4}" -f 0, "Custom", "-", "-", "Choose a backup point per component"))
-    }
-}
-
-foreach ($group in $groupList) {
-    $sortedEntries = $group.Entries | Sort-Object BackupDate -Descending
-    $newest = $sortedEntries | Select-Object -First 1
-    $oldest = $sortedEntries | Select-Object -Last 1
-    $ageStr = if ($newest.BackupDate) {
-        $ageSpan = $now - $newest.BackupDate
-        if ($ageSpan.TotalDays -ge 1) { "$([math]::Floor($ageSpan.TotalDays)) Days" } else { "$([math]::Floor($ageSpan.TotalHours)) Hours" }
-    } else { "unknown" }
-    $uniqueTypes = @($group.Entries | Select-Object -ExpandProperty ComponentType | Sort-Object -Unique)
-    $newestStr = if ($newest.BackupDate) { $newest.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
-
-    $vspStr = "-"
-    if ($showVspColumn -and $newest.BackupDate) {
-        $nearestVsp = $vspBackups | Sort-Object { [math]::Abs(($_.BackupDate - $newest.BackupDate).Ticks) } | Select-Object -First 1
-        if ($nearestVsp) { $vspStr = $nearestVsp.BackupDate.ToString("yyyy-MM-dd HH:mm") }
-    }
-
-    if ($isSingleComponent) {
-        if ($showVspColumn) {
-            $rowLines.Add(("  {0,3}  {1,-20}  {2,-10}  {3,-26}  {4} ({5})" -f $group.Index, $newestStr, $ageStr, $vspStr, ($uniqueTypes -join ', '), $uniqueTypes.Count))
-        } else {
-            $rowLines.Add(("  {0,3}  {1,-20}  {2,-10}  {3} ({4})" -f $group.Index, $newestStr, $ageStr, ($uniqueTypes -join ', '), $uniqueTypes.Count))
-        }
-    } else {
-        $oldestStr = if ($oldest.BackupDate) { $oldest.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
-        if ($showVspColumn) {
-            $rowLines.Add(("  {0,3}  {1,-18}  {2,-16}  {3,-10}  {4,-26}  {5} ({6})" -f $group.Index, $oldestStr, $newestStr, $ageStr, $vspStr, ($uniqueTypes -join ', '), $uniqueTypes.Count))
-        } else {
-            $rowLines.Add(("  {0,3}  {1,-18}  {2,-16}  {3,-10}  {4} ({5})" -f $group.Index, $oldestStr, $newestStr, $ageStr, ($uniqueTypes -join ', '), $uniqueTypes.Count))
-        }
-    }
-}
-
-$tableWidth = (@($rowLines) + $headerLine | Measure-Object -Property Length -Maximum).Maximum
-$separator = " " + ("─" * $tableWidth)
-
-Write-Host ""
-Write-Host " Available Backup Groups (All times in UTC)" -ForegroundColor Cyan
-Write-Host $separator -ForegroundColor Cyan
-Write-Host $headerLine -ForegroundColor Gray
-Write-Host ""
-
-$rowLines | ForEach-Object { Write-Host $_ -ForegroundColor White }
-
-Write-Host $separator -ForegroundColor Cyan
-Write-Host ""
-
-# User selects a backup group
-$selectedGroup = $null
-$customMode = $false
-Do {
-    Write-Host " Enter the ID of the backup group to use, or C to Cancel: " -ForegroundColor Yellow -NoNewline
-    $selection = Read-Host
-    if ($selection -in @("C", "c")) {
-        LogMessage -type INFO -message "[$jumpboxName] Cancelled by user."
-        $StopWatch.Stop()
-        $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
-        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    if ($parsedBackups.Count -eq 0) {
+        LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] No backups found for components: $($resolvedComponents -join ', ')"
         return
     }
-    $selNum = -1
-    if ([int]::TryParse($selection, [ref]$selNum) -and (-not $isSingleComponent) -and $selNum -eq 0) {
-        $customMode = $true
-        $selectedGroup = [PSCustomObject]@{ Index = 0; Entries = @() }
-    } elseif ([int]::TryParse($selection, [ref]$selNum) -and $selNum -ge 1 -and $selNum -le $groupList.Count) {
-        $selectedGroup = $groupList | Where-Object { $_.Index -eq $selNum }
+
+    # Build rank-based backup groups: rank 1 = most recent backup of each component,
+    # rank 2 = second most recent, and so on. Components backed up at different times
+    # within the same scheduled window are still placed in the same rank group.
+    $byComponent = @{}
+    foreach ($b in $parsedBackups) {
+        if (-not $byComponent.ContainsKey($b.ComponentType)) {
+            $byComponent[$b.ComponentType] = [System.Collections.Generic.List[PSCustomObject]]::new()
+        }
+        $byComponent[$b.ComponentType].Add($b)
+    }
+    foreach ($key in @($byComponent.Keys)) {
+        $byComponent[$key] = @($byComponent[$key] | Sort-Object BackupDate -Descending)
+    }
+
+    $maxRank = ($byComponent.Values | ForEach-Object { $_.Count } | Measure-Object -Maximum).Maximum
+    $groupList = [System.Collections.Generic.List[PSCustomObject]]::new()
+
+    for ($rank = 0; $rank -lt $maxRank; $rank++) {
+        $entries = [System.Collections.Generic.List[PSCustomObject]]::new()
+        foreach ($componentType in ($byComponent.Keys | Sort-Object)) {
+            if ($rank -lt $byComponent[$componentType].Count) {
+                $entries.Add($byComponent[$componentType][$rank])
+            }
+        }
+        if ($entries.Count -gt 0) {
+            $groupList.Add([PSCustomObject]@{ Index = ($rank + 1); Entries = $entries })
+        }
+    }
+
+    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Found $($parsedBackups.Count) backup(s) across $($groupList.Count) backup group(s)"
+
+    # Display numbered list of backup groups
+    $isSingleComponent = ($resolvedComponents.Count -eq 1)
+
+    # When the selection doesn't include vsp (or vcfa) directly, surface the nearest vsp backup
+    # alongside each group for reference -- vsp is the platform's own backup and its timing is
+    # useful context even when it wasn't explicitly requested. $allBackups is unfiltered by
+    # -Components/-Type (only by -VspId), so vsp entries are available here regardless of
+    # $resolvedComponents.
+    $showVspColumn = ($resolvedComponents -notcontains "vsp") -and ($resolvedComponents -notcontains "vcfa")
+    $vspBackups = @()
+    if ($showVspColumn) {
+        foreach ($backup in $allBackups) {
+            if ($backup.component.type -ne "vsp") { continue }
+            $vspNormalizedName = $backup.name -replace 'T(\d{2})-(\d{2})-(\d{2})Z', 'T$1:$2:$3Z'
+            $vspBackupDate = $null
+            try {
+                $vspBackupDate = [datetime]::Parse($vspNormalizedName, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal)
+            } catch {}
+            if ($vspBackupDate) {
+                $vspBackups += [PSCustomObject]@{ Name = $backup.name; BackupDate = $vspBackupDate }
+            }
+        }
+        if ($vspBackups.Count -eq 0) {
+            LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] No vsp backups found to correlate with the requested component(s). Associated VSP Backup column will be omitted."
+            $showVspColumn = $false
+        }
+    }
+
+    # Build every row up front so the separator can be sized to the widest row --
+    # the Components column's length varies with how many component types share a group.
+    $headerLine = if ($isSingleComponent) {
+        if ($showVspColumn) {
+            "  {0,3}  {1,-20}  {2,-10}  {3,-26}  {4}" -f "ID", "Backup Points", "Age", "Associated VSP Backup", "Components"
+        } else {
+            "  {0,3}  {1,-20}  {2,-10}  {3}" -f "ID", "Backup Points", "Age", "Components"
+        }
     } else {
-        Write-Host " Invalid selection. Enter a number between 1 and $($groupList.Count), or C to Cancel." -ForegroundColor Yellow
-    }
-} Until ($null -ne $selectedGroup)
-
-# Build the final list of chosen entries: either the picked rank group, or a per-component custom selection
-$finalEntries = @()
-if ($customMode) {
-    LogMessage -type INFO -message "[$jumpboxName] Building custom backup selection"
-    foreach ($componentType in ($byComponent.Keys | Sort-Object)) {
-        $options = $byComponent[$componentType]
-
-        Write-Host ""
-        Write-Host " Backup points for '$componentType'" -ForegroundColor Cyan
-        Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
-        Write-Host ("  {0,3}  {1,-20}  {2,-10}  {3}" -f "ID", "Backup Time (UTC)", "Age", "Version") -ForegroundColor Gray
-        for ($i = 0; $i -lt $options.Count; $i++) {
-            $opt = $options[$i]
-            $optStr = if ($opt.BackupDate) { $opt.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
-            $optAge = if ($opt.BackupDate) {
-                $optAgeSpan = $now - $opt.BackupDate
-                if ($optAgeSpan.TotalDays -ge 1) { "$([math]::Floor($optAgeSpan.TotalDays)) Days" } else { "$([math]::Floor($optAgeSpan.TotalHours)) Hours" }
-            } else { "unknown" }
-            Write-Host ("  {0,3}  {1,-20}  {2,-10}  {3}" -f ($i + 1), $optStr, $optAge, $opt.Version) -ForegroundColor White
+        if ($showVspColumn) {
+            "  {0,3}  {1,-18}  {2,-16}  {3,-10}  {4,-26}  {5}" -f "ID", "Backup Start", "Backup End", "Age", "Associated VSP Backup", "Components"
+        } else {
+            "  {0,3}  {1,-18}  {2,-16}  {3,-10}  {4}" -f "ID", "Backup Start", "Backup End", "Age", "Components"
         }
-        Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+    }
 
-        $chosenEntry = $null
-        Do {
-            Write-Host " Enter the ID of the backup point to use for '$componentType', or C to Cancel: " -ForegroundColor Yellow -NoNewline
-            $optSelection = Read-Host
-            if ($optSelection -in @("C", "c")) {
-                LogMessage -type INFO -message "[$jumpboxName] Cancelled by user."
-                $StopWatch.Stop()
-                $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
-                LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
-                return
-            }
-            $optNum = 0
-            if ([int]::TryParse($optSelection, [ref]$optNum) -and $optNum -ge 1 -and $optNum -le $options.Count) {
-                $chosenEntry = $options[$optNum - 1]
+    $rowLines = [System.Collections.Generic.List[String]]::new()
+    if (-not $isSingleComponent) {
+        if ($showVspColumn) {
+            $rowLines.Add(("  {0,3}  {1,-18}  {2,-16}  {3,-10}  {4,-26}  {5}" -f 0, "Custom", "-", "-", "-", "Choose a backup point per component"))
+        } else {
+            $rowLines.Add(("  {0,3}  {1,-18}  {2,-16}  {3,-10}  {4}" -f 0, "Custom", "-", "-", "Choose a backup point per component"))
+        }
+    }
+
+    foreach ($group in $groupList) {
+        $sortedEntries = $group.Entries | Sort-Object BackupDate -Descending
+        $newest = $sortedEntries | Select-Object -First 1
+        $oldest = $sortedEntries | Select-Object -Last 1
+        $ageStr = if ($newest.BackupDate) {
+            $ageSpan = $now - $newest.BackupDate
+            if ($ageSpan.TotalDays -ge 1) { "$([math]::Floor($ageSpan.TotalDays)) Days" } else { "$([math]::Floor($ageSpan.TotalHours)) Hours" }
+        } else { "unknown" }
+        $uniqueTypes = @($group.Entries | Select-Object -ExpandProperty ComponentType | Sort-Object -Unique)
+        $newestStr = if ($newest.BackupDate) { $newest.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
+
+        $vspStr = "-"
+        if ($showVspColumn -and $newest.BackupDate) {
+            $nearestVsp = $vspBackups | Sort-Object { [math]::Abs(($_.BackupDate - $newest.BackupDate).Ticks) } | Select-Object -First 1
+            if ($nearestVsp) { $vspStr = $nearestVsp.BackupDate.ToString("yyyy-MM-dd HH:mm") }
+        }
+
+        if ($isSingleComponent) {
+            if ($showVspColumn) {
+                $rowLines.Add(("  {0,3}  {1,-20}  {2,-10}  {3,-26}  {4} ({5})" -f $group.Index, $newestStr, $ageStr, $vspStr, ($uniqueTypes -join ', '), $uniqueTypes.Count))
             } else {
-                Write-Host " Invalid selection. Enter a number between 1 and $($options.Count), or C to Cancel." -ForegroundColor Yellow
+                $rowLines.Add(("  {0,3}  {1,-20}  {2,-10}  {3} ({4})" -f $group.Index, $newestStr, $ageStr, ($uniqueTypes -join ', '), $uniqueTypes.Count))
             }
-        } Until ($null -ne $chosenEntry)
-
-        $finalEntries += $chosenEntry
-    }
-    $groupLabel = "Custom"
-    LogMessage -type INFO -message "[$jumpboxName] Selected custom backup group ($($finalEntries.Count) component(s))"
-} else {
-    $finalEntries = @($selectedGroup.Entries)
-    $sortedFinalEntries = $finalEntries | Sort-Object BackupDate -Descending
-    $newestFinal = $sortedFinalEntries | Select-Object -First 1
-    $oldestFinal = $sortedFinalEntries | Select-Object -Last 1
-    $newestFinalStr = if ($newestFinal.BackupDate) { $newestFinal.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
-    $oldestFinalStr = if ($oldestFinal.BackupDate) { $oldestFinal.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
-    $groupLabel = if ($oldestFinalStr -eq $newestFinalStr) { "$newestFinalStr UTC" } else { "$oldestFinalStr -> $newestFinalStr UTC" }
-}
-
-# Show what is available in the selected backup group
-$groupTitle = if ($customMode) { "Components in custom backup group" } else { "Components in backup group $($selectedGroup.Index) ($groupLabel)" }
-Write-Host ""
-Write-Host " $groupTitle" -ForegroundColor Cyan
-Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
-Write-Host ("  {0,-16}  {1,-18}  {2}" -f "Component", "Version", "Backup Time") -ForegroundColor Gray
-$finalEntries | Sort-Object BackupDate -Descending | ForEach-Object {
-    $entryTimeStr = if ($_.BackupDate) { $_.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
-    Write-Host ("  {0,-16}  {1,-18}  {2}" -f $_.ComponentType, $_.Version, $entryTimeStr) -ForegroundColor White
-}
-Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
-Write-Host ""
-
-# Offer to construct a restore JSON for the selected backup group
-Do {
-    Write-Host " Would you like to construct a restore JSON for this backup group? (Y/N): " -ForegroundColor Yellow -NoNewline
-    $buildJson = Read-Host
-} Until ($buildJson -in @("Y", "y", "N", "n"))
-
-if ($buildJson -in @("Y", "y")) {
-    $explicitlyPassed = $PSBoundParameters.ContainsKey("Components")
-    $restoreComponentTypes = if ($explicitlyPassed) { $Components } else { $Components | Where-Object { $_ -notin @("ops-logs", "vcfa") } }
-
-    $restoreComponents = @(
-        foreach ($componentType in $restoreComponentTypes) {
-            $entry = $finalEntries | Where-Object { $_.ComponentType -eq $componentType } | Select-Object -First 1
-            if ($entry) { @{ path = $entry.Path; point = $entry.Name } }
+        } else {
+            $oldestStr = if ($oldest.BackupDate) { $oldest.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
+            if ($showVspColumn) {
+                $rowLines.Add(("  {0,3}  {1,-18}  {2,-16}  {3,-10}  {4,-26}  {5} ({6})" -f $group.Index, $oldestStr, $newestStr, $ageStr, $vspStr, ($uniqueTypes -join ', '), $uniqueTypes.Count))
+            } else {
+                $rowLines.Add(("  {0,3}  {1,-18}  {2,-16}  {3,-10}  {4} ({5})" -f $group.Index, $oldestStr, $newestStr, $ageStr, ($uniqueTypes -join ', '), $uniqueTypes.Count))
+            }
         }
-    )
+    }
 
-    $restorePayload = @{ components = $restoreComponents } | ConvertTo-Json -Depth 5
-    $outputFile = ".\restore-payload.json"
-    $restorePayload | Out-File -FilePath $outputFile -Encoding utf8
-    LogMessage -type INFO -message "[$jumpboxName] Restore JSON saved to $outputFile ($($restoreComponents.Count) component(s))"
-    Write-Host ""
-    Write-Host " Restore JSON contents:" -ForegroundColor Cyan
-    Write-Host $restorePayload
-    Write-Host ""
-}
+    $tableWidth = (@($rowLines) + $headerLine | Measure-Object -Property Length -Maximum).Maximum
+    $separator = " " + ("─" * $tableWidth)
 
-$StopWatch.Stop()
-$minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
-LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    Write-Host ""
+    Write-Host " Available Backup Groups (All times in UTC)" -ForegroundColor Cyan
+    Write-Host $separator -ForegroundColor Cyan
+    Write-Host $headerLine -ForegroundColor Gray
+    Write-Host ""
+
+    $rowLines | ForEach-Object { Write-Host $_ -ForegroundColor White }
+
+    Write-Host $separator -ForegroundColor Cyan
+    Write-Host ""
+
+    # User selects a backup group
+    $selectedGroup = $null
+    $customMode = $false
+    Do {
+        Write-Host " Enter the ID of the backup group to use, or C to Cancel: " -ForegroundColor Yellow -NoNewline
+        $selection = Read-Host
+        if ($selection -in @("C", "c")) {
+            LogMessage -type INFO -message "[$jumpboxName] Cancelled by user."
+            $StopWatch.Stop()
+            $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+            LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+            return
+        }
+        $selNum = -1
+        if ([int]::TryParse($selection, [ref]$selNum) -and (-not $isSingleComponent) -and $selNum -eq 0) {
+            $customMode = $true
+            $selectedGroup = [PSCustomObject]@{ Index = 0; Entries = @() }
+        } elseif ([int]::TryParse($selection, [ref]$selNum) -and $selNum -ge 1 -and $selNum -le $groupList.Count) {
+            $selectedGroup = $groupList | Where-Object { $_.Index -eq $selNum }
+        } else {
+            Write-Host " Invalid selection. Enter a number between 1 and $($groupList.Count), or C to Cancel." -ForegroundColor Yellow
+        }
+    } Until ($null -ne $selectedGroup)
+
+    # Build the final list of chosen entries: either the picked rank group, or a per-component custom selection
+    $finalEntries = @()
+    if ($customMode) {
+        LogMessage -type INFO -message "[$jumpboxName] Building custom backup selection"
+        foreach ($componentType in ($byComponent.Keys | Sort-Object)) {
+            $options = $byComponent[$componentType]
+
+            Write-Host ""
+            Write-Host " Backup points for '$componentType'" -ForegroundColor Cyan
+            Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+            Write-Host ("  {0,3}  {1,-20}  {2,-10}  {3}" -f "ID", "Backup Time (UTC)", "Age", "Version") -ForegroundColor Gray
+            for ($i = 0; $i -lt $options.Count; $i++) {
+                $opt = $options[$i]
+                $optStr = if ($opt.BackupDate) { $opt.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
+                $optAge = if ($opt.BackupDate) {
+                    $optAgeSpan = $now - $opt.BackupDate
+                    if ($optAgeSpan.TotalDays -ge 1) { "$([math]::Floor($optAgeSpan.TotalDays)) Days" } else { "$([math]::Floor($optAgeSpan.TotalHours)) Hours" }
+                } else { "unknown" }
+                Write-Host ("  {0,3}  {1,-20}  {2,-10}  {3}" -f ($i + 1), $optStr, $optAge, $opt.Version) -ForegroundColor White
+            }
+            Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+
+            $chosenEntry = $null
+            Do {
+                Write-Host " Enter the ID of the backup point to use for '$componentType', or C to Cancel: " -ForegroundColor Yellow -NoNewline
+                $optSelection = Read-Host
+                if ($optSelection -in @("C", "c")) {
+                    LogMessage -type INFO -message "[$jumpboxName] Cancelled by user."
+                    $StopWatch.Stop()
+                    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+                    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+                    return
+                }
+                $optNum = 0
+                if ([int]::TryParse($optSelection, [ref]$optNum) -and $optNum -ge 1 -and $optNum -le $options.Count) {
+                    $chosenEntry = $options[$optNum - 1]
+                } else {
+                    Write-Host " Invalid selection. Enter a number between 1 and $($options.Count), or C to Cancel." -ForegroundColor Yellow
+                }
+            } Until ($null -ne $chosenEntry)
+
+            $finalEntries += $chosenEntry
+        }
+        $groupLabel = "Custom"
+        LogMessage -type INFO -message "[$jumpboxName] Selected custom backup group ($($finalEntries.Count) component(s))"
+    } else {
+        $finalEntries = @($selectedGroup.Entries)
+        $sortedFinalEntries = $finalEntries | Sort-Object BackupDate -Descending
+        $newestFinal = $sortedFinalEntries | Select-Object -First 1
+        $oldestFinal = $sortedFinalEntries | Select-Object -Last 1
+        $newestFinalStr = if ($newestFinal.BackupDate) { $newestFinal.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
+        $oldestFinalStr = if ($oldestFinal.BackupDate) { $oldestFinal.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
+        $groupLabel = if ($oldestFinalStr -eq $newestFinalStr) { "$newestFinalStr UTC" } else { "$oldestFinalStr -> $newestFinalStr UTC" }
+    }
+
+    # Show what is available in the selected backup group
+    $groupTitle = if ($customMode) { "Components in custom backup group" } else { "Components in backup group $($selectedGroup.Index) ($groupLabel)" }
+    Write-Host ""
+    Write-Host " $groupTitle" -ForegroundColor Cyan
+    Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+    Write-Host ("  {0,-16}  {1,-18}  {2}" -f "Component", "Version", "Backup Time") -ForegroundColor Gray
+    $finalEntries | Sort-Object BackupDate -Descending | ForEach-Object {
+        $entryTimeStr = if ($_.BackupDate) { $_.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
+        Write-Host ("  {0,-16}  {1,-18}  {2}" -f $_.ComponentType, $_.Version, $entryTimeStr) -ForegroundColor White
+    }
+    Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+    Write-Host ""
+
+    # Offer to construct a restore JSON for the selected backup group
+    Do {
+        Write-Host " Would you like to construct a restore JSON for this backup group? (Y/N): " -ForegroundColor Yellow -NoNewline
+        $buildJson = Read-Host
+    } Until ($buildJson -in @("Y", "y", "N", "n"))
+
+    if ($buildJson -in @("Y", "y")) {
+        # Both -Components and -Type are an explicit, deliberate selection (see the
+        # -Components/-Type resolution above -- one of them is required), so every requested
+        # component type is always included in the restore JSON; there's no implicit "default
+        # selection" case left to filter ops-logs/vcfa out of.
+        $restoreComponents = @(
+            foreach ($componentType in $resolvedComponents) {
+                $entry = $finalEntries | Where-Object { $_.ComponentType -eq $componentType } | Select-Object -First 1
+                if ($entry) { @{ path = $entry.Path; point = $entry.Name } }
+            }
+        )
+
+        $restorePayload = @{ components = $restoreComponents } | ConvertTo-Json -Depth 5
+        $outputFile = if ($PSBoundParameters.ContainsKey('Type')) { ".\$($Type)-restore-payload.json" } else { ".\restore-payload.json" }
+        $restorePayload | Out-File -FilePath $outputFile -Encoding utf8
+        LogMessage -type INFO -message "[$jumpboxName] Restore JSON saved to $outputFile ($($restoreComponents.Count) component(s))"
+        Write-Host ""
+        Write-Host " Restore JSON contents:" -ForegroundColor Cyan
+        Write-Host $restorePayload
+        Write-Host ""
+    }
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
 }
 Export-ModuleMember -Function Get-ServicesRuntimeComponentBackups
 
@@ -16847,64 +16851,6 @@ Function Start-VCFRecoveryCoordinator {
         return
     }
     if (-not (Test-Path $plansPath)) {
-        LogMessage -type ERROR -message "Cannot find plans folder '$plansPath'."
-        return
-    }
-
-    $pwshPath = (Get-Process -Id $PID).Path   # same pwsh.exe/powershell.exe build this session is running under
-
-    # ProcessStartInfo.ArgumentList, not Start-Process's own -ArgumentList: the cmdlet's version just
-    # joins array elements with spaces and does not quote ones that themselves contain spaces, which
-    # breaks the moment the module is installed under a path like "C:\Program Files\..." -- pwsh.exe's
-    # own command-line parser then splits that path at the space and can't find a script file at all.
-    # ArgumentList.Add() here quotes each argument correctly regardless of what it contains.
-    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
-    $startInfo.FileName = $pwshPath
-    # pwsh.exe is a console-subsystem executable, so launching it this way would otherwise open a
-    # visible console window behind the WPF one -- the in-process runspace this used to run in never
-    # showed one, and the orchestrator window is the only thing meant to be visible.
-    $startInfo.UseShellExecute = $false
-    $startInfo.CreateNoWindow = $true
-    # -STA must come before -File: anything after -File's own value is passed through as an argument
-    # to the script itself, not interpreted as a pwsh.exe switch. WPF requires an STA thread, and
-    # pwsh.exe's own usage text lists both -STA and -MTA as real switches -- meaning the apartment
-    # state a plain launch ends up with isn't something to assume. Without this, Application.Run()
-    # throws right after the window is constructed, which is invisible with CreateNoWindow set above:
-    # the whole process just exits, and the window vanishes with no error shown anywhere.
-    $startInfo.ArgumentList.Add('-STA')
-    $startInfo.ArgumentList.Add('-NoProfile')
-    $startInfo.ArgumentList.Add('-File')
-    $startInfo.ArgumentList.Add($uiScriptPath)
-    $startInfo.ArgumentList.Add('-XamlPath')
-    $startInfo.ArgumentList.Add($xamlPath)
-    $startInfo.ArgumentList.Add('-WorkingDirectory')
-    $startInfo.ArgumentList.Add($launchDirectory)
-    $startInfo.ArgumentList.Add('-PlansPath')
-    $startInfo.ArgumentList.Add($plansPath)
-
-    # Redirected only so a fast, unhandled failure (e.g. an exception thrown before Application.Run()
-    # ever starts pumping messages) has somewhere to be read back from below -- not read from at all
-    # while the process is still running, since that would block once its stderr's pipe buffer filled.
-    $startInfo.RedirectStandardError = $true
-
-    $process = [System.Diagnostics.Process]::Start($startInfo)
-
-    # A real launch stays open indefinitely; this is only long enough to catch a launch that failed
-    # outright, so this cmdlet reports what actually happened instead of claiming success regardless,
-    # the way it used to when the old in-process approach's background-thread exceptions went unread.
-    Start-Sleep -Milliseconds 750
-    $process.Refresh()
-    if ($process.HasExited) {
-        $errorOutput = $process.StandardError.ReadToEnd()
-        LogMessage -type ERROR -message "VCF Recovery Coordinator UI exited immediately (exit code $($process.ExitCode)). $errorOutput"
-        return
-    }
-
-    LogMessage -type NOTE -message "VCF Recovery Coordinator UI launched (PID $($process.Id))."
-}
-Export-ModuleMember -Function Start-VCFRecoveryCoordinator
-
-#EndRegion UI Orchestrator
         LogMessage -type ERROR -message "Cannot find plans folder '$plansPath'."
         return
     }
