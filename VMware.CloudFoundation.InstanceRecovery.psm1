@@ -2352,7 +2352,7 @@ Function Get-BackupsFromSFTPServer {
         )
 
         $restorePayload = @{ components = $restoreComponents } | ConvertTo-Json -Depth 5
-        $outputFile = ".\restore-payload.json"
+        $outputFile = ".\component-restore-payload.json"
         $restorePayload | Out-File -FilePath $outputFile -Encoding utf8
         LogMessage -type INFO -message "[$jumpboxName] Restore JSON saved to $outputFile ($($restoreComponents.Count) component(s))"
         Write-Host ""
@@ -10879,11 +10879,11 @@ Function Get-ServicesRuntimeComponentBackups {
     .DESCRIPTION
     The Get-ServicesRuntimeComponentBackups cmdlet queries the  Services Runtime GET /api/v1/system/backups endpoint and returns backup details for the specified component types, sorted by component type and age. Output includes component type, version, backup name, age, and path.
 
-    Exactly one of -Components or -Type must be supplied. -Components takes an explicit list of component types. -Type instead picks one of four built-in component lists (vcfms, vcfa, opsLogs, fleet) -- see -Type's own parameter help for what each contains.
+    Exactly one of -Components or -Type must be supplied. -Components takes an explicit list of component types. -Type instead picks one of three built-in component lists (vcfms, vcfa, opsLogs) -- see -Type's own parameter help for what each contains.
 
     When the resolved component list does not include "vsp" or "vcfa", the "Available Backup Groups" table includes an additional "Associated VSP Backup (UTC)" column showing the vsp backup whose timestamp is closest to each group, for reference when the vsp component itself is not part of the selection.
 
-    If you opt in to generating a restore JSON, it's saved as ".\<Type>.json" when -Type was used, or ".\restore-payload.json" when -Components was used.
+    If you opt in to generating a restore JSON, it's saved as ".\<Type>-restore-payload.json" when -Type was used, or ".\component-restore-payload.json" when -Components was used.
 
     .EXAMPLE
     Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -Components "vsp","salt"
@@ -10907,11 +10907,10 @@ Function Get-ServicesRuntimeComponentBackups {
     One or more component types to display. Valid values: vsp, vcf-fleet-lcm, vcf-fleet-depot, vcf-sddc-lcm, salt, salt-raas, vidb, ops-logs, vcfa. Takes precedence over -Type if both are supplied. Exactly one of -Components or -Type is required.
 
     .PARAMETER Type
-    Picks one of four built-in component lists instead of an explicit -Components list, and also names the generated restore JSON file:
+    Picks one of three built-in component lists instead of an explicit -Components list, and also names the generated restore JSON file:
       vcfms   - vsp, vcf-fleet-lcm, vcf-fleet-depot, vcf-sddc-lcm, salt, salt-raas, vidb, vcfms-metrics-store, vcf-obs-data-platform, telemetry-acceptor
       vcfa    - vsp, vcfa, vcd-migrator
       opsLogs - ops-logs
-      fleet   - vcf-fleet-lcm, vcf-fleet-depot, salt-raas, vidb
     Ignored if -Components is also supplied. Exactly one of -Components or -Type is required.
 
     .PARAMETER VspId
@@ -10923,7 +10922,7 @@ Function Get-ServicesRuntimeComponentBackups {
         [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
         [Parameter(Mandatory = $false)][String] $ServicesRuntimeUsername = "admin@vsp.local",
         [Parameter(Mandatory = $false)][ValidateSet("vsp", "vcf-fleet-lcm", "vcf-fleet-depot", "vcf-sddc-lcm", "salt", "salt-raas", "vidb", "ops-logs", "vcfms-metrics-store", "vcf-obs-data-platform", "telemetry-acceptor", "vcfa")][String[]] $Components,
-        [Parameter(Mandatory = $false)][ValidateSet("vcfms", "vcfa", "opsLogs", "fleet")][String] $Type,
+        [Parameter(Mandatory = $false)][ValidateSet("vcfms", "vcfa", "opsLogs")][String] $Type,
         [Parameter(Mandatory = $false)][String] $VspId
     )
 
@@ -10950,8 +10949,6 @@ Function Get-ServicesRuntimeComponentBackups {
             $resolvedComponents = @("vsp", "vcfa", "vcd-migrator")
         } elseif ($Type -eq 'opsLogs') {
             $resolvedComponents = @("ops-logs")
-        }elseif ($Type -eq 'fleet') {
-            $resolvedComponents = @("vcf-fleet-lcm", "vcf-fleet-depot", "salt-raas", "vidb")
         }
     } else {
         LogMessage -type ERROR -message "[$jumpboxName] Either -Components or -Type must be specified."
@@ -11268,7 +11265,7 @@ Function Get-ServicesRuntimeComponentBackups {
         )
 
         $restorePayload = @{ components = $restoreComponents } | ConvertTo-Json -Depth 5
-        $outputFile = if ($PSBoundParameters.ContainsKey('Type')) { ".\$($Type)-restore-payload.json" } else { ".\restore-payload.json" }
+        $outputFile = if ($PSBoundParameters.ContainsKey('Type')) { ".\$($Type)-restore-payload.json" } else { ".\component-restore-payload.json" }
         $restorePayload | Out-File -FilePath $outputFile -Encoding utf8
         LogMessage -type INFO -message "[$jumpboxName] Restore JSON saved to $outputFile ($($restoreComponents.Count) component(s))"
         Write-Host ""
@@ -11299,7 +11296,7 @@ Function Restore-ServicesRuntimeComponentBackup {
     # Step 1: List available backups to find paths and restore points
     Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!"
 
-    # Step 2: Create a JSON file (restore-payload.json) with the desired components:
+    # Step 2: Create a JSON file (component-restore-payload.json) with the desired components:
     # {
     #   "components": [
     #     { "path": "sftp://svc-vcf-bck@10.167.173.126:22/media/backups/vcf/backups/.../vsp/.../2026-03-23T16-45-31Z", "point": "2026-03-23T16-45-31Z" },
@@ -11308,22 +11305,25 @@ Function Restore-ServicesRuntimeComponentBackup {
     # }
 
     # Step 3: Run the restore
-    Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -RestoreJsonFile ".\restore-payload.json"
-        # Both -Components and -Type are now an explicit, deliberate selection (see the
-        # -Components/-Type resolution above -- one of them is required), so every requested
-        # component type is always included in the restore JSON; there's no more implicit "default
-        # selection" case to filter ops-logs/vcfa out of.
-        $restoreComponents = @(
-            foreach ($componentType in $resolvedComponents) {
-                $entry = $finalEntries | Where-Object { $_.ComponentType -eq $componentType } | Select-Object -First 1
-                if ($entry) {
-                    @{ path = $entry.Path; point = $entry.Name }
-                }
-            }
-        )
+    Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -RestoreJsonFile ".\component-restore-payload.json"
 
-        $restorePayload = @{ components = $restoreComponents } | ConvertTo-Json -Depth 5
-        $outputFile     = if ($PSBoundParameters.ContainsKey('Type')) { ".\$Type.json" } else { ".\restore-payload.json" }
+    .PARAMETER ServicesRuntimeFqdn
+    FQDN of the Services Runtime instance.
+
+    .PARAMETER ServicesRuntimePassword
+    Password for the Services Runtime admin user (used to obtain a token).
+
+    .PARAMETER ServicesRuntimeUsername
+    Username for the Services Runtime token. Default is "admin@vsp.local".
+
+    .PARAMETER RestoreJsonFile
+    Path to a JSON file containing the restore payload. The file must contain a "components" array with "path" and "point" for each component to restore.
+
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][String] $ServicesRuntimeFqdn,
+        [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
         [Parameter(Mandatory = $false)][String] $ServicesRuntimeUsername = "admin@vsp.local",
         [Parameter(Mandatory = $true)][String] $RestoreJsonFile
     )
