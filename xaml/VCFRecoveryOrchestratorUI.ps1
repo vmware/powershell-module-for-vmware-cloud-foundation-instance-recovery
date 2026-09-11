@@ -310,6 +310,15 @@ $global:parallelConsoles = [System.Collections.Generic.List[object]]::new()
 # a later, non-consecutive block reusing the same ThreadId reuses the exact same console/session
 # instead of spawning a fresh one; nothing ever removes an entry from this once created.
 $global:threadConsoles = @{}
+# The domain/cluster most recently pushed into Main via Set-SelectedTargetInConsole -- kept so
+# Initialize-ConsoleVariables can re-send the exact same "Set-SelectedRecoveryTarget" call to a
+# freshly spawned thread console (see Invoke-StepThread), the same way it already re-primes a new
+# console with $extractedSDDCDataFile/the loaded variables file. Without this, a threaded step
+# referencing $workloadDomain or $clusterName (e.g. management-domain-recovery-plan.json's/
+# workload-domain-recovery-plan.json's own threadId 2/3 blocks -- vCenter/NSX Manager OVA deployment
+# and restore) would run in a brand-new console that never received either value at all.
+$global:selectedWorkloadDomain = ''
+$global:selectedClusterName = ''
 
 function Protect-SingleQuotes([string]$Value) {
     return $Value.Replace("'", "''")
@@ -1089,6 +1098,17 @@ function Initialize-ConsoleVariables($Console) {
         $escapedPath = Protect-SingleQuotes $filePathTextBox.Text
         Send-ToConsole "Set-ExportedSDDCDataFilePath -Path '$escapedPath'" $Console
         $lastCmdletSent = 'Set-ExportedSDDCDataFilePath'
+    }
+    # $workloadDomain/$clusterName are set via Set-SelectedRecoveryTarget, not a file (see
+    # $script:selectionDrivenVariables) -- neither the "extracted data" priming above nor the
+    # "variables answers file" priming below ever carries them, so a freshly spawned thread console
+    # needs this call of its own or steps referencing either variable fail with it unset.
+    if ($global:selectedWorkloadDomain -or $global:selectedClusterName) {
+        $cmdArgs = @()
+        if ($global:selectedWorkloadDomain) { $cmdArgs += "-WorkloadDomain '$(Protect-SingleQuotes $global:selectedWorkloadDomain)'" }
+        if ($global:selectedClusterName) { $cmdArgs += "-ClusterName '$(Protect-SingleQuotes $global:selectedClusterName)'" }
+        Send-ToConsole "Set-SelectedRecoveryTarget $($cmdArgs -join ' ')" $Console
+        $lastCmdletSent = 'Set-SelectedRecoveryTarget'
     }
     if ($global:variablesAnswersFilePath) {
         $escapedAnswersPath = Protect-SingleQuotes $global:variablesAnswersFilePath
@@ -2523,8 +2543,14 @@ function Set-SelectedTargetInConsole([string]$WorkloadDomain, [string]$ClusterNa
     # $cmdArgs, not $args -- $args is a PowerShell automatic variable and assigning to it inside a
     # function shadows the real one.
     $cmdArgs = @()
-    if (-not [string]::IsNullOrWhiteSpace($WorkloadDomain)) { $cmdArgs += "-WorkloadDomain '$(Protect-SingleQuotes $WorkloadDomain)'" }
-    if (-not [string]::IsNullOrWhiteSpace($ClusterName)) { $cmdArgs += "-ClusterName '$(Protect-SingleQuotes $ClusterName)'" }
+    if (-not [string]::IsNullOrWhiteSpace($WorkloadDomain)) {
+        $cmdArgs += "-WorkloadDomain '$(Protect-SingleQuotes $WorkloadDomain)'"
+        $global:selectedWorkloadDomain = $WorkloadDomain
+    }
+    if (-not [string]::IsNullOrWhiteSpace($ClusterName)) {
+        $cmdArgs += "-ClusterName '$(Protect-SingleQuotes $ClusterName)'"
+        $global:selectedClusterName = $ClusterName
+    }
     if ($cmdArgs.Count -eq 0) { return }
     Send-ToConsole "Set-SelectedRecoveryTarget $($cmdArgs -join ' ')"
 }
