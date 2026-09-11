@@ -596,15 +596,26 @@
                     </Grid>
                 </GroupBox>
                 <!-- Runs every message that used to be the single-line, overwritten StatusTextBlock
-                     (formerly sitting inside Data Source) - see New-Advisory in the .ps1. A plain
-                     multi-line, read-only TextBox rather than a TextBlock+ScrollViewer: it gets a
-                     working, independently-scrollable vertical scrollbar for free, entirely separate
-                     from the Console pane's own native console window/scrolling above - the two
-                     never interact. Height is sized for roughly 3 lines at the shared TextBox style's
-                     default font/padding; VerticalScrollBarVisibility="Auto" only shows the bar once
-                     there's actually more history than that to scroll through. -->
+                     (formerly sitting inside Data Source) - see New-Advisory in the .ps1. A
+                     read-only RichTextBox rather than a TextBox: each advisory needs its OWN
+                     formatting (bold black normally, bold red for a failure), which a TextBox
+                     cannot do since Foreground/FontWeight there apply to the whole control. It
+                     still gets a working, independently-scrollable vertical scrollbar for free,
+                     entirely separate from the Console pane's own native console window/scrolling
+                     above - the two never interact. Height is sized for roughly 3 lines;
+                     VerticalScrollBarVisibility="Auto" only shows the bar once there's actually
+                     more history than that to scroll through. Newest advisory is inserted at the
+                     TOP (see New-Advisory), so the most recent is always the one on screen.
+                     The Paragraph style zeroes the default paragraph margin, which would otherwise
+                     put a blank line's worth of space between every advisory. -->
                 <GroupBox Grid.Row="1" Header="Advisories" Margin="0,12,0,0" Padding="10,10,10,10">
-                    <TextBox x:Name="AdvisoriesTextBox" IsReadOnly="True" IsReadOnlyCaretVisible="True" TextWrapping="Wrap" AcceptsReturn="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Height="60" Foreground="#C0392B" />
+                    <RichTextBox x:Name="AdvisoriesRichTextBox" IsReadOnly="True" IsReadOnlyCaretVisible="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Height="60">
+                        <RichTextBox.Resources>
+                            <Style TargetType="Paragraph">
+                                <Setter Property="Margin" Value="0" />
+                            </Style>
+                        </RichTextBox.Resources>
+                    </RichTextBox>
                 </GroupBox>
             </Grid>
         </Grid>

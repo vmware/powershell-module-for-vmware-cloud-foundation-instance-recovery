@@ -85,7 +85,7 @@ $dataSourceGroupBox = $window.FindName('DataSourceGroupBox')
 $extractRadio = $window.FindName('ExtractBackupRadio')
 $browseButton = $window.FindName('BrowseButton')
 $filePathTextBox = $window.FindName('FilePathTextBox')
-$advisoriesTextBox = $window.FindName('AdvisoriesTextBox')
+$advisoriesRichTextBox = $window.FindName('AdvisoriesRichTextBox')
 $discoveredInfrastructureGroupBox = $window.FindName('DiscoveredInfrastructureGroupBox')
 $discoveredInfrastructureTabControl = $window.FindName('DiscoveredInfrastructureTabControl')
 $workloadDomainsTabItem = $window.FindName('WorkloadDomainsTabItem')
@@ -139,18 +139,43 @@ $runAllFleetComponentsParallelCheckBox = $window.FindName('RunAllFleetComponents
 $fleetComponentsStepsListBox = $window.FindName('FleetComponentsStepsListBox')
 $originalVcfInstallerAvailableCheckBox = $window.FindName('OriginalVcfInstallerAvailableCheckBox')
 
-# Appends $Message as a new line to the Advisories pane (below the Console pane) and scrolls it into
-# view -- the single place every status/error/informational message in this app surfaces to the
-# operator now, replacing the old single-line StatusTextBlock that used to sit inside Data Source and
-# get silently overwritten by whatever ran next. Kept as a running history instead: nothing here ever
-# clears it, so an earlier warning stays visible (scroll up) even after something later succeeds.
-function New-Advisory([string]$Message) {
-    if ($advisoriesTextBox.Text) {
-        $advisoriesTextBox.Text += "`r`n$Message"
-    } else {
-        $advisoriesTextBox.Text = $Message
+# Posts $Message to the Advisories pane (below the Console pane) -- the single place every status/
+# error/informational message in this app surfaces to the operator, replacing the old single-line
+# StatusTextBlock that used to sit inside Data Source and get silently overwritten by whatever ran
+# next. Kept as a running history instead: nothing here ever clears it, so an earlier warning stays
+# visible (scroll down) even after something later succeeds.
+#
+# NEWEST FIRST: each advisory is inserted ABOVE the previous one, so the most recent message is
+# always the one on screen without needing to scroll, and the pane is scrolled back to the top to
+# guarantee it's in view. Every message is prefixed with a timestamp in the same
+# "MM-dd-yyyy_HH:mm:ss" format LogMessage stamps its console output with, so an advisory here can be
+# lined up against the matching line in a console transcript.
+#
+# -Failure renders the message bold RED; everything else is bold BLACK. This is a deliberate explicit
+# switch rather than sniffing the text for words like "failed": several genuine failures don't
+# contain any such word ("Console process isn't running.", "Console window did not appear within 10
+# seconds."), and a plan-authored advisory (see the New-Advisory pseudo-command in Invoke-Step) is
+# arbitrary operator-supplied text that must not be mis-coloured by a keyword match.
+function New-Advisory([string]$Message, [switch]$Failure) {
+    $run = New-Object System.Windows.Documents.Run("[$(Get-Date -Format 'MM-dd-yyyy_HH:mm:ss')] $Message")
+    $run.FontWeight = [System.Windows.FontWeights]::Bold
+    $run.Foreground = if ($Failure) { [System.Windows.Media.Brushes]::Red } else { [System.Windows.Media.Brushes]::Black }
+
+    $paragraph = New-Object System.Windows.Documents.Paragraph($run)
+    $paragraph.Margin = New-Object System.Windows.Thickness(0)
+
+    $blocks = $advisoriesRichTextBox.Document.Blocks
+    # A RichTextBox's document starts life with one empty Paragraph already in it; reusing that for
+    # the first advisory (rather than inserting before it) avoids a leading blank line.
+    if ($blocks.Count -eq 1 -and $blocks.FirstBlock -is [System.Windows.Documents.Paragraph] -and $blocks.FirstBlock.Inlines.Count -eq 0) {
+        $blocks.Clear()
     }
-    $advisoriesTextBox.ScrollToEnd()
+    if ($blocks.Count -gt 0) {
+        $blocks.InsertBefore($blocks.FirstBlock, $paragraph)
+    } else {
+        $blocks.Add($paragraph)
+    }
+    $advisoriesRichTextBox.ScrollToHome()
 }
 
 # Populated once a domain is selected (see Sync-DomainSteps below), an additional cluster is picked
@@ -981,7 +1006,7 @@ function New-EmbeddedConsole([string]$TabHeader, [switch]$Bootstrap) {
     while ((Get-Date) -lt $deadline) {
         $process.Refresh()
         if ($process.HasExited) {
-            New-Advisory "Console process exited before its window appeared."
+            New-Advisory "Console process exited before its window appeared." -Failure
             break
         }
         $hwnd = $process.MainWindowHandle
@@ -1001,7 +1026,7 @@ function New-EmbeddedConsole([string]$TabHeader, [switch]$Bootstrap) {
         $hwndHost = New-Object VCFIRConsole.ConsoleHwndHost($hwnd)
         $hostBorder.Child = $hwndHost
     } else {
-        New-Advisory "Console window did not appear within 10 seconds."
+        New-Advisory "Console window did not appear within 10 seconds." -Failure
     }
 
     $console = [PSCustomObject]@{
@@ -1093,7 +1118,7 @@ function Initialize-ConsoleVariables($Console) {
         }
         Start-Sleep -Milliseconds 50
     }
-    New-Advisory "Console '$($Console.TabItem.Header)' did not confirm its bootstrap variables within 10 seconds."
+    New-Advisory "Console '$($Console.TabItem.Header)' did not confirm its bootstrap variables within 10 seconds." -Failure
 }
 
 # Resolves to whichever console's tab is currently selected, for the benefit of anything that
@@ -1279,7 +1304,7 @@ function Send-ToConsole([string]$CommandLine, $Console) {
         $Console = $global:mainConsole
     }
     if ($null -eq $Console -or $null -eq $Console.Process -or $Console.Process.HasExited) {
-        New-Advisory "Console process isn't running."
+        New-Advisory "Console process isn't running." -Failure
         return
     }
     try {
@@ -1345,7 +1370,7 @@ function Send-ToConsole([string]$CommandLine, $Console) {
             [VCFIRConsole.NativeMethods]::FreeConsole() | Out-Null
         }
     } catch {
-        New-Advisory "Failed to send command: $($_.Exception.Message)"
+        New-Advisory "Failed to send command: $($_.Exception.Message)" -Failure
     }
     Set-ConsoleFocus
 }
@@ -1686,7 +1711,7 @@ function Invoke-StepChain([object[]]$Rows, [switch]$IgnoreThreads, [scriptblock]
                     Set-ConsoleFocus
                     Invoke-StepChain $remainingRows -IgnoreThreads:$IgnoreThreads -OnChainComplete $OnChainComplete
                 } else {
-                    New-Advisory 'Run All stopped: one or more threads did not complete cleanly -- check each console/transcript before retrying.'
+                    New-Advisory 'Run All stopped: one or more threads did not complete cleanly -- check each console/transcript before retrying.' -Failure
                     if ($OnChainComplete) {
                         & $OnChainComplete $false
                     }
@@ -1705,7 +1730,7 @@ function Invoke-StepChain([object[]]$Rows, [switch]$IgnoreThreads, [scriptblock]
         if ($isClean) {
             Invoke-StepChain $remainingRows -IgnoreThreads:$IgnoreThreads -OnChainComplete $OnChainComplete
         } else {
-            New-Advisory "Run All stopped: $($row.CmdletName) did not complete cleanly -- check the console/transcript for warnings, errors, or a PowerShell error record before retrying."
+            New-Advisory "Run All stopped: $($row.CmdletName) did not complete cleanly -- check the console/transcript for warnings, errors, or a PowerShell error record before retrying." -Failure
             if ($OnChainComplete) {
                 & $OnChainComplete $false
             }
@@ -1815,7 +1840,7 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
             try {
                 Invoke-Step $runButton $cmdletName $CommandLine $null $null $Interactive $Id $Condition
             } catch {
-                New-Advisory "Run button failed: $($_.Exception.Message)"
+                New-Advisory "Run button failed: $($_.Exception.Message)" -Failure
             }
         }.GetNewClosure())
 
@@ -2068,12 +2093,12 @@ function Import-ExtractedSddcDataFile([string]$Path) {
     try {
         $extractedSddcData = Get-Content -Path $Path -Raw | ConvertFrom-Json
     } catch {
-        New-Advisory "Failed to load extracted SDDC data: $($_.Exception.Message)"
+        New-Advisory "Failed to load extracted SDDC data: $($_.Exception.Message)" -Failure
         return
     }
 
     if (-not $extractedSddcData.workloadDomains) {
-        New-Advisory "No 'workloadDomains' property found in the selected file."
+        New-Advisory "No 'workloadDomains' property found in the selected file." -Failure
         return
     }
 
@@ -2337,7 +2362,7 @@ function Import-VariablesAnswersFile([string]$Path) {
         # forth, the same way picking a domain switches Setup to the Workload Domains tab.
         $stepsVariablesTabControl.SelectedIndex = 1
     } catch {
-        New-Advisory "Load Variables failed: $($_.Exception.Message)"
+        New-Advisory "Load Variables failed: $($_.Exception.Message)" -Failure
     }
 }
 
@@ -2623,7 +2648,7 @@ function Import-GroupVariablesAnswersFile($Group, [string]$Path) {
 
         $Group.VariablesStepsTabControl.SelectedIndex = 1
     } catch {
-        New-Advisory "Load Variables failed: $($_.Exception.Message)"
+        New-Advisory "Load Variables failed: $($_.Exception.Message)" -Failure
     }
 }
 
@@ -2797,7 +2822,7 @@ $domainsListBox.Add_SelectionChanged({
         try {
             Sync-DomainSteps
         } catch {
-            New-Advisory "Domain selection handler failed: $($_.Exception.Message)"
+            New-Advisory "Domain selection handler failed: $($_.Exception.Message)" -Failure
         }
     }.GetNewClosure())
 
@@ -2865,7 +2890,7 @@ $additionalClustersListBox.Add_SelectionChanged({
         try {
             Sync-AdditionalClusterSteps
         } catch {
-            New-Advisory "Additional cluster selection handler failed: $($_.Exception.Message)"
+            New-Advisory "Additional cluster selection handler failed: $($_.Exception.Message)" -Failure
         }
     }.GetNewClosure())
 
@@ -2963,7 +2988,7 @@ $runAllDomainRecoveryButton.Add_Click({
                 Stop-RunTimer $runTimer
             }.GetNewClosure()
         } catch {
-            New-Advisory "Run All failed: $($_.Exception.Message)"
+            New-Advisory "Run All failed: $($_.Exception.Message)" -Failure
             Set-AllStepButtonsEnabled $true
             Stop-RunTimer $runTimer
         }
@@ -2978,7 +3003,7 @@ $runAllAdditionalClusterRecoveryButton.Add_Click({
                 Stop-RunTimer $runTimer
             }.GetNewClosure()
         } catch {
-            New-Advisory "Run All failed: $($_.Exception.Message)"
+            New-Advisory "Run All failed: $($_.Exception.Message)" -Failure
             Set-AllStepButtonsEnabled $true
             Stop-RunTimer $runTimer
         }
@@ -2993,7 +3018,7 @@ $runAllRecoverFleetButton.Add_Click({
                 Stop-RunTimer $runTimer
             }.GetNewClosure()
         } catch {
-            New-Advisory "Run All failed: $($_.Exception.Message)"
+            New-Advisory "Run All failed: $($_.Exception.Message)" -Failure
             Set-AllStepButtonsEnabled $true
             Stop-RunTimer $runTimer
         }
@@ -3008,7 +3033,7 @@ $runAllInstanceComponentsButton.Add_Click({
                 Stop-RunTimer $runTimer
             }.GetNewClosure()
         } catch {
-            New-Advisory "Run All failed: $($_.Exception.Message)"
+            New-Advisory "Run All failed: $($_.Exception.Message)" -Failure
             Set-AllStepButtonsEnabled $true
             Stop-RunTimer $runTimer
         }
@@ -3023,7 +3048,7 @@ $runAllFleetComponentsButton.Add_Click({
                 Stop-RunTimer $runTimer
             }.GetNewClosure()
         } catch {
-            New-Advisory "Run All failed: $($_.Exception.Message)"
+            New-Advisory "Run All failed: $($_.Exception.Message)" -Failure
             Set-AllStepButtonsEnabled $true
             Stop-RunTimer $runTimer
         }
@@ -3076,7 +3101,7 @@ $exitButton.Add_Click({
 
             $window.Close()
         } catch {
-            New-Advisory "Exit failed: $($_.Exception.Message)"
+            New-Advisory "Exit failed: $($_.Exception.Message)" -Failure
         }
     }.GetNewClosure())
 
@@ -3142,7 +3167,7 @@ $resumeButton.Add_Click({
 
             New-Advisory "Resumed state from '$($dialog.FileName)'."
         } catch {
-            New-Advisory "Resume failed: $($_.Exception.Message)"
+            New-Advisory "Resume failed: $($_.Exception.Message)" -Failure
         }
     }.GetNewClosure())
 
