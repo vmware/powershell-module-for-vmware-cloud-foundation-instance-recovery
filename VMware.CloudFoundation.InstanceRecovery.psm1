@@ -15448,6 +15448,316 @@ Function Update-ServicesRuntimePackageDeployment {
 }
 Export-ModuleMember -Function Update-ServicesRuntimePackageDeployment
 
+Function Set-ServicesRuntimeScale {
+    <#
+    .SYNOPSIS
+    Scales the recovery site VCF Management Services instance's worker nodes to match the
+    protected site, per the "Scale the Recovery Site VCF Management Services Instance for
+    VCF Fleet Disaster Recovery" procedure.
+
+    .DESCRIPTION
+    The Set-ServicesRuntimeScale cmdlet is only required when the recovery site's VCF
+    Management Services instance is smaller than the protected site instance it is recovering.
+    It performs the following steps:
+
+      1. Resolves the recovery cluster's KUBECONFIG (via the existing
+         Get-VcfmsServicesRuntimeKubeconfig helper, unless -KubeconfigPath is supplied).
+      2. Determines the protected site's worker node size and cluster profile name — either
+         read directly from the vmsp-platform.yaml file produced by New-ExtractVcfmsBackup
+         against the protected site's backup (-BackupYamlDir), or supplied directly via
+         -WorkerSize and -ProfileName.
+      3. Displays the current and target values and prompts for confirmation (unless -Force
+         is set).
+      4. Patches the recovery cluster's vmsp-platform PackageDeployment (namespace
+         vmsp-platform) via kubectl patch --type=merge, setting
+         spec.values.cluster.worker.size and spec.values.profiles.name.
+      5. Polls the PackageDeployment status until it reports a terminal Ready/Completed
+         state, or until -TimeoutMinutes elapses — the source procedure explicitly calls
+         out not to proceed with subsequent recovery tasks until this step has completed.
+
+    .EXAMPLE
+    # Read the target worker size/profile from a previously extracted protected-site backup
+    Set-ServicesRuntimeScale `
+        -ServicesRuntimeFqdn     "lax-sr01.lax.rainpole.io" `
+        -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
+        -BackupYamlDir           "C:\backup-yaml"
+
+    .EXAMPLE
+    # Supply the worker size and profile name directly
+    Set-ServicesRuntimeScale `
+        -ServicesRuntimeFqdn     "lax-sr01.lax.rainpole.io" `
+        -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
+        -WorkerSize              "medium" `
+        -ProfileName             "medium"
+
+    .EXAMPLE
+    # Use an already-retrieved kubeconfig and skip the confirmation prompt
+    Set-ServicesRuntimeScale `
+        -KubeconfigPath "C:\kubeconfigs\lax-sr01.kubeconfig" `
+        -BackupYamlDir  "C:\backup-yaml" `
+        -Force
+
+    .PARAMETER ServicesRuntimeFqdn
+    FQDN or IP of any Services Runtime cluster node on the recovery site. Required for
+    automatic kubeconfig retrieval when -KubeconfigPath is not supplied.
+
+    .PARAMETER ServicesRuntimePassword
+    Password for vmware-system-user on the recovery Services Runtime node. Required for
+    automatic kubeconfig retrieval when -KubeconfigPath is not supplied.
+
+    .PARAMETER KubeconfigPath
+    Path to an already-downloaded kubeconfig for the recovery Services Runtime cluster.
+    Takes precedence over automatic retrieval.
+
+    .PARAMETER KubeconfigOutputDir
+    Directory where the auto-retrieved kubeconfig is written. Defaults to the current
+    directory.
+
+    .PARAMETER BackupYamlDir
+    Directory containing the vmsp-platform.yaml file produced by New-ExtractVcfmsBackup
+    against the protected site's backup. Used to determine the target -WorkerSize and
+    -ProfileName when they are not supplied directly.
+
+    .PARAMETER WorkerSize
+    Target worker node size (e.g. "small", "medium", "large") to apply on the recovery
+    cluster, matching the protected site. When supplied, -ProfileName must also be supplied
+    and -BackupYamlDir is not required.
+
+    .PARAMETER ProfileName
+    Target cluster profile name to apply on the recovery cluster, matching the protected
+    site. When supplied, -WorkerSize must also be supplied and -BackupYamlDir is not
+    required.
+
+    .PARAMETER Force
+    Skip the interactive confirmation prompt and proceed immediately.
+
+    .PARAMETER PollIntervalSeconds
+    Interval in seconds between PackageDeployment status polls. Default is 30.
+
+    .PARAMETER TimeoutMinutes
+    Maximum time in minutes to wait for the PackageDeployment to report a terminal state
+    before giving up and returning control to the caller. Default is 60.
+    #>
+
+    Param(
+        [Parameter(Mandatory = $false)][String] $ServicesRuntimeFqdn,
+        [Parameter(Mandatory = $false)][String] $ServicesRuntimePassword,
+        [Parameter(Mandatory = $false)][String] $KubeconfigPath,
+        [Parameter(Mandatory = $false)][String] $KubeconfigOutputDir = ".",
+        [Parameter(Mandatory = $false)][String] $BackupYamlDir,
+        [Parameter(Mandatory = $false)][String] $WorkerSize,
+        [Parameter(Mandatory = $false)][String] $ProfileName,
+        [Parameter(Mandatory = $false)][Switch] $Force,
+        [Parameter(Mandatory = $false)][Int]    $PollIntervalSeconds = 30,
+        [Parameter(Mandatory = $false)][Int]    $TimeoutMinutes = 60
+    )
+
+    $jumpboxName = hostname
+    $StopWatch   = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    # -------------------------------------------------------------------------
+    # Pre-requisite: kubectl must be on PATH
+    # -------------------------------------------------------------------------
+    if (-not (Get-Command kubectl -ErrorAction SilentlyContinue)) {
+        LogMessage -type WARNING -message "[$jumpboxName] kubectl not found on PATH. Install kubectl and re-run."
+        $StopWatch.Stop(); return
+    }
+
+    # -------------------------------------------------------------------------
+    # Resolve the target WorkerSize / ProfileName
+    # -------------------------------------------------------------------------
+    if ($WorkerSize -or $ProfileName) {
+        if (-not $WorkerSize -or -not $ProfileName) {
+            LogMessage -type ERROR -message "[$jumpboxName] -WorkerSize and -ProfileName must be supplied together."
+            $StopWatch.Stop(); return
+        }
+        LogMessage -type INFO -message "[$jumpboxName] Using supplied target values — WorkerSize: $WorkerSize, ProfileName: $ProfileName"
+    } else {
+        if (-not $BackupYamlDir) {
+            LogMessage -type ERROR -message "[$jumpboxName] Supply either -BackupYamlDir, or both -WorkerSize and -ProfileName."
+            $StopWatch.Stop(); return
+        }
+        $resolvedYamlDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($BackupYamlDir)
+        $vmspPlatformYaml = Join-Path $resolvedYamlDir "vmsp-platform.yaml"
+        if (-not (Test-Path $vmspPlatformYaml)) {
+            LogMessage -type ERROR -message "[$jumpboxName] vmsp-platform.yaml not found: $vmspPlatformYaml"
+            $StopWatch.Stop(); return
+        }
+
+        LogMessage -type INFO -message "[$jumpboxName] Reading target worker size / profile name from $vmspPlatformYaml"
+        $yamlLines = Get-Content -Path $vmspPlatformYaml
+
+        # Mirror the documented awk extraction: find the "worker:" block and take the first
+        # "size:" line under it; find the "profiles:" block and take the first "name:" line
+        # under it. Both blocks are indented further than their parent key.
+        $WorkerSize  = $null
+        $inWorkerBlock = $false
+        foreach ($line in $yamlLines) {
+            if ($line -match '^\s*worker:\s*$') { $inWorkerBlock = $true; continue }
+            if ($inWorkerBlock) {
+                if ($line -match '^\s*size:\s*(.+?)\s*$') { $WorkerSize = $Matches[1].Trim('"', "'"); break }
+                if ($line -notmatch '^\s{2,}\S') { $inWorkerBlock = $false }
+            }
+        }
+
+        $ProfileName = $null
+        $inProfilesBlock = $false
+        foreach ($line in $yamlLines) {
+            if ($line -match '^\s*profiles:\s*$') { $inProfilesBlock = $true; continue }
+            if ($inProfilesBlock) {
+                if ($line -match '^\s*name:\s*(.+?)\s*$') { $ProfileName = $Matches[1].Trim('"', "'"); break }
+                if ($line -notmatch '^\s{2,}\S' -and $line -notmatch '^\s*-\s') { $inProfilesBlock = $false }
+            }
+        }
+
+        if (-not $WorkerSize -or -not $ProfileName) {
+            LogMessage -type ERROR -message "[$jumpboxName] Could not determine worker size / profile name from $vmspPlatformYaml (WorkerSize: '$WorkerSize', ProfileName: '$ProfileName'). Supply -WorkerSize and -ProfileName directly instead."
+            $StopWatch.Stop(); return
+        }
+        LogMessage -type INFO -message "[$jumpboxName] Resolved from backup — WorkerSize: $WorkerSize, ProfileName: $ProfileName"
+    }
+
+    # -------------------------------------------------------------------------
+    # Resolve kubeconfig
+    # -------------------------------------------------------------------------
+    $resolvedKubeconfig = $KubeconfigPath
+    if (-not $resolvedKubeconfig) {
+        if (-not $ServicesRuntimeFqdn -or -not $ServicesRuntimePassword) {
+            LogMessage -type ERROR -message "[$jumpboxName] Supply -KubeconfigPath, or both -ServicesRuntimeFqdn and -ServicesRuntimePassword."
+            $StopWatch.Stop(); return
+        }
+        LogMessage -type INFO -message "[$jumpboxName] Retrieving kubeconfig from $ServicesRuntimeFqdn"
+        $kubeconfigResult = Get-VcfmsServicesRuntimeKubeconfig `
+            -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
+            -Password            $ServicesRuntimePassword `
+            -OutputDir           $KubeconfigOutputDir
+        if (-not $kubeconfigResult) {
+            LogMessage -type ERROR -message "[$jumpboxName] Could not retrieve kubeconfig. Aborting."
+            $StopWatch.Stop(); return
+        }
+        $resolvedKubeconfig = $kubeconfigResult.KubeconfigPath
+    }
+    if (-not (Test-Path $resolvedKubeconfig)) {
+        LogMessage -type ERROR -message "[$jumpboxName] Kubeconfig not found: $resolvedKubeconfig"
+        $StopWatch.Stop(); return
+    }
+    LogMessage -type INFO -message "[$jumpboxName] Kubeconfig : $resolvedKubeconfig"
+
+    # -------------------------------------------------------------------------
+    # Display current values for comparison before patching
+    # -------------------------------------------------------------------------
+    $currentWorkerSize = & kubectl --kubeconfig $resolvedKubeconfig get packagedeployment vmsp-platform -n vmsp-platform `
+        -o jsonpath='{.spec.values.cluster.worker.size}' 2>$null
+    $currentProfileName = & kubectl --kubeconfig $resolvedKubeconfig get packagedeployment vmsp-platform -n vmsp-platform `
+        -o jsonpath='{.spec.values.profiles.name}' 2>$null
+
+    Write-Host ""
+    Write-Host " Recovery Site Scale — pd/vmsp-platform (namespace vmsp-platform)" -ForegroundColor Cyan
+    Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+    Write-Host ("  {0,-14} {1,-20} {2}" -f "", "Current", "Target") -ForegroundColor Gray
+    Write-Host ("  {0,-14} {1,-20} {2}" -f "Worker size", $currentWorkerSize, $WorkerSize) -ForegroundColor White
+    Write-Host ("  {0,-14} {1,-20} {2}" -f "Profile name", $currentProfileName, $ProfileName) -ForegroundColor White
+    Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+    Write-Host ""
+
+    if ($currentWorkerSize -eq $WorkerSize -and $currentProfileName -eq $ProfileName) {
+        LogMessage -type INFO -message "[$jumpboxName] Recovery cluster already matches the target size/profile. Nothing to do."
+        $StopWatch.Stop()
+        $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+        return
+    }
+
+    if (-not $Force) {
+        Do {
+            Write-Host " Proceed with scaling the recovery cluster to match the protected site? (Y/N): " -ForegroundColor Yellow -NoNewline
+            $confirmation = Read-Host
+        } Until ($confirmation -in @("Y", "y", "N", "n"))
+
+        if ($confirmation -in @("N", "n")) {
+            LogMessage -type INFO -message "[$jumpboxName] Operation cancelled by user."
+            $StopWatch.Stop(); return
+        }
+    }
+
+    # -------------------------------------------------------------------------
+    # Patch the PackageDeployment
+    # -------------------------------------------------------------------------
+    $patch = @{
+        spec = @{
+            values = @{
+                cluster  = @{ worker = @{ size = $WorkerSize } }
+                profiles = @{ name = $ProfileName }
+            }
+        }
+    } | ConvertTo-Json -Depth 6 -Compress
+
+    LogMessage -type INFO -message "[$jumpboxName] Patching pd/vmsp-platform (worker.size=$WorkerSize, profiles.name=$ProfileName)"
+    $patchOutput = & kubectl --kubeconfig $resolvedKubeconfig `
+        patch packagedeployment vmsp-platform -n vmsp-platform `
+        --type=merge -p $patch 2>&1
+    $exitCode = $LASTEXITCODE
+    $patchOutput | ForEach-Object { Write-Host "  $_" }
+    if ($exitCode -ne 0) {
+        LogMessage -type ERROR -message "[$jumpboxName] kubectl patch failed (exit $exitCode)"
+        $StopWatch.Stop(); return
+    }
+    LogMessage -type INFO -message "[$jumpboxName] Patch applied successfully"
+
+    # -------------------------------------------------------------------------
+    # Poll the PackageDeployment until it reports a terminal Ready/Completed
+    # state, or until TimeoutMinutes elapses. The source procedure explicitly
+    # states not to proceed with subsequent recovery tasks until this
+    # completes, so this loop blocks the caller by design.
+    # -------------------------------------------------------------------------
+    $terminalStates = @("Ready", "READY", "Completed", "COMPLETED", "Succeeded", "SUCCEEDED", "Reconciled")
+    $failureStates  = @("Failed", "FAILED", "Error", "ERROR")
+    LogMessage -type INFO -message "[$jumpboxName] Monitoring pd/vmsp-platform rollout (polling every ${PollIntervalSeconds}s, timeout ${TimeoutMinutes}m)"
+
+    $elapsedSeconds = 0
+    $timeoutSeconds = $TimeoutMinutes * 60
+    $lastStatusJson = ""
+    $finalPhase     = "UNKNOWN"
+    Do {
+        Start-Sleep -Seconds $PollIntervalSeconds
+        $elapsedSeconds += $PollIntervalSeconds
+
+        $statusJson = & kubectl --kubeconfig $resolvedKubeconfig get packagedeployment vmsp-platform -n vmsp-platform `
+            -o jsonpath='{.status}' 2>&1
+        $phase = & kubectl --kubeconfig $resolvedKubeconfig get packagedeployment vmsp-platform -n vmsp-platform `
+            -o jsonpath='{.status.phase}' 2>&1
+        if ([string]::IsNullOrWhiteSpace([string]$phase)) { $phase = "UNKNOWN" }
+        $finalPhase = [string]$phase
+
+        if ($statusJson -ne $lastStatusJson) {
+            LogMessage -type INFO -message "[$jumpboxName] Status ($($elapsedSeconds)s elapsed): $statusJson"
+            $lastStatusJson = $statusJson
+        } else {
+            LogMessage -type INFO -message "[$jumpboxName] Phase: $finalPhase (${elapsedSeconds}s elapsed, no change since last poll)"
+        }
+
+        if ($finalPhase -in $failureStates) {
+            LogMessage -type ERROR -message "[$jumpboxName] pd/vmsp-platform reports failure phase: $finalPhase"
+            break
+        }
+    } Until (($finalPhase -in $terminalStates) -or ($elapsedSeconds -ge $timeoutSeconds))
+
+    if ($finalPhase -in $terminalStates) {
+        LogMessage -type INFO -message "[$jumpboxName] pd/vmsp-platform reached terminal state: $finalPhase"
+    } elseif ($finalPhase -in $failureStates) {
+        LogMessage -type ERROR -message "[$jumpboxName] Scaling failed — resolve the reported error before proceeding with subsequent recovery tasks."
+    } else {
+        LogMessage -type WARNING -message "[$jumpboxName] Timed out after ${TimeoutMinutes}m waiting for a terminal state (last phase: $finalPhase). Check 'kubectl get packagedeployment vmsp-platform -n vmsp-platform' manually before proceeding — do not continue with subsequent recovery tasks until this is confirmed Ready."
+    }
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+Export-ModuleMember -Function Set-ServicesRuntimeScale
+
 Function Get-VcfmsFleetComponentRegistration {
     <#
     .SYNOPSIS
