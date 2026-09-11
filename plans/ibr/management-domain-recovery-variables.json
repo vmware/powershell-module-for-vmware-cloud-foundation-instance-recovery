@@ -1,10 +1,8 @@
 {
-  "extractedSDDCDataFile": "",
   "targetType": "",
   "targetFqdn": "",
   "targetAdmin": "",
   "targetAdminPassword": "",
-  "workloadDomain": "",
   "restoredvCenterDeploymentSize": "",
   "vCenterOvaFile": "",
   "restoredNsxManagerDeploymentSize": "",
@@ -29,7 +27,6 @@
   "sddcManagerAdmin": "",
   "sddcManagerAdminPassword": "",
   "restoredVcenterFqdn": "",
-  "clusterName": "",
   "restoredVcenterAdmin": "",
   "restoredVcenterAdminPassword": "",
   "restoredNsxManagerFqdn": "",

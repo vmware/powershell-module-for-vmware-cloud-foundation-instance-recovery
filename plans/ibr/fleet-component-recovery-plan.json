@@ -230,7 +230,7 @@
   {
     "description": "Stage Binaries (manual step)",
     "commandLine": "Read-Host 'Press Enter to confirm Binary Staging to VCFA Services Runtime is complete' | Out-Null; Write-Host 'Completed Task Read-Host'",
-    "displayName": "Confirm Manual Step: Binary Staging to VCFA Services Runtime",
+    "displayName": "Confirm Manual Step: Binary Staging to VCFA Services Runtime is complete",
     "condition": [
       {
         "type": "variable",

@@ -212,6 +212,16 @@ $global:fleetComponentsGroup = @{
 # are evaluated and before the Variables tab is built, so a referenced fact shows up pre-filled --
 # still an ordinary editable row, in case the extracted value is ever wrong or needs overriding.
 $global:derivedStepVariables = @{}
+# Variables the UI owns outright, so the operator never types them and they are never rendered as
+# editable rows: $extractedSDDCDataFile comes from the Data Source selection (pushed by
+# Set-ExportedSDDCDataFilePath), and $workloadDomain/$clusterName from the domain/additional-cluster
+# selection (pushed by Set-SelectedRecoveryTarget). Filtered out of every answers file this app generates AND out of every
+# one it loads, and Import-RecoveryVariables skips both names too -- together that means a stale
+# answers file can never quietly point a step at a different cluster or data file than the one
+# currently selected on screen. Deliberately NOT handled via $global:derivedStepVariables: that
+# mechanism produces a pre-filled but still-editable row, which for these two would be a control that
+# looks authoritative while the console ignores whatever is typed into it.
+$script:selectionDrivenVariables = @('extractedSDDCDataFile', 'workloadDomain', 'clusterName')
 # The live "selectedDomain"/"selectedCluster" data a "dataPath" condition (see Test-DataPathCondition)
 # can walk into generically, e.g. "selectedCluster.isStretched" -- set alongside
 # $global:derivedStepVariables at the same two places (Sync-DomainSteps/Sync-AdditionalClusterSteps),
@@ -2277,10 +2287,11 @@ function Import-VariablesAnswersFile([string]$Path) {
             $answerMap[$property.Name] = [string]$property.Value
         }
 
-        # extractedSDDCDataFile comes from the Data Source browse selection, not the answers file --
-        # an answer file that happens to also define it must not overwrite that value or show up as
-        # an editable row here.
-        $answerMap.Remove('extractedSDDCDataFile')
+        # extractedSDDCDataFile comes from the Data Source browse selection and clusterName from the
+        # cluster selection, not the answers file -- an answer file that happens to also define
+        # either must not overwrite the live selection or show up as an editable row here. See
+        # $script:selectionDrivenVariables.
+        foreach ($ownedName in $script:selectionDrivenVariables) { $answerMap.Remove($ownedName) }
 
         # Facts the extracted SDDC data already knows (isStretched, primaryDatastoreType -- see
         # Update-DerivedStepVariables/Sync-DomainSteps/Sync-AdditionalClusterSteps) fill in any of
@@ -2361,7 +2372,10 @@ $loadVariablesButton.Add_Click({
 # created empty immediately (so it exists on disk right away, not only once something's typed) and
 # rewritten in full every time a field loses focus -- no separate "Save" action to remember.
 function New-VariablesFile([string]$Path) {
-    $variableNames = @(Get-ReferencedVariableNames (Get-StepReferenceText $global:allSteps))
+    # Excludes the UI-owned, selection-driven names ($extractedSDDCDataFile, $clusterName) so a newly
+    # created answers file never contains a row the console would ignore -- see
+    # $script:selectionDrivenVariables.
+    $variableNames = @(Get-ReferencedVariableNames (Get-StepReferenceText $global:allSteps) | Where-Object { $_ -notin $script:selectionDrivenVariables })
     if ($variableNames.Count -eq 0) {
         New-Advisory 'No steps are currently loaded, so there are no variables to create a file for.'
         return
@@ -2491,6 +2505,23 @@ $applyOriginalVcfInstallerAvailable = {
 $originalVcfInstallerAvailableCheckBox.Add_Checked($applyOriginalVcfInstallerAvailable)
 $originalVcfInstallerAvailableCheckBox.Add_Unchecked($applyOriginalVcfInstallerAvailable)
 
+# Pushes the current selection into the console session as $workloadDomain/$clusterName. Both come
+# from one selection, so they go in ONE call -- two separate cmdlets would double the "Starting
+# Task/Completed Task" banners in the console for every click. Blank values are omitted rather than
+# sent as empty strings, so clearing part of a selection never overwrites a good value with ''.
+# Kept as a named function rather than repeating this at both call sites (Sync-DomainSteps and
+# Sync-AdditionalClusterSteps), since the two selection paths have to agree on exactly what "the
+# selected domain and cluster" mean.
+function Set-SelectedTargetInConsole([string]$WorkloadDomain, [string]$ClusterName) {
+    # $cmdArgs, not $args -- $args is a PowerShell automatic variable and assigning to it inside a
+    # function shadows the real one.
+    $cmdArgs = @()
+    if (-not [string]::IsNullOrWhiteSpace($WorkloadDomain)) { $cmdArgs += "-WorkloadDomain '$(Protect-SingleQuotes $WorkloadDomain)'" }
+    if (-not [string]::IsNullOrWhiteSpace($ClusterName)) { $cmdArgs += "-ClusterName '$(Protect-SingleQuotes $ClusterName)'" }
+    if ($cmdArgs.Count -eq 0) { return }
+    Send-ToConsole "Set-SelectedRecoveryTarget $($cmdArgs -join ' ')"
+}
+
 # Shared by the domain SelectionChanged handler and by switching back to IBR from FDR (see the
 # Recovery Type Checked handlers below) -- re-selecting the same domain doesn't refire
 # SelectionChanged, so switching recovery type has to be able to re-derive Execution's state from
@@ -2573,7 +2604,7 @@ function Import-GroupVariablesAnswersFile($Group, [string]$Path) {
         foreach ($property in $answers.PSObject.Properties) {
             $answerMap[$property.Name] = [string]$property.Value
         }
-        $answerMap.Remove('extractedSDDCDataFile')
+        foreach ($ownedName in $script:selectionDrivenVariables) { $answerMap.Remove($ownedName) }
 
         foreach ($name in $global:derivedStepVariables.Keys) {
             if (-not $answerMap.Contains($name)) {
@@ -2627,7 +2658,7 @@ function New-GroupVariablesFile($Group, [string]$Path) {
     # own "variable"-typed condition (see Update-GroupRevealedSteps), never in a step's commandLine --
     # it's driven entirely by $originalVcfInstallerAvailableCheckBox, so it must never turn into an
     # ordinary answers-file text row here the way every other referenced variable name does.
-    $variableNames = @(Get-ReferencedVariableNames (Get-StepReferenceText $Group.Steps) | Where-Object { $_ -ne 'originalVcfInstallerAvailable' })
+    $variableNames = @(Get-ReferencedVariableNames (Get-StepReferenceText $Group.Steps) | Where-Object { $_ -ne 'originalVcfInstallerAvailable' -and $_ -notin $script:selectionDrivenVariables })
     if ($variableNames.Count -eq 0) {
         New-Advisory 'No steps are currently loaded, so there are no variables to create a file for.'
         return
@@ -2770,6 +2801,11 @@ function Sync-DomainSteps {
                 domainName           = $selected.Tag.domainName
             }
         }
+
+        # See the matching call in Sync-AdditionalClusterSteps -- selecting a DOMAIN targets that
+        # domain's own default cluster, so that's the cluster these plans' $clusterName refers to,
+        # while $workloadDomain is the selected domain itself.
+        Set-SelectedTargetInConsole ([string]$selected.Tag.domainName) ([string]$defaultCluster.name)
     } else {
         $domainRecoveryPanel.Visibility = [System.Windows.Visibility]::Collapsed
         Set-ActiveStepsVariablesPane $stepsVariablesTabControl
@@ -2840,6 +2876,13 @@ function Sync-AdditionalClusterSteps {
                 domainName           = $selected.Tag.DomainName
             }
         }
+
+        # $workloadDomain/$clusterName are selection-driven, exactly like $extractedSDDCDataFile is
+        # Data-Source-driven (see Set-ExportedSDDCDataFilePath's own call site) -- the operator never
+        # types them, and Import-RecoveryVariables ignores any left in an answers file so a stale file
+        # can never point these steps at a different domain or cluster than the one highlighted on
+        # screen. An additional-cluster row carries its owning domain, so both come from this one row.
+        Set-SelectedTargetInConsole ([string]$selected.Tag.DomainName) ([string]$selected.Tag.ClusterName)
     } else {
         $additionalClusterRecoveryPanel.Visibility = [System.Windows.Visibility]::Collapsed
         $global:derivedStepVariables = @{}

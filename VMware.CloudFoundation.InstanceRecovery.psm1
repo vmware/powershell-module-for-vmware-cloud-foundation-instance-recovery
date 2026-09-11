@@ -16739,9 +16739,12 @@ Function Import-RecoveryVariables {
     LogMessage -type INFO -message "[$jumpboxName] Loading variables from '$Path'"
     $answers = Get-Content -Path $Path -Raw | ConvertFrom-Json
     foreach ($property in $answers.PSObject.Properties) {
-        # extractedSDDCDataFile comes from the orchestrator UI's own Data Source selection, not the
-        # answers file -- an answer file that happens to also define it must not overwrite that value.
-        if ($property.Name -eq 'extractedSDDCDataFile') {
+        # extractedSDDCDataFile comes from the orchestrator UI's own Data Source selection, and
+        # workloadDomain/clusterName from its domain/cluster selection -- not the answers file. An
+        # answer file that happens to also define any of them (e.g. one saved before these became
+        # selection-driven) must never overwrite the live selection, or a step would silently run
+        # against the wrong domain or cluster.
+        if ($property.Name -in @('extractedSDDCDataFile', 'workloadDomain', 'clusterName')) {
             continue
         }
         Set-Variable -Name $property.Name -Value ([string]$property.Value) -Scope Global
@@ -16785,6 +16788,63 @@ Function Set-ExportedSDDCDataFilePath {
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
 }
 Export-ModuleMember -Function Set-ExportedSDDCDataFilePath
+
+Function Set-SelectedRecoveryTarget {
+    <#
+    .SYNOPSIS
+    Sets $workloadDomain and/or $clusterName in the current session
+
+    .DESCRIPTION
+    The Set-SelectedRecoveryTarget cmdlet sets $workloadDomain and $clusterName, so the other
+    Instance Recovery cmdlets in this module can reference them directly without either needing to be
+    passed explicitly on the command line every time. The orchestrator UI calls this whenever a
+    domain or cluster is selected, which is the single source of truth for what the plan's steps act
+    on -- both values come from one selection, so they are set together in a single call rather than
+    one call each.
+
+    Import-RecoveryVariables deliberately ignores workloadDomain and clusterName found in an answers
+    file, so a stale file can never point the steps at a different domain or cluster than the one
+    selected on screen.
+
+    .PARAMETER WorkloadDomain
+    Name of the selected workload domain.
+
+    .PARAMETER ClusterName
+    Name of the selected vSphere cluster. For a domain selection this is that domain's default
+    cluster; for an additional-cluster selection it is the cluster that was picked.
+
+    .EXAMPLE
+    Set-SelectedRecoveryTarget -WorkloadDomain 'sfo-w02' -ClusterName 'sfo-w02-cl02'
+
+    .EXAMPLE
+    Set-SelectedRecoveryTarget -ClusterName 'sfo-w02-cl02'
+    #>
+    Param(
+        [Parameter (Mandatory = $false)][String] $WorkloadDomain,
+        [Parameter (Mandatory = $false)][String] $ClusterName
+    )
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+
+    if ($PSBoundParameters.ContainsKey('WorkloadDomain')) {
+        LogMessage -type INFO -message "[$jumpboxName] Setting selected workload domain to '$WorkloadDomain'"
+        Set-Variable -Name 'workloadDomain' -Value $WorkloadDomain -Scope Global
+    }
+    if ($PSBoundParameters.ContainsKey('ClusterName')) {
+        LogMessage -type INFO -message "[$jumpboxName] Setting selected cluster name to '$ClusterName'"
+        Set-Variable -Name 'clusterName' -Value $ClusterName -Scope Global
+    }
+    if (-not $PSBoundParameters.ContainsKey('WorkloadDomain') -and -not $PSBoundParameters.ContainsKey('ClusterName')) {
+        LogMessage -type WARNING -message "[$jumpboxName] Neither -WorkloadDomain nor -ClusterName was supplied; nothing was set."
+    }
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+Export-ModuleMember -Function Set-SelectedRecoveryTarget
 
 #EndRegion Recovery Variables
 
