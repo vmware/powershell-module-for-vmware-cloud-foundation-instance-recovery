@@ -117,6 +117,7 @@ Function Import-RecoveryVariables {
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
 }
+Export-ModuleMember -Function Import-RecoveryVariables
 
 Function Set-ExportedSDDCDataFilePath {
     <#
@@ -149,6 +150,7 @@ Function Set-ExportedSDDCDataFilePath {
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
 }
+Export-ModuleMember -Function Set-ExportedSDDCDataFilePath
 
 Function Set-SelectedRecoveryTarget {
     <#
@@ -205,6 +207,7 @@ Function Set-SelectedRecoveryTarget {
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
 }
+Export-ModuleMember -Function Set-SelectedRecoveryTarget
 
 #EndRegion Recovery Variables
 
