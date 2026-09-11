@@ -137,6 +137,7 @@ $fleetComponentsVariablesItemsPanel = $window.FindName('FleetComponentsVariables
 $runAllFleetComponentsButton = $window.FindName('RunAllFleetComponentsButton')
 $runAllFleetComponentsParallelCheckBox = $window.FindName('RunAllFleetComponentsParallelCheckBox')
 $fleetComponentsStepsListBox = $window.FindName('FleetComponentsStepsListBox')
+$originalVcfInstallerAvailableCheckBox = $window.FindName('OriginalVcfInstallerAvailableCheckBox')
 
 # Appends $Message as a new line to the Advisories pane (below the Console pane) and scrolls it into
 # view -- the single place every status/error/informational message in this app surfaces to the
@@ -184,6 +185,7 @@ $global:instanceComponentsGroup = @{
     Steps                    = @()
     StepRows                 = @()
     AnswersFilePath          = $null
+    AnswerMap                = $null
     StepsListBox             = $instanceComponentsStepsListBox
     VariablesItemsPanel      = $instanceComponentsVariablesItemsPanel
     LoadedVariablesText      = $instanceComponentsLoadedVariablesTextBlock
@@ -195,6 +197,7 @@ $global:fleetComponentsGroup = @{
     Steps                    = @()
     StepRows                 = @()
     AnswersFilePath          = $null
+    AnswerMap                = $null
     StepsListBox             = $fleetComponentsStepsListBox
     VariablesItemsPanel      = $fleetComponentsVariablesItemsPanel
     LoadedVariablesText      = $fleetComponentsLoadedVariablesTextBlock
@@ -2038,6 +2041,7 @@ function Import-ExtractedSddcDataFile([string]$Path) {
         $group.Steps = @()
         $group.StepRows = @()
         $group.AnswersFilePath = $null
+        $group.AnswerMap = $null
     }
     Set-ActiveStepsVariablesPane $stepsVariablesTabControl
     # Nothing meaningful to show until a load actually succeeds below -- collapsed here covers
@@ -2474,6 +2478,19 @@ $fleetComponentsNewVariablesFileButton.Add_Click({
         New-GroupVariablesFile $global:fleetComponentsGroup $dialog.FileName
     }.GetNewClosure())
 
+# Toggling "Original VCF Installer Available" re-filters Fleet Components' own Steps list right
+# away (see Update-GroupRevealedSteps's fleetComponentsGroup-only override) so "Add VCFMS Trusted
+# Certificate" / "Confirm Binary Staging is complete" swap places immediately, without waiting for
+# some unrelated variable edit to trigger the next re-filter. A no-op before Load/New Variables has
+# ever populated $global:fleetComponentsGroup.AnswerMap -- there's no Steps list to re-filter yet.
+$applyOriginalVcfInstallerAvailable = {
+    if ($global:fleetComponentsGroup.AnswerMap) {
+        Update-GroupRevealedSteps $global:fleetComponentsGroup $global:fleetComponentsGroup.AnswerMap
+    }
+}
+$originalVcfInstallerAvailableCheckBox.Add_Checked($applyOriginalVcfInstallerAvailable)
+$originalVcfInstallerAvailableCheckBox.Add_Unchecked($applyOriginalVcfInstallerAvailable)
+
 # Shared by the domain SelectionChanged handler and by switching back to IBR from FDR (see the
 # Recovery Type Checked handlers below) -- re-selecting the same domain doesn't refire
 # SelectionChanged, so switching recovery type has to be able to re-derive Execution's state from
@@ -2514,6 +2531,24 @@ function Update-RevealedSteps([System.Collections.IDictionary]$Variables) {
 # $global:instanceComponentsGroup/$global:fleetComponentsGroup) -- one group is exactly one plan
 # file, so there's only ever one ListBox to populate, not two.
 function Update-GroupRevealedSteps($Group, [System.Collections.IDictionary]$Variables) {
+    # Fleet Component Recovery's own "Original VCF Installer Available" checkbox (see
+    # $originalVcfInstallerAvailableCheckBox) gates two of its steps via an ordinary "variable"-typed
+    # condition (see Test-StepCondition), but that checkbox is deliberately never written into the
+    # answers file/Variables tab -- it's a UI toggle, not an operator-typed value. A clone (not a
+    # mutation of $Variables itself) carries its current state into just this one filtering pass, so
+    # the caller's own dictionary -- which IS what gets persisted back to the answers file on every
+    # real variable edit -- never picks up this UI-only key.
+    if ($Group -eq $global:fleetComponentsGroup) {
+        # Not $Variables.Clone() -- System.Collections.Specialized.OrderedDictionary (what
+        # [ordered]@{} produces, see $answerMap/$values in Import-GroupVariablesAnswersFile/
+        # New-GroupVariablesFile) doesn't expose a public Clone() method on this runtime; confirmed
+        # directly (a real test run threw "does not contain a method named 'Clone'" here). A
+        # hand-built copy works regardless of the concrete IDictionary implementation.
+        $cloned = [ordered]@{}
+        foreach ($key in $Variables.Keys) { $cloned[$key] = $Variables[$key] }
+        $Variables = $cloned
+        $Variables['originalVcfInstallerAvailable'] = if ($originalVcfInstallerAvailableCheckBox.IsChecked) { 'true' } else { 'false' }
+    }
     $Group.StepRows = Set-PlanStepsListBox $Group.StepsListBox (Get-ApplicableSteps $Group.Steps $Variables)
 }
 
@@ -2575,6 +2610,7 @@ function Import-GroupVariablesAnswersFile($Group, [string]$Path) {
 
         $Group.LoadedVariablesText.Text = "Loaded $($orderedNames.Count) variable(s) from $Path."
         $Group.AnswersFilePath = $Path
+        $Group.AnswerMap = $answerMap
 
         Update-GroupRevealedSteps $Group $answerMap
 
@@ -2587,7 +2623,11 @@ function Import-GroupVariablesAnswersFile($Group, [string]$Path) {
 # Group counterpart to New-VariablesFile -- see Import-GroupVariablesAnswersFile's own comment for
 # why this is a near-duplicate rather than a generalization of the existing shared-flow function.
 function New-GroupVariablesFile($Group, [string]$Path) {
-    $variableNames = @(Get-ReferencedVariableNames (Get-StepReferenceText $Group.Steps))
+    # "originalVcfInstallerAvailable" is referenced only via the two Fleet Component Recovery steps'
+    # own "variable"-typed condition (see Update-GroupRevealedSteps), never in a step's commandLine --
+    # it's driven entirely by $originalVcfInstallerAvailableCheckBox, so it must never turn into an
+    # ordinary answers-file text row here the way every other referenced variable name does.
+    $variableNames = @(Get-ReferencedVariableNames (Get-StepReferenceText $Group.Steps) | Where-Object { $_ -ne 'originalVcfInstallerAvailable' })
     if ($variableNames.Count -eq 0) {
         New-Advisory 'No steps are currently loaded, so there are no variables to create a file for.'
         return
@@ -2614,6 +2654,7 @@ function New-GroupVariablesFile($Group, [string]$Path) {
 
     $Group.LoadedVariablesText.Text = "Creating '$Path' -- values save automatically as you fill them in."
     $Group.AnswersFilePath = $Path
+    $Group.AnswerMap = $values
 
     Update-GroupRevealedSteps $Group $values
 
@@ -2676,6 +2717,7 @@ function Sync-DomainSteps {
         $group.Steps = @()
         $group.StepRows = @()
         $group.AnswersFilePath = $null
+        $group.AnswerMap = $null
     }
 
     $selected = $domainsListBox.SelectedItem
@@ -2837,6 +2879,7 @@ function Sync-IbrRecoveryScopeSelection {
         $group.Steps = @()
         $group.StepRows = @()
         $group.AnswersFilePath = $null
+        $group.AnswerMap = $null
     }
 
     # Clearing selection (rather than leaving stale rows selected under a since-rebuilt list)

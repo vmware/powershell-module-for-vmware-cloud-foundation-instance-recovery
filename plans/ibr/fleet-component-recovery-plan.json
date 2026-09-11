@@ -1,5 +1,32 @@
 [
   {
+    "description": "Restore VCF Operations from an Image-Based Backup (manual step, no automation available -- complete outside this tool, then press Enter here to continue)",
+    "commandLine": "Read-Host 'Press Enter once VCF Operations has been restored from an image-based backup' | Out-Null; Write-Host 'Completed Task Read-Host'",
+    "displayName": "Confirm VCF Operations has been restored",
+    "condition": [],
+    "threadId": "",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Verify VCF Operations State (manual step, no automation available -- complete outside this tool, then press Enter here to continue)",
+    "commandLine": "Read-Host 'Press Enter once VCF Operations state has been verified' | Out-Null; Write-Host 'Completed Task Read-Host'",
+    "displayName": "Confirm VCF Operations state has been verified",
+    "condition": [],
+    "threadId": "",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Retrieve Registered Operations Components",
+    "commandLine": "Get-VcfOperationsRegisteredComponents -VcfOperationsFqdn $vcfOperationsFqdn -Username $username -Password $password -AuthSource $authSource",
+    "displayName": "Get VCF Operations Registered Components",
+    "condition": [],
+    "threadId": "",
+    "interactive": false,
+    "visible": true
+  },
+  {
     "description": "Repoint SDDC Manager to the Offline Depot",
     "commandLine": "Set-SDDCManagerOfflineDepot -sddcManagerFqdn $sddcManagerFqdn -sddcManagerUser $sddcManagerAdmin -sddcManagerPassword $sddcManagerAdminPassword -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort -offlineDepotUsername $offlineDepotUsername -offlineDepotPassword $offlineDepotPassword",
     "displayName": "Set SDDC Manager Offline Depot",
@@ -12,15 +39,6 @@
     "description": "Trigger Download of Binaries Needed for Recovery",
     "commandLine": "Invoke-SddcManagerBundleDownload -sddcManagerFqdn $sddcManagerFqdn -vcfUserPassword $vcfUserPassword -rootPassword $rootPassword -adminPassword $adminPassword -VcfVersion $VcfVersion -WaitForCompletion",
     "displayName": "Invoke SDDC Manager Bundle Download",
-    "condition": [],
-    "threadId": "",
-    "interactive": false,
-    "visible": true
-  },
-  {
-    "description": "Retrieve Registered Operations Components",
-    "commandLine": "Get-VcfOperationsRegisteredComponents -VcfOperationsFqdn $vcfOperationsFqdn -Username $username -Password $password -AuthSource $authSource",
-    "displayName": "Get VCF Operations Registered Components",
     "condition": [],
     "threadId": "",
     "interactive": false,
@@ -63,19 +81,33 @@
     "visible": true
   },
   {
-    "description": "Trust the Installer Host Certificate",
+    "description": "Trust the Installer Host Certificate (only needed when binaries are hosted on the original VCF Installer)",
     "commandLine": "Add-VcfmsTrustedCertificate -ServicesRuntimeFqdn $servicesRuntimeFqdn -ServicesRuntimePassword $servicesRuntimePassword -RemoteHostFqdn $remoteHostFqdn",
     "displayName": "Add VCFMS Trusted Certificate",
-    "condition": [],
+    "condition": [
+      {
+        "type": "variable",
+        "name": "originalVcfInstallerAvailable",
+        "operator": "eq",
+        "value": "true"
+      }
+    ],
     "threadId": "",
     "interactive": false,
     "visible": true
   },
   {
-    "description": "Stage Binaries (manual step, no automation available -- complete outside this tool, then press Enter here to continue)",
+    "description": "Stage Binaries (manual step, no automation available -- complete outside this tool, then press Enter here to continue; only needed when the original VCF Installer is unavailable)",
     "commandLine": "Read-Host 'Press Enter to confirm Binary Staging is complete' | Out-Null; Write-Host 'Completed Task Read-Host'",
     "displayName": "Confirm Binary Staging is complete",
-    "condition": [],
+    "condition": [
+      {
+        "type": "variable",
+        "name": "originalVcfInstallerAvailable",
+        "operator": "eq",
+        "value": "false"
+      }
+    ],
     "threadId": "",
     "interactive": true,
     "visible": true
@@ -144,15 +176,6 @@
     "visible": true
   },
   {
-    "description": "Redeploy Telemetry and Real Time Metrics (manual step, no automation available)",
-    "commandLine": "Read-Host 'Press Enter once Telemetry and Real Time Metrics are redeployed' | Out-Null; Write-Host 'Completed Task Read-Host'",
-    "displayName": "Confirm Telemetry and Real Time Metrics are redeployed",
-    "condition": [],
-    "threadId": "",
-    "interactive": true,
-    "visible": true
-  },
-  {
     "description": "Update Log Management State (manual step, no automation available)",
     "commandLine": "Read-Host 'Press Enter once Log Management state is updated' | Out-Null; Write-Host 'Completed Task Read-Host'",
     "displayName": "Confirm Log Management state is updated",
@@ -168,6 +191,96 @@
     "condition": [],
     "threadId": "",
     "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "Retrieve Registered Operations Components (for VCF Automation)",
+    "commandLine": "Get-VcfOperationsRegisteredComponents -VcfOperationsFqdn $vcfOperationsFqdn -Username $username -Password $password -AuthSource $authSource",
+    "displayName": "Get VCF Operations Registered Components",
+    "condition": [],
+    "threadId": "",
+    "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "Prepare to Restore VCF Automation (remove the existing VSP cluster entry)",
+    "commandLine": "Remove-SddcManagerVspClusterEntry -SddcManagerFqdn $sddcManagerFqdn -VcfUserPassword $vcfUserPassword -RootPassword $rootPassword -ClusterType $clusterType",
+    "displayName": "Remove SDDC Manager Vsp Cluster Entry",
+    "condition": [],
+    "threadId": "",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Redeploy VCF Automation Services Runtime Cluster",
+    "commandLine": "New-ServicesRuntime -SddcManagerFqdn $sddcManagerFqdn -SddcManagerUser $sddcManagerUser -SddcManagerPassword $sddcManagerPassword -PlatformFqdn $platformFqdn -SystemUserPassword $systemUserPassword -Ipv4Addresses ($ipv4Addresses.Split(',').Trim()) -Size $size -NetworkMoId $networkMoId -GatewayCidrIpv4 $gatewayCidrIpv4 -ClusterId $clusterId -InternalClusterCidrIpv4 $internalClusterCidrIpv4 -type $type",
+    "displayName": "Create New Services Runtime",
+    "condition": [],
+    "threadId": "",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Set SFTP Backup Settings on the VCF Automation Services Runtime",
+    "commandLine": "Set-ServicesRuntimeSftpBackupSettings -ServicesRuntimeFqdn $servicesRuntimeFqdn -ServicesRuntimePassword $servicesRuntimePassword -ComponentId $vspId -SftpHost $sftpHost -SftpUsername $sftpUsername -SftpPassword $sftpPassword -SftpDirectory $sftpDirectory -EncryptionPassphrase $encryptionPassphrase",
+    "displayName": "Set Services Runtime SFTP Backup Settings",
+    "condition": [],
+    "threadId": "",
+    "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "Trust the Installer Host Certificate on VCF Automation",
+    "commandLine": "Add-VcfmsTrustedCertificate -ServicesRuntimeFqdn $servicesRuntimeFqdn -ServicesRuntimePassword $servicesRuntimePassword -RemoteHostFqdn $remoteHostFqdn",
+    "displayName": "Add VCFMS Trusted Certificate",
+    "condition": [],
+    "threadId": "",
+    "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "Retrieve a List of Backups for the VCF Automation (vcfa) Component",
+    "commandLine": "Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn $servicesRuntimeFqdn -ServicesRuntimePassword $servicesRuntimePassword -VspId $vspId -Components ($vcfaBackupComponents.Split(',').Trim())",
+    "displayName": "Get Services Runtime Component Backups",
+    "condition": [],
+    "threadId": "",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Restore VCF Automation",
+    "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $servicesRuntimeFqdn -ServicesRuntimePassword $servicesRuntimePassword -RestoreJsonFile \".\\restore-payload.json\"",
+    "displayName": "Restore Services Runtime Component Backups",
+    "condition": [],
+    "threadId": "",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Update Connections in VCF Automation (manual step, no automation available -- complete outside this tool, then press Enter here to continue)",
+    "commandLine": "Read-Host 'Press Enter once connections in VCF Automation have been updated' | Out-Null; Write-Host 'Completed Task Read-Host'",
+    "displayName": "Confirm VCF Automation connections have been updated",
+    "condition": [],
+    "threadId": "",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Install the Migration Service Engine Component on VCF Automation",
+    "commandLine": "Install-VcfaMigrationServiceEngine -VcfaServiceRuntimeFqdn $servicesRuntimeFqdn -VcfaServiceRuntimePassword $servicesRuntimePassword -RepositoryUrl $migrationServiceRepositoryUrl",
+    "displayName": "Install VCFA Migration Service Engine",
+    "condition": [],
+    "threadId": "",
+    "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "Redeploy License Server (manual step, no automation available -- complete outside this tool, then press Enter here to continue)",
+    "commandLine": "Read-Host 'Press Enter once the License Server has been redeployed' | Out-Null; Write-Host 'Completed Task Read-Host'",
+    "displayName": "Confirm License Server has been redeployed",
+    "condition": [],
+    "threadId": "",
+    "interactive": true,
     "visible": true
   }
 ]

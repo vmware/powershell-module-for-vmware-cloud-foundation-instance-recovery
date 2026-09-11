@@ -536,6 +536,9 @@
                         <TabItem Header="Steps">
                             <DockPanel Margin="0,8,0,0">
                                 <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="0,0,0,8">
+                                    <CheckBox x:Name="OriginalVcfInstallerAvailableCheckBox" Content="Original VCF Installer Available" IsChecked="True" VerticalAlignment="Center" />
+                                </DockPanel>
+                                <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="0,0,0,8">
                                     <Button x:Name="RunAllFleetComponentsButton" Content="Run All" HorizontalAlignment="Left" />
                                     <CheckBox x:Name="RunAllFleetComponentsParallelCheckBox" Content="Run parallel tasks using multiple threads (numbered circles)" IsChecked="True" VerticalAlignment="Center" Margin="12,0,0,0" />
                                 </DockPanel>

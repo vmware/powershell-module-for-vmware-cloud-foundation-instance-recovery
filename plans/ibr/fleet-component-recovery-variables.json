@@ -41,5 +41,7 @@
   "vspBackupComponents": "",
   "fleetBackupComponents": "",
   "logBackupComponents": "",
-  "originalConfigurationFile": ""
+  "originalConfigurationFile": "",
+  "vcfaBackupComponents": "",
+  "migrationServiceRepositoryUrl": ""
 }

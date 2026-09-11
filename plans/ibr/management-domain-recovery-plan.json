@@ -209,7 +209,7 @@
     "condition": [
       {
         "type": "dataPath",
-        "path": "selectedCluster.isStretchedseec",
+        "path": "selectedCluster.isStretched",
         "operator": "eq",
         "value": "t"
       }
