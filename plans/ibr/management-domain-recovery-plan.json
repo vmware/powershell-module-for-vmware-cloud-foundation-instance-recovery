@@ -304,15 +304,6 @@
   },
   {
     "description": "",
-    "commandLine": "Invoke-SddcManagerSSHKeyRefresh -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -clusterName $clusterName -workloadDomain $workloadDomain -VcfUserPassword $VcfUserPassword",
-    "displayName": "Invoke SDDC Manager SSHKey Refresh",
-    "condition": [],
-    "threadId": "",
-    "interactive": false,
-    "visible": true
-  },
-  {
-    "description": "",
     "commandLine": "Update-DomainDatastoreID -extractedSDDCDataFile $extractedSDDCDataFile -vCenterFqdn $vCenterFqdn -clusterName $clusterName -VcfUserPassword $VcfUserPassword -RootPassword $RootPassword -autoConfirm",
     "displayName": "Update Domain Datastore ID",
     "condition": [],
@@ -324,6 +315,15 @@
     "description": "",
     "commandLine": "Update-ClusterHostSourceIDs -extractedSDDCDataFile $extractedSDDCDataFile -vCenterFqdn $vCenterFqdn -clusterName $clusterName -VcfUserPassword $VcfUserPassword -RootPassword $RootPassword -autoConfirm",
     "displayName": "Update Cluster Host Source IDs",
+    "condition": [],
+    "threadId": "",
+    "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "",
+    "commandLine": "Invoke-SddcManagerSSHKeyRefresh -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -clusterName $clusterName -workloadDomain $workloadDomain -VcfUserPassword $VcfUserPassword",
+    "displayName": "Invoke SDDC Manager SSHKey Refresh",
     "condition": [],
     "threadId": "",
     "interactive": false,

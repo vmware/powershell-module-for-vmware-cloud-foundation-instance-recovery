@@ -115,15 +115,6 @@
     "visible": true
   },
   {
-    "description": "Synchronize the SDDC Manager Service Accounts on the ESX Host",
-    "commandLine": "Resolve-PhysicalHostServiceAccounts -targetFqdn $restoredVcenterFqdn -targetAdmin $restoredVcenterAdmin -targetAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -svcAccountPassword $svcAccountPassword -sddcManagerFqdn $sddcManagerFqdn -sddcManagerAdmin $sddcManagerAdmin -sddcManagerAdminPassword $sddcManagerAdminPassword",
-    "displayName": "Resolve Physical Host Service Accounts",
-    "condition": [],
-    "threadId": "",
-    "interactive": false,
-    "visible": true
-  },
-  {
     "description": "Update SSH Keys for Hosts",
     "commandLine": "Invoke-SddcManagerSSHKeyRefresh -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -clusterName $clusterName -VcfUserPassword $VcfUserPassword",
     "displayName": "Invoke SDDC Manager SSHKey Refresh",
@@ -145,6 +136,15 @@
     "description": "Update Host IDs",
     "commandLine": "Update-ClusterHostSourceIDs -extractedSDDCDataFile $extractedSDDCDataFile -vCenterFqdn $vCenterFqdn -clusterName $clusterName -VcfUserPassword $VcfUserPassword -RootPassword $RootPassword -autoConfirm",
     "displayName": "Update Cluster Host Source IDs",
+    "condition": [],
+    "threadId": "",
+    "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "Synchronize the SDDC Manager Service Accounts on the ESX Host",
+    "commandLine": "Resolve-PhysicalHostServiceAccounts -targetFqdn $restoredVcenterFqdn -targetAdmin $restoredVcenterAdmin -targetAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -svcAccountPassword $svcAccountPassword -sddcManagerFqdn $sddcManagerFqdn -sddcManagerAdmin $sddcManagerAdmin -sddcManagerAdminPassword $sddcManagerAdminPassword",
+    "displayName": "Resolve Physical Host Service Accounts",
     "condition": [],
     "threadId": "",
     "interactive": false,

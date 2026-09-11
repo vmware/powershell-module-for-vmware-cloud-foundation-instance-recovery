@@ -220,7 +220,7 @@
       }
     ],
     "threadId": "",
-    "interactive": false,
+    "interactive": true,
     "visible": true
   },
   {
