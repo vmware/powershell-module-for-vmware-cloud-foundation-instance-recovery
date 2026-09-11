@@ -55,7 +55,7 @@
   },
   {
     "description": "Prepare to Restore VCF Management Services (remove the existing VSP cluster entry)",
-    "commandLine": "Remove-SddcManagerVspClusterEntry -SddcManagerFqdn $sddcManagerFqdn -VcfUserPassword $vcfUserPassword -RootPassword $rootPassword -ClusterType $clusterType",
+    "commandLine": "Remove-SddcManagerVspClusterEntry -SddcManagerFqdn $sddcManagerFqdn -VcfUserPassword $vcfUserPassword -RootPassword $rootPassword -ClusterType MANAGEMENT",
     "displayName": "Remove SDDC Manager Vsp Cluster Entry",
     "condition": [],
     "threadId": "",
@@ -64,8 +64,8 @@
   },
   {
     "description": "Redeploy VCF Management Services (VCFMS)",
-    "commandLine": "New-ServicesRuntime -SddcManagerFqdn $sddcManagerFqdn -SddcManagerUser $sddcManagerUser -SddcManagerPassword $sddcManagerPassword -PlatformFqdn $platformFqdn -InstanceFqdn $instanceFqdn -FleetFqdn $fleetFqdn -SystemUserPassword $systemUserPassword -Ipv4Addresses ($ipv4Addresses.Split(',').Trim()) -Size $size -NetworkMoId $networkMoId -GatewayCidrIpv4 $gatewayCidrIpv4 -ClusterId $clusterId -InternalClusterCidrIpv4 $internalClusterCidrIpv4 -type $type",
-    "displayName": "Create New Services Runtime",
+    "commandLine": "New-ServicesRuntime -SddcManagerFqdn $sddcManagerFqdn -SddcManagerUser $sddcManagerUser -SddcManagerPassword $sddcManagerPassword -PlatformFqdn $platformFqdn -InstanceFqdn $instanceFqdn -FleetFqdn $fleetFqdn -SystemUserPassword $systemUserPassword -Ipv4Addresses ($ipv4Addresses.Split(',').Trim()) -Size $size -NetworkMoId $networkMoId -GatewayCidrIpv4 $gatewayCidrIpv4 -ClusterId $clusterId -InternalClusterCidrIpv4 $internalClusterCidrIpv4 -type MANAGEMENT",
+    "displayName": "Create New Services Runtime for VCFMS",
     "condition": [],
     "threadId": "",
     "interactive": true,
@@ -73,7 +73,7 @@
   },
   {
     "description": "Set SFTP Backup Settings on the Redeployed Services Runtime",
-    "commandLine": "Set-ServicesRuntimeSftpBackupSettings -ServicesRuntimeFqdn $servicesRuntimeFqdn -ServicesRuntimePassword $servicesRuntimePassword -ComponentId $vspId -SftpHost $sftpHost -SftpUsername $sftpUsername -SftpPassword $sftpPassword -SftpDirectory $sftpDirectory -EncryptionPassphrase $encryptionPassphrase",
+    "commandLine": "Set-ServicesRuntimeSftpBackupSettings -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -ComponentId $vcfmsVspId -SftpHost $sftpHost -SftpUsername $sftpUsername -SftpPassword $sftpPassword -SftpDirectory $sftpDirectory -EncryptionPassphrase $encryptionPassphrase",
     "displayName": "Set Services Runtime SFTP Backup Settings",
     "condition": [],
     "threadId": "",
@@ -82,7 +82,7 @@
   },
   {
     "description": "Trust the Installer Host Certificate (only needed when binaries are hosted on the original VCF Installer)",
-    "commandLine": "Add-VcfmsTrustedCertificate -ServicesRuntimeFqdn $servicesRuntimeFqdn -ServicesRuntimePassword $servicesRuntimePassword -RemoteHostFqdn $remoteHostFqdn",
+    "commandLine": "Add-VcfmsTrustedCertificate -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -RemoteHostFqdn $remoteHostFqdn",
     "displayName": "Add VCFMS Trusted Certificate",
     "condition": [
       {
@@ -113,9 +113,9 @@
     "visible": true
   },
   {
-    "description": "Retrieve a List of Backups for the VCF Management Services (vsp) Component",
-    "commandLine": "Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn $servicesRuntimeFqdn -ServicesRuntimePassword $servicesRuntimePassword -VspId $vspId -Components ($vspBackupComponents.Split(',').Trim())",
-    "displayName": "Get Services Runtime Component Backups",
+    "description": "Retrieve a List of Backups for the VCF Management Services (VCFMS",
+    "commandLine": "Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -VspId $vcfmsVspId -type vcmfs",
+    "displayName": "Retrieve VCFMS Backups",
     "condition": [],
     "threadId": "",
     "interactive": true,
@@ -123,15 +123,15 @@
   },
   {
     "description": "Restore VCF Management Services (VCFMS)",
-    "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $servicesRuntimeFqdn -ServicesRuntimePassword $servicesRuntimePassword -RestoreJsonFile \".\\restore-payload.json\"",
-    "displayName": "Restore Services Runtime Component Backups",
+    "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -RestoreJsonFile \".\\vcfms-restore-payload.json\"",
+    "displayName": "Restore VCFMS Backups",
     "condition": [],
     "threadId": "",
     "interactive": true,
     "visible": true
   },
   {
-    "description": "Apply Services Runtime Configuration (manual step): scp vmsp-platform.yaml to /tmp on the control plane node (10.11.10.33); ssh to the control plane; sudo su; export KUBECONFIG=/etc/kubernetes/admin.conf; kubectl apply -f /tmp/vmsp-platform.yaml. Press Enter here once complete.",
+    "description": "Apply Services Runtime Configuration (manual step)",
     "commandLine": "Read-Host 'Press Enter to confirm Services Runtime Configuration has been applied' | Out-Null; Write-Host 'Completed Task Read-Host'",
     "displayName": "Confirm Services Runtime Configuration has been applied",
     "condition": [],
@@ -140,27 +140,9 @@
     "visible": true
   },
   {
-    "description": "Retrieve Backups for the Remaining Fleet Components (vcf-fleet-lcm, vcf-fleet-depot, vcf-sddc-lcm, salt, salt-raas, vidb)",
-    "commandLine": "Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn $servicesRuntimeFqdn -ServicesRuntimePassword $servicesRuntimePassword -VspId $vspId -Components ($fleetBackupComponents.Split(',').Trim())",
-    "displayName": "Get Services Runtime Component Backups",
-    "condition": [],
-    "threadId": "",
-    "interactive": true,
-    "visible": true
-  },
-  {
-    "description": "Restore the Remaining Fleet Components",
-    "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $servicesRuntimeFqdn -ServicesRuntimePassword $servicesRuntimePassword -RestoreJsonFile \".\\restore-payload.json\"",
-    "displayName": "Restore Services Runtime Component Backups",
-    "condition": [],
-    "threadId": "",
-    "interactive": true,
-    "visible": true
-  },
-  {
     "description": "Retrieve Backups for Log Management (ops-logs)",
-    "commandLine": "Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn $servicesRuntimeFqdn -ServicesRuntimePassword $servicesRuntimePassword -VspId $vspId -Components ($logBackupComponents.Split(',').Trim())",
-    "displayName": "Get Services Runtime Component Backups",
+    "commandLine": "Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -VspId $vcfmsVspId -type opsLogs",
+    "displayName": "Get Log Management Backups",
     "condition": [],
     "threadId": "",
     "interactive": true,
@@ -168,15 +150,15 @@
   },
   {
     "description": "Restore Log Management",
-    "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $servicesRuntimeFqdn -ServicesRuntimePassword $servicesRuntimePassword -RestoreJsonFile \".\\restore-payload.json\"",
-    "displayName": "Restore Services Runtime Component Backup",
+    "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -RestoreJsonFile \".\\opsLogs-restore-payload.json\"",
+    "displayName": "Restore Log Management Backup",
     "condition": [],
     "threadId": "",
     "interactive": true,
     "visible": true
   },
   {
-    "description": "Update Log Management State (manual step, no automation available)",
+    "description": "Update Log Management State (manual step)",
     "commandLine": "Read-Host 'Press Enter once Log Management state is updated' | Out-Null; Write-Host 'Completed Task Read-Host'",
     "displayName": "Confirm Log Management state is updated",
     "condition": [],
@@ -204,7 +186,7 @@
   },
   {
     "description": "Prepare to Restore VCF Automation (remove the existing VSP cluster entry)",
-    "commandLine": "Remove-SddcManagerVspClusterEntry -SddcManagerFqdn $sddcManagerFqdn -VcfUserPassword $vcfUserPassword -RootPassword $rootPassword -ClusterType $clusterType",
+    "commandLine": "Remove-SddcManagerVspClusterEntry -SddcManagerFqdn $sddcManagerFqdn -VcfUserPassword $vcfUserPassword -RootPassword $rootPassword -ClusterType CONSUMPTION",
     "displayName": "Remove SDDC Manager Vsp Cluster Entry",
     "condition": [],
     "threadId": "",
@@ -213,7 +195,7 @@
   },
   {
     "description": "Redeploy VCF Automation Services Runtime Cluster",
-    "commandLine": "New-ServicesRuntime -SddcManagerFqdn $sddcManagerFqdn -SddcManagerUser $sddcManagerUser -SddcManagerPassword $sddcManagerPassword -PlatformFqdn $platformFqdn -SystemUserPassword $systemUserPassword -Ipv4Addresses ($ipv4Addresses.Split(',').Trim()) -Size $size -NetworkMoId $networkMoId -GatewayCidrIpv4 $gatewayCidrIpv4 -ClusterId $clusterId -InternalClusterCidrIpv4 $internalClusterCidrIpv4 -type $type",
+    "commandLine": "New-ServicesRuntime -SddcManagerFqdn $sddcManagerFqdn -SddcManagerUser $sddcManagerUser -SddcManagerPassword $sddcManagerPassword -PlatformFqdn $platformFqdn -SystemUserPassword $systemUserPassword -Ipv4Addresses ($ipv4Addresses.Split(',').Trim()) -Size $size -NetworkMoId $networkMoId -GatewayCidrIpv4 $gatewayCidrIpv4 -ClusterId $clusterId -InternalClusterCidrIpv4 $internalClusterCidrIpv4 -type CONSUMPTION",
     "displayName": "Create New Services Runtime",
     "condition": [],
     "threadId": "",
@@ -222,7 +204,7 @@
   },
   {
     "description": "Set SFTP Backup Settings on the VCF Automation Services Runtime",
-    "commandLine": "Set-ServicesRuntimeSftpBackupSettings -ServicesRuntimeFqdn $servicesRuntimeFqdn -ServicesRuntimePassword $servicesRuntimePassword -ComponentId $vspId -SftpHost $sftpHost -SftpUsername $sftpUsername -SftpPassword $sftpPassword -SftpDirectory $sftpDirectory -EncryptionPassphrase $encryptionPassphrase",
+    "commandLine": "Set-ServicesRuntimeSftpBackupSettings -ServicesRuntimeFqdn $vcfaServicesRuntimeFqdn -ServicesRuntimePassword $vcfaServicesRuntimePassword -ComponentId $vcfaVspId -SftpHost $sftpHost -SftpUsername $sftpUsername -SftpPassword $sftpPassword -SftpDirectory $sftpDirectory -EncryptionPassphrase $encryptionPassphrase",
     "displayName": "Set Services Runtime SFTP Backup Settings",
     "condition": [],
     "threadId": "",
@@ -231,7 +213,7 @@
   },
   {
     "description": "Trust the Installer Host Certificate on VCF Automation",
-    "commandLine": "Add-VcfmsTrustedCertificate -ServicesRuntimeFqdn $servicesRuntimeFqdn -ServicesRuntimePassword $servicesRuntimePassword -RemoteHostFqdn $remoteHostFqdn",
+    "commandLine": "Add-VcfmsTrustedCertificate -ServicesRuntimeFqdn $vcfaServicesRuntimeFqdn -ServicesRuntimePassword $vcfaServicesRuntimePassword -RemoteHostFqdn $remoteHostFqdn",
     "displayName": "Add VCFMS Trusted Certificate",
     "condition": [],
     "threadId": "",
@@ -239,9 +221,9 @@
     "visible": true
   },
   {
-    "description": "Retrieve a List of Backups for the VCF Automation (vcfa) Component",
-    "commandLine": "Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn $servicesRuntimeFqdn -ServicesRuntimePassword $servicesRuntimePassword -VspId $vspId -Components ($vcfaBackupComponents.Split(',').Trim())",
-    "displayName": "Get Services Runtime Component Backups",
+    "description": "Retrieve a List of Backups for the VCF Automation Component",
+    "commandLine": "Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn $vcfaServicesRuntimeFqdn -ServicesRuntimePassword $vcfaServicesRuntimePassword -VspId $vspId -type vcfa",
+    "displayName": "Retrieve VCF Automation Backups",
     "condition": [],
     "threadId": "",
     "interactive": true,
@@ -249,15 +231,33 @@
   },
   {
     "description": "Restore VCF Automation",
-    "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $servicesRuntimeFqdn -ServicesRuntimePassword $servicesRuntimePassword -RestoreJsonFile \".\\restore-payload.json\"",
-    "displayName": "Restore Services Runtime Component Backups",
+    "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $vcfaServicesRuntimeFqdn -ServicesRuntimePassword $vcfaServicesRuntimePassword -RestoreJsonFile \".\\vcfa-restore-payload.json\"",
+    "displayName": "Restore VCF Automation Backup",
     "condition": [],
     "threadId": "",
     "interactive": true,
     "visible": true
   },
   {
-    "description": "Update Connections in VCF Automation (manual step, no automation available -- complete outside this tool, then press Enter here to continue)",
+    "description": "Retrieve Telemetry Component Backup",
+    "commandLine": "Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -VspId $vcfmsVspId -component telemetry-acceptor",
+    "displayName": "Retrieve Telemetry Backups",
+    "condition": [],
+    "threadId": "",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Restore Telemetry",
+    "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -RestoreJsonFile \".\\vcfa-restore-payload.json\"",
+    "displayName": "Restore Telemetry Backup",
+    "condition": [],
+    "threadId": "",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Update Connections in VCF Automation (manual step)",
     "commandLine": "Read-Host 'Press Enter once connections in VCF Automation have been updated' | Out-Null; Write-Host 'Completed Task Read-Host'",
     "displayName": "Confirm VCF Automation connections have been updated",
     "condition": [],
@@ -266,16 +266,7 @@
     "visible": true
   },
   {
-    "description": "Install the Migration Service Engine Component on VCF Automation",
-    "commandLine": "Install-VcfaMigrationServiceEngine -VcfaServiceRuntimeFqdn $servicesRuntimeFqdn -VcfaServiceRuntimePassword $servicesRuntimePassword -RepositoryUrl $migrationServiceRepositoryUrl",
-    "displayName": "Install VCFA Migration Service Engine",
-    "condition": [],
-    "threadId": "",
-    "interactive": false,
-    "visible": true
-  },
-  {
-    "description": "Redeploy License Server (manual step, no automation available -- complete outside this tool, then press Enter here to continue)",
+    "description": "Redeploy License Server (manual step)",
     "commandLine": "Read-Host 'Press Enter once the License Server has been redeployed' | Out-Null; Write-Host 'Completed Task Read-Host'",
     "displayName": "Confirm License Server has been redeployed",
     "condition": [],
