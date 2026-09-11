@@ -10923,7 +10923,7 @@ Function Get-ServicesRuntimeComponentBackups {
         [Parameter(Mandatory = $true)][String] $ServicesRuntimeFqdn,
         [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
         [Parameter(Mandatory = $false)][String] $ServicesRuntimeUsername = "admin@vsp.local",
-        [Parameter(Mandatory = $false)][ValidateSet("vsp", "vcf-fleet-lcm", "vcf-fleet-depot", "vcf-sddc-lcm", "salt", "salt-raas", "vidb", "ops-logs", "vcfa")][String[]] $Components = @("vsp", "vcf-fleet-lcm", "vcf-fleet-depot", "vcf-sddc-lcm", "salt", "salt-raas", "vidb", "ops-logs", "vcfa"),
+        [Parameter(Mandatory = $false)][ValidateSet("vsp", "vcf-fleet-lcm", "vcf-fleet-depot", "vcf-sddc-lcm", "salt", "salt-raas", "vidb", "ops-logs", "vcfms-metrics-store", "vcf-obs-data-platform", "telemetry-acceptor", "vcfa")][String[]] $Components,
         [Parameter(Mandatory = $false)][String] $VspId
     )
 
@@ -10974,7 +10974,9 @@ Function Get-ServicesRuntimeComponentBackups {
     $now = Get-Date
 
     foreach ($backup in $allBackups) {
-        if ($backup.component.type -notin $Components) { continue }
+        if ($backup.component.type -notin $Components) {
+            continue 
+        }
         $backupName     = $backup.name
         $normalizedName = $backupName -replace 'T(\d{2})-(\d{2})-(\d{2})Z', 'T$1:$2:$3Z'
         $backupDate     = $null
@@ -10982,7 +10984,8 @@ Function Get-ServicesRuntimeComponentBackups {
         try {
             $backupDate = [datetime]::Parse($normalizedName, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal)
             $daysOld    = [math]::Floor(($now - $backupDate).TotalDays)
-        } catch {}
+        } catch {
+        }
 
         $parsedBackups += [PSCustomObject]@{
             ComponentType  = $backup.component.type
@@ -11042,12 +11045,15 @@ Function Get-ServicesRuntimeComponentBackups {
     $vspBackups = @()
     if ($showVspColumn) {
         foreach ($backup in $allBackups) {
-            if ($backup.component.type -ne "vsp") { continue }
+            if ($backup.component.type -ne "vsp") {
+                continue 
+            }
             $vspNormalizedName = $backup.name -replace 'T(\d{2})-(\d{2})-(\d{2})Z', 'T$1:$2:$3Z'
             $vspBackupDate = $null
             try {
                 $vspBackupDate = [datetime]::Parse($vspNormalizedName, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal)
-            } catch {}
+            } catch {
+            }
             if ($vspBackupDate) {
                 $vspBackups += [PSCustomObject]@{ Name = $backup.name; BackupDate = $vspBackupDate }
             }
@@ -11089,15 +11095,27 @@ Function Get-ServicesRuntimeComponentBackups {
         $oldest        = $sortedEntries | Select-Object -Last 1
         $ageStr        = if ($newest.BackupDate) {
             $ageSpan = $now - $newest.BackupDate
-            if ($ageSpan.TotalDays -ge 1) { "$([math]::Floor($ageSpan.TotalDays)) Days" } else { "$([math]::Floor($ageSpan.TotalHours)) Hours" }
-        } else { "unknown" }
+            if ($ageSpan.TotalDays -ge 1) {
+                "$([math]::Floor($ageSpan.TotalDays)) Days" 
+            } else {
+                "$([math]::Floor($ageSpan.TotalHours)) Hours" 
+            }
+        } else {
+            "unknown" 
+        }
         $uniqueTypes   = @($group.Entries | Select-Object -ExpandProperty ComponentType | Sort-Object -Unique)
-        $newestStr     = if ($newest.BackupDate) { $newest.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
+        $newestStr     = if ($newest.BackupDate) {
+            $newest.BackupDate.ToString("yyyy-MM-dd HH:mm") 
+        } else {
+            "unknown" 
+        }
 
         $vspStr = "-"
         if ($showVspColumn -and $newest.BackupDate) {
             $nearestVsp = $vspBackups | Sort-Object { [math]::Abs(($_.BackupDate - $newest.BackupDate).Ticks) } | Select-Object -First 1
-            if ($nearestVsp) { $vspStr = $nearestVsp.BackupDate.ToString("yyyy-MM-dd HH:mm") }
+            if ($nearestVsp) {
+                $vspStr = $nearestVsp.BackupDate.ToString("yyyy-MM-dd HH:mm") 
+            }
         }
 
         if ($isSingleComponent) {
@@ -11107,7 +11125,11 @@ Function Get-ServicesRuntimeComponentBackups {
                 $rowLines.Add(("  {0,3}  {1,-20}  {2,-10}  {3} ({4})" -f $group.Index, $newestStr, $ageStr, ($uniqueTypes -join ', '), $uniqueTypes.Count))
             }
         } else {
-            $oldestStr = if ($oldest.BackupDate) { $oldest.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
+            $oldestStr = if ($oldest.BackupDate) {
+                $oldest.BackupDate.ToString("yyyy-MM-dd HH:mm") 
+            } else {
+                "unknown" 
+            }
             if ($showVspColumn) {
                 $rowLines.Add(("  {0,3}  {1,-18}  {2,-16}  {3,-10}  {4,-26}  {5} ({6})" -f $group.Index, $oldestStr, $newestStr, $ageStr, $vspStr, ($uniqueTypes -join ', '), $uniqueTypes.Count))
             } else {
@@ -11167,11 +11189,21 @@ Function Get-ServicesRuntimeComponentBackups {
             Write-Host ("  {0,3}  {1,-20}  {2,-10}  {3}" -f "ID", "Backup Time (UTC)", "Age", "Version") -ForegroundColor Gray
             for ($i = 0; $i -lt $options.Count; $i++) {
                 $opt    = $options[$i]
-                $optStr = if ($opt.BackupDate) { $opt.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
+                $optStr = if ($opt.BackupDate) {
+                    $opt.BackupDate.ToString("yyyy-MM-dd HH:mm") 
+                } else {
+                    "unknown" 
+                }
                 $optAge = if ($opt.BackupDate) {
                     $optAgeSpan = $now - $opt.BackupDate
-                    if ($optAgeSpan.TotalDays -ge 1) { "$([math]::Floor($optAgeSpan.TotalDays)) Days" } else { "$([math]::Floor($optAgeSpan.TotalHours)) Hours" }
-                } else { "unknown" }
+                    if ($optAgeSpan.TotalDays -ge 1) {
+                        "$([math]::Floor($optAgeSpan.TotalDays)) Days" 
+                    } else {
+                        "$([math]::Floor($optAgeSpan.TotalHours)) Hours" 
+                    }
+                } else {
+                    "unknown" 
+                }
                 Write-Host ("  {0,3}  {1,-20}  {2,-10}  {3}" -f ($i + 1), $optStr, $optAge, $opt.Version) -ForegroundColor White
             }
             Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
@@ -11204,19 +11236,39 @@ Function Get-ServicesRuntimeComponentBackups {
         $sortedFinalEntries = $finalEntries | Sort-Object BackupDate -Descending
         $newestFinal       = $sortedFinalEntries | Select-Object -First 1
         $oldestFinal       = $sortedFinalEntries | Select-Object -Last 1
-        $newestFinalStr    = if ($newestFinal.BackupDate) { $newestFinal.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
-        $oldestFinalStr    = if ($oldestFinal.BackupDate) { $oldestFinal.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
-        $groupLabel        = if ($oldestFinalStr -eq $newestFinalStr) { "$newestFinalStr UTC" } else { "$oldestFinalStr -> $newestFinalStr UTC" }
+        $newestFinalStr    = if ($newestFinal.BackupDate) {
+            $newestFinal.BackupDate.ToString("yyyy-MM-dd HH:mm") 
+        } else {
+            "unknown" 
+        }
+        $oldestFinalStr    = if ($oldestFinal.BackupDate) {
+            $oldestFinal.BackupDate.ToString("yyyy-MM-dd HH:mm") 
+        } else {
+            "unknown" 
+        }
+        $groupLabel        = if ($oldestFinalStr -eq $newestFinalStr) {
+            "$newestFinalStr UTC" 
+        } else {
+            "$oldestFinalStr -> $newestFinalStr UTC" 
+        }
     }
 
     # Show what is available in the selected backup group
-    $groupTitle = if ($customMode) { "Components in custom backup group" } else { "Components in backup group $($selectedGroup.Index) ($groupLabel)" }
+    $groupTitle = if ($customMode) {
+        "Components in custom backup group" 
+    } else {
+        "Components in backup group $($selectedGroup.Index) ($groupLabel)" 
+    }
     Write-Host ""
     Write-Host " $groupTitle" -ForegroundColor Cyan
     Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
     Write-Host ("  {0,-16}  {1,-18}  {2}" -f "Component", "Version", "Backup Time") -ForegroundColor Gray
     $finalEntries | Sort-Object BackupDate -Descending | ForEach-Object {
-        $entryTimeStr = if ($_.BackupDate) { $_.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
+        $entryTimeStr = if ($_.BackupDate) {
+            $_.BackupDate.ToString("yyyy-MM-dd HH:mm") 
+        } else {
+            "unknown" 
+        }
         Write-Host ("  {0,-16}  {1,-18}  {2}" -f $_.ComponentType, $_.Version, $entryTimeStr) -ForegroundColor White
     }
     Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
@@ -11230,12 +11282,18 @@ Function Get-ServicesRuntimeComponentBackups {
 
     if ($buildJson -in @("Y", "y")) {
         $explicitlyPassed      = $PSBoundParameters.ContainsKey("Components")
-        $restoreComponentTypes = if ($explicitlyPassed) { $Components } else { $Components | Where-Object { $_ -notin @("ops-logs", "vcfa") } }
+        $restoreComponentTypes = if ($explicitlyPassed) {
+            $Components 
+        } else {
+            $Components | Where-Object { $_ -notin @("ops-logs", "vcfa") } 
+        }
 
         $restoreComponents = @(
             foreach ($componentType in $restoreComponentTypes) {
                 $entry = $finalEntries | Where-Object { $_.ComponentType -eq $componentType } | Select-Object -First 1
-                if ($entry) { @{ path = $entry.Path; point = $entry.Name } }
+                if ($entry) {
+                    @{ path = $entry.Path; point = $entry.Name } 
+                }
             }
         )
 
@@ -11333,7 +11391,7 @@ Function Restore-ServicesRuntimeComponentBackup {
     Write-Host " Restore Payload ($($payloadObject.components.Count) component(s)):" -ForegroundColor Cyan
     Write-Host " ----------------------------------------------------------------" -ForegroundColor Cyan
     foreach ($comp in $payloadObject.components) {
-        $componentName = ($comp.path -split '/') | Where-Object { $_ -in @("vsp", "vcf-fleet-lcm", "vcf-fleet-depot", "vcf-sddc-lcm", "salt", "salt-raas", "vidb", "ops-logs", "vcfa") } | Select-Object -First 1
+        $componentName = ($comp.path -split '/') | Where-Object { $_ -in @("vsp", "vcf-fleet-lcm", "vcf-fleet-depot", "vcf-sddc-lcm", "salt", "salt-raas", "vidb", "ops-logs", "vcfms-metrics-store", "vcf-obs-data-platform", "telemetry-acceptor", "vcfa") } | Select-Object -First 1
         if (-not $componentName) { $componentName = "unknown" }
         Write-Host "   $componentName" -ForegroundColor Yellow -NoNewline
         Write-Host " -> point: $($comp.point)" -ForegroundColor White
