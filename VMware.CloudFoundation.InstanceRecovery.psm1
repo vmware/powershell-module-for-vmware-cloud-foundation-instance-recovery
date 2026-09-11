@@ -8485,7 +8485,7 @@ Function Remove-SddcManagerVspClusterEntry {
     Start-Sleep 5
     $deleteClusterOutput = $stream.Read()
     $cleanDeleteCluster = & $cleanSshOutput $deleteClusterOutput
-    Write-Host $cleanDeleteCluster
+    #Write-Host $cleanDeleteCluster
     LogMessage -type INFO -message "[$SddcManagerFqdn] vsp_cluster DELETE result: $($cleanDeleteCluster.Trim())"
 
     # Delete the corresponding credential by username
@@ -8494,7 +8494,7 @@ Function Remove-SddcManagerVspClusterEntry {
     Start-Sleep 5
     $deleteCredOutput = $stream.Read()
     $cleanDeleteCred = & $cleanSshOutput $deleteCredOutput
-    Write-Host $cleanDeleteCred
+    #Write-Host $cleanDeleteCred
     LogMessage -type INFO -message "[$SddcManagerFqdn] credential DELETE result: $($cleanDeleteCred.Trim())"
 
     # Close SSH session
@@ -8504,7 +8504,7 @@ Function Remove-SddcManagerVspClusterEntry {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
-    return $vspClusterId
+    #return $vspClusterId
 }
 Export-ModuleMember -Function Remove-SddcManagerVspClusterEntry
 
