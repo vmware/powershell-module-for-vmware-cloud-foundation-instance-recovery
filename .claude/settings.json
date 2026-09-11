@@ -4,7 +4,8 @@
       "Read(//c/Users/Administrator/.claude/projects/C--Users-Administrator/**)",
       "Read(//f/PlatformTools/**)",
       "Read(//c/Program Files/PowerShell/Modules/VMware.CloudFoundation.InstanceRecovery/9.1.1.1001/**)",
-      "WebFetch(domain:techdocs.broadcom.com)"
+      "WebFetch(domain:techdocs.broadcom.com)",
+      "Read(//c/Users/Administrator/AppData/Local/Temp/2/claude/c--Users-Administrator-Documents-GitHub-powershell-module-for-vmware-cloud-foundation-instance-recovery/778d0225-7158-4fdd-bc13-48a253d266bb/scratchpad/**)"
     ],
     "defaultMode": "bypassPermissions",
     "blockReadsOutsideWorkingDirectories": false,
