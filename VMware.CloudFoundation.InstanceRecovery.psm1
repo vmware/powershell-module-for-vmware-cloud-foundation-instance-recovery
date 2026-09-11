@@ -10918,7 +10918,7 @@ Function Get-ServicesRuntimeComponentBackups {
         [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
         [Parameter(Mandatory = $false)][String] $ServicesRuntimeUsername = "admin@vsp.local",
         [Parameter(Mandatory = $false)][ValidateSet("vsp", "vcf-fleet-lcm", "vcf-fleet-depot", "vcf-sddc-lcm", "salt", "salt-raas", "vidb", "ops-logs", "vcfms-metrics-store", "vcf-obs-data-platform", "telemetry-acceptor", "vcfa")][String[]] $Components,
-        [Parameter(Mandatory = $false)][ValidateSet("vcfms", "vcfa", "opsLogs")][String] $Type,
+        [Parameter(Mandatory = $false)][ValidateSet("vcfms", "vcfa", "opsLogs", "fleet")][String] $Type,
         [Parameter(Mandatory = $false)][String] $VspId
     )
 
@@ -10947,6 +10947,8 @@ Function Get-ServicesRuntimeComponentBackups {
             $resolvedComponents = @("vsp", "vcfa", "vcd-migrator")
         } elseif ($Type -eq 'opsLogs') {
             $resolvedComponents = @("ops-logs")
+        }elseif ($Type -eq 'fleet') {
+            $resolvedComponents = @("vcf-fleet-lcm", "vcf-fleet-depot", "salt-raas", "vidb")
         }
     } else {
         LogMessage -type ERROR -message "[$jumpboxName] Either -Components or -Type must be specified."
