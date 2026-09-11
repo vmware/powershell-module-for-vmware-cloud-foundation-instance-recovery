@@ -1962,7 +1962,8 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
         $interactiveColumn = New-Object System.Windows.Controls.ColumnDefinition
         $interactiveColumn.Width = New-Object System.Windows.GridLength(100)
         $runColumn = New-Object System.Windows.Controls.ColumnDefinition
-        $runColumn.Width = New-Object System.Windows.GridLength(71)
+        # 6px for the button's own left margin (below) plus its 80px width.
+        $runColumn.Width = New-Object System.Windows.GridLength(86)
         [void]$variantPanel.ColumnDefinitions.Add($nameColumn)
         [void]$variantPanel.ColumnDefinitions.Add($threadColumn)
         [void]$variantPanel.ColumnDefinitions.Add($interactiveColumn)
@@ -1971,7 +1972,10 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
         $variantButton = New-Object System.Windows.Controls.Button
         # Wide enough for 'Running' -- the longest of the states this button ever shows (Pending/
         # Run/Running/Done/Failed/Skipped) -- so it doesn't visibly resize as a step starts/finishes.
-        $variantButton.Width = 65
+        # Matches the Recovery Plan tab's own "Run Plan" button width (see the XAML) so every button
+        # in the app that triggers/reflects step execution reads as the same control, not two
+        # different sizes depending on which tab happens to be open.
+        $variantButton.Width = 80
         $variantButton.Padding = '6,2'
         $variantButton.Margin = '6,0,0,0'
         $variantButton.HorizontalAlignment = 'Right'

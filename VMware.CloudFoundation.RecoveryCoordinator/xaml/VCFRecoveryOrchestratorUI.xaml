@@ -453,7 +453,7 @@
                             <Grid Margin="0,8,0,0">
                                 <DockPanel x:Name="DomainRecoveryPlanPanel" Visibility="Collapsed">
                                     <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="0,0,0,8">
-                                        <Button x:Name="RunAllDomainRecoveryButton" Content="Run Plan" DockPanel.Dock="Right" VerticalAlignment="Center" />
+                                        <Button x:Name="RunAllDomainRecoveryButton" Content="Run Plan" Width="80" DockPanel.Dock="Right" VerticalAlignment="Center" />
                                         <CheckBox x:Name="RunAllDomainRecoveryParallelCheckBox" Content="Run tasks using multiple threads (indicated by numbered circles)" IsChecked="True" VerticalAlignment="Center" DockPanel.Dock="Left" />
                                     </DockPanel>
                                     <ListBox x:Name="DomainRecoveryPlanStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
@@ -464,7 +464,7 @@
                                      also collapsed for FDR the same way as the other two. -->
                                 <DockPanel x:Name="AdditionalClusterRecoveryPlanPanel" Visibility="Collapsed">
                                     <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="0,0,0,8">
-                                        <Button x:Name="RunAllAdditionalClusterRecoveryButton" Content="Run Plan" DockPanel.Dock="Right" VerticalAlignment="Center" />
+                                        <Button x:Name="RunAllAdditionalClusterRecoveryButton" Content="Run Plan" Width="80" DockPanel.Dock="Right" VerticalAlignment="Center" />
                                         <CheckBox x:Name="RunAllAdditionalClusterRecoveryParallelCheckBox" Content="Run parallel tasks using multiple threads (numbered circles)" IsChecked="True" VerticalAlignment="Center" DockPanel.Dock="Left" />
                                     </DockPanel>
                                     <ListBox x:Name="AdditionalClusterRecoveryPlanStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
@@ -475,7 +475,7 @@
                                      picked (see the .ps1's Recovery Type Checked handlers). -->
                                 <DockPanel x:Name="RecoverFleetPlanPanel" Visibility="Collapsed">
                                     <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="0,0,0,8">
-                                        <Button x:Name="RunAllRecoverFleetButton" Content="Run Plan" DockPanel.Dock="Right" VerticalAlignment="Center" />
+                                        <Button x:Name="RunAllRecoverFleetButton" Content="Run Plan" Width="80" DockPanel.Dock="Right" VerticalAlignment="Center" />
                                         <CheckBox x:Name="RunAllRecoverFleetParallelCheckBox" Content="Run parallel tasks using multiple threads (numbered circles)" IsChecked="True" VerticalAlignment="Center" DockPanel.Dock="Left" />
                                     </DockPanel>
                                     <ListBox x:Name="RecoverFleetPlanStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
@@ -547,7 +547,7 @@
                         <TabItem Header="Recovery Plan">
                             <DockPanel Margin="0,8,0,0">
                                 <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="0,0,0,8">
-                                    <Button x:Name="RunAllInstanceComponentsButton" Content="Run Plan" DockPanel.Dock="Right" VerticalAlignment="Center" />
+                                    <Button x:Name="RunAllInstanceComponentsButton" Content="Run Plan" Width="80" DockPanel.Dock="Right" VerticalAlignment="Center" />
                                     <CheckBox x:Name="RunAllInstanceComponentsParallelCheckBox" Content="Run parallel tasks using multiple threads (numbered circles)" IsChecked="True" VerticalAlignment="Center" DockPanel.Dock="Left" />
                                 </DockPanel>
                                 <ListBox x:Name="InstanceComponentsPlanStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
@@ -582,7 +582,7 @@
                                      last child being handed the remaining (here, zero) width, which is what
                                      made a plain DockPanel unusable here previously. -->
                                 <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="0,0,0,8">
-                                    <Button x:Name="RunAllFleetComponentsButton" Content="Run Plan" DockPanel.Dock="Right" VerticalAlignment="Center" />
+                                    <Button x:Name="RunAllFleetComponentsButton" Content="Run Plan" Width="80" DockPanel.Dock="Right" VerticalAlignment="Center" />
                                     <CheckBox x:Name="RunAllFleetComponentsParallelCheckBox" Content="Run parallel tasks using multiple threads (numbered circles)" IsChecked="True" VerticalAlignment="Center" DockPanel.Dock="Left" />
                                     <CheckBox x:Name="OriginalVcfInstallerAvailableCheckBox" Content="Original VCF Installer Available" IsChecked="True" VerticalAlignment="Center" Margin="12,0,0,0" DockPanel.Dock="Left" />
                                 </DockPanel>
