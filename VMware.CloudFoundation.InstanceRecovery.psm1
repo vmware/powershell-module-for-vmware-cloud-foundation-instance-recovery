@@ -476,12 +476,12 @@ Function New-ExtractDataFromSDDCBackup {
     $sddcManagerObject += [pscustomobject]@{
         'fqdn'         = $sddcManagerFqdn
         'vmname'       = $sddcManagerVmName
-        'ip'           = If (Resolve-DnsName $sddcManagerFqdn -errorAction SilentlyContinue) {(Resolve-DnsName $sddcManagerFqdn | Where-Object {$_.section -eq "Answer"}).IPAddress} else {$null}
+        'ip'           = If (Resolve-DnsName $sddcManagerFqdn -errorAction SilentlyContinue) { (Resolve-DnsName $sddcManagerFqdn | Where-Object { $_.section -eq "Answer" }).IPAddress } else { $null }
         'fips_enabled' = $metadataJSON.fips_enabled
         'ceip_enabled' = $ceipStatus
         'version'      = $sddcManagerVersion
     }
-    If ($sddcManagerObject.ip -eq $null) { LogMessage -type WARNING -message "DNS Resolution for $($sddcManagerObject.fqdn) failed, please correct and retry"}
+    If ($sddcManagerObject.ip -eq $null) { LogMessage -type WARNING -message "DNS Resolution for $($sddcManagerObject.fqdn) failed, please correct and retry" }
 
     LogMessage -type INFO -message "[$jumpboxName] Retrieving NSX Manager Details"
     #Get All NSX Manager Clusters
@@ -509,7 +509,7 @@ Function New-ExtractDataFromSDDCBackup {
                 }
             }
             $nsxtManagerCluster = [pscustomobject]@{
-                'clusterVip' = If (Resolve-DnsName $lineContent.split("`t")[5] -erroraction SilentlyContinue) {(Resolve-DnsName $lineContent.split("`t")[5] | Where-Object { $_.section -eq "Answer" }).IPAddress } else { $null}
+                'clusterVip'  = If (Resolve-DnsName $lineContent.split("`t")[5] -erroraction SilentlyContinue) { (Resolve-DnsName $lineContent.split("`t")[5] | Where-Object { $_.section -eq "Answer" }).IPAddress } else { $null }
                 'clusterFqdn' = $lineContent.split("`t")[5]
                 'domainIDs'   = $nodeContent.domainIds
                 'nsxNodes'    = $nsxNodes
@@ -1388,12 +1388,12 @@ Function Update-ExtractedSDDCData {
                         $portGroup | Add-Member -NotePropertyName "Name" -NotePropertyValue $vmManagementPGName -Force
                     }
                     #Az1 PortGroups
-                    if (($portGroup.TransportType -eq "MANAGEMENT") -AND ($portGroup.faultLevel -in "PRIMARY","NONE")) {
+                    if (($portGroup.TransportType -eq "MANAGEMENT") -AND ($portGroup.faultLevel -in "PRIMARY", "NONE")) {
                         $managementPGName = ((Invoke-VcfGetVdses -ClusterId $cluster.id).PortGroups | Where-Object { ($_.TransportType -eq "MANAGEMENT") -AND ($_.id -eq $portGroup.id) }).Name
                         LogMessage -type INFO -message "Injecting portgroup name $managementPGName on $($vds.dvsName)"
                         $portGroup | Add-Member -NotePropertyName "Name" -NotePropertyValue $managementPGName -Force
                     }
-                    if (($portGroup.TransportType -eq "VMOTION") -AND ($portGroup.faultLevel -in "PRIMARY","NONE")) {
+                    if (($portGroup.TransportType -eq "VMOTION") -AND ($portGroup.faultLevel -in "PRIMARY", "NONE")) {
                         $vMotionPGName = ((Invoke-VcfGetVdses -ClusterId $cluster.id).PortGroups | Where-Object { ($_.TransportType -eq "VMOTION") -AND ($_.id -eq $portGroup.id) }).Name
                         LogMessage -type INFO -message "Injecting portgroup name $vMotionPGName on $($vds.dvsName)"
                         $portGroup | Add-Member -NotePropertyName "Name" -NotePropertyValue $vMotionPGName -Force
@@ -1404,8 +1404,7 @@ Function Update-ExtractedSDDCData {
                         $portGroup | Add-Member -NotePropertyName "Name" -NotePropertyValue $vSanPGName -Force
                     }
 
-                    If ($cluster.isStretched -eq 't')
-                    {
+                    If ($cluster.isStretched -eq 't') {
                         #Az2 PortGroups
                         if (($portGroup.TransportType -eq "MANAGEMENT") -AND ($portGroup.faultLevel -eq "SECONDARY")) {
                             $managementPGName = ((Invoke-VcfGetVdses -ClusterId $cluster.id).PortGroups | Where-Object { ($_.TransportType -eq "MANAGEMENT") -AND ($_.id -eq $portGroup.id) }).Name
@@ -1427,8 +1426,7 @@ Function Update-ExtractedSDDCData {
                 }
             }
 
-            If ($cluster.isStretched -eq 't')
-            {
+            If ($cluster.isStretched -eq 't') {
                 #Get Witness Fqdn
                 $clusterObject = Get-Cluster -Name $clusterName
                 $stretchedClusterSystem = Get-VsanView -Id "VimClusterVsanVcStretchedClusterSystem-vsan-stretched-cluster-system"
@@ -1504,7 +1502,7 @@ Function Update-ExtractedSDDCDataWithSupervisorDetails {
     # Connect CIS and PowerCLI for all queries
     LogMessage -type INFO -message "[$vCenterFQDN] Connecting to CIS and vCenter"
     $cisConnection = Connect-CisServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword
-    $supervisorService    = Get-CisService 'com.vmware.vcenter.namespace_management.clusters'
+    $supervisorService = Get-CisService 'com.vmware.vcenter.namespace_management.clusters'
     $contentLibraryService = Get-CisService 'com.vmware.content.library'
     $viConnection = Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword
 
@@ -1514,7 +1512,7 @@ Function Update-ExtractedSDDCDataWithSupervisorDetails {
 
     $supervisorsArray = @()
     Foreach ($supervisorSummary in $supervisorSummaries) {
-        $supervisorId   = $supervisorSummary.cluster
+        $supervisorId = $supervisorSummary.cluster
         $supervisorName = $supervisorSummary.cluster_name
 
         # Collect all vSphere clusters in this workload domain that match this supervisor by name
@@ -1531,9 +1529,9 @@ Function Update-ExtractedSDDCDataWithSupervisorDetails {
         $clusterArray = @()
         Foreach ($cluster in $associatedClusters) {
             $clusterEntry = New-Object -TypeName PSObject
-            $clusterEntry | Add-Member -NotePropertyName 'id'       -NotePropertyValue $cluster.id
-            $clusterEntry | Add-Member -NotePropertyName 'name'     -NotePropertyValue $cluster.name
-            $clusterEntry | Add-Member -NotePropertyName 'moRef'    -NotePropertyValue $supervisorId
+            $clusterEntry | Add-Member -NotePropertyName 'id' -NotePropertyValue $cluster.id
+            $clusterEntry | Add-Member -NotePropertyName 'name' -NotePropertyValue $cluster.name
+            $clusterEntry | Add-Member -NotePropertyName 'moRef' -NotePropertyValue $supervisorId
             $clusterArray += $clusterEntry
         }
 
@@ -1554,34 +1552,34 @@ Function Update-ExtractedSDDCDataWithSupervisorDetails {
             if ($datastoreBacking.type -eq 'DATASTORE') {
                 $datastoreMoRef = $datastoreBacking.datastore_id
                 $datastore = Get-Datastore | Where-Object { $_.Id -eq $datastoreMoRef } | Select-Object -First 1
-                $datastoreDetail | Add-Member -NotePropertyName 'type'       -NotePropertyValue $datastore.Type
-                $datastoreDetail | Add-Member -NotePropertyName 'name'       -NotePropertyValue $datastore.Name
-                $datastoreDetail | Add-Member -NotePropertyName 'moRef'      -NotePropertyValue $datastoreMoRef
-                $datastoreDetail | Add-Member -NotePropertyName 'server'     -NotePropertyValue $null
+                $datastoreDetail | Add-Member -NotePropertyName 'type' -NotePropertyValue $datastore.Type
+                $datastoreDetail | Add-Member -NotePropertyName 'name' -NotePropertyValue $datastore.Name
+                $datastoreDetail | Add-Member -NotePropertyName 'moRef' -NotePropertyValue $datastoreMoRef
+                $datastoreDetail | Add-Member -NotePropertyName 'server' -NotePropertyValue $null
                 $datastoreDetail | Add-Member -NotePropertyName 'mountPoint' -NotePropertyValue $null
                 LogMessage -type INFO -message "[$vCenterFQDN] Datastore backing: '$($datastore.Name)' (Type: $($datastore.Type))"
             } else {
                 # OTHER type — NFS or similar, parse server and mount point from storage_url
                 $storageUrl = $datastoreBacking.storage_url
                 $uri = [System.Uri]$storageUrl
-                $datastoreDetail | Add-Member -NotePropertyName 'type'       -NotePropertyValue $datastoreBacking.type
-                $datastoreDetail | Add-Member -NotePropertyName 'name'       -NotePropertyValue $null
-                $datastoreDetail | Add-Member -NotePropertyName 'moRef'      -NotePropertyValue $null
-                $datastoreDetail | Add-Member -NotePropertyName 'server'     -NotePropertyValue $uri.Host
+                $datastoreDetail | Add-Member -NotePropertyName 'type' -NotePropertyValue $datastoreBacking.type
+                $datastoreDetail | Add-Member -NotePropertyName 'name' -NotePropertyValue $null
+                $datastoreDetail | Add-Member -NotePropertyName 'moRef' -NotePropertyValue $null
+                $datastoreDetail | Add-Member -NotePropertyName 'server' -NotePropertyValue $uri.Host
                 $datastoreDetail | Add-Member -NotePropertyName 'mountPoint' -NotePropertyValue $uri.AbsolutePath
                 LogMessage -type INFO -message "[$vCenterFQDN] Datastore backing: $($uri.Host)$($uri.AbsolutePath) (Type: $($datastoreBacking.type))"
             }
 
             $contentLibraryDetail = New-Object -TypeName PSObject
-            $contentLibraryDetail | Add-Member -NotePropertyName 'id'        -NotePropertyValue $contentLibraryId
-            $contentLibraryDetail | Add-Member -NotePropertyName 'name'      -NotePropertyValue $contentLibraryName
+            $contentLibraryDetail | Add-Member -NotePropertyName 'id' -NotePropertyValue $contentLibraryId
+            $contentLibraryDetail | Add-Member -NotePropertyName 'name' -NotePropertyValue $contentLibraryName
             $contentLibraryDetail | Add-Member -NotePropertyName 'datastore' -NotePropertyValue $datastoreDetail
         }
 
         $supervisorDetail = New-Object -TypeName PSObject
-        $supervisorDetail | Add-Member -NotePropertyName 'supervisorName'    -NotePropertyValue $supervisorName
-        $supervisorDetail | Add-Member -NotePropertyName 'vsphereClusters'   -NotePropertyValue $clusterArray
-        $supervisorDetail | Add-Member -NotePropertyName 'contentLibrary'    -NotePropertyValue $contentLibraryDetail
+        $supervisorDetail | Add-Member -NotePropertyName 'supervisorName' -NotePropertyValue $supervisorName
+        $supervisorDetail | Add-Member -NotePropertyName 'vsphereClusters' -NotePropertyValue $clusterArray
+        $supervisorDetail | Add-Member -NotePropertyName 'contentLibrary' -NotePropertyValue $contentLibraryDetail
         $supervisorsArray += $supervisorDetail
     }
 
@@ -2083,8 +2081,7 @@ Function New-UploadAndModifySDDCManagerBackup {
     LogMessage -type INFO -message "[$jumpboxName] Uploading Backup File to SDDC Manager Appliance"
     $copyFile = Copy-VMGuestFile -Source $backupFileFullPath -Destination "/tmp/$backupFileName" -LocalToGuest -VM $sddcManagerVmName -GuestUser "root" -GuestPassword $rootUserPassword -Force -WarningAction SilentlyContinue -WarningVariable WarnMsg
 
-    If (($vcfVersion -like "9.0*") -or ($vcfVersion -like "9.1.0*"))
-    {
+    If (($vcfVersion -like "9.0*") -or ($vcfVersion -like "9.1.0*")) {
         #Establish SSH Connection to SDDC Manager
         LogMessage -type INFO -message "[$jumpboxName] Establishing Connection to $sddcManagerFQDN"
         $SecurePassword = ConvertTo-SecureString -String $vcfUserPassword -AsPlainText -Force
@@ -2272,7 +2269,7 @@ Function Get-BackupsFromSFTPServer {
         $byComponent[$key] = @($byComponent[$key] | Sort-Object BackupDate -Descending)
     }
 
-    $maxRank   = ($byComponent.Values | ForEach-Object { $_.Count } | Measure-Object -Maximum).Maximum
+    $maxRank = ($byComponent.Values | ForEach-Object { $_.Count } | Measure-Object -Maximum).Maximum
     $groupList = [System.Collections.Generic.List[PSCustomObject]]::new()
 
     for ($rank = 0; $rank -lt $maxRank; $rank++) {
@@ -2297,8 +2294,8 @@ Function Get-BackupsFromSFTPServer {
     Write-Host ""
 
     foreach ($group in $groupList) {
-        $newest      = $group.Entries | Sort-Object BackupDate -Descending | Select-Object -First 1
-        $ageStr      = if ($null -ne $newest.DaysOld) { "$($newest.DaysOld) days ago" } else { "unknown" }
+        $newest = $group.Entries | Sort-Object BackupDate -Descending | Select-Object -First 1
+        $ageStr = if ($null -ne $newest.DaysOld) { "$($newest.DaysOld) days ago" } else { "unknown" }
         $uniqueTypes = @($group.Entries | Select-Object -ExpandProperty ComponentType | Sort-Object -Unique)
         Write-Host ("  {0,3}  {1,-25}  {2,-14}  {3} ({4})" -f $group.Index, $newest.Name, $ageStr, ($uniqueTypes -join ', '), $uniqueTypes.Count) -ForegroundColor White
     }
@@ -2355,7 +2352,7 @@ Function Get-BackupsFromSFTPServer {
         )
 
         $restorePayload = @{ components = $restoreComponents } | ConvertTo-Json -Depth 5
-        $outputFile     = ".\restore-payload.json"
+        $outputFile = ".\restore-payload.json"
         $restorePayload | Out-File -FilePath $outputFile -Encoding utf8
         LogMessage -type INFO -message "[$jumpboxName] Restore JSON saved to $outputFile ($($restoreComponents.Count) component(s))"
         Write-Host ""
@@ -3660,10 +3657,10 @@ Function Add-HostsToCluster {
         }
 
         $targetSubCluster = $subClusterMeta | Select-Object -First 1
-        $subClusterId     = $targetSubCluster.SubClusterId
+        $subClusterId = $targetSubCluster.SubClusterId
 
         # Extract origin GUID from ComputeCollectionId ("37681f70-6760-40a6-b173-7baa522c301c:domain-c40" -> "37681f70-6760-40a6-b173-7baa522c301c")
-        $clusterOriginId  = $targetSubCluster.ComputeCollectionId.Split(':')[0]
+        $clusterOriginId = $targetSubCluster.ComputeCollectionId.Split(':')[0]
 
         LogMessage -type INFO -message "[$clusterName] Discovered Sub-Cluster: $($targetSubCluster.SubClusterName) ($subClusterId)"
 
@@ -3780,7 +3777,7 @@ Function Add-HostsToCluster {
                             transport_node_profile_sub_config_name = $targetSubCluster.SubClusterName
                         }
                     )
-                    sub_cluster_id = $subClusterPath
+                    sub_cluster_id             = $subClusterPath
                 }
                 $tncObj | Add-Member -NotePropertyName "sub_cluster_config" -NotePropertyValue (@($existingSubClusterConfig) + $newSubClusterConfigEntry) -Force
                 $tncBody = $tncObj | ConvertTo-Json -Depth 10
@@ -3941,12 +3938,12 @@ Function Add-VMKernelsToHost {
     $clusterDetails = $workloadDomain.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }
 
     If ($clusterDetails.isStretched -eq "t") {
-        $azs = @("az1","az2")
+        $azs = @("az1", "az2")
     } else {
         $azs = @("az1")
     }
     Foreach ($az in $azs) {
-        If ($clusterDetails.isStretched -eq "t"){
+        If ($clusterDetails.isStretched -eq "t") {
             LogMessage -type NOTE "[$clusterName] Adding VMkernels to $($az.toUpper()) Hosts"
         }
         $vmHosts = $clusterDetails.azHostMapping.$($az)
@@ -4242,24 +4239,17 @@ Function New-RebuiltVsanDatastore {
         $proposedConfigAccepted = Read-Host
         $proposedConfigAccepted = $proposedConfigAccepted -replace "`t|`n|`r", ""
         If ($proposedConfigAccepted -eq "Y") {
-            If ($clusterDetails.isStretched -eq 't')
-            {
-                $azs = @("az1","az2")
-            }
-            else
-            {
+            If ($clusterDetails.isStretched -eq 't') {
+                $azs = @("az1", "az2")
+            } else {
                 $azs = @("az1")
             }
-            Foreach ($az in $azs)
-            {
+            Foreach ($az in $azs) {
                 $azHosts = $clusterDetails.azHostMapping.$($az)
                 $azVmHosts = $vmhosts | Where-Object { $_.name -in $azHosts }
-                If ($clusterDetails.isStretched -eq 't')
-                {
+                If ($clusterDetails.isStretched -eq 't') {
                     LogMessage -type NOTE -message "[$clusterName] Starting Parallel Disk Group Creation across all $($az.ToUpper()) hosts"
-                }
-                else
-                {
+                } else {
                     LogMessage -type NOTE -message "[$clusterName] Starting Parallel Disk Group Creation across all hosts"
                 }
                 Foreach ($vmHost in $azVmHosts) {
@@ -4712,8 +4702,8 @@ Function Add-DiskgroupsToManagementHosts {
         $sshSession = $null
         Try {
             $SecurePassword = ConvertTo-SecureString -String $peer.RootPassword -AsPlainText -Force
-            $rootCreds      = New-Object System.Management.Automation.PSCredential ("root", $SecurePassword)
-            $inmem          = New-SSHMemoryKnownHost
+            $rootCreds = New-Object System.Management.Automation.PSCredential ("root", $SecurePassword)
+            $inmem = New-SSHMemoryKnownHost
             New-SSHTrustedHost -KnownHostStore $inmem -HostName $peer.Name `
                 -FingerPrint ((Get-SSHHostKey -ComputerName $peer.Name).fingerprint) | Out-Null
             Do {
@@ -4890,7 +4880,7 @@ Function New-SingleHostVsanDatastore {
     $workloadDomain = $extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }
     $cluster = $workloadDomain.vsphereClusterDetails | Where-Object { $_.isDefault -eq "t" }
     $azHosts = $cluster.azHostMapping.az1
-    $esxHostFqdn = ($cluster.hosts | where-object {$_.hostname -in $azHosts})[0].hostname
+    $esxHostFqdn = ($cluster.hosts | where-object { $_.hostname -in $azHosts })[0].hostname
     $esxHostAdmin = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $esxHostFqdn) -and ($_.username -eq "root") }).username
     $esxHostPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $esxHostFqdn) -and ($_.username -eq "root") }).password
 
@@ -5452,12 +5442,12 @@ Function New-RebuiltVdsConfiguration {
 
     If ($proposedConfigAccepted -eq "Y") {
         If ($cluster.isStretched -eq "t") {
-            $azs = @("az1","az2")
+            $azs = @("az1", "az2")
         } else {
             $azs = @("az1")
         }
         Foreach ($az in $azs) {
-            If ($cluster.isStretched -eq "t"){
+            If ($cluster.isStretched -eq "t") {
                 LogMessage -type NOTE "[$clusterName] Adding $($az.toUpper()) Hosts to Virtual Distributed Switches"
             }
             $azHosts = $cluster.azHostMapping.$($az)
@@ -6075,14 +6065,14 @@ Function New-PrepareManagementHostNetworking {
         Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false -ErrorAction SilentlyContinue
 
         If ($cluster.isStretched -eq "t") {
-            $azs = @("az1","az2")
+            $azs = @("az1", "az2")
         } else {
             $azs = @("az1")
         }
 
         Foreach ($az in $azs) {
             $azHosts = $cluster.azHostMapping.$($az)
-            $clusterHostDetails = $cluster.hosts | Where-Object {$_.hostname -in $azHosts}
+            $clusterHostDetails = $cluster.hosts | Where-Object { $_.hostname -in $azHosts }
 
             Foreach ($clusterHost in $clusterHostDetails) {
                 $currentHostFQDN = $clusterHost.hostname
@@ -6213,13 +6203,13 @@ Function Add-VMKernelsToManagementHosts {
     $cluster = $workloadDomain.vsphereClusterDetails | Where-Object { $_.isDefault -eq "t" }
 
     If ($cluster.isStretched -eq "t") {
-        $azs = @("az1","az2")
+        $azs = @("az1", "az2")
     } else {
         $azs = @("az1")
     }
 
     Foreach ($az in $azs) {
-        If ($cluster.isStretched -eq "t"){
+        If ($cluster.isStretched -eq "t") {
             LogMessage -type NOTE "[Managment Cluster] Adding VMkernels to $($az.toUpper()) Hosts"
         }
 
@@ -6250,7 +6240,7 @@ Function Add-VMKernelsToManagementHosts {
         }
 
         $azHosts = $cluster.azHostMapping.$($az)
-        $vmHosts = $cluster.hosts | Where-Object {$_.hostname -in $azHosts}
+        $vmHosts = $cluster.hosts | Where-Object { $_.hostname -in $azHosts }
 
         Foreach ($clusterHost in $vmHosts) {
             $currentHostFQDN = $clusterHost.hostname
@@ -7373,8 +7363,7 @@ Function Restore-ClusterVMTags {
 }
 Export-ModuleMember -Function Restore-ClusterVMTags
 
-Function Clear-vCenterAlarms
-{
+Function Clear-vCenterAlarms {
     Param(
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
@@ -7727,7 +7716,7 @@ Function Invoke-NSXEdgeClusterRecovery {
                 $memoryGB = $vmDeploymentConfig.resource_allocation.memory_allocation_in_mb / 1024
                 $cpuShareLevel = (($vmDeploymentConfig.reservation_info.cpu_reservation.reservation_in_shares -split ("_"))[0]).tolower()
                 $attachedNetworks = $vmDeploymentConfig.data_network_ids
-                $portgroup = (Get-VDPortGroup | Where-Object {$_.ExtensionData.MoRef.Value -eq $vmDeploymentConfig.management_network_id} | Select-Object Name).Name
+                $portgroup = (Get-VDPortGroup | Where-Object { $_.ExtensionData.MoRef.Value -eq $vmDeploymentConfig.management_network_id } | Select-Object Name).Name
                 $clusterVdsName = (Get-View -Id (Get-View -Id "DistributedVirtualPortgroup-$($vmDeploymentConfig.management_network_id)").Config.DistributedVirtualSwitch).Name
 
                 #Create Dummy VM
@@ -7974,7 +7963,7 @@ Function Invoke-NSXEdgeClusterRecoverySelective {
         $memoryGB = $vmDeploymentConfig.resource_allocation.memory_allocation_in_mb / 1024
         $cpuShareLevel = (($vmDeploymentConfig.reservation_info.cpu_reservation.reservation_in_shares -split ("_"))[0]).tolower()
         $attachedNetworks = $vmDeploymentConfig.data_network_ids
-        $portgroup = (Get-VDPortGroup | Where-Object {$_.ExtensionData.MoRef.Value -eq $vmDeploymentConfig.management_network_id} | Select-Object Name).Name
+        $portgroup = (Get-VDPortGroup | Where-Object { $_.ExtensionData.MoRef.Value -eq $vmDeploymentConfig.management_network_id } | Select-Object Name).Name
         $clusterVdsName = (Get-View -Id (Get-View -Id "DistributedVirtualPortgroup-$($vmDeploymentConfig.management_network_id)").Config.DistributedVirtualSwitch).Name
 
         LogMessage -type INFO -message "[$($edge.display_name)] Preparing to Update Placement References"
@@ -8313,8 +8302,7 @@ Function Wait-NSXTEdgeDeployment {
                         If ($nodeStatus -eq "UP" -and $controlStatus -eq "UP") {
                             $upCount++
                         }
-                    }
-                    Catch {
+                    } Catch {
                         # Edge status not yet available, continue polling
                     }
                 }
@@ -8324,8 +8312,7 @@ Function Wait-NSXTEdgeDeployment {
                     Return
                 }
             }
-        }
-        Catch {
+        } Catch {
             # Silent catch during polling - edges may not exist yet
         }
 
@@ -8835,8 +8822,8 @@ Function Update-ClusterHostSourceIDs {
     $hostMoRefMap = @()
     Foreach ($vmHost in $clusterHosts) {
         $hostMoRefMap += [PSCustomObject]@{
-            Hostname   = $vmHost.Name
-            NewMoRef   = $vmHost.ExtensionData.moref.value
+            Hostname = $vmHost.Name
+            NewMoRef = $vmHost.ExtensionData.moref.value
         }
         LogMessage -type INFO -message "[$vCenterFQDN] $($vmHost.Name) resolved with live MoRef: $($vmHost.ExtensionData.moref.value)"
     }
@@ -9555,7 +9542,7 @@ Function New-ServicesRuntime {
             internalClusterCidrIpv4 = $InternalClusterCidrIpv4
         }
         if (-not [string]::IsNullOrWhiteSpace($InstanceFqdn)) { $payloadHash['instanceFqdn'] = $InstanceFqdn }
-        if (-not [string]::IsNullOrWhiteSpace($FleetFqdn))    { $payloadHash['fleetFqdn']    = $FleetFqdn }
+        if (-not [string]::IsNullOrWhiteSpace($FleetFqdn)) { $payloadHash['fleetFqdn'] = $FleetFqdn }
         $requestBody = $payloadHash | ConvertTo-Json -Depth 5
     }
 
@@ -9748,17 +9735,17 @@ Function Get-ServicesRuntime {
             $payload = [ordered]@{ domainId = $cluster.domainId; platformFqdn = $cluster.platformFqdn }
             if ($cluster.type -ne 'CONSUMPTION') {
                 $payload['instanceFqdn'] = $cluster.instanceFqdn
-                $payload['fleetFqdn']    = $cluster.fleetFqdn
+                $payload['fleetFqdn'] = $cluster.fleetFqdn
             }
             $payload['systemUserPassword'] = "<admin@vsp.local password>"
-            $payload['type']               = $cluster.type
+            $payload['type'] = $cluster.type
             if ($cluster.type -eq 'MANAGEMENT') {
                 $startIp = $cluster.ipv4Pool.ipRange.startIpAddress
-                $endIp   = $cluster.ipv4Pool.ipRange.endIpAddress
+                $endIp = $cluster.ipv4Pool.ipRange.endIpAddress
                 if (-not $startIp -and $cluster.ipv4Pool.addresses) {
-                    $addrs   = @($cluster.ipv4Pool.addresses)
+                    $addrs = @($cluster.ipv4Pool.addresses)
                     $startIp = $addrs | Select-Object -First 1
-                    $endIp   = $addrs | Select-Object -Last 1
+                    $endIp = $addrs | Select-Object -Last 1
                 }
                 $payload['ipv4Pool'] = [ordered]@{
                     ipRange = [ordered]@{
@@ -9773,10 +9760,10 @@ Function Get-ServicesRuntime {
                 }
                 $payload['ipv4Pool'] = [ordered]@{ addresses = $addresses }
             }
-            $payload['size']                    = $cluster.size
-            $payload['networkMoId']             = "<vCenter Portgroup UUID>"
-            $payload['gatewayCidrIpv4']         = "<Gateway CIDR for the associated network>"
-            $payload['clusterId']               = $cluster.vspClusterId
+            $payload['size'] = $cluster.size
+            $payload['networkMoId'] = "<vCenter Portgroup UUID>"
+            $payload['gatewayCidrIpv4'] = "<Gateway CIDR for the associated network>"
+            $payload['clusterId'] = $cluster.vspClusterId
             $payload['internalClusterCidrIpv4'] = $cluster.internalClusterCidrIpv4
 
             $shortName = ($cluster.platformFqdn -split '\.')[0]
@@ -9997,7 +9984,7 @@ Function Get-VcfOperationsRegisteredComponents {
                         fleetFqdn        = $_.properties.fleetFqdn
                         ip               = $ip
                         instanceName     = $_.vcfInstance.instanceName
-                        instanceFqdn    = $_.properties.instanceFqdn
+                        instanceFqdn     = $_.properties.instanceFqdn
                         vcfInstanceFqdn  = $_.vcfInstance.fqdn
                     }
                 } |
@@ -10128,18 +10115,18 @@ Function Get-RegisteredComponentIds {
     $vspComponents = @(
         $allComponents |
             Where-Object { ($_.componentType).ToUpper() -eq 'VSP' } |
-            ForEach-Object {
-                $ip = if ($_.properties.ip) { $_.properties.ip } else { $_.vcfInstance.ip }
-                [PSCustomObject]@{
-                    id              = $_.componentUuid
-                    fqdn            = $_.properties.fqdn
-                    fleetFqdn       = $_.properties.fleetFqdn
-                    ip              = $ip
-                    instanceName    = $_.vcfInstance.instanceName
-                    vcfInstanceFqdn = $_.vcfInstance.fqdn
-                }
-            } |
-            Sort-Object -Property id -Unique
+                ForEach-Object {
+                    $ip = if ($_.properties.ip) { $_.properties.ip } else { $_.vcfInstance.ip }
+                    [PSCustomObject]@{
+                        id              = $_.componentUuid
+                        fqdn            = $_.properties.fqdn
+                        fleetFqdn       = $_.properties.fleetFqdn
+                        ip              = $ip
+                        instanceName    = $_.vcfInstance.instanceName
+                        vcfInstanceFqdn = $_.vcfInstance.fqdn
+                    }
+                } |
+                    Sort-Object -Property id -Unique
     )
 
     $vsp = $vspComponents
@@ -10892,16 +10879,20 @@ Function Get-ServicesRuntimeComponentBackups {
     .DESCRIPTION
     The Get-ServicesRuntimeComponentBackups cmdlet queries the  Services Runtime GET /api/v1/system/backups endpoint and returns backup details for the specified component types, sorted by component type and age. Output includes component type, version, backup name, age, and path.
 
-    When -Components does not include "vsp" or "vcfa", the "Available Backup Groups" table includes an additional "Associated VSP Backup (UTC)" column showing the vsp backup whose timestamp is closest to each group, for reference when the vsp component itself is not part of the selection.
+    Exactly one of -Components or -Type must be supplied. -Components takes an explicit list of component types. -Type instead picks one of three built-in component lists (vcfms, vcfa, opsLogs) -- see -Type's own parameter help for what each currently contains.
 
-    .EXAMPLE
-    Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!"
+    When the resolved component list does not include "vsp" or "vcfa", the "Available Backup Groups" table includes an additional "Associated VSP Backup (UTC)" column showing the vsp backup whose timestamp is closest to each group, for reference when the vsp component itself is not part of the selection.
+
+    If you opt in to generating a restore JSON, it's saved as ".\<Type>.json" when -Type was used, or ".\restore-payload.json" when -Components was used.
 
     .EXAMPLE
     Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -Components "vsp","salt"
 
     .EXAMPLE
-    Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -VspId "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+    Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -Type vcfms
+
+    .EXAMPLE
+    Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -Type vcfa -VspId "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
 
     .PARAMETER ServicesRuntimeFqdn
     FQDN of the Services Runtime instance.
@@ -10913,7 +10904,10 @@ Function Get-ServicesRuntimeComponentBackups {
     Username for the Services Runtime token. Default is "admin@vsp.local".
 
     .PARAMETER Components
-    One or more component types to display. Valid values: vsp, vcf-fleet-lcm, vcf-fleet-depot, vcf-sddc-lcm, salt, salt-raas, vidb, ops-logs, vcfa. Default is all of them. When you opt in to generated restore JSON without passing -Components, ops-logs and vcfa are omitted from that JSON (you can still include them by passing -Components explicitly).
+    One or more component types to display. Valid values: vsp, vcf-fleet-lcm, vcf-fleet-depot, vcf-sddc-lcm, salt, salt-raas, vidb, ops-logs, vcfa. Takes precedence over -Type if both are supplied. Exactly one of -Components or -Type is required.
+
+    .PARAMETER Type
+    Picks one of three built-in component lists instead of an explicit -Components list: "vcfms", "vcfa", or "opsLogs". Ignored if -Components is also supplied. Exactly one of -Components or -Type is required. The three lists are placeholders pending confirmation of their real component membership.
 
     .PARAMETER VspId
     When specified, only backups whose path contains /vcf/backups/<VspId>/ are returned. Use this to scope results to a specific VSP instance when multiple are present in the backup store.
@@ -10924,6 +10918,7 @@ Function Get-ServicesRuntimeComponentBackups {
         [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
         [Parameter(Mandatory = $false)][String] $ServicesRuntimeUsername = "admin@vsp.local",
         [Parameter(Mandatory = $false)][ValidateSet("vsp", "vcf-fleet-lcm", "vcf-fleet-depot", "vcf-sddc-lcm", "salt", "salt-raas", "vidb", "ops-logs", "vcfms-metrics-store", "vcf-obs-data-platform", "telemetry-acceptor", "vcfa")][String[]] $Components,
+        [Parameter(Mandatory = $false)][ValidateSet("vcfms", "vcfa", "opsLogs")][String] $Type,
         [Parameter(Mandatory = $false)][String] $VspId
     )
 
@@ -10931,6 +10926,32 @@ Function Get-ServicesRuntimeComponentBackups {
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    # -Components wins if both are supplied. -Type's three lists are placeholders (real component
+    # membership still to be confirmed) -- callers using -Type today are expected to update them
+    # directly here once known, not to pass -Components as a workaround. Resolved into a SEPARATE
+    # $resolvedComponents variable rather than reassigning $Components itself -- confirmed directly
+    # that PowerShell re-checks a parameter's own [ValidateSet] on every later assignment within the
+    # function, not just the initial binding, so assigning a placeholder string straight into
+    # $Components throws "not a valid value for the Components variable" the moment -Type is used.
+    # Each branch below assigns "$resolvedComponents = @(...)" directly, not via a switch/if-else
+    # used AS a value -- confirmed directly (same quirk Get-RecoveryPlanSteps's own comment
+    # describes) that piping a single-element array out of a switch/if branch on the way to an
+    # assignment silently unwraps it back into a bare scalar string.
+    if ($PSBoundParameters.ContainsKey('Components')) {
+        $resolvedComponents = $Components
+    } elseif ($PSBoundParameters.ContainsKey('Type')) {
+        if ($Type -eq 'vcfms') {
+            $resolvedComponents = @("vsp", "vcf-fleet-lcm", "vcf-fleet-depot", "vcf-sddc-lcm", "salt", "salt-raas", "vidb", "vcfms-metrics-store", "vcf-obs-data-platform", "telemetry-acceptor")
+        } elseif ($Type -eq 'vcfa') {
+            $resolvedComponents = @("vsp", "vcfa", "vcd-migrator")
+        } elseif ($Type -eq 'opsLogs') {
+            $resolvedComponents = @("ops-logs")
+        }
+    } else {
+        LogMessage -type ERROR -message "[$jumpboxName] Either -Components or -Type must be specified."
+        return
+    }
 
     # Get Services Runtime token
     $srToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
@@ -10974,342 +10995,285 @@ Function Get-ServicesRuntimeComponentBackups {
     $now = Get-Date
 
     foreach ($backup in $allBackups) {
-        if ($backup.component.type -notin $Components) {
-            continue 
-        }
-        $backupName     = $backup.name
-        $normalizedName = $backupName -replace 'T(\d{2})-(\d{2})-(\d{2})Z', 'T$1:$2:$3Z'
-        $backupDate     = $null
-        $daysOld        = $null
-        try {
-            $backupDate = [datetime]::Parse($normalizedName, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal)
-            $daysOld    = [math]::Floor(($now - $backupDate).TotalDays)
-        } catch {
-        }
-
-        $parsedBackups += [PSCustomObject]@{
-            ComponentType  = $backup.component.type
-            Version        = $backup.component.version
-            Name           = $backupName
-            NormalizedName = $normalizedName
-            BackupDate     = $backupDate
-            DaysOld        = $daysOld
-            Path           = $backup.path
-        }
-    }
-
-    if ($parsedBackups.Count -eq 0) {
-        LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] No backups found for components: $($Components -join ', ')"
-        return
-    }
-
-    # Build rank-based backup groups: rank 1 = most recent backup of each component,
-    # rank 2 = second most recent, and so on. Components backed up at different times
-    # within the same scheduled window are still placed in the same rank group.
-    $byComponent = @{}
-    foreach ($b in $parsedBackups) {
-        if (-not $byComponent.ContainsKey($b.ComponentType)) {
-            $byComponent[$b.ComponentType] = [System.Collections.Generic.List[PSCustomObject]]::new()
-        }
-        $byComponent[$b.ComponentType].Add($b)
-    }
-    foreach ($key in @($byComponent.Keys)) {
-        $byComponent[$key] = @($byComponent[$key] | Sort-Object BackupDate -Descending)
-    }
-
-    $maxRank   = ($byComponent.Values | ForEach-Object { $_.Count } | Measure-Object -Maximum).Maximum
-    $groupList = [System.Collections.Generic.List[PSCustomObject]]::new()
-
-    for ($rank = 0; $rank -lt $maxRank; $rank++) {
-        $entries = [System.Collections.Generic.List[PSCustomObject]]::new()
-        foreach ($componentType in ($byComponent.Keys | Sort-Object)) {
-            if ($rank -lt $byComponent[$componentType].Count) {
-                $entries.Add($byComponent[$componentType][$rank])
-            }
-        }
-        if ($entries.Count -gt 0) {
-            $groupList.Add([PSCustomObject]@{ Index = ($rank + 1); Entries = $entries })
-        }
-    }
-
-    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Found $($parsedBackups.Count) backup(s) across $($groupList.Count) backup group(s)"
-
-    # Display numbered list of backup groups
-    $isSingleComponent = ($Components.Count -eq 1)
-
-    # When the selection doesn't include vsp (or vcfa) directly, surface the nearest vsp backup
-    # alongside each group for reference -- vsp is the platform's own backup and its timing is
-    # useful context even when it wasn't explicitly requested. $allBackups is unfiltered by
-    # -Components (only by -VspId), so vsp entries are available here regardless of $Components.
-    $showVspColumn = ($Components -notcontains "vsp") -and ($Components -notcontains "vcfa")
-    $vspBackups = @()
-    if ($showVspColumn) {
-        foreach ($backup in $allBackups) {
-            if ($backup.component.type -ne "vsp") {
-                continue 
-            }
-            $vspNormalizedName = $backup.name -replace 'T(\d{2})-(\d{2})-(\d{2})Z', 'T$1:$2:$3Z'
-            $vspBackupDate = $null
+        if ($backup.component.type -notin $resolvedComponents) {
+            $backupName = $backup.name
+            $normalizedName = $backupName -replace 'T(\d{2})-(\d{2})-(\d{2})Z', 'T$1:$2:$3Z'
+            $backupDate = $null
+            $daysOld = $null
             try {
-                $vspBackupDate = [datetime]::Parse($vspNormalizedName, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal)
-            } catch {
-            }
-            if ($vspBackupDate) {
-                $vspBackups += [PSCustomObject]@{ Name = $backup.name; BackupDate = $vspBackupDate }
-            }
-        }
-        if ($vspBackups.Count -eq 0) {
-            LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] No vsp backups found to correlate with the requested component(s). Associated VSP Backup column will be omitted."
-            $showVspColumn = $false
-        }
-    }
+                $backupDate = [datetime]::Parse($normalizedName, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal)
+                $daysOld = [math]::Floor(($now - $backupDate).TotalDays)
+            } catch {}
 
-    # Build every row up front so the separator can be sized to the widest row --
-    # the Components column's length varies with how many component types share a group.
-    $headerLine = if ($isSingleComponent) {
-        if ($showVspColumn) {
-            "  {0,3}  {1,-20}  {2,-10}  {3,-26}  {4}" -f "ID", "Backup Points", "Age", "Associated VSP Backup", "Components"
-        } else {
-            "  {0,3}  {1,-20}  {2,-10}  {3}" -f "ID", "Backup Points", "Age", "Components"
-        }
-    } else {
-        if ($showVspColumn) {
-            "  {0,3}  {1,-18}  {2,-16}  {3,-10}  {4,-26}  {5}" -f "ID", "Backup Start", "Backup End", "Age", "Associated VSP Backup", "Components"
-        } else {
-            "  {0,3}  {1,-18}  {2,-16}  {3,-10}  {4}" -f "ID", "Backup Start", "Backup End", "Age", "Components"
-        }
-    }
-
-    $rowLines = [System.Collections.Generic.List[String]]::new()
-    if (-not $isSingleComponent) {
-        if ($showVspColumn) {
-            $rowLines.Add(("  {0,3}  {1,-18}  {2,-16}  {3,-10}  {4,-26}  {5}" -f 0, "Custom", "-", "-", "-", "Choose a backup point per component"))
-        } else {
-            $rowLines.Add(("  {0,3}  {1,-18}  {2,-16}  {3,-10}  {4}" -f 0, "Custom", "-", "-", "Choose a backup point per component"))
-        }
-    }
-
-    foreach ($group in $groupList) {
-        $sortedEntries = $group.Entries | Sort-Object BackupDate -Descending
-        $newest        = $sortedEntries | Select-Object -First 1
-        $oldest        = $sortedEntries | Select-Object -Last 1
-        $ageStr        = if ($newest.BackupDate) {
-            $ageSpan = $now - $newest.BackupDate
-            if ($ageSpan.TotalDays -ge 1) {
-                "$([math]::Floor($ageSpan.TotalDays)) Days" 
-            } else {
-                "$([math]::Floor($ageSpan.TotalHours)) Hours" 
-            }
-        } else {
-            "unknown" 
-        }
-        $uniqueTypes   = @($group.Entries | Select-Object -ExpandProperty ComponentType | Sort-Object -Unique)
-        $newestStr     = if ($newest.BackupDate) {
-            $newest.BackupDate.ToString("yyyy-MM-dd HH:mm") 
-        } else {
-            "unknown" 
-        }
-
-        $vspStr = "-"
-        if ($showVspColumn -and $newest.BackupDate) {
-            $nearestVsp = $vspBackups | Sort-Object { [math]::Abs(($_.BackupDate - $newest.BackupDate).Ticks) } | Select-Object -First 1
-            if ($nearestVsp) {
-                $vspStr = $nearestVsp.BackupDate.ToString("yyyy-MM-dd HH:mm") 
+            $parsedBackups += [PSCustomObject]@{
+                ComponentType  = $backup.component.type
+                Version        = $backup.component.version
+                Name           = $backupName
+                NormalizedName = $normalizedName
+                BackupDate     = $backupDate
+                DaysOld        = $daysOld
+                Path           = $backup.path
             }
         }
 
-        if ($isSingleComponent) {
-            if ($showVspColumn) {
-                $rowLines.Add(("  {0,3}  {1,-20}  {2,-10}  {3,-26}  {4} ({5})" -f $group.Index, $newestStr, $ageStr, $vspStr, ($uniqueTypes -join ', '), $uniqueTypes.Count))
-            } else {
-                $rowLines.Add(("  {0,3}  {1,-20}  {2,-10}  {3} ({4})" -f $group.Index, $newestStr, $ageStr, ($uniqueTypes -join ', '), $uniqueTypes.Count))
-            }
-        } else {
-            $oldestStr = if ($oldest.BackupDate) {
-                $oldest.BackupDate.ToString("yyyy-MM-dd HH:mm") 
-            } else {
-                "unknown" 
-            }
-            if ($showVspColumn) {
-                $rowLines.Add(("  {0,3}  {1,-18}  {2,-16}  {3,-10}  {4,-26}  {5} ({6})" -f $group.Index, $oldestStr, $newestStr, $ageStr, $vspStr, ($uniqueTypes -join ', '), $uniqueTypes.Count))
-            } else {
-                $rowLines.Add(("  {0,3}  {1,-18}  {2,-16}  {3,-10}  {4} ({5})" -f $group.Index, $oldestStr, $newestStr, $ageStr, ($uniqueTypes -join ', '), $uniqueTypes.Count))
-            }
-        }
-    }
-
-    $tableWidth = (@($rowLines) + $headerLine | Measure-Object -Property Length -Maximum).Maximum
-    $separator  = " " + ("─" * $tableWidth)
-
-    Write-Host ""
-    Write-Host " Available Backup Groups (All times in UTC)" -ForegroundColor Cyan
-    Write-Host $separator -ForegroundColor Cyan
-    Write-Host $headerLine -ForegroundColor Gray
-    Write-Host ""
-
-    $rowLines | ForEach-Object { Write-Host $_ -ForegroundColor White }
-
-    Write-Host $separator -ForegroundColor Cyan
-    Write-Host ""
-
-    # User selects a backup group
-    $selectedGroup = $null
-    $customMode    = $false
-    Do {
-        Write-Host " Enter the ID of the backup group to use, or C to Cancel: " -ForegroundColor Yellow -NoNewline
-        $selection = Read-Host
-        if ($selection -in @("C", "c")) {
-            LogMessage -type INFO -message "[$jumpboxName] Cancelled by user."
-            $StopWatch.Stop()
-            $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
-            LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+        if ($parsedBackups.Count -eq 0) {
+            LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] No backups found for components: $($Components -join ', ')"
             return
         }
-        $selNum = -1
-        if ([int]::TryParse($selection, [ref]$selNum) -and (-not $isSingleComponent) -and $selNum -eq 0) {
-            $customMode    = $true
-            $selectedGroup = [PSCustomObject]@{ Index = 0; Entries = @() }
-        } elseif ([int]::TryParse($selection, [ref]$selNum) -and $selNum -ge 1 -and $selNum -le $groupList.Count) {
-            $selectedGroup = $groupList | Where-Object { $_.Index -eq $selNum }
-        } else {
-            Write-Host " Invalid selection. Enter a number between 1 and $($groupList.Count), or C to Cancel." -ForegroundColor Yellow
-        }
-    } Until ($null -ne $selectedGroup)
-
-    # Build the final list of chosen entries: either the picked rank group, or a per-component custom selection
-    $finalEntries = @()
-    if ($customMode) {
-        LogMessage -type INFO -message "[$jumpboxName] Building custom backup selection"
-        foreach ($componentType in ($byComponent.Keys | Sort-Object)) {
-            $options = $byComponent[$componentType]
-
-            Write-Host ""
-            Write-Host " Backup points for '$componentType'" -ForegroundColor Cyan
-            Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
-            Write-Host ("  {0,3}  {1,-20}  {2,-10}  {3}" -f "ID", "Backup Time (UTC)", "Age", "Version") -ForegroundColor Gray
-            for ($i = 0; $i -lt $options.Count; $i++) {
-                $opt    = $options[$i]
-                $optStr = if ($opt.BackupDate) {
-                    $opt.BackupDate.ToString("yyyy-MM-dd HH:mm") 
-                } else {
-                    "unknown" 
-                }
-                $optAge = if ($opt.BackupDate) {
-                    $optAgeSpan = $now - $opt.BackupDate
-                    if ($optAgeSpan.TotalDays -ge 1) {
-                        "$([math]::Floor($optAgeSpan.TotalDays)) Days" 
-                    } else {
-                        "$([math]::Floor($optAgeSpan.TotalHours)) Hours" 
-                    }
-                } else {
-                    "unknown" 
-                }
-                Write-Host ("  {0,3}  {1,-20}  {2,-10}  {3}" -f ($i + 1), $optStr, $optAge, $opt.Version) -ForegroundColor White
+        LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] No backups found for components: $($resolvedComponents -join ', ')"
+        # Build rank-based backup groups: rank 1 = most recent backup of each component,
+        # rank 2 = second most recent, and so on. Components backed up at different times
+        # within the same scheduled window are still placed in the same rank group.
+        $byComponent = @{}
+        foreach ($b in $parsedBackups) {
+            if (-not $byComponent.ContainsKey($b.ComponentType)) {
+                $byComponent[$b.ComponentType] = [System.Collections.Generic.List[PSCustomObject]]::new()
             }
-            Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
-
-            $chosenEntry = $null
-            Do {
-                Write-Host " Enter the ID of the backup point to use for '$componentType', or C to Cancel: " -ForegroundColor Yellow -NoNewline
-                $optSelection = Read-Host
-                if ($optSelection -in @("C", "c")) {
-                    LogMessage -type INFO -message "[$jumpboxName] Cancelled by user."
-                    $StopWatch.Stop()
-                    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
-                    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
-                    return
-                }
-                $optNum = 0
-                if ([int]::TryParse($optSelection, [ref]$optNum) -and $optNum -ge 1 -and $optNum -le $options.Count) {
-                    $chosenEntry = $options[$optNum - 1]
-                } else {
-                    Write-Host " Invalid selection. Enter a number between 1 and $($options.Count), or C to Cancel." -ForegroundColor Yellow
-                }
-            } Until ($null -ne $chosenEntry)
-
-            $finalEntries += $chosenEntry
+            $byComponent[$b.ComponentType].Add($b)
         }
-        $groupLabel = "Custom"
-        LogMessage -type INFO -message "[$jumpboxName] Selected custom backup group ($($finalEntries.Count) component(s))"
-    } else {
-        $finalEntries      = @($selectedGroup.Entries)
-        $sortedFinalEntries = $finalEntries | Sort-Object BackupDate -Descending
-        $newestFinal       = $sortedFinalEntries | Select-Object -First 1
-        $oldestFinal       = $sortedFinalEntries | Select-Object -Last 1
-        $newestFinalStr    = if ($newestFinal.BackupDate) {
-            $newestFinal.BackupDate.ToString("yyyy-MM-dd HH:mm") 
-        } else {
-            "unknown" 
-        }
-        $oldestFinalStr    = if ($oldestFinal.BackupDate) {
-            $oldestFinal.BackupDate.ToString("yyyy-MM-dd HH:mm") 
-        } else {
-            "unknown" 
-        }
-        $groupLabel        = if ($oldestFinalStr -eq $newestFinalStr) {
-            "$newestFinalStr UTC" 
-        } else {
-            "$oldestFinalStr -> $newestFinalStr UTC" 
-        }
-    }
-
-    # Show what is available in the selected backup group
-    $groupTitle = if ($customMode) {
-        "Components in custom backup group" 
-    } else {
-        "Components in backup group $($selectedGroup.Index) ($groupLabel)" 
-    }
-    Write-Host ""
-    Write-Host " $groupTitle" -ForegroundColor Cyan
-    Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
-    Write-Host ("  {0,-16}  {1,-18}  {2}" -f "Component", "Version", "Backup Time") -ForegroundColor Gray
-    $finalEntries | Sort-Object BackupDate -Descending | ForEach-Object {
-        $entryTimeStr = if ($_.BackupDate) {
-            $_.BackupDate.ToString("yyyy-MM-dd HH:mm") 
-        } else {
-            "unknown" 
-        }
-        Write-Host ("  {0,-16}  {1,-18}  {2}" -f $_.ComponentType, $_.Version, $entryTimeStr) -ForegroundColor White
-    }
-    Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
-    Write-Host ""
-
-    # Offer to construct a restore JSON for the selected backup group
-    Do {
-        Write-Host " Would you like to construct a restore JSON for this backup group? (Y/N): " -ForegroundColor Yellow -NoNewline
-        $buildJson = Read-Host
-    } Until ($buildJson -in @("Y", "y", "N", "n"))
-
-    if ($buildJson -in @("Y", "y")) {
-        $explicitlyPassed      = $PSBoundParameters.ContainsKey("Components")
-        $restoreComponentTypes = if ($explicitlyPassed) {
-            $Components 
-        } else {
-            $Components | Where-Object { $_ -notin @("ops-logs", "vcfa") } 
+        foreach ($key in @($byComponent.Keys)) {
+            $byComponent[$key] = @($byComponent[$key] | Sort-Object BackupDate -Descending)
         }
 
-        $restoreComponents = @(
-            foreach ($componentType in $restoreComponentTypes) {
-                $entry = $finalEntries | Where-Object { $_.ComponentType -eq $componentType } | Select-Object -First 1
-                if ($entry) {
-                    @{ path = $entry.Path; point = $entry.Name } 
+        $maxRank = ($byComponent.Values | ForEach-Object { $_.Count } | Measure-Object -Maximum).Maximum
+        $groupList = [System.Collections.Generic.List[PSCustomObject]]::new()
+
+        for ($rank = 0; $rank -lt $maxRank; $rank++) {
+            $entries = [System.Collections.Generic.List[PSCustomObject]]::new()
+            foreach ($componentType in ($byComponent.Keys | Sort-Object)) {
+                if ($rank -lt $byComponent[$componentType].Count) {
+                    $entries.Add($byComponent[$componentType][$rank])
                 }
             }
-        )
+            if ($entries.Count -gt 0) {
+                $groupList.Add([PSCustomObject]@{ Index = ($rank + 1); Entries = $entries })
+            }
+        }
 
-        $restorePayload = @{ components = $restoreComponents } | ConvertTo-Json -Depth 5
-        $outputFile     = ".\restore-payload.json"
-        $restorePayload | Out-File -FilePath $outputFile -Encoding utf8
-        LogMessage -type INFO -message "[$jumpboxName] Restore JSON saved to $outputFile ($($restoreComponents.Count) component(s))"
-        Write-Host ""
-        Write-Host " Restore JSON contents:" -ForegroundColor Cyan
-        Write-Host $restorePayload
-        Write-Host ""
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Found $($parsedBackups.Count) backup(s) across $($groupList.Count) backup group(s)"
+
+        # Display numbered list of backup groups
+        $isSingleComponent = ($Components.Count -eq 1)
+
+        # When the selection doesn't include vsp (or vcfa) directly, surface the nearest vsp backup
+        $isSingleComponent = ($resolvedComponents.Count -eq 1)
+
+        # When the selection doesn't include vsp (or vcfa) directly, surface the nearest vsp backup
+        # alongside each group for reference -- vsp is the platform's own backup and its timing is
+        # useful context even when it wasn't explicitly requested. $allBackups is unfiltered by
+        # -Components/-Type (only by -VspId), so vsp entries are available here regardless of
+        # $resolvedComponents.
+        $showVspColumn = ($resolvedComponents -notcontains "vsp") -and ($resolvedComponents -notcontains "vcfa")
+        if ($backup.component.type -ne "vsp") { continue }
+        $vspNormalizedName = $backup.name -replace 'T(\d{2})-(\d{2})-(\d{2})Z', 'T$1:$2:$3Z'
+        $vspBackupDate = $null
+        try {
+            $vspBackupDate = [datetime]::Parse($vspNormalizedName, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal)
+        } catch {}
+        if ($vspBackupDate) {
+            $vspBackups += [PSCustomObject]@{ Name = $backup.name; BackupDate = $vspBackupDate }
+        }
+    }
+    if ($vspBackups.Count -eq 0) {
+        LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] No vsp backups found to correlate with the requested component(s). Associated VSP Backup column will be omitted."
+        $showVspColumn = $false
+    }
+}
+
+# Build every row up front so the separator can be sized to the widest row --
+# the Components column's length varies with how many component types share a group.
+$headerLine = if ($isSingleComponent) {
+    if ($showVspColumn) {
+        "  {0,3}  {1,-20}  {2,-10}  {3,-26}  {4}" -f "ID", "Backup Points", "Age", "Associated VSP Backup", "Components"
+    } else {
+        "  {0,3}  {1,-20}  {2,-10}  {3}" -f "ID", "Backup Points", "Age", "Components"
+    }
+} else {
+    if ($showVspColumn) {
+        "  {0,3}  {1,-18}  {2,-16}  {3,-10}  {4,-26}  {5}" -f "ID", "Backup Start", "Backup End", "Age", "Associated VSP Backup", "Components"
+    } else {
+        "  {0,3}  {1,-18}  {2,-16}  {3,-10}  {4}" -f "ID", "Backup Start", "Backup End", "Age", "Components"
+    }
+}
+
+$rowLines = [System.Collections.Generic.List[String]]::new()
+if (-not $isSingleComponent) {
+    if ($showVspColumn) {
+        $rowLines.Add(("  {0,3}  {1,-18}  {2,-16}  {3,-10}  {4,-26}  {5}" -f 0, "Custom", "-", "-", "-", "Choose a backup point per component"))
+    } else {
+        $rowLines.Add(("  {0,3}  {1,-18}  {2,-16}  {3,-10}  {4}" -f 0, "Custom", "-", "-", "Choose a backup point per component"))
+    }
+}
+
+foreach ($group in $groupList) {
+    $sortedEntries = $group.Entries | Sort-Object BackupDate -Descending
+    $newest = $sortedEntries | Select-Object -First 1
+    $oldest = $sortedEntries | Select-Object -Last 1
+    $ageStr = if ($newest.BackupDate) {
+        $ageSpan = $now - $newest.BackupDate
+        if ($ageSpan.TotalDays -ge 1) { "$([math]::Floor($ageSpan.TotalDays)) Days" } else { "$([math]::Floor($ageSpan.TotalHours)) Hours" }
+    } else { "unknown" }
+    $uniqueTypes = @($group.Entries | Select-Object -ExpandProperty ComponentType | Sort-Object -Unique)
+    $newestStr = if ($newest.BackupDate) { $newest.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
+
+    $vspStr = "-"
+    if ($showVspColumn -and $newest.BackupDate) {
+        $nearestVsp = $vspBackups | Sort-Object { [math]::Abs(($_.BackupDate - $newest.BackupDate).Ticks) } | Select-Object -First 1
+        if ($nearestVsp) { $vspStr = $nearestVsp.BackupDate.ToString("yyyy-MM-dd HH:mm") }
     }
 
-    $StopWatch.Stop()
-    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    if ($isSingleComponent) {
+        if ($showVspColumn) {
+            $rowLines.Add(("  {0,3}  {1,-20}  {2,-10}  {3,-26}  {4} ({5})" -f $group.Index, $newestStr, $ageStr, $vspStr, ($uniqueTypes -join ', '), $uniqueTypes.Count))
+        } else {
+            $rowLines.Add(("  {0,3}  {1,-20}  {2,-10}  {3} ({4})" -f $group.Index, $newestStr, $ageStr, ($uniqueTypes -join ', '), $uniqueTypes.Count))
+        }
+    } else {
+        $oldestStr = if ($oldest.BackupDate) { $oldest.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
+        if ($showVspColumn) {
+            $rowLines.Add(("  {0,3}  {1,-18}  {2,-16}  {3,-10}  {4,-26}  {5} ({6})" -f $group.Index, $oldestStr, $newestStr, $ageStr, $vspStr, ($uniqueTypes -join ', '), $uniqueTypes.Count))
+        } else {
+            $rowLines.Add(("  {0,3}  {1,-18}  {2,-16}  {3,-10}  {4} ({5})" -f $group.Index, $oldestStr, $newestStr, $ageStr, ($uniqueTypes -join ', '), $uniqueTypes.Count))
+        }
+    }
+}
+
+$tableWidth = (@($rowLines) + $headerLine | Measure-Object -Property Length -Maximum).Maximum
+$separator = " " + ("─" * $tableWidth)
+
+Write-Host ""
+Write-Host " Available Backup Groups (All times in UTC)" -ForegroundColor Cyan
+Write-Host $separator -ForegroundColor Cyan
+Write-Host $headerLine -ForegroundColor Gray
+Write-Host ""
+
+$rowLines | ForEach-Object { Write-Host $_ -ForegroundColor White }
+
+Write-Host $separator -ForegroundColor Cyan
+Write-Host ""
+
+# User selects a backup group
+$selectedGroup = $null
+$customMode = $false
+Do {
+    Write-Host " Enter the ID of the backup group to use, or C to Cancel: " -ForegroundColor Yellow -NoNewline
+    $selection = Read-Host
+    if ($selection -in @("C", "c")) {
+        LogMessage -type INFO -message "[$jumpboxName] Cancelled by user."
+        $StopWatch.Stop()
+        $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+        return
+    }
+    $selNum = -1
+    if ([int]::TryParse($selection, [ref]$selNum) -and (-not $isSingleComponent) -and $selNum -eq 0) {
+        $customMode = $true
+        $selectedGroup = [PSCustomObject]@{ Index = 0; Entries = @() }
+    } elseif ([int]::TryParse($selection, [ref]$selNum) -and $selNum -ge 1 -and $selNum -le $groupList.Count) {
+        $selectedGroup = $groupList | Where-Object { $_.Index -eq $selNum }
+    } else {
+        Write-Host " Invalid selection. Enter a number between 1 and $($groupList.Count), or C to Cancel." -ForegroundColor Yellow
+    }
+} Until ($null -ne $selectedGroup)
+
+# Build the final list of chosen entries: either the picked rank group, or a per-component custom selection
+$finalEntries = @()
+if ($customMode) {
+    LogMessage -type INFO -message "[$jumpboxName] Building custom backup selection"
+    foreach ($componentType in ($byComponent.Keys | Sort-Object)) {
+        $options = $byComponent[$componentType]
+
+        Write-Host ""
+        Write-Host " Backup points for '$componentType'" -ForegroundColor Cyan
+        Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+        Write-Host ("  {0,3}  {1,-20}  {2,-10}  {3}" -f "ID", "Backup Time (UTC)", "Age", "Version") -ForegroundColor Gray
+        for ($i = 0; $i -lt $options.Count; $i++) {
+            $opt = $options[$i]
+            $optStr = if ($opt.BackupDate) { $opt.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
+            $optAge = if ($opt.BackupDate) {
+                $optAgeSpan = $now - $opt.BackupDate
+                if ($optAgeSpan.TotalDays -ge 1) { "$([math]::Floor($optAgeSpan.TotalDays)) Days" } else { "$([math]::Floor($optAgeSpan.TotalHours)) Hours" }
+            } else { "unknown" }
+            Write-Host ("  {0,3}  {1,-20}  {2,-10}  {3}" -f ($i + 1), $optStr, $optAge, $opt.Version) -ForegroundColor White
+        }
+        Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+
+        $chosenEntry = $null
+        Do {
+            Write-Host " Enter the ID of the backup point to use for '$componentType', or C to Cancel: " -ForegroundColor Yellow -NoNewline
+            $optSelection = Read-Host
+            if ($optSelection -in @("C", "c")) {
+                LogMessage -type INFO -message "[$jumpboxName] Cancelled by user."
+                $StopWatch.Stop()
+                $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+                LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+                return
+            }
+            $optNum = 0
+            if ([int]::TryParse($optSelection, [ref]$optNum) -and $optNum -ge 1 -and $optNum -le $options.Count) {
+                $chosenEntry = $options[$optNum - 1]
+            } else {
+                Write-Host " Invalid selection. Enter a number between 1 and $($options.Count), or C to Cancel." -ForegroundColor Yellow
+            }
+        } Until ($null -ne $chosenEntry)
+
+        $finalEntries += $chosenEntry
+    }
+    $groupLabel = "Custom"
+    LogMessage -type INFO -message "[$jumpboxName] Selected custom backup group ($($finalEntries.Count) component(s))"
+} else {
+    $finalEntries = @($selectedGroup.Entries)
+    $sortedFinalEntries = $finalEntries | Sort-Object BackupDate -Descending
+    $newestFinal = $sortedFinalEntries | Select-Object -First 1
+    $oldestFinal = $sortedFinalEntries | Select-Object -Last 1
+    $newestFinalStr = if ($newestFinal.BackupDate) { $newestFinal.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
+    $oldestFinalStr = if ($oldestFinal.BackupDate) { $oldestFinal.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
+    $groupLabel = if ($oldestFinalStr -eq $newestFinalStr) { "$newestFinalStr UTC" } else { "$oldestFinalStr -> $newestFinalStr UTC" }
+}
+
+# Show what is available in the selected backup group
+$groupTitle = if ($customMode) { "Components in custom backup group" } else { "Components in backup group $($selectedGroup.Index) ($groupLabel)" }
+Write-Host ""
+Write-Host " $groupTitle" -ForegroundColor Cyan
+Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+Write-Host ("  {0,-16}  {1,-18}  {2}" -f "Component", "Version", "Backup Time") -ForegroundColor Gray
+$finalEntries | Sort-Object BackupDate -Descending | ForEach-Object {
+    $entryTimeStr = if ($_.BackupDate) { $_.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
+    Write-Host ("  {0,-16}  {1,-18}  {2}" -f $_.ComponentType, $_.Version, $entryTimeStr) -ForegroundColor White
+}
+Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+Write-Host ""
+
+# Offer to construct a restore JSON for the selected backup group
+Do {
+    Write-Host " Would you like to construct a restore JSON for this backup group? (Y/N): " -ForegroundColor Yellow -NoNewline
+    $buildJson = Read-Host
+} Until ($buildJson -in @("Y", "y", "N", "n"))
+
+if ($buildJson -in @("Y", "y")) {
+    $explicitlyPassed = $PSBoundParameters.ContainsKey("Components")
+    $restoreComponentTypes = if ($explicitlyPassed) { $Components } else { $Components | Where-Object { $_ -notin @("ops-logs", "vcfa") } }
+
+    $restoreComponents = @(
+        foreach ($componentType in $restoreComponentTypes) {
+            $entry = $finalEntries | Where-Object { $_.ComponentType -eq $componentType } | Select-Object -First 1
+            if ($entry) { @{ path = $entry.Path; point = $entry.Name } }
+        }
+    )
+
+    $restorePayload = @{ components = $restoreComponents } | ConvertTo-Json -Depth 5
+    $outputFile = ".\restore-payload.json"
+    $restorePayload | Out-File -FilePath $outputFile -Encoding utf8
+    LogMessage -type INFO -message "[$jumpboxName] Restore JSON saved to $outputFile ($($restoreComponents.Count) component(s))"
+    Write-Host ""
+    Write-Host " Restore JSON contents:" -ForegroundColor Cyan
+    Write-Host $restorePayload
+    Write-Host ""
+}
+
+$StopWatch.Stop()
+$minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
 }
 Export-ModuleMember -Function Get-ServicesRuntimeComponentBackups
 
@@ -11339,24 +11303,21 @@ Function Restore-ServicesRuntimeComponentBackup {
 
     # Step 3: Run the restore
     Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -RestoreJsonFile ".\restore-payload.json"
+        # Both -Components and -Type are now an explicit, deliberate selection (see the
+        # -Components/-Type resolution above -- one of them is required), so every requested
+        # component type is always included in the restore JSON; there's no more implicit "default
+        # selection" case to filter ops-logs/vcfa out of.
+        $restoreComponents = @(
+            foreach ($componentType in $resolvedComponents) {
+                $entry = $finalEntries | Where-Object { $_.ComponentType -eq $componentType } | Select-Object -First 1
+                if ($entry) {
+                    @{ path = $entry.Path; point = $entry.Name }
+                }
+            }
+        )
 
-    .PARAMETER ServicesRuntimeFqdn
-    FQDN of the Services Runtime instance.
-
-    .PARAMETER ServicesRuntimePassword
-    Password for the Services Runtime admin user (used to obtain a token).
-
-    .PARAMETER ServicesRuntimeUsername
-    Username for the Services Runtime token. Default is "admin@vsp.local".
-
-    .PARAMETER RestoreJsonFile
-    Path to a JSON file containing the restore payload. The file must contain a "components" array with "path" and "point" for each component to restore.
-
-    #>
-
-    Param(
-        [Parameter(Mandatory = $true)][String] $ServicesRuntimeFqdn,
-        [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
+        $restorePayload = @{ components = $restoreComponents } | ConvertTo-Json -Depth 5
+        $outputFile     = if ($PSBoundParameters.ContainsKey('Type')) { ".\$Type.json" } else { ".\restore-payload.json" }
         [Parameter(Mandatory = $false)][String] $ServicesRuntimeUsername = "admin@vsp.local",
         [Parameter(Mandatory = $true)][String] $RestoreJsonFile
     )
@@ -11391,7 +11352,7 @@ Function Restore-ServicesRuntimeComponentBackup {
     Write-Host " Restore Payload ($($payloadObject.components.Count) component(s)):" -ForegroundColor Cyan
     Write-Host " ----------------------------------------------------------------" -ForegroundColor Cyan
     foreach ($comp in $payloadObject.components) {
-        $componentName = ($comp.path -split '/') | Where-Object { $_ -in @("vsp", "vcf-fleet-lcm", "vcf-fleet-depot", "vcf-sddc-lcm", "salt", "salt-raas", "vidb", "ops-logs", "vcfms-metrics-store", "vcf-obs-data-platform", "telemetry-acceptor", "vcfa") } | Select-Object -First 1
+        $componentName = ($comp.path -split '/') | Where-Object { $_ -in @("vsp", "vcf-fleet-lcm", "vcf-fleet-depot", "vcf-sddc-lcm", "salt", "salt-raas", "vidb", "ops-logs", "vcfa") } | Select-Object -First 1
         if (-not $componentName) { $componentName = "unknown" }
         Write-Host "   $componentName" -ForegroundColor Yellow -NoNewline
         Write-Host " -> point: $($comp.point)" -ForegroundColor White
@@ -12132,14 +12093,14 @@ Function Start-ServicesRuntimeComponentBackup {
 
     $allComponentsList = [System.Collections.Generic.List[PSCustomObject]]::new()
     foreach ($comp in $allComponents) {
-        $fqdn            = if ($comp.componentTypeDescription -eq 'VCF services runtime') { $comp.fqdn } else { $null }
+        $fqdn = if ($comp.componentTypeDescription -eq 'VCF services runtime') { $comp.fqdn } else { $null }
         $vcfInstanceName = if ($comp.vspCluster.fqdn) { $comp.vspCluster.fqdn } else { "Fleet-wide" }
         $allComponentsList.Add([PSCustomObject]@{
-            Id           = $comp.id
-            Type         = $comp.componentTypeDescription
-            Fqdn         = $fqdn
-            VcfInstance  = $vcfInstanceName
-        })
+                Id          = $comp.id
+                Type        = $comp.componentTypeDescription
+                Fqdn        = $fqdn
+                VcfInstance = $vcfInstanceName
+            })
     }
 
     $selectedComponents = @()
@@ -12162,10 +12123,10 @@ Function Start-ServicesRuntimeComponentBackup {
         $instanceIndex = 1
         foreach ($vcfInstance in ($allComponentsList.VcfInstance | Sort-Object -Unique)) {
             $instanceGroups.Add([PSCustomObject]@{
-                Index      = $instanceIndex
-                VcfInstance = $vcfInstance
-                Components  = @($allComponentsList | Where-Object { $_.VcfInstance -eq $vcfInstance } | Sort-Object Type)
-            })
+                    Index       = $instanceIndex
+                    VcfInstance = $vcfInstance
+                    Components  = @($allComponentsList | Where-Object { $_.VcfInstance -eq $vcfInstance } | Sort-Object Type)
+                })
             $instanceIndex++
         }
 
@@ -12203,11 +12164,11 @@ Function Start-ServicesRuntimeComponentBackup {
         $index = 1
         foreach ($comp in $selectedGroup.Components) {
             $componentList.Add([PSCustomObject]@{
-                Index = $index
-                Id    = $comp.Id
-                Type  = $comp.Type
-                Fqdn  = $comp.Fqdn
-            })
+                    Index = $index
+                    Id    = $comp.Id
+                    Type  = $comp.Type
+                    Fqdn  = $comp.Fqdn
+                })
             $index++
         }
 
@@ -12289,7 +12250,7 @@ Function Start-ServicesRuntimeComponentBackup {
     }
 
     $backupBody = @{ components = @($selectedComponents.Id) } | ConvertTo-Json -Depth 5
-    $backupUri  = "https://$ServicesRuntimeFqdn/api/v1/system/backups?action=backup"
+    $backupUri = "https://$ServicesRuntimeFqdn/api/v1/system/backups?action=backup"
     LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Submitting backup for $($selectedComponents.Count) component(s)"
 
     try {
@@ -12556,7 +12517,7 @@ Function Set-ServicesRuntimeComponentVips {
         [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
         [Parameter(Mandatory = $false)][String] $ServicesRuntimeUsername = "admin@vsp.local",
         [Parameter(Mandatory = $true)][ValidateSet("vcfa", "vidb", "ops-logs")][String] $ComponentType,
-        [Parameter(Mandatory = $true)][ValidateCount(1,3)][String[]] $Vips,
+        [Parameter(Mandatory = $true)][ValidateCount(1, 3)][String[]] $Vips,
         [Parameter(Mandatory = $false)][String] $ComponentId,
         [Parameter(Mandatory = $false)][String] $IngressKey,
         [Parameter(Mandatory = $false)][Int] $PollIntervalSeconds = 30,
@@ -12849,7 +12810,7 @@ Function Get-VcfmsRemoteFileContent {
     # Fetches a remote file via sudo -S base64 and returns decoded UTF-8 text, or $null on failure.
     # Unexported — used by Get-VcfmsServicesRuntimeKubeconfig.
     param([int]$SessionId, [String]$RemotePath, [String]$Pwd)
-    $cmd    = "echo '$Pwd' | sudo -S base64 -w 0 $RemotePath"
+    $cmd = "echo '$Pwd' | sudo -S base64 -w 0 $RemotePath"
     $result = Invoke-SSHCommand -SessionId $SessionId -Command $cmd -TimeOut 30
     if ($result.ExitStatus -ne 0) { return $null }
     $b64 = ($result.Output -join "") -replace '[^A-Za-z0-9+/=]', ''
@@ -12896,7 +12857,7 @@ Function Get-VcfmsServicesRuntimeKubeconfig {
     $SecurePassword = ConvertTo-SecureString -String $Password -AsPlainText -Force
     $creds = New-Object System.Management.Automation.PSCredential ('vmware-system-user', $SecurePassword)
 
-    $session          = $null
+    $session = $null
     $controlPlaneHost = $ServicesRuntimeFqdn
     try {
         $session = Open-VcfmsSshSession -Fqdn $ServicesRuntimeFqdn -Creds $creds
@@ -12923,7 +12884,7 @@ Function Get-VcfmsServicesRuntimeKubeconfig {
                 LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Could not find server field in node-agent.conf"
                 return $null
             }
-            $controlPlaneUri  = ($serverLine -replace '^\s*server:\s*', '').Trim()
+            $controlPlaneUri = ($serverLine -replace '^\s*server:\s*', '').Trim()
             $controlPlaneHost = ([uri]$controlPlaneUri).Host
             LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Control plane address from node-agent.conf: $controlPlaneHost"
 
@@ -12973,13 +12934,13 @@ Function ConvertTo-VcfmsYaml {
     param($obj, [int]$indent = 0)
     $pad = ' ' * $indent
     if ($null -eq $obj) { return 'null' }
-    if ($obj -is [bool])   { if ($obj) { return 'true' } else { return 'false' } }
+    if ($obj -is [bool]) { if ($obj) { return 'true' } else { return 'false' } }
     if ($obj -is [int] -or $obj -is [long] -or $obj -is [double]) { return "$obj" }
     if ($obj -is [string]) {
         if ($obj -eq '' -or
             $obj -match '^[\s]|[\s]$|^[>|!&*{}[\],#`@%]|: |^-\s|^[\d]' -or
             $obj -match '[\r\n]' -or
-            $obj -in @('true','false','null','yes','no','on','off')) {
+            $obj -in @('true', 'false', 'null', 'yes', 'no', 'on', 'off')) {
             $escaped = $obj -replace "'", "''"
             return "'$escaped'"
         }
@@ -12989,7 +12950,7 @@ Function ConvertTo-VcfmsYaml {
         if ($obj.Count -eq 0) { return '{}' }
         $lines = @()
         foreach ($k in $obj.Keys) {
-            $v  = $obj[$k]
+            $v = $obj[$k]
             $ks = ConvertTo-VcfmsYaml $k 0
             if ($null -eq $v -or $v -is [bool] -or $v -is [int] -or $v -is [long] -or $v -is [double] -or $v -is [string]) {
                 $lines += "$pad${ks}: $(ConvertTo-VcfmsYaml $v 0)"
@@ -13017,9 +12978,9 @@ Function ConvertTo-VcfmsYaml {
                 $lines += "$pad-"
                 $lines += ConvertTo-VcfmsYaml $item ($indent + 2)
             } else {
-                $inner     = ConvertTo-VcfmsYaml $item ($indent + 2)
+                $inner = ConvertTo-VcfmsYaml $item ($indent + 2)
                 $firstLine = $inner.TrimStart()
-                $rest      = ($inner -split "`n" | Select-Object -Skip 1) -join "`n"
+                $rest = ($inner -split "`n" | Select-Object -Skip 1) -join "`n"
                 $lines += "$pad- $firstLine"
                 if ($rest) { $lines += $rest }
             }
@@ -13051,7 +13012,7 @@ Function Remove-VcfmsTransientMeta {
     # Unexported — used by New-ExtractVcfmsBackup.
     param($obj)
     if ($obj -is [System.Collections.IDictionary] -and $obj.Contains('metadata')) {
-        foreach ($k in @('managedFields','resourceVersion','uid','creationTimestamp')) {
+        foreach ($k in @('managedFields', 'resourceVersion', 'uid', 'creationTimestamp')) {
             $obj['metadata'].Remove($k) | Out-Null
         }
     }
@@ -13068,27 +13029,27 @@ Function Invoke-VcfmsOpensslDecrypt {
     if ($magic -ne 'Salted__') {
         throw "Unexpected OpenSSL header: '$magic' — expected 'Salted__'"
     }
-    $salt       = $cipherBytes[8..15]
+    $salt = $cipherBytes[8..15]
     $ciphertext = $cipherBytes[16..($cipherBytes.Length - 1)]
 
     $passBytes = [System.Text.Encoding]::UTF8.GetBytes($Passphrase)
-    $pbkdf2    = New-Object System.Security.Cryptography.Rfc2898DeriveBytes(
-                     $passBytes, [byte[]]$salt, 10000,
-                     [System.Security.Cryptography.HashAlgorithmName]::SHA256)
+    $pbkdf2 = New-Object System.Security.Cryptography.Rfc2898DeriveBytes(
+        $passBytes, [byte[]]$salt, 10000,
+        [System.Security.Cryptography.HashAlgorithmName]::SHA256)
     $key = $pbkdf2.GetBytes(32)
-    $iv  = $pbkdf2.GetBytes(16)
+    $iv = $pbkdf2.GetBytes(16)
 
-    $aes          = [System.Security.Cryptography.Aes]::Create()
-    $aes.Mode     = [System.Security.Cryptography.CipherMode]::CBC
-    $aes.Padding  = [System.Security.Cryptography.PaddingMode]::PKCS7
-    $aes.Key      = $key
-    $aes.IV       = $iv
-    $decryptor    = $aes.CreateDecryptor()
-    $inStream     = [System.IO.MemoryStream]::new($ciphertext)
+    $aes = [System.Security.Cryptography.Aes]::Create()
+    $aes.Mode = [System.Security.Cryptography.CipherMode]::CBC
+    $aes.Padding = [System.Security.Cryptography.PaddingMode]::PKCS7
+    $aes.Key = $key
+    $aes.IV = $iv
+    $decryptor = $aes.CreateDecryptor()
+    $inStream = [System.IO.MemoryStream]::new($ciphertext)
     $cryptoStream = New-Object System.Security.Cryptography.CryptoStream(
-                        $inStream, $decryptor,
-                        [System.Security.Cryptography.CryptoStreamMode]::Read)
-    $outStream    = [System.IO.File]::OpenWrite($OutPath)
+        $inStream, $decryptor,
+        [System.Security.Cryptography.CryptoStreamMode]::Read)
+    $outStream = [System.IO.File]::OpenWrite($OutPath)
     try { $cryptoStream.CopyTo($outStream) }
     finally { $cryptoStream.Close(); $outStream.Close(); $aes.Dispose() }
 }
@@ -13099,8 +13060,8 @@ Function Expand-VcfmsTarGz {
     param([string]$ArchivePath, [string]$DestDir)
 
     [System.IO.Directory]::CreateDirectory($DestDir) | Out-Null
-    $fs  = [System.IO.File]::OpenRead($ArchivePath)
-    $gz  = New-Object System.IO.Compression.GZipStream($fs, [System.IO.Compression.CompressionMode]::Decompress)
+    $fs = [System.IO.File]::OpenRead($ArchivePath)
+    $gz = New-Object System.IO.Compression.GZipStream($fs, [System.IO.Compression.CompressionMode]::Decompress)
     $buf = New-Object byte[] 512
 
     try {
@@ -13115,16 +13076,16 @@ Function Expand-VcfmsTarGz {
             foreach ($b in $buf) { if ($b -ne 0) { $allZero = $false; break } }
             if ($allZero) { return }
 
-            $nameRaw   = [System.Text.Encoding]::ASCII.GetString($buf, 0,   100).TrimEnd([char]0)
-            $sizeOctal = [System.Text.Encoding]::ASCII.GetString($buf, 124,  12).Trim().TrimEnd([char]0)
-            $typeFlag  = [char]$buf[156]
+            $nameRaw = [System.Text.Encoding]::ASCII.GetString($buf, 0, 100).TrimEnd([char]0)
+            $sizeOctal = [System.Text.Encoding]::ASCII.GetString($buf, 124, 12).Trim().TrimEnd([char]0)
+            $typeFlag = [char]$buf[156]
             $prefixRaw = [System.Text.Encoding]::ASCII.GetString($buf, 345, 155).TrimEnd([char]0)
             $entryName = if ($prefixRaw) { "$prefixRaw/$nameRaw" } else { $nameRaw }
             $entrySize = if ($sizeOctal) { [Convert]::ToInt64($sizeOctal.Trim(), 8) } else { 0 }
 
-            $blocks    = [int][Math]::Ceiling($entrySize / 512)
+            $blocks = [int][Math]::Ceiling($entrySize / 512)
             $dataBytes = New-Object byte[] ($blocks * 512)
-            $dataRead  = 0
+            $dataRead = 0
             while ($dataRead -lt $dataBytes.Length) {
                 $n = $gz.Read($dataBytes, $dataRead, $dataBytes.Length - $dataRead)
                 if ($n -eq 0) { break }
@@ -13132,7 +13093,7 @@ Function Expand-VcfmsTarGz {
             }
 
             if ($typeFlag -eq '0' -or $typeFlag -eq [char]0) {
-                $destPath   = Join-Path $DestDir ($entryName -replace '/', [System.IO.Path]::DirectorySeparatorChar)
+                $destPath = Join-Path $DestDir ($entryName -replace '/', [System.IO.Path]::DirectorySeparatorChar)
                 $destParent = [System.IO.Path]::GetDirectoryName($destPath)
                 [System.IO.Directory]::CreateDirectory($destParent) | Out-Null
                 [System.IO.File]::WriteAllBytes($destPath, $dataBytes[0..([int]$entrySize - 1)])
@@ -13148,9 +13109,9 @@ Function Resolve-VcfmsVeleroJson {
     # Unexported — used by New-ExtractVcfmsBackup.
     param([string]$VeleroBase, [string]$ResourceKind, [string]$Namespace, [string]$Stem)
     foreach ($layout in @(
-        (Join-Path $VeleroBase "resources\$ResourceKind\namespaces\$Namespace\$Stem.json"),
-        (Join-Path $VeleroBase "resources\$ResourceKind\v1-preferredversion\namespaces\$Namespace\$Stem.json")
-    )) {
+            (Join-Path $VeleroBase "resources\$ResourceKind\namespaces\$Namespace\$Stem.json"),
+            (Join-Path $VeleroBase "resources\$ResourceKind\v1-preferredversion\namespaces\$Namespace\$Stem.json")
+        )) {
         if (Test-Path $layout) { return $layout }
     }
     return $null
@@ -13160,17 +13121,17 @@ Function New-VcfmsTlsSecretFromNdc {
     # Synthesizes a kubernetes.io/tls Secret from an NDC Opaque secret JSON.
     # Unexported — used by New-ExtractVcfmsBackup.
     param([string]$NdcJsonPath, [string]$PlainStem)
-    $ndc     = Get-Content $NdcJsonPath -Raw | ConvertFrom-Json
-    $data    = $ndc.data
+    $ndc = Get-Content $NdcJsonPath -Raw | ConvertFrom-Json
+    $data = $ndc.data
     $certB64 = if ($data.cert) { $data.cert } elseif ($data.'tls.crt') { $data.'tls.crt' } else { $null }
-    $keyB64  = if ($data.key)  { $data.key }  elseif ($data.'tls.key') { $data.'tls.key' } else { $null }
+    $keyB64 = if ($data.key) { $data.key }  elseif ($data.'tls.key') { $data.'tls.key' } else { $null }
     if (-not $certB64 -or -not $keyB64) {
         throw "NDC secret $NdcJsonPath has no cert/key in .data; cannot synthesize $PlainStem"
     }
     $ns = if ($ndc.metadata.namespace) { $ndc.metadata.namespace } else { 'vmsp-platform' }
     $md = [ordered]@{
-        name      = $PlainStem
-        namespace = $ns
+        name        = $PlainStem
+        namespace   = $ns
         annotations = [ordered]@{
             'vmsp.vmware.com/generated-from-backup' = ([System.IO.Path]::GetFileNameWithoutExtension($NdcJsonPath))
         }
@@ -13292,8 +13253,8 @@ Function New-ExtractVcfmsBackup {
             LogMessage -type INFO -message "[$jumpboxName] Retrieving kubeconfig from $ServicesRuntimeFqdn"
             $kubeconfigResult = Get-VcfmsServicesRuntimeKubeconfig `
                 -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
-                -Password            $ServicesRuntimePassword `
-                -OutputDir           $resolvedOutputDir
+                -Password $ServicesRuntimePassword `
+                -OutputDir $resolvedOutputDir
             if (-not $kubeconfigResult) {
                 LogMessage -type ERROR -message "[$jumpboxName] Failed to retrieve kubeconfig. Aborting."
                 $StopWatch.Stop(); return
@@ -13309,10 +13270,10 @@ Function New-ExtractVcfmsBackup {
     }
 
     # Step 1: Decrypt the outer blob (OpenSSL AES-256-CBC / PBKDF2)
-    $workDir   = Join-Path ([System.IO.Path]::GetTempPath()) "vcfms-extract-$(Get-Random)"
+    $workDir = Join-Path ([System.IO.Path]::GetTempPath()) "vcfms-extract-$(Get-Random)"
     [System.IO.Directory]::CreateDirectory($workDir) | Out-Null
     try {
-        $outerTgz  = Join-Path $workDir "decoded.tgz"
+        $outerTgz = Join-Path $workDir "decoded.tgz"
         LogMessage -type INFO -message "[$jumpboxName] Decrypting archive"
         try {
             Invoke-VcfmsOpensslDecrypt -InPath $resolvedArchive -OutPath $outerTgz -Passphrase $EncryptionPassphrase
@@ -13332,7 +13293,7 @@ Function New-ExtractVcfmsBackup {
         }
 
         $innerTgz = Get-ChildItem -Path $outerRoot -Recurse -Filter '*-vsp-*.tar.gz' |
-                        Select-Object -First 1 -ExpandProperty FullName
+            Select-Object -First 1 -ExpandProperty FullName
         if (-not $innerTgz) {
             LogMessage -type ERROR -message "[$jumpboxName] Could not find inner *-vsp-*.tar.gz under extracted archive"
             $StopWatch.Stop(); return
@@ -13349,17 +13310,17 @@ Function New-ExtractVcfmsBackup {
         }
 
         # Step 4: Walk the Velero tree and write YAML files
-        $secretKind   = 'secrets'
-        $pdKind       = 'packagedeployments.releases.vmsp.vmware.com'
-        $ns           = 'vmsp-platform'
+        $secretKind = 'secrets'
+        $pdKind = 'packagedeployments.releases.vmsp.vmware.com'
+        $ns = 'vmsp-platform'
         $writtenFiles = @()
 
         # vmsp-platform.yaml (PackageDeployment)
         $pdStem = 'vmsp-platform'
         $pdJson = Resolve-VcfmsVeleroJson -VeleroBase $veleroRoot -ResourceKind $pdKind -Namespace $ns -Stem $pdStem
         if ($pdJson) {
-            $obj  = ConvertTo-VcfmsOrderedHashtable (Get-Content $pdJson -Raw | ConvertFrom-Json)
-            $obj  = Remove-VcfmsTransientMeta $obj
+            $obj = ConvertTo-VcfmsOrderedHashtable (Get-Content $pdJson -Raw | ConvertFrom-Json)
+            $obj = Remove-VcfmsTransientMeta $obj
             $yaml = ConvertTo-VcfmsYaml $obj
             $dest = Join-Path $resolvedOutputDir "$pdStem.yaml"
             [System.IO.File]::WriteAllText($dest, $yaml + "`n", (New-Object System.Text.UTF8Encoding $false))
@@ -13371,11 +13332,11 @@ Function New-ExtractVcfmsBackup {
 
         # ingress-<family>-tls-ndc.yaml / ingress-<family>-tls.yaml for each ingress family
         foreach ($family in @('fleet', 'instance', 'platform')) {
-            $ndcStem  = "ingress-$family-tls-ndc"
-            $ndcJson  = Resolve-VcfmsVeleroJson -VeleroBase $veleroRoot -ResourceKind $secretKind -Namespace $ns -Stem $ndcStem
+            $ndcStem = "ingress-$family-tls-ndc"
+            $ndcJson = Resolve-VcfmsVeleroJson -VeleroBase $veleroRoot -ResourceKind $secretKind -Namespace $ns -Stem $ndcStem
             if ($ndcJson) {
-                $obj  = ConvertTo-VcfmsOrderedHashtable (Get-Content $ndcJson -Raw | ConvertFrom-Json)
-                $obj  = Remove-VcfmsTransientMeta $obj
+                $obj = ConvertTo-VcfmsOrderedHashtable (Get-Content $ndcJson -Raw | ConvertFrom-Json)
+                $obj = Remove-VcfmsTransientMeta $obj
                 $yaml = ConvertTo-VcfmsYaml $obj
                 $dest = Join-Path $resolvedOutputDir "$ndcStem.yaml"
                 [System.IO.File]::WriteAllText($dest, $yaml + "`n", (New-Object System.Text.UTF8Encoding $false))
@@ -13387,19 +13348,19 @@ Function New-ExtractVcfmsBackup {
 
             # ingress-<family>-tls.yaml — from backup directly, or synthesized from NDC
             $plainStem = "ingress-$family-tls"
-            $dest      = Join-Path $resolvedOutputDir "$plainStem.yaml"
+            $dest = Join-Path $resolvedOutputDir "$plainStem.yaml"
             $plainJson = Resolve-VcfmsVeleroJson -VeleroBase $veleroRoot -ResourceKind $secretKind -Namespace $ns -Stem $plainStem
             if ($plainJson) {
-                $obj  = ConvertTo-VcfmsOrderedHashtable (Get-Content $plainJson -Raw | ConvertFrom-Json)
-                $obj  = Remove-VcfmsTransientMeta $obj
+                $obj = ConvertTo-VcfmsOrderedHashtable (Get-Content $plainJson -Raw | ConvertFrom-Json)
+                $obj = Remove-VcfmsTransientMeta $obj
                 $yaml = ConvertTo-VcfmsYaml $obj
                 [System.IO.File]::WriteAllText($dest, $yaml + "`n", (New-Object System.Text.UTF8Encoding $false))
                 LogMessage -type INFO -message "[$jumpboxName] Written: $dest"
                 $writtenFiles += $dest
             } elseif ($ndcJson) {
                 try {
-                    $obj  = New-VcfmsTlsSecretFromNdc -NdcJsonPath $ndcJson -PlainStem $plainStem
-                    $obj  = Remove-VcfmsTransientMeta $obj
+                    $obj = New-VcfmsTlsSecretFromNdc -NdcJsonPath $ndcJson -PlainStem $plainStem
+                    $obj = Remove-VcfmsTransientMeta $obj
                     $yaml = ConvertTo-VcfmsYaml $obj
                     [System.IO.File]::WriteAllText($dest, $yaml + "`n", (New-Object System.Text.UTF8Encoding $false))
                     LogMessage -type INFO -message "[$jumpboxName] Written (synthesized from NDC): $dest"
@@ -13507,7 +13468,7 @@ Function Invoke-VcfmsBackupSftpToYaml {
     )
 
     $jumpboxName = hostname
-    $StopWatch   = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
@@ -13527,8 +13488,8 @@ Function Invoke-VcfmsBackupSftpToYaml {
     LogMessage -type INFO -message "[$jumpboxName] Resolving control plane node from $ServicesRuntimeFqdn"
     $kubeconfigResult = Get-VcfmsServicesRuntimeKubeconfig `
         -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
-        -Password            $ServicesRuntimePassword `
-        -OutputDir           "."
+        -Password $ServicesRuntimePassword `
+        -OutputDir "."
     if (-not $kubeconfigResult) {
         LogMessage -type ERROR -message "[$jumpboxName] Could not resolve control plane node. Aborting."
         $StopWatch.Stop(); return
@@ -13539,11 +13500,11 @@ Function Invoke-VcfmsBackupSftpToYaml {
     # -------------------------------------------------------------------------
     # Open SSH session to the control plane node
     # -------------------------------------------------------------------------
-    $SecurePassword    = ConvertTo-SecureString -String $ServicesRuntimePassword -AsPlainText -Force
-    $creds             = New-Object System.Management.Automation.PSCredential ('vmware-system-user', $SecurePassword)
-    $session           = $null
-    $remoteScriptName  = "vmsp-backup-sftp-to-yaml.sh"
-    $remotePath        = "/tmp/$remoteScriptName"
+    $SecurePassword = ConvertTo-SecureString -String $ServicesRuntimePassword -AsPlainText -Force
+    $creds = New-Object System.Management.Automation.PSCredential ('vmware-system-user', $SecurePassword)
+    $session = $null
+    $remoteScriptName = "vmsp-backup-sftp-to-yaml.sh"
+    $remotePath = "/tmp/$remoteScriptName"
 
     try {
         $session = Open-VcfmsSshSession -Fqdn $controlPlaneHost -Creds $creds
@@ -13556,10 +13517,10 @@ Function Invoke-VcfmsBackupSftpToYaml {
         # Strip CR bytes so the file always has Unix line endings on the remote node,
         # regardless of how git checked it out on the local machine (Windows autocrlf etc.)
         $scriptBytes = [byte[]]($scriptBytes | Where-Object { $_ -ne 0x0D })
-        $b64         = [System.Convert]::ToBase64String($scriptBytes)
+        $b64 = [System.Convert]::ToBase64String($scriptBytes)
 
         # printf is used instead of echo to avoid an appended newline corrupting the decode
-        $uploadCmd    = "printf '%s' '$b64' | base64 -d > $remotePath && chmod +x $remotePath"
+        $uploadCmd = "printf '%s' '$b64' | base64 -d > $remotePath && chmod +x $remotePath"
         $uploadResult = Invoke-SSHCommand -SessionId $session.SessionId -Command $uploadCmd -TimeOut 60
         if ($uploadResult.ExitStatus -ne 0) {
             LogMessage -type ERROR -message "[$controlPlaneHost] Script upload failed (exit $($uploadResult.ExitStatus)): $($uploadResult.Error -join ' ')"
@@ -13586,14 +13547,14 @@ Function Invoke-VcfmsBackupSftpToYaml {
         # Print all output (stdout + stderr merged via 2>&1); filter sudo prompt noise
         $execResult.Output |
             Where-Object { $_ -notmatch '^\[sudo\]' } |
-            ForEach-Object { Write-Host "  $_" }
+                ForEach-Object { Write-Host "  $_" }
 
         # Belt-and-suspenders: if Posh-SSH still delivers anything on the Error channel
         # split on newlines first so a single multi-line string is handled correctly
         if ($execResult.Error) {
             (($execResult.Error -join "`n") -split "`r?`n") |
                 Where-Object { $_ -notmatch '^\[sudo\]' -and $_ -ne '' } |
-                ForEach-Object { Write-Host "  $_" -ForegroundColor Yellow }
+                    ForEach-Object { Write-Host "  $_" -ForegroundColor Yellow }
         }
 
         Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
@@ -13686,7 +13647,7 @@ Function Disable-VcfmsClusterLogging {
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
-    $terminalStates = @("COMPLETED","Completed","COMPLETE","FAILED","CANCELLED","ERROR","SUCCESS","SUCCESSFUL","Succeeded","Failed")
+    $terminalStates = @("COMPLETED", "Completed", "COMPLETE", "FAILED", "CANCELLED", "ERROR", "SUCCESS", "SUCCESSFUL", "Succeeded", "Failed")
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     # Pre-requisite: kubectl must be available on the local machine
@@ -13803,7 +13764,7 @@ Function Disable-VcfmsClusterLogging {
     } While ($taskStatus -notin $terminalStates)
 
     Write-Host ""
-    $successStates = @("COMPLETED","Completed","COMPLETE","SUCCESS","SUCCESSFUL","Succeeded")
+    $successStates = @("COMPLETED", "Completed", "COMPLETE", "SUCCESS", "SUCCESSFUL", "Succeeded")
     if ($taskStatus -in $successStates) {
         LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Logging disabled successfully on component $componentId"
 
@@ -13813,9 +13774,9 @@ Function Disable-VcfmsClusterLogging {
             Confirm-VcfmsFluentdOperatorState -KubeconfigPath $KubeconfigPath
         } else {
             Confirm-VcfmsFluentdOperatorState `
-                -ServicesRuntimeFqdn     $ServicesRuntimeFqdn `
+                -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
                 -ServicesRuntimePassword $ServicesRuntimePassword `
-                -KubeconfigOutputDir     $KubeconfigOutputDir
+                -KubeconfigOutputDir $KubeconfigOutputDir
         }
     } else {
         LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Apply task ended with status: $taskStatus"
@@ -13915,9 +13876,9 @@ Function Enable-VcfmsClusterLogging {
         [Parameter(Mandatory = $false)][String] $KubeconfigOutputDir = "."
     )
 
-    $jumpboxName    = hostname
-    $StopWatch      = New-Object -TypeName System.Diagnostics.Stopwatch
-    $terminalStates = @("COMPLETED","Completed","COMPLETE","FAILED","CANCELLED","ERROR","SUCCESS","SUCCESSFUL","Succeeded","Failed")
+    $jumpboxName = hostname
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $terminalStates = @("COMPLETED", "Completed", "COMPLETE", "FAILED", "CANCELLED", "ERROR", "SUCCESS", "SUCCESSFUL", "Succeeded", "Failed")
     $StopWatch.Start()
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     LogMessage -type INFO -message "[$jumpboxName] Services Runtime : $ServicesRuntimeFqdn"
@@ -13928,8 +13889,8 @@ Function Enable-VcfmsClusterLogging {
     # -------------------------------------------------------------------------
     $srToken = Get-VcfmsServicesRuntimeToken `
         -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
-        -Username            $ServicesRuntimeUsername `
-        -Password            $ServicesRuntimePassword
+        -Username $ServicesRuntimeUsername `
+        -Password $ServicesRuntimePassword
     if (-not $srToken) {
         LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Unable to obtain Services Runtime token. Aborting."
         $StopWatch.Stop(); return
@@ -13991,7 +13952,7 @@ Function Enable-VcfmsClusterLogging {
     LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Submitting apply task to enable logging on component $componentId"
     try {
         $applyResponse = Invoke-RestMethod `
-            -Uri    "https://$ServicesRuntimeFqdn/api/v1/components/$componentId`?action=apply" `
+            -Uri "https://$ServicesRuntimeFqdn/api/v1/components/$componentId`?action=apply" `
             -Method POST -Headers $headers -Body $body -SkipCertificateCheck
     } catch {
         LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Apply request failed: $($_.Exception.Message)"
@@ -14009,8 +13970,8 @@ Function Enable-VcfmsClusterLogging {
     # Step 4: Poll task to completion
     # -------------------------------------------------------------------------
     LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Polling task $taskId every ${PollIntervalSeconds}s"
-    $elapsed      = 0
-    $taskStatus   = "UNKNOWN"
+    $elapsed = 0
+    $taskStatus = "UNKNOWN"
     $taskResponse = $null
     Do {
         Start-Sleep -Seconds $PollIntervalSeconds
@@ -14020,18 +13981,18 @@ Function Enable-VcfmsClusterLogging {
                 LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Token age >= 60 minutes; refreshing"
                 $newToken = Get-VcfmsServicesRuntimeToken `
                     -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
-                    -Username            $ServicesRuntimeUsername `
-                    -Password            $ServicesRuntimePassword
+                    -Username $ServicesRuntimeUsername `
+                    -Password $ServicesRuntimePassword
                 if ($newToken) {
-                    $srToken                  = $newToken
+                    $srToken = $newToken
                     $headers["Authorization"] = "Bearer $srToken"
-                    $tokenFetchedAt           = [DateTime]::UtcNow
+                    $tokenFetchedAt = [DateTime]::UtcNow
                 } else {
                     LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Token refresh failed; continuing with existing token"
                 }
             }
             $taskResponse = Invoke-RestMethod `
-                -Uri    "https://$ServicesRuntimeFqdn/api/v1/tasks/$taskId" `
+                -Uri "https://$ServicesRuntimeFqdn/api/v1/tasks/$taskId" `
                 -Method GET -Headers $headers -SkipCertificateCheck
             $rawSt = $taskResponse.status
             $rawPh = $taskResponse.phase
@@ -14050,7 +14011,7 @@ Function Enable-VcfmsClusterLogging {
     } While ($taskStatus -notin $terminalStates)
 
     Write-Host ""
-    $successStates = @("COMPLETED","Completed","COMPLETE","SUCCESS","SUCCESSFUL","Succeeded")
+    $successStates = @("COMPLETED", "Completed", "COMPLETE", "SUCCESS", "SUCCESSFUL", "Succeeded")
     if ($taskStatus -notin $successStates) {
         LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Apply task ended with status: $taskStatus"
         if ($taskResponse -and $taskResponse.description.localizedMessage) {
@@ -14068,9 +14029,9 @@ Function Enable-VcfmsClusterLogging {
         Confirm-VcfmsFluentdOperatorState -KubeconfigPath $KubeconfigPath
     } else {
         Confirm-VcfmsFluentdOperatorState `
-            -ServicesRuntimeFqdn     $ServicesRuntimeFqdn `
+            -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
             -ServicesRuntimePassword $ServicesRuntimePassword `
-            -KubeconfigOutputDir     $KubeconfigOutputDir
+            -KubeconfigOutputDir $KubeconfigOutputDir
     }
 
     $StopWatch.Stop()
@@ -14149,8 +14110,8 @@ Function Confirm-VcfmsFluentdOperatorState {
             LogMessage -type INFO -message "[$jumpboxName] Retrieving kubeconfig from $ServicesRuntimeFqdn"
             $kubeconfigResult = Get-VcfmsServicesRuntimeKubeconfig `
                 -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
-                -Password            $ServicesRuntimePassword `
-                -OutputDir           $KubeconfigOutputDir
+                -Password $ServicesRuntimePassword `
+                -OutputDir $KubeconfigOutputDir
             if (-not $kubeconfigResult) {
                 LogMessage -type ERROR -message "[$jumpboxName] Failed to retrieve kubeconfig. Aborting."
                 $StopWatch.Stop(); return
@@ -14169,7 +14130,7 @@ Function Confirm-VcfmsFluentdOperatorState {
 
     LogMessage -type INFO -message "[$jumpboxName] Kubeconfig     : $resolvedKubeconfig"
 
-    $ns  = "vmsp-platform"
+    $ns = "vmsp-platform"
     $sts = "logging-operator-fluentd"
     $pod = "logging-operator-fluentd-0"
 
@@ -14258,7 +14219,7 @@ Function Confirm-VcfmsFluentdOperatorState {
     $getOutput2 | ForEach-Object { Write-Host "   $_" }
 
     $rolloutHealthy2 = ($rolloutOutput2 -join " ") -match "partitioned roll out complete|successfully rolled out"
-    $readyHealthy2   = $false
+    $readyHealthy2 = $false
     $dataLine2 = $getOutput2 | Select-Object -Skip 1 | Select-Object -First 1
     if ($dataLine2 -match '\s(\d+)/(\d+)\s') {
         $readyHealthy2 = ($Matches[1] -eq $Matches[2]) -and ([int]$Matches[1] -gt 0)
@@ -14360,9 +14321,9 @@ Function Set-VcfmsFleetIdentity {
         [Parameter(Mandatory = $false)][Int]    $PollIntervalSeconds = 30
     )
 
-    $jumpboxName   = hostname
-    $StopWatch     = New-Object -TypeName System.Diagnostics.Stopwatch
-    $terminalStates = @("COMPLETED","Completed","COMPLETE","FAILED","CANCELLED","ERROR","SUCCESS","SUCCESSFUL","Succeeded","Failed")
+    $jumpboxName = hostname
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $terminalStates = @("COMPLETED", "Completed", "COMPLETE", "FAILED", "CANCELLED", "ERROR", "SUCCESS", "SUCCESSFUL", "Succeeded", "Failed")
     $StopWatch.Start()
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
@@ -14375,8 +14336,8 @@ Function Set-VcfmsFleetIdentity {
         $StopWatch.Stop(); return
     }
 
-    $tlsYaml      = Join-Path $resolvedYamlDir "ingress-fleet-tls.yaml"
-    $ndcYaml      = Join-Path $resolvedYamlDir "ingress-fleet-tls-ndc.yaml"
+    $tlsYaml = Join-Path $resolvedYamlDir "ingress-fleet-tls.yaml"
+    $ndcYaml = Join-Path $resolvedYamlDir "ingress-fleet-tls-ndc.yaml"
     $missingFiles = @()
     if (-not (Test-Path $tlsYaml)) { $missingFiles += $tlsYaml }
     if (-not (Test-Path $ndcYaml)) { $missingFiles += $ndcYaml }
@@ -14395,8 +14356,8 @@ Function Set-VcfmsFleetIdentity {
         LogMessage -type INFO -message "[$jumpboxName] Retrieving kubeconfig from $ServicesRuntimeFqdn"
         $kubeconfigResult = Get-VcfmsServicesRuntimeKubeconfig `
             -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
-            -Password            $ServicesRuntimePassword `
-            -OutputDir           $KubeconfigOutputDir
+            -Password $ServicesRuntimePassword `
+            -OutputDir $KubeconfigOutputDir
         if (-not $kubeconfigResult) {
             LogMessage -type ERROR -message "[$jumpboxName] Failed to retrieve kubeconfig. Aborting."
             $StopWatch.Stop(); return
@@ -14421,7 +14382,7 @@ Function Set-VcfmsFleetIdentity {
     $allSucceeded = $true
     foreach ($yamlFile in @($tlsYaml, $ndcYaml)) {
         LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Applying $(Split-Path $yamlFile -Leaf)"
-        $output   = & kubectl --kubeconfig $resolvedKubeconfig apply -f $yamlFile 2>&1
+        $output = & kubectl --kubeconfig $resolvedKubeconfig apply -f $yamlFile 2>&1
         $exitCode = $LASTEXITCODE
         $output | ForEach-Object { Write-Host "   $_" }
         if ($exitCode -eq 0) {
@@ -14502,8 +14463,8 @@ Function Set-VcfmsFleetIdentity {
 
     # Step 2d: Poll task to completion
     LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Polling task $taskId every ${PollIntervalSeconds}s"
-    $elapsed     = 0
-    $taskStatus  = "UNKNOWN"
+    $elapsed = 0
+    $taskStatus = "UNKNOWN"
     $taskResponse = $null
     Do {
         Start-Sleep -Seconds $PollIntervalSeconds
@@ -14538,7 +14499,7 @@ Function Set-VcfmsFleetIdentity {
     } While ($taskStatus -notin $terminalStates)
 
     Write-Host ""
-    $successStates = @("COMPLETED","Completed","COMPLETE","SUCCESS","SUCCESSFUL","Succeeded")
+    $successStates = @("COMPLETED", "Completed", "COMPLETE", "SUCCESS", "SUCCESSFUL", "Succeeded")
     if ($taskStatus -in $successStates) {
         LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Fleet ingress configured successfully"
         LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Fleet FQDN : $FleetFqdn"
@@ -14622,9 +14583,9 @@ Function Clear-VcfmsFleetIdentity {
         [Parameter(Mandatory = $false)][Int]    $PollIntervalSeconds = 60
     )
 
-    $jumpboxName    = hostname
-    $StopWatch      = New-Object -TypeName System.Diagnostics.Stopwatch
-    $terminalStates = @("COMPLETED","Completed","COMPLETE","FAILED","CANCELLED","ERROR","SUCCESS","SUCCESSFUL","Succeeded","Failed")
+    $jumpboxName = hostname
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $terminalStates = @("COMPLETED", "Completed", "COMPLETE", "FAILED", "CANCELLED", "ERROR", "SUCCESS", "SUCCESSFUL", "Succeeded", "Failed")
     $StopWatch.Start()
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     LogMessage -type INFO -message "[$jumpboxName] Services Runtime : $ServicesRuntimeFqdn"
@@ -14637,8 +14598,8 @@ Function Clear-VcfmsFleetIdentity {
         LogMessage -type INFO -message "[$jumpboxName] Retrieving kubeconfig from $ServicesRuntimeFqdn"
         $kubeconfigResult = Get-VcfmsServicesRuntimeKubeconfig `
             -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
-            -Password            $ServicesRuntimePassword `
-            -OutputDir           $KubeconfigOutputDir
+            -Password $ServicesRuntimePassword `
+            -OutputDir $KubeconfigOutputDir
         if (-not $kubeconfigResult) {
             LogMessage -type ERROR -message "[$jumpboxName] Failed to retrieve kubeconfig. Aborting."
             $StopWatch.Stop(); return
@@ -14671,8 +14632,8 @@ Function Clear-VcfmsFleetIdentity {
     # -------------------------------------------------------------------------
     $srToken = Get-VcfmsServicesRuntimeToken `
         -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
-        -Username            $ServicesRuntimeUsername `
-        -Password            $ServicesRuntimePassword
+        -Username $ServicesRuntimeUsername `
+        -Password $ServicesRuntimePassword
     if (-not $srToken) {
         LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Unable to obtain Services Runtime token. Aborting."
         $StopWatch.Stop(); return
@@ -14706,7 +14667,7 @@ Function Clear-VcfmsFleetIdentity {
     LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Submitting apply task to clear fleet ingress on component $componentId"
     try {
         $applyResponse = Invoke-RestMethod `
-            -Uri    "https://$ServicesRuntimeFqdn/api/v1/components/$componentId`?action=apply" `
+            -Uri "https://$ServicesRuntimeFqdn/api/v1/components/$componentId`?action=apply" `
             -Method POST -Headers $headers -Body $body -SkipCertificateCheck
     } catch {
         LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Apply request failed: $($_.Exception.Message)"
@@ -14724,8 +14685,8 @@ Function Clear-VcfmsFleetIdentity {
     # Step 4: Poll task to completion
     # -------------------------------------------------------------------------
     LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Polling task $taskId every ${PollIntervalSeconds}s"
-    $elapsed      = 0
-    $taskStatus   = "UNKNOWN"
+    $elapsed = 0
+    $taskStatus = "UNKNOWN"
     $taskResponse = $null
     Do {
         Start-Sleep -Seconds $PollIntervalSeconds
@@ -14735,18 +14696,18 @@ Function Clear-VcfmsFleetIdentity {
                 LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Token age >= 60 minutes; refreshing"
                 $newToken = Get-VcfmsServicesRuntimeToken `
                     -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
-                    -Username            $ServicesRuntimeUsername `
-                    -Password            $ServicesRuntimePassword
+                    -Username $ServicesRuntimeUsername `
+                    -Password $ServicesRuntimePassword
                 if ($newToken) {
-                    $srToken                  = $newToken
+                    $srToken = $newToken
                     $headers["Authorization"] = "Bearer $srToken"
-                    $tokenFetchedAt           = [DateTime]::UtcNow
+                    $tokenFetchedAt = [DateTime]::UtcNow
                 } else {
                     LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Token refresh failed; continuing with existing token"
                 }
             }
             $taskResponse = Invoke-RestMethod `
-                -Uri    "https://$ServicesRuntimeFqdn/api/v1/tasks/$taskId" `
+                -Uri "https://$ServicesRuntimeFqdn/api/v1/tasks/$taskId" `
                 -Method GET -Headers $headers -SkipCertificateCheck
             $rawSt = $taskResponse.status
             $rawPh = $taskResponse.phase
@@ -14765,7 +14726,7 @@ Function Clear-VcfmsFleetIdentity {
     } While ($taskStatus -notin $terminalStates)
 
     Write-Host ""
-    $successStates = @("COMPLETED","Completed","COMPLETE","SUCCESS","SUCCESSFUL","Succeeded")
+    $successStates = @("COMPLETED", "Completed", "COMPLETE", "SUCCESS", "SUCCESSFUL", "Succeeded")
     if ($taskStatus -in $successStates) {
         LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Fleet ingress VIP cleared successfully on component $componentId"
     } else {
@@ -14868,15 +14829,15 @@ Function Invoke-VcfmsFleetComponentRegistration {
     Param(
         [Parameter(Mandatory = $true)][String] $ServicesRuntimeFqdn,
         [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
-        [Parameter(Mandatory = $true,  ParameterSetName = "ByVcfInstance")][String] $TargetVcfInstance,
-        [Parameter(Mandatory = $true,  ParameterSetName = "ByFqdn")][String]        $TargetFqdn,
-        [Parameter(Mandatory = $true,  ParameterSetName = "BySddcId")][String]      $TargetSddcId,
+        [Parameter(Mandatory = $true, ParameterSetName = "ByVcfInstance")][String] $TargetVcfInstance,
+        [Parameter(Mandatory = $true, ParameterSetName = "ByFqdn")][String]        $TargetFqdn,
+        [Parameter(Mandatory = $true, ParameterSetName = "BySddcId")][String]      $TargetSddcId,
         [Parameter(Mandatory = $false)][Switch] $DryRun,
         [Parameter(Mandatory = $false)][Int] $RemoteScriptTimeout = 300
     )
 
-    $jumpboxName  = hostname
-    $StopWatch    = New-Object -TypeName System.Diagnostics.Stopwatch
+    $jumpboxName = hostname
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
@@ -14897,8 +14858,8 @@ Function Invoke-VcfmsFleetComponentRegistration {
     LogMessage -type INFO -message "[$jumpboxName] Resolving control plane node from $ServicesRuntimeFqdn"
     $kubeconfigResult = Get-VcfmsServicesRuntimeKubeconfig `
         -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
-        -Password            $ServicesRuntimePassword `
-        -OutputDir           "."
+        -Password $ServicesRuntimePassword `
+        -OutputDir "."
     if (-not $kubeconfigResult) {
         LogMessage -type ERROR -message "[$jumpboxName] Could not resolve control plane node. Aborting."
         $StopWatch.Stop(); return
@@ -14907,8 +14868,8 @@ Function Invoke-VcfmsFleetComponentRegistration {
     LogMessage -type INFO -message "[$jumpboxName] Control plane node  : $controlPlaneHost"
     switch ($PSCmdlet.ParameterSetName) {
         "ByVcfInstance" { LogMessage -type INFO -message "[$jumpboxName] Target VCF instance : $TargetVcfInstance" }
-        "ByFqdn"        { LogMessage -type INFO -message "[$jumpboxName] Target FQDN pattern : $TargetFqdn" }
-        "BySddcId"      { LogMessage -type INFO -message "[$jumpboxName] Target SDDC LCM ID  : $TargetSddcId" }
+        "ByFqdn" { LogMessage -type INFO -message "[$jumpboxName] Target FQDN pattern : $TargetFqdn" }
+        "BySddcId" { LogMessage -type INFO -message "[$jumpboxName] Target SDDC LCM ID  : $TargetSddcId" }
     }
     if ($DryRun) {
         LogMessage -type INFO -message "[$jumpboxName] Mode               : DRY RUN (no changes will be written)"
@@ -14918,9 +14879,9 @@ Function Invoke-VcfmsFleetComponentRegistration {
     # Open SSH session to the control plane node
     # -------------------------------------------------------------------------
     $SecurePassword = ConvertTo-SecureString -String $ServicesRuntimePassword -AsPlainText -Force
-    $creds          = New-Object System.Management.Automation.PSCredential ('vmware-system-user', $SecurePassword)
-    $session        = $null
-    $remotePath     = "/tmp/update_fleet_component_registration.sh"
+    $creds = New-Object System.Management.Automation.PSCredential ('vmware-system-user', $SecurePassword)
+    $session = $null
+    $remotePath = "/tmp/update_fleet_component_registration.sh"
 
     try {
         $session = Open-VcfmsSshSession -Fqdn $controlPlaneHost -Creds $creds
@@ -14933,10 +14894,10 @@ Function Invoke-VcfmsFleetComponentRegistration {
         # Strip CR bytes so the file always has Unix line endings on the remote node,
         # regardless of how git checked it out on the local machine (Windows autocrlf etc.)
         $scriptBytes = [byte[]]($scriptBytes | Where-Object { $_ -ne 0x0D })
-        $b64         = [System.Convert]::ToBase64String($scriptBytes)
+        $b64 = [System.Convert]::ToBase64String($scriptBytes)
 
         # printf is used instead of echo to avoid an appended newline corrupting the decode
-        $uploadCmd    = "printf '%s' '$b64' | base64 -d > $remotePath && chmod +x $remotePath"
+        $uploadCmd = "printf '%s' '$b64' | base64 -d > $remotePath && chmod +x $remotePath"
         $uploadResult = Invoke-SSHCommand -SessionId $session.SessionId -Command $uploadCmd -TimeOut 60
         if ($uploadResult.ExitStatus -ne 0) {
             LogMessage -type ERROR -message "[$controlPlaneHost] Script upload failed (exit $($uploadResult.ExitStatus)): $($uploadResult.Error -join ' ')"
@@ -14951,8 +14912,8 @@ Function Invoke-VcfmsFleetComponentRegistration {
         # -------------------------------------------------------------------------
         $scriptArgs = switch ($PSCmdlet.ParameterSetName) {
             "ByVcfInstance" { "--target-fqdn '$TargetVcfInstance'" }
-            "ByFqdn"        { "--target-fqdn '$TargetFqdn'" }
-            "BySddcId"      { "--target-fqdn '$TargetSddcId'" }
+            "ByFqdn" { "--target-fqdn '$TargetFqdn'" }
+            "BySddcId" { "--target-fqdn '$TargetSddcId'" }
         }
         if ($DryRun) { $scriptArgs += " --dry-run" }
 
@@ -14967,14 +14928,14 @@ Function Invoke-VcfmsFleetComponentRegistration {
         # Print all output (stdout + stderr merged via 2>&1); filter sudo prompt noise
         $execResult.Output |
             Where-Object { $_ -notmatch '^\[sudo\]' } |
-            ForEach-Object { Write-Host "  $_" }
+                ForEach-Object { Write-Host "  $_" }
 
         # Belt-and-suspenders: if Posh-SSH still delivers anything on the Error channel
         # split on newlines first so a single multi-line string is handled correctly
         if ($execResult.Error) {
             (($execResult.Error -join "`n") -split "`r?`n") |
                 Where-Object { $_ -notmatch '^\[sudo\]' -and $_ -ne '' } |
-                ForEach-Object { Write-Host "  $_" -ForegroundColor Yellow }
+                    ForEach-Object { Write-Host "  $_" -ForegroundColor Yellow }
         }
 
         Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
@@ -15101,8 +15062,8 @@ Function Invoke-VcfmsVcfaRegistration {
         [Parameter(Mandatory = $false)][Int]    $RemoteScriptTimeout = 600
     )
 
-    $jumpboxName  = hostname
-    $StopWatch    = New-Object -TypeName System.Diagnostics.Stopwatch
+    $jumpboxName = hostname
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
@@ -15133,8 +15094,8 @@ Function Invoke-VcfmsVcfaRegistration {
     LogMessage -type INFO -message "[$jumpboxName] Resolving control plane node from $ServicesRuntimeFqdn"
     $kubeconfigResult = Get-VcfmsServicesRuntimeKubeconfig `
         -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
-        -Password            $ServicesRuntimePassword `
-        -OutputDir           "."
+        -Password $ServicesRuntimePassword `
+        -OutputDir "."
     if (-not $kubeconfigResult) {
         LogMessage -type ERROR -message "[$jumpboxName] Could not resolve control plane node. Aborting."
         $StopWatch.Stop(); return
@@ -15151,10 +15112,10 @@ Function Invoke-VcfmsVcfaRegistration {
     # Open SSH session to the control plane node
     # -------------------------------------------------------------------------
     $SecurePassword = ConvertTo-SecureString -String $ServicesRuntimePassword -AsPlainText -Force
-    $creds          = New-Object System.Management.Automation.PSCredential ('vmware-system-user', $SecurePassword)
-    $session        = $null
-    $remotePaths    = $scriptNames | ForEach-Object { "/tmp/$_" }
-    $remoteMain     = "/tmp/create_vcfa_registration.sh"
+    $creds = New-Object System.Management.Automation.PSCredential ('vmware-system-user', $SecurePassword)
+    $session = $null
+    $remotePaths = $scriptNames | ForEach-Object { "/tmp/$_" }
+    $remoteMain = "/tmp/create_vcfa_registration.sh"
 
     try {
         $session = Open-VcfmsSshSession -Fqdn $controlPlaneHost -Creds $creds
@@ -15171,10 +15132,10 @@ Function Invoke-VcfmsVcfaRegistration {
             # Strip CR bytes so the file always has Unix line endings on the remote node,
             # regardless of how git checked it out on the local machine (Windows autocrlf etc.)
             $scriptBytes = [byte[]]($scriptBytes | Where-Object { $_ -ne 0x0D })
-            $b64         = [System.Convert]::ToBase64String($scriptBytes)
+            $b64 = [System.Convert]::ToBase64String($scriptBytes)
 
             # printf is used instead of echo to avoid an appended newline corrupting the decode
-            $uploadCmd    = "printf '%s' '$b64' | base64 -d > $remotePath && chmod +x $remotePath"
+            $uploadCmd = "printf '%s' '$b64' | base64 -d > $remotePath && chmod +x $remotePath"
             $uploadResult = Invoke-SSHCommand -SessionId $session.SessionId -Command $uploadCmd -TimeOut 60
             if ($uploadResult.ExitStatus -ne 0) {
                 LogMessage -type ERROR -message "[$controlPlaneHost] Script upload failed (exit $($uploadResult.ExitStatus)): $($uploadResult.Error -join ' ')"
@@ -15194,8 +15155,8 @@ Function Invoke-VcfmsVcfaRegistration {
         if ($DryRun) { $scriptArgs += " --dry-run" }
 
         $execCmd = "echo '$ServicesRuntimePassword' | sudo -S env KUBECONFIG=/etc/kubernetes/admin.conf " +
-            "VCFA_ADMIN_PASSWORD='$VspPassword' VCFA_SYSTEM_PASSWORD='$VcfaSystemPassword' OPS_ADMIN_PASSWORD='$OpsPassword' " +
-            "bash $remoteMain $scriptArgs 2>&1"
+        "VCFA_ADMIN_PASSWORD='$VspPassword' VCFA_SYSTEM_PASSWORD='$VcfaSystemPassword' OPS_ADMIN_PASSWORD='$OpsPassword' " +
+        "bash $remoteMain $scriptArgs 2>&1"
 
         LogMessage -type INFO -message "[$controlPlaneHost] Executing create_vcfa_registration.sh (timeout: ${RemoteScriptTimeout}s)"
         Write-Host ""
@@ -15206,14 +15167,14 @@ Function Invoke-VcfmsVcfaRegistration {
         # Print all output (stdout + stderr merged via 2>&1); filter sudo prompt noise
         $execResult.Output |
             Where-Object { $_ -notmatch '^\[sudo\]' } |
-            ForEach-Object { Write-Host "  $_" }
+                ForEach-Object { Write-Host "  $_" }
 
         # Belt-and-suspenders: if Posh-SSH still delivers anything on the Error channel
         # split on newlines first so a single multi-line string is handled correctly
         if ($execResult.Error) {
             (($execResult.Error -join "`n") -split "`r?`n") |
                 Where-Object { $_ -notmatch '^\[sudo\]' -and $_ -ne '' } |
-                ForEach-Object { Write-Host "  $_" -ForegroundColor Yellow }
+                    ForEach-Object { Write-Host "  $_" -ForegroundColor Yellow }
         }
 
         Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
@@ -15358,7 +15319,7 @@ Function Update-ServicesRuntimePackageDeployment {
     )
 
     $jumpboxName = hostname
-    $StopWatch   = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
@@ -15374,7 +15335,7 @@ Function Update-ServicesRuntimePackageDeployment {
     # Step 1: Connect to vCenter and resolve vSphere inventory MoRef IDs
     # =========================================================================
     LogMessage -type INFO -message "[$jumpboxName] Step 1: Connecting to vCenter $vCenterFqdn"
-    $vcConnection  = $null
+    $vcConnection = $null
     $vsphereValues = $null
 
     try {
@@ -15382,34 +15343,34 @@ Function Update-ServicesRuntimePackageDeployment {
         LogMessage -type INFO -message "[$vCenterFqdn] Connected to vCenter"
 
         LogMessage -type INFO -message "[$vCenterFqdn] Resolving vSphere inventory objects"
-        $dc       = Get-Datacenter -Name $TargetDatacenter -ErrorAction Stop
-        $cluster  = Get-Cluster    -Name $TargetCluster    -Location $dc      -ErrorAction Stop
-        $hosts    = Get-VMHost     -Location $cluster       -ErrorAction Stop
-        $ds       = Get-Datastore  -Name $TargetDatastore  -VMHost $hosts     -ErrorAction Stop
-        $dvs      = Get-VDSwitch   -VMHost $hosts          -ErrorAction Stop | Select-Object -Unique
-        $dpg      = Get-VDPortgroup -Name $TargetDpG       -VDSwitch $dvs     -ErrorAction Stop | Select-Object -First 1
-        $folder   = Get-Folder     -Name $TargetFolder     -Type VM -Location $dc -ErrorAction Stop
-        $rp       = Get-ResourcePool -Name $TargetRP       -Location $cluster  -ErrorAction Stop
-        $template = Get-Template   -Name $TargetTemplate   -Location $folder   -ErrorAction Stop
+        $dc = Get-Datacenter -Name $TargetDatacenter -ErrorAction Stop
+        $cluster = Get-Cluster -Name $TargetCluster -Location $dc -ErrorAction Stop
+        $hosts = Get-VMHost -Location $cluster -ErrorAction Stop
+        $ds = Get-Datastore -Name $TargetDatastore -VMHost $hosts -ErrorAction Stop
+        $dvs = Get-VDSwitch -VMHost $hosts -ErrorAction Stop | Select-Object -Unique
+        $dpg = Get-VDPortgroup -Name $TargetDpG -VDSwitch $dvs -ErrorAction Stop | Select-Object -First 1
+        $folder = Get-Folder -Name $TargetFolder -Type VM -Location $dc -ErrorAction Stop
+        $rp = Get-ResourcePool -Name $TargetRP -Location $cluster -ErrorAction Stop
+        $template = Get-Template -Name $TargetTemplate -Location $folder -ErrorAction Stop
 
         LogMessage -type INFO -message "[$vCenterFqdn] All inventory objects resolved"
 
         # MoRef IDs (Type:Value format expected by the PD)
-        $dcId      = "$($dc.ExtensionData.MoRef.Type):$($dc.ExtensionData.MoRef.Value)"
+        $dcId = "$($dc.ExtensionData.MoRef.Type):$($dc.ExtensionData.MoRef.Value)"
         $clusterId = "$($cluster.ExtensionData.MoRef.Type):$($cluster.ExtensionData.MoRef.Value)"
-        $dsId      = "$($ds.ExtensionData.MoRef.Type):$($ds.ExtensionData.MoRef.Value)"
-        $dpgId     = "$($dpg.ExtensionData.MoRef.Type):$($dpg.ExtensionData.MoRef.Value)"
-        $folderId  = "$($folder.ExtensionData.MoRef.Type):$($folder.ExtensionData.MoRef.Value)"
-        $rpId      = "$($rp.ExtensionData.MoRef.Type):$($rp.ExtensionData.MoRef.Value)"
-        $tmplId    = "$($template.ExtensionData.MoRef.Type):$($template.ExtensionData.MoRef.Value)"
+        $dsId = "$($ds.ExtensionData.MoRef.Type):$($ds.ExtensionData.MoRef.Value)"
+        $dpgId = "$($dpg.ExtensionData.MoRef.Type):$($dpg.ExtensionData.MoRef.Value)"
+        $folderId = "$($folder.ExtensionData.MoRef.Type):$($folder.ExtensionData.MoRef.Value)"
+        $rpId = "$($rp.ExtensionData.MoRef.Type):$($rp.ExtensionData.MoRef.Value)"
+        $tmplId = "$($template.ExtensionData.MoRef.Type):$($template.ExtensionData.MoRef.Value)"
 
         # Inventory paths
-        $dcPath      = "/$($dc.Name)"
+        $dcPath = "/$($dc.Name)"
         $clusterPath = "/$($dc.Name)/host/$($cluster.Name)"
-        $dsPath      = "/$($dc.Name)/datastore/$($ds.Name)"
+        $dsPath = "/$($dc.Name)/datastore/$($ds.Name)"
         $networkPath = "/$($dc.Name)/network/$($dpg.Name)"
-        $folderPath  = "/$($dc.Name)/vm/$($folder.Name)"
-        $rpPath      = "$clusterPath/Resources/$($rp.Name)".Replace("/Resources/Resources", "/Resources")
+        $folderPath = "/$($dc.Name)/vm/$($folder.Name)"
+        $rpPath = "$clusterPath/Resources/$($rp.Name)".Replace("/Resources/Resources", "/Resources")
 
         LogMessage -type INFO -message "[$vCenterFqdn] Datacenter   : $dcPath ($dcId)"
         LogMessage -type INFO -message "[$vCenterFqdn] Cluster      : $clusterPath ($clusterId)"
@@ -15459,8 +15420,8 @@ Function Update-ServicesRuntimePackageDeployment {
     LogMessage -type INFO -message "[$jumpboxName] Step 2: Retrieving kubeconfig from $ServicesRuntimeFqdn"
     $kubeconfigResult = Get-VcfmsServicesRuntimeKubeconfig `
         -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
-        -Password            $ServicesRuntimePassword `
-        -OutputDir           $OutputDir
+        -Password $ServicesRuntimePassword `
+        -OutputDir $OutputDir
     if (-not $kubeconfigResult) {
         LogMessage -type ERROR -message "[$jumpboxName] Could not retrieve kubeconfig. Aborting."
         $StopWatch.Stop(); return
@@ -15539,7 +15500,7 @@ Function Get-VcfmsFleetComponentRegistration {
     )
 
     $jumpboxName = hostname
-    $StopWatch   = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
@@ -15547,8 +15508,8 @@ Function Get-VcfmsFleetComponentRegistration {
     LogMessage -type INFO -message "[$jumpboxName] Resolving control plane node from $ServicesRuntimeFqdn"
     $kubeconfigResult = Get-VcfmsServicesRuntimeKubeconfig `
         -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
-        -Password            $ServicesRuntimePassword `
-        -OutputDir           "."
+        -Password $ServicesRuntimePassword `
+        -OutputDir "."
     if (-not $kubeconfigResult) {
         LogMessage -type ERROR -message "[$jumpboxName] Could not resolve control plane node. Aborting."
         $StopWatch.Stop(); return
@@ -15557,9 +15518,9 @@ Function Get-VcfmsFleetComponentRegistration {
     LogMessage -type INFO -message "[$jumpboxName] Control plane node: $controlPlaneHost"
 
     $SecurePassword = ConvertTo-SecureString -String $ServicesRuntimePassword -AsPlainText -Force
-    $creds          = New-Object System.Management.Automation.PSCredential ('vmware-system-user', $SecurePassword)
-    $session        = $null
-    $remotePath     = "/tmp/get_fleet_component_registration.sh"
+    $creds = New-Object System.Management.Automation.PSCredential ('vmware-system-user', $SecurePassword)
+    $session = $null
+    $remotePath = "/tmp/get_fleet_component_registration.sh"
 
     # Build the query script using a single-quoted here-string so that bash variables
     # ($pod, $FLEET_DB_POD) and SQL single-quotes are preserved literally.
@@ -15603,8 +15564,8 @@ kubectl exec -n vcf-fleet-lcm "$FLEET_DB_POD" -c postgres -- \
         LogMessage -type INFO -message "[$controlPlaneHost] Uploading query script"
         $scriptBytes = [System.Text.Encoding]::UTF8.GetBytes($scriptContent)
         $scriptBytes = [byte[]]($scriptBytes | Where-Object { $_ -ne 0x0D })
-        $b64         = [System.Convert]::ToBase64String($scriptBytes)
-        $uploadCmd   = "printf '%s' '$b64' | base64 -d > $remotePath && chmod +x $remotePath"
+        $b64 = [System.Convert]::ToBase64String($scriptBytes)
+        $uploadCmd = "printf '%s' '$b64' | base64 -d > $remotePath && chmod +x $remotePath"
         $uploadResult = Invoke-SSHCommand -SessionId $session.SessionId -Command $uploadCmd -TimeOut 60
         if ($uploadResult.ExitStatus -ne 0) {
             LogMessage -type ERROR -message "[$controlPlaneHost] Script upload failed (exit $($uploadResult.ExitStatus))"
@@ -15612,7 +15573,7 @@ kubectl exec -n vcf-fleet-lcm "$FLEET_DB_POD" -c postgres -- \
         }
 
         # Execute under sudo with KUBECONFIG; merge stderr so nothing is silently lost
-        $execCmd    = "echo '$ServicesRuntimePassword' | sudo -S env KUBECONFIG=/etc/kubernetes/admin.conf bash $remotePath 2>&1"
+        $execCmd = "echo '$ServicesRuntimePassword' | sudo -S env KUBECONFIG=/etc/kubernetes/admin.conf bash $remotePath 2>&1"
         $execResult = Invoke-SSHCommand -SessionId $session.SessionId -Command $execCmd -TimeOut 60
 
         Write-Host ""
@@ -15620,7 +15581,7 @@ kubectl exec -n vcf-fleet-lcm "$FLEET_DB_POD" -c postgres -- \
         Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
         $execResult.Output |
             Where-Object { $_ -notmatch '^\[sudo\]' } |
-            ForEach-Object { Write-Host "  $_" }
+                ForEach-Object { Write-Host "  $_" }
         Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
         Write-Host ""
 
@@ -15744,7 +15705,7 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
     )
 
     $jumpboxName = hostname
-    $StopWatch   = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     LogMessage -type INFO -message "[$jumpboxName] VCF Ops Host   : $VcfOpsFqdn"
@@ -15780,9 +15741,9 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
     # Open SSH session to the VCF Operations primary node as root
     # -------------------------------------------------------------------------
     $SecurePassword = ConvertTo-SecureString -String $VcfOpsRootPassword -AsPlainText -Force
-    $creds          = New-Object System.Management.Automation.PSCredential ('root', $SecurePassword)
-    $remotePath     = "/tmp/update-vidb-vcf-instance.sh"
-    $session        = $null
+    $creds = New-Object System.Management.Automation.PSCredential ('root', $SecurePassword)
+    $remotePath = "/tmp/update-vidb-vcf-instance.sh"
+    $session = $null
 
     try {
         $session = Open-VcfmsSshSession -Fqdn $VcfOpsFqdn -Creds $creds
@@ -15798,7 +15759,7 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
             LogMessage -type INFO -message "[$VcfOpsFqdn] Step 3: Querying VCF adapter instances from VCF Operations API"
 
             # Acquire a short-lived token for the discovery query
-            $tokenUri  = "https://$VcfOpsFqdn/suite-api/api/auth/token/acquire"
+            $tokenUri = "https://$VcfOpsFqdn/suite-api/api/auth/token/acquire"
             $tokenBody = @{ username = $VcfOpsAdminUsername; password = $VcfOpsAdminPassword } | ConvertTo-Json -Compress
             try {
                 $tokenResp = Invoke-RestMethod -Uri $tokenUri -Method POST -Body $tokenBody `
@@ -15813,11 +15774,11 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
                 $StopWatch.Stop(); return
             }
 
-            $vidbsUri  = "https://$VcfOpsFqdn/suite-api/internal/vidb/vidbs"
+            $vidbsUri = "https://$VcfOpsFqdn/suite-api/internal/vidb/vidbs"
             $apiHeaders = @{
-                "Authorization"                  = "vRealizeOpsToken $apiToken"
+                "Authorization"                     = "vRealizeOpsToken $apiToken"
                 "x-vrealizeops-api-use-unsupported" = "true"
-                "Accept"                         = "application/json"
+                "Accept"                            = "application/json"
             }
             try {
                 $vidbsResp = Invoke-RestMethod -Uri $vidbsUri -Method GET -Headers $apiHeaders -SkipCertificateCheck
@@ -15839,11 +15800,11 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
             $idx = 1
             foreach ($inst in $vcfInstances) {
                 $vcfInstanceTable += [pscustomobject]@{
-                    ID           = $idx
+                    ID            = $idx
                     VCFInstanceId = $inst.vcfInstanceId
-                    FQDN         = $inst.fqdn
-                    Type         = $inst.deploymentType
-                    ResourceName = $inst.vcfResourceName
+                    FQDN          = $inst.fqdn
+                    Type          = $inst.deploymentType
+                    ResourceName  = $inst.vcfResourceName
                 }
                 $idx++
             }
@@ -15851,7 +15812,7 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
             Write-Host ""
             Write-Host " Step 3: Select the VCF instance to associate with the Identity Broker" -ForegroundColor Cyan
             Write-Host ""
-            $vcfInstanceTable | Format-Table -Property @{Expression = " "}, ID, VCFInstanceId, FQDN, Type, ResourceName -AutoSize -HideTableHeaders |
+            $vcfInstanceTable | Format-Table -Property @{Expression = " " }, ID, VCFInstanceId, FQDN, Type, ResourceName -AutoSize -HideTableHeaders |
                 Out-String | ForEach-Object { $_.Trim("`r", "`n") }
 
             $validIds = 1..($vcfInstances.Count) | ForEach-Object { "$_" }
@@ -15882,9 +15843,9 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
         if (-not $SsoDomainId) {
             LogMessage -type INFO -message "[$VcfOpsFqdn] Step 4: Querying kv_vidb_sso_domain table in VCF Operations database"
 
-            $psql    = '/opt/vmware/vpostgres/current/bin/psql -p 5433 -d vcopsdb -t -A'
-            $ssoSql  = "SELECT key, name, vidb_resource_id, vcf_instance_id FROM kv_vidb_sso_domain;"
-            $ssoCmd  = "su - postgres -c `"$psql -c '$ssoSql'`""
+            $psql = '/opt/vmware/vpostgres/current/bin/psql -p 5433 -d vcopsdb -t -A'
+            $ssoSql = "SELECT key, name, vidb_resource_id, vcf_instance_id FROM kv_vidb_sso_domain;"
+            $ssoCmd = "su - postgres -c `"$psql -c '$ssoSql'`""
             $ssoResult = Invoke-SSHCommand -SessionId $session.SessionId -Command $ssoCmd -TimeOut 30
 
             $ssoDomainRows = @()
@@ -15912,9 +15873,9 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
                 $idx = 1
                 foreach ($row in $ssoDomainRows) {
                     $ssoTable += [pscustomobject]@{
-                        ID            = $idx
-                        Key           = $row.Key
-                        Name          = $row.Name
+                        ID             = $idx
+                        Key            = $row.Key
+                        Name           = $row.Name
                         VidbResourceId = $row.VidbResourceId
                         VcfInstanceId  = $row.VcfInstanceId
                     }
@@ -15924,7 +15885,7 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
                 Write-Host ""
                 Write-Host " Step 4: Select the stale SSO domain entry to remove from kv_vidb_sso_domain" -ForegroundColor Cyan
                 Write-Host ""
-                $ssoTable | Format-Table -Property @{Expression = " "}, ID, Key, Name, VidbResourceId, VcfInstanceId -AutoSize -HideTableHeaders |
+                $ssoTable | Format-Table -Property @{Expression = " " }, ID, Key, Name, VidbResourceId, VcfInstanceId -AutoSize -HideTableHeaders |
                     Out-String | ForEach-Object { $_.Trim("`r", "`n") }
 
                 $validSsoIds = 1..($ssoDomainRows.Count) | ForEach-Object { "$_" }
@@ -15957,9 +15918,9 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
         $scriptBytes = [System.IO.File]::ReadAllBytes($localScript)
         # Strip CR bytes so the file always has Unix line endings on the remote node
         $scriptBytes = [byte[]]($scriptBytes | Where-Object { $_ -ne 0x0D })
-        $b64         = [System.Convert]::ToBase64String($scriptBytes)
+        $b64 = [System.Convert]::ToBase64String($scriptBytes)
 
-        $uploadCmd    = "printf '%s' '$b64' | base64 -d > $remotePath && chmod +x $remotePath"
+        $uploadCmd = "printf '%s' '$b64' | base64 -d > $remotePath && chmod +x $remotePath"
         $uploadResult = Invoke-SSHCommand -SessionId $session.SessionId -Command $uploadCmd -TimeOut 60
         if ($uploadResult.ExitStatus -ne 0) {
             LogMessage -type ERROR -message "[$VcfOpsFqdn] Script upload failed (exit $($uploadResult.ExitStatus)): $($uploadResult.Error -join ' ')"
@@ -15990,7 +15951,7 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
         if ($execResult.Error) {
             (($execResult.Error -join "`n") -split "`r?`n") |
                 Where-Object { $_ -ne '' } |
-                ForEach-Object { Write-Host "  $_" -ForegroundColor Yellow }
+                    ForEach-Object { Write-Host "  $_" -ForegroundColor Yellow }
         }
 
         Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
@@ -16089,9 +16050,9 @@ Function Install-VcfaMigrationServiceEngine {
         [Parameter(Mandatory = $false)][Int]    $InstallPollIntervalSeconds = 30
     )
 
-    $jumpboxName    = hostname
-    $StopWatch      = New-Object -TypeName System.Diagnostics.Stopwatch
-    $terminalStates = @("COMPLETED","Completed","COMPLETE","FAILED","CANCELLED","ERROR","SUCCESS","SUCCESSFUL","Succeeded","Failed")
+    $jumpboxName = hostname
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $terminalStates = @("COMPLETED", "Completed", "COMPLETE", "FAILED", "CANCELLED", "ERROR", "SUCCESS", "SUCCESSFUL", "Succeeded", "Failed")
     $StopWatch.Start()
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     LogMessage -type INFO -message "[$jumpboxName] VCFA Services Runtime    : $VcfaServiceRuntimeFqdn"
@@ -16104,8 +16065,8 @@ Function Install-VcfaMigrationServiceEngine {
     # -------------------------------------------------------------------------
     $srToken = Get-VcfmsServicesRuntimeToken `
         -ServicesRuntimeFqdn $VcfaServiceRuntimeFqdn `
-        -Username            $VcfaServiceRuntimeUsername `
-        -Password            $VcfaServiceRuntimePassword
+        -Username $VcfaServiceRuntimeUsername `
+        -Password $VcfaServiceRuntimePassword
     if (-not $srToken) {
         LogMessage -type ERROR -message "[$VcfaServiceRuntimeFqdn] Unable to obtain VCFA Services Runtime token. Aborting."
         $StopWatch.Stop(); return
@@ -16125,12 +16086,12 @@ Function Install-VcfaMigrationServiceEngine {
             LogMessage -type INFO -message "[$VcfaServiceRuntimeFqdn] Token age >= 60 minutes; refreshing"
             $newToken = Get-VcfmsServicesRuntimeToken `
                 -ServicesRuntimeFqdn $VcfaServiceRuntimeFqdn `
-                -Username            $VcfaServiceRuntimeUsername `
-                -Password            $VcfaServiceRuntimePassword
+                -Username $VcfaServiceRuntimeUsername `
+                -Password $VcfaServiceRuntimePassword
             if ($newToken) {
-                $script:srToken                  = $newToken
+                $script:srToken = $newToken
                 $script:headers["Authorization"] = "Bearer $newToken"
-                $script:tokenFetchedAt           = [DateTime]::UtcNow
+                $script:tokenFetchedAt = [DateTime]::UtcNow
             } else {
                 LogMessage -type WARNING -message "[$VcfaServiceRuntimeFqdn] Token refresh failed; continuing with existing token"
             }
@@ -16155,7 +16116,7 @@ Function Install-VcfaMigrationServiceEngine {
 
     try {
         $stageResponse = Invoke-RestMethod `
-            -Uri    "https://$VcfaServiceRuntimeFqdn/api/v1/components?action=stage" `
+            -Uri "https://$VcfaServiceRuntimeFqdn/api/v1/components?action=stage" `
             -Method POST -Headers $headers -Body $stageBody -SkipCertificateCheck
     } catch {
         LogMessage -type ERROR -message "[$VcfaServiceRuntimeFqdn] Stage request failed: $($_.Exception.Message)"
@@ -16171,8 +16132,8 @@ Function Install-VcfaMigrationServiceEngine {
 
     # Poll stage task
     LogMessage -type INFO -message "[$VcfaServiceRuntimeFqdn] Polling stage task $stageTaskId every ${StagePollIntervalSeconds}s"
-    $elapsed      = 0
-    $taskStatus   = "UNKNOWN"
+    $elapsed = 0
+    $taskStatus = "UNKNOWN"
     $taskResponse = $null
     Do {
         Start-Sleep -Seconds $StagePollIntervalSeconds
@@ -16180,7 +16141,7 @@ Function Install-VcfaMigrationServiceEngine {
         & $refreshToken
         try {
             $taskResponse = Invoke-RestMethod `
-                -Uri    "https://$VcfaServiceRuntimeFqdn/api/v1/tasks/$stageTaskId" `
+                -Uri "https://$VcfaServiceRuntimeFqdn/api/v1/tasks/$stageTaskId" `
                 -Method GET -Headers $headers -SkipCertificateCheck
             $rawSt = $taskResponse.status
             $rawPh = $taskResponse.phase
@@ -16198,7 +16159,7 @@ Function Install-VcfaMigrationServiceEngine {
         LogMessage -type INFO -message "[$VcfaServiceRuntimeFqdn] Stage task $stageTaskId status=$taskStatus (${elapsed}s elapsed)"
     } While ($taskStatus -notin $terminalStates)
 
-    $successStates = @("COMPLETED","Completed","COMPLETE","SUCCESS","SUCCESSFUL","Succeeded")
+    $successStates = @("COMPLETED", "Completed", "COMPLETE", "SUCCESS", "SUCCESSFUL", "Succeeded")
     if ($taskStatus -notin $successStates) {
         LogMessage -type ERROR -message "[$VcfaServiceRuntimeFqdn] Stage task ended with status: $taskStatus"
         if ($taskResponse -and $taskResponse.description.localizedMessage) {
@@ -16229,7 +16190,7 @@ Function Install-VcfaMigrationServiceEngine {
 
     try {
         $installResponse = Invoke-RestMethod `
-            -Uri    "https://$VcfaServiceRuntimeFqdn/api/v1/components?action=install" `
+            -Uri "https://$VcfaServiceRuntimeFqdn/api/v1/components?action=install" `
             -Method POST -Headers $headers -Body $installBody -SkipCertificateCheck
     } catch {
         LogMessage -type ERROR -message "[$VcfaServiceRuntimeFqdn] Install request failed: $($_.Exception.Message)"
@@ -16245,8 +16206,8 @@ Function Install-VcfaMigrationServiceEngine {
 
     # Poll install task
     LogMessage -type INFO -message "[$VcfaServiceRuntimeFqdn] Polling install task $installTaskId every ${InstallPollIntervalSeconds}s"
-    $elapsed      = 0
-    $taskStatus   = "UNKNOWN"
+    $elapsed = 0
+    $taskStatus = "UNKNOWN"
     $taskResponse = $null
     Do {
         Start-Sleep -Seconds $InstallPollIntervalSeconds
@@ -16254,7 +16215,7 @@ Function Install-VcfaMigrationServiceEngine {
         & $refreshToken
         try {
             $taskResponse = Invoke-RestMethod `
-                -Uri    "https://$VcfaServiceRuntimeFqdn/api/v1/tasks/$installTaskId" `
+                -Uri "https://$VcfaServiceRuntimeFqdn/api/v1/tasks/$installTaskId" `
                 -Method GET -Headers $headers -SkipCertificateCheck
             $rawSt = $taskResponse.status
             $rawPh = $taskResponse.phase
@@ -16349,7 +16310,7 @@ Function Remove-VcfmsRecoveredComponents {
     )
 
     $jumpboxName = hostname
-    $StopWatch   = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     LogMessage -type INFO -message "[$jumpboxName] Services Runtime : $ServicesRuntimeFqdn"
@@ -16362,14 +16323,14 @@ Function Remove-VcfmsRecoveredComponents {
         LogMessage -type INFO -message "[$jumpboxName] Retrieving kubeconfig from $ServicesRuntimeFqdn"
         $kubeconfigResult = Get-VcfmsServicesRuntimeKubeconfig `
             -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
-            -Password            $ServicesRuntimePassword `
-            -OutputDir           $KubeconfigOutputDir
+            -Password $ServicesRuntimePassword `
+            -OutputDir $KubeconfigOutputDir
         if (-not $kubeconfigResult) {
             LogMessage -type ERROR -message "[$jumpboxName] Could not retrieve kubeconfig. Aborting."
             $StopWatch.Stop(); return
         }
         $resolvedKubeconfig = $kubeconfigResult.KubeconfigPath
-        $controlPlaneHost   = $kubeconfigResult.ControlPlaneHost
+        $controlPlaneHost = $kubeconfigResult.ControlPlaneHost
     } else {
         LogMessage -type INFO -message "[$jumpboxName] Using supplied kubeconfig: $resolvedKubeconfig"
         $controlPlaneHost = $ServicesRuntimeFqdn
@@ -16385,7 +16346,7 @@ Function Remove-VcfmsRecoveredComponents {
     LogMessage -type INFO -message "[$controlPlaneHost] Step 1a: Deleting component resources: $componentList"
 
     $deleteOutput = & kubectl --kubeconfig $resolvedKubeconfig delete component @components 2>&1
-    $deleteExit   = $LASTEXITCODE
+    $deleteExit = $LASTEXITCODE
 
     $deleteOutput | ForEach-Object { Write-Host "   $_" }
 
@@ -16401,7 +16362,7 @@ Function Remove-VcfmsRecoveredComponents {
     # command against the standby is expected to fail and is handled gracefully.
     # -------------------------------------------------------------------------
     $deleteTypes = "DELETE FROM component WHERE component_type IN ('VIDB', 'OPS_LOGS', 'SALT_RAAS', 'VCF_FLEET_LCM', 'VCF_FLEET_DEPOT');"
-    $dbPods      = @("vcf-sddc-lcm-db-0", "vcf-sddc-lcm-db-1")
+    $dbPods = @("vcf-sddc-lcm-db-0", "vcf-sddc-lcm-db-1")
 
     foreach ($dbPod in $dbPods) {
         LogMessage -type INFO -message "[$controlPlaneHost] Step 1b: Running DELETE on $dbPod"
@@ -16432,8 +16393,7 @@ Export-ModuleMember -Function Remove-VcfmsRecoveredComponents
 #EndRegion Services Runtime
 
 #Region Supervisor
-Function Confirm-ContentLibraryDatastoreFolder
-{
+Function Confirm-ContentLibraryDatastoreFolder {
     <#
     .SYNOPSIS
     Checks for the presence of a content library folder on the target datastore and creates it if absent.
@@ -16484,7 +16444,7 @@ Function Confirm-ContentLibraryDatastoreFolder
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
 
-    $driveName  = "clDSCheck_$(Get-Random)"
+    $driveName = "clDSCheck_$(Get-Random)"
 
     Try {
         LogMessage -type INFO -message "[$vCenterFQDN] Connecting to vCenter"
@@ -16498,7 +16458,7 @@ Function Confirm-ContentLibraryDatastoreFolder
             Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
             return
         }
-        $libraryId  = $library.Id
+        $libraryId = $library.Id
         $folderName = "contentlib-$libraryId"
         LogMessage -type INFO -message "[$vCenterFQDN] Content Library '$contentLibraryName' resolved (Id: $libraryId)"
 
@@ -16542,8 +16502,7 @@ Function Confirm-ContentLibraryDatastoreFolder
 }
 Export-ModuleMember -Function Confirm-ContentLibraryDatastoreFolder
 
-Function Set-ContentLibraryDatastoreMapping
-{
+Function Set-ContentLibraryDatastoreMapping {
     Param(
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $vCenterRootPassword,
@@ -16595,7 +16554,7 @@ Function Set-ContentLibraryDatastoreMapping
     Start-Sleep 3
     $clLibraryOutput = & $cleanSshOutput $stream.Read()
     $libraryMatches = ($clLibraryOutput | Select-String -Pattern $guidPattern -AllMatches).Matches
-    $libraryId       = $libraryMatches | Select-Object -First 1 -ExpandProperty Value
+    $libraryId = $libraryMatches | Select-Object -First 1 -ExpandProperty Value
     $existinvCenterId = $libraryMatches | Select-Object -Last 1 -ExpandProperty Value
     if (-not $libraryId) {
         LogMessage -type ERROR -message "[$vCenterFQDN] Could not find Content Library '$contentLibraryName' in VCDB"
@@ -16664,8 +16623,7 @@ Function Set-ContentLibraryDatastoreMapping
 }
 Export-ModuleMember -Function Set-ContentLibraryDatastoreMapping
 
-Function Invoke-SupervisorRestore
-{
+Function Invoke-SupervisorRestore {
     Param(
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
@@ -16887,6 +16845,64 @@ Function Start-VCFRecoveryCoordinator {
         return
     }
     if (-not (Test-Path $plansPath)) {
+        LogMessage -type ERROR -message "Cannot find plans folder '$plansPath'."
+        return
+    }
+
+    $pwshPath = (Get-Process -Id $PID).Path   # same pwsh.exe/powershell.exe build this session is running under
+
+    # ProcessStartInfo.ArgumentList, not Start-Process's own -ArgumentList: the cmdlet's version just
+    # joins array elements with spaces and does not quote ones that themselves contain spaces, which
+    # breaks the moment the module is installed under a path like "C:\Program Files\..." -- pwsh.exe's
+    # own command-line parser then splits that path at the space and can't find a script file at all.
+    # ArgumentList.Add() here quotes each argument correctly regardless of what it contains.
+    $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $startInfo.FileName = $pwshPath
+    # pwsh.exe is a console-subsystem executable, so launching it this way would otherwise open a
+    # visible console window behind the WPF one -- the in-process runspace this used to run in never
+    # showed one, and the orchestrator window is the only thing meant to be visible.
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    # -STA must come before -File: anything after -File's own value is passed through as an argument
+    # to the script itself, not interpreted as a pwsh.exe switch. WPF requires an STA thread, and
+    # pwsh.exe's own usage text lists both -STA and -MTA as real switches -- meaning the apartment
+    # state a plain launch ends up with isn't something to assume. Without this, Application.Run()
+    # throws right after the window is constructed, which is invisible with CreateNoWindow set above:
+    # the whole process just exits, and the window vanishes with no error shown anywhere.
+    $startInfo.ArgumentList.Add('-STA')
+    $startInfo.ArgumentList.Add('-NoProfile')
+    $startInfo.ArgumentList.Add('-File')
+    $startInfo.ArgumentList.Add($uiScriptPath)
+    $startInfo.ArgumentList.Add('-XamlPath')
+    $startInfo.ArgumentList.Add($xamlPath)
+    $startInfo.ArgumentList.Add('-WorkingDirectory')
+    $startInfo.ArgumentList.Add($launchDirectory)
+    $startInfo.ArgumentList.Add('-PlansPath')
+    $startInfo.ArgumentList.Add($plansPath)
+
+    # Redirected only so a fast, unhandled failure (e.g. an exception thrown before Application.Run()
+    # ever starts pumping messages) has somewhere to be read back from below -- not read from at all
+    # while the process is still running, since that would block once its stderr's pipe buffer filled.
+    $startInfo.RedirectStandardError = $true
+
+    $process = [System.Diagnostics.Process]::Start($startInfo)
+
+    # A real launch stays open indefinitely; this is only long enough to catch a launch that failed
+    # outright, so this cmdlet reports what actually happened instead of claiming success regardless,
+    # the way it used to when the old in-process approach's background-thread exceptions went unread.
+    Start-Sleep -Milliseconds 750
+    $process.Refresh()
+    if ($process.HasExited) {
+        $errorOutput = $process.StandardError.ReadToEnd()
+        LogMessage -type ERROR -message "VCF Recovery Coordinator UI exited immediately (exit code $($process.ExitCode)). $errorOutput"
+        return
+    }
+
+    LogMessage -type NOTE -message "VCF Recovery Coordinator UI launched (PID $($process.Id))."
+}
+Export-ModuleMember -Function Start-VCFRecoveryCoordinator
+
+#EndRegion UI Orchestrator
         LogMessage -type ERROR -message "Cannot find plans folder '$plansPath'."
         return
     }
