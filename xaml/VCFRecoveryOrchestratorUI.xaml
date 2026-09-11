@@ -535,13 +535,17 @@
                         </TabItem>
                         <TabItem Header="Steps">
                             <DockPanel Margin="0,8,0,0">
-                                <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="0,0,0,8">
-                                    <CheckBox x:Name="OriginalVcfInstallerAvailableCheckBox" Content="Original VCF Installer Available" IsChecked="True" VerticalAlignment="Center" />
-                                </DockPanel>
-                                <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="0,0,0,8">
-                                    <Button x:Name="RunAllFleetComponentsButton" Content="Run All" HorizontalAlignment="Left" />
+                                <!-- WrapPanel, not DockPanel: this row lives in the narrow 3* Recovery Tasks
+                                     column, so all three controls only fit on one line on a wide display. A
+                                     DockPanel would hand the last child zero width and render it invisible
+                                     (confirmed by measurement, not assumed); a WrapPanel keeps the installer
+                                     checkbox inline to the right when there's room and drops it to a second
+                                     line when there isn't. -->
+                                <WrapPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                                    <Button x:Name="RunAllFleetComponentsButton" Content="Run All" />
                                     <CheckBox x:Name="RunAllFleetComponentsParallelCheckBox" Content="Run parallel tasks using multiple threads (numbered circles)" IsChecked="True" VerticalAlignment="Center" Margin="12,0,0,0" />
-                                </DockPanel>
+                                    <CheckBox x:Name="OriginalVcfInstallerAvailableCheckBox" Content="Original VCF Installer Available" IsChecked="True" VerticalAlignment="Center" Margin="12,0,0,0" />
+                                </WrapPanel>
                                 <ListBox x:Name="FleetComponentsStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
                             </DockPanel>
                         </TabItem>
