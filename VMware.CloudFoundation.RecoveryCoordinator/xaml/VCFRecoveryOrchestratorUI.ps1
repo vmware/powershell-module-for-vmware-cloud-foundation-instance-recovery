@@ -455,6 +455,49 @@ Register-EngineeringModeGate $stepsVariablesTabControl
 Register-EngineeringModeGate $instanceComponentsVariablesStepsTabControl
 Register-EngineeringModeGate $fleetComponentsVariablesStepsTabControl
 
+# Same engineering-mode gate as Register-EngineeringModeGate above (shares its
+# $global:engineeringModeUnlocked flag -- one unlock covers both), but for a RadioButton marked
+# PENDING in the XAML (FDR, Fleet Component Recovery) instead of the Advanced tab. Wraps -- rather
+# than runs alongside -- $OnAllowed: the caller's real Checked-handling logic is passed in and only
+# ever invoked once the password has been accepted (or was already unlocked), so gating and
+# business logic can't race the way two independently-registered Checked handlers on the same
+# RadioButton would (the RadioButton's own IsChecked flip back to $SafeRadios below fires sibling
+# Checked handlers synchronously, but never re-enters $GatedRadio's own Checked event a second time
+# with $OnAllowed already having run for the rejected attempt).
+function Register-RadioEngineeringModeGate([System.Windows.Controls.RadioButton]$GatedRadio, [System.Windows.Controls.RadioButton[]]$SafeRadios, [string]$FeatureName, [scriptblock]$OnAllowed) {
+    # A hashtable, not a bare variable -- same reason as Register-EngineeringModeGate's own
+    # $gateState above: it has to survive across separate invocations of the closures below, one
+    # of which lives on each $SafeRadios sibling rather than on $GatedRadio itself.
+    $gateState = @{ LastSafeRadio = @($SafeRadios | Where-Object { $_.IsChecked })[0] }
+    if (-not $gateState.LastSafeRadio) {
+        $gateState.LastSafeRadio = $SafeRadios[0]
+    }
+    foreach ($safeRadio in $SafeRadios) {
+        $safeRadio.Add_Checked({ $gateState.LastSafeRadio = $safeRadio }.GetNewClosure())
+    }
+
+    $GatedRadio.Add_Checked({
+            if (-not $global:engineeringModeUnlocked) {
+                # Revert first, same order as Register-EngineeringModeGate's own TabControl revert:
+                # this flips $GatedRadio back off (RadioButtons in one GroupName are mutually
+                # exclusive) and runs $gateState.LastSafeRadio's own Checked handler synchronously,
+                # so the UI is back in its prior state before the modal password prompt even opens.
+                $gateState.LastSafeRadio.IsChecked = $true
+                $entered = Show-PasswordPromptDialog -Title 'Unlock Engineering Mode' -Message "Enter the engineering mode password to select $FeatureName."
+                if ($entered -and (Test-EngineeringModePassword $entered)) {
+                    $global:engineeringModeUnlocked = $true
+                    # Re-checking now that the flag is set re-fires this same Checked handler; the
+                    # guard above is skipped that time and falls through to $OnAllowed below.
+                    $GatedRadio.IsChecked = $true
+                } elseif ($entered) {
+                    New-Advisory 'Incorrect engineering mode password.' -Failure
+                }
+                return
+            }
+            & $OnAllowed
+        }.GetNewClosure())
+}
+
 # Reads a plan file fresh from disk every time it's called (no caching) -- the whole point is that
 # editing a plan file and re-selecting the domain (or relaunching) picks the change up immediately,
 # with no recompiling or restarting anything else. Plan files are a JSON array of step objects:
@@ -2348,7 +2391,10 @@ $ibrRecoveryTypeRadio.Add_Checked({
 # Extract SDDC Manager Backup runs immediately rather than waiting for a further action. No variable
 # values are known yet at this point, so conditional steps fail open (see Test-StepCondition) and
 # show unconditionally until Load Variables/New Variables File re-filters them for real.
-$fdrRecoveryTypeRadio.Add_Checked({
+# PENDING (see the XAML's badge on this radio) -- gated behind the engineering mode password via
+# Register-RadioEngineeringModeGate, same as Advanced. All of the below only ever runs once that
+# gate has let it through.
+Register-RadioEngineeringModeGate $fdrRecoveryTypeRadio @($ibrRecoveryTypeRadio) 'Fleet Disaster Recovery (FDR)' {
         $ibrRecoveryScopeGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
         $dataSourceGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
         $discoveredInfrastructureGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
@@ -2380,7 +2426,7 @@ $fdrRecoveryTypeRadio.Add_Checked({
 
         $stepsVariablesGroupBox.Visibility = [System.Windows.Visibility]::Visible
         $stepsVariablesTabControl.SelectedIndex = 1   # "Steps"
-    })
+    }
 
 # Extracting a backup isn't a plan with steps to sequence -- it's one action, run immediately from
 # Browse below (see Invoke-ExtractSDDCManagerBackup). Picking this radio just clears any stale
@@ -3180,7 +3226,8 @@ function Sync-IbrRecoveryScopeSelection {
 }
 
 $managementDomainRecoveryRadio.Add_Checked({ Sync-IbrRecoveryScopeSelection })
-$fleetComponentRecoveryRadio.Add_Checked({ Sync-IbrRecoveryScopeSelection })
+# PENDING (see the XAML's badge on this radio) -- gated the same way as FDR above.
+Register-RadioEngineeringModeGate $fleetComponentRecoveryRadio @($managementDomainRecoveryRadio, $workloadDomainRecoveryRadio, $additionalClusterRecoveryRadio) 'Fleet Component Recovery' { Sync-IbrRecoveryScopeSelection }
 $workloadDomainRecoveryRadio.Add_Checked({ Sync-IbrRecoveryScopeSelection })
 $additionalClusterRecoveryRadio.Add_Checked({ Sync-IbrRecoveryScopeSelection })
 

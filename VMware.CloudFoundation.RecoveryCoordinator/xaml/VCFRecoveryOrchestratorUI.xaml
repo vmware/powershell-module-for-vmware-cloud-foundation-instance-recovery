@@ -283,7 +283,22 @@
                 <GroupBox Grid.Row="0" Header="Recovery Type" Margin="0,0,0,12">
                     <StackPanel Margin="0,-8,0,0">
                         <RadioButton x:Name="IbrRecoveryTypeRadio" Content="Instance Backup &amp; Restore (IBR)" GroupName="RecoveryType" IsChecked="True" Margin="0,0,0,6" />
-                        <RadioButton x:Name="FdrRecoveryTypeRadio" Content="Fleet Disaster Recovery (FDR)" GroupName="RecoveryType" />
+                        <!-- PENDING: FDR isn't finished yet, so it stays selectable only behind the
+                             same engineering-mode password gate as the Advanced tab (see
+                             Register-RadioEngineeringModeGate in the .ps1) - picking it without
+                             the password reverts the selection back to IBR. The badge is the same
+                             LightGray/Black pairing New-StepRow uses for a step's own "Pending"
+                             button, not the slate-grey "Requires Input" pill, since it marks a
+                             not-ready FEATURE rather than a fixed property of an already-available
+                             one. -->
+                        <RadioButton x:Name="FdrRecoveryTypeRadio" GroupName="RecoveryType">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="Fleet Disaster Recovery (FDR)" VerticalAlignment="Center" />
+                                <Border Background="LightGray" CornerRadius="8" Padding="6,1" Margin="8,0,0,0" VerticalAlignment="Center">
+                                    <TextBlock Text="PENDING" FontSize="10.5" FontWeight="SemiBold" Foreground="Black" />
+                                </Border>
+                            </StackPanel>
+                        </RadioButton>
                     </StackPanel>
                 </GroupBox>
 
@@ -299,7 +314,19 @@
                 <GroupBox x:Name="IbrRecoveryScopeGroupBox" Grid.Row="1" Header="Recovery Scope" Margin="0,0,0,12">
                     <StackPanel Margin="0,-8,0,0">
                         <RadioButton x:Name="ManagementDomainRecoveryRadio" Content="Management Domain Recovery" GroupName="IbrRecoveryScope" IsChecked="True" Margin="0,0,0,6" />
-                        <RadioButton x:Name="FleetComponentRecoveryRadio" Content="Fleet Component Recovery" GroupName="IbrRecoveryScope" Margin="0,0,0,6" />
+                        <!-- PENDING, gated the same way as FDR above - see the comment on
+                             FdrRecoveryTypeRadio for why. Reverting on a rejected/cancelled unlock
+                             here goes back to whichever of the other three scope radios was
+                             selected last (see Register-RadioEngineeringModeGate), not always
+                             Management Domain. -->
+                        <RadioButton x:Name="FleetComponentRecoveryRadio" GroupName="IbrRecoveryScope" Margin="0,0,0,6">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="Fleet Component Recovery" VerticalAlignment="Center" />
+                                <Border Background="LightGray" CornerRadius="8" Padding="6,1" Margin="8,0,0,0" VerticalAlignment="Center">
+                                    <TextBlock Text="PENDING" FontSize="10.5" FontWeight="SemiBold" Foreground="Black" />
+                                </Border>
+                            </StackPanel>
+                        </RadioButton>
                         <RadioButton x:Name="WorkloadDomainRecoveryRadio" Content="Workload Domain Recovery" GroupName="IbrRecoveryScope" Margin="0,0,0,6" />
                         <RadioButton x:Name="AdditionalClusterRecoveryRadio" Content="Additional Cluster Recovery" GroupName="IbrRecoveryScope" />
                     </StackPanel>
