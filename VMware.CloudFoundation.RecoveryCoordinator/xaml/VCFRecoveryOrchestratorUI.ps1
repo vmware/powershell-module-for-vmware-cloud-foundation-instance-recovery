@@ -497,12 +497,12 @@ function Get-CurrentRecoveryPlanTarget {
     return [string]$entry.target
 }
 
-# Shared by all three Recovery Parameters combos. Content is a StackPanel (label + optional PENDING
-# pill), not a plain string -- the same LightGray/Black pairing New-StepRow uses for a step's own
-# "Pending" button (not the slate-grey "Requires Input" pill elsewhere), since this marks a
-# not-ready FEATURE rather than a fixed property of an already-available one. Tag carries the
-# catalog id (a recovery type id, plan id, or data source id) so callers can resolve back to the
-# catalog entry without re-parsing the label text.
+# Shared by all three Recovery Parameters combos. Content is a StackPanel (label + optional
+# ENGINEERING-ONLY pill), not a plain string -- the same LightGray/Black pairing New-StepRow uses
+# for a step's own "Pending" button (not the slate-grey "Requires Input" pill elsewhere), since
+# this marks a feature gated behind the engineering mode password rather than a fixed property of
+# an already-available one. Tag carries the catalog id (a recovery type id, plan id, or data
+# source id) so callers can resolve back to the catalog entry without re-parsing the label text.
 function New-RecoveryOptionComboBoxItem([string]$Label, [bool]$Pending, [string]$Tag) {
     $item = New-Object System.Windows.Controls.ComboBoxItem
     $item.Tag = $Tag
@@ -520,7 +520,7 @@ function New-RecoveryOptionComboBoxItem([string]$Label, [bool]$Pending, [string]
         $badge.Margin = '8,0,0,0'
         $badge.VerticalAlignment = 'Center'
         $badgeText = New-Object System.Windows.Controls.TextBlock
-        $badgeText.Text = 'PENDING'
+        $badgeText.Text = 'ENGINEERING-ONLY'
         $badgeText.FontSize = 10.5
         $badgeText.FontWeight = 'SemiBold'
         $badgeText.Foreground = [System.Windows.Media.Brushes]::Black

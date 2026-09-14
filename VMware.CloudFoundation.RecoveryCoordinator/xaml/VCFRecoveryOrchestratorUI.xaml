@@ -286,7 +286,7 @@
                      with its own stack of RadioButtons; collapsed into one card with three combo
                      boxes so a new plan can be added by editing plans/recovery-plan-catalog.json
                      alone, without touching this markup. Every item in all three combos (including
-                     their PENDING badges) is built in the .ps1 from that catalog file - see
+                     their ENGINEERING-ONLY badges) is built in the .ps1 from that catalog file - see
                      New-RecoveryOptionComboBoxItem/Sync-RecoveryPlanSelection - so none of the
                      three ComboBoxes below carry any static Items here. -->
                 <!-- Only a negative top margin on the content here, not the Console pane's extra
