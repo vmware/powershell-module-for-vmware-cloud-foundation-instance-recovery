@@ -74,15 +74,13 @@ if ($vmwLogoImage) {
 
 $resumeButton = $window.FindName('ResumeButton')
 $exitButton = $window.FindName('ExitButton')
-$ibrRecoveryTypeRadio = $window.FindName('IbrRecoveryTypeRadio')
-$fdrRecoveryTypeRadio = $window.FindName('FdrRecoveryTypeRadio')
-$ibrRecoveryScopeGroupBox = $window.FindName('IbrRecoveryScopeGroupBox')
-$managementDomainRecoveryRadio = $window.FindName('ManagementDomainRecoveryRadio')
-$fleetComponentRecoveryRadio = $window.FindName('FleetComponentRecoveryRadio')
-$workloadDomainRecoveryRadio = $window.FindName('WorkloadDomainRecoveryRadio')
-$additionalClusterRecoveryRadio = $window.FindName('AdditionalClusterRecoveryRadio')
-$dataSourceGroupBox = $window.FindName('DataSourceGroupBox')
-$extractRadio = $window.FindName('ExtractBackupRadio')
+# Recovery Type/Recovery Plan/Data Source (see plans/recovery-plan-catalog.json and
+# Sync-RecoveryPlanSelection) -- replaced the old fixed set of RadioButtons/GroupBoxes below with
+# three catalog-driven ComboBoxes, so there's no longer one FindName per plan/scope.
+$recoveryTypeComboBox = $window.FindName('RecoveryTypeComboBox')
+$recoveryPlanComboBox = $window.FindName('RecoveryPlanComboBox')
+$dataSourceRowPanel = $window.FindName('DataSourceRowPanel')
+$dataSourceComboBox = $window.FindName('DataSourceComboBox')
 $browseButton = $window.FindName('BrowseButton')
 $filePathTextBox = $window.FindName('FilePathTextBox')
 $advisoriesRichTextBox = $window.FindName('AdvisoriesRichTextBox')
@@ -210,9 +208,9 @@ $global:recoverFleetStepRows = @()
 $global:domainRecoverySteps = @()
 $global:additionalClusterRecoverySteps = @()
 # Raw, unfiltered domain list from the currently loaded extracted-sddc-data.json (see
-# Import-ExtractedSddcDataFile) -- Sync-IbrRecoveryScopeSelection re-filters this into
-# $domainsListBox every time Recovery Scope changes (MANAGEMENT-only for Management Domain
-# Recovery, non-MANAGEMENT for Workload Domain Recovery), without needing to re-read the file.
+# Import-ExtractedSddcDataFile) -- Sync-RecoveryPlanSelection re-filters this into
+# $domainsListBox every time the selected Recovery Plan changes (MANAGEMENT-only for Management
+# Domain Recovery, non-MANAGEMENT for Workload Domain Recovery), without needing to re-read the file.
 $global:allDiscoveredDomains = @()
 # One state bundle per MANAGEMENT-domain sub-plan (Instance Components / Fleet Components) -- each
 # is a genuinely independent operation with its own Steps, its own Run All row-tracking, and (unlike
@@ -284,8 +282,8 @@ $global:conditionDataContext = @{}
 # domain/cluster later in the same session, which must not see stale status from the previous one).
 $global:stepRunStatus = @{}
 # Whether Import-ExtractedSddcDataFile has ever successfully loaded data -- tracked separately
-# from Discovered Infrastructure's own Visibility so switching from FDR back to IBR (see the
-# Recovery Type Checked handlers) knows whether to reveal it again or leave it collapsed.
+# from Discovered Infrastructure's own Visibility so switching from FDR back to IBR (see
+# Sync-RecoveryPlanSelection) knows whether to reveal it again or leave it collapsed.
 $global:extractedDataLoaded = $false
 # Path to the last-loaded variable answers file, if any -- tracked separately from the textbox-less
 # Load Variables flow so Exit can record it, and Resume can pass it straight back to the same loader.
@@ -455,47 +453,114 @@ Register-EngineeringModeGate $stepsVariablesTabControl
 Register-EngineeringModeGate $instanceComponentsVariablesStepsTabControl
 Register-EngineeringModeGate $fleetComponentsVariablesStepsTabControl
 
-# Same engineering-mode gate as Register-EngineeringModeGate above (shares its
-# $global:engineeringModeUnlocked flag -- one unlock covers both), but for a RadioButton marked
-# PENDING in the XAML (FDR, Fleet Component Recovery) instead of the Advanced tab. Wraps -- rather
-# than runs alongside -- $OnAllowed: the caller's real Checked-handling logic is passed in and only
-# ever invoked once the password has been accepted (or was already unlocked), so gating and
-# business logic can't race the way two independently-registered Checked handlers on the same
-# RadioButton would (the RadioButton's own IsChecked flip back to $SafeRadios below fires sibling
-# Checked handlers synchronously, but never re-enters $GatedRadio's own Checked event a second time
-# with $OnAllowed already having run for the rejected attempt).
-function Register-RadioEngineeringModeGate([System.Windows.Controls.RadioButton]$GatedRadio, [System.Windows.Controls.RadioButton[]]$SafeRadios, [string]$FeatureName, [scriptblock]$OnAllowed) {
-    # A hashtable, not a bare variable -- same reason as Register-EngineeringModeGate's own
-    # $gateState above: it has to survive across separate invocations of the closures below, one
-    # of which lives on each $SafeRadios sibling rather than on $GatedRadio itself.
-    $gateState = @{ LastSafeRadio = @($SafeRadios | Where-Object { $_.IsChecked })[0] }
-    if (-not $gateState.LastSafeRadio) {
-        $gateState.LastSafeRadio = $SafeRadios[0]
+# --- Recovery Parameters catalog (plans/recovery-plan-catalog.json) ------------------------------
+# Drives the Recovery Type/Recovery Plan/Data Source combo boxes (see the XAML's "Recovery
+# Parameters" card) so a new recovery plan -- or relabeling/repointing an existing one -- is a JSON
+# edit, not a code change. Loaded once, not re-read on every use like Get-RecoveryPlanSteps: unlike
+# a plan's own steps (re-read on every domain/cluster selection so an edit is picked up immediately
+# without restarting), this catalog only ever shapes the combo boxes themselves, which are built
+# once at startup -- the same "edit it, then relaunch" expectation the XAML itself already carries.
+$script:recoveryPlanCatalog = $null
+function Get-RecoveryPlanCatalog {
+    if ($null -eq $script:recoveryPlanCatalog) {
+        $catalogPath = Join-Path $PlansPath 'recovery-plan-catalog.json'
+        if (-not (Test-Path -LiteralPath $catalogPath)) {
+            throw "Cannot find recovery plan catalog '$catalogPath'."
+        }
+        $script:recoveryPlanCatalog = Get-Content -LiteralPath $catalogPath -Raw | ConvertFrom-Json
     }
-    foreach ($safeRadio in $SafeRadios) {
-        $safeRadio.Add_Checked({ $gateState.LastSafeRadio = $safeRadio }.GetNewClosure())
-    }
+    return $script:recoveryPlanCatalog
+}
 
-    $GatedRadio.Add_Checked({
-            if (-not $global:engineeringModeUnlocked) {
-                # Revert first, same order as Register-EngineeringModeGate's own TabControl revert:
-                # this flips $GatedRadio back off (RadioButtons in one GroupName are mutually
-                # exclusive) and runs $gateState.LastSafeRadio's own Checked handler synchronously,
-                # so the UI is back in its prior state before the modal password prompt even opens.
-                $gateState.LastSafeRadio.IsChecked = $true
-                $entered = Show-PasswordPromptDialog -Title 'Unlock Engineering Mode' -Message "Enter the engineering mode password to select $FeatureName."
-                if ($entered -and (Test-EngineeringModePassword $entered)) {
-                    $global:engineeringModeUnlocked = $true
-                    # Re-checking now that the flag is set re-fires this same Checked handler; the
-                    # guard above is skipped that time and falls through to $OnAllowed below.
-                    $GatedRadio.IsChecked = $true
-                } elseif ($entered) {
-                    New-Advisory 'Incorrect engineering mode password.' -Failure
-                }
-                return
-            }
-            & $OnAllowed
-        }.GetNewClosure())
+function Get-RecoveryPlanCatalogEntry([string]$PlanId) {
+    return (Get-RecoveryPlanCatalog).recoveryPlans | Where-Object { $_.id -eq $PlanId } | Select-Object -First 1
+}
+
+# The plan currently selected on the Recovery Plan combo, or $null before anything's been
+# populated yet (there briefly is no SelectedItem while Items is being rebuilt -- see
+# RecoveryTypeComboBox's own SelectionChanged). Every function below that used to branch on which
+# of the 4 (now 5, RecoverFleet included) fixed RadioButtons was checked reads this instead.
+function Get-CurrentRecoveryPlanEntry {
+    $selected = $recoveryPlanComboBox.SelectedItem
+    if ($null -eq $selected) { return $null }
+    return Get-RecoveryPlanCatalogEntry ([string]$selected.Tag)
+}
+
+# Renamed from Get-CurrentIbrRecoveryScope: still returns the exact same string values
+# (ManagementDomain/FleetComponent/WorkloadDomain/AdditionalCluster) every existing "-eq" comparison
+# elsewhere already depends on, plus a new RecoverFleet value for FDR's own plan -- previously
+# handled by a completely separate code path (the old FDR Recovery Type Checked handler) that this
+# refactor folds into the same one Sync-RecoveryPlanSelection dispatcher every other plan uses.
+function Get-CurrentRecoveryPlanTarget {
+    $entry = Get-CurrentRecoveryPlanEntry
+    if ($null -eq $entry) { return $null }
+    return [string]$entry.target
+}
+
+# Shared by all three Recovery Parameters combos. Content is a StackPanel (label + optional PENDING
+# pill), not a plain string -- the same LightGray/Black pairing New-StepRow uses for a step's own
+# "Pending" button (not the slate-grey "Requires Input" pill elsewhere), since this marks a
+# not-ready FEATURE rather than a fixed property of an already-available one. Tag carries the
+# catalog id (a recovery type id, plan id, or data source id) so callers can resolve back to the
+# catalog entry without re-parsing the label text.
+function New-RecoveryOptionComboBoxItem([string]$Label, [bool]$Pending, [string]$Tag) {
+    $item = New-Object System.Windows.Controls.ComboBoxItem
+    $item.Tag = $Tag
+    $panel = New-Object System.Windows.Controls.StackPanel
+    $panel.Orientation = 'Horizontal'
+    $textBlock = New-Object System.Windows.Controls.TextBlock
+    $textBlock.Text = $Label
+    $textBlock.VerticalAlignment = 'Center'
+    [void]$panel.Children.Add($textBlock)
+    if ($Pending) {
+        $badge = New-Object System.Windows.Controls.Border
+        $badge.Background = [System.Windows.Media.Brushes]::LightGray
+        $badge.CornerRadius = 8
+        $badge.Padding = '6,1'
+        $badge.Margin = '8,0,0,0'
+        $badge.VerticalAlignment = 'Center'
+        $badgeText = New-Object System.Windows.Controls.TextBlock
+        $badgeText.Text = 'PENDING'
+        $badgeText.FontSize = 10.5
+        $badgeText.FontWeight = 'SemiBold'
+        $badgeText.Foreground = [System.Windows.Media.Brushes]::Black
+        $badge.Child = $badgeText
+        [void]$panel.Children.Add($badge)
+    }
+    $item.Content = $panel
+    return $item
+}
+
+# The plan a given Recovery Type should land on as soon as it's selected -- whichever of its plans
+# the catalog marks "default": true, or its first plan if none is marked (every recoveryType in
+# the shipped catalog has exactly one default; this fallback only matters for a hand-edited catalog
+# that omits one).
+function Get-DefaultRecoveryPlanId([string]$RecoveryTypeId) {
+    $plans = @((Get-RecoveryPlanCatalog).recoveryPlans | Where-Object { $_.recoveryType -eq $RecoveryTypeId })
+    $defaultPlan = $plans | Where-Object { $_.default } | Select-Object -First 1
+    if (-not $defaultPlan) { $defaultPlan = $plans | Select-Object -First 1 }
+    if (-not $defaultPlan) { return $null }
+    return [string]$defaultPlan.id
+}
+
+# Selects both combos together in one call -- used by the engineering-mode gate below to revert a
+# rejected/cancelled pending-plan pick, and by Resume to restore a saved selection. Setting
+# RecoveryTypeComboBox.SelectedItem first (only when it's actually changing) rebuilds
+# RecoveryPlanComboBox's own Items for that type and auto-selects that type's default plan; the
+# second, explicit RecoveryPlanComboBox.SelectedItem assignment then corrects that to whichever
+# plan was actually wanted, if it differs from the type's default. Each assignment that actually
+# changes a selection fires that combo's own SelectionChanged synchronously (nested, depth-first --
+# normal WPF routed-event behavior), so by the time this function returns, every effect of both
+# selections (Sync-RecoveryPlanSelection included) has already fully run.
+function Select-RecoveryTypeAndPlan([string]$RecoveryTypeId, [string]$PlanId) {
+    if ($RecoveryTypeId) {
+        $typeItem = $recoveryTypeComboBox.Items | Where-Object { $_.Tag -eq $RecoveryTypeId } | Select-Object -First 1
+        if ($typeItem) { $recoveryTypeComboBox.SelectedItem = $typeItem }
+    }
+    if ($PlanId) {
+        $planItem = $recoveryPlanComboBox.Items | Where-Object { $_.Tag -eq $PlanId } | Select-Object -First 1
+        if ($planItem) { $recoveryPlanComboBox.SelectedItem = $planItem }
+    }
 }
 
 # Reads a plan file fresh from disk every time it's called (no caching) -- the whole point is that
@@ -2319,10 +2384,10 @@ function Import-ExtractedSddcDataFile([string]$Path) {
         return
     }
 
-    # Cached raw/unfiltered -- Sync-IbrRecoveryScopeSelection (called at the end of this function,
-    # and again whenever Recovery Scope changes) re-filters this into $domainsListBox itself
-    # (MANAGEMENT-only for Management Domain Recovery, non-MANAGEMENT for Workload Domain Recovery),
-    # so this function no longer populates $domainsListBox directly.
+    # Cached raw/unfiltered -- Sync-RecoveryPlanSelection (called at the end of this function, and
+    # again whenever the selected Recovery Plan changes) re-filters this into $domainsListBox
+    # itself (MANAGEMENT-only for Management Domain Recovery, non-MANAGEMENT for Workload Domain
+    # Recovery), so this function no longer populates $domainsListBox directly.
     $global:allDiscoveredDomains = @($extractedSddcData.workloadDomains)
 
     # Every domain's own default cluster (isDefault 't') is already the one the Recover Default
@@ -2364,75 +2429,103 @@ function Import-ExtractedSddcDataFile([string]$Path) {
     }
 
     $global:extractedDataLoaded = $true
-    Sync-IbrRecoveryScopeSelection
+    Sync-RecoveryPlanSelection
 
     $escapedPath = Protect-SingleQuotes $Path
     Send-ToConsole "Set-ExportedSDDCDataFilePath -Path '$escapedPath'"
 }
 
-# IBR is domain-driven: Data Source/Recovery Scope/Discovered Infrastructure come back, and Domain
-# Restores/Recover Default Cluster/Recover Additional Cluster/the two MANAGEMENT-only panes replace
-# Recover Fleet on the Steps tab strip. Sync-IbrRecoveryScopeSelection owns Discovered
-# Infrastructure's own visibility/content and re-runs Sync-DomainSteps/Sync-AdditionalClusterSteps
-# itself (via clearing/rebuilding selection), so this handler doesn't need to call any of that
-# directly -- it just reveals Recovery Scope/Data Source and hands off to the dispatcher.
-$ibrRecoveryTypeRadio.Add_Checked({
-        $ibrRecoveryScopeGroupBox.Visibility = [System.Windows.Visibility]::Visible
-        $dataSourceGroupBox.Visibility = [System.Windows.Visibility]::Visible
-        Set-RecoverFleetPanelsVisibility ([System.Windows.Visibility]::Collapsed)
-        $global:recoverFleetStepRows = Set-PlanStepsListBox $recoverFleetPlanStepsListBox $recoverFleetManualStepsListBox @()
-        Sync-IbrRecoveryScopeSelection
-    })
+# Recovery Type -> Recovery Plan -> Data Source, entirely catalog-driven (see
+# plans/recovery-plan-catalog.json and the helpers above) -- replaces the old fixed
+# IbrRecoveryTypeRadio/FdrRecoveryTypeRadio/4-scope-RadioButtons/ExtractBackupRadio wiring, all of
+# it now folded into Sync-RecoveryPlanSelection (defined further down, alongside the old
+# Sync-IbrRecoveryScopeSelection/Sync-DomainSteps/Sync-AdditionalClusterSteps it replaces/reuses)
+# plus the two SelectionChanged handlers below.
+foreach ($recoveryType in (Get-RecoveryPlanCatalog).recoveryTypes) {
+    [void]$recoveryTypeComboBox.Items.Add((New-RecoveryOptionComboBoxItem $recoveryType.label ([bool]$recoveryType.pending) ([string]$recoveryType.id)))
+}
 
-# FDR has one whole-fleet plan (plans/fdr/fdr-failover-plan.json) with no domain to select, so Data
-# Source/Discovered Infrastructure are irrelevant to it -- collapsing both (rather than covering
-# them with a placeholder) lets Recovery Tasks' Auto-height rows collapse to zero and the row below
-# take the freed space automatically. Loads and shows the plan immediately, same as picking
-# Extract SDDC Manager Backup runs immediately rather than waiting for a further action. No variable
-# values are known yet at this point, so conditional steps fail open (see Test-StepCondition) and
-# show unconditionally until Load Variables/New Variables File re-filters them for real.
-# PENDING (see the XAML's badge on this radio) -- gated behind the engineering mode password via
-# Register-RadioEngineeringModeGate, same as Advanced. All of the below only ever runs once that
-# gate has let it through.
-Register-RadioEngineeringModeGate $fdrRecoveryTypeRadio @($ibrRecoveryTypeRadio) 'Fleet Disaster Recovery (FDR)' {
-        $ibrRecoveryScopeGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
-        $dataSourceGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
-        $discoveredInfrastructureGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
-        Set-DomainRecoveryPanelsVisibility ([System.Windows.Visibility]::Collapsed)
-        Set-AdditionalClusterRecoveryPanelsVisibility ([System.Windows.Visibility]::Collapsed)
-        $global:additionalClusterRecoveryStepRows = Set-PlanStepsListBox $additionalClusterRecoveryPlanStepsListBox $additionalClusterRecoveryManualStepsListBox @()
-        Set-RecoverFleetPanelsVisibility ([System.Windows.Visibility]::Visible)
+# Remembers the last selection that was NOT rejected by the engineering-mode gate below, so a
+# rejected/cancelled unlock attempt on a PENDING plan (Fleet Component Recovery, Recover Fleet)
+# reverts to exactly where the operator actually was, not a fixed default -- same idea as
+# Register-EngineeringModeGate's own $gateState.LastSafeTab. Set for real the first time
+# RecoveryPlanComboBox's own SelectionChanged (below) lands on a non-pending plan, which happens
+# naturally the moment the startup selection is triggered near the bottom of this script.
+$script:lastSafeRecoveryTypeId = $null
+$script:lastSafeRecoveryPlanId = $null
 
-        $variablesItemsPanel.Children.Clear()
-        $loadedVariablesTextBlock.Text = 'No variables loaded yet.'
-        foreach ($group in @($global:instanceComponentsGroup, $global:fleetComponentsGroup)) {
-            $group.StepsListBox.Items.Clear()
-            $group.ManualStepsListBox.Items.Clear()
-            $group.VariablesItemsPanel.Children.Clear()
-            $group.LoadedVariablesText.Text = 'No variables loaded yet.'
-            $group.Steps = @()
-            $group.StepRows = @()
-            $group.AnswersFilePath = $null
+# Rebuilds Recovery Plan's own Items to whichever plans the catalog lists under the newly selected
+# Recovery Type, then selects that type's default plan (Management Domain Recovery for IBR,
+# Recover Fleet for FDR) -- picking FDR this way is what makes Recover Fleet's own PENDING gate
+# (on RecoveryPlanComboBox's SelectionChanged, below) fire immediately, exactly like checking the
+# old FdrRecoveryTypeRadio directly used to.
+$recoveryTypeComboBox.Add_SelectionChanged({
+        $selectedType = $recoveryTypeComboBox.SelectedItem
+        if ($null -eq $selectedType) { return }
+        $typeId = [string]$selectedType.Tag
+        $recoveryPlanComboBox.Items.Clear()
+        foreach ($plan in @((Get-RecoveryPlanCatalog).recoveryPlans | Where-Object { $_.recoveryType -eq $typeId })) {
+            [void]$recoveryPlanComboBox.Items.Add((New-RecoveryOptionComboBoxItem $plan.label ([bool]$plan.pending) ([string]$plan.id)))
         }
-        # Cleared on an IBR-to-FDR switch because stale $global:stepRunStatus surviving it would be a
-        # real correctness concern, not just a latent one.
-        $global:conditionDataContext = @{}
-        $global:stepRunStatus = @{}
-        Set-ActiveStepsVariablesPane $stepsVariablesTabControl
+        $defaultPlanId = Get-DefaultRecoveryPlanId $typeId
+        $defaultItem = $recoveryPlanComboBox.Items | Where-Object { $_.Tag -eq $defaultPlanId } | Select-Object -First 1
+        if ($defaultItem) {
+            $recoveryPlanComboBox.SelectedItem = $defaultItem
+        } elseif ($recoveryPlanComboBox.Items.Count -gt 0) {
+            $recoveryPlanComboBox.SelectedIndex = 0
+        }
+    }.GetNewClosure())
 
-        $recoverFleetSteps = Get-ApplicableSteps (Get-RecoveryPlanSteps 'fdr' 'fdr-failover-plan.json') @{}
-        $global:recoverFleetStepRows = Set-PlanStepsListBox $recoverFleetPlanStepsListBox $recoverFleetManualStepsListBox $recoverFleetSteps
-        $global:allSteps = @($recoverFleetSteps)
+# The one dispatcher for every recovery plan pick -- gates PENDING plans behind the engineering
+# mode password (same $global:engineeringModeUnlocked flag Register-EngineeringModeGate uses for
+# Advanced), then hands off to Sync-RecoveryPlanSelection. Combining the gate and the real
+# selection-handling logic in this single handler (rather than two independently-registered ones,
+# the way the old RadioButton-based Register-RadioEngineeringModeGate worked) is what lets a
+# rejected attempt revert the pick cleanly without Sync-RecoveryPlanSelection ever running for a
+# plan that was never actually allowed through.
+$recoveryPlanComboBox.Add_SelectionChanged({
+        $selectedPlan = $recoveryPlanComboBox.SelectedItem
+        if ($null -eq $selectedPlan) { return }
+        $entry = Get-RecoveryPlanCatalogEntry ([string]$selectedPlan.Tag)
+        if (-not $entry) { return }
 
-        $stepsVariablesGroupBox.Visibility = [System.Windows.Visibility]::Visible
-        $stepsVariablesTabControl.SelectedIndex = 1   # "Steps"
-    }
+        if ($entry.pending -and -not $global:engineeringModeUnlocked) {
+            # Revert first (mirrors Register-EngineeringModeGate's own TabControl revert): puts the
+            # UI back exactly where it was, synchronously, before the modal password prompt even
+            # opens. $script:lastSafeRecoveryPlanId is $null only if EVERY plan under every type
+            # were pending, which the shipped catalog never does -- nothing to revert to in that
+            # case, so the pick is just left as-is (still gated; Sync-RecoveryPlanSelection is never
+            # reached below either way).
+            if ($script:lastSafeRecoveryPlanId) {
+                Select-RecoveryTypeAndPlan $script:lastSafeRecoveryTypeId $script:lastSafeRecoveryPlanId
+            }
+            $entered = Show-PasswordPromptDialog -Title 'Unlock Engineering Mode' -Message "Enter the engineering mode password to select $($entry.label)."
+            if ($entered -and (Test-EngineeringModePassword $entered)) {
+                $global:engineeringModeUnlocked = $true
+                # Re-selecting now that the flag is set re-fires this same SelectionChanged; the
+                # guard above is skipped that time and falls through to Sync-RecoveryPlanSelection.
+                Select-RecoveryTypeAndPlan $entry.recoveryType $entry.id
+            } elseif ($entered) {
+                New-Advisory 'Incorrect engineering mode password.' -Failure
+            }
+            return
+        }
 
-# Extracting a backup isn't a plan with steps to sequence -- it's one action, run immediately from
-# Browse below (see Invoke-ExtractSDDCManagerBackup). Picking this radio just clears any stale
-# Domain Recovery rows left over from a previously selected domain, the same "nothing to show yet"
-# state a fresh launch starts in.
-$extractRadio.Add_Checked({
+        $script:lastSafeRecoveryTypeId = $entry.recoveryType
+        $script:lastSafeRecoveryPlanId = $entry.id
+        Sync-RecoveryPlanSelection
+    }.GetNewClosure())
+
+# Only the "Extract SDDC Manager Backup" data source needs a handler here -- picking "Load
+# Extracted SDDC Data" is a pure no-op until Browse actually supplies a file (see
+# $browseButton.Add_Click below), same as when these were two RadioButtons and only
+# ExtractBackupRadio had an Add_Checked. Clears any stale Domain Recovery rows left over from a
+# previously selected domain, the same "nothing to show yet" state a fresh launch starts in --
+# whatever was loaded under a previous data source is about to be superseded by a fresh extraction.
+$dataSourceComboBox.Add_SelectionChanged({
+        $selectedSource = $dataSourceComboBox.SelectedItem
+        if ($null -eq $selectedSource -or [string]$selectedSource.Tag -ne 'ExtractBackup') { return }
+
         $global:domainRecoveryStepRows = Set-PlanStepsListBox $domainRecoveryPlanStepsListBox $domainRecoveryManualStepsListBox @()
         $global:additionalClusterRecoveryStepRows = Set-PlanStepsListBox $additionalClusterRecoveryPlanStepsListBox $additionalClusterRecoveryManualStepsListBox @()
         $variablesItemsPanel.Children.Clear()
@@ -2453,7 +2546,7 @@ $extractRadio.Add_Checked({
         $global:allSteps = @()
         $global:conditionDataContext = @{}
         $global:stepRunStatus = @{}
-    })
+    }.GetNewClosure())
 
 # Prompts for the backup's credentials file and encryption password right here (rather than via
 # the Variables tab -- there's no plan/Execution context for this action at all) and runs it
@@ -2489,7 +2582,7 @@ function Invoke-ExtractSDDCManagerBackup([string]$BackupFilePath) {
 }
 
 $browseButton.Add_Click({
-        $extracting = $extractRadio.IsChecked -eq $true
+        $extracting = $dataSourceComboBox.SelectedItem -and ([string]$dataSourceComboBox.SelectedItem.Tag -eq 'ExtractBackup')
         $dialog = New-Object Microsoft.Win32.OpenFileDialog
         if ($extracting) {
             $dialog.Filter = 'All files (*.*)|*.*'
@@ -2664,7 +2757,14 @@ $newVariablesFileButton.Add_Click({
         $dialog = New-Object Microsoft.Win32.SaveFileDialog
         $dialog.Filter = 'JSON files (*.json)|*.json|All files (*.*)|*.*'
         $dialog.Title = 'Save new variables file'
-        $dialog.FileName = 'variables.json'
+        # Defaults to the currently selected plan's own catalog-listed variables file name (see
+        # plans/recovery-plan-catalog.json) so the suggested name always matches whichever of
+        # Workload Domain Recovery/Additional Cluster Recovery/Recover Fleet is actually active,
+        # rather than one generic name regardless of plan. Falls back to the old generic name if
+        # no plan is selected yet (shouldn't normally happen -- this button is only reachable once
+        # Recovery Tasks itself is visible, which requires a plan).
+        $currentEntryForFileName = Get-CurrentRecoveryPlanEntry
+        $dialog.FileName = if ($currentEntryForFileName -and $currentEntryForFileName.variablesFile) { $currentEntryForFileName.variablesFile } else { 'variables.json' }
         if ($dialog.ShowDialog() -ne $true) {
             return
         }
@@ -2689,7 +2789,11 @@ $instanceComponentsNewVariablesFileButton.Add_Click({
         $dialog = New-Object Microsoft.Win32.SaveFileDialog
         $dialog.Filter = 'JSON files (*.json)|*.json|All files (*.*)|*.*'
         $dialog.Title = 'Save new variables file'
-        $dialog.FileName = 'instance-components-variables.json'
+        # See the matching comment on $newVariablesFileButton above -- this pane is always
+        # Management Domain Recovery specifically, so its catalog entry can be looked up by id
+        # directly rather than via Get-CurrentRecoveryPlanEntry.
+        $managementDomainEntryForFileName = Get-RecoveryPlanCatalogEntry 'ManagementDomain'
+        $dialog.FileName = if ($managementDomainEntryForFileName -and $managementDomainEntryForFileName.variablesFile) { $managementDomainEntryForFileName.variablesFile } else { 'instance-components-variables.json' }
         if ($dialog.ShowDialog() -ne $true) {
             return
         }
@@ -2714,7 +2818,11 @@ $fleetComponentsNewVariablesFileButton.Add_Click({
         $dialog = New-Object Microsoft.Win32.SaveFileDialog
         $dialog.Filter = 'JSON files (*.json)|*.json|All files (*.*)|*.*'
         $dialog.Title = 'Save new variables file'
-        $dialog.FileName = 'fleet-components-variables.json'
+        # See the matching comment on $newVariablesFileButton above -- this pane is always Fleet
+        # Component Recovery specifically, so its catalog entry can be looked up by id directly
+        # rather than via Get-CurrentRecoveryPlanEntry.
+        $fleetComponentEntryForFileName = Get-RecoveryPlanCatalogEntry 'FleetComponent'
+        $dialog.FileName = if ($fleetComponentEntryForFileName -and $fleetComponentEntryForFileName.variablesFile) { $fleetComponentEntryForFileName.variablesFile } else { 'fleet-components-variables.json' }
         if ($dialog.ShowDialog() -ne $true) {
             return
         }
@@ -2757,9 +2865,9 @@ function Set-SelectedTargetInConsole([string]$WorkloadDomain, [string]$ClusterNa
     Send-ToConsole "Set-SelectedRecoveryTarget $($cmdArgs -join ' ')"
 }
 
-# Shared by the domain SelectionChanged handler and by switching back to IBR from FDR (see the
-# Recovery Type Checked handlers below) -- re-selecting the same domain doesn't refire
-# SelectionChanged, so switching recovery type has to be able to re-derive Execution's state from
+# Shared by the domain SelectionChanged handler and by switching back to IBR from FDR (see
+# Sync-RecoveryPlanSelection below) -- re-selecting the same domain doesn't refire
+# SelectionChanged, so switching recovery plan has to be able to re-derive Execution's state from
 # whatever's currently selected on its own, not only react to an actual selection change.
 # Recomputes $global:allSteps as the union of every currently-populated IBR Steps panel (Domain
 # Recovery, Additional Cluster Recovery) -- these are two independent, mutually exclusive
@@ -2775,10 +2883,18 @@ function Update-AllSteps {
 function Update-ExecutionVisibility {
     $hasDomainSelected = $null -ne $domainsListBox.SelectedItem
     $hasClusterSelected = $additionalClustersListBox.SelectedItem -is [System.Windows.Controls.ListBoxItem]
-    # Fleet Component Recovery has no domain/cluster selection at all to hang this off of -- its own
-    # Recovery Tasks pane is ready to show as soon as data is loaded and that scope is active.
-    $isFleetComponentReady = (Get-CurrentIbrRecoveryScope) -eq 'FleetComponent' -and $global:extractedDataLoaded
-    $stepsVariablesGroupBox.Visibility = if ($hasDomainSelected -or $hasClusterSelected -or $isFleetComponentReady) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
+    # Fleet Component Recovery and Recover Fleet (FDR) have no domain/cluster selection at all to
+    # hang this off of -- either one's own Recovery Tasks pane is ready to show as soon as its own
+    # data requirement is met (extracted data loaded, for a plan that needs a data source at all;
+    # immediately for one that doesn't -- see the catalog's own "dataSources" per plan). Generalized
+    # over $entry.target rather than a hardcoded "-eq 'FleetComponent'" so a future plan reusing
+    # 'fleetComponent'/'recoverFleet' picks this up automatically.
+    $entry = Get-CurrentRecoveryPlanEntry
+    $isStandaloneTargetReady = $false
+    if ($entry -and $entry.target -in @('FleetComponent', 'RecoverFleet')) {
+        $isStandaloneTargetReady = (@($entry.dataSources).Count -eq 0) -or $global:extractedDataLoaded
+    }
+    $stepsVariablesGroupBox.Visibility = if ($hasDomainSelected -or $hasClusterSelected -or $isStandaloneTargetReady) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
 }
 
 # Populates the Domain Recovery/Additional Cluster Recovery ListBoxes from whatever
@@ -2945,16 +3061,6 @@ function Set-ActiveStepsVariablesPane($PaneToShow) {
     }
 }
 
-# Single source of truth for which of the 4 IBR Recovery Scope radios is currently checked -- used
-# by Sync-DomainSteps (to decide Management Domain vs Workload Domain) and
-# Sync-IbrRecoveryScopeSelection, rather than each repeating its own if/elseif chain.
-function Get-CurrentIbrRecoveryScope {
-    if ($managementDomainRecoveryRadio.IsChecked -eq $true) { return 'ManagementDomain' }
-    if ($fleetComponentRecoveryRadio.IsChecked -eq $true) { return 'FleetComponent' }
-    if ($additionalClusterRecoveryRadio.IsChecked -eq $true) { return 'AdditionalCluster' }
-    return 'WorkloadDomain'
-}
-
 # Each of Domain Recovery/Additional Cluster Recovery/Recover Fleet now has TWO panels (Recovery
 # Plan's read-only view and Manual Steps' interactive one -- see New-StepRow), not one, but they are
 # still shown/hidden as a single unit exactly like the old single panel was: whichever workflow is
@@ -3016,16 +3122,17 @@ function Sync-DomainSteps {
         # $global:instanceComponentsGroup/$global:fleetComponentsGroup and
         # Set-ActiveStepsVariablesPane), not the single combined plan Workload Domain Recovery uses.
         # $domainsListBox is only ever populated with MANAGEMENT-type domains under this scope (see
-        # Sync-IbrRecoveryScopeSelection's own filtering), so checking the scope itself here is
-        # equivalent to (and doesn't depend on re-inspecting) $selected.Tag.domainType.
-        if ((Get-CurrentIbrRecoveryScope) -eq 'ManagementDomain') {
+        # Sync-RecoveryPlanSelection's own filtering), so checking the current plan's own target
+        # here is equivalent to (and doesn't depend on re-inspecting) $selected.Tag.domainType.
+        $planEntry = Get-CurrentRecoveryPlanEntry
+        if ($planEntry -and $planEntry.target -eq 'ManagementDomain') {
             Set-DomainRecoveryPanelsVisibility ([System.Windows.Visibility]::Collapsed)
             Set-ActiveStepsVariablesPane $instanceComponentsVariablesStepsTabControl
-            $global:instanceComponentsGroup.Steps = Get-RecoveryPlanSteps 'ibr' 'management-domain-recovery-plan.json'
-        } else {
+            $global:instanceComponentsGroup.Steps = Get-RecoveryPlanSteps $planEntry.planFolder $planEntry.planFile
+        } elseif ($planEntry) {
             Set-DomainRecoveryPanelsVisibility ([System.Windows.Visibility]::Visible)
             Set-ActiveStepsVariablesPane $stepsVariablesTabControl
-            $global:domainRecoverySteps = Get-RecoveryPlanSteps 'ibr' 'workload-domain-recovery-plan.json'
+            $global:domainRecoverySteps = Get-RecoveryPlanSteps $planEntry.planFolder $planEntry.planFile
         }
 
         # The default-cluster-recovery portion of either plan runs against the domain's default
@@ -3100,7 +3207,10 @@ function Sync-AdditionalClusterSteps {
             $domainsListBox.SelectedItem = $null
         }
         Set-AdditionalClusterRecoveryPanelsVisibility ([System.Windows.Visibility]::Visible)
-        $global:additionalClusterRecoverySteps = Get-RecoveryPlanSteps 'ibr' 'additional-cluster-recovery-plan.json'
+        $planEntry = Get-CurrentRecoveryPlanEntry
+        if ($planEntry) {
+            $global:additionalClusterRecoverySteps = Get-RecoveryPlanSteps $planEntry.planFolder $planEntry.planFile
+        }
         # See the matching comment in Sync-DomainSteps -- $selected.Tag here is the cluster
         # PSCustomObject built in Import-ExtractedSddcDataFile, not a raw domain object, so no
         # isDefault lookup is needed: this row already IS the one cluster in question.
@@ -3144,18 +3254,25 @@ $additionalClustersListBox.Add_SelectionChanged({
         }
     }.GetNewClosure())
 
-# Dispatcher for the 4 IBR Recovery Scope radios -- called whenever one is checked, and again at the
-# end of Import-ExtractedSddcDataFile (so loading/reloading data after a scope was already picked
-# re-applies its filtering correctly). Owns Discovered Infrastructure's own visibility/content;
+# Dispatcher for every Recovery Plan pick -- called by RecoveryPlanComboBox's own SelectionChanged
+# (once the engineering-mode gate there has let a PENDING plan through, or immediately for a
+# non-pending one), and again at the end of Import-ExtractedSddcDataFile (so loading/reloading data
+# after a plan was already picked re-applies its filtering correctly). Owns Discovered
+# Infrastructure's own visibility/content and Data Source's own permitted-options/visibility;
 # actual Steps/Variables reveal for Workload Domain/Additional Cluster continues to come from their
 # existing SelectionChanged-driven Sync-DomainSteps/Sync-AdditionalClusterSteps (re-triggered here by
-# clearing/rebuilding selection) -- Fleet Component Recovery has no selection to hook at all, so this
-# function reveals its pane directly.
-function Sync-IbrRecoveryScopeSelection {
-    # Reset both MANAGEMENT-only groups unconditionally. Sync-DomainSteps already does this too
-    # whenever it runs (triggered below by clearing domain selection), but Fleet Component Recovery
-    # never triggers Sync-DomainSteps at all (no domain selection involved), so this is the only
-    # place that clears stale Instance/Fleet Components state when navigating away from them.
+# clearing/rebuilding selection) -- Fleet Component Recovery and Recover Fleet (FDR) have no
+# selection to hook at all, so this function reveals their panes directly. Folds in what used to be
+# three separate places (this function, the old FdrRecoveryTypeRadio Checked handler, and the
+# recoverFleet-clearing half of the old IbrRecoveryTypeRadio Checked handler) now that all five
+# plans -- including Recover Fleet -- are just catalog entries picked from the same one combo.
+function Sync-RecoveryPlanSelection {
+    # Reset both MANAGEMENT-only groups unconditionally, same reasoning as Sync-DomainSteps's own
+    # identical reset: whichever plan was previously active (including Recover Fleet, which has no
+    # selection of its own to trigger Sync-DomainSteps's copy of this) might have left stale rows
+    # behind. Recover Fleet's own rows/panel are reset unconditionally too, right below, for the
+    # same reason -- neither $domainsListBox nor $additionalClustersListBox selection changing
+    # (further down) would ever clear those.
     foreach ($group in @($global:instanceComponentsGroup, $global:fleetComponentsGroup)) {
         $group.StepsListBox.Items.Clear()
         $group.ManualStepsListBox.Items.Clear()
@@ -3166,6 +3283,8 @@ function Sync-IbrRecoveryScopeSelection {
         $group.AnswersFilePath = $null
         $group.AnswerMap = $null
     }
+    Set-RecoverFleetPanelsVisibility ([System.Windows.Visibility]::Collapsed)
+    $global:recoverFleetStepRows = Set-PlanStepsListBox $recoverFleetPlanStepsListBox $recoverFleetManualStepsListBox @()
 
     # Clearing selection (rather than leaving stale rows selected under a since-rebuilt list)
     # re-triggers Sync-DomainSteps/Sync-AdditionalClusterSteps, which already reset their own flat
@@ -3173,7 +3292,57 @@ function Sync-IbrRecoveryScopeSelection {
     if ($null -ne $domainsListBox.SelectedItem) { $domainsListBox.SelectedItem = $null }
     if ($null -ne $additionalClustersListBox.SelectedItem) { $additionalClustersListBox.SelectedItem = $null }
 
-    $scope = Get-CurrentIbrRecoveryScope
+    $entry = Get-CurrentRecoveryPlanEntry
+    if (-not $entry) { return }
+
+    # Data Source: hidden entirely for a plan that permits none at all (Recover Fleet, FDR's only
+    # plan -- "FDR should not require a data source") rather than shown with nothing selectable.
+    # Repopulated fresh on every plan change, not just once, since a different plan can permit a
+    # different subset -- only Management Domain Recovery permits Extract SDDC Manager Backup; see
+    # plans/recovery-plan-catalog.json.
+    $permittedDataSourceIds = @($entry.dataSources)
+    $requiresDataSource = $permittedDataSourceIds.Count -gt 0
+    $dataSourceRowPanel.Visibility = if ($requiresDataSource) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
+    if ($requiresDataSource) {
+        # Keeps whatever was already picked if it's still permitted for this plan (e.g. switching
+        # away from Management Domain Recovery and back without ever touching Data Source in
+        # between), rather than always snapping back to the plan's own default.
+        $previouslySelectedId = if ($dataSourceComboBox.SelectedItem) { [string]$dataSourceComboBox.SelectedItem.Tag } else { $null }
+        $dataSourceComboBox.Items.Clear()
+        foreach ($source in @((Get-RecoveryPlanCatalog).dataSources | Where-Object { $permittedDataSourceIds -contains $_.id })) {
+            [void]$dataSourceComboBox.Items.Add((New-RecoveryOptionComboBoxItem $source.label $false ([string]$source.id)))
+        }
+        $wantedId = if ($previouslySelectedId -and ($permittedDataSourceIds -contains $previouslySelectedId)) { $previouslySelectedId } else { [string]$entry.defaultDataSource }
+        $wantedItem = $dataSourceComboBox.Items | Where-Object { $_.Tag -eq $wantedId } | Select-Object -First 1
+        if ($wantedItem) {
+            $dataSourceComboBox.SelectedItem = $wantedItem
+        } elseif ($dataSourceComboBox.Items.Count -gt 0) {
+            $dataSourceComboBox.SelectedIndex = 0
+        }
+    }
+
+    if (-not $requiresDataSource) {
+        # Recover Fleet (FDR): no data source, no discovery, loads immediately -- same as the old
+        # dedicated FdrRecoveryTypeRadio Checked handler this folds in. No variable values are known
+        # yet at this point, so conditional steps fail open (see Test-StepCondition) and show
+        # unconditionally until Load Variables/New Variables File re-filters them for real.
+        $discoveredInfrastructureGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
+        $variablesItemsPanel.Children.Clear()
+        $loadedVariablesTextBlock.Text = 'No variables loaded yet.'
+        $global:conditionDataContext = @{}
+        $global:stepRunStatus = @{}
+        Set-ActiveStepsVariablesPane $stepsVariablesTabControl
+
+        $recoverFleetSteps = Get-ApplicableSteps (Get-RecoveryPlanSteps $entry.planFolder $entry.planFile) @{}
+        $global:recoverFleetStepRows = Set-PlanStepsListBox $recoverFleetPlanStepsListBox $recoverFleetManualStepsListBox $recoverFleetSteps
+        $global:allSteps = @($recoverFleetSteps)
+        Set-RecoverFleetPanelsVisibility ([System.Windows.Visibility]::Visible)
+
+        $stepsVariablesGroupBox.Visibility = [System.Windows.Visibility]::Visible
+        $stepsVariablesTabControl.SelectedIndex = 1   # "Steps"
+        Update-ExecutionVisibility
+        return
+    }
 
     if (-not $global:extractedDataLoaded) {
         $discoveredInfrastructureGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
@@ -3181,12 +3350,12 @@ function Sync-IbrRecoveryScopeSelection {
         return
     }
 
-    if ($scope -eq 'FleetComponent') {
+    if ($entry.target -eq 'FleetComponent') {
         # No discovery/selection step at all -- fleet-component-recovery-plan.json never references
         # $extractedSDDCDataFile, but Data Source is still shown beforehand for flow consistency
-        # across all 4 scopes (a deliberate choice, not an oversight).
+        # across every plan that has one (a deliberate choice, not an oversight).
         $discoveredInfrastructureGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
-        $global:fleetComponentsGroup.Steps = Get-RecoveryPlanSteps 'ibr' 'fleet-component-recovery-plan.json'
+        $global:fleetComponentsGroup.Steps = Get-RecoveryPlanSteps $entry.planFolder $entry.planFile
         Set-ActiveStepsVariablesPane $fleetComponentsVariablesStepsTabControl
         Update-ExecutionVisibility
         return
@@ -3194,21 +3363,21 @@ function Sync-IbrRecoveryScopeSelection {
 
     $discoveredInfrastructureGroupBox.Visibility = [System.Windows.Visibility]::Visible
 
-    if ($scope -eq 'AdditionalCluster') {
+    if ($entry.target -eq 'AdditionalCluster') {
         $workloadDomainsTabItem.Visibility = [System.Windows.Visibility]::Collapsed
         $additionalClustersTabItem.Visibility = [System.Windows.Visibility]::Visible
         $discoveredInfrastructureTabControl.SelectedItem = $additionalClustersTabItem
-        # AdditionalClustersListBox's own contents are unaffected by scope -- already populated by
-        # Import-ExtractedSddcDataFile.
+        # AdditionalClustersListBox's own contents are unaffected by which plan is active --
+        # already populated by Import-ExtractedSddcDataFile.
     } else {
         $additionalClustersTabItem.Visibility = [System.Windows.Visibility]::Collapsed
         $workloadDomainsTabItem.Visibility = [System.Windows.Visibility]::Visible
         $discoveredInfrastructureTabControl.SelectedItem = $workloadDomainsTabItem
-        $workloadDomainsTabItem.Header = if ($scope -eq 'ManagementDomain') { 'Management Domain' } else { 'Workload Domains' }
+        $workloadDomainsTabItem.Header = if ($entry.target -eq 'ManagementDomain') { 'Management Domain' } else { 'Workload Domains' }
 
         $domainsListBox.Items.Clear()
         $filteredDomains = @($global:allDiscoveredDomains | Where-Object {
-                if ($scope -eq 'ManagementDomain') { $_.domainType -eq 'MANAGEMENT' } else { $_.domainType -ne 'MANAGEMENT' }
+                if ($entry.target -eq 'ManagementDomain') { $_.domainType -eq 'MANAGEMENT' } else { $_.domainType -ne 'MANAGEMENT' }
             })
         foreach ($domain in $filteredDomains) {
             $item = New-Object System.Windows.Controls.ListBoxItem
@@ -3218,18 +3387,19 @@ function Sync-IbrRecoveryScopeSelection {
         }
         # There's only ever at most one MANAGEMENT domain -- auto-select it rather than making the
         # user click the sole row in an otherwise-empty-feeling list.
-        if ($scope -eq 'ManagementDomain' -and $domainsListBox.Items.Count -gt 0) {
+        if ($entry.target -eq 'ManagementDomain' -and $domainsListBox.Items.Count -gt 0) {
             $domainsListBox.SelectedIndex = 0
         }
     }
     Update-ExecutionVisibility
 }
 
-$managementDomainRecoveryRadio.Add_Checked({ Sync-IbrRecoveryScopeSelection })
-# PENDING (see the XAML's badge on this radio) -- gated the same way as FDR above.
-Register-RadioEngineeringModeGate $fleetComponentRecoveryRadio @($managementDomainRecoveryRadio, $workloadDomainRecoveryRadio, $additionalClusterRecoveryRadio) 'Fleet Component Recovery' { Sync-IbrRecoveryScopeSelection }
-$workloadDomainRecoveryRadio.Add_Checked({ Sync-IbrRecoveryScopeSelection })
-$additionalClusterRecoveryRadio.Add_Checked({ Sync-IbrRecoveryScopeSelection })
+# Triggers the very first Sync-RecoveryPlanSelection run, now that every function it calls is
+# defined -- the default Recovery Type (IBR, the catalog's first entry) selects its own default
+# plan (Management Domain Recovery) via RecoveryTypeComboBox's own SelectionChanged, which cascades
+# into RecoveryPlanComboBox's, which is what actually runs Sync-RecoveryPlanSelection. This also
+# gives $script:lastSafeRecoveryTypeId/$script:lastSafeRecoveryPlanId their real starting values.
+$recoveryTypeComboBox.SelectedIndex = 0
 
 $runAllDomainRecoveryButton.Add_Click({
         try {
@@ -3320,9 +3490,15 @@ $exitButton.Add_Click({
             # together (see Set-StepButtonsState), so they can never disagree on Content.
             $completedCmdlets = @($allRows | Where-Object { $_.PlanButton.Content -eq 'Done' } | ForEach-Object { $_.CmdletName })
 
+            $currentPlanEntry = Get-CurrentRecoveryPlanEntry
             $state = [PSCustomObject]@{
                 ExtractedDataFilePath     = $filePathTextBox.Text
-                IbrRecoveryScope          = Get-CurrentIbrRecoveryScope
+                # RecoveryPlanId is the catalog id (e.g. "ManagementDomain", "RecoverFleet") of
+                # whichever plan was selected on the Recovery Plan combo -- see Resume below, which
+                # also still recognizes the older IbrRecoveryScope field name a save from before
+                # this combo-box refactor would have used (the two are the same string values for
+                # every IBR plan, so no migration is needed for those).
+                RecoveryPlanId            = if ($currentPlanEntry) { $currentPlanEntry.id } else { $null }
                 VariablesAnswersFilePaths = [PSCustomObject]@{
                     Shared              = $global:variablesAnswersFilePath
                     InstanceComponents  = $global:instanceComponentsGroup.AnswersFilePath
@@ -3375,19 +3551,20 @@ $resumeButton.Add_Click({
             $state = Get-Content -Path $dialog.FileName -Raw | ConvertFrom-Json
 
             # Restored BEFORE Import-ExtractedSddcDataFile (which itself calls
-            # Sync-IbrRecoveryScopeSelection once data loads) so that first real filter/populate pass
-            # already uses the correct scope, instead of running once under whatever was checked
-            # before Resume and then a second time once corrected. An older saved state with no
-            # IbrRecoveryScope field, or an unrecognized value, just leaves whatever's currently
-            # checked (the default, Workload Domain Recovery) alone.
-            $scopeRadioByName = @{
-                ManagementDomain = $managementDomainRecoveryRadio
-                FleetComponent   = $fleetComponentRecoveryRadio
-                WorkloadDomain   = $workloadDomainRecoveryRadio
-                AdditionalCluster = $additionalClusterRecoveryRadio
-            }
-            if ($state.IbrRecoveryScope -and $scopeRadioByName.ContainsKey([string]$state.IbrRecoveryScope)) {
-                $scopeRadioByName[[string]$state.IbrRecoveryScope].IsChecked = $true
+            # Sync-RecoveryPlanSelection once data loads) so that first real filter/populate pass
+            # already uses the correct plan, instead of running once under whatever was selected
+            # before Resume and then a second time once corrected. RecoveryPlanId is this refactor's
+            # own field name; IbrRecoveryScope is read as a fallback for a state file saved before
+            # Recovery Type/Plan/Data Source became combo boxes -- same string values for every IBR
+            # plan, so no migration was needed for those. An older/unrecognized value just leaves
+            # whatever's currently selected (the app's own default, Management Domain Recovery)
+            # alone.
+            $savedPlanId = if ($state.RecoveryPlanId) { [string]$state.RecoveryPlanId } elseif ($state.IbrRecoveryScope) { [string]$state.IbrRecoveryScope } else { $null }
+            if ($savedPlanId) {
+                $savedPlanEntry = Get-RecoveryPlanCatalogEntry $savedPlanId
+                if ($savedPlanEntry) {
+                    Select-RecoveryTypeAndPlan ([string]$savedPlanEntry.recoveryType) $savedPlanId
+                }
             }
 
             if ($state.ExtractedDataFilePath) {

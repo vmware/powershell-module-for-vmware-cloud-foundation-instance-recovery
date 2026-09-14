@@ -1,0 +1,76 @@
+{
+  "_comment": "Drives the Recovery Parameters pane's three combo boxes (Recovery Type / Recovery Plan / Data Source) in VCFRecoveryOrchestratorUI.xaml/.ps1. Edit this file to add a new recovery plan, relabel one, change which data sources it permits, or repoint it at a different plan/variables JSON file -- no PowerShell/XAML changes needed for any of that. A brand-new plan must still reuse one of the existing 'target' values below (each is tied to a specific piece of already-built UI plumbing); adding a genuinely new kind of target is a code change, not a JSON one.",
+
+  "recoveryTypes": [
+    { "id": "IBR", "label": "Instance Backup & Restore (IBR)" },
+    { "id": "FDR", "label": "Fleet Disaster Recovery (FDR)", "pending": true }
+  ],
+
+  "dataSources": [
+    { "id": "ExtractBackup", "label": "Extract SDDC Manager Backup" },
+    { "id": "LoadExtractedData", "label": "Load Extracted SDDC Data" }
+  ],
+
+  "_targetComment": "target is one of: managementDomain | workloadDomain | additionalCluster | fleetComponent | recoverFleet -- see Sync-RecoveryPlanSelection in the .ps1 for what each one does. Exactly one plan should claim a given target; two plans claiming the same one will fight over the same panel.",
+
+  "recoveryPlans": [
+    {
+      "id": "ManagementDomain",
+      "label": "Management Domain Recovery",
+      "recoveryType": "IBR",
+      "target": "managementDomain",
+      "default": true,
+      "planFolder": "ibr",
+      "planFile": "management-domain-recovery-plan.json",
+      "variablesFile": "management-domain-recovery-variables.json",
+      "dataSources": ["ExtractBackup", "LoadExtractedData"],
+      "defaultDataSource": "ExtractBackup"
+    },
+    {
+      "id": "FleetComponent",
+      "label": "Fleet Component Recovery",
+      "recoveryType": "IBR",
+      "target": "fleetComponent",
+      "pending": true,
+      "planFolder": "ibr",
+      "planFile": "fleet-component-recovery-plan.json",
+      "variablesFile": "fleet-component-recovery-variables.json",
+      "dataSources": ["LoadExtractedData"],
+      "defaultDataSource": "LoadExtractedData"
+    },
+    {
+      "id": "WorkloadDomain",
+      "label": "Workload Domain Recovery",
+      "recoveryType": "IBR",
+      "target": "workloadDomain",
+      "planFolder": "ibr",
+      "planFile": "workload-domain-recovery-plan.json",
+      "variablesFile": "workload-domain-recovery-variables.json",
+      "dataSources": ["LoadExtractedData"],
+      "defaultDataSource": "LoadExtractedData"
+    },
+    {
+      "id": "AdditionalCluster",
+      "label": "Additional Cluster Recovery",
+      "recoveryType": "IBR",
+      "target": "additionalCluster",
+      "planFolder": "ibr",
+      "planFile": "additional-cluster-recovery-plan.json",
+      "variablesFile": "additional-cluster-recovery-variables.json",
+      "dataSources": ["LoadExtractedData"],
+      "defaultDataSource": "LoadExtractedData"
+    },
+    {
+      "id": "RecoverFleet",
+      "label": "Recover Fleet",
+      "recoveryType": "FDR",
+      "target": "recoverFleet",
+      "default": true,
+      "pending": true,
+      "planFolder": "fdr",
+      "planFile": "fdr-failover-plan.json",
+      "variablesFile": "fdr-failover-variables.json",
+      "dataSources": []
+    }
+  ]
+}
