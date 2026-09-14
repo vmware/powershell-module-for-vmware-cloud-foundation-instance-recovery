@@ -3,7 +3,7 @@
 
   "recoveryTypes": [
     { "id": "IBR", "label": "Instance Backup & Restore (IBR)" },
-    { "id": "FDR", "label": "Fleet Disaster Recovery (FDR)", "pending": true }
+    { "id": "FDR", "label": "Fleet Disaster Recovery (FDR)", "engineeringOnly": true }
   ],
 
   "dataSources": [
@@ -31,7 +31,7 @@
       "label": "Fleet Component Recovery",
       "recoveryType": "IBR",
       "target": "fleetComponent",
-      "pending": true,
+      "engineeringOnly": true,
       "planFolder": "ibr",
       "planFile": "fleet-component-recovery-plan.json",
       "variablesFile": "fleet-component-recovery-variables.json",
@@ -66,7 +66,7 @@
       "recoveryType": "FDR",
       "target": "recoverFleet",
       "default": true,
-      "pending": true,
+      "engineeringOnly": true,
       "planFolder": "fdr",
       "planFile": "fdr-failover-plan.json",
       "variablesFile": "fdr-failover-variables.json",

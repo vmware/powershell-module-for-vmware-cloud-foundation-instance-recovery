@@ -224,6 +224,7 @@ $global:allDiscoveredDomains = @()
 # underneath either way), not treated as two independently-scoped variables, since in practice
 # they're meant to be the same real credential.
 $global:instanceComponentsGroup = @{
+    PlanId                   = 'ManagementDomain'
     Steps                    = @()
     StepRows                 = @()
     AnswersFilePath          = $null
@@ -237,6 +238,7 @@ $global:instanceComponentsGroup = @{
     VariablesStepsTabControl = $instanceComponentsVariablesStepsTabControl
 }
 $global:fleetComponentsGroup = @{
+    PlanId                   = 'FleetComponent'
     Steps                    = @()
     StepRows                 = @()
     AnswersFilePath          = $null
@@ -503,7 +505,7 @@ function Get-CurrentRecoveryPlanTarget {
 # this marks a feature gated behind the engineering mode password rather than a fixed property of
 # an already-available one. Tag carries the catalog id (a recovery type id, plan id, or data
 # source id) so callers can resolve back to the catalog entry without re-parsing the label text.
-function New-RecoveryOptionComboBoxItem([string]$Label, [bool]$Pending, [string]$Tag) {
+function New-RecoveryOptionComboBoxItem([string]$Label, [bool]$EngineeringOnly, [string]$Tag) {
     $item = New-Object System.Windows.Controls.ComboBoxItem
     $item.Tag = $Tag
     $panel = New-Object System.Windows.Controls.StackPanel
@@ -512,7 +514,7 @@ function New-RecoveryOptionComboBoxItem([string]$Label, [bool]$Pending, [string]
     $textBlock.Text = $Label
     $textBlock.VerticalAlignment = 'Center'
     [void]$panel.Children.Add($textBlock)
-    if ($Pending) {
+    if ($EngineeringOnly) {
         $badge = New-Object System.Windows.Controls.Border
         $badge.Background = [System.Windows.Media.Brushes]::LightGray
         $badge.CornerRadius = 8
@@ -544,7 +546,7 @@ function Get-DefaultRecoveryPlanId([string]$RecoveryTypeId) {
 }
 
 # Selects both combos together in one call -- used by the engineering-mode gate below to revert a
-# rejected/cancelled pending-plan pick, and by Resume to restore a saved selection. Setting
+# rejected/cancelled engineering-only-plan pick, and by Resume to restore a saved selection. Setting
 # RecoveryTypeComboBox.SelectedItem first (only when it's actually changing) rebuilds
 # RecoveryPlanComboBox's own Items for that type and auto-selects that type's default plan; the
 # second, explicit RecoveryPlanComboBox.SelectedItem assignment then corrects that to whichever
@@ -2442,30 +2444,31 @@ function Import-ExtractedSddcDataFile([string]$Path) {
 # Sync-IbrRecoveryScopeSelection/Sync-DomainSteps/Sync-AdditionalClusterSteps it replaces/reuses)
 # plus the two SelectionChanged handlers below.
 foreach ($recoveryType in (Get-RecoveryPlanCatalog).recoveryTypes) {
-    [void]$recoveryTypeComboBox.Items.Add((New-RecoveryOptionComboBoxItem $recoveryType.label ([bool]$recoveryType.pending) ([string]$recoveryType.id)))
+    [void]$recoveryTypeComboBox.Items.Add((New-RecoveryOptionComboBoxItem $recoveryType.label ([bool]$recoveryType.engineeringOnly) ([string]$recoveryType.id)))
 }
 
 # Remembers the last selection that was NOT rejected by the engineering-mode gate below, so a
-# rejected/cancelled unlock attempt on a PENDING plan (Fleet Component Recovery, Recover Fleet)
-# reverts to exactly where the operator actually was, not a fixed default -- same idea as
+# rejected/cancelled unlock attempt on an ENGINEERING-ONLY plan (Fleet Component Recovery, Recover
+# Fleet) reverts to exactly where the operator actually was, not a fixed default -- same idea as
 # Register-EngineeringModeGate's own $gateState.LastSafeTab. Set for real the first time
-# RecoveryPlanComboBox's own SelectionChanged (below) lands on a non-pending plan, which happens
-# naturally the moment the startup selection is triggered near the bottom of this script.
+# RecoveryPlanComboBox's own SelectionChanged (below) lands on a plan that isn't engineering-only,
+# which happens naturally the moment the startup selection is triggered near the bottom of this
+# script.
 $script:lastSafeRecoveryTypeId = $null
 $script:lastSafeRecoveryPlanId = $null
 
 # Rebuilds Recovery Plan's own Items to whichever plans the catalog lists under the newly selected
 # Recovery Type, then selects that type's default plan (Management Domain Recovery for IBR,
-# Recover Fleet for FDR) -- picking FDR this way is what makes Recover Fleet's own PENDING gate
-# (on RecoveryPlanComboBox's SelectionChanged, below) fire immediately, exactly like checking the
-# old FdrRecoveryTypeRadio directly used to.
+# Recover Fleet for FDR) -- picking FDR this way is what makes Recover Fleet's own
+# engineering-only gate (on RecoveryPlanComboBox's SelectionChanged, below) fire immediately,
+# exactly like checking the old FdrRecoveryTypeRadio directly used to.
 $recoveryTypeComboBox.Add_SelectionChanged({
         $selectedType = $recoveryTypeComboBox.SelectedItem
         if ($null -eq $selectedType) { return }
         $typeId = [string]$selectedType.Tag
         $recoveryPlanComboBox.Items.Clear()
         foreach ($plan in @((Get-RecoveryPlanCatalog).recoveryPlans | Where-Object { $_.recoveryType -eq $typeId })) {
-            [void]$recoveryPlanComboBox.Items.Add((New-RecoveryOptionComboBoxItem $plan.label ([bool]$plan.pending) ([string]$plan.id)))
+            [void]$recoveryPlanComboBox.Items.Add((New-RecoveryOptionComboBoxItem $plan.label ([bool]$plan.engineeringOnly) ([string]$plan.id)))
         }
         $defaultPlanId = Get-DefaultRecoveryPlanId $typeId
         $defaultItem = $recoveryPlanComboBox.Items | Where-Object { $_.Tag -eq $defaultPlanId } | Select-Object -First 1
@@ -2476,9 +2479,9 @@ $recoveryTypeComboBox.Add_SelectionChanged({
         }
     }.GetNewClosure())
 
-# The one dispatcher for every recovery plan pick -- gates PENDING plans behind the engineering
-# mode password (same $global:engineeringModeUnlocked flag Register-EngineeringModeGate uses for
-# Advanced), then hands off to Sync-RecoveryPlanSelection. Combining the gate and the real
+# The one dispatcher for every recovery plan pick -- gates ENGINEERING-ONLY plans behind the
+# engineering mode password (same $global:engineeringModeUnlocked flag Register-EngineeringModeGate
+# uses for Advanced), then hands off to Sync-RecoveryPlanSelection. Combining the gate and the real
 # selection-handling logic in this single handler (rather than two independently-registered ones,
 # the way the old RadioButton-based Register-RadioEngineeringModeGate worked) is what lets a
 # rejected attempt revert the pick cleanly without Sync-RecoveryPlanSelection ever running for a
@@ -2489,13 +2492,13 @@ $recoveryPlanComboBox.Add_SelectionChanged({
         $entry = Get-RecoveryPlanCatalogEntry ([string]$selectedPlan.Tag)
         if (-not $entry) { return }
 
-        if ($entry.pending -and -not $global:engineeringModeUnlocked) {
+        if ($entry.engineeringOnly -and -not $global:engineeringModeUnlocked) {
             # Revert first (mirrors Register-EngineeringModeGate's own TabControl revert): puts the
             # UI back exactly where it was, synchronously, before the modal password prompt even
             # opens. $script:lastSafeRecoveryPlanId is $null only if EVERY plan under every type
-            # were pending, which the shipped catalog never does -- nothing to revert to in that
-            # case, so the pick is just left as-is (still gated; Sync-RecoveryPlanSelection is never
-            # reached below either way).
+            # were engineering-only, which the shipped catalog never does -- nothing to revert to
+            # in that case, so the pick is just left as-is (still gated; Sync-RecoveryPlanSelection
+            # is never reached below either way).
             if ($script:lastSafeRecoveryPlanId) {
                 Select-RecoveryTypeAndPlan $script:lastSafeRecoveryTypeId $script:lastSafeRecoveryPlanId
             }
@@ -2606,6 +2609,37 @@ $browseButton.Add_Click({
         Import-ExtractedSddcDataFile $dialog.FileName
     }.GetNewClosure())
 
+# The plan's own shipped variables file (recovery-plan-catalog.json's variablesFile, next to its
+# planFile) doubles as the "template": the exact set of variable names a loaded answers file for that
+# plan is expected to define. Returns $null -- "no template to check against" -- rather than throwing
+# when there's no current catalog entry (nothing selected yet) or its variables file is missing, so
+# callers treat that the same as any other not-yet-ready state: skip validation rather than block.
+function Get-VariablesTemplateKeys($CatalogEntry) {
+    if ($null -eq $CatalogEntry) { return $null }
+    $templatePath = Join-Path (Join-Path $PlansPath $CatalogEntry.planFolder) $CatalogEntry.variablesFile
+    if (-not (Test-Path -LiteralPath $templatePath)) { return $null }
+    $template = Get-Content -LiteralPath $templatePath -Raw | ConvertFrom-Json
+    return @($template.PSObject.Properties.Name)
+}
+
+# Compares an answers file's key set (already stripped of $script:selectionDrivenVariables, same as
+# $TemplateKeys already is) against the plan's template key set and describes the mismatch, or
+# returns $null if they match -- order and values don't matter, only which variables are defined.
+# Guards against loading a variables file meant for a different plan (or hand-edited into a different
+# shape): without this, Import-VariablesAnswersFile/Import-GroupVariablesAnswersFile would otherwise
+# happily accept it, silently dropping unrecognized names to the bottom of the list instead of
+# rejecting the file outright.
+function Get-VariablesStructureMismatch([string[]]$AnswerMapKeys, [string[]]$TemplateKeys) {
+    $missing = @($TemplateKeys | Where-Object { $_ -notin $AnswerMapKeys })
+    $extra = @($AnswerMapKeys | Where-Object { $_ -notin $TemplateKeys })
+    if ($missing.Count -eq 0 -and $extra.Count -eq 0) { return $null }
+
+    $parts = @()
+    if ($missing.Count -gt 0) { $parts += "missing $($missing -join ', ')" }
+    if ($extra.Count -gt 0) { $parts += "unexpected $($extra -join ', ')" }
+    return $parts -join '; '
+}
+
 # Answer file is a flat JSON object, e.g. { "targetFqdn": "sfo-m01-vc02...", "targetAdminPassword": "..." }.
 # Parsed here purely to populate the Variables tab's rows in the order they'll be needed (first use
 # across the selected domain's steps -- Management Domain Restores, then Recover Default Cluster --
@@ -2628,6 +2662,19 @@ function Import-VariablesAnswersFile([string]$Path) {
         # either must not overwrite the live selection or show up as an editable row here. See
         # $script:selectionDrivenVariables.
         foreach ($ownedName in $script:selectionDrivenVariables) { $answerMap.Remove($ownedName) }
+
+        # Reject the file outright -- before anything on screen changes -- if its variable names
+        # don't match the selected plan's own template. Checked ahead of the panel clear/rebuild
+        # below so a bad file leaves the Variables tab exactly as it was, with only the advisory
+        # noting why.
+        $templateKeys = Get-VariablesTemplateKeys (Get-CurrentRecoveryPlanEntry)
+        if ($null -ne $templateKeys) {
+            $mismatch = Get-VariablesStructureMismatch @($answerMap.Keys) $templateKeys
+            if ($null -ne $mismatch) {
+                New-Advisory "Load Variables failed: '$Path' does not match the selected plan's variables structure ($mismatch)." -Failure
+                return
+            }
+        }
 
         $variablesItemsPanel.Children.Clear()
 
@@ -2957,6 +3004,17 @@ function Import-GroupVariablesAnswersFile($Group, [string]$Path) {
         }
         foreach ($ownedName in $script:selectionDrivenVariables) { $answerMap.Remove($ownedName) }
 
+        # See the matching comment in Import-VariablesAnswersFile -- same reject-before-anything-
+        # changes structural check, against this group's own plan (Group.PlanId).
+        $templateKeys = Get-VariablesTemplateKeys (Get-RecoveryPlanCatalogEntry $Group.PlanId)
+        if ($null -ne $templateKeys) {
+            $mismatch = Get-VariablesStructureMismatch @($answerMap.Keys) $templateKeys
+            if ($null -ne $mismatch) {
+                New-Advisory "Load Variables failed: '$Path' does not match the selected plan's variables structure ($mismatch)." -Failure
+                return
+            }
+        }
+
         $Group.VariablesItemsPanel.Children.Clear()
 
         if ($answerMap.Count -eq 0) {
@@ -3255,8 +3313,8 @@ $additionalClustersListBox.Add_SelectionChanged({
     }.GetNewClosure())
 
 # Dispatcher for every Recovery Plan pick -- called by RecoveryPlanComboBox's own SelectionChanged
-# (once the engineering-mode gate there has let a PENDING plan through, or immediately for a
-# non-pending one), and again at the end of Import-ExtractedSddcDataFile (so loading/reloading data
+# (once the engineering-mode gate there has let an ENGINEERING-ONLY plan through, or immediately
+# for one that isn't), and again at the end of Import-ExtractedSddcDataFile (so loading/reloading data
 # after a plan was already picked re-applies its filtering correctly). Owns Discovered
 # Infrastructure's own visibility/content and Data Source's own permitted-options/visibility;
 # actual Steps/Variables reveal for Workload Domain/Additional Cluster continues to come from their
