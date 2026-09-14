@@ -74,18 +74,16 @@ if ($vmwLogoImage) {
 
 $resumeButton = $window.FindName('ResumeButton')
 $exitButton = $window.FindName('ExitButton')
-$ibrRecoveryTypeRadio = $window.FindName('IbrRecoveryTypeRadio')
-$fdrRecoveryTypeRadio = $window.FindName('FdrRecoveryTypeRadio')
-$ibrRecoveryScopeGroupBox = $window.FindName('IbrRecoveryScopeGroupBox')
-$managementDomainRecoveryRadio = $window.FindName('ManagementDomainRecoveryRadio')
-$fleetComponentRecoveryRadio = $window.FindName('FleetComponentRecoveryRadio')
-$workloadDomainRecoveryRadio = $window.FindName('WorkloadDomainRecoveryRadio')
-$additionalClusterRecoveryRadio = $window.FindName('AdditionalClusterRecoveryRadio')
-$dataSourceGroupBox = $window.FindName('DataSourceGroupBox')
-$extractRadio = $window.FindName('ExtractBackupRadio')
+# Recovery Type/Recovery Plan/Data Source (see plans/recovery-plan-catalog.json and
+# Sync-RecoveryPlanSelection) -- replaced the old fixed set of RadioButtons/GroupBoxes below with
+# three catalog-driven ComboBoxes, so there's no longer one FindName per plan/scope.
+$recoveryTypeComboBox = $window.FindName('RecoveryTypeComboBox')
+$recoveryPlanComboBox = $window.FindName('RecoveryPlanComboBox')
+$dataSourceRowPanel = $window.FindName('DataSourceRowPanel')
+$dataSourceComboBox = $window.FindName('DataSourceComboBox')
 $browseButton = $window.FindName('BrowseButton')
 $filePathTextBox = $window.FindName('FilePathTextBox')
-$advisoriesTextBox = $window.FindName('AdvisoriesTextBox')
+$advisoriesRichTextBox = $window.FindName('AdvisoriesRichTextBox')
 $discoveredInfrastructureGroupBox = $window.FindName('DiscoveredInfrastructureGroupBox')
 $discoveredInfrastructureTabControl = $window.FindName('DiscoveredInfrastructureTabControl')
 $workloadDomainsTabItem = $window.FindName('WorkloadDomainsTabItem')
@@ -94,12 +92,29 @@ $domainsListBox = $window.FindName('WorkloadDomainsListBox')
 $additionalClustersListBox = $window.FindName('AdditionalClustersListBox')
 $stepsVariablesGroupBox = $window.FindName('StepsVariablesGroupBox')
 $stepsVariablesTabControl = $window.FindName('StepsVariablesTabControl')
-$domainRecoveryPanel = $window.FindName('DomainRecoveryPanel')
-$additionalClusterRecoveryPanel = $window.FindName('AdditionalClusterRecoveryPanel')
-$recoverFleetPanel = $window.FindName('RecoverFleetPanel')
-$domainRecoveryStepsListBox = $window.FindName('DomainRecoveryStepsListBox')
-$additionalClusterRecoveryStepsListBox = $window.FindName('AdditionalClusterRecoveryStepsListBox')
-$recoverFleetStepsListBox = $window.FindName('RecoverFleetStepsListBox')
+# Each of these three (Domain Recovery/Additional Cluster Recovery/Recover Fleet) now has TWO
+# panels, not one: …PlanPanel under the Recovery Plan tab (Run All/checkbox + read-only,
+# Run-All-driven buttons) and …ManualPanel under Manual Steps (no Run All, individually-clickable
+# buttons). Both panels of a pair are always shown/hidden together -- see
+# Set-DomainRecoveryPanelsVisibility/Set-AdditionalClusterRecoveryPanelsVisibility/
+# Set-RecoverFleetPanelsVisibility.
+$domainRecoveryPlanPanel = $window.FindName('DomainRecoveryPlanPanel')
+$domainRecoveryManualPanel = $window.FindName('DomainRecoveryManualPanel')
+$additionalClusterRecoveryPlanPanel = $window.FindName('AdditionalClusterRecoveryPlanPanel')
+$additionalClusterRecoveryManualPanel = $window.FindName('AdditionalClusterRecoveryManualPanel')
+$recoverFleetPlanPanel = $window.FindName('RecoverFleetPlanPanel')
+$recoverFleetManualPanel = $window.FindName('RecoverFleetManualPanel')
+# …PlanStepsListBox (Recovery Plan tab) holds read-only rows driven by Run All;
+# …ManualStepsListBox (Manual Steps tab) holds the same steps with real, individually-clickable Run
+# buttons. Both are populated together by Set-PlanStepsListBox from the same $rows -- see
+# New-StepRow's PlanButton/ManualButton for how one logical step ends up with two Button references
+# that are always kept in sync.
+$domainRecoveryPlanStepsListBox = $window.FindName('DomainRecoveryPlanStepsListBox')
+$domainRecoveryManualStepsListBox = $window.FindName('DomainRecoveryManualStepsListBox')
+$additionalClusterRecoveryPlanStepsListBox = $window.FindName('AdditionalClusterRecoveryPlanStepsListBox')
+$additionalClusterRecoveryManualStepsListBox = $window.FindName('AdditionalClusterRecoveryManualStepsListBox')
+$recoverFleetPlanStepsListBox = $window.FindName('RecoverFleetPlanStepsListBox')
+$recoverFleetManualStepsListBox = $window.FindName('RecoverFleetManualStepsListBox')
 $runAllDomainRecoveryButton = $window.FindName('RunAllDomainRecoveryButton')
 $runAllAdditionalClusterRecoveryButton = $window.FindName('RunAllAdditionalClusterRecoveryButton')
 $runAllRecoverFleetButton = $window.FindName('RunAllRecoverFleetButton')
@@ -129,27 +144,55 @@ $instanceComponentsLoadedVariablesTextBlock = $window.FindName('InstanceComponen
 $instanceComponentsVariablesItemsPanel = $window.FindName('InstanceComponentsVariablesItemsPanel')
 $runAllInstanceComponentsButton = $window.FindName('RunAllInstanceComponentsButton')
 $runAllInstanceComponentsParallelCheckBox = $window.FindName('RunAllInstanceComponentsParallelCheckBox')
-$instanceComponentsStepsListBox = $window.FindName('InstanceComponentsStepsListBox')
+$instanceComponentsPlanStepsListBox = $window.FindName('InstanceComponentsPlanStepsListBox')
+$instanceComponentsManualStepsListBox = $window.FindName('InstanceComponentsManualStepsListBox')
 $fleetComponentsLoadVariablesButton = $window.FindName('FleetComponentsLoadVariablesButton')
 $fleetComponentsNewVariablesFileButton = $window.FindName('FleetComponentsNewVariablesFileButton')
 $fleetComponentsLoadedVariablesTextBlock = $window.FindName('FleetComponentsLoadedVariablesTextBlock')
 $fleetComponentsVariablesItemsPanel = $window.FindName('FleetComponentsVariablesItemsPanel')
 $runAllFleetComponentsButton = $window.FindName('RunAllFleetComponentsButton')
 $runAllFleetComponentsParallelCheckBox = $window.FindName('RunAllFleetComponentsParallelCheckBox')
-$fleetComponentsStepsListBox = $window.FindName('FleetComponentsStepsListBox')
+$fleetComponentsPlanStepsListBox = $window.FindName('FleetComponentsPlanStepsListBox')
+$fleetComponentsManualStepsListBox = $window.FindName('FleetComponentsManualStepsListBox')
+$originalVcfInstallerAvailableCheckBox = $window.FindName('OriginalVcfInstallerAvailableCheckBox')
 
-# Appends $Message as a new line to the Advisories pane (below the Console pane) and scrolls it into
-# view -- the single place every status/error/informational message in this app surfaces to the
-# operator now, replacing the old single-line StatusTextBlock that used to sit inside Data Source and
-# get silently overwritten by whatever ran next. Kept as a running history instead: nothing here ever
-# clears it, so an earlier warning stays visible (scroll up) even after something later succeeds.
-function New-Advisory([string]$Message) {
-    if ($advisoriesTextBox.Text) {
-        $advisoriesTextBox.Text += "`r`n$Message"
-    } else {
-        $advisoriesTextBox.Text = $Message
+# Posts $Message to the Advisories pane (below the Console pane) -- the single place every status/
+# error/informational message in this app surfaces to the operator, replacing the old single-line
+# StatusTextBlock that used to sit inside Data Source and get silently overwritten by whatever ran
+# next. Kept as a running history instead: nothing here ever clears it, so an earlier warning stays
+# visible (scroll down) even after something later succeeds.
+#
+# NEWEST FIRST: each advisory is inserted ABOVE the previous one, so the most recent message is
+# always the one on screen without needing to scroll, and the pane is scrolled back to the top to
+# guarantee it's in view. Every message is prefixed with a timestamp in the same
+# "MM-dd-yyyy HH:mm:ss" format LogMessage stamps its console output with, so an advisory here can be
+# lined up against the matching line in a console transcript.
+#
+# -Failure renders the message bold RED; everything else is plain BLACK. This is a deliberate explicit
+# switch rather than sniffing the text for words like "failed": several genuine failures don't
+# contain any such word ("Console process isn't running.", "Console window did not appear within 10
+# seconds."), and a plan-authored advisory (see the New-Advisory pseudo-command in Invoke-Step) is
+# arbitrary operator-supplied text that must not be mis-coloured by a keyword match.
+function New-Advisory([string]$Message, [switch]$Failure) {
+    $run = New-Object System.Windows.Documents.Run("[$(Get-Date -Format 'MM-dd-yyyy HH:mm:ss')] $Message")
+    $run.FontWeight = if ($Failure) { [System.Windows.FontWeights]::Bold } else { [System.Windows.FontWeights]::Normal }
+    $run.Foreground = if ($Failure) { [System.Windows.Media.Brushes]::Red } else { [System.Windows.Media.Brushes]::Black }
+
+    $paragraph = New-Object System.Windows.Documents.Paragraph($run)
+    $paragraph.Margin = New-Object System.Windows.Thickness(0)
+
+    $blocks = $advisoriesRichTextBox.Document.Blocks
+    # A RichTextBox's document starts life with one empty Paragraph already in it; reusing that for
+    # the first advisory (rather than inserting before it) avoids a leading blank line.
+    if ($blocks.Count -eq 1 -and $blocks.FirstBlock -is [System.Windows.Documents.Paragraph] -and $blocks.FirstBlock.Inlines.Count -eq 0) {
+        $blocks.Clear()
     }
-    $advisoriesTextBox.ScrollToEnd()
+    if ($blocks.Count -gt 0) {
+        $blocks.InsertBefore($blocks.FirstBlock, $paragraph)
+    } else {
+        $blocks.Add($paragraph)
+    }
+    $advisoriesRichTextBox.ScrollToHome()
 }
 
 # Populated once a domain is selected (see Sync-DomainSteps below), an additional cluster is picked
@@ -165,9 +208,9 @@ $global:recoverFleetStepRows = @()
 $global:domainRecoverySteps = @()
 $global:additionalClusterRecoverySteps = @()
 # Raw, unfiltered domain list from the currently loaded extracted-sddc-data.json (see
-# Import-ExtractedSddcDataFile) -- Sync-IbrRecoveryScopeSelection re-filters this into
-# $domainsListBox every time Recovery Scope changes (MANAGEMENT-only for Management Domain
-# Recovery, non-MANAGEMENT for Workload Domain Recovery), without needing to re-read the file.
+# Import-ExtractedSddcDataFile) -- Sync-RecoveryPlanSelection re-filters this into
+# $domainsListBox every time the selected Recovery Plan changes (MANAGEMENT-only for Management
+# Domain Recovery, non-MANAGEMENT for Workload Domain Recovery), without needing to re-read the file.
 $global:allDiscoveredDomains = @()
 # One state bundle per MANAGEMENT-domain sub-plan (Instance Components / Fleet Components) -- each
 # is a genuinely independent operation with its own Steps, its own Run All row-tracking, and (unlike
@@ -184,7 +227,9 @@ $global:instanceComponentsGroup = @{
     Steps                    = @()
     StepRows                 = @()
     AnswersFilePath          = $null
-    StepsListBox             = $instanceComponentsStepsListBox
+    AnswerMap                = $null
+    StepsListBox             = $instanceComponentsPlanStepsListBox
+    ManualStepsListBox       = $instanceComponentsManualStepsListBox
     VariablesItemsPanel      = $instanceComponentsVariablesItemsPanel
     LoadedVariablesText      = $instanceComponentsLoadedVariablesTextBlock
     RunAllButton             = $runAllInstanceComponentsButton
@@ -195,42 +240,50 @@ $global:fleetComponentsGroup = @{
     Steps                    = @()
     StepRows                 = @()
     AnswersFilePath          = $null
-    StepsListBox             = $fleetComponentsStepsListBox
+    AnswerMap                = $null
+    StepsListBox             = $fleetComponentsPlanStepsListBox
+    ManualStepsListBox       = $fleetComponentsManualStepsListBox
     VariablesItemsPanel      = $fleetComponentsVariablesItemsPanel
     LoadedVariablesText      = $fleetComponentsLoadedVariablesTextBlock
     RunAllButton             = $runAllFleetComponentsButton
     ParallelCheckBox         = $runAllFleetComponentsParallelCheckBox
     VariablesStepsTabControl = $fleetComponentsVariablesStepsTabControl
 }
-# Facts about the currently selected domain's default cluster or the currently selected additional
-# cluster (isStretched, primaryDatastoreType -- see Update-DerivedStepVariables) that a plan's own
-# condition can reference (e.g. "$isStretched -eq 't'") without asking the operator to type in
-# something the extracted SDDC data already knows. Merged into the answer values before conditions
-# are evaluated and before the Variables tab is built, so a referenced fact shows up pre-filled --
-# still an ordinary editable row, in case the extracted value is ever wrong or needs overriding.
-$global:derivedStepVariables = @{}
+# Variables the UI owns outright, so the operator never types them and they are never rendered as
+# editable rows: $extractedSDDCDataFile comes from the Data Source selection (pushed by
+# Set-ExportedSDDCDataFilePath), and $workloadDomain/$clusterName from the domain/additional-cluster
+# selection (pushed by Set-SelectedRecoveryTarget). Filtered out of every answers file this app
+# generates AND out of every one it loads, and Import-RecoveryVariables skips all three names too --
+# together that means a stale answers file can never quietly point a step at a different cluster or
+# data file than the one currently selected on screen.
+#
+# Facts a "dataPath" condition reads (isStretched, primaryDatastoreType, nsxNodeDetails.count) are
+# NOT in this list and do not need to be: they never become variables at all, because
+# Get-StepReferenceText no longer synthesizes a name for a dataPath condition. They are resolved
+# straight out of $global:conditionDataContext below.
+$script:selectionDrivenVariables = @('extractedSDDCDataFile', 'workloadDomain', 'clusterName')
 # The live "selectedDomain"/"selectedCluster" data a "dataPath" condition (see Test-DataPathCondition)
-# can walk into generically, e.g. "selectedCluster.isStretched" -- set alongside
-# $global:derivedStepVariables at the same two places (Sync-DomainSteps/Sync-AdditionalClusterSteps),
-# with the same reset points, but exposing the WHOLE selected object rather than a hand-picked pair of
-# scalars, so a new plan condition can reference a fact nobody thought to wire into
-# $global:derivedStepVariables ahead of time. Both source shapes (raw domain-cluster JSON, camelCase;
-# the synthesized additional-cluster summary object, PascalCase) are normalized into one consistent
-# camelCase "selectedCluster" shape here so a dataPath expression works the same regardless of scope.
+# walks into generically, e.g. "selectedCluster.isStretched" -- set in Sync-DomainSteps/
+# Sync-AdditionalClusterSteps, exposing the WHOLE selected object so a new plan condition can
+# reference a fact nobody wired in ahead of time. This is the ONLY source for such facts: they are
+# read from the selection, never supplied or overridden by the operator. Both source shapes (raw
+# domain-cluster JSON, camelCase; the synthesized additional-cluster summary object, PascalCase) are
+# normalized into one consistent camelCase "selectedCluster" shape so a dataPath expression works the
+# same regardless of scope.
 $global:conditionDataContext = @{}
 # Run-scoped ledger a "stepStatus" condition (see Test-StepStatusGate) reads to gate whether a step
 # actually executes, keyed by each step's own optional "id" -- 'Success'/'Failed'/'Skipped', stamped
 # by Start-StepCompletionWatcher/Invoke-Step as steps actually run; a step id that hasn't run yet this
 # selection reads as 'NotRun'. Deliberately mirrors Button.Content's own persistence -- nothing resets
 # it on its own timer, only the same "a fresh domain/cluster selection starts over" points that already
-# reset $global:derivedStepVariables/$global:conditionDataContext (plus, unlike those two, an explicit
+# reset $global:conditionDataContext (plus, unlike that one, an explicit
 # unconditional clear at the TOP of Sync-DomainSteps/Sync-AdditionalClusterSteps -- a step id is only
 # unique within one plan file, and the very same plan is legitimately re-run against a different
 # domain/cluster later in the same session, which must not see stale status from the previous one).
 $global:stepRunStatus = @{}
 # Whether Import-ExtractedSddcDataFile has ever successfully loaded data -- tracked separately
-# from Discovered Infrastructure's own Visibility so switching from FDR back to IBR (see the
-# Recovery Type Checked handlers) knows whether to reveal it again or leave it collapsed.
+# from Discovered Infrastructure's own Visibility so switching from FDR back to IBR (see
+# Sync-RecoveryPlanSelection) knows whether to reveal it again or leave it collapsed.
 $global:extractedDataLoaded = $false
 # Path to the last-loaded variable answers file, if any -- tracked separately from the textbox-less
 # Load Variables flow so Exit can record it, and Resume can pass it straight back to the same loader.
@@ -242,6 +295,15 @@ $global:variablesAnswersFilePath = $null
 # UI alone -- Lock-ElementSelection disables both list boxes outright once this flips true, so
 # picking a different element requires Exit + a fresh launch instead.
 $global:recoveryRunStarted = $false
+# The one DispatcherTimer currently driving the Overall Recovery Time badge, if any -- see
+# Start-RunTimer/Stop-RunTimer. Tracked globally (not just via each Run All button's own local
+# $runTimer closure variable) so Start-RunTimer can defensively stop a previous run's timer that,
+# for whatever reason, never got a matching Stop-RunTimer call, instead of leaving it running
+# forever alongside a new one -- two timers both writing the same elapsed-time TextBlock is what
+# actually produces an apparently-impossible reading mid-run, not any real accumulation across
+# parallel threads (the clock itself is a single wall-clock diff from one $startTime, recomputed
+# fresh on every tick, so it can't compound like that on its own).
+$global:activeRunTimer = $null
 
 # Completion tracking, attempt 5: a PowerShell transcript of the console, read from disk. Unaffected
 # by the move away from the terminal control -- it never depended on that control's own rendering
@@ -267,6 +329,15 @@ $global:parallelConsoles = [System.Collections.Generic.List[object]]::new()
 # a later, non-consecutive block reusing the same ThreadId reuses the exact same console/session
 # instead of spawning a fresh one; nothing ever removes an entry from this once created.
 $global:threadConsoles = @{}
+# The domain/cluster most recently pushed into Main via Set-SelectedTargetInConsole -- kept so
+# Initialize-ConsoleVariables can re-send the exact same "Set-SelectedRecoveryTarget" call to a
+# freshly spawned thread console (see Invoke-StepThread), the same way it already re-primes a new
+# console with $extractedSDDCDataFile/the loaded variables file. Without this, a threaded step
+# referencing $workloadDomain or $clusterName (e.g. management-domain-recovery-plan.json's/
+# workload-domain-recovery-plan.json's own threadId 2/3 blocks -- vCenter/NSX Manager OVA deployment
+# and restore) would run in a brand-new console that never received either value at all.
+$global:selectedWorkloadDomain = ''
+$global:selectedClusterName = ''
 
 function Protect-SingleQuotes([string]$Value) {
     return $Value.Replace("'", "''")
@@ -326,6 +397,170 @@ function Show-PasswordPromptDialog([string]$Title, [string]$Message) {
         return $passwordBox.Password
     }
     return $null
+}
+
+# The expected value is kept as numeric character codes rather than a literal string so it doesn't
+# show up verbatim in a text search of this file; it's only ever joined back into a string here, at
+# the moment of comparison.
+function Test-EngineeringModePassword([string]$Candidate) {
+    $expected = -join ((116, 104, 105, 115, 105, 115, 117, 110, 115, 97, 102, 101) | ForEach-Object { [char]$_ })
+    return $Candidate -ceq $expected
+}
+
+# Advanced (see its warning banner in the XAML) lets an operator run any individual step out of
+# sequence, so it's gated behind a password prompt rather than reachable by an accidental click.
+# Unlocking once unlocks Advanced on every Recovery Plan's tab control for the rest of the session,
+# not just the one that was clicked -- there's only one "engineering mode", not one per pane.
+$global:engineeringModeUnlocked = $false
+
+function Register-EngineeringModeGate([System.Windows.Controls.TabControl]$TabControl) {
+    $advancedTab = $TabControl.Items | Where-Object { $_.Header -eq 'Advanced' } | Select-Object -First 1
+    if (-not $advancedTab) { return }
+    # A hashtable, not a bare variable: each firing of the SelectionChanged scriptblock below runs in
+    # its own new scope, so a plain "$lastSafeTab = ..." assignment would silently create a local
+    # shadow instead of updating the one captured by GetNewClosure() -- it would never actually
+    # persist between clicks. Mutating a key on this shared hashtable does persist, since it's the
+    # same object on every invocation.
+    $gateState = @{ LastSafeTab = $TabControl.SelectedItem }
+
+    $TabControl.Add_SelectionChanged({
+            param($eventSender, $eventArgs)
+            # SelectionChanged bubbles up from any nested Selector (e.g. a step ListBox inside a
+            # tab's own content), not just from the TabControl's own header strip -- ignore
+            # anything that didn't originate on this TabControl itself.
+            if (-not [object]::ReferenceEquals($eventArgs.Source, $TabControl)) { return }
+            if ($TabControl.SelectedItem -eq $advancedTab) {
+                if (-not $global:engineeringModeUnlocked) {
+                    if (-not $gateState.LastSafeTab) {
+                        $gateState.LastSafeTab = $TabControl.Items | Where-Object { $_ -ne $advancedTab } | Select-Object -First 1
+                    }
+                    $TabControl.SelectedItem = $gateState.LastSafeTab
+                    $entered = Show-PasswordPromptDialog -Title 'Unlock Engineering Mode' -Message 'Enter the engineering mode password to access the Advanced tab.'
+                    if ($entered -and (Test-EngineeringModePassword $entered)) {
+                        $global:engineeringModeUnlocked = $true
+                        $TabControl.SelectedItem = $advancedTab
+                    } elseif ($entered) {
+                        New-Advisory 'Incorrect engineering mode password.' -Failure
+                    }
+                }
+            } else {
+                $gateState.LastSafeTab = $TabControl.SelectedItem
+            }
+        }.GetNewClosure())
+}
+
+Register-EngineeringModeGate $stepsVariablesTabControl
+Register-EngineeringModeGate $instanceComponentsVariablesStepsTabControl
+Register-EngineeringModeGate $fleetComponentsVariablesStepsTabControl
+
+# --- Recovery Parameters catalog (plans/recovery-plan-catalog.json) ------------------------------
+# Drives the Recovery Type/Recovery Plan/Data Source combo boxes (see the XAML's "Recovery
+# Parameters" card) so a new recovery plan -- or relabeling/repointing an existing one -- is a JSON
+# edit, not a code change. Loaded once, not re-read on every use like Get-RecoveryPlanSteps: unlike
+# a plan's own steps (re-read on every domain/cluster selection so an edit is picked up immediately
+# without restarting), this catalog only ever shapes the combo boxes themselves, which are built
+# once at startup -- the same "edit it, then relaunch" expectation the XAML itself already carries.
+$script:recoveryPlanCatalog = $null
+function Get-RecoveryPlanCatalog {
+    if ($null -eq $script:recoveryPlanCatalog) {
+        $catalogPath = Join-Path $PlansPath 'recovery-plan-catalog.json'
+        if (-not (Test-Path -LiteralPath $catalogPath)) {
+            throw "Cannot find recovery plan catalog '$catalogPath'."
+        }
+        $script:recoveryPlanCatalog = Get-Content -LiteralPath $catalogPath -Raw | ConvertFrom-Json
+    }
+    return $script:recoveryPlanCatalog
+}
+
+function Get-RecoveryPlanCatalogEntry([string]$PlanId) {
+    return (Get-RecoveryPlanCatalog).recoveryPlans | Where-Object { $_.id -eq $PlanId } | Select-Object -First 1
+}
+
+# The plan currently selected on the Recovery Plan combo, or $null before anything's been
+# populated yet (there briefly is no SelectedItem while Items is being rebuilt -- see
+# RecoveryTypeComboBox's own SelectionChanged). Every function below that used to branch on which
+# of the 4 (now 5, RecoverFleet included) fixed RadioButtons was checked reads this instead.
+function Get-CurrentRecoveryPlanEntry {
+    $selected = $recoveryPlanComboBox.SelectedItem
+    if ($null -eq $selected) { return $null }
+    return Get-RecoveryPlanCatalogEntry ([string]$selected.Tag)
+}
+
+# Renamed from Get-CurrentIbrRecoveryScope: still returns the exact same string values
+# (ManagementDomain/FleetComponent/WorkloadDomain/AdditionalCluster) every existing "-eq" comparison
+# elsewhere already depends on, plus a new RecoverFleet value for FDR's own plan -- previously
+# handled by a completely separate code path (the old FDR Recovery Type Checked handler) that this
+# refactor folds into the same one Sync-RecoveryPlanSelection dispatcher every other plan uses.
+function Get-CurrentRecoveryPlanTarget {
+    $entry = Get-CurrentRecoveryPlanEntry
+    if ($null -eq $entry) { return $null }
+    return [string]$entry.target
+}
+
+# Shared by all three Recovery Parameters combos. Content is a StackPanel (label + optional PENDING
+# pill), not a plain string -- the same LightGray/Black pairing New-StepRow uses for a step's own
+# "Pending" button (not the slate-grey "Requires Input" pill elsewhere), since this marks a
+# not-ready FEATURE rather than a fixed property of an already-available one. Tag carries the
+# catalog id (a recovery type id, plan id, or data source id) so callers can resolve back to the
+# catalog entry without re-parsing the label text.
+function New-RecoveryOptionComboBoxItem([string]$Label, [bool]$Pending, [string]$Tag) {
+    $item = New-Object System.Windows.Controls.ComboBoxItem
+    $item.Tag = $Tag
+    $panel = New-Object System.Windows.Controls.StackPanel
+    $panel.Orientation = 'Horizontal'
+    $textBlock = New-Object System.Windows.Controls.TextBlock
+    $textBlock.Text = $Label
+    $textBlock.VerticalAlignment = 'Center'
+    [void]$panel.Children.Add($textBlock)
+    if ($Pending) {
+        $badge = New-Object System.Windows.Controls.Border
+        $badge.Background = [System.Windows.Media.Brushes]::LightGray
+        $badge.CornerRadius = 8
+        $badge.Padding = '6,1'
+        $badge.Margin = '8,0,0,0'
+        $badge.VerticalAlignment = 'Center'
+        $badgeText = New-Object System.Windows.Controls.TextBlock
+        $badgeText.Text = 'PENDING'
+        $badgeText.FontSize = 10.5
+        $badgeText.FontWeight = 'SemiBold'
+        $badgeText.Foreground = [System.Windows.Media.Brushes]::Black
+        $badge.Child = $badgeText
+        [void]$panel.Children.Add($badge)
+    }
+    $item.Content = $panel
+    return $item
+}
+
+# The plan a given Recovery Type should land on as soon as it's selected -- whichever of its plans
+# the catalog marks "default": true, or its first plan if none is marked (every recoveryType in
+# the shipped catalog has exactly one default; this fallback only matters for a hand-edited catalog
+# that omits one).
+function Get-DefaultRecoveryPlanId([string]$RecoveryTypeId) {
+    $plans = @((Get-RecoveryPlanCatalog).recoveryPlans | Where-Object { $_.recoveryType -eq $RecoveryTypeId })
+    $defaultPlan = $plans | Where-Object { $_.default } | Select-Object -First 1
+    if (-not $defaultPlan) { $defaultPlan = $plans | Select-Object -First 1 }
+    if (-not $defaultPlan) { return $null }
+    return [string]$defaultPlan.id
+}
+
+# Selects both combos together in one call -- used by the engineering-mode gate below to revert a
+# rejected/cancelled pending-plan pick, and by Resume to restore a saved selection. Setting
+# RecoveryTypeComboBox.SelectedItem first (only when it's actually changing) rebuilds
+# RecoveryPlanComboBox's own Items for that type and auto-selects that type's default plan; the
+# second, explicit RecoveryPlanComboBox.SelectedItem assignment then corrects that to whichever
+# plan was actually wanted, if it differs from the type's default. Each assignment that actually
+# changes a selection fires that combo's own SelectionChanged synchronously (nested, depth-first --
+# normal WPF routed-event behavior), so by the time this function returns, every effect of both
+# selections (Sync-RecoveryPlanSelection included) has already fully run.
+function Select-RecoveryTypeAndPlan([string]$RecoveryTypeId, [string]$PlanId) {
+    if ($RecoveryTypeId) {
+        $typeItem = $recoveryTypeComboBox.Items | Where-Object { $_.Tag -eq $RecoveryTypeId } | Select-Object -First 1
+        if ($typeItem) { $recoveryTypeComboBox.SelectedItem = $typeItem }
+    }
+    if ($PlanId) {
+        $planItem = $recoveryPlanComboBox.Items | Where-Object { $_.Tag -eq $PlanId } | Select-Object -First 1
+        if ($planItem) { $recoveryPlanComboBox.SelectedItem = $planItem }
+    }
 }
 
 # Reads a plan file fresh from disk every time it's called (no caching) -- the whole point is that
@@ -525,10 +760,14 @@ function Get-StepReferenceText([object[]]$Steps) {
     foreach ($step in $Steps) {
         $lines.Add($step.CommandLine)
         foreach ($condition in $step.Condition) {
+            # Only "variable" conditions contribute a name. A "dataPath" condition deliberately does
+            # NOT: its value is read exclusively from the selected domain/cluster in the extracted
+            # SDDC data (see Test-DataPathCondition/$global:conditionDataContext), so it is never an
+            # operator input. Synthesizing a name for it used to surface facts like isStretched/
+            # primaryDatastoreType/count as editable Variables-tab rows AND save them into the
+            # answers file -- values defined by a UI selection, presented as if typed by hand.
             if ($condition.type -eq 'variable') {
                 $lines.Add('$' + [string]$condition.name)
-            } elseif ($condition.type -eq 'dataPath') {
-                $lines.Add('$' + (([string]$condition.path) -split '\.')[-1])
             }
         }
     }
@@ -539,8 +778,15 @@ function Get-StepReferenceText([object[]]$Steps) {
 # Cluster) -- clears whatever rows it showed before (a stale row from a previous plan/domain must
 # never survive into a new selection) and returns the fresh row objects so Run All can replay them.
 # $Steps is expected to already be condition-filtered (see Get-ApplicableSteps) -- this only renders.
-function Set-PlanStepsListBox([System.Windows.Controls.ListBox]$ListBox, [object[]]$Steps) {
-    $ListBox.Items.Clear()
+# Populates BOTH of a workflow's ListBoxes ($PlanListBox on the Recovery Plan tab, $ManualListBox on
+# Manual Steps) from the one $Steps list, in lockstep -- each step becomes exactly one row object
+# (see New-StepRow) whose PlanPanel goes into $PlanListBox and ManualPanel into $ManualListBox. The
+# returned $rows array is what Run All/Set-AllStepButtonsEnabled/Exit/Resume all operate on; they
+# don't need to know or care that each row now has two visual representations, only that
+# $row.PlanButton/$row.ManualButton exist and are always updated together.
+function Set-PlanStepsListBox([System.Windows.Controls.ListBox]$PlanListBox, [System.Windows.Controls.ListBox]$ManualListBox, [object[]]$Steps) {
+    $PlanListBox.Items.Clear()
+    $ManualListBox.Items.Clear()
     $rows = @()
     # Flips every time a new consecutive run of same-ThreadId rows starts (including a ThreadId
     # value repeating later, non-consecutively -- that is a distinct thread block, not a
@@ -556,11 +802,12 @@ function Set-PlanStepsListBox([System.Windows.Controls.ListBox]$ListBox, [object
         }
         $row = New-StepRow $step.CommandLine $step.ThreadId $step.Description $step.Interactive $colorAlt $step.Id $step.Condition $step.DisplayName
         # Visible ($true unless a step explicitly sets "visible": false) governs only whether the
-        # row is ADDED to the ListBox -- it's still built and still included in $rows below, so Run
-        # All still runs it in sequence exactly like any other step. This is deliberately unlike
+        # row is ADDED to the ListBoxes -- it's still built and still included in $rows below, so
+        # Run All still runs it in sequence exactly like any other step. This is deliberately unlike
         # Condition, which governs whether a step runs at all.
         if ($step.Visible) {
-            [void]$ListBox.Items.Add($row.Panel)
+            [void]$PlanListBox.Items.Add($row.PlanPanel)
+            [void]$ManualListBox.Items.Add($row.ManualPanel)
         }
         $rows += $row
         $previousThreadId = $step.ThreadId
@@ -568,9 +815,9 @@ function Set-PlanStepsListBox([System.Windows.Controls.ListBox]$ListBox, [object
     return $rows
 }
 
-# Maps a cluster's raw primaryDatastoreType (as recorded in the extracted SDDC data, and used
-# verbatim in plan conditions like "$primaryDatastoreType -eq 'VSAN'" -- see
-# Update-DerivedStepVariables) to a human-friendly label for display only. The raw value itself is
+# Maps a cluster's raw primaryDatastoreType (as recorded in the extracted SDDC data, and matched
+# verbatim by a dataPath condition on "selectedCluster.primaryDatastoreType" -- see
+# $global:conditionDataContext) to a human-friendly label for display only. The raw value itself is
 # never touched, so conditions keep matching the real extracted data regardless of this mapping. An
 # unrecognized type passes through unchanged rather than disappearing.
 function Get-DisplayDatastoreType([string]$RawType) {
@@ -959,7 +1206,7 @@ function New-EmbeddedConsole([string]$TabHeader, [switch]$Bootstrap) {
     while ((Get-Date) -lt $deadline) {
         $process.Refresh()
         if ($process.HasExited) {
-            New-Advisory "Console process exited before its window appeared."
+            New-Advisory "Console process exited before its window appeared." -Failure
             break
         }
         $hwnd = $process.MainWindowHandle
@@ -979,7 +1226,7 @@ function New-EmbeddedConsole([string]$TabHeader, [switch]$Bootstrap) {
         $hwndHost = New-Object VCFIRConsole.ConsoleHwndHost($hwnd)
         $hostBorder.Child = $hwndHost
     } else {
-        New-Advisory "Console window did not appear within 10 seconds."
+        New-Advisory "Console window did not appear within 10 seconds." -Failure
     }
 
     $console = [PSCustomObject]@{
@@ -1043,6 +1290,17 @@ function Initialize-ConsoleVariables($Console) {
         Send-ToConsole "Set-ExportedSDDCDataFilePath -Path '$escapedPath'" $Console
         $lastCmdletSent = 'Set-ExportedSDDCDataFilePath'
     }
+    # $workloadDomain/$clusterName are set via Set-SelectedRecoveryTarget, not a file (see
+    # $script:selectionDrivenVariables) -- neither the "extracted data" priming above nor the
+    # "variables answers file" priming below ever carries them, so a freshly spawned thread console
+    # needs this call of its own or steps referencing either variable fail with it unset.
+    if ($global:selectedWorkloadDomain -or $global:selectedClusterName) {
+        $cmdArgs = @()
+        if ($global:selectedWorkloadDomain) { $cmdArgs += "-WorkloadDomain '$(Protect-SingleQuotes $global:selectedWorkloadDomain)'" }
+        if ($global:selectedClusterName) { $cmdArgs += "-ClusterName '$(Protect-SingleQuotes $global:selectedClusterName)'" }
+        Send-ToConsole "Set-SelectedRecoveryTarget $($cmdArgs -join ' ')" $Console
+        $lastCmdletSent = 'Set-SelectedRecoveryTarget'
+    }
     if ($global:variablesAnswersFilePath) {
         $escapedAnswersPath = Protect-SingleQuotes $global:variablesAnswersFilePath
         Send-ToConsole "Import-RecoveryVariables -Path '$escapedAnswersPath'" $Console
@@ -1071,7 +1329,7 @@ function Initialize-ConsoleVariables($Console) {
         }
         Start-Sleep -Milliseconds 50
     }
-    New-Advisory "Console '$($Console.TabItem.Header)' did not confirm its bootstrap variables within 10 seconds."
+    New-Advisory "Console '$($Console.TabItem.Header)' did not confirm its bootstrap variables within 10 seconds." -Failure
 }
 
 # Resolves to whichever console's tab is currently selected, for the benefit of anything that
@@ -1257,7 +1515,7 @@ function Send-ToConsole([string]$CommandLine, $Console) {
         $Console = $global:mainConsole
     }
     if ($null -eq $Console -or $null -eq $Console.Process -or $Console.Process.HasExited) {
-        New-Advisory "Console process isn't running."
+        New-Advisory "Console process isn't running." -Failure
         return
     }
     try {
@@ -1323,7 +1581,7 @@ function Send-ToConsole([string]$CommandLine, $Console) {
             [VCFIRConsole.NativeMethods]::FreeConsole() | Out-Null
         }
     } catch {
-        New-Advisory "Failed to send command: $($_.Exception.Message)"
+        New-Advisory "Failed to send command: $($_.Exception.Message)" -Failure
     }
     Set-ConsoleFocus
 }
@@ -1354,7 +1612,7 @@ function Test-StepTranscriptClean([string]$TranscriptSlice) {
 # Test-StepTranscriptClean -- once "Completed Task" is found; Invoke-StepChain/Invoke-StepThreadChain
 # use this to gate starting the next step (or continuing past a block of background threads) on the
 # previous one(s) actually having gone cleanly, not just having finished. $Console defaults to Main.
-function Add-StepWatch($Button, [string]$CmdletName, [scriptblock]$OnComplete, $Console, [string]$Id) {
+function Add-StepWatch($Buttons, [string]$CmdletName, [scriptblock]$OnComplete, $Console, [string]$Id) {
     if ($null -eq $Console) {
         $Console = $global:mainConsole
     }
@@ -1363,13 +1621,16 @@ function Add-StepWatch($Button, [string]$CmdletName, [scriptblock]$OnComplete, $
         $currentText = Get-Content -Path $Console.TranscriptPath -Raw -ErrorAction SilentlyContinue
         if ($null -eq $currentText) { $currentText = '' }
     }
-    # Drop any earlier watch for this same button first, rather than stacking duplicates on a re-run.
+    # Drop any earlier watch for this same row first, rather than stacking duplicates on a re-run.
+    # $Buttons is the same @($row.PlanButton, $row.ManualButton) array reference every caller for
+    # this row passes (see New-StepRow/Invoke-StepChain/Invoke-StepThreadChain), so plain -ne here
+    # is reference-equality on that array, exactly like the single-Button comparison this replaced.
     # @(...) around the whole pipeline is required, not optional: Where-Object filtering everything
     # out (as it always does on the very first-ever call, since the list starts empty) produces $null,
     # not an empty collection, and List[object]'s constructor throws ArgumentNullException on $null.
-    $global:activeStepWatches = [System.Collections.Generic.List[object]]@($global:activeStepWatches | Where-Object { $_.Button -ne $Button })
+    $global:activeStepWatches = [System.Collections.Generic.List[object]]@($global:activeStepWatches | Where-Object { $_.Buttons -ne $Buttons })
     $global:activeStepWatches.Add([PSCustomObject]@{
-            Button         = $Button
+            Buttons        = $Buttons
             TargetText     = "Completed Task $CmdletName"
             StartOffset    = $currentText.Length
             OnComplete     = $OnComplete
@@ -1395,7 +1656,7 @@ function Add-CompletionWatch([string]$CmdletName, [scriptblock]$OnComplete, $Con
         if ($null -eq $currentText) { $currentText = '' }
     }
     $global:activeStepWatches.Add([PSCustomObject]@{
-            Button         = $null
+            Buttons        = $null
             TargetText     = "Completed Task $CmdletName"
             StartOffset    = $currentText.Length
             OnComplete     = $OnComplete
@@ -1446,8 +1707,12 @@ function Lock-ElementSelection {
 function Set-AllStepButtonsEnabled([bool]$Enabled) {
     $allRows = @($global:domainRecoveryStepRows) + @($global:additionalClusterRecoveryStepRows) + @($global:recoverFleetStepRows) +
         @($global:instanceComponentsGroup.StepRows) + @($global:fleetComponentsGroup.StepRows)
+    # Only ManualButton -- PlanButton is permanently IsEnabled=$false (see New-StepRow) regardless
+    # of Run All's own state, so it stays visually correct (its status colors render even while
+    # disabled -- see the shared Button style's ControlTemplate.Triggers) without ever needing to be
+    # toggled here.
     foreach ($row in $allRows) {
-        $row.Button.IsEnabled = $Enabled
+        $row.ManualButton.IsEnabled = $Enabled
     }
     $runAllDomainRecoveryButton.IsEnabled = $Enabled
     $runAllAdditionalClusterRecoveryButton.IsEnabled = $Enabled
@@ -1456,8 +1721,9 @@ function Set-AllStepButtonsEnabled([bool]$Enabled) {
     $global:fleetComponentsGroup.RunAllButton.IsEnabled = $Enabled
 }
 
-# Elapsed-time display for a Run All run -- hidden and not running the rest of the time. Shared
-# across all three Steps panels (Domain Recovery / Additional Cluster Recovery / Recover Fleet)
+# Elapsed-time display for a Run All run -- hidden until the first run this session, then left
+# showing its last value (frozen, not running) between runs rather than disappearing; see
+# Stop-RunTimer. Shared across all three Steps panels (Domain Recovery / Additional Cluster Recovery / Recover Fleet)
 # rather than one per panel, since only one Run All can ever be active across the whole app at a
 # time anyway (see Set-AllStepButtonsEnabled) -- positioned in the XAML above the Steps/Variables
 # tab strip, right-aligned to share the same edge as the Steps ListBoxes' own Run-button column.
@@ -1466,6 +1732,14 @@ function Set-AllStepButtonsEnabled([bool]$Enabled) {
 # progress. Returns the running DispatcherTimer so the caller can stop it again in Stop-RunTimer
 # once the whole Run All chain finishes (see each Run All button's own Add_Click).
 function Start-RunTimer {
+    # Defensively stop whatever the previous run's timer was first, rather than assuming its own
+    # Stop-RunTimer call already ran -- if it didn't (some exception deep in an async completion
+    # callback bypassing the normal call site, for instance), the orphaned timer would otherwise
+    # keep ticking forever, writing an ever-growing elapsed time to the same TextBlock alongside
+    # this new one and occasionally winning the display race with a stale, larger reading.
+    if ($global:activeRunTimer) {
+        $global:activeRunTimer.Stop()
+    }
     $startTime = Get-Date
     $overallRecoveryTimeTextBlock.Text = '00:00:00'
     $overallRecoveryTimePanel.Visibility = 'Visible'
@@ -1473,20 +1747,31 @@ function Start-RunTimer {
     $timer.Interval = [TimeSpan]::FromSeconds(1)
     $timer.Add_Tick({
             $elapsed = (Get-Date) - $startTime
-            $overallRecoveryTimeTextBlock.Text = '{0:00}:{1:00}:{2:00}' -f [int]$elapsed.TotalHours, $elapsed.Minutes, $elapsed.Seconds
+            # [Math]::Floor, not a plain [int] cast -- [int] ROUNDS, so 47 minutes in ([int]0.79)
+            # rendered as "01:47:xx", a full hour ahead of reality while the minutes and seconds
+            # beside it stayed correct, and the badge appeared to jump BACK an hour every time the
+            # rounding flipped direction on the half hour. Only TotalHours needs this; .Minutes and
+            # .Seconds are already whole-number components, not fractional totals.
+            $overallRecoveryTimeTextBlock.Text = '{0:00}:{1:00}:{2:00}' -f [Math]::Floor($elapsed.TotalHours), $elapsed.Minutes, $elapsed.Seconds
         }.GetNewClosure())
+    $global:activeRunTimer = $timer
     $timer.Start()
     return $timer
 }
 
-# Stops the DispatcherTimer Start-RunTimer returned and hides the timer panel (label + badge)
-# again. $Timer may be $null (e.g. Invoke-StepChain threw before Start-RunTimer was ever called) --
-# tolerated so the catch block in each Run All handler can call this unconditionally.
+# Stops the DispatcherTimer Start-RunTimer returned -- deliberately does NOT hide the timer panel
+# or reset its displayed value: the last elapsed time shown is exactly what a "simply stop, don't
+# disappear" clock should keep showing until the next Run All starts fresh (Start-RunTimer resets
+# both the text and visibility at that point). $Timer may be $null (e.g. Invoke-StepChain threw
+# before Start-RunTimer was ever called) -- tolerated so the catch block in each Run All handler
+# can call this unconditionally.
 function Stop-RunTimer($Timer) {
     if ($Timer) {
         $Timer.Stop()
     }
-    $overallRecoveryTimePanel.Visibility = 'Collapsed'
+    if ($global:activeRunTimer -eq $Timer) {
+        $global:activeRunTimer = $null
+    }
 }
 
 # Resets a row to its "in progress" look (undoing any earlier Done/Failed state -- re-running a step
@@ -1513,13 +1798,23 @@ function Stop-RunTimer($Timer) {
 # Test-StepStatusGate. This is deliberately the ONLY place that check happens: display-time filtering
 # (Get-ApplicableSteps) never hides a row over a stepStatus condition, since nothing has run yet at
 # that point -- only whether the step actually EXECUTES is gated here.
-function Invoke-Step($Button, [string]$CmdletName, [string]$CommandLine, [scriptblock]$OnStepComplete, $Console, $Interactive, [string]$Id, [object[]]$Condition) {
+# Applies the same Content/Background to every button in $Buttons at once (PlanButton and
+# ManualButton -- see New-StepRow) -- the single place that pairing is written out, reused here,
+# in Start-StepCompletionWatcher's Done/Failed path, and in the Resume handler's Done-restore path,
+# so those three can never drift into setting one button but not the other.
+function Set-StepButtonsState($Buttons, [string]$Content, $Background) {
+    foreach ($stepButton in $Buttons) {
+        $stepButton.Content = $Content
+        $stepButton.Background = $Background
+    }
+}
+
+function Invoke-Step($Buttons, [string]$CmdletName, [string]$CommandLine, [scriptblock]$OnStepComplete, $Console, $Interactive, [string]$Id, [object[]]$Condition) {
     if ($null -eq $Console) {
         $Console = $global:mainConsole
     }
     if ($Condition -and -not (Test-StepStatusGate $Condition)) {
-        $Button.Content = 'Skipped'
-        $Button.Background = [System.Windows.Media.Brushes]::Gray
+        Set-StepButtonsState $Buttons 'Skipped' ([System.Windows.Media.Brushes]::Gray)
         if ($Id) {
             $global:stepRunStatus[$Id] = 'Skipped'
         }
@@ -1545,8 +1840,7 @@ function Invoke-Step($Button, [string]$CmdletName, [string]$CommandLine, [script
     if ($advisoryMatch.Success) {
         Lock-ElementSelection
         New-Advisory ($advisoryMatch.Groups[1].Value -replace "''", "'")
-        $Button.Content = 'Done'
-        $Button.Background = [System.Windows.Media.Brushes]::Green
+        Set-StepButtonsState $Buttons 'Done' ([System.Windows.Media.Brushes]::Green)
         if ($Id) {
             $global:stepRunStatus[$Id] = 'Success'
         }
@@ -1556,9 +1850,8 @@ function Invoke-Step($Button, [string]$CmdletName, [string]$CommandLine, [script
         return
     }
     Lock-ElementSelection
-    $Button.Content = 'Running'
-    $Button.Background = [System.Windows.Media.Brushes]::Orange
-    Add-StepWatch $Button $CmdletName $OnStepComplete $Console $Id
+    Set-StepButtonsState $Buttons 'Running' ([System.Windows.Media.Brushes]::Orange)
+    Add-StepWatch $Buttons $CmdletName $OnStepComplete $Console $Id
     if ($Interactive) {
         $consoleTabControl.SelectedItem = $Console.TabItem
         Set-ConsoleFocus
@@ -1644,7 +1937,7 @@ function Invoke-StepChain([object[]]$Rows, [switch]$IgnoreThreads, [scriptblock]
                     Set-ConsoleFocus
                     Invoke-StepChain $remainingRows -IgnoreThreads:$IgnoreThreads -OnChainComplete $OnChainComplete
                 } else {
-                    New-Advisory 'Run All stopped: one or more threads did not complete cleanly -- check each console/transcript before retrying.'
+                    New-Advisory 'Run All stopped: one or more threads did not complete cleanly -- check each console/transcript before retrying.' -Failure
                     if ($OnChainComplete) {
                         & $OnChainComplete $false
                     }
@@ -1658,12 +1951,12 @@ function Invoke-StepChain([object[]]$Rows, [switch]$IgnoreThreads, [scriptblock]
         return
     }
     $remainingRows = @($Rows | Select-Object -Skip 1)
-    Invoke-Step $row.Button $row.CmdletName $row.CommandLine {
+    Invoke-Step @($row.PlanButton, $row.ManualButton) $row.CmdletName $row.CommandLine {
         param($isClean)
         if ($isClean) {
             Invoke-StepChain $remainingRows -IgnoreThreads:$IgnoreThreads -OnChainComplete $OnChainComplete
         } else {
-            New-Advisory "Run All stopped: $($row.CmdletName) did not complete cleanly -- check the console/transcript for warnings, errors, or a PowerShell error record before retrying."
+            New-Advisory "Run All stopped: $($row.CmdletName) did not complete cleanly -- check the console/transcript for warnings, errors, or a PowerShell error record before retrying." -Failure
             if ($OnChainComplete) {
                 & $OnChainComplete $false
             }
@@ -1707,7 +2000,7 @@ function Invoke-StepThreadChain([object[]]$Rows, $Console, [scriptblock]$OnCompl
     }
     $row = $Rows[0]
     $remainingRows = @($Rows | Select-Object -Skip 1)
-    Invoke-Step $row.Button $row.CmdletName $row.CommandLine {
+    Invoke-Step @($row.PlanButton, $row.ManualButton) $row.CmdletName $row.CommandLine {
         param($isClean)
         if ($isClean) {
             Invoke-StepThreadChain $remainingRows $Console $OnComplete
@@ -1717,37 +2010,26 @@ function Invoke-StepThreadChain([object[]]$Rows, $Console, [scriptblock]$OnCompl
     }.GetNewClosure() $Console $row.Interactive $row.Id $row.Condition
 }
 
-# Returns [PSCustomObject]@{ Panel; CommandLine; Button; CmdletName; DisplayName; ThreadId;
-# Interactive; Id; Condition }, not just the row's visual Panel -- the other fields are needed
-# separately so a tab's "Run All" button can replay every row's Run action, and so Invoke-Step/
-# Add-StepWatch can update the right row's button and watch for the right cmdlet name without
-# re-parsing the rendered list. Id/Condition are carried through to Invoke-Step so its stepStatus
-# pre-flight gate (Test-StepStatusGate) applies identically whether a row's Run is clicked manually
-# or reached via Run All/a thread chain.
+# Returns [PSCustomObject]@{ PlanPanel; PlanButton; ManualPanel; ManualButton; CommandLine;
+# CmdletName; DisplayName; ThreadId; Interactive; Id; Condition } -- ONE logical step, rendered as
+# TWO separate visual rows (a WPF element can only ever belong to one parent, so the name/thread
+# badge/interactive pill/button all have to be built twice, once per tab):
+#   - PlanPanel/PlanButton: the read-only "Recovery Plan" tab's row. The button starts disabled,
+#     grey, and reading "Pending" -- IsEnabled=$false blocks every form of interaction (click,
+#     keyboard Enter, Tab-focus) at once, and the shared Button style's own ControlTemplate.Triggers
+#     already force Opacity back to 1 (full color) whenever Content becomes Running/Done/Failed/
+#     Skipped even while disabled, so this button still shows every one of Run All's real status
+#     colors, it simply can never be clicked to START one.
+#   - ManualPanel/ManualButton: the interactive "Manual Steps" tab's row, functionally identical to
+#     this row's own previous single-panel design -- a real, clickable "Run" button wired straight
+#     to Invoke-Step.
+# Both buttons are always passed together (see @($row.PlanButton, $row.ManualButton) at every call
+# site) to Invoke-Step/Add-StepWatch, so whichever one actually triggered a run (Run All via
+# PlanButton, or a manual click via ManualButton), both update in lockstep -- there is no way for
+# the two tabs to show a different status for the same step. Id/Condition are carried through to
+# Invoke-Step so its stepStatus pre-flight gate (Test-StepStatusGate) applies identically regardless
+# of how a step's run was triggered.
 function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Description, $Interactive, [bool]$ThreadColorAlt = $false, [string]$Id = '', [object[]]$Condition = @(), [string]$DisplayName = '') {
-    # A Grid with fixed-width columns, not a DockPanel -- a DockPanel only stacks whichever badges a
-    # given row actually has, so a row with just one badge (or none) leaves the other badge's spot
-    # collapsed and everything shifts to fill the gap. Every row gets the same 4 columns (name /
-    # thread circle / interactive pill / Run) whether or not it has content for a given column, so
-    # every column's contents line up vertically down the whole list like a real table.
-    $panel = New-Object System.Windows.Controls.Grid
-    $panel.Margin = '2,0,2,0'
-    if ($Description) {
-        $panel.ToolTip = $Description
-    }
-    $nameColumn = New-Object System.Windows.Controls.ColumnDefinition
-    $nameColumn.Width = New-Object System.Windows.GridLength(1, [System.Windows.GridUnitType]::Star)
-    $threadColumn = New-Object System.Windows.Controls.ColumnDefinition
-    $threadColumn.Width = New-Object System.Windows.GridLength(30)
-    $interactiveColumn = New-Object System.Windows.Controls.ColumnDefinition
-    $interactiveColumn.Width = New-Object System.Windows.GridLength(100)
-    $runColumn = New-Object System.Windows.Controls.ColumnDefinition
-    $runColumn.Width = New-Object System.Windows.GridLength(71)
-    [void]$panel.ColumnDefinitions.Add($nameColumn)
-    [void]$panel.ColumnDefinitions.Add($threadColumn)
-    [void]$panel.ColumnDefinitions.Add($interactiveColumn)
-    [void]$panel.ColumnDefinitions.Add($runColumn)
-
     # The full command line (with its parameters) stays in the module and is only ever sent to the
     # console, never rendered in the Steps list. Variable values referenced in it (e.g. $targetFqdn)
     # come from whatever was loaded via "Load Variables..." -- they're already set in the console
@@ -1760,89 +2042,155 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
         $DisplayName = $cmdletName
     }
 
-    $runButton = New-Object System.Windows.Controls.Button
-    $runButton.Content = 'Run'
-    # Wide enough for 'Running' -- the longest of the states this button ever shows (Run/Running/
-    # Done/Failed) -- so it doesn't visibly resize as a step starts and finishes.
-    $runButton.Width = 65
-    $runButton.Padding = '6,2'
-    $runButton.Margin = '6,0,0,0'
-    $runButton.HorizontalAlignment = 'Right'
-    [System.Windows.Controls.Grid]::SetColumn($runButton, 3)
-    $runButton.Add_Click({
+    # Builds ONE visual variant of this row (called once for the read-only Plan panel, once for the
+    # interactive Manual panel) -- the two are identical (Grid columns/name/thread badge/interactive
+    # pill) except for the Run-column button itself, which this returns separately so the caller can
+    # wire its Add_Click (Manual only) or leave it alone (Plan). No .GetNewClosure() needed here:
+    # this scriptblock is invoked synchronously, twice, within this same function call, never stored
+    # for later -- normal PowerShell parent-scope variable capture already sees $ThreadId/
+    # $ThreadColorAlt/$Description/$Interactive/$DisplayName correctly without it.
+    $buildVariant = {
+        param([bool]$ReadOnly)
+
+        # A Grid with fixed-width columns, not a DockPanel -- a DockPanel only stacks whichever
+        # badges a given row actually has, so a row with just one badge (or none) leaves the other
+        # badge's spot collapsed and everything shifts to fill the gap. Every row gets the same 4
+        # columns (name / thread circle / interactive pill / Run) whether or not it has content for
+        # a given column, so every column's contents line up vertically down the whole list like a
+        # real table.
+        $variantPanel = New-Object System.Windows.Controls.Grid
+        $variantPanel.Margin = '2,0,2,0'
+        if ($Description) {
+            $variantPanel.ToolTip = $Description
+        }
+        $nameColumn = New-Object System.Windows.Controls.ColumnDefinition
+        $nameColumn.Width = New-Object System.Windows.GridLength(1, [System.Windows.GridUnitType]::Star)
+        $threadColumn = New-Object System.Windows.Controls.ColumnDefinition
+        $threadColumn.Width = New-Object System.Windows.GridLength(30)
+        $interactiveColumn = New-Object System.Windows.Controls.ColumnDefinition
+        $interactiveColumn.Width = New-Object System.Windows.GridLength(100)
+        $runColumn = New-Object System.Windows.Controls.ColumnDefinition
+        # 6px for the button's own left margin (below) plus its 80px width.
+        $runColumn.Width = New-Object System.Windows.GridLength(86)
+        [void]$variantPanel.ColumnDefinitions.Add($nameColumn)
+        [void]$variantPanel.ColumnDefinitions.Add($threadColumn)
+        [void]$variantPanel.ColumnDefinitions.Add($interactiveColumn)
+        [void]$variantPanel.ColumnDefinitions.Add($runColumn)
+
+        $variantButton = New-Object System.Windows.Controls.Button
+        # Wide enough for 'Running' -- the longest of the states this button ever shows (Pending/
+        # Run/Running/Done/Failed/Skipped) -- so it doesn't visibly resize as a step starts/finishes.
+        # Matches the Recovery Plan tab's own "Run Plan" button width (see the XAML) so every button
+        # in the app that triggers/reflects step execution reads as the same control, not two
+        # different sizes depending on which tab happens to be open.
+        $variantButton.Width = 80
+        $variantButton.Padding = '6,2'
+        $variantButton.Margin = '6,0,0,0'
+        $variantButton.HorizontalAlignment = 'Right'
+        [System.Windows.Controls.Grid]::SetColumn($variantButton, 3)
+        if ($ReadOnly) {
+            $variantButton.Content = 'Pending'
+            $variantButton.Background = [System.Windows.Media.Brushes]::LightGray
+            $variantButton.Foreground = [System.Windows.Media.Brushes]::Black
+            $variantButton.IsEnabled = $false
+        } else {
+            $variantButton.Content = 'Run'
+        }
+
+        # Run All bundles a consecutive run of rows carrying a ThreadId into background threads (see
+        # Invoke-StepThread); manually clicking Run on a single row never does, even if it has one.
+        # A numbered circle, not a "[1]" text badge -- easier to scan at a glance, and its
+        # background alternates between two colors (set by the caller, Set-PlanStepsListBox, via
+        # $ThreadColorAlt) each time a new consecutive run of same-ThreadId rows starts, so where
+        # one thread's block of steps ends and the next begins is visible without having to read the
+        # numbers themselves.
+        $variantThreadCircle = $null
+        if ($ThreadId) {
+            $threadCircleText = New-Object System.Windows.Controls.TextBlock
+            $threadCircleText.Text = $ThreadId
+            $threadCircleText.Foreground = [System.Windows.Media.Brushes]::White
+            $threadCircleText.FontSize = 10
+            $threadCircleText.FontWeight = 'Bold'
+            $threadCircleText.HorizontalAlignment = 'Center'
+            $threadCircleText.VerticalAlignment = 'Center'
+            $variantThreadCircle = New-Object System.Windows.Controls.Border
+            $variantThreadCircle.Width = 22
+            $variantThreadCircle.Height = 22
+            $variantThreadCircle.CornerRadius = 11
+            $variantThreadCircle.Background = if ($ThreadColorAlt) {
+                [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.Color]::FromRgb(0x2F, 0x9E, 0x8C))
+            } else {
+                [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.Color]::FromRgb(0x3E, 0x6B, 0xB8))
+            }
+            $variantThreadCircle.HorizontalAlignment = 'Center'
+            $variantThreadCircle.VerticalAlignment = 'Center'
+            $variantThreadCircle.Child = $threadCircleText
+            [System.Windows.Controls.Grid]::SetColumn($variantThreadCircle, 1)
+        }
+
+        # A pill-style badge, not a trailing "*" on the name (an earlier version of this) -- the
+        # user's own feedback was that a bare asterisk read as too subtle to actually notice. Slate
+        # grey with white text is deliberately neutral -- distinct from every runtime state color
+        # already in use here (Orange/Green/Firebrick for Running/Done/Failed) since this marks a
+        # fixed property of the step, not something that changes as it runs.
+        $variantInteractiveBadge = $null
+        if ($Interactive) {
+            $interactiveBadgeText = New-Object System.Windows.Controls.TextBlock
+            $interactiveBadgeText.Text = 'Requires Input'
+            $interactiveBadgeText.Foreground = [System.Windows.Media.Brushes]::White
+            $interactiveBadgeText.FontSize = 10.5
+            $interactiveBadgeText.FontWeight = 'SemiBold'
+            $variantInteractiveBadge = New-Object System.Windows.Controls.Border
+            $variantInteractiveBadge.Background = [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.Color]::FromRgb(0x70, 0x80, 0x90))
+            $variantInteractiveBadge.CornerRadius = 8
+            $variantInteractiveBadge.Padding = '6,1'
+            $variantInteractiveBadge.Margin = '8,0,6,0'
+            $variantInteractiveBadge.HorizontalAlignment = 'Left'
+            $variantInteractiveBadge.VerticalAlignment = 'Center'
+            $variantInteractiveBadge.Child = $interactiveBadgeText
+            [System.Windows.Controls.Grid]::SetColumn($variantInteractiveBadge, 2)
+        }
+
+        $variantLabel = New-Object System.Windows.Controls.TextBlock
+        $variantLabel.Text = $DisplayName
+        $variantLabel.FontFamily = New-Object System.Windows.Media.FontFamily('Consolas')
+        $variantLabel.VerticalAlignment = 'Center'
+        [System.Windows.Controls.Grid]::SetColumn($variantLabel, 0)
+
+        [void]$variantPanel.Children.Add($variantLabel)
+        if ($variantThreadCircle) {
+            [void]$variantPanel.Children.Add($variantThreadCircle)
+        }
+        if ($variantInteractiveBadge) {
+            [void]$variantPanel.Children.Add($variantInteractiveBadge)
+        }
+        [void]$variantPanel.Children.Add($variantButton)
+        return [PSCustomObject]@{ Panel = $variantPanel; Button = $variantButton }
+    }
+
+    $planVariant = & $buildVariant $true
+    $manualVariant = & $buildVariant $false
+    $manualVariant.Button.Add_Click({
             try {
-                Invoke-Step $runButton $cmdletName $CommandLine $null $null $Interactive $Id $Condition
+                Invoke-Step @($planVariant.Button, $manualVariant.Button) $cmdletName $CommandLine $null $null $Interactive $Id $Condition
             } catch {
-                New-Advisory "Run button failed: $($_.Exception.Message)"
+                New-Advisory "Run button failed: $($_.Exception.Message)" -Failure
             }
         }.GetNewClosure())
 
-    # Run All bundles a consecutive run of rows carrying a ThreadId into background threads (see
-    # Invoke-StepThread); manually clicking Run on a single row never does, even if it has one. A
-    # numbered circle, not a "[1]" text badge -- easier to scan at a glance, and its background
-    # alternates between two colors (set by the caller, Set-PlanStepsListBox, via $ThreadColorAlt)
-    # each time a new consecutive run of same-ThreadId rows starts, so where one thread's block of
-    # steps ends and the next begins is visible without having to read the numbers themselves.
-    if ($ThreadId) {
-        $threadCircleText = New-Object System.Windows.Controls.TextBlock
-        $threadCircleText.Text = $ThreadId
-        $threadCircleText.Foreground = [System.Windows.Media.Brushes]::White
-        $threadCircleText.FontSize = 10
-        $threadCircleText.FontWeight = 'Bold'
-        $threadCircleText.HorizontalAlignment = 'Center'
-        $threadCircleText.VerticalAlignment = 'Center'
-        $threadCircle = New-Object System.Windows.Controls.Border
-        $threadCircle.Width = 22
-        $threadCircle.Height = 22
-        $threadCircle.CornerRadius = 11
-        $threadCircle.Background = if ($ThreadColorAlt) {
-            [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.Color]::FromRgb(0x2F, 0x9E, 0x8C))
-        } else {
-            [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.Color]::FromRgb(0x3E, 0x6B, 0xB8))
-        }
-        $threadCircle.HorizontalAlignment = 'Center'
-        $threadCircle.VerticalAlignment = 'Center'
-        $threadCircle.Child = $threadCircleText
-        [System.Windows.Controls.Grid]::SetColumn($threadCircle, 1)
+    return [PSCustomObject]@{
+        PlanPanel    = $planVariant.Panel
+        PlanButton   = $planVariant.Button
+        ManualPanel  = $manualVariant.Panel
+        ManualButton = $manualVariant.Button
+        CommandLine  = $CommandLine
+        CmdletName   = $cmdletName
+        DisplayName  = $DisplayName
+        ThreadId     = $ThreadId
+        Interactive  = $Interactive
+        Id           = $Id
+        Condition    = $Condition
     }
-
-    # A pill-style badge, not a trailing "*" on the name (an earlier version of this) -- the user's
-    # own feedback was that a bare asterisk read as too subtle to actually notice. Slate grey with
-    # white text is deliberately neutral -- distinct from every runtime state color already in use
-    # here (Orange/Green/Firebrick for Running/Done/Failed) since this marks a fixed property of the
-    # step, not something that changes as it runs.
-    if ($Interactive) {
-        $interactiveBadgeText = New-Object System.Windows.Controls.TextBlock
-        $interactiveBadgeText.Text = 'Requires Input'
-        $interactiveBadgeText.Foreground = [System.Windows.Media.Brushes]::White
-        $interactiveBadgeText.FontSize = 10.5
-        $interactiveBadgeText.FontWeight = 'SemiBold'
-        $interactiveBadge = New-Object System.Windows.Controls.Border
-        $interactiveBadge.Background = [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.Color]::FromRgb(0x70, 0x80, 0x90))
-        $interactiveBadge.CornerRadius = 8
-        $interactiveBadge.Padding = '6,1'
-        $interactiveBadge.Margin = '8,0,6,0'
-        $interactiveBadge.HorizontalAlignment = 'Left'
-        $interactiveBadge.VerticalAlignment = 'Center'
-        $interactiveBadge.Child = $interactiveBadgeText
-        [System.Windows.Controls.Grid]::SetColumn($interactiveBadge, 2)
-    }
-
-    $label = New-Object System.Windows.Controls.TextBlock
-    $label.Text = $DisplayName
-    $label.FontFamily = New-Object System.Windows.Media.FontFamily('Consolas')
-    $label.VerticalAlignment = 'Center'
-    [System.Windows.Controls.Grid]::SetColumn($label, 0)
-
-    [void]$panel.Children.Add($label)
-    if ($threadCircle) {
-        [void]$panel.Children.Add($threadCircle)
-    }
-    if ($interactiveBadge) {
-        [void]$panel.Children.Add($interactiveBadge)
-    }
-    [void]$panel.Children.Add($runButton)
-    return [PSCustomObject]@{ Panel = $panel; CommandLine = $CommandLine; Button = $runButton; CmdletName = $cmdletName; DisplayName = $DisplayName; ThreadId = $ThreadId; Interactive = $Interactive; Id = $Id; Condition = $Condition }
 }
 
 # Variable names referenced across $CommandLines (e.g. "$targetFqdn"), in order of first
@@ -1971,13 +2319,11 @@ function Start-StepCompletionWatcher {
                 $transcriptText = $transcriptCache[$watch.TranscriptPath]
                 $newText = if ($transcriptText.Length -gt $watch.StartOffset) { $transcriptText.Substring($watch.StartOffset) } else { '' }
                 $isClean = Test-StepTranscriptClean $newText
-                if ($watch.Button) {
+                if ($watch.Buttons) {
                     if ($isClean) {
-                        $watch.Button.Content = 'Done'
-                        $watch.Button.Background = [System.Windows.Media.Brushes]::Green
+                        Set-StepButtonsState $watch.Buttons 'Done' ([System.Windows.Media.Brushes]::Green)
                     } else {
-                        $watch.Button.Content = 'Failed'
-                        $watch.Button.Background = [System.Windows.Media.Brushes]::Firebrick
+                        Set-StepButtonsState $watch.Buttons 'Failed' ([System.Windows.Media.Brushes]::Firebrick)
                     }
                 }
                 if ($watch.Id) {
@@ -1997,18 +2343,22 @@ function Start-StepCompletionWatcher {
 function Import-ExtractedSddcDataFile([string]$Path) {
     $domainsListBox.Items.Clear()
     $additionalClustersListBox.Items.Clear()
-    $domainRecoveryStepsListBox.Items.Clear()
-    $additionalClusterRecoveryStepsListBox.Items.Clear()
+    $domainRecoveryPlanStepsListBox.Items.Clear()
+    $domainRecoveryManualStepsListBox.Items.Clear()
+    $additionalClusterRecoveryPlanStepsListBox.Items.Clear()
+    $additionalClusterRecoveryManualStepsListBox.Items.Clear()
     $variablesItemsPanel.Children.Clear()
     $loadedVariablesTextBlock.Text = 'No variables loaded yet.'
     $stepsVariablesGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
     foreach ($group in @($global:instanceComponentsGroup, $global:fleetComponentsGroup)) {
         $group.StepsListBox.Items.Clear()
+        $group.ManualStepsListBox.Items.Clear()
         $group.VariablesItemsPanel.Children.Clear()
         $group.LoadedVariablesText.Text = 'No variables loaded yet.'
         $group.Steps = @()
         $group.StepRows = @()
         $group.AnswersFilePath = $null
+        $group.AnswerMap = $null
     }
     Set-ActiveStepsVariablesPane $stepsVariablesTabControl
     # Nothing meaningful to show until a load actually succeeds below -- collapsed here covers
@@ -2019,26 +2369,25 @@ function Import-ExtractedSddcDataFile([string]$Path) {
     $global:domainRecoverySteps = @()
     $global:additionalClusterRecoverySteps = @()
     $global:allSteps = @()
-    $global:derivedStepVariables = @{}
     $global:conditionDataContext = @{}
     $global:stepRunStatus = @{}
 
     try {
         $extractedSddcData = Get-Content -Path $Path -Raw | ConvertFrom-Json
     } catch {
-        New-Advisory "Failed to load extracted SDDC data: $($_.Exception.Message)"
+        New-Advisory "Failed to load extracted SDDC data: $($_.Exception.Message)" -Failure
         return
     }
 
     if (-not $extractedSddcData.workloadDomains) {
-        New-Advisory "No 'workloadDomains' property found in the selected file."
+        New-Advisory "No 'workloadDomains' property found in the selected file." -Failure
         return
     }
 
-    # Cached raw/unfiltered -- Sync-IbrRecoveryScopeSelection (called at the end of this function,
-    # and again whenever Recovery Scope changes) re-filters this into $domainsListBox itself
-    # (MANAGEMENT-only for Management Domain Recovery, non-MANAGEMENT for Workload Domain Recovery),
-    # so this function no longer populates $domainsListBox directly.
+    # Cached raw/unfiltered -- Sync-RecoveryPlanSelection (called at the end of this function, and
+    # again whenever the selected Recovery Plan changes) re-filters this into $domainsListBox
+    # itself (MANAGEMENT-only for Management Domain Recovery, non-MANAGEMENT for Workload Domain
+    # Recovery), so this function no longer populates $domainsListBox directly.
     $global:allDiscoveredDomains = @($extractedSddcData.workloadDomains)
 
     # Every domain's own default cluster (isDefault 't') is already the one the Recover Default
@@ -2080,80 +2429,111 @@ function Import-ExtractedSddcDataFile([string]$Path) {
     }
 
     $global:extractedDataLoaded = $true
-    Sync-IbrRecoveryScopeSelection
+    Sync-RecoveryPlanSelection
 
     $escapedPath = Protect-SingleQuotes $Path
     Send-ToConsole "Set-ExportedSDDCDataFilePath -Path '$escapedPath'"
 }
 
-# IBR is domain-driven: Data Source/Recovery Scope/Discovered Infrastructure come back, and Domain
-# Restores/Recover Default Cluster/Recover Additional Cluster/the two MANAGEMENT-only panes replace
-# Recover Fleet on the Steps tab strip. Sync-IbrRecoveryScopeSelection owns Discovered
-# Infrastructure's own visibility/content and re-runs Sync-DomainSteps/Sync-AdditionalClusterSteps
-# itself (via clearing/rebuilding selection), so this handler doesn't need to call any of that
-# directly -- it just reveals Recovery Scope/Data Source and hands off to the dispatcher.
-$ibrRecoveryTypeRadio.Add_Checked({
-        $ibrRecoveryScopeGroupBox.Visibility = [System.Windows.Visibility]::Visible
-        $dataSourceGroupBox.Visibility = [System.Windows.Visibility]::Visible
-        $recoverFleetPanel.Visibility = [System.Windows.Visibility]::Collapsed
-        $global:recoverFleetStepRows = Set-PlanStepsListBox $recoverFleetStepsListBox @()
-        Sync-IbrRecoveryScopeSelection
-    })
+# Recovery Type -> Recovery Plan -> Data Source, entirely catalog-driven (see
+# plans/recovery-plan-catalog.json and the helpers above) -- replaces the old fixed
+# IbrRecoveryTypeRadio/FdrRecoveryTypeRadio/4-scope-RadioButtons/ExtractBackupRadio wiring, all of
+# it now folded into Sync-RecoveryPlanSelection (defined further down, alongside the old
+# Sync-IbrRecoveryScopeSelection/Sync-DomainSteps/Sync-AdditionalClusterSteps it replaces/reuses)
+# plus the two SelectionChanged handlers below.
+foreach ($recoveryType in (Get-RecoveryPlanCatalog).recoveryTypes) {
+    [void]$recoveryTypeComboBox.Items.Add((New-RecoveryOptionComboBoxItem $recoveryType.label ([bool]$recoveryType.pending) ([string]$recoveryType.id)))
+}
 
-# FDR has one whole-fleet plan (plans/fdr/fdr-failover-plan.json) with no domain to select, so Data
-# Source/Discovered Infrastructure are irrelevant to it -- collapsing both (rather than covering
-# them with a placeholder) lets Recovery Tasks' Auto-height rows collapse to zero and the row below
-# take the freed space automatically. Loads and shows the plan immediately, same as picking
-# Extract SDDC Manager Backup runs immediately rather than waiting for a further action. No variable
-# values are known yet at this point, so conditional steps fail open (see Test-StepCondition) and
-# show unconditionally until Load Variables/New Variables File re-filters them for real.
-$fdrRecoveryTypeRadio.Add_Checked({
-        $ibrRecoveryScopeGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
-        $dataSourceGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
-        $discoveredInfrastructureGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
-        $domainRecoveryPanel.Visibility = [System.Windows.Visibility]::Collapsed
-        $additionalClusterRecoveryPanel.Visibility = [System.Windows.Visibility]::Collapsed
-        $global:additionalClusterRecoveryStepRows = Set-PlanStepsListBox $additionalClusterRecoveryStepsListBox @()
-        $recoverFleetPanel.Visibility = [System.Windows.Visibility]::Visible
+# Remembers the last selection that was NOT rejected by the engineering-mode gate below, so a
+# rejected/cancelled unlock attempt on a PENDING plan (Fleet Component Recovery, Recover Fleet)
+# reverts to exactly where the operator actually was, not a fixed default -- same idea as
+# Register-EngineeringModeGate's own $gateState.LastSafeTab. Set for real the first time
+# RecoveryPlanComboBox's own SelectionChanged (below) lands on a non-pending plan, which happens
+# naturally the moment the startup selection is triggered near the bottom of this script.
+$script:lastSafeRecoveryTypeId = $null
+$script:lastSafeRecoveryPlanId = $null
 
-        $variablesItemsPanel.Children.Clear()
-        $loadedVariablesTextBlock.Text = 'No variables loaded yet.'
-        foreach ($group in @($global:instanceComponentsGroup, $global:fleetComponentsGroup)) {
-            $group.StepsListBox.Items.Clear()
-            $group.VariablesItemsPanel.Children.Clear()
-            $group.LoadedVariablesText.Text = 'No variables loaded yet.'
-            $group.Steps = @()
-            $group.StepRows = @()
-            $group.AnswersFilePath = $null
+# Rebuilds Recovery Plan's own Items to whichever plans the catalog lists under the newly selected
+# Recovery Type, then selects that type's default plan (Management Domain Recovery for IBR,
+# Recover Fleet for FDR) -- picking FDR this way is what makes Recover Fleet's own PENDING gate
+# (on RecoveryPlanComboBox's SelectionChanged, below) fire immediately, exactly like checking the
+# old FdrRecoveryTypeRadio directly used to.
+$recoveryTypeComboBox.Add_SelectionChanged({
+        $selectedType = $recoveryTypeComboBox.SelectedItem
+        if ($null -eq $selectedType) { return }
+        $typeId = [string]$selectedType.Tag
+        $recoveryPlanComboBox.Items.Clear()
+        foreach ($plan in @((Get-RecoveryPlanCatalog).recoveryPlans | Where-Object { $_.recoveryType -eq $typeId })) {
+            [void]$recoveryPlanComboBox.Items.Add((New-RecoveryOptionComboBoxItem $plan.label ([bool]$plan.pending) ([string]$plan.id)))
         }
-        # A pre-existing gap for $global:derivedStepVariables too (harmless before now, since no FDR
-        # plan referenced either fact) -- closed here since stale $global:stepRunStatus surviving an
-        # IBR-to-FDR switch would be a real correctness concern, not just a latent one.
-        $global:derivedStepVariables = @{}
-        $global:conditionDataContext = @{}
-        $global:stepRunStatus = @{}
-        Set-ActiveStepsVariablesPane $stepsVariablesTabControl
+        $defaultPlanId = Get-DefaultRecoveryPlanId $typeId
+        $defaultItem = $recoveryPlanComboBox.Items | Where-Object { $_.Tag -eq $defaultPlanId } | Select-Object -First 1
+        if ($defaultItem) {
+            $recoveryPlanComboBox.SelectedItem = $defaultItem
+        } elseif ($recoveryPlanComboBox.Items.Count -gt 0) {
+            $recoveryPlanComboBox.SelectedIndex = 0
+        }
+    }.GetNewClosure())
 
-        $recoverFleetSteps = Get-ApplicableSteps (Get-RecoveryPlanSteps 'fdr' 'fdr-failover-plan.json') @{}
-        $global:recoverFleetStepRows = Set-PlanStepsListBox $recoverFleetStepsListBox $recoverFleetSteps
-        $global:allSteps = @($recoverFleetSteps)
+# The one dispatcher for every recovery plan pick -- gates PENDING plans behind the engineering
+# mode password (same $global:engineeringModeUnlocked flag Register-EngineeringModeGate uses for
+# Advanced), then hands off to Sync-RecoveryPlanSelection. Combining the gate and the real
+# selection-handling logic in this single handler (rather than two independently-registered ones,
+# the way the old RadioButton-based Register-RadioEngineeringModeGate worked) is what lets a
+# rejected attempt revert the pick cleanly without Sync-RecoveryPlanSelection ever running for a
+# plan that was never actually allowed through.
+$recoveryPlanComboBox.Add_SelectionChanged({
+        $selectedPlan = $recoveryPlanComboBox.SelectedItem
+        if ($null -eq $selectedPlan) { return }
+        $entry = Get-RecoveryPlanCatalogEntry ([string]$selectedPlan.Tag)
+        if (-not $entry) { return }
 
-        $stepsVariablesGroupBox.Visibility = [System.Windows.Visibility]::Visible
-        $stepsVariablesTabControl.SelectedIndex = 1   # "Steps"
-    })
+        if ($entry.pending -and -not $global:engineeringModeUnlocked) {
+            # Revert first (mirrors Register-EngineeringModeGate's own TabControl revert): puts the
+            # UI back exactly where it was, synchronously, before the modal password prompt even
+            # opens. $script:lastSafeRecoveryPlanId is $null only if EVERY plan under every type
+            # were pending, which the shipped catalog never does -- nothing to revert to in that
+            # case, so the pick is just left as-is (still gated; Sync-RecoveryPlanSelection is never
+            # reached below either way).
+            if ($script:lastSafeRecoveryPlanId) {
+                Select-RecoveryTypeAndPlan $script:lastSafeRecoveryTypeId $script:lastSafeRecoveryPlanId
+            }
+            $entered = Show-PasswordPromptDialog -Title 'Unlock Engineering Mode' -Message "Enter the engineering mode password to select $($entry.label)."
+            if ($entered -and (Test-EngineeringModePassword $entered)) {
+                $global:engineeringModeUnlocked = $true
+                # Re-selecting now that the flag is set re-fires this same SelectionChanged; the
+                # guard above is skipped that time and falls through to Sync-RecoveryPlanSelection.
+                Select-RecoveryTypeAndPlan $entry.recoveryType $entry.id
+            } elseif ($entered) {
+                New-Advisory 'Incorrect engineering mode password.' -Failure
+            }
+            return
+        }
 
-# Extracting a backup isn't a plan with steps to sequence -- it's one action, run immediately from
-# Browse below (see Invoke-ExtractSDDCManagerBackup). Picking this radio just clears any stale
-# Domain Recovery rows left over from a previously selected domain, the same "nothing to show yet"
-# state a fresh launch starts in.
-$extractRadio.Add_Checked({
-        $global:domainRecoveryStepRows = Set-PlanStepsListBox $domainRecoveryStepsListBox @()
-        $global:additionalClusterRecoveryStepRows = Set-PlanStepsListBox $additionalClusterRecoveryStepsListBox @()
+        $script:lastSafeRecoveryTypeId = $entry.recoveryType
+        $script:lastSafeRecoveryPlanId = $entry.id
+        Sync-RecoveryPlanSelection
+    }.GetNewClosure())
+
+# Only the "Extract SDDC Manager Backup" data source needs a handler here -- picking "Load
+# Extracted SDDC Data" is a pure no-op until Browse actually supplies a file (see
+# $browseButton.Add_Click below), same as when these were two RadioButtons and only
+# ExtractBackupRadio had an Add_Checked. Clears any stale Domain Recovery rows left over from a
+# previously selected domain, the same "nothing to show yet" state a fresh launch starts in --
+# whatever was loaded under a previous data source is about to be superseded by a fresh extraction.
+$dataSourceComboBox.Add_SelectionChanged({
+        $selectedSource = $dataSourceComboBox.SelectedItem
+        if ($null -eq $selectedSource -or [string]$selectedSource.Tag -ne 'ExtractBackup') { return }
+
+        $global:domainRecoveryStepRows = Set-PlanStepsListBox $domainRecoveryPlanStepsListBox $domainRecoveryManualStepsListBox @()
+        $global:additionalClusterRecoveryStepRows = Set-PlanStepsListBox $additionalClusterRecoveryPlanStepsListBox $additionalClusterRecoveryManualStepsListBox @()
         $variablesItemsPanel.Children.Clear()
         $loadedVariablesTextBlock.Text = 'No variables loaded yet.'
         $stepsVariablesGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
         foreach ($group in @($global:instanceComponentsGroup, $global:fleetComponentsGroup)) {
             $group.StepsListBox.Items.Clear()
+            $group.ManualStepsListBox.Items.Clear()
             $group.VariablesItemsPanel.Children.Clear()
             $group.LoadedVariablesText.Text = 'No variables loaded yet.'
             $group.Steps = @()
@@ -2164,10 +2544,9 @@ $extractRadio.Add_Checked({
         $global:domainRecoverySteps = @()
         $global:additionalClusterRecoverySteps = @()
         $global:allSteps = @()
-        $global:derivedStepVariables = @{}
         $global:conditionDataContext = @{}
         $global:stepRunStatus = @{}
-    })
+    }.GetNewClosure())
 
 # Prompts for the backup's credentials file and encryption password right here (rather than via
 # the Variables tab -- there's no plan/Execution context for this action at all) and runs it
@@ -2203,7 +2582,7 @@ function Invoke-ExtractSDDCManagerBackup([string]$BackupFilePath) {
 }
 
 $browseButton.Add_Click({
-        $extracting = $extractRadio.IsChecked -eq $true
+        $extracting = $dataSourceComboBox.SelectedItem -and ([string]$dataSourceComboBox.SelectedItem.Tag -eq 'ExtractBackup')
         $dialog = New-Object Microsoft.Win32.OpenFileDialog
         if ($extracting) {
             $dialog.Filter = 'All files (*.*)|*.*'
@@ -2244,20 +2623,11 @@ function Import-VariablesAnswersFile([string]$Path) {
             $answerMap[$property.Name] = [string]$property.Value
         }
 
-        # extractedSDDCDataFile comes from the Data Source browse selection, not the answers file --
-        # an answer file that happens to also define it must not overwrite that value or show up as
-        # an editable row here.
-        $answerMap.Remove('extractedSDDCDataFile')
-
-        # Facts the extracted SDDC data already knows (isStretched, primaryDatastoreType -- see
-        # Update-DerivedStepVariables/Sync-DomainSteps/Sync-AdditionalClusterSteps) fill in any of
-        # these names the answer file doesn't already define -- an explicit value in the answer file
-        # always wins, since that's an intentional operator override.
-        foreach ($name in $global:derivedStepVariables.Keys) {
-            if (-not $answerMap.Contains($name)) {
-                $answerMap[$name] = [string]$global:derivedStepVariables[$name]
-            }
-        }
+        # extractedSDDCDataFile comes from the Data Source browse selection and clusterName from the
+        # cluster selection, not the answers file -- an answer file that happens to also define
+        # either must not overwrite the live selection or show up as an editable row here. See
+        # $script:selectionDrivenVariables.
+        foreach ($ownedName in $script:selectionDrivenVariables) { $answerMap.Remove($ownedName) }
 
         $variablesItemsPanel.Children.Clear()
 
@@ -2307,7 +2677,7 @@ function Import-VariablesAnswersFile([string]$Path) {
         # forth, the same way picking a domain switches Setup to the Workload Domains tab.
         $stepsVariablesTabControl.SelectedIndex = 1
     } catch {
-        New-Advisory "Load Variables failed: $($_.Exception.Message)"
+        New-Advisory "Load Variables failed: $($_.Exception.Message)" -Failure
     }
 }
 
@@ -2328,19 +2698,18 @@ $loadVariablesButton.Add_Click({
 # created empty immediately (so it exists on disk right away, not only once something's typed) and
 # rewritten in full every time a field loses focus -- no separate "Save" action to remember.
 function New-VariablesFile([string]$Path) {
-    $variableNames = @(Get-ReferencedVariableNames (Get-StepReferenceText $global:allSteps))
+    # Excludes the UI-owned, selection-driven names ($extractedSDDCDataFile, $clusterName) so a newly
+    # created answers file never contains a row the console would ignore -- see
+    # $script:selectionDrivenVariables.
+    $variableNames = @(Get-ReferencedVariableNames (Get-StepReferenceText $global:allSteps) | Where-Object { $_ -notin $script:selectionDrivenVariables })
     if ($variableNames.Count -eq 0) {
         New-Advisory 'No steps are currently loaded, so there are no variables to create a file for.'
         return
     }
 
-    # Facts the extracted SDDC data already knows (isStretched, primaryDatastoreType) start pre-filled
-    # from $global:derivedStepVariables rather than blank -- same override precedence as
-    # Import-VariablesAnswersFile: still an ordinary editable row, just not empty when there's no
-    # real reason to make someone retype something already known.
     $values = [ordered]@{}
     foreach ($name in $variableNames) {
-        $values[$name] = if ($global:derivedStepVariables.Contains($name)) { [string]$global:derivedStepVariables[$name] } else { '' }
+        $values[$name] = ''
     }
     $values | ConvertTo-Json | Set-Content -LiteralPath $Path -Encoding utf8
 
@@ -2388,7 +2757,14 @@ $newVariablesFileButton.Add_Click({
         $dialog = New-Object Microsoft.Win32.SaveFileDialog
         $dialog.Filter = 'JSON files (*.json)|*.json|All files (*.*)|*.*'
         $dialog.Title = 'Save new variables file'
-        $dialog.FileName = 'variables.json'
+        # Defaults to the currently selected plan's own catalog-listed variables file name (see
+        # plans/recovery-plan-catalog.json) so the suggested name always matches whichever of
+        # Workload Domain Recovery/Additional Cluster Recovery/Recover Fleet is actually active,
+        # rather than one generic name regardless of plan. Falls back to the old generic name if
+        # no plan is selected yet (shouldn't normally happen -- this button is only reachable once
+        # Recovery Tasks itself is visible, which requires a plan).
+        $currentEntryForFileName = Get-CurrentRecoveryPlanEntry
+        $dialog.FileName = if ($currentEntryForFileName -and $currentEntryForFileName.variablesFile) { $currentEntryForFileName.variablesFile } else { 'variables.json' }
         if ($dialog.ShowDialog() -ne $true) {
             return
         }
@@ -2413,7 +2789,11 @@ $instanceComponentsNewVariablesFileButton.Add_Click({
         $dialog = New-Object Microsoft.Win32.SaveFileDialog
         $dialog.Filter = 'JSON files (*.json)|*.json|All files (*.*)|*.*'
         $dialog.Title = 'Save new variables file'
-        $dialog.FileName = 'instance-components-variables.json'
+        # See the matching comment on $newVariablesFileButton above -- this pane is always
+        # Management Domain Recovery specifically, so its catalog entry can be looked up by id
+        # directly rather than via Get-CurrentRecoveryPlanEntry.
+        $managementDomainEntryForFileName = Get-RecoveryPlanCatalogEntry 'ManagementDomain'
+        $dialog.FileName = if ($managementDomainEntryForFileName -and $managementDomainEntryForFileName.variablesFile) { $managementDomainEntryForFileName.variablesFile } else { 'instance-components-variables.json' }
         if ($dialog.ShowDialog() -ne $true) {
             return
         }
@@ -2438,16 +2818,56 @@ $fleetComponentsNewVariablesFileButton.Add_Click({
         $dialog = New-Object Microsoft.Win32.SaveFileDialog
         $dialog.Filter = 'JSON files (*.json)|*.json|All files (*.*)|*.*'
         $dialog.Title = 'Save new variables file'
-        $dialog.FileName = 'fleet-components-variables.json'
+        # See the matching comment on $newVariablesFileButton above -- this pane is always Fleet
+        # Component Recovery specifically, so its catalog entry can be looked up by id directly
+        # rather than via Get-CurrentRecoveryPlanEntry.
+        $fleetComponentEntryForFileName = Get-RecoveryPlanCatalogEntry 'FleetComponent'
+        $dialog.FileName = if ($fleetComponentEntryForFileName -and $fleetComponentEntryForFileName.variablesFile) { $fleetComponentEntryForFileName.variablesFile } else { 'fleet-components-variables.json' }
         if ($dialog.ShowDialog() -ne $true) {
             return
         }
         New-GroupVariablesFile $global:fleetComponentsGroup $dialog.FileName
     }.GetNewClosure())
 
-# Shared by the domain SelectionChanged handler and by switching back to IBR from FDR (see the
-# Recovery Type Checked handlers below) -- re-selecting the same domain doesn't refire
-# SelectionChanged, so switching recovery type has to be able to re-derive Execution's state from
+# Toggling "Original VCF Installer Available" re-filters Fleet Components' own Steps list right
+# away (see Update-GroupRevealedSteps's fleetComponentsGroup-only override) so "Add VCFMS Trusted
+# Certificate" / "Confirm Binary Staging is complete" swap places immediately, without waiting for
+# some unrelated variable edit to trigger the next re-filter. A no-op before Load/New Variables has
+# ever populated $global:fleetComponentsGroup.AnswerMap -- there's no Steps list to re-filter yet.
+$applyOriginalVcfInstallerAvailable = {
+    if ($global:fleetComponentsGroup.AnswerMap) {
+        Update-GroupRevealedSteps $global:fleetComponentsGroup $global:fleetComponentsGroup.AnswerMap
+    }
+}
+$originalVcfInstallerAvailableCheckBox.Add_Checked($applyOriginalVcfInstallerAvailable)
+$originalVcfInstallerAvailableCheckBox.Add_Unchecked($applyOriginalVcfInstallerAvailable)
+
+# Pushes the current selection into the console session as $workloadDomain/$clusterName. Both come
+# from one selection, so they go in ONE call -- two separate cmdlets would double the "Starting
+# Task/Completed Task" banners in the console for every click. Blank values are omitted rather than
+# sent as empty strings, so clearing part of a selection never overwrites a good value with ''.
+# Kept as a named function rather than repeating this at both call sites (Sync-DomainSteps and
+# Sync-AdditionalClusterSteps), since the two selection paths have to agree on exactly what "the
+# selected domain and cluster" mean.
+function Set-SelectedTargetInConsole([string]$WorkloadDomain, [string]$ClusterName) {
+    # $cmdArgs, not $args -- $args is a PowerShell automatic variable and assigning to it inside a
+    # function shadows the real one.
+    $cmdArgs = @()
+    if (-not [string]::IsNullOrWhiteSpace($WorkloadDomain)) {
+        $cmdArgs += "-WorkloadDomain '$(Protect-SingleQuotes $WorkloadDomain)'"
+        $global:selectedWorkloadDomain = $WorkloadDomain
+    }
+    if (-not [string]::IsNullOrWhiteSpace($ClusterName)) {
+        $cmdArgs += "-ClusterName '$(Protect-SingleQuotes $ClusterName)'"
+        $global:selectedClusterName = $ClusterName
+    }
+    if ($cmdArgs.Count -eq 0) { return }
+    Send-ToConsole "Set-SelectedRecoveryTarget $($cmdArgs -join ' ')"
+}
+
+# Shared by the domain SelectionChanged handler and by switching back to IBR from FDR (see
+# Sync-RecoveryPlanSelection below) -- re-selecting the same domain doesn't refire
+# SelectionChanged, so switching recovery plan has to be able to re-derive Execution's state from
 # whatever's currently selected on its own, not only react to an actual selection change.
 # Recomputes $global:allSteps as the union of every currently-populated IBR Steps panel (Domain
 # Recovery, Additional Cluster Recovery) -- these are two independent, mutually exclusive
@@ -2463,10 +2883,18 @@ function Update-AllSteps {
 function Update-ExecutionVisibility {
     $hasDomainSelected = $null -ne $domainsListBox.SelectedItem
     $hasClusterSelected = $additionalClustersListBox.SelectedItem -is [System.Windows.Controls.ListBoxItem]
-    # Fleet Component Recovery has no domain/cluster selection at all to hang this off of -- its own
-    # Recovery Tasks pane is ready to show as soon as data is loaded and that scope is active.
-    $isFleetComponentReady = (Get-CurrentIbrRecoveryScope) -eq 'FleetComponent' -and $global:extractedDataLoaded
-    $stepsVariablesGroupBox.Visibility = if ($hasDomainSelected -or $hasClusterSelected -or $isFleetComponentReady) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
+    # Fleet Component Recovery and Recover Fleet (FDR) have no domain/cluster selection at all to
+    # hang this off of -- either one's own Recovery Tasks pane is ready to show as soon as its own
+    # data requirement is met (extracted data loaded, for a plan that needs a data source at all;
+    # immediately for one that doesn't -- see the catalog's own "dataSources" per plan). Generalized
+    # over $entry.target rather than a hardcoded "-eq 'FleetComponent'" so a future plan reusing
+    # 'fleetComponent'/'recoverFleet' picks this up automatically.
+    $entry = Get-CurrentRecoveryPlanEntry
+    $isStandaloneTargetReady = $false
+    if ($entry -and $entry.target -in @('FleetComponent', 'RecoverFleet')) {
+        $isStandaloneTargetReady = (@($entry.dataSources).Count -eq 0) -or $global:extractedDataLoaded
+    }
+    $stepsVariablesGroupBox.Visibility = if ($hasDomainSelected -or $hasClusterSelected -or $isStandaloneTargetReady) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
 }
 
 # Populates the Domain Recovery/Additional Cluster Recovery ListBoxes from whatever
@@ -2477,15 +2905,33 @@ function Update-ExecutionVisibility {
 # list the right names), but must not itself put Run buttons in front of anyone before values exist
 # for them to use.
 function Update-RevealedSteps([System.Collections.IDictionary]$Variables) {
-    $global:domainRecoveryStepRows = Set-PlanStepsListBox $domainRecoveryStepsListBox (Get-ApplicableSteps $global:domainRecoverySteps $Variables)
-    $global:additionalClusterRecoveryStepRows = Set-PlanStepsListBox $additionalClusterRecoveryStepsListBox (Get-ApplicableSteps $global:additionalClusterRecoverySteps $Variables)
+    $global:domainRecoveryStepRows = Set-PlanStepsListBox $domainRecoveryPlanStepsListBox $domainRecoveryManualStepsListBox (Get-ApplicableSteps $global:domainRecoverySteps $Variables)
+    $global:additionalClusterRecoveryStepRows = Set-PlanStepsListBox $additionalClusterRecoveryPlanStepsListBox $additionalClusterRecoveryManualStepsListBox (Get-ApplicableSteps $global:additionalClusterRecoverySteps $Variables)
 }
 
 # Single-listbox counterpart to Update-RevealedSteps, for Instance Components/Fleet Components (see
 # $global:instanceComponentsGroup/$global:fleetComponentsGroup) -- one group is exactly one plan
 # file, so there's only ever one ListBox to populate, not two.
 function Update-GroupRevealedSteps($Group, [System.Collections.IDictionary]$Variables) {
-    $Group.StepRows = Set-PlanStepsListBox $Group.StepsListBox (Get-ApplicableSteps $Group.Steps $Variables)
+    # Fleet Component Recovery's own "Original VCF Installer Available" checkbox (see
+    # $originalVcfInstallerAvailableCheckBox) gates two of its steps via an ordinary "variable"-typed
+    # condition (see Test-StepCondition), but that checkbox is deliberately never written into the
+    # answers file/Variables tab -- it's a UI toggle, not an operator-typed value. A clone (not a
+    # mutation of $Variables itself) carries its current state into just this one filtering pass, so
+    # the caller's own dictionary -- which IS what gets persisted back to the answers file on every
+    # real variable edit -- never picks up this UI-only key.
+    if ($Group -eq $global:fleetComponentsGroup) {
+        # Not $Variables.Clone() -- System.Collections.Specialized.OrderedDictionary (what
+        # [ordered]@{} produces, see $answerMap/$values in Import-GroupVariablesAnswersFile/
+        # New-GroupVariablesFile) doesn't expose a public Clone() method on this runtime; confirmed
+        # directly (a real test run threw "does not contain a method named 'Clone'" here). A
+        # hand-built copy works regardless of the concrete IDictionary implementation.
+        $cloned = [ordered]@{}
+        foreach ($key in $Variables.Keys) { $cloned[$key] = $Variables[$key] }
+        $Variables = $cloned
+        $Variables['originalVcfInstallerAvailable'] = if ($originalVcfInstallerAvailableCheckBox.IsChecked) { 'true' } else { 'false' }
+    }
+    $Group.StepRows = Set-PlanStepsListBox $Group.StepsListBox $Group.ManualStepsListBox (Get-ApplicableSteps $Group.Steps $Variables)
 }
 
 # Group counterpart to Import-VariablesAnswersFile, used only by Instance Components/Fleet
@@ -2509,13 +2955,7 @@ function Import-GroupVariablesAnswersFile($Group, [string]$Path) {
         foreach ($property in $answers.PSObject.Properties) {
             $answerMap[$property.Name] = [string]$property.Value
         }
-        $answerMap.Remove('extractedSDDCDataFile')
-
-        foreach ($name in $global:derivedStepVariables.Keys) {
-            if (-not $answerMap.Contains($name)) {
-                $answerMap[$name] = [string]$global:derivedStepVariables[$name]
-            }
-        }
+        foreach ($ownedName in $script:selectionDrivenVariables) { $answerMap.Remove($ownedName) }
 
         $Group.VariablesItemsPanel.Children.Clear()
 
@@ -2546,19 +2986,24 @@ function Import-GroupVariablesAnswersFile($Group, [string]$Path) {
 
         $Group.LoadedVariablesText.Text = "Loaded $($orderedNames.Count) variable(s) from $Path."
         $Group.AnswersFilePath = $Path
+        $Group.AnswerMap = $answerMap
 
         Update-GroupRevealedSteps $Group $answerMap
 
         $Group.VariablesStepsTabControl.SelectedIndex = 1
     } catch {
-        New-Advisory "Load Variables failed: $($_.Exception.Message)"
+        New-Advisory "Load Variables failed: $($_.Exception.Message)" -Failure
     }
 }
 
 # Group counterpart to New-VariablesFile -- see Import-GroupVariablesAnswersFile's own comment for
 # why this is a near-duplicate rather than a generalization of the existing shared-flow function.
 function New-GroupVariablesFile($Group, [string]$Path) {
-    $variableNames = @(Get-ReferencedVariableNames (Get-StepReferenceText $Group.Steps))
+    # "originalVcfInstallerAvailable" is referenced only via the two Fleet Component Recovery steps'
+    # own "variable"-typed condition (see Update-GroupRevealedSteps), never in a step's commandLine --
+    # it's driven entirely by $originalVcfInstallerAvailableCheckBox, so it must never turn into an
+    # ordinary answers-file text row here the way every other referenced variable name does.
+    $variableNames = @(Get-ReferencedVariableNames (Get-StepReferenceText $Group.Steps) | Where-Object { $_ -ne 'originalVcfInstallerAvailable' -and $_ -notin $script:selectionDrivenVariables })
     if ($variableNames.Count -eq 0) {
         New-Advisory 'No steps are currently loaded, so there are no variables to create a file for.'
         return
@@ -2566,7 +3011,7 @@ function New-GroupVariablesFile($Group, [string]$Path) {
 
     $values = [ordered]@{}
     foreach ($name in $variableNames) {
-        $values[$name] = if ($global:derivedStepVariables.Contains($name)) { [string]$global:derivedStepVariables[$name] } else { '' }
+        $values[$name] = ''
     }
     $values | ConvertTo-Json | Set-Content -LiteralPath $Path -Encoding utf8
 
@@ -2585,6 +3030,7 @@ function New-GroupVariablesFile($Group, [string]$Path) {
 
     $Group.LoadedVariablesText.Text = "Creating '$Path' -- values save automatically as you fill them in."
     $Group.AnswersFilePath = $Path
+    $Group.AnswerMap = $values
 
     Update-GroupRevealedSteps $Group $values
 
@@ -2615,18 +3061,28 @@ function Set-ActiveStepsVariablesPane($PaneToShow) {
     }
 }
 
-# Single source of truth for which of the 4 IBR Recovery Scope radios is currently checked -- used
-# by Sync-DomainSteps (to decide Management Domain vs Workload Domain) and
-# Sync-IbrRecoveryScopeSelection, rather than each repeating its own if/elseif chain.
-function Get-CurrentIbrRecoveryScope {
-    if ($managementDomainRecoveryRadio.IsChecked -eq $true) { return 'ManagementDomain' }
-    if ($fleetComponentRecoveryRadio.IsChecked -eq $true) { return 'FleetComponent' }
-    if ($additionalClusterRecoveryRadio.IsChecked -eq $true) { return 'AdditionalCluster' }
-    return 'WorkloadDomain'
+# Each of Domain Recovery/Additional Cluster Recovery/Recover Fleet now has TWO panels (Recovery
+# Plan's read-only view and Manual Steps' interactive one -- see New-StepRow), not one, but they are
+# still shown/hidden as a single unit exactly like the old single panel was: whichever workflow is
+# active shows on BOTH tabs at once, never just one. These three tiny wrappers are the single place
+# that pairing is written out, so Sync-DomainSteps/Sync-AdditionalClusterSteps/the Recovery Type
+# Checked handlers never risk toggling one half of a pair and forgetting the other.
+function Set-DomainRecoveryPanelsVisibility([System.Windows.Visibility]$Visibility) {
+    $domainRecoveryPlanPanel.Visibility = $Visibility
+    $domainRecoveryManualPanel.Visibility = $Visibility
+}
+function Set-AdditionalClusterRecoveryPanelsVisibility([System.Windows.Visibility]$Visibility) {
+    $additionalClusterRecoveryPlanPanel.Visibility = $Visibility
+    $additionalClusterRecoveryManualPanel.Visibility = $Visibility
+}
+function Set-RecoverFleetPanelsVisibility([System.Windows.Visibility]$Visibility) {
+    $recoverFleetPlanPanel.Visibility = $Visibility
+    $recoverFleetManualPanel.Visibility = $Visibility
 }
 
 function Sync-DomainSteps {
-    $domainRecoveryStepsListBox.Items.Clear()
+    $domainRecoveryPlanStepsListBox.Items.Clear()
+    $domainRecoveryManualStepsListBox.Items.Clear()
     $variablesItemsPanel.Children.Clear()
     $loadedVariablesTextBlock.Text = 'No variables loaded yet.'
     $global:domainRecoverySteps = @()
@@ -2642,11 +3098,13 @@ function Sync-DomainSteps {
     # the previous domain sitting in $global:instanceComponentsGroup/$global:fleetComponentsGroup.
     foreach ($group in @($global:instanceComponentsGroup, $global:fleetComponentsGroup)) {
         $group.StepsListBox.Items.Clear()
+        $group.ManualStepsListBox.Items.Clear()
         $group.VariablesItemsPanel.Children.Clear()
         $group.LoadedVariablesText.Text = 'No variables loaded yet.'
         $group.Steps = @()
         $group.StepRows = @()
         $group.AnswersFilePath = $null
+        $group.AnswerMap = $null
     }
 
     $selected = $domainsListBox.SelectedItem
@@ -2664,16 +3122,17 @@ function Sync-DomainSteps {
         # $global:instanceComponentsGroup/$global:fleetComponentsGroup and
         # Set-ActiveStepsVariablesPane), not the single combined plan Workload Domain Recovery uses.
         # $domainsListBox is only ever populated with MANAGEMENT-type domains under this scope (see
-        # Sync-IbrRecoveryScopeSelection's own filtering), so checking the scope itself here is
-        # equivalent to (and doesn't depend on re-inspecting) $selected.Tag.domainType.
-        if ((Get-CurrentIbrRecoveryScope) -eq 'ManagementDomain') {
-            $domainRecoveryPanel.Visibility = [System.Windows.Visibility]::Collapsed
+        # Sync-RecoveryPlanSelection's own filtering), so checking the current plan's own target
+        # here is equivalent to (and doesn't depend on re-inspecting) $selected.Tag.domainType.
+        $planEntry = Get-CurrentRecoveryPlanEntry
+        if ($planEntry -and $planEntry.target -eq 'ManagementDomain') {
+            Set-DomainRecoveryPanelsVisibility ([System.Windows.Visibility]::Collapsed)
             Set-ActiveStepsVariablesPane $instanceComponentsVariablesStepsTabControl
-            $global:instanceComponentsGroup.Steps = Get-RecoveryPlanSteps 'ibr' 'management-domain-recovery-plan.json'
-        } else {
-            $domainRecoveryPanel.Visibility = [System.Windows.Visibility]::Visible
+            $global:instanceComponentsGroup.Steps = Get-RecoveryPlanSteps $planEntry.planFolder $planEntry.planFile
+        } elseif ($planEntry) {
+            Set-DomainRecoveryPanelsVisibility ([System.Windows.Visibility]::Visible)
             Set-ActiveStepsVariablesPane $stepsVariablesTabControl
-            $global:domainRecoverySteps = Get-RecoveryPlanSteps 'ibr' 'workload-domain-recovery-plan.json'
+            $global:domainRecoverySteps = Get-RecoveryPlanSteps $planEntry.planFolder $planEntry.planFile
         }
 
         # The default-cluster-recovery portion of either plan runs against the domain's default
@@ -2682,10 +3141,6 @@ function Sync-DomainSteps {
         # domain types (and both MANAGEMENT groups): Instance Components' own condition (e.g.
         # "$isStretched -eq 't'") needs exactly the same derived facts a VI domain's plan does.
         $defaultCluster = $selected.Tag.vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' } | Select-Object -First 1
-        $global:derivedStepVariables = @{
-            isStretched          = [string]$defaultCluster.isStretched
-            primaryDatastoreType = [string]$defaultCluster.primaryDatastoreType
-        }
         # Normalized (camelCase) so a "dataPath" condition (e.g. "selectedCluster.isStretched")
         # resolves identically here and in Sync-AdditionalClusterSteps, regardless of which raw shape
         # the underlying data actually came in.
@@ -2699,10 +3154,14 @@ function Sync-DomainSteps {
                 domainName           = $selected.Tag.domainName
             }
         }
+
+        # See the matching call in Sync-AdditionalClusterSteps -- selecting a DOMAIN targets that
+        # domain's own default cluster, so that's the cluster these plans' $clusterName refers to,
+        # while $workloadDomain is the selected domain itself.
+        Set-SelectedTargetInConsole ([string]$selected.Tag.domainName) ([string]$defaultCluster.name)
     } else {
-        $domainRecoveryPanel.Visibility = [System.Windows.Visibility]::Collapsed
+        Set-DomainRecoveryPanelsVisibility ([System.Windows.Visibility]::Collapsed)
         Set-ActiveStepsVariablesPane $stepsVariablesTabControl
-        $global:derivedStepVariables = @{}
         $global:conditionDataContext = @{}
     }
 
@@ -2719,7 +3178,7 @@ $domainsListBox.Add_SelectionChanged({
         try {
             Sync-DomainSteps
         } catch {
-            New-Advisory "Domain selection handler failed: $($_.Exception.Message)"
+            New-Advisory "Domain selection handler failed: $($_.Exception.Message)" -Failure
         }
     }.GetNewClosure())
 
@@ -2729,7 +3188,8 @@ $domainsListBox.Add_SelectionChanged({
 # plain string, not a ListBoxItem -- see Import-ExtractedSddcDataFile) is deliberately not treated
 # as a real selection here.
 function Sync-AdditionalClusterSteps {
-    $additionalClusterRecoveryStepsListBox.Items.Clear()
+    $additionalClusterRecoveryPlanStepsListBox.Items.Clear()
+    $additionalClusterRecoveryManualStepsListBox.Items.Clear()
     $variablesItemsPanel.Children.Clear()
     $loadedVariablesTextBlock.Text = 'No variables loaded yet.'
     $global:additionalClusterRecoverySteps = @()
@@ -2746,15 +3206,14 @@ function Sync-AdditionalClusterSteps {
         if ($null -ne $domainsListBox.SelectedItem) {
             $domainsListBox.SelectedItem = $null
         }
-        $additionalClusterRecoveryPanel.Visibility = [System.Windows.Visibility]::Visible
-        $global:additionalClusterRecoverySteps = Get-RecoveryPlanSteps 'ibr' 'additional-cluster-recovery-plan.json'
+        Set-AdditionalClusterRecoveryPanelsVisibility ([System.Windows.Visibility]::Visible)
+        $planEntry = Get-CurrentRecoveryPlanEntry
+        if ($planEntry) {
+            $global:additionalClusterRecoverySteps = Get-RecoveryPlanSteps $planEntry.planFolder $planEntry.planFile
+        }
         # See the matching comment in Sync-DomainSteps -- $selected.Tag here is the cluster
         # PSCustomObject built in Import-ExtractedSddcDataFile, not a raw domain object, so no
         # isDefault lookup is needed: this row already IS the one cluster in question.
-        $global:derivedStepVariables = @{
-            isStretched          = [string]$selected.Tag.IsStretched
-            primaryDatastoreType = [string]$selected.Tag.PrimaryDatastoreType
-        }
         # Normalized to the same camelCase shape Sync-DomainSteps builds -- the synthesized
         # additional-cluster summary object (built in Import-ExtractedSddcDataFile) uses PascalCase
         # property names, which would otherwise make a "dataPath" condition's path depend on which
@@ -2769,9 +3228,15 @@ function Sync-AdditionalClusterSteps {
                 domainName           = $selected.Tag.DomainName
             }
         }
+
+        # $workloadDomain/$clusterName are selection-driven, exactly like $extractedSDDCDataFile is
+        # Data-Source-driven (see Set-ExportedSDDCDataFilePath's own call site) -- the operator never
+        # types them, and Import-RecoveryVariables ignores any left in an answers file so a stale file
+        # can never point these steps at a different domain or cluster than the one highlighted on
+        # screen. An additional-cluster row carries its owning domain, so both come from this one row.
+        Set-SelectedTargetInConsole ([string]$selected.Tag.DomainName) ([string]$selected.Tag.ClusterName)
     } else {
-        $additionalClusterRecoveryPanel.Visibility = [System.Windows.Visibility]::Collapsed
-        $global:derivedStepVariables = @{}
+        Set-AdditionalClusterRecoveryPanelsVisibility ([System.Windows.Visibility]::Collapsed)
         $global:conditionDataContext = @{}
     }
 
@@ -2785,30 +3250,41 @@ $additionalClustersListBox.Add_SelectionChanged({
         try {
             Sync-AdditionalClusterSteps
         } catch {
-            New-Advisory "Additional cluster selection handler failed: $($_.Exception.Message)"
+            New-Advisory "Additional cluster selection handler failed: $($_.Exception.Message)" -Failure
         }
     }.GetNewClosure())
 
-# Dispatcher for the 4 IBR Recovery Scope radios -- called whenever one is checked, and again at the
-# end of Import-ExtractedSddcDataFile (so loading/reloading data after a scope was already picked
-# re-applies its filtering correctly). Owns Discovered Infrastructure's own visibility/content;
+# Dispatcher for every Recovery Plan pick -- called by RecoveryPlanComboBox's own SelectionChanged
+# (once the engineering-mode gate there has let a PENDING plan through, or immediately for a
+# non-pending one), and again at the end of Import-ExtractedSddcDataFile (so loading/reloading data
+# after a plan was already picked re-applies its filtering correctly). Owns Discovered
+# Infrastructure's own visibility/content and Data Source's own permitted-options/visibility;
 # actual Steps/Variables reveal for Workload Domain/Additional Cluster continues to come from their
 # existing SelectionChanged-driven Sync-DomainSteps/Sync-AdditionalClusterSteps (re-triggered here by
-# clearing/rebuilding selection) -- Fleet Component Recovery has no selection to hook at all, so this
-# function reveals its pane directly.
-function Sync-IbrRecoveryScopeSelection {
-    # Reset both MANAGEMENT-only groups unconditionally. Sync-DomainSteps already does this too
-    # whenever it runs (triggered below by clearing domain selection), but Fleet Component Recovery
-    # never triggers Sync-DomainSteps at all (no domain selection involved), so this is the only
-    # place that clears stale Instance/Fleet Components state when navigating away from them.
+# clearing/rebuilding selection) -- Fleet Component Recovery and Recover Fleet (FDR) have no
+# selection to hook at all, so this function reveals their panes directly. Folds in what used to be
+# three separate places (this function, the old FdrRecoveryTypeRadio Checked handler, and the
+# recoverFleet-clearing half of the old IbrRecoveryTypeRadio Checked handler) now that all five
+# plans -- including Recover Fleet -- are just catalog entries picked from the same one combo.
+function Sync-RecoveryPlanSelection {
+    # Reset both MANAGEMENT-only groups unconditionally, same reasoning as Sync-DomainSteps's own
+    # identical reset: whichever plan was previously active (including Recover Fleet, which has no
+    # selection of its own to trigger Sync-DomainSteps's copy of this) might have left stale rows
+    # behind. Recover Fleet's own rows/panel are reset unconditionally too, right below, for the
+    # same reason -- neither $domainsListBox nor $additionalClustersListBox selection changing
+    # (further down) would ever clear those.
     foreach ($group in @($global:instanceComponentsGroup, $global:fleetComponentsGroup)) {
         $group.StepsListBox.Items.Clear()
+        $group.ManualStepsListBox.Items.Clear()
         $group.VariablesItemsPanel.Children.Clear()
         $group.LoadedVariablesText.Text = 'No variables loaded yet.'
         $group.Steps = @()
         $group.StepRows = @()
         $group.AnswersFilePath = $null
+        $group.AnswerMap = $null
     }
+    Set-RecoverFleetPanelsVisibility ([System.Windows.Visibility]::Collapsed)
+    $global:recoverFleetStepRows = Set-PlanStepsListBox $recoverFleetPlanStepsListBox $recoverFleetManualStepsListBox @()
 
     # Clearing selection (rather than leaving stale rows selected under a since-rebuilt list)
     # re-triggers Sync-DomainSteps/Sync-AdditionalClusterSteps, which already reset their own flat
@@ -2816,7 +3292,57 @@ function Sync-IbrRecoveryScopeSelection {
     if ($null -ne $domainsListBox.SelectedItem) { $domainsListBox.SelectedItem = $null }
     if ($null -ne $additionalClustersListBox.SelectedItem) { $additionalClustersListBox.SelectedItem = $null }
 
-    $scope = Get-CurrentIbrRecoveryScope
+    $entry = Get-CurrentRecoveryPlanEntry
+    if (-not $entry) { return }
+
+    # Data Source: hidden entirely for a plan that permits none at all (Recover Fleet, FDR's only
+    # plan -- "FDR should not require a data source") rather than shown with nothing selectable.
+    # Repopulated fresh on every plan change, not just once, since a different plan can permit a
+    # different subset -- only Management Domain Recovery permits Extract SDDC Manager Backup; see
+    # plans/recovery-plan-catalog.json.
+    $permittedDataSourceIds = @($entry.dataSources)
+    $requiresDataSource = $permittedDataSourceIds.Count -gt 0
+    $dataSourceRowPanel.Visibility = if ($requiresDataSource) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
+    if ($requiresDataSource) {
+        # Keeps whatever was already picked if it's still permitted for this plan (e.g. switching
+        # away from Management Domain Recovery and back without ever touching Data Source in
+        # between), rather than always snapping back to the plan's own default.
+        $previouslySelectedId = if ($dataSourceComboBox.SelectedItem) { [string]$dataSourceComboBox.SelectedItem.Tag } else { $null }
+        $dataSourceComboBox.Items.Clear()
+        foreach ($source in @((Get-RecoveryPlanCatalog).dataSources | Where-Object { $permittedDataSourceIds -contains $_.id })) {
+            [void]$dataSourceComboBox.Items.Add((New-RecoveryOptionComboBoxItem $source.label $false ([string]$source.id)))
+        }
+        $wantedId = if ($previouslySelectedId -and ($permittedDataSourceIds -contains $previouslySelectedId)) { $previouslySelectedId } else { [string]$entry.defaultDataSource }
+        $wantedItem = $dataSourceComboBox.Items | Where-Object { $_.Tag -eq $wantedId } | Select-Object -First 1
+        if ($wantedItem) {
+            $dataSourceComboBox.SelectedItem = $wantedItem
+        } elseif ($dataSourceComboBox.Items.Count -gt 0) {
+            $dataSourceComboBox.SelectedIndex = 0
+        }
+    }
+
+    if (-not $requiresDataSource) {
+        # Recover Fleet (FDR): no data source, no discovery, loads immediately -- same as the old
+        # dedicated FdrRecoveryTypeRadio Checked handler this folds in. No variable values are known
+        # yet at this point, so conditional steps fail open (see Test-StepCondition) and show
+        # unconditionally until Load Variables/New Variables File re-filters them for real.
+        $discoveredInfrastructureGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
+        $variablesItemsPanel.Children.Clear()
+        $loadedVariablesTextBlock.Text = 'No variables loaded yet.'
+        $global:conditionDataContext = @{}
+        $global:stepRunStatus = @{}
+        Set-ActiveStepsVariablesPane $stepsVariablesTabControl
+
+        $recoverFleetSteps = Get-ApplicableSteps (Get-RecoveryPlanSteps $entry.planFolder $entry.planFile) @{}
+        $global:recoverFleetStepRows = Set-PlanStepsListBox $recoverFleetPlanStepsListBox $recoverFleetManualStepsListBox $recoverFleetSteps
+        $global:allSteps = @($recoverFleetSteps)
+        Set-RecoverFleetPanelsVisibility ([System.Windows.Visibility]::Visible)
+
+        $stepsVariablesGroupBox.Visibility = [System.Windows.Visibility]::Visible
+        $stepsVariablesTabControl.SelectedIndex = 1   # "Steps"
+        Update-ExecutionVisibility
+        return
+    }
 
     if (-not $global:extractedDataLoaded) {
         $discoveredInfrastructureGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
@@ -2824,12 +3350,12 @@ function Sync-IbrRecoveryScopeSelection {
         return
     }
 
-    if ($scope -eq 'FleetComponent') {
+    if ($entry.target -eq 'FleetComponent') {
         # No discovery/selection step at all -- fleet-component-recovery-plan.json never references
         # $extractedSDDCDataFile, but Data Source is still shown beforehand for flow consistency
-        # across all 4 scopes (a deliberate choice, not an oversight).
+        # across every plan that has one (a deliberate choice, not an oversight).
         $discoveredInfrastructureGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
-        $global:fleetComponentsGroup.Steps = Get-RecoveryPlanSteps 'ibr' 'fleet-component-recovery-plan.json'
+        $global:fleetComponentsGroup.Steps = Get-RecoveryPlanSteps $entry.planFolder $entry.planFile
         Set-ActiveStepsVariablesPane $fleetComponentsVariablesStepsTabControl
         Update-ExecutionVisibility
         return
@@ -2837,21 +3363,21 @@ function Sync-IbrRecoveryScopeSelection {
 
     $discoveredInfrastructureGroupBox.Visibility = [System.Windows.Visibility]::Visible
 
-    if ($scope -eq 'AdditionalCluster') {
+    if ($entry.target -eq 'AdditionalCluster') {
         $workloadDomainsTabItem.Visibility = [System.Windows.Visibility]::Collapsed
         $additionalClustersTabItem.Visibility = [System.Windows.Visibility]::Visible
         $discoveredInfrastructureTabControl.SelectedItem = $additionalClustersTabItem
-        # AdditionalClustersListBox's own contents are unaffected by scope -- already populated by
-        # Import-ExtractedSddcDataFile.
+        # AdditionalClustersListBox's own contents are unaffected by which plan is active --
+        # already populated by Import-ExtractedSddcDataFile.
     } else {
         $additionalClustersTabItem.Visibility = [System.Windows.Visibility]::Collapsed
         $workloadDomainsTabItem.Visibility = [System.Windows.Visibility]::Visible
         $discoveredInfrastructureTabControl.SelectedItem = $workloadDomainsTabItem
-        $workloadDomainsTabItem.Header = if ($scope -eq 'ManagementDomain') { 'Management Domain' } else { 'Workload Domains' }
+        $workloadDomainsTabItem.Header = if ($entry.target -eq 'ManagementDomain') { 'Management Domain' } else { 'Workload Domains' }
 
         $domainsListBox.Items.Clear()
         $filteredDomains = @($global:allDiscoveredDomains | Where-Object {
-                if ($scope -eq 'ManagementDomain') { $_.domainType -eq 'MANAGEMENT' } else { $_.domainType -ne 'MANAGEMENT' }
+                if ($entry.target -eq 'ManagementDomain') { $_.domainType -eq 'MANAGEMENT' } else { $_.domainType -ne 'MANAGEMENT' }
             })
         foreach ($domain in $filteredDomains) {
             $item = New-Object System.Windows.Controls.ListBoxItem
@@ -2861,17 +3387,19 @@ function Sync-IbrRecoveryScopeSelection {
         }
         # There's only ever at most one MANAGEMENT domain -- auto-select it rather than making the
         # user click the sole row in an otherwise-empty-feeling list.
-        if ($scope -eq 'ManagementDomain' -and $domainsListBox.Items.Count -gt 0) {
+        if ($entry.target -eq 'ManagementDomain' -and $domainsListBox.Items.Count -gt 0) {
             $domainsListBox.SelectedIndex = 0
         }
     }
     Update-ExecutionVisibility
 }
 
-$managementDomainRecoveryRadio.Add_Checked({ Sync-IbrRecoveryScopeSelection })
-$fleetComponentRecoveryRadio.Add_Checked({ Sync-IbrRecoveryScopeSelection })
-$workloadDomainRecoveryRadio.Add_Checked({ Sync-IbrRecoveryScopeSelection })
-$additionalClusterRecoveryRadio.Add_Checked({ Sync-IbrRecoveryScopeSelection })
+# Triggers the very first Sync-RecoveryPlanSelection run, now that every function it calls is
+# defined -- the default Recovery Type (IBR, the catalog's first entry) selects its own default
+# plan (Management Domain Recovery) via RecoveryTypeComboBox's own SelectionChanged, which cascades
+# into RecoveryPlanComboBox's, which is what actually runs Sync-RecoveryPlanSelection. This also
+# gives $script:lastSafeRecoveryTypeId/$script:lastSafeRecoveryPlanId their real starting values.
+$recoveryTypeComboBox.SelectedIndex = 0
 
 $runAllDomainRecoveryButton.Add_Click({
         try {
@@ -2882,7 +3410,7 @@ $runAllDomainRecoveryButton.Add_Click({
                 Stop-RunTimer $runTimer
             }.GetNewClosure()
         } catch {
-            New-Advisory "Run All failed: $($_.Exception.Message)"
+            New-Advisory "Run All failed: $($_.Exception.Message)" -Failure
             Set-AllStepButtonsEnabled $true
             Stop-RunTimer $runTimer
         }
@@ -2897,7 +3425,7 @@ $runAllAdditionalClusterRecoveryButton.Add_Click({
                 Stop-RunTimer $runTimer
             }.GetNewClosure()
         } catch {
-            New-Advisory "Run All failed: $($_.Exception.Message)"
+            New-Advisory "Run All failed: $($_.Exception.Message)" -Failure
             Set-AllStepButtonsEnabled $true
             Stop-RunTimer $runTimer
         }
@@ -2912,7 +3440,7 @@ $runAllRecoverFleetButton.Add_Click({
                 Stop-RunTimer $runTimer
             }.GetNewClosure()
         } catch {
-            New-Advisory "Run All failed: $($_.Exception.Message)"
+            New-Advisory "Run All failed: $($_.Exception.Message)" -Failure
             Set-AllStepButtonsEnabled $true
             Stop-RunTimer $runTimer
         }
@@ -2927,7 +3455,7 @@ $runAllInstanceComponentsButton.Add_Click({
                 Stop-RunTimer $runTimer
             }.GetNewClosure()
         } catch {
-            New-Advisory "Run All failed: $($_.Exception.Message)"
+            New-Advisory "Run All failed: $($_.Exception.Message)" -Failure
             Set-AllStepButtonsEnabled $true
             Stop-RunTimer $runTimer
         }
@@ -2942,7 +3470,7 @@ $runAllFleetComponentsButton.Add_Click({
                 Stop-RunTimer $runTimer
             }.GetNewClosure()
         } catch {
-            New-Advisory "Run All failed: $($_.Exception.Message)"
+            New-Advisory "Run All failed: $($_.Exception.Message)" -Failure
             Set-AllStepButtonsEnabled $true
             Stop-RunTimer $runTimer
         }
@@ -2958,11 +3486,19 @@ $exitButton.Add_Click({
         try {
             $allRows = @($global:domainRecoveryStepRows) + @($global:additionalClusterRecoveryStepRows) + @($global:recoverFleetStepRows) +
                 @($global:instanceComponentsGroup.StepRows) + @($global:fleetComponentsGroup.StepRows)
-            $completedCmdlets = @($allRows | Where-Object { $_.Button.Content -eq 'Done' } | ForEach-Object { $_.CmdletName })
+            # Checking PlanButton alone is enough -- PlanButton/ManualButton are always updated
+            # together (see Set-StepButtonsState), so they can never disagree on Content.
+            $completedCmdlets = @($allRows | Where-Object { $_.PlanButton.Content -eq 'Done' } | ForEach-Object { $_.CmdletName })
 
+            $currentPlanEntry = Get-CurrentRecoveryPlanEntry
             $state = [PSCustomObject]@{
                 ExtractedDataFilePath     = $filePathTextBox.Text
-                IbrRecoveryScope          = Get-CurrentIbrRecoveryScope
+                # RecoveryPlanId is the catalog id (e.g. "ManagementDomain", "RecoverFleet") of
+                # whichever plan was selected on the Recovery Plan combo -- see Resume below, which
+                # also still recognizes the older IbrRecoveryScope field name a save from before
+                # this combo-box refactor would have used (the two are the same string values for
+                # every IBR plan, so no migration is needed for those).
+                RecoveryPlanId            = if ($currentPlanEntry) { $currentPlanEntry.id } else { $null }
                 VariablesAnswersFilePaths = [PSCustomObject]@{
                     Shared              = $global:variablesAnswersFilePath
                     InstanceComponents  = $global:instanceComponentsGroup.AnswersFilePath
@@ -2995,7 +3531,7 @@ $exitButton.Add_Click({
 
             $window.Close()
         } catch {
-            New-Advisory "Exit failed: $($_.Exception.Message)"
+            New-Advisory "Exit failed: $($_.Exception.Message)" -Failure
         }
     }.GetNewClosure())
 
@@ -3015,19 +3551,20 @@ $resumeButton.Add_Click({
             $state = Get-Content -Path $dialog.FileName -Raw | ConvertFrom-Json
 
             # Restored BEFORE Import-ExtractedSddcDataFile (which itself calls
-            # Sync-IbrRecoveryScopeSelection once data loads) so that first real filter/populate pass
-            # already uses the correct scope, instead of running once under whatever was checked
-            # before Resume and then a second time once corrected. An older saved state with no
-            # IbrRecoveryScope field, or an unrecognized value, just leaves whatever's currently
-            # checked (the default, Workload Domain Recovery) alone.
-            $scopeRadioByName = @{
-                ManagementDomain = $managementDomainRecoveryRadio
-                FleetComponent   = $fleetComponentRecoveryRadio
-                WorkloadDomain   = $workloadDomainRecoveryRadio
-                AdditionalCluster = $additionalClusterRecoveryRadio
-            }
-            if ($state.IbrRecoveryScope -and $scopeRadioByName.ContainsKey([string]$state.IbrRecoveryScope)) {
-                $scopeRadioByName[[string]$state.IbrRecoveryScope].IsChecked = $true
+            # Sync-RecoveryPlanSelection once data loads) so that first real filter/populate pass
+            # already uses the correct plan, instead of running once under whatever was selected
+            # before Resume and then a second time once corrected. RecoveryPlanId is this refactor's
+            # own field name; IbrRecoveryScope is read as a fallback for a state file saved before
+            # Recovery Type/Plan/Data Source became combo boxes -- same string values for every IBR
+            # plan, so no migration was needed for those. An older/unrecognized value just leaves
+            # whatever's currently selected (the app's own default, Management Domain Recovery)
+            # alone.
+            $savedPlanId = if ($state.RecoveryPlanId) { [string]$state.RecoveryPlanId } elseif ($state.IbrRecoveryScope) { [string]$state.IbrRecoveryScope } else { $null }
+            if ($savedPlanId) {
+                $savedPlanEntry = Get-RecoveryPlanCatalogEntry $savedPlanId
+                if ($savedPlanEntry) {
+                    Select-RecoveryTypeAndPlan ([string]$savedPlanEntry.recoveryType) $savedPlanId
+                }
             }
 
             if ($state.ExtractedDataFilePath) {
@@ -3054,14 +3591,13 @@ $resumeButton.Add_Click({
                 @($global:instanceComponentsGroup.StepRows) + @($global:fleetComponentsGroup.StepRows)
             foreach ($row in $allRows) {
                 if ($completedCmdlets -contains $row.CmdletName) {
-                    $row.Button.Content = 'Done'
-                    $row.Button.Background = [System.Windows.Media.Brushes]::Green
+                    Set-StepButtonsState @($row.PlanButton, $row.ManualButton) 'Done' ([System.Windows.Media.Brushes]::Green)
                 }
             }
 
             New-Advisory "Resumed state from '$($dialog.FileName)'."
         } catch {
-            New-Advisory "Resume failed: $($_.Exception.Message)"
+            New-Advisory "Resume failed: $($_.Exception.Message)" -Failure
         }
     }.GetNewClosure())
 
