@@ -1151,6 +1151,42 @@ Function New-ExtractDataFromSDDCBackup {
         $vspClusters = @()
     }
 
+    #Get vcf_management_component details
+    LogMessage -type INFO -message "[$jumpboxName] Retrieving VCF Management Component Details"
+    #Find the column number for each required element. Future proofed if column number changes
+    $headerLine = ($psqlContent | Select-String -SimpleMatch "COPY public.vcf_management_component" | Select-Object Line).Line
+    $columnHeaders = [regex]::Match($headerLine, '\((.*?)\)').Groups[1].Value
+    $columns = $columnHeaders -split '\s*,\s*'
+    $componentTypeColumn = $columns.IndexOf('component_type')
+    $fqdnColumn = $columns.IndexOf('fqdn')
+    $deploymentTypeColumn = $columns.IndexOf('deployment_type')
+    $deploymentStatusColumn = $columns.IndexOf('deployment_status')
+
+    $vcfManagmentComponentLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.vcf_management_component" | Select-Object Line, LineNumber).LineNumber
+    If ($vcfManagmentComponentLineNumber) {
+        $vcfManagmentComponentLineIndex = $vcfManagmentComponentLineNumber
+        $vcfManagementComponents = @()
+        Do {
+            $lineContent = $psqlContent | Select-Object -Index $vcfManagmentComponentLineIndex
+            If ($lineContent -ne '\.') {
+                $componentType = $lineContent.split("`t")[$componentTypeColumn]
+                $fqdn = $lineContent.split("`t")[$fqdnColumn]
+                $deploymentType = $lineContent.split("`t")[$deploymentTypeColumn]
+                $deploymentStatus = $lineContent.split("`t")[$deploymentStatusColumn]
+                $vcfManagementComponents += [pscustomobject]@{
+                    'componentType'     = $componentType
+                    'fqdn'              = $fqdn
+                    'deploymentType'    = $deploymentType
+                    'deploymentStatus'  = $deploymentStatus
+                }
+            }
+            $vcfManagmentComponentLineIndex++
+        }
+        Until ($lineContent -eq '\.')
+    } else {
+        $vcfManagementComponents = @()
+    }
+
     #Get License Models
     LogMessage -type INFO -message "[$jumpboxName] Retrieving Licensing Models"
     #Find the column number for each required element. Future proofed if column number changes
@@ -1341,6 +1377,7 @@ Function New-ExtractDataFromSDDCBackup {
     $sddcDataObject | Add-Member -notepropertyname 'licenseKeys' -notepropertyvalue $licenseKeys
     $sddcDataObject | Add-Member -notepropertyname 'workloadDomains' -notepropertyvalue $workloadDomains
     $sddcDataObject | Add-Member -notepropertyname 'vspClusters' -notepropertyvalue $vspClusters
+    $sddcDataObject | Add-Member -notepropertyname 'vcfManagementComponents' -notepropertyvalue $vcfManagementComponents
     $sddcDataObject | Add-Member -notepropertyname 'passwords' -notepropertyvalue $passwordVaultObject
     $sddcDataObject | ConvertTo-Json -Depth 10 | Out-File "$parentFolder\extracted-sddc-data.json"
 
