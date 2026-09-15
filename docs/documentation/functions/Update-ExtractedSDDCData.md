@@ -14,6 +14,8 @@ Update-ExtractedSDDCData [-extractedSDDCDataFile] <String> [-sddcManagerFQDN] <S
 
 The `Update-ExtractedSDDCData` cmdlet enriches the `extracted-sddc-data.json` file produced by `New-ExtractDataFromSDDCBackup` with data that is not captured in the SDDC Manager backup. It connects to the specified vCenter, iterates over each workload domain whose vCenter FQDN matches the supplied value, and injects cluster names, primary datastore names, primary datastore storage policy names, and port group names (VM Management, Management, vMotion, vSAN) into the JSON.
 
+When `-vCenterFQDN` resolves to the MANAGEMENT domain, it also records a `managementComponentVMs` section: for the MANAGEMENT vsp cluster, and (only when `FLEET_LCM` is present in `vcfManagementComponents`) the `VCF_OPERATIONS:MASTER` and `VCF_OPERATIONS_CLOUD_PROXY` components plus the CONSUMPTION vsp cluster if one exists, it finds every VM whose name starts with that component's FQDN hostname and records each VM's name, connected port group, vCPU count, and memory (GB).
+
 ## Examples
 
 ### Example 1

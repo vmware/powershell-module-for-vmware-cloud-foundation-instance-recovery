@@ -1400,6 +1400,8 @@ Function Update-ExtractedSDDCData {
     .DESCRIPTION
     The Update-ExtractedSDDCData cmdlet Updates extracted SDDC Data JSON file with detail not caprured in the SDDC manager backup VCF Instance Recovery.
 
+    When -vCenterFQDN resolves to the MANAGEMENT domain, this also records a 'managementComponentVMs' section: for the MANAGEMENT vsp cluster, and (only when 'FLEET_LCM' is present in vcfManagementComponents) the VCF_OPERATIONS:MASTER and VCF_OPERATIONS_CLOUD_PROXY components plus the CONSUMPTION vsp cluster if one exists, it finds every VM whose name starts with that component's FQDN hostname and records each VM's name, connected portgroup, vCPU count, and memory (GB).
+
     .EXAMPLE
     Update-ExtractedSDDCData -extractedSDDCDataFile "".\extracted-sddc-data.json" -sddcManagerFQDN "sfo-vcf01.sfo.rainpole.io" -sddcManagerAdmin "administrator@vsphere.local" -sddcManagerAdminPassword "VMw@re1!VMw@re1!"
 
@@ -1525,6 +1527,73 @@ Function Update-ExtractedSDDCData {
                 $cluster | Add-Member -NotePropertyName "witness" -NotePropertyValue $witnessObject -force
             }
         }
+
+        # Management-component VM inventory: none of this is in the SDDC Manager backup at all (it's
+        # not vCenter/cluster/host inventory data, just fleet/services appliances that happen to run
+        # on the management domain), so it can only be resolved here, against the live, restored
+        # vCenter, exactly like cluster.name above. Gated on the MANAGEMENT domain specifically since
+        # that's where every one of these components (VSP clusters, VCF Operations, VCF Automation)
+        # actually runs.
+        If ($workloadDomain.domainType -eq 'MANAGEMENT') {
+            LogMessage -type INFO -message "[$jumpboxName] Retrieving Management Component VM Details"
+
+            # Every one of these components deploys as one or more VMs whose names all share the
+            # component's own FQDN hostname as a prefix (e.g. a 3-node VSP cluster "sfo-sr01.sfo.
+            # rainpole.io" deploys as VMs "sfo-sr01a"/"sfo-sr01b"/"sfo-sr01c") -- so a hostname-prefix
+            # wildcard match against the live vCenter's VM inventory is what actually finds every node,
+            # not just the one the FQDN happens to resolve to.
+            $managementComponentLookupTargets = @()
+
+            $managementVspCluster = $extractedSddcData.vspClusters | Where-Object { $_.type -eq 'MANAGEMENT' } | Select-Object -First 1
+            if ($managementVspCluster -and $managementVspCluster.primaryFqdn) {
+                $managementComponentLookupTargets += [pscustomobject]@{ 'component' = 'VSP-MANAGEMENT'; 'fqdn' = $managementVspCluster.primaryFqdn }
+            }
+
+            # VCF Operations/Automation and the VCFA (consumption) VSP cluster are only present at all
+            # when Fleet Components have actually been deployed -- FLEET_LCM showing up in
+            # vcfManagementComponents is what tells us that (see the matching "runs Fleet Components"
+            # advisory in the orchestrator UI).
+            $hasFleetLcm = @($extractedSddcData.vcfManagementComponents.componentType) -contains 'FLEET_LCM'
+            If ($hasFleetLcm) {
+                Foreach ($componentType in @('VCF_OPERATIONS:MASTER', 'VCF_OPERATIONS_CLOUD_PROXY')) {
+                    $managementComponent = $extractedSddcData.vcfManagementComponents | Where-Object { $_.componentType -eq $componentType } | Select-Object -First 1
+                    if ($managementComponent -and $managementComponent.fqdn) {
+                        $managementComponentLookupTargets += [pscustomobject]@{ 'component' = $componentType; 'fqdn' = $managementComponent.fqdn }
+                    }
+                }
+
+                $consumptionVspCluster = $extractedSddcData.vspClusters | Where-Object { $_.type -eq 'CONSUMPTION' } | Select-Object -First 1
+                if ($consumptionVspCluster -and $consumptionVspCluster.primaryFqdn) {
+                    $managementComponentLookupTargets += [pscustomobject]@{ 'component' = 'VSP-CONSUMPTION'; 'fqdn' = $consumptionVspCluster.primaryFqdn }
+                }
+            }
+
+            $managementComponentVMs = @()
+            Foreach ($lookupTarget in $managementComponentLookupTargets) {
+                $hostnamePrefix = ($lookupTarget.fqdn -split '\.')[0]
+                LogMessage -type INFO -message "Locating VMs matching hostname prefix '$hostnamePrefix' for $($lookupTarget.component)"
+                $matchingVMs = @(Get-VM -Name "$hostnamePrefix*" -ErrorAction SilentlyContinue)
+                $vmDetails = @()
+                Foreach ($vm in $matchingVMs) {
+                    $portGroup = (Get-NetworkAdapter -VM $vm | Select-Object -First 1).NetworkName
+                    $vmDetails += [pscustomobject]@{
+                        'name'      = $vm.Name
+                        'portGroup' = $portGroup
+                        'numCpu'    = $vm.NumCpu
+                        'memoryGB'  = $vm.MemoryGB
+                    }
+                }
+                $managementComponentVMs += [pscustomobject]@{
+                    'component'      = $lookupTarget.component
+                    'fqdn'           = $lookupTarget.fqdn
+                    'hostnamePrefix' = $hostnamePrefix
+                    'vms'            = $vmDetails
+                }
+            }
+
+            $extractedSddcData | Add-Member -NotePropertyName 'managementComponentVMs' -NotePropertyValue $managementComponentVMs -Force
+        }
+
         Disconnect-VIServer * -confirm:$false
     }
     LogMessage -type INFO -message "[$jumpboxName] Updating Extracted Data"
