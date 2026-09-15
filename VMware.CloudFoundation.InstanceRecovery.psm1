@@ -9811,7 +9811,7 @@ Function Get-VcfmsServicesRuntimeToken {
     )
 
     $jumpboxName = hostname
-    LogMessage -type INFO -message "[$jumpboxName] Requesting VCFMS Services Runtime token from $ServicesRuntimeFqdn"
+    LogMessage -type INFO -message "[$jumpboxName] Requesting Services Runtime token from $ServicesRuntimeFqdn"
 
     $tokenUri = "https://$ServicesRuntimeFqdn/api/v1/identity/token"
     $tokenBody = "grant_type=password&username=$([uri]::EscapeDataString($Username))&password=$([uri]::EscapeDataString($Password))"
