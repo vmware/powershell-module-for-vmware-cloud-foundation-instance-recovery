@@ -7,14 +7,14 @@ Retrieves and displays available backups from a VCFMS Services Runtime instance,
 ## Syntax
 
 ```powershell
-Get-ServicesRuntimeComponentBackups [-ServicesRuntimeFqdn] <String> [-ServicesRuntimePassword] <String> [[-Components] <String[]>] [[-ServicesRuntimeUsername] <String>] [[-VspId] <String>] [<CommonParameters>]
+Get-ServicesRuntimeComponentBackups [-ServicesRuntimeFqdn] <String> [-ServicesRuntimePassword] <String> [[-Components] <String[]>] [[-ServicesRuntimeUsername] <String>] [[-extractedSDDCDataFile] <String>] [<CommonParameters>]
 ```
 
 ## Description
 
 The `Get-ServicesRuntimeComponentBackups` cmdlet queries the VCFMS Services Runtime `GET /api/v1/system/backups` endpoint and returns backup details for the specified component types, sorted by component type and age. Output includes component type, version, backup name, age, and SFTP path.
 
-When `-VspId` is supplied, results are filtered to only those backups whose path contains `/vcf/backups/<VspId>/`. After displaying the results, the cmdlet optionally generates a `restore-payload.json` file containing the latest backup of each component ready for use with `Restore-ServicesRuntimeComponentBackup`.
+When `-extractedSDDCDataFile` is supplied, `-ServicesRuntimeFqdn` is matched against the `primaryFqdn` of the entries in the file's `vspClusters` section to resolve a vsp cluster ID, and results are filtered to only those backups whose path contains `/vcf/backups/<vspClusterID>/`. After displaying the results, the cmdlet optionally generates a `restore-payload.json` file containing the latest backup of each component ready for use with `Restore-ServicesRuntimeComponentBackup`.
 
 ## Examples
 
@@ -47,7 +47,7 @@ Scope results to a specific VSP instance.
 Get-ServicesRuntimeComponentBackups `
     -ServicesRuntimeFqdn     "sfo-sr01.sfo.rainpole.io" `
     -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
-    -VspId                   "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+    -extractedSDDCDataFile   ".\extracted-sddc-data.json"
 ```
 
 ## Parameters
@@ -116,9 +116,9 @@ Accept pipeline input: False
 Accept wildcard characters: False
 ```
 
-### -VspId
+### -extractedSDDCDataFile
 
-When specified, only backups whose path contains `/vcf/backups/<VspId>/` are returned.
+Relative or absolute path to the `extracted-sddc-data.json` file (previously created by `New-ExtractDataFromSDDCBackup`). When specified, `-ServicesRuntimeFqdn` is matched against the `primaryFqdn` of the entries in the file's `vspClusters` section to resolve a vsp cluster ID, and only backups whose path contains `/vcf/backups/<vspClusterID>/` are returned.
 
 ```yaml
 Type: String

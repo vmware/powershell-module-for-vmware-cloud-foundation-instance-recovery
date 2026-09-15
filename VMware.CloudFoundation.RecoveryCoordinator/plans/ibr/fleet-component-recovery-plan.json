@@ -64,7 +64,7 @@
   },
   {
     "description": "Redeploy VCF Management Services (VCFMS)",
-    "commandLine": "New-ServicesRuntime -SddcManagerFqdn $sddcManagerFqdn -SddcManagerUser $sddcManagerUser -SddcManagerPassword $sddcManagerPassword -PlatformFqdn $platformFqdn -InstanceFqdn $instanceFqdn -FleetFqdn $fleetFqdn -SystemUserPassword $systemUserPassword -Ipv4Addresses ($ipv4Addresses.Split(',').Trim()) -Size $size -NetworkMoId $networkMoId -GatewayCidrIpv4 $gatewayCidrIpv4 -ClusterId $clusterId -InternalClusterCidrIpv4 $internalClusterCidrIpv4 -type MANAGEMENT",
+    "commandLine": "New-ServicesRuntime -SddcManagerFqdn $sddcManagerFqdn -SddcManagerUser $sddcManagerUser -SddcManagerPassword $sddcManagerPassword -PlatformFqdn $platformFqdn -InstanceFqdn $instanceFqdn -FleetFqdn $fleetFqdn -SystemUserPassword $systemUserPassword -Ipv4Addresses ($ipv4Addresses.Split(',').Trim()) -Size $size -NetworkMoId $networkMoId -GatewayCidrIpv4 $gatewayCidrIpv4 -extractedSDDCDataFile $extractedSDDCDataFile -InternalClusterCidrIpv4 $internalClusterCidrIpv4 -type MANAGEMENT",
     "displayName": "Create New Services Runtime for VCFMS",
     "condition": [],
     "threadId": "",
@@ -73,7 +73,7 @@
   },
   {
     "description": "Set SFTP Backup Settings on the Redeployed Services Runtime",
-    "commandLine": "Set-ServicesRuntimeSftpBackupSettings -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -ComponentId $vcfmsVspId -SftpHost $sftpHost -SftpUsername $sftpUsername -SftpPassword $sftpPassword -SftpDirectory $sftpDirectory -EncryptionPassphrase $encryptionPassphrase",
+    "commandLine": "Set-ServicesRuntimeSftpBackupSettings -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -extractedSDDCDataFile $extractedSDDCDataFile -SftpHost $sftpHost -SftpUsername $sftpUsername -SftpPassword $sftpPassword -SftpDirectory $sftpDirectory -EncryptionPassphrase $encryptionPassphrase",
     "displayName": "Set VCFMS Services Runtime SFTP Backup Settings",
     "condition": [],
     "threadId": "",
@@ -114,7 +114,7 @@
   },
   {
     "description": "Retrieve a List of Backups for the VCF Management Services (VCFMS)",
-    "commandLine": "Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -VspId $vcfmsVspId -type vcfms",
+    "commandLine": "Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -extractedSDDCDataFile $extractedSDDCDataFile -type vcfms",
     "displayName": "Retrieve VCFMS Backups",
     "condition": [],
     "threadId": "",
@@ -141,7 +141,7 @@
   },
   {
     "description": "Retrieve Backups for Log Management (ops-logs)",
-    "commandLine": "Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -VspId $vcfmsVspId -type opsLogs",
+    "commandLine": "Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -extractedSDDCDataFile $extractedSDDCDataFile -type opsLogs",
     "displayName": "Get Log Management Backups",
     "condition": [],
     "threadId": "",
@@ -195,7 +195,7 @@
   },
   {
     "description": "Redeploy VCF Automation Services Runtime Cluster",
-    "commandLine": "New-ServicesRuntime -SddcManagerFqdn $sddcManagerFqdn -SddcManagerUser $sddcManagerUser -SddcManagerPassword $sddcManagerPassword -PlatformFqdn $platformFqdn -SystemUserPassword $systemUserPassword -Ipv4Addresses ($ipv4Addresses.Split(',').Trim()) -Size $size -NetworkMoId $networkMoId -GatewayCidrIpv4 $gatewayCidrIpv4 -ClusterId $clusterId -InternalClusterCidrIpv4 $internalClusterCidrIpv4 -type CONSUMPTION",
+    "commandLine": "New-ServicesRuntime -SddcManagerFqdn $sddcManagerFqdn -SddcManagerUser $sddcManagerUser -SddcManagerPassword $sddcManagerPassword -PlatformFqdn $platformFqdn -SystemUserPassword $systemUserPassword -Ipv4Addresses ($ipv4Addresses.Split(',').Trim()) -Size $size -NetworkMoId $networkMoId -GatewayCidrIpv4 $gatewayCidrIpv4 -extractedSDDCDataFile $extractedSDDCDataFile -InternalClusterCidrIpv4 $internalClusterCidrIpv4 -type CONSUMPTION",
     "displayName": "Create New VCFA Services Runtime",
     "condition": [],
     "threadId": "",
@@ -204,7 +204,7 @@
   },
   {
     "description": "Set SFTP Backup Settings on the VCF Automation Services Runtime",
-    "commandLine": "Set-ServicesRuntimeSftpBackupSettings -ServicesRuntimeFqdn $vcfaServicesRuntimeFqdn -ServicesRuntimePassword $vcfaServicesRuntimePassword -ComponentId $vcfaVspId -SftpHost $sftpHost -SftpUsername $sftpUsername -SftpPassword $sftpPassword -SftpDirectory $sftpDirectory -EncryptionPassphrase $encryptionPassphrase",
+    "commandLine": "Set-ServicesRuntimeSftpBackupSettings -ServicesRuntimeFqdn $vcfaServicesRuntimeFqdn -ServicesRuntimePassword $vcfaServicesRuntimePassword -extractedSDDCDataFile $extractedSDDCDataFile -SftpHost $sftpHost -SftpUsername $sftpUsername -SftpPassword $sftpPassword -SftpDirectory $sftpDirectory -EncryptionPassphrase $encryptionPassphrase",
     "displayName": "Set VCFA Services Runtime SFTP Backup Settings",
     "condition": [],
     "threadId": "",
@@ -245,7 +245,7 @@
   },
   {
     "description": "Retrieve a List of Backups for the VCF Automation Component",
-    "commandLine": "Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn $vcfaServicesRuntimeFqdn -ServicesRuntimePassword $vcfaServicesRuntimePassword -VspId $vcfaVspId -type vcfa",
+    "commandLine": "Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn $vcfaServicesRuntimeFqdn -ServicesRuntimePassword $vcfaServicesRuntimePassword -extractedSDDCDataFile $extractedSDDCDataFile -type vcfa",
     "displayName": "Retrieve VCF Automation Backups",
     "condition": [],
     "threadId": "",
@@ -263,7 +263,7 @@
   },
   {
     "description": "Retrieve Telemetry Component Backup",
-    "commandLine": "Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -VspId $vcfmsVspId -components telemetry-acceptor",
+    "commandLine": "Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -extractedSDDCDataFile $extractedSDDCDataFile -components telemetry-acceptor",
     "displayName": "Retrieve Telemetry Backups",
     "condition": [],
     "threadId": "",

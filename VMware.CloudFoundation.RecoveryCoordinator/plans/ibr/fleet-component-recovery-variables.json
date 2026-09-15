@@ -26,11 +26,9 @@
   "size": "",
   "networkMoId": "",
   "gatewayCidrIpv4": "",
-  "clusterId": "",
   "internalClusterCidrIpv4": "",
   "vcfmsServicesRuntimeFqdn": "",
   "vcfmsServicesRuntimePassword": "",
-  "vcfmsVspId": "",
   "sftpHost": "",
   "sftpUsername": "",
   "sftpPassword": "",
@@ -38,6 +36,5 @@
   "remoteHostFqdn": "",
   "originalConfigurationFile": "",
   "vcfaServicesRuntimeFqdn": "",
-  "vcfaServicesRuntimePassword": "",
-  "vcfaVspId": ""
+  "vcfaServicesRuntimePassword": ""
 }

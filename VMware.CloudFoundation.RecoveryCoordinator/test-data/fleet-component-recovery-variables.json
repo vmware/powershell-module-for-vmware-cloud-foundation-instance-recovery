@@ -26,11 +26,9 @@
   "size": "small",
   "networkMoId": "dvportgroup-25",
   "gatewayCidrIpv4": "10.11.10.1/24",
-  "clusterId": "59cc7bb0-5436-4880-a710-b11933489dc7",
   "internalClusterCidrIpv4": "198.18.0.0/15",
   "vcfmsServicesRuntimeFqdn": "sfo-sr01.sfo.rainpole.io",
   "vcfmsServicesRuntimePassword": "VMw@re1!VMw@re1!",
-  "vcfmsVspId": "",
   "sftpHost": "10.167.173.134",
   "sftpUsername": "svc-vcf-bck",
   "sftpPassword": "VMw@re1!",
@@ -38,6 +36,5 @@
   "remoteHostFqdn": "sfo-ins01.sfo.rainpole.io",
   "originalConfigurationFile": "F:\\VCFIR\\originalDepotServicesconfig.json",
   "vcfaServicesRuntimeFqdn": "",
-  "vcfaServicesRuntimePassword": "",
-  "vcfaVspId": ""
+  "vcfaServicesRuntimePassword": ""
 }

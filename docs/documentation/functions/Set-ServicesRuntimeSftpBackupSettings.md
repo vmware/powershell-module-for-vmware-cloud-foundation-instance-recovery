@@ -7,12 +7,12 @@ Configures SFTP backup settings on a VCFMS Services Runtime instance.
 ## Syntax
 
 ```powershell
-Set-ServicesRuntimeSftpBackupSettings [-ServicesRuntimeFqdn] <String> [-ServicesRuntimePassword] <String> [-ComponentId] <String> [-SftpHost] <String> [-SftpUsername] <String> [-SftpPassword] <String> [-SftpDirectory] <String> [-EncryptionPassphrase] <String> [[-SftpPort] <String>] [[-SftpFingerprint] <String>] [[-ServicesRuntimeUsername] <String>] [[-PollIntervalSeconds] <Int32>] [<CommonParameters>]
+Set-ServicesRuntimeSftpBackupSettings [-ServicesRuntimeFqdn] <String> [-ServicesRuntimePassword] <String> [-extractedSDDCDataFile] <String> [-SftpHost] <String> [-SftpUsername] <String> [-SftpPassword] <String> [-SftpDirectory] <String> [-EncryptionPassphrase] <String> [[-SftpPort] <String>] [[-SftpFingerprint] <String>] [[-ServicesRuntimeUsername] <String>] [[-PollIntervalSeconds] <Int32>] [<CommonParameters>]
 ```
 
 ## Description
 
-The `Set-ServicesRuntimeSftpBackupSettings` cmdlet applies SFTP backup configuration to the specified VCFMS component via `POST /api/v1/components/{ComponentId}?action=apply`. If `-SftpFingerprint` is not supplied, the SSH host key fingerprint is automatically retrieved from the SFTP server using `ssh-keyscan`.
+The `Set-ServicesRuntimeSftpBackupSettings` cmdlet applies SFTP backup configuration to the specified VCFMS component via `POST /api/v1/components/{ComponentId}?action=apply`. The component ID is resolved by matching `-ServicesRuntimeFqdn` against the `primaryFqdn` of the entries in the `vspClusters` section of `-extractedSDDCDataFile`. If `-SftpFingerprint` is not supplied, the SSH host key fingerprint is automatically retrieved from the SFTP server using `ssh-keyscan`.
 
 ## Examples
 
@@ -24,7 +24,7 @@ Apply SFTP backup configuration with automatic fingerprint retrieval.
 Set-ServicesRuntimeSftpBackupSettings `
     -ServicesRuntimeFqdn     "sfo-sr01.sfo.rainpole.io" `
     -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
-    -ComponentId             "1f5c79fe-e3aa-41b1-a5cf-774a6497fa3d" `
+    -extractedSDDCDataFile   ".\extracted-sddc-data.json" `
     -SftpHost                "10.167.173.126" `
     -SftpDirectory           "/media/backups/" `
     -SftpUsername            "svc-vcf-bck" `
@@ -40,7 +40,7 @@ Supply the SFTP fingerprint directly.
 Set-ServicesRuntimeSftpBackupSettings `
     -ServicesRuntimeFqdn     "sfo-sr01.sfo.rainpole.io" `
     -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
-    -ComponentId             "1f5c79fe-e3aa-41b1-a5cf-774a6497fa3d" `
+    -extractedSDDCDataFile   ".\extracted-sddc-data.json" `
     -SftpHost                "10.167.173.126" `
     -SftpDirectory           "/media/backups/" `
     -SftpUsername            "svc-vcf-bck" `
@@ -83,9 +83,9 @@ Accept pipeline input: False
 Accept wildcard characters: False
 ```
 
-### -ComponentId
+### -extractedSDDCDataFile
 
-The component ID (cluster ID) of the VCFMS runtime instance to apply the SFTP settings to.
+Relative or absolute path to the `extracted-sddc-data.json` file (previously created by `New-ExtractDataFromSDDCBackup`). Used to look up the component ID (vsp cluster ID) to apply the SFTP settings to, by matching `-ServicesRuntimeFqdn` against the `primaryFqdn` of the entries in the file's `vspClusters` section.
 
 ```yaml
 Type: String

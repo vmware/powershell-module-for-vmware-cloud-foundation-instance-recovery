@@ -9435,8 +9435,8 @@ Function New-ServicesRuntime {
     .PARAMETER GatewayCidrIpv4
     (ByParameter) Gateway CIDR in IPv4 format (e.g. 10.11.99.1/24).
 
-    .PARAMETER ClusterId
-    (ByParameter) Cluster ID from the original deployment. Must match the original.
+    .PARAMETER extractedSDDCDataFile
+    (ByParameter) Relative or absolute path to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup). Used to look up the cluster ID from the original deployment, by matching -PlatformFqdn against the primaryFqdn of the entries in the file's vspClusters section.
 
     .PARAMETER InternalClusterCidrIpv4
     (ByParameter) Internal cluster CIDR in IPv4 format (e.g. 198.18.0.0/15).
@@ -9491,7 +9491,7 @@ Function New-ServicesRuntime {
         [String] $GatewayCidrIpv4,
 
         [Parameter(Mandatory = $true, ParameterSetName = "ByParameter")]
-        [String] $ClusterId,
+        [String] $extractedSDDCDataFile,
 
         [Parameter(Mandatory = $true, ParameterSetName = "ByParameter")]
         [String] $InternalClusterCidrIpv4,
@@ -9553,6 +9553,17 @@ Function New-ServicesRuntime {
                 return
             }
         }
+
+        # Look up the cluster ID by matching the platform FQDN against the vspClusters section of
+        # the extracted SDDC data, rather than requiring it to be passed directly.
+        $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
+        $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-Json
+        $ClusterId = ($extractedSddcData.vspClusters | Where-Object { $_.primaryFqdn -eq $PlatformFqdn }).vspClusterID
+        if (-not $ClusterId) {
+            LogMessage -type ERROR -message "[$jumpboxName] No vspClusters entry in '$extractedSDDCDataFile' matches PlatformFqdn '$PlatformFqdn'. Aborting."
+            return
+        }
+        LogMessage -type INFO -message "[$jumpboxName] Resolved cluster ID '$ClusterId' for '$PlatformFqdn'"
 
         LogMessage -type INFO -message "[$SddcManagerFqdn] Retrieving management domain ID from /v1/domains"
         try {
@@ -10384,7 +10395,7 @@ Function Set-ServicesRuntimeSftpBackupSettings {
     The Set-ServicesRuntimeSftpBackupSettings cmdlet retrieves the SFTP server's SSH host key fingerprint, then applies SFTP backup configuration to the specified VCFMS component via POST /api/v1/components/{componentId}?action=apply.
 
     .EXAMPLE
-    Set-ServicesRuntimeSftpBackupSettings -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -ComponentId "1f5c79fe-e3aa-41b1-a5cf-774a6497fa3d" -SftpHost "10.167.173.126" -SftpUsername "svc-vcf-bck" -SftpPassword "VMw@re1!" -SftpDirectory "/media/backups/" -EncryptionPassphrase "VMw@re1!VMw@re1!"
+    Set-ServicesRuntimeSftpBackupSettings -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -SftpHost "10.167.173.126" -SftpUsername "svc-vcf-bck" -SftpPassword "VMw@re1!" -SftpDirectory "/media/backups/" -EncryptionPassphrase "VMw@re1!VMw@re1!"
 
     .PARAMETER ServicesRuntimeFqdn
     FQDN of the VCFMS Services Runtime instance.
@@ -10395,8 +10406,8 @@ Function Set-ServicesRuntimeSftpBackupSettings {
     .PARAMETER ServicesRuntimeUsername
     Username for the Services Runtime token. Default is "admin@vsp.local".
 
-    .PARAMETER ComponentId
-    Component ID (cluster ID) to apply the SFTP settings to.
+    .PARAMETER extractedSDDCDataFile
+    Relative or absolute path to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup). Used to look up the component ID (vsp cluster ID) to apply the SFTP settings to, by matching -ServicesRuntimeFqdn against the primaryFqdn of the entries in the file's vspClusters section.
 
     .PARAMETER SftpHost
     IP address or FQDN of the SFTP server.
@@ -10427,7 +10438,7 @@ Function Set-ServicesRuntimeSftpBackupSettings {
         [Parameter(Mandatory = $true)][String] $ServicesRuntimeFqdn,
         [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
         [Parameter(Mandatory = $false)][String] $ServicesRuntimeUsername = "admin@vsp.local",
-        [Parameter(Mandatory = $true)][String] $ComponentId,
+        [Parameter(Mandatory = $true)][String] $extractedSDDCDataFile,
         [Parameter(Mandatory = $true)][String] $SftpHost,
         [Parameter(Mandatory = $false)][String] $SftpPort = "22",
         [Parameter(Mandatory = $true)][String] $SftpUsername,
@@ -10442,6 +10453,17 @@ Function Set-ServicesRuntimeSftpBackupSettings {
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    # Look up the component ID (vsp cluster ID) by matching the Services Runtime FQDN against the
+    # vspClusters section of the extracted SDDC data, rather than requiring it to be passed directly.
+    $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
+    $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-Json
+    $ComponentId = ($extractedSddcData.vspClusters | Where-Object { $_.primaryFqdn -eq $ServicesRuntimeFqdn }).vspClusterID
+    if (-not $ComponentId) {
+        LogMessage -type ERROR -message "[$jumpboxName] No vspClusters entry in '$extractedSDDCDataFile' matches ServicesRuntimeFqdn '$ServicesRuntimeFqdn'. Aborting."
+        return
+    }
+    LogMessage -type INFO -message "[$jumpboxName] Resolved component ID '$ComponentId' for '$ServicesRuntimeFqdn'"
 
     # Retrieve the SFTP fingerprint if not provided
     if (-not $SftpFingerprint) {
@@ -10933,7 +10955,7 @@ Function Get-ServicesRuntimeComponentBackups {
     Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -Type vcfms
 
     .EXAMPLE
-    Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -Type vcfa -VspId "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+    Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -Type vcfa -extractedSDDCDataFile ".\extracted-sddc-data.json"
 
     .PARAMETER ServicesRuntimeFqdn
     FQDN of the Services Runtime instance.
@@ -10954,8 +10976,8 @@ Function Get-ServicesRuntimeComponentBackups {
       opsLogs - ops-logs
     Ignored if -Components is also supplied. Exactly one of -Components or -Type is required.
 
-    .PARAMETER VspId
-    When specified, only backups whose path contains /vcf/backups/<VspId>/ are returned. Use this to scope results to a specific VSP instance when multiple are present in the backup store.
+    .PARAMETER extractedSDDCDataFile
+    Relative or absolute path to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup). When specified, -ServicesRuntimeFqdn is matched against the primaryFqdn of the entries in the file's vspClusters section to resolve a vsp cluster ID, and only backups whose path contains /vcf/backups/<vspClusterID>/ are returned. Use this to scope results to a specific VSP instance when multiple are present in the backup store.
     #>
 
     Param(
@@ -10964,7 +10986,7 @@ Function Get-ServicesRuntimeComponentBackups {
         [Parameter(Mandatory = $false)][String] $ServicesRuntimeUsername = "admin@vsp.local",
         [Parameter(Mandatory = $false)][ValidateSet("vsp", "vcf-fleet-lcm", "vcf-fleet-depot", "vcf-sddc-lcm", "salt", "salt-raas", "vidb", "ops-logs", "vcfms-metrics-store", "vcf-obs-data-platform", "telemetry-acceptor", "vcfa", "vcd-migrator")][String[]] $Components,
         [Parameter(Mandatory = $false)][ValidateSet("vcfms", "vcfa", "opsLogs")][String] $Type,
-        [Parameter(Mandatory = $false)][String] $VspId
+        [Parameter(Mandatory = $false)][String] $extractedSDDCDataFile
     )
 
     $jumpboxName = hostname
@@ -11024,13 +11046,22 @@ Function Get-ServicesRuntimeComponentBackups {
         return
     }
 
-    if ($PSBoundParameters.ContainsKey('VspId')) {
-        $allBackups = @($allBackups | Where-Object { $_.path -match ('/vcf/backups/' + [regex]::Escape($VspId) + '(/|$)') })
-        if ($allBackups.Count -eq 0) {
-            LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] No backups found with VspId '$VspId' in path."
-            return
+    if ($PSBoundParameters.ContainsKey('extractedSDDCDataFile')) {
+        # Look up the vsp cluster ID by matching the Services Runtime FQDN against the vspClusters
+        # section of the extracted SDDC data, rather than requiring it to be passed directly.
+        $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
+        $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-Json
+        $VspId = ($extractedSddcData.vspClusters | Where-Object { $_.primaryFqdn -eq $ServicesRuntimeFqdn }).vspClusterID
+        if (-not $VspId) {
+            LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] No vspClusters entry in '$extractedSDDCDataFile' matches ServicesRuntimeFqdn '$ServicesRuntimeFqdn'. Skipping VspId filtering."
+        } else {
+            $allBackups = @($allBackups | Where-Object { $_.path -match ('/vcf/backups/' + [regex]::Escape($VspId) + '(/|$)') })
+            if ($allBackups.Count -eq 0) {
+                LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] No backups found with VspId '$VspId' in path."
+                return
+            }
+            LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Filtered to $($allBackups.Count) backup(s) matching VspId '$VspId'"
         }
-        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Filtered to $($allBackups.Count) backup(s) matching VspId '$VspId'"
     }
 
     # Parse all backups for the requested component types, normalising the timestamp
@@ -11101,7 +11132,7 @@ Function Get-ServicesRuntimeComponentBackups {
     # When the selection doesn't include vsp (or vcfa) directly, surface the nearest vsp backup
     # alongside each group for reference -- vsp is the platform's own backup and its timing is
     # useful context even when it wasn't explicitly requested. $allBackups is unfiltered by
-    # -Components/-Type (only by -VspId), so vsp entries are available here regardless of
+    # -Components/-Type (only by -extractedSDDCDataFile's resolved VspId), so vsp entries are available here regardless of
     # $resolvedComponents.
     $showVspColumn = ($resolvedComponents -notcontains "vsp") -and ($resolvedComponents -notcontains "vcfa")
     $vspBackups = @()

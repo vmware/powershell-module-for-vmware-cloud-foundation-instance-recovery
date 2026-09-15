@@ -11,7 +11,7 @@ Deploys a new VCF Management Services (VCFMS) runtime instance via the SDDC Mana
 New-ServicesRuntime [-SddcManagerFqdn] <String> [-SddcManagerUser] <String> [-SddcManagerPassword] <String> [-Type] <String> [-JsonFile] <String> [[-PollIntervalSeconds] <Int32>] [<CommonParameters>]
 
 # By individual parameters
-New-ServicesRuntime [-SddcManagerFqdn] <String> [-SddcManagerUser] <String> [-SddcManagerPassword] <String> [-Type] <String> [-PlatformFqdn] <String> [-SystemUserPassword] <String> [-Ipv4Addresses] <String[]> [-Size] <String> [-NetworkMoId] <String> [-GatewayCidrIpv4] <String> [-ClusterId] <String> [-InternalClusterCidrIpv4] <String> [[-InstanceFqdn] <String>] [[-FleetFqdn] <String>] [[-PollIntervalSeconds] <Int32>] [<CommonParameters>]
+New-ServicesRuntime [-SddcManagerFqdn] <String> [-SddcManagerUser] <String> [-SddcManagerPassword] <String> [-Type] <String> [-PlatformFqdn] <String> [-SystemUserPassword] <String> [-Ipv4Addresses] <String[]> [-Size] <String> [-NetworkMoId] <String> [-GatewayCidrIpv4] <String> [-extractedSDDCDataFile] <String> [-InternalClusterCidrIpv4] <String> [[-InstanceFqdn] <String>] [[-FleetFqdn] <String>] [[-PollIntervalSeconds] <Int32>] [<CommonParameters>]
 ```
 
 ## Description
@@ -262,9 +262,9 @@ Accept pipeline input: False
 Accept wildcard characters: False
 ```
 
-### -ClusterId
+### -extractedSDDCDataFile
 
-Cluster ID from the original deployment. Used with the `ByParameter` parameter set.
+Relative or absolute path to the `extracted-sddc-data.json` file (previously created by `New-ExtractDataFromSDDCBackup`). Used to look up the cluster ID from the original deployment, by matching `-PlatformFqdn` against the `primaryFqdn` of the entries in the file's `vspClusters` section. Used with the `ByParameter` parameter set.
 
 ```yaml
 Type: String
