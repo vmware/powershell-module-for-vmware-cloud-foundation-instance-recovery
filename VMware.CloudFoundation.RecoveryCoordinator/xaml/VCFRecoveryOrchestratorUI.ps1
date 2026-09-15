@@ -2577,7 +2577,7 @@ $dataSourceComboBox.Add_SelectionChanged({
 # immediately. Cancelling either prompt aborts without sending anything to the console.
 function Invoke-ExtractSDDCManagerBackup([string]$BackupFilePath) {
     $credentialsDialog = New-Object Microsoft.Win32.OpenFileDialog
-    $credentialsDialog.Filter = 'All files (*.*)|*.*'
+    $credentialsDialog.Filter = 'JSON files (*.json)|*.json|All files (*.*)|*.*'
     $credentialsDialog.Title = 'Select credentials file'
     if ($credentialsDialog.ShowDialog() -ne $true) {
         return
@@ -2609,7 +2609,7 @@ $browseButton.Add_Click({
         $extracting = $dataSourceComboBox.SelectedItem -and ([string]$dataSourceComboBox.SelectedItem.Tag -eq 'ExtractBackup')
         $dialog = New-Object Microsoft.Win32.OpenFileDialog
         if ($extracting) {
-            $dialog.Filter = 'All files (*.*)|*.*'
+            $dialog.Filter = 'Backup files (*.tar.gz)|*.tar.gz|All files (*.*)|*.*'
             $dialog.Title = 'Select backup file'
         } else {
             $dialog.Filter = 'JSON files (*.json)|*.json|All files (*.*)|*.*'
