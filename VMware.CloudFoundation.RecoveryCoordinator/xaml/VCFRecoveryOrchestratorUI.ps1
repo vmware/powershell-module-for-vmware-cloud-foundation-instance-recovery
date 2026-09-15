@@ -2386,6 +2386,9 @@ function Import-ExtractedSddcDataFile([string]$Path) {
         return
     }
 
+    $runsFleetComponents = @($extractedSddcData.vcfManagementComponents.ComponentType) -contains 'FLEET_LCM'
+    New-Advisory "VCF Instance instance runs Fleet Components : $runsFleetComponents"
+
     # Cached raw/unfiltered -- Sync-RecoveryPlanSelection (called at the end of this function, and
     # again whenever the selected Recovery Plan changes) re-filters this into $domainsListBox
     # itself (MANAGEMENT-only for Management Domain Recovery, non-MANAGEMENT for Workload Domain
