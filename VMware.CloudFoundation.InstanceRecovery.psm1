@@ -9550,7 +9550,7 @@ Function New-ServicesRuntime {
     # Display the payload for verification (password redacted)
     $displayBody = $requestBody -replace '"systemUserPassword"\s*:\s*"[^"]*"', '"systemUserPassword": "***"'
     Write-Host ""
-    Write-Host " VCFMS Runtime Deployment Payload:" -ForegroundColor Cyan
+    Write-Host " Services Runtime Deployment Payload:" -ForegroundColor Cyan
     Write-Host $displayBody
     Write-Host ""
 
@@ -9560,17 +9560,17 @@ Function New-ServicesRuntime {
     } Until ($confirmation -in @("Y", "y", "N", "n"))
 
     if ($confirmation -in @("N", "n")) {
-        LogMessage -type INFO -message "[$SddcManagerFqdn] VCFMS runtime deployment cancelled by user."
+        LogMessage -type INFO -message "[$SddcManagerFqdn] Services runtime deployment cancelled by user."
         return
     }
 
     $vspClustersUri = "https://$SddcManagerFqdn/v1/vsp-clusters"
-    LogMessage -type INFO -message "[$SddcManagerFqdn] Submitting VCFMS runtime deployment to POST /v1/vsp-clusters"
+    LogMessage -type INFO -message "[$SddcManagerFqdn] Submitting Services runtime deployment to POST /v1/vsp-clusters"
 
     try {
         $response = Invoke-RestMethod -Uri $vspClustersUri -Method POST -Headers $headers -Body $requestBody -SkipCertificateCheck
     } catch {
-        LogMessage -type ERROR -message "[$SddcManagerFqdn] VCFMS deployment request failed: $($_.Exception.Message)"
+        LogMessage -type ERROR -message "[$SddcManagerFqdn] Services runtime deployment request failed: $($_.Exception.Message)"
         if ($_.Exception.Response) {
             try {
                 $errorStream = $_.Exception.Response.GetResponseStream()
@@ -9593,7 +9593,7 @@ Function New-ServicesRuntime {
         return $response
     }
 
-    LogMessage -type INFO -message "[$SddcManagerFqdn] VCFMS deployment task submitted: $taskId"
+    LogMessage -type INFO -message "[$SddcManagerFqdn] Services runtime deployment task submitted: $taskId"
     LogMessage -type INFO -message "[$SddcManagerFqdn] Polling task status every $PollIntervalSeconds seconds"
 
     # Poll the task until completion
@@ -9616,9 +9616,9 @@ Function New-ServicesRuntime {
     } While ($taskStatus -in @("IN_PROGRESS", "IN PROGRESS", "PENDING", "RUNNING", "Pending", "Running"))
 
     if ($taskStatus -in @("SUCCESSFUL", "SUCCESS", "COMPLETED", "Succeeded")) {
-        LogMessage -type INFO -message "[$SddcManagerFqdn] VCFMS runtime deployment completed successfully"
+        LogMessage -type INFO -message "[$SddcManagerFqdn] Services runtime deployment completed successfully"
     } else {
-        LogMessage -type ERROR -message "[$SddcManagerFqdn] VCFMS runtime deployment ended with status: $taskStatus"
+        LogMessage -type ERROR -message "[$SddcManagerFqdn] Services runtime deployment ended with status: $taskStatus"
 
         $errorDetailsFound = $false
 
