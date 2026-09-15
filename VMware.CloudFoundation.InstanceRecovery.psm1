@@ -1112,6 +1112,45 @@ Function New-ExtractDataFromSDDCBackup {
     }
     Until ($lineContent -eq '\.')
 
+    #Get VSP Cluster Details (VCF Automation / Operations fleet management clusters)
+    LogMessage -type INFO -message "[$jumpboxName] Retrieving VSP Cluster Details"
+    #Find the column number for each required element. Future proofed if column number changes
+    $headerLine = ($psqlContent | Select-String -SimpleMatch "COPY public.vsp_cluster (id" | Select-Object Line).Line
+    $columnHeaders = [regex]::Match($headerLine, '\((.*?)\)').Groups[1].Value
+    $columns = $columnHeaders -split '\s*,\s*'
+    $vspClusterIdColumn = $columns.IndexOf('vsp_cluster_id')
+    $vspDomainIdColumn = $columns.IndexOf('domain_id')
+    $vspPrimaryFqdnColumn = $columns.IndexOf('primary_fqdn')
+    $vspTypeColumn = $columns.IndexOf('type')
+
+    $vspClustersLineNumber = ($psqlContent | Select-String -SimpleMatch "COPY public.vsp_cluster (id" | Select-Object Line, LineNumber).LineNumber
+    If ($vspClustersLineNumber) {
+        $vspClustersLineIndex = $vspClustersLineNumber
+        $vspClusters = @()
+        Do {
+            $lineContent = $psqlContent | Select-Object -Index $vspClustersLineIndex
+            If ($lineContent -ne '\.') {
+                $vspClusterId = $lineContent.split("`t")[$vspClusterIdColumn]
+                $vspDomainId = $lineContent.split("`t")[$vspDomainIdColumn]
+                $vspPrimaryFqdn = $lineContent.split("`t")[$vspPrimaryFqdnColumn]
+                $vspType = $lineContent.split("`t")[$vspTypeColumn]
+                $vspPrimaryIp = If (Resolve-DnsName $vspPrimaryFqdn -errorAction SilentlyContinue) { (Resolve-DnsName $vspPrimaryFqdn | Where-Object { $_.section -eq "Answer" }).IPAddress } else { $null }
+                $vspClusters += [pscustomobject]@{
+                    'type'         = $vspType
+                    'vspClusterID' = $vspClusterId
+                    'domainID'     = $vspDomainId
+                    'primaryFqdn'  = $vspPrimaryFqdn
+                    'primaryIp'    = $vspPrimaryIp
+                }
+                If ($vspPrimaryIp -eq $null) { LogMessage -type WARNING -message "DNS Resolution for $vspPrimaryFqdn failed, please correct and retry" }
+            }
+            $vspClustersLineIndex++
+        }
+        Until ($lineContent -eq '\.')
+    } else {
+        $vspClusters = @()
+    }
+
     #Get License Models
     LogMessage -type INFO -message "[$jumpboxName] Retrieving Licensing Models"
     #Find the column number for each required element. Future proofed if column number changes
@@ -1301,6 +1340,7 @@ Function New-ExtractDataFromSDDCBackup {
     $sddcDataObject | Add-Member -notepropertyname 'mgmtDomainInfrastructure' -notepropertyvalue $mgmtDomainInfrastructure
     $sddcDataObject | Add-Member -notepropertyname 'licenseKeys' -notepropertyvalue $licenseKeys
     $sddcDataObject | Add-Member -notepropertyname 'workloadDomains' -notepropertyvalue $workloadDomains
+    $sddcDataObject | Add-Member -notepropertyname 'vspClusters' -notepropertyvalue $vspClusters
     $sddcDataObject | Add-Member -notepropertyname 'passwords' -notepropertyvalue $passwordVaultObject
     $sddcDataObject | ConvertTo-Json -Depth 10 | Out-File "$parentFolder\extracted-sddc-data.json"
 
