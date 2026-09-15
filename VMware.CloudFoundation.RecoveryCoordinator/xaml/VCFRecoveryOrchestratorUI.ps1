@@ -1853,7 +1853,25 @@ function Invoke-Step($Buttons, [string]$CmdletName, [string]$CommandLine, [scrip
     }
     Lock-ElementSelection
     Set-StepButtonsState $Buttons 'Running' ([System.Windows.Media.Brushes]::Orange)
-    Add-StepWatch $Buttons $CmdletName $OnStepComplete $Console $Id
+    # Update-ExtractedSDDCData resolves the default cluster's name (and other live-vCenter-derived
+    # fields) and writes it back to disk -- see Update-SelectedClusterNameFromDisk's own comment for
+    # why that needs a re-push into the console rather than staying stale for the rest of the run.
+    # Wrapped around $OnStepComplete (rather than a second, independent Add-StepWatch/CmdletName
+    # match) so it fires exactly once, in the same clean-vs-failed branch every other step's own
+    # completion already goes through, and can't race the chain's next step being sent.
+    $effectiveOnStepComplete = $OnStepComplete
+    if ($CmdletName -eq 'Update-ExtractedSDDCData') {
+        $effectiveOnStepComplete = {
+            param($isClean)
+            if ($isClean) {
+                Update-SelectedClusterNameFromDisk
+            }
+            if ($OnStepComplete) {
+                & $OnStepComplete $isClean
+            }
+        }.GetNewClosure()
+    }
+    Add-StepWatch $Buttons $CmdletName $effectiveOnStepComplete $Console $Id
     if ($Interactive) {
         $consoleTabControl.SelectedItem = $Console.TabItem
         Set-ConsoleFocus
@@ -2913,6 +2931,56 @@ function Set-SelectedTargetInConsole([string]$WorkloadDomain, [string]$ClusterNa
     }
     if ($cmdArgs.Count -eq 0) { return }
     Send-ToConsole "Set-SelectedRecoveryTarget $($cmdArgs -join ' ')"
+}
+
+# Update-ExtractedSDDCData resolves cluster.name (and other live-vCenter-derived fields) against a
+# real vCenter and writes the result back into $filePathTextBox.Text on disk -- but the UI only ever
+# reads that file into $global:allDiscoveredDomains/$domainsListBox.SelectedItem.Tag once, back when
+# it was loaded via Import-ExtractedSddcDataFile, so $clusterName (pushed into the console at
+# selection time, when the name was still blank) goes stale the moment that step writes a real name.
+# Hooked onto that one cmdlet's own completion in Invoke-Step, rather than requiring every plan that
+# calls it to also carry an extra step re-deriving this -- so it can't be forgotten when a plan
+# changes.
+#
+# Deliberately NOT a full Import-ExtractedSddcDataFile re-run: that clears every Steps/Variables panel
+# and $global:stepRunStatus, which would wipe out the very run this callback fires in the middle of.
+# This only re-reads the file and re-pushes the one thing that actually changed.
+function Update-SelectedClusterNameFromDisk {
+    if (-not $global:extractedDataLoaded -or [string]::IsNullOrWhiteSpace($filePathTextBox.Text)) {
+        return
+    }
+    $selectedItem = $domainsListBox.SelectedItem
+    if ($null -eq $selectedItem -or $null -eq $selectedItem.Tag) {
+        return
+    }
+    $domainName = [string]$selectedItem.Tag.domainName
+    if ([string]::IsNullOrWhiteSpace($domainName)) {
+        return
+    }
+
+    try {
+        $freshData = Get-Content -Path $filePathTextBox.Text -Raw | ConvertFrom-Json
+    } catch {
+        return
+    }
+    $freshDomain = $freshData.workloadDomains | Where-Object { $_.domainName -eq $domainName } | Select-Object -First 1
+    $freshDefaultCluster = $freshDomain.vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' } | Select-Object -First 1
+    if ($null -eq $freshDefaultCluster -or [string]::IsNullOrWhiteSpace($freshDefaultCluster.name)) {
+        return
+    }
+
+    # Tag is a reference into $global:allDiscoveredDomains, not a copy (see Sync-RecoveryPlanSelection),
+    # so updating it here keeps the in-memory data consistent with disk for anything that reads it
+    # later -- including re-selecting this same domain, which wouldn't otherwise refire and re-derive it.
+    $staleDefaultCluster = $selectedItem.Tag.vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' } | Select-Object -First 1
+    if ($staleDefaultCluster) {
+        $staleDefaultCluster.name = $freshDefaultCluster.name
+    }
+    if ($global:conditionDataContext.selectedCluster) {
+        $global:conditionDataContext.selectedCluster.name = $freshDefaultCluster.name
+    }
+
+    Set-SelectedTargetInConsole ([string]$domainName) ([string]$freshDefaultCluster.name)
 }
 
 # Shared by the domain SelectionChanged handler and by switching back to IBR from FDR (see
