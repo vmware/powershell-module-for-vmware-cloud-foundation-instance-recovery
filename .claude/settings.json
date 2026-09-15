@@ -5,7 +5,8 @@
       "Read(//f/PlatformTools/**)",
       "Read(//c/Program Files/PowerShell/Modules/VMware.CloudFoundation.InstanceRecovery/9.1.1.1001/**)",
       "WebFetch(domain:techdocs.broadcom.com)",
-      "Read(//c/Users/Administrator/AppData/Local/Temp/2/claude/c--Users-Administrator-Documents-GitHub-powershell-module-for-vmware-cloud-foundation-instance-recovery/778d0225-7158-4fdd-bc13-48a253d266bb/scratchpad/**)"
+      "Read(//c/Users/Administrator/AppData/Local/Temp/2/claude/c--Users-Administrator-Documents-GitHub-powershell-module-for-vmware-cloud-foundation-instance-recovery/778d0225-7158-4fdd-bc13-48a253d266bb/scratchpad/**)",
+      "Read(//f/VCFIR/current/sddc-manager-backup/vcf-backup-sfo-vcf01-sfo-rainpole-io-2026-09-14-15-52-45/database/**)"
     ],
     "defaultMode": "bypassPermissions",
     "blockReadsOutsideWorkingDirectories": false,
