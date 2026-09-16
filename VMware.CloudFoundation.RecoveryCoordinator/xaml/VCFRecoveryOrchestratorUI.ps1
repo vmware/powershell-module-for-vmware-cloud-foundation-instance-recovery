@@ -1694,6 +1694,28 @@ function Lock-ElementSelection {
     New-Advisory 'Run Started. Navigation to other domains/clusters disabled.'
 }
 
+# Reverses Lock-ElementSelection once a Run Plan/Run All chain has fully finished -- successfully or
+# not -- so the operator is free to pick a different domain/cluster, switch Recovery Type/Recovery
+# Plan/Data Source, or load a new variables file for the next run. Called from every one of the five
+# Run All buttons' -OnChainComplete callback AND their own catch block, alongside
+# Set-AllStepButtonsEnabled $true, rather than from Invoke-StepChain itself -- Invoke-StepChain has no
+# way to tell "this was the outermost call a Run All button made" apart from a recursive call it made
+# to itself partway through a chain.
+#
+# Safe to call unconditionally there: Set-AllStepButtonsEnabled $false disables every Run All button
+# across every panel the instant any one of them starts (see its own comment), so only one chain can
+# ever be in flight at a time -- this can never fire while a different group's chain is still running.
+# Idempotent the same way Lock-ElementSelection is, so it's harmless if a run never actually got as
+# far as locking anything (e.g. an empty StepRows chain resolving immediately).
+function Unlock-ElementSelection {
+    if (-not $global:recoveryRunStarted) {
+        return
+    }
+    $global:recoveryRunStarted = $false
+    $discoveredInfrastructureTabControl.IsEnabled = $true
+    New-Advisory 'Run Finished. Navigation to other domains/clusters re-enabled.'
+}
+
 # Prevents clicking an individual step's own Run button out of sequence while a Run All chain is
 # in progress -- without this, a manual click either injects a second, out-of-order command into
 # whichever console the chain's current step is already using (interleaving both steps' output in
@@ -3536,11 +3558,13 @@ $runAllDomainRecoveryButton.Add_Click({
             $runTimer = Start-RunTimer
             Invoke-StepChain $global:domainRecoveryStepRows -IgnoreThreads:(-not $runAllDomainRecoveryParallelCheckBox.IsChecked) -OnChainComplete {
                 Set-AllStepButtonsEnabled $true
+                Unlock-ElementSelection
                 Stop-RunTimer $runTimer
             }.GetNewClosure()
         } catch {
             New-Advisory "Run All failed: $($_.Exception.Message)" -Failure
             Set-AllStepButtonsEnabled $true
+            Unlock-ElementSelection
             Stop-RunTimer $runTimer
         }
     }.GetNewClosure())
@@ -3551,11 +3575,13 @@ $runAllAdditionalClusterRecoveryButton.Add_Click({
             $runTimer = Start-RunTimer
             Invoke-StepChain $global:additionalClusterRecoveryStepRows -IgnoreThreads:(-not $runAllAdditionalClusterRecoveryParallelCheckBox.IsChecked) -OnChainComplete {
                 Set-AllStepButtonsEnabled $true
+                Unlock-ElementSelection
                 Stop-RunTimer $runTimer
             }.GetNewClosure()
         } catch {
             New-Advisory "Run All failed: $($_.Exception.Message)" -Failure
             Set-AllStepButtonsEnabled $true
+            Unlock-ElementSelection
             Stop-RunTimer $runTimer
         }
     }.GetNewClosure())
@@ -3566,11 +3592,13 @@ $runAllRecoverFleetButton.Add_Click({
             $runTimer = Start-RunTimer
             Invoke-StepChain $global:recoverFleetStepRows -IgnoreThreads:(-not $runAllRecoverFleetParallelCheckBox.IsChecked) -OnChainComplete {
                 Set-AllStepButtonsEnabled $true
+                Unlock-ElementSelection
                 Stop-RunTimer $runTimer
             }.GetNewClosure()
         } catch {
             New-Advisory "Run All failed: $($_.Exception.Message)" -Failure
             Set-AllStepButtonsEnabled $true
+            Unlock-ElementSelection
             Stop-RunTimer $runTimer
         }
     }.GetNewClosure())
@@ -3581,11 +3609,13 @@ $runAllInstanceComponentsButton.Add_Click({
             $runTimer = Start-RunTimer
             Invoke-StepChain $global:instanceComponentsGroup.StepRows -IgnoreThreads:(-not $global:instanceComponentsGroup.ParallelCheckBox.IsChecked) -OnChainComplete {
                 Set-AllStepButtonsEnabled $true
+                Unlock-ElementSelection
                 Stop-RunTimer $runTimer
             }.GetNewClosure()
         } catch {
             New-Advisory "Run All failed: $($_.Exception.Message)" -Failure
             Set-AllStepButtonsEnabled $true
+            Unlock-ElementSelection
             Stop-RunTimer $runTimer
         }
     }.GetNewClosure())
@@ -3596,11 +3626,13 @@ $runAllFleetComponentsButton.Add_Click({
             $runTimer = Start-RunTimer
             Invoke-StepChain $global:fleetComponentsGroup.StepRows -IgnoreThreads:(-not $global:fleetComponentsGroup.ParallelCheckBox.IsChecked) -OnChainComplete {
                 Set-AllStepButtonsEnabled $true
+                Unlock-ElementSelection
                 Stop-RunTimer $runTimer
             }.GetNewClosure()
         } catch {
             New-Advisory "Run All failed: $($_.Exception.Message)" -Failure
             Set-AllStepButtonsEnabled $true
+            Unlock-ElementSelection
             Stop-RunTimer $runTimer
         }
     }.GetNewClosure())
