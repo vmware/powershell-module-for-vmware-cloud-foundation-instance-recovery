@@ -29,6 +29,8 @@
   "internalClusterCidrIpv4": "",
   "vcfmsServicesRuntimeFqdn": "",
   "vcfmsServicesRuntimePassword": "",
+  "KubeconfigPath": "",
+  "BackupYamlDir": "",
   "sftpHost": "",
   "sftpUsername": "",
   "sftpPassword": "",
