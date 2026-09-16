@@ -55,20 +55,20 @@
   },
   {
     "description": "Prepare to Restore VCF Management Services (remove the existing VSP cluster entry)",
-    "commandLine": "Remove-SddcManagerVspClusterEntry -SddcManagerFqdn $sddcManagerFqdn -VcfUserPassword $vcfUserPassword -RootPassword $rootPassword -ClusterType MANAGEMENT",
+    "commandLine": "Remove-SddcManagerVspClusterEntry -SddcManagerFqdn $sddcManagerFqdn -VcfUserPassword $vcfUserPassword -RootPassword $rootPassword -ClusterType MANAGEMENT -autoConfirm",
     "displayName": "Remove VCFMS Services Runtime Cluster Entry",
     "condition": [],
     "threadId": "",
-    "interactive": true,
+    "interactive": false,
     "visible": true
   },
   {
     "description": "Redeploy VCF Management Services (VCFMS)",
-    "commandLine": "New-ServicesRuntime -SddcManagerFqdn $sddcManagerFqdn -SddcManagerUser $sddcManagerUser -SddcManagerPassword $sddcManagerPassword -PlatformFqdn $platformFqdn -InstanceFqdn $instanceFqdn -FleetFqdn $fleetFqdn -SystemUserPassword $systemUserPassword -Ipv4Addresses ($ipv4Addresses.Split(',').Trim()) -Size $size -NetworkMoId $networkMoId -GatewayCidrIpv4 $gatewayCidrIpv4 -extractedSDDCDataFile $extractedSDDCDataFile -InternalClusterCidrIpv4 $internalClusterCidrIpv4 -type MANAGEMENT",
+    "commandLine": "New-ServicesRuntime -SddcManagerFqdn $sddcManagerFqdn -SddcManagerUser $sddcManagerUser -SddcManagerPassword $sddcManagerPassword -PlatformFqdn $platformFqdn -InstanceFqdn $instanceFqdn -FleetFqdn $fleetFqdn -SystemUserPassword $systemUserPassword -Ipv4Addresses ($ipv4Addresses.Split(',').Trim()) -Size $size -NetworkMoId $networkMoId -GatewayCidrIpv4 $gatewayCidrIpv4 -extractedSDDCDataFile $extractedSDDCDataFile -InternalClusterCidrIpv4 $internalClusterCidrIpv4 -type MANAGEMENT -autoConfirm",
     "displayName": "Create New Services Runtime for VCFMS",
     "condition": [],
     "threadId": "",
-    "interactive": true,
+    "interactive": false,
     "visible": true
   },
   {
@@ -123,11 +123,11 @@
   },
   {
     "description": "Restore VCF Management Services (VCFMS)",
-    "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -RestoreJsonFile \".\\vcfms-restore-payload.json\"",
+    "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -RestoreJsonFile \".\\vcfms-restore-payload.json\" -autoConfirm",
     "displayName": "Restore VCFMS Backups",
     "condition": [],
     "threadId": "",
-    "interactive": true,
+    "interactive": false,
     "visible": true
   },
   {
@@ -159,11 +159,11 @@
   },
   {
     "description": "Restore Log Management",
-    "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -RestoreJsonFile \".\\opsLogs-restore-payload.json\"",
+    "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -RestoreJsonFile \".\\opsLogs-restore-payload.json\" -autoConfirm",
     "displayName": "Restore Log Management Backup",
     "condition": [],
     "threadId": "",
-    "interactive": true,
+    "interactive": false,
     "visible": true
   },
   {
@@ -195,20 +195,20 @@
   },
   {
     "description": "Prepare to Restore VCF Automation (remove the existing VSP cluster entry)",
-    "commandLine": "Remove-SddcManagerVspClusterEntry -SddcManagerFqdn $sddcManagerFqdn -VcfUserPassword $vcfUserPassword -RootPassword $rootPassword -ClusterType CONSUMPTION",
+    "commandLine": "Remove-SddcManagerVspClusterEntry -SddcManagerFqdn $sddcManagerFqdn -VcfUserPassword $vcfUserPassword -RootPassword $rootPassword -ClusterType CONSUMPTION -autoConfirm",
     "displayName": "Remove VCFA Services Runtime Cluster Entry",
     "condition": [],
     "threadId": "",
-    "interactive": true,
+    "interactive": false,
     "visible": true
   },
   {
     "description": "Redeploy VCF Automation Services Runtime Cluster",
-    "commandLine": "New-ServicesRuntime -SddcManagerFqdn $sddcManagerFqdn -SddcManagerUser $sddcManagerUser -SddcManagerPassword $sddcManagerPassword -PlatformFqdn $platformFqdn -SystemUserPassword $systemUserPassword -Ipv4Addresses ($ipv4Addresses.Split(',').Trim()) -Size $size -NetworkMoId $networkMoId -GatewayCidrIpv4 $gatewayCidrIpv4 -extractedSDDCDataFile $extractedSDDCDataFile -InternalClusterCidrIpv4 $internalClusterCidrIpv4 -type CONSUMPTION",
+    "commandLine": "New-ServicesRuntime -SddcManagerFqdn $sddcManagerFqdn -SddcManagerUser $sddcManagerUser -SddcManagerPassword $sddcManagerPassword -PlatformFqdn $platformFqdn -SystemUserPassword $systemUserPassword -Ipv4Addresses ($ipv4Addresses.Split(',').Trim()) -Size $size -NetworkMoId $networkMoId -GatewayCidrIpv4 $gatewayCidrIpv4 -extractedSDDCDataFile $extractedSDDCDataFile -InternalClusterCidrIpv4 $internalClusterCidrIpv4 -type CONSUMPTION -autoConfirm",
     "displayName": "Create New VCFA Services Runtime",
     "condition": [],
     "threadId": "",
-    "interactive": true,
+    "interactive": false,
     "visible": true
   },
   {
@@ -263,11 +263,11 @@
   },
   {
     "description": "Restore VCF Automation",
-    "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $vcfaServicesRuntimeFqdn -ServicesRuntimePassword $vcfaServicesRuntimePassword -RestoreJsonFile \".\\vcfa-restore-payload.json\"",
+    "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $vcfaServicesRuntimeFqdn -ServicesRuntimePassword $vcfaServicesRuntimePassword -RestoreJsonFile \".\\vcfa-restore-payload.json\" -autoConfirm",
     "displayName": "Restore VCF Automation Backup",
     "condition": [],
     "threadId": "",
-    "interactive": true,
+    "interactive": false,
     "visible": true
   },
   {
@@ -281,11 +281,11 @@
   },
   {
     "description": "Restore Telemetry",
-    "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -RestoreJsonFile \".\\component-restore-payload.json\"",
+    "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -RestoreJsonFile \".\\component-restore-payload.json\" -autoConfirm",
     "displayName": "Restore Telemetry Backup",
     "condition": [],
     "threadId": "",
-    "interactive": true,
+    "interactive": false,
     "visible": true
   },
   {

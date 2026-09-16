@@ -8541,13 +8541,17 @@ Function Remove-SddcManagerVspClusterEntry {
 
     .PARAMETER ClusterType
     Type of vsp_cluster entry to remove. Valid values are MANAGEMENT or CONSUMPTION.
+
+    .PARAMETER autoConfirm
+    If specified, deletes the proposed vsp_cluster entry without prompting for confirmation.
     #>
 
     Param(
         [Parameter(Mandatory = $true)][String] $SddcManagerFqdn,
         [Parameter(Mandatory = $true)][String] $VcfUserPassword,
         [Parameter(Mandatory = $true)][String] $RootPassword,
-        [Parameter(Mandatory = $true)][ValidateSet("MANAGEMENT", "CONSUMPTION")][String] $ClusterType
+        [Parameter(Mandatory = $true)][ValidateSet("MANAGEMENT", "CONSUMPTION")][String] $ClusterType,
+        [Parameter(Mandatory = $false)][Switch] $autoConfirm
     )
 
     $jumpboxName = hostname
@@ -8615,15 +8619,17 @@ Function Remove-SddcManagerVspClusterEntry {
     Write-Host "   vsp_cluster_id:   $vspClusterId"
     Write-Host "   Credential user:  $credentialUsername"
     Write-Host ""
-    Do {
-        Write-Host " Proceed with deletion? (Y/N): " -ForegroundColor Yellow -NoNewline
-        $confirmation = Read-Host
-    } Until ($confirmation -in @("Y", "y", "N", "n"))
+    if (-not $autoConfirm) {
+        Do {
+            Write-Host " Proceed with deletion? (Y/N): " -ForegroundColor Yellow -NoNewline
+            $confirmation = Read-Host
+        } Until ($confirmation -in @("Y", "y", "N", "n"))
 
-    if ($confirmation -in @("N", "n")) {
-        LogMessage -type INFO -message "[$SddcManagerFqdn] Operation cancelled by user."
-        Remove-SSHSession -SSHSession $sshSession | Out-Null
-        return
+        if ($confirmation -in @("N", "n")) {
+            LogMessage -type INFO -message "[$SddcManagerFqdn] Operation cancelled by user."
+            Remove-SSHSession -SSHSession $sshSession | Out-Null
+            return
+        }
     }
 
     # Delete the entry from vsp_cluster
@@ -9549,6 +9555,9 @@ Function New-ServicesRuntime {
 
     .PARAMETER PollIntervalSeconds
     Interval in seconds to poll the task status. Default is 300 (5 minutes).
+
+    .PARAMETER autoConfirm
+    If specified, submits the proposed deployment payload without prompting for confirmation.
     #>
 
     Param(
@@ -9604,7 +9613,11 @@ Function New-ServicesRuntime {
 
         [Parameter(Mandatory = $false, ParameterSetName = "ByFile")]
         [Parameter(Mandatory = $false, ParameterSetName = "ByParameter")]
-        [Int] $PollIntervalSeconds = 300
+        [Int] $PollIntervalSeconds = 300,
+
+        [Parameter(Mandatory = $false, ParameterSetName = "ByFile")]
+        [Parameter(Mandatory = $false, ParameterSetName = "ByParameter")]
+        [Switch] $autoConfirm
     )
 
     $jumpboxName = hostname
@@ -9712,14 +9725,16 @@ Function New-ServicesRuntime {
     Write-Host $displayBody
     Write-Host ""
 
-    Do {
-        Write-Host " Proceed with deployment? (Y/N): " -ForegroundColor Yellow -NoNewline
-        $confirmation = Read-Host
-    } Until ($confirmation -in @("Y", "y", "N", "n"))
+    if (-not $autoConfirm) {
+        Do {
+            Write-Host " Proceed with deployment? (Y/N): " -ForegroundColor Yellow -NoNewline
+            $confirmation = Read-Host
+        } Until ($confirmation -in @("Y", "y", "N", "n"))
 
-    if ($confirmation -in @("N", "n")) {
-        LogMessage -type INFO -message "[$SddcManagerFqdn] VCFMS runtime deployment cancelled by user."
-        return
+        if ($confirmation -in @("N", "n")) {
+            LogMessage -type INFO -message "[$SddcManagerFqdn] VCFMS runtime deployment cancelled by user."
+            return
+        }
     }
 
     $vspClustersUri = "https://$SddcManagerFqdn/v1/vsp-clusters"
@@ -11514,13 +11529,17 @@ Function Restore-ServicesRuntimeComponentBackup {
     .PARAMETER RestoreJsonFile
     Path to a JSON file containing the restore payload. The file must contain a "components" array with "path" and "point" for each component to restore.
 
+    .PARAMETER autoConfirm
+    If specified, submits the proposed restore payload without prompting for confirmation.
+
     #>
 
     Param(
         [Parameter(Mandatory = $true)][String] $ServicesRuntimeFqdn,
         [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
         [Parameter(Mandatory = $false)][String] $ServicesRuntimeUsername = "admin@vsp.local",
-        [Parameter(Mandatory = $true)][String] $RestoreJsonFile
+        [Parameter(Mandatory = $true)][String] $RestoreJsonFile,
+        [Parameter(Mandatory = $false)][Switch] $autoConfirm
     )
 
     $jumpboxName = hostname
@@ -11561,14 +11580,16 @@ Function Restore-ServicesRuntimeComponentBackup {
     }
     Write-Host ""
 
-    Do {
-        Write-Host " Proceed with restore? (Y/N): " -ForegroundColor Yellow -NoNewline
-        $confirmation = Read-Host
-    } Until ($confirmation -in @("Y", "y", "N", "n"))
+    if (-not $autoConfirm) {
+        Do {
+            Write-Host " Proceed with restore? (Y/N): " -ForegroundColor Yellow -NoNewline
+            $confirmation = Read-Host
+        } Until ($confirmation -in @("Y", "y", "N", "n"))
 
-    if ($confirmation -in @("N", "n")) {
-        LogMessage -type INFO -message "[$jumpboxName] Restore cancelled by user."
-        return
+        if ($confirmation -in @("N", "n")) {
+            LogMessage -type INFO -message "[$jumpboxName] Restore cancelled by user."
+            return
+        }
     }
 
     # Get Services Runtime token
