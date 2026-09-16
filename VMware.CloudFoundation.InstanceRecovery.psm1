@@ -9695,6 +9695,12 @@ Function New-ServicesRuntime {
     .PARAMETER extractedSDDCDataFile
     (ByParameter) Relative or absolute path to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup). Used to look up the cluster ID from the original deployment, by matching -PlatformFqdn against the primaryFqdn of the entries in the file's vspClusters section.
 
+    .PARAMETER opsRegisteredComponentsFile
+    (ByParameter) Relative or absolute path to the opsRegisteredComponentsFile.json file (previously created by Get-OpsRegisteredComponents). Used to look up the cluster ID.
+
+    .PARAMETER clusterId
+    (ByParameter) Explicit clusterId specification
+
     .PARAMETER InternalClusterCidrIpv4
     (ByParameter) Internal cluster CIDR in IPv4 format (e.g. 198.18.0.0/15).
 
@@ -9750,8 +9756,14 @@ Function New-ServicesRuntime {
         [Parameter(Mandatory = $true, ParameterSetName = "ByParameter")]
         [String] $GatewayCidrIpv4,
 
-        [Parameter(Mandatory = $true, ParameterSetName = "ByParameter")]
+        [Parameter(Mandatory = $false, ParameterSetName = "ByParameter")]
         [String] $extractedSDDCDataFile,
+
+        [Parameter(Mandatory = $false, ParameterSetName = "ByParameter")]
+        [String] $opsRegisteredComponentsFile,
+
+        [Parameter(Mandatory = $false, ParameterSetName = "ByParameter")]
+        [String] $clusterId,
 
         [Parameter(Mandatory = $true, ParameterSetName = "ByParameter")]
         [String] $InternalClusterCidrIpv4,
@@ -9821,12 +9833,24 @@ Function New-ServicesRuntime {
 
         # Look up the cluster ID by matching the platform FQDN against the vspClusters section of
         # the extracted SDDC data, rather than requiring it to be passed directly.
-        $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
-        $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-Json
-        $ClusterId = ($extractedSddcData.vspClusters | Where-Object { $_.primaryFqdn -eq $PlatformFqdn }).vspClusterID
+        If (!$clusterId)
+        {
+            If ($extractedSDDCDataFile)
+            {
+                $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
+                $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-Json
+                $ClusterId = ($extractedSddcData.vspClusters | Where-Object { $_.primaryFqdn -eq $PlatformFqdn }).vspClusterID
+            }
+            elseif ($opsRegisteredComponentsFile)
+            {
+                $opsRegisteredComponentsFilePath = (Resolve-Path -Path $opsRegisteredComponentsFile).path
+                $opsRegisteredComponents = Get-Content $opsRegisteredComponentsFilePath | ConvertFrom-Json
+                $ClusterId = $opsRegisteredComponents.vcfa.vspComponentUuid
+            }
+        }
         if (-not $ClusterId) {
-            LogMessage -type ERROR -message "[$jumpboxName] No vspClusters entry in '$extractedSDDCDataFile' matches PlatformFqdn '$PlatformFqdn'. Aborting."
-            return
+        LogMessage -type ERROR -message "[$jumpboxName] No vspClusters entry in '$extractedSDDCDataFile' matches PlatformFqdn '$PlatformFqdn'. Aborting."
+        return
         }
         LogMessage -type INFO -message "[$jumpboxName] Resolved cluster ID '$ClusterId' for '$PlatformFqdn'"
 
