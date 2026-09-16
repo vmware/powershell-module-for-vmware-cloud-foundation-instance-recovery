@@ -18,6 +18,42 @@
     "visible": true
   },
   {
+    "description": "Retrieve a List of Backups for the VCF Management Services (VCFMS)",
+    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -Type vcfms -extractedSDDCDataFile $extractedSDDCDataFile",
+    "displayName": "Retrieve VCFMS Backups",
+    "condition": [],
+    "threadId": "",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Retrieve Backups for Log Management (ops-logs)",
+    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -Type opsLogs -extractedSDDCDataFile $extractedSDDCDataFile",
+    "displayName": "Get Log Management Backups",
+    "condition": [],
+    "threadId": "",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Retrieve a List of Backups for the VCF Automation Component",
+    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -Type vcfa -extractedSDDCDataFile $extractedSDDCDataFile",
+    "displayName": "Retrieve VCF Automation Backups",
+    "condition": [],
+    "threadId": "",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Retrieve Telemetry Component Backup",
+    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -componentNames telemetry-acceptor -extractedSDDCDataFile $extractedSDDCDataFile",
+    "displayName": "Retrieve Telemetry Backups",
+    "condition": [],
+    "threadId": "",
+    "interactive": true,
+    "visible": true
+  },
+  {
     "description": "Retrieve Registered Operations Components",
     "commandLine": "Get-VcfOperationsRegisteredComponents -VcfOperationsFqdn $vcfOperationsFqdn -Username $username -Password $password -AuthSource $authSource",
     "displayName": "Get VCF Operations Registered Components",
@@ -113,15 +149,6 @@
     "visible": true
   },
   {
-    "description": "Retrieve a List of Backups for the VCF Management Services (VCFMS)",
-    "commandLine": "Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -extractedSDDCDataFile $extractedSDDCDataFile -type vcfms",
-    "displayName": "Retrieve VCFMS Backups",
-    "condition": [],
-    "threadId": "",
-    "interactive": true,
-    "visible": true
-  },
-  {
     "description": "Restore VCF Management Services (VCFMS)",
     "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -RestoreJsonFile \".\\vcfms-restore-payload.json\" -autoConfirm",
     "displayName": "Restore VCFMS Backups",
@@ -146,15 +173,6 @@
     "condition": [],
     "threadId": "",
     "interactive": false,
-    "visible": true
-  },
-  {
-    "description": "Retrieve Backups for Log Management (ops-logs)",
-    "commandLine": "Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -extractedSDDCDataFile $extractedSDDCDataFile -type opsLogs",
-    "displayName": "Get Log Management Backups",
-    "condition": [],
-    "threadId": "",
-    "interactive": true,
     "visible": true
   },
   {
@@ -253,30 +271,12 @@
     "visible": true
   },
   {
-    "description": "Retrieve a List of Backups for the VCF Automation Component",
-    "commandLine": "Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn $vcfaServicesRuntimeFqdn -ServicesRuntimePassword $vcfaServicesRuntimePassword -extractedSDDCDataFile $extractedSDDCDataFile -type vcfa",
-    "displayName": "Retrieve VCF Automation Backups",
-    "condition": [],
-    "threadId": "",
-    "interactive": true,
-    "visible": true
-  },
-  {
     "description": "Restore VCF Automation",
     "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $vcfaServicesRuntimeFqdn -ServicesRuntimePassword $vcfaServicesRuntimePassword -RestoreJsonFile \".\\vcfa-restore-payload.json\" -autoConfirm",
     "displayName": "Restore VCF Automation Backup",
     "condition": [],
     "threadId": "",
     "interactive": false,
-    "visible": true
-  },
-  {
-    "description": "Retrieve Telemetry Component Backup",
-    "commandLine": "Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -extractedSDDCDataFile $extractedSDDCDataFile -components telemetry-acceptor",
-    "displayName": "Retrieve Telemetry Backups",
-    "condition": [],
-    "threadId": "",
-    "interactive": true,
     "visible": true
   },
   {
