@@ -9618,6 +9618,7 @@ Function New-ServicesRuntime {
         LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain SDDC Manager token. Aborting."
         return
     }
+    $tokenFetchedAt = [DateTime]::UtcNow
 
     $headers = @{
         "Authorization" = "Bearer $accessToken"
@@ -9760,6 +9761,17 @@ Function New-ServicesRuntime {
         Start-Sleep -Seconds $PollIntervalSeconds
 
         try {
+            if (([DateTime]::UtcNow - $tokenFetchedAt).TotalMinutes -ge 57) {
+                LogMessage -type INFO -message "[$SddcManagerFqdn] Token age >= 57 minutes; refreshing"
+                $newToken = Get-SddcManagerToken -SddcManagerFqdn $SddcManagerFqdn -Username $SddcManagerUser -Password $SddcManagerPassword
+                if ($newToken) {
+                    $accessToken = $newToken
+                    $headers["Authorization"] = "Bearer $accessToken"
+                    $tokenFetchedAt = [DateTime]::UtcNow
+                } else {
+                    LogMessage -type WARNING -message "[$SddcManagerFqdn] Token refresh failed; continuing with existing token"
+                }
+            }
             $taskResponse = Invoke-RestMethod -Uri $taskUri -Method GET -Headers $headers -SkipCertificateCheck
             $taskStatus = $taskResponse.status
             LogMessage -type INFO -message "[$SddcManagerFqdn] Status: $taskStatus"
@@ -9767,7 +9779,9 @@ Function New-ServicesRuntime {
             LogMessage -type WARNING -message "[$SddcManagerFqdn] Error polling task (will retry): $($_.Exception.Message)"
             $newToken = Get-SddcManagerToken -SddcManagerFqdn $SddcManagerFqdn -Username $SddcManagerUser -Password $SddcManagerPassword
             if ($newToken) {
-                $headers["Authorization"] = "Bearer $newToken"
+                $accessToken = $newToken
+                $headers["Authorization"] = "Bearer $accessToken"
+                $tokenFetchedAt = [DateTime]::UtcNow
             }
         }
     } While ($taskStatus -in @("IN_PROGRESS", "IN PROGRESS", "PENDING", "RUNNING", "Pending", "Running"))
