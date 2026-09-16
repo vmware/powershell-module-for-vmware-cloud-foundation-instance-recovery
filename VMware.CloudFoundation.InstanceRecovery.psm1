@@ -11650,9 +11650,12 @@ Function Restore-ServicesRuntimeComponentBackup {
     $taskUri = "https://$ServicesRuntimeFqdn/api/v1/tasks/$taskId"
     $taskStatus = "Running"
     $reportedComponentStatuses = @{}
-    $componentFirstSeenAt = @{}
     $lastStatusLoggedAt = [DateTime]::MinValue
     $lastLoggedStatus = ""
+    # The restoreResults entries returned by this API only carry componentId and status —
+    # no per-component start/end time — so elapsed time is reported against the overall
+    # restore task's own start time instead of a (unmeasurable) per-component duration.
+    $taskStartedAtUtc = $tokenFetchedAt
     Do {
         Start-Sleep -Seconds 60
 
@@ -11670,6 +11673,10 @@ Function Restore-ServicesRuntimeComponentBackup {
             }
             $taskResponse = Invoke-RestMethod -Uri $taskUri -Method GET -Headers $headers -SkipCertificateCheck
             $taskStatus = $taskResponse.status
+            if ($taskResponse.startTime) {
+                $reportedStart = ConvertFrom-VcfmsTaskTimestampToUtc -Timestamp $taskResponse.startTime
+                if ($reportedStart) { $taskStartedAtUtc = $reportedStart }
+            }
             $statusChanged = $taskStatus -ne $lastLoggedStatus
             $quietIntervalElapsed = ([DateTime]::UtcNow - $lastStatusLoggedAt).TotalSeconds -ge 300
             if ($statusChanged -or $quietIntervalElapsed) {
@@ -11685,25 +11692,18 @@ Function Restore-ServicesRuntimeComponentBackup {
                     $cid = $entry.componentId
                     $cStatus = $entry.status
                     if ($cid -and $cStatus) {
-                        if (-not $componentFirstSeenAt.ContainsKey($cid)) {
-                            $componentFirstSeenAt[$cid] = [DateTime]::UtcNow
-                        }
                         $prev = $reportedComponentStatuses[$cid]
                         if ($prev -ne $cStatus) {
                             $cName = if ($componentNameById.ContainsKey($cid)) { $componentNameById[$cid] } else { $cid }
                             $elapsedMsg = ""
                             if ($cStatus -in $terminalComponentStates) {
-                                $span = $null
-                                if ($entry.startTime -and $entry.endTime) {
-                                    $cStart = ConvertFrom-VcfmsTaskTimestampToUtc -Timestamp $entry.startTime
-                                    $cEnd   = ConvertFrom-VcfmsTaskTimestampToUtc -Timestamp $entry.endTime
-                                    if ($cStart -and $cEnd) { $span = $cEnd - $cStart }
-                                }
-                                if (-not $span) {
-                                    $span = [DateTime]::UtcNow - $componentFirstSeenAt[$cid]
-                                }
+                                # This API does not report a per-component start/end time, so this
+                                # reflects how long the overall restore task has been running, not
+                                # this component's own individual duration.
+                                $span = [DateTime]::UtcNow - $taskStartedAtUtc
+                                if ($span -lt [TimeSpan]::Zero) { $span = [TimeSpan]::Zero }
                                 $totalMinutes = ($span.Hours * 60) + $span.Minutes
-                                $elapsedMsg = " in $totalMinutes minutes and $($span.Seconds) seconds"
+                                $elapsedMsg = " ($totalMinutes minutes and $($span.Seconds) seconds since restore started)"
                             }
                             LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Component $cName status: $cStatus$elapsedMsg"
                             $reportedComponentStatuses[$cid] = $cStatus
