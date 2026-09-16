@@ -2301,10 +2301,15 @@ Function Get-BackupsFromSFTPServer {
 
     .DESCRIPTION
     The Get-BackupsFromSFTPServer cmdlet connects to a remote SFTP server and walks the backup folder structure
-    (<sftpServerBackupPath>/<vspId>/<version>/<component>/<subId>/<version>/<dated backup>) to find backups
-    for the specified component types, groups them by backup rank (rank 1 = most recent backup of each component,
-    rank 2 = second most recent, and so on), and lets the user interactively select a backup group. Output includes
+    (<sftpServerBackupPath>/<vspId>/<version>/<component>/<subId>/<version>/<dated backup>) to find backups for the
+    specified component types, sorted into rank-based backup groups (rank 1 = most recent backup of each component,
+    rank 2 = second most recent, and so on), and lets the user interactively select a backup group -- either an
+    entire rank, or (when more than one component is requested) a custom per-component combination. Output includes
     component type, version, backup name, age, and path, mirroring the behaviour of Get-ServicesRuntimeComponentBackups.
+
+    When the requested component list does not include "vsp" or "vcfa", the "Available Backup Groups" table includes
+    an additional "Associated VSP Backup" column showing the vsp backup whose timestamp is closest to each group, for
+    reference when the vsp component itself is not part of the selection.
 
     .EXAMPLE
     Get-BackupsFromSFTPServer -sftpServer "10.50.5.66" -sftpUser svc-bkup-user -sftpPassword "VMw@re1!" -sftpServerBackupPath "/media/backups/vcf/backups" -vspId "e6b2ad0a-b76f-4080-b9db-aa338bacdc64"
@@ -2361,36 +2366,63 @@ Function Get-BackupsFromSFTPServer {
         $sftpSession = New-SFTPSession -ComputerName $sftpServer -Credential $mycreds -KnownHost $inmem
     } Until ($sftpSession)
 
-    # Walk the backup folder structure and parse every backup found for the requested component types
-    $parsedBackups = @()
     $instancePath = "$sftpServerBackupPath/$vspId"
+    $now = Get-Date
 
-    Try {
-        Foreach ($componentName in $componentNames) {
-            LogMessage -type INFO -message "[$sftpServer] Searching for $componentName backups under $instancePath"
+    # Walks <instancePath>/<version>/<ComponentName>/<subId>/<version>/<dated backup> for one component. Takes the
+    # already-listed top-level version folders as a parameter rather than re-listing them per component/probe.
+    function Get-SFTPComponentBackupEntries {
+        Param(
+            [Parameter(Mandatory = $true)][String] $ComponentName,
+            [Parameter(Mandatory = $true)][Object[]] $VersionFolders
+        )
+        $entries = @()
+        Foreach ($versionFolder in $VersionFolders) {
+            $componentPath = "$($versionFolder.FullName)/$ComponentName"
+            If (!(Test-SFTPPath -SessionId $sftpSession.SessionId -Path $componentPath)) { Continue }
 
-            $versionFolders = Get-SFTPChildItem -SessionId $sftpSession.SessionId -Path $instancePath | Where-Object { $_.IsDirectory }
-            Foreach ($versionFolder in $versionFolders) {
-                $componentPath = "$($versionFolder.FullName)/$componentName"
-                If (!(Test-SFTPPath -SessionId $sftpSession.SessionId -Path $componentPath)) { Continue }
-
-                $subIdFolders = Get-SFTPChildItem -SessionId $sftpSession.SessionId -Path $componentPath | Where-Object { $_.IsDirectory }
-                Foreach ($subIdFolder in $subIdFolders) {
-                    $version2Folders = Get-SFTPChildItem -SessionId $sftpSession.SessionId -Path $subIdFolder.FullName | Where-Object { $_.IsDirectory }
-                    Foreach ($version2Folder in $version2Folders) {
-                        $backupFolders = Get-SFTPChildItem -SessionId $sftpSession.SessionId -Path $version2Folder.FullName | Where-Object { $_.IsDirectory }
-                        Foreach ($backupFolder in $backupFolders) {
-                            $parsedBackups += [PSCustomObject]@{
-                                ComponentType = $componentName
-                                Version       = $version2Folder.Name
-                                Name          = $backupFolder.Name
-                                BackupDate    = $backupFolder.LastWriteTime
-                                DaysOld       = [math]::Floor(((Get-Date) - $backupFolder.LastWriteTime).TotalDays)
-                                Path          = $backupFolder.FullName
-                            }
+            $subIdFolders = Get-SFTPChildItem -SessionId $sftpSession.SessionId -Path $componentPath | Where-Object { $_.IsDirectory }
+            Foreach ($subIdFolder in $subIdFolders) {
+                $version2Folders = Get-SFTPChildItem -SessionId $sftpSession.SessionId -Path $subIdFolder.FullName | Where-Object { $_.IsDirectory }
+                Foreach ($version2Folder in $version2Folders) {
+                    $backupFolders = Get-SFTPChildItem -SessionId $sftpSession.SessionId -Path $version2Folder.FullName | Where-Object { $_.IsDirectory }
+                    Foreach ($backupFolder in $backupFolders) {
+                        $entries += [PSCustomObject]@{
+                            ComponentType = $ComponentName
+                            Version       = $version2Folder.Name
+                            Name          = $backupFolder.Name
+                            BackupDate    = $backupFolder.LastWriteTime
+                            Path          = $backupFolder.FullName
                         }
                     }
                 }
+            }
+        }
+        return $entries
+    }
+
+    # Walk the backup folder structure and parse every backup found for the requested component types
+    $parsedBackups = @()
+    $vspBackups = @()
+
+    Try {
+        $versionFolders = @(Get-SFTPChildItem -SessionId $sftpSession.SessionId -Path $instancePath | Where-Object { $_.IsDirectory })
+
+        Foreach ($componentName in $componentNames) {
+            LogMessage -type INFO -message "[$sftpServer] Searching for $componentName backups under $instancePath"
+            $parsedBackups += Get-SFTPComponentBackupEntries -ComponentName $componentName -VersionFolders $versionFolders
+        }
+
+        # When the requested components don't include vsp (or vcfa), also walk the vsp backups purely to correlate
+        # the nearest one against each rank group -- vsp is the platform's own backup and its timing is useful
+        # context even when it wasn't explicitly requested.
+        $showVspColumn = ($componentNames -notcontains "vsp") -and ($componentNames -notcontains "vcfa")
+        if ($showVspColumn) {
+            LogMessage -type INFO -message "[$sftpServer] Searching for vsp backups under $instancePath for correlation"
+            $vspBackups = @(Get-SFTPComponentBackupEntries -ComponentName "vsp" -VersionFolders $versionFolders)
+            if ($vspBackups.Count -eq 0) {
+                LogMessage -type WARNING -message "[$sftpServer] No vsp backups found to correlate with the requested component(s). Associated VSP Backup column will be omitted."
+                $showVspColumn = $false
             }
         }
     } Finally {
@@ -2434,24 +2466,81 @@ Function Get-BackupsFromSFTPServer {
     LogMessage -type INFO -message "[$sftpServer] Found $($parsedBackups.Count) backup(s) across $($groupList.Count) backup group(s)"
 
     # Display numbered list of backup groups
-    Write-Host ""
-    Write-Host " Available Backup Groups" -ForegroundColor Cyan
-    Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
-    Write-Host ("  {0,3}  {1,-25}  {2,-14}  {3}" -f "ID", "Newest Backup (UTC)", "Age", "Components") -ForegroundColor Gray
-    Write-Host ""
+    $isSingleComponent = ($componentNames.Count -eq 1)
 
-    foreach ($group in $groupList) {
-        $newest = $group.Entries | Sort-Object BackupDate -Descending | Select-Object -First 1
-        $ageStr = if ($null -ne $newest.DaysOld) { "$($newest.DaysOld) days ago" } else { "unknown" }
-        $uniqueTypes = @($group.Entries | Select-Object -ExpandProperty ComponentType | Sort-Object -Unique)
-        Write-Host ("  {0,3}  {1,-25}  {2,-14}  {3} ({4})" -f $group.Index, $newest.Name, $ageStr, ($uniqueTypes -join ', '), $uniqueTypes.Count) -ForegroundColor White
+    # Build every row up front so the separator can be sized to the widest row --
+    # the Components column's length varies with how many component types share a group.
+    $headerLine = if ($isSingleComponent) {
+        if ($showVspColumn) {
+            "  {0,3}  {1,-20}  {2,-10}  {3,-26}  {4}" -f "ID", "Backup Points", "Age", "Associated VSP Backup", "Components"
+        } else {
+            "  {0,3}  {1,-20}  {2,-10}  {3}" -f "ID", "Backup Points", "Age", "Components"
+        }
+    } else {
+        if ($showVspColumn) {
+            "  {0,3}  {1,-18}  {2,-16}  {3,-10}  {4,-26}  {5}" -f "ID", "Backup Start", "Backup End", "Age", "Associated VSP Backup", "Components"
+        } else {
+            "  {0,3}  {1,-18}  {2,-16}  {3,-10}  {4}" -f "ID", "Backup Start", "Backup End", "Age", "Components"
+        }
     }
 
-    Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+    $rowLines = [System.Collections.Generic.List[String]]::new()
+    if (-not $isSingleComponent) {
+        if ($showVspColumn) {
+            $rowLines.Add(("  {0,3}  {1,-18}  {2,-16}  {3,-10}  {4,-26}  {5}" -f 0, "Custom", "-", "-", "-", "Choose a backup point per component"))
+        } else {
+            $rowLines.Add(("  {0,3}  {1,-18}  {2,-16}  {3,-10}  {4}" -f 0, "Custom", "-", "-", "Choose a backup point per component"))
+        }
+    }
+
+    foreach ($group in $groupList) {
+        $sortedEntries = $group.Entries | Sort-Object BackupDate -Descending
+        $newest = $sortedEntries | Select-Object -First 1
+        $oldest = $sortedEntries | Select-Object -Last 1
+        $ageSpan = $now - $newest.BackupDate
+        $ageStr = if ($ageSpan.TotalDays -ge 1) { "$([math]::Floor($ageSpan.TotalDays)) Days" } else { "$([math]::Floor($ageSpan.TotalHours)) Hours" }
+        $uniqueTypes = @($group.Entries | Select-Object -ExpandProperty ComponentType | Sort-Object -Unique)
+        $newestStr = $newest.BackupDate.ToString("yyyy-MM-dd HH:mm")
+
+        $vspStr = "-"
+        if ($showVspColumn) {
+            $nearestVsp = $vspBackups | Sort-Object { [math]::Abs(($_.BackupDate - $newest.BackupDate).Ticks) } | Select-Object -First 1
+            if ($nearestVsp) { $vspStr = $nearestVsp.BackupDate.ToString("yyyy-MM-dd HH:mm") }
+        }
+
+        if ($isSingleComponent) {
+            if ($showVspColumn) {
+                $rowLines.Add(("  {0,3}  {1,-20}  {2,-10}  {3,-26}  {4} ({5})" -f $group.Index, $newestStr, $ageStr, $vspStr, ($uniqueTypes -join ', '), $uniqueTypes.Count))
+            } else {
+                $rowLines.Add(("  {0,3}  {1,-20}  {2,-10}  {3} ({4})" -f $group.Index, $newestStr, $ageStr, ($uniqueTypes -join ', '), $uniqueTypes.Count))
+            }
+        } else {
+            $oldestStr = $oldest.BackupDate.ToString("yyyy-MM-dd HH:mm")
+            if ($showVspColumn) {
+                $rowLines.Add(("  {0,3}  {1,-18}  {2,-16}  {3,-10}  {4,-26}  {5} ({6})" -f $group.Index, $oldestStr, $newestStr, $ageStr, $vspStr, ($uniqueTypes -join ', '), $uniqueTypes.Count))
+            } else {
+                $rowLines.Add(("  {0,3}  {1,-18}  {2,-16}  {3,-10}  {4} ({5})" -f $group.Index, $oldestStr, $newestStr, $ageStr, ($uniqueTypes -join ', '), $uniqueTypes.Count))
+            }
+        }
+    }
+
+    $tableWidth = (@($rowLines) + $headerLine | Measure-Object -Property Length -Maximum).Maximum
+    $separator = " " + ("─" * $tableWidth)
+
+    Write-Host ""
+    Write-Host " Available Backup Groups" -ForegroundColor Cyan
+    Write-Host $separator -ForegroundColor Cyan
+    Write-Host $headerLine -ForegroundColor Gray
+    Write-Host ""
+
+    $rowLines | ForEach-Object { Write-Host $_ -ForegroundColor White }
+
+    Write-Host $separator -ForegroundColor Cyan
     Write-Host ""
 
     # User selects a backup group
     $selectedGroup = $null
+    $customMode = $false
     Do {
         Write-Host " Enter the ID of the backup group to use, or C to Cancel: " -ForegroundColor Yellow -NoNewline
         $selection = Read-Host
@@ -2462,23 +2551,79 @@ Function Get-BackupsFromSFTPServer {
             LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
             return
         }
-        $selNum = 0
-        if ([int]::TryParse($selection, [ref]$selNum) -and $selNum -ge 1 -and $selNum -le $groupList.Count) {
+        $selNum = -1
+        if ([int]::TryParse($selection, [ref]$selNum) -and (-not $isSingleComponent) -and $selNum -eq 0) {
+            $customMode = $true
+            $selectedGroup = [PSCustomObject]@{ Index = 0; Entries = @() }
+        } elseif ([int]::TryParse($selection, [ref]$selNum) -and $selNum -ge 1 -and $selNum -le $groupList.Count) {
             $selectedGroup = $groupList | Where-Object { $_.Index -eq $selNum }
         } else {
             Write-Host " Invalid selection. Enter a number between 1 and $($groupList.Count), or C to Cancel." -ForegroundColor Yellow
         }
     } Until ($null -ne $selectedGroup)
 
-    $groupLabel = ($selectedGroup.Entries | Sort-Object BackupDate -Descending | Select-Object -First 1).Name
-    LogMessage -type INFO -message "[$jumpboxName] Selected backup group $($selectedGroup.Index) ($groupLabel)"
+    # Build the final list of chosen entries: either the picked rank group, or a per-component custom selection
+    $finalEntries = @()
+    if ($customMode) {
+        LogMessage -type INFO -message "[$jumpboxName] Building custom backup selection"
+        foreach ($componentType in ($byComponent.Keys | Sort-Object)) {
+            $options = $byComponent[$componentType]
+
+            Write-Host ""
+            Write-Host " Backup points for '$componentType'" -ForegroundColor Cyan
+            Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+            Write-Host ("  {0,3}  {1,-20}  {2,-10}  {3}" -f "ID", "Backup Time", "Age", "Version") -ForegroundColor Gray
+            for ($i = 0; $i -lt $options.Count; $i++) {
+                $opt = $options[$i]
+                $optStr = $opt.BackupDate.ToString("yyyy-MM-dd HH:mm")
+                $optAgeSpan = $now - $opt.BackupDate
+                $optAge = if ($optAgeSpan.TotalDays -ge 1) { "$([math]::Floor($optAgeSpan.TotalDays)) Days" } else { "$([math]::Floor($optAgeSpan.TotalHours)) Hours" }
+                Write-Host ("  {0,3}  {1,-20}  {2,-10}  {3}" -f ($i + 1), $optStr, $optAge, $opt.Version) -ForegroundColor White
+            }
+            Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+
+            $chosenEntry = $null
+            Do {
+                Write-Host " Enter the ID of the backup point to use for '$componentType', or C to Cancel: " -ForegroundColor Yellow -NoNewline
+                $optSelection = Read-Host
+                if ($optSelection -in @("C", "c")) {
+                    LogMessage -type INFO -message "[$jumpboxName] Cancelled by user."
+                    $StopWatch.Stop()
+                    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+                    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+                    return
+                }
+                $optNum = 0
+                if ([int]::TryParse($optSelection, [ref]$optNum) -and $optNum -ge 1 -and $optNum -le $options.Count) {
+                    $chosenEntry = $options[$optNum - 1]
+                } else {
+                    Write-Host " Invalid selection. Enter a number between 1 and $($options.Count), or C to Cancel." -ForegroundColor Yellow
+                }
+            } Until ($null -ne $chosenEntry)
+
+            $finalEntries += $chosenEntry
+        }
+        $groupLabel = "Custom"
+        LogMessage -type INFO -message "[$jumpboxName] Selected custom backup group ($($finalEntries.Count) component(s))"
+    } else {
+        $finalEntries = @($selectedGroup.Entries)
+        $sortedFinalEntries = $finalEntries | Sort-Object BackupDate -Descending
+        $newestFinal = $sortedFinalEntries | Select-Object -First 1
+        $oldestFinal = $sortedFinalEntries | Select-Object -Last 1
+        $newestFinalStr = $newestFinal.BackupDate.ToString("yyyy-MM-dd HH:mm")
+        $oldestFinalStr = $oldestFinal.BackupDate.ToString("yyyy-MM-dd HH:mm")
+        $groupLabel = if ($oldestFinalStr -eq $newestFinalStr) { $newestFinalStr } else { "$oldestFinalStr -> $newestFinalStr" }
+        LogMessage -type INFO -message "[$jumpboxName] Selected backup group $($selectedGroup.Index) ($groupLabel)"
+    }
 
     # Show what is available in the selected backup group
+    $groupTitle = if ($customMode) { "Components in custom backup group" } else { "Components in backup group $($selectedGroup.Index) ($groupLabel)" }
     Write-Host ""
-    Write-Host " Components in backup group $($selectedGroup.Index) ($groupLabel)" -ForegroundColor Cyan
+    Write-Host " $groupTitle" -ForegroundColor Cyan
     Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
-    $selectedGroup.Entries | Sort-Object ComponentType | ForEach-Object {
-        Write-Host ("  {0,-22}  {1,-15}  {2}" -f $_.ComponentType, $_.Version, $_.Path) -ForegroundColor White
+    Write-Host ("  {0,-16}  {1,-18}  {2}" -f "Component", "Version", "Backup Time") -ForegroundColor Gray
+    $finalEntries | Sort-Object BackupDate -Descending | ForEach-Object {
+        Write-Host ("  {0,-16}  {1,-18}  {2}" -f $_.ComponentType, $_.Version, $_.BackupDate.ToString("yyyy-MM-dd HH:mm")) -ForegroundColor White
     }
     Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
     Write-Host ""
@@ -2493,7 +2638,7 @@ Function Get-BackupsFromSFTPServer {
         $sftpUriPrefix = "sftp://$sftpUser@${sftpServer}:22"
         $restoreComponents = @(
             foreach ($componentType in $componentNames) {
-                $entry = $selectedGroup.Entries | Where-Object { $_.ComponentType -eq $componentType } | Select-Object -First 1
+                $entry = $finalEntries | Where-Object { $_.ComponentType -eq $componentType } | Select-Object -First 1
                 if ($entry) { @{ path = "$sftpUriPrefix$($entry.Path)"; point = $entry.Name } }
             }
         )
@@ -2511,7 +2656,7 @@ Function Get-BackupsFromSFTPServer {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
-    Return $selectedGroup.Entries
+    Return $finalEntries
 }
 Export-ModuleMember -Function Get-BackupsFromSFTPServer
 
