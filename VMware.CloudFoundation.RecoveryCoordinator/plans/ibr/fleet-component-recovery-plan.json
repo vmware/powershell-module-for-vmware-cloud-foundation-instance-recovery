@@ -29,7 +29,7 @@
   {
     "description": "Retrieve Backups for Log Management (ops-logs)",
     "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -Type opsLogs -extractedSDDCDataFile $extractedSDDCDataFile",
-    "displayName": "Get Log Management Backups",
+    "displayName": "Retrieve Log Management Backups",
     "condition": [],
     "threadId": "",
     "interactive": true,
