@@ -2311,11 +2311,19 @@ Function Get-BackupsFromSFTPServer {
     an additional "Associated VSP Backup" column showing the vsp backup whose timestamp is closest to each group, for
     reference when the vsp component itself is not part of the selection.
 
+    Exactly one of -vspId or -Type (together with -extractedSDDCDataFile) must be usable to determine the VCF instance
+    to search. -vspId takes precedence if supplied. Otherwise -Type resolves it via the vspClusters section of the
+    extracted SDDC data: vcfa maps to the CONSUMPTION vsp cluster, vcfms and opsLogs both map to the MANAGEMENT vsp
+    cluster (ops-logs backups live on the same fleet management instance as vcf-fleet-lcm/salt/vidb).
+
     .EXAMPLE
     Get-BackupsFromSFTPServer -sftpServer "10.50.5.66" -sftpUser svc-bkup-user -sftpPassword "VMw@re1!" -sftpServerBackupPath "/media/backups/vcf/backups" -vspId "e6b2ad0a-b76f-4080-b9db-aa338bacdc64"
 
     .EXAMPLE
     Get-BackupsFromSFTPServer -sftpServer "10.50.5.66" -sftpUser svc-bkup-user -sftpPassword "VMw@re1!" -sftpServerBackupPath "/media/backups/vcf/backups" -vspId "e6b2ad0a-b76f-4080-b9db-aa338bacdc64" -componentNames "vcf-fleet-lcm","salt-raas"
+
+    .EXAMPLE
+    Get-BackupsFromSFTPServer -sftpServer "10.50.5.66" -sftpUser svc-bkup-user -sftpPassword "VMw@re1!" -sftpServerBackupPath "/media/backups/vcf/backups" -Type vcfa -extractedSDDCDataFile ".\extracted-sddc-data.json"
 
     .PARAMETER sftpServer
     Address of the SFTP server that hosts the VCF Fleet backups
@@ -2331,7 +2339,17 @@ Function Get-BackupsFromSFTPServer {
     does not already end with /vcf/backups, it is appended automatically
 
     .PARAMETER vspId
-    ID of the VCF instance (the top level folder under sftpServerBackupPath) whose backups should be searched
+    ID of the VCF instance (the top level folder under sftpServerBackupPath) whose backups should be searched. Takes
+    precedence over -Type if both are supplied. Exactly one of -vspId or -Type (with -extractedSDDCDataFile) is required.
+
+    .PARAMETER Type
+    Resolves -vspId via the vspClusters section of -extractedSDDCDataFile instead of taking it directly: vcfa resolves
+    the CONSUMPTION vsp cluster, vcfms and opsLogs both resolve the MANAGEMENT vsp cluster. Requires -extractedSDDCDataFile.
+    Ignored if -vspId is also supplied. Exactly one of -vspId or -Type (with -extractedSDDCDataFile) is required.
+
+    .PARAMETER extractedSDDCDataFile
+    Relative or absolute path to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup).
+    Required when -Type is used to resolve -vspId.
 
     .PARAMETER componentNames
     Names of the components to find backups for. Defaults to vcf-fleet-lcm, vcf-fleet-depot, salt-raas, and vidb
@@ -2341,13 +2359,39 @@ Function Get-BackupsFromSFTPServer {
         [Parameter (Mandatory = $true)][String] $sftpUser,
         [Parameter (Mandatory = $true)][String] $sftpPassword,
         [Parameter (Mandatory = $true)][String] $sftpServerBackupPath,
-        [Parameter (Mandatory = $true)][String] $vspId,
+        [Parameter (Mandatory = $false)][String] $vspId,
+        [Parameter (Mandatory = $false)][ValidateSet("vcfa", "vcfms", "opsLogs")][String] $Type,
+        [Parameter (Mandatory = $false)][String] $extractedSDDCDataFile,
         [Parameter (Mandatory = $false)][String[]] $componentNames = @("vcf-fleet-lcm", "vcf-fleet-depot", "salt-raas", "vidb")
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+
+    # -vspId wins if supplied directly. Otherwise -Type (paired with -extractedSDDCDataFile) resolves it via the
+    # vspClusters section of the extracted SDDC data -- vcfa maps to the CONSUMPTION vsp cluster, vcfms and opsLogs
+    # both map to the MANAGEMENT vsp cluster (ops-logs backups live on the same fleet management instance as vcfms).
+    if ($PSBoundParameters.ContainsKey('vspId') -and $vspId) {
+        # Use as supplied.
+    } elseif ($PSBoundParameters.ContainsKey('Type')) {
+        if (-not $PSBoundParameters.ContainsKey('extractedSDDCDataFile')) {
+            LogMessage -type ERROR -message "[$jumpboxName] -extractedSDDCDataFile is required when -Type is used to resolve -vspId."
+            return
+        }
+        $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
+        $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-Json
+        $vspClusterType = if ($Type -eq 'vcfa') { 'CONSUMPTION' } else { 'MANAGEMENT' }
+        $vspId = ($extractedSddcData.vspClusters | Where-Object { $_.type -eq $vspClusterType }).vspClusterID
+        if (-not $vspId) {
+            LogMessage -type ERROR -message "[$jumpboxName] No vspClusters entry of type '$vspClusterType' found in '$extractedSDDCDataFile'. Aborting."
+            return
+        }
+        LogMessage -type INFO -message "[$jumpboxName] Resolved vspId '$vspId' from -Type '$Type' ($vspClusterType) via '$extractedSDDCDataFile'"
+    } else {
+        LogMessage -type ERROR -message "[$jumpboxName] Either -vspId, or -Type together with -extractedSDDCDataFile, must be specified."
+        return
+    }
 
     $sftpServerBackupPath = $sftpServerBackupPath.TrimEnd('/')
     If ($sftpServerBackupPath -notlike "*/vcf/backups") {
