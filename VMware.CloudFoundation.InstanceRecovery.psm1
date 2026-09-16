@@ -3110,9 +3110,9 @@ Function Set-SDDCManagerFDSDepot {
     #Seting Depot URI
     $depotUri = "https://$sddcManagerFqdn/v1/system/settings/depot"
 
-    LogMessage -type INFO -message "[$sddcManagerFqdn] Deleting Existing Depot Configuration"
+    #LogMessage -type INFO -message "[$sddcManagerFqdn] Deleting Existing Depot Configuration"
     #Delete Depot Settings
-    Invoke-RestMethod -Uri $depotUri -Method DELETE -Headers $headers -SkipCertificateCheck *>$null
+    #Invoke-RestMethod -Uri $depotUri -Method DELETE -Headers $headers -SkipCertificateCheck *>$null
 
     #Set services config URI
     $servicesConfigUri = "https://$sddcManagerFqdn/v1/services-config"
