@@ -10061,6 +10061,9 @@ Function Get-VcfOperationsRegisteredComponents {
     A VCF Operations token is obtained automatically via Get-VcfOperationsToken.
 
     .EXAMPLE
+    Get-VcfOperationsRegisteredComponents -VcfOperationsFqdn "flt-ops01a.rainpole.io" -Password "VMw@re1!VMw@re1!"
+
+    .EXAMPLE
     Get-VcfOperationsRegisteredComponents -VcfOperationsFqdn "flt-ops01a.rainpole.io" -Password "VMw@re1!VMw@re1!" -OutputDir "F:\Recovery\"
 
     .EXAMPLE
@@ -10079,7 +10082,7 @@ Function Get-VcfOperationsRegisteredComponents {
     Authentication source for the VCF Operations API. Default is "local".
 
     .PARAMETER OutputDir
-    Path to the location where component-ids-versions.json will be created.
+    Path to the location where component-ids-versions.json will be created. Defaults to the current directory (the folder the command -- or the UI -- was launched from) if not specified.
     #>
 
     Param(
@@ -10087,7 +10090,7 @@ Function Get-VcfOperationsRegisteredComponents {
         [Parameter(Mandatory = $false)][String] $Username = "admin",
         [Parameter(Mandatory = $true)][String] $Password,
         [Parameter(Mandatory = $false)][String] $AuthSource = "local",
-        [Parameter(Mandatory = $true)][String] $OutputDir
+        [Parameter(Mandatory = $false)][String] $OutputDir = "."
     )
 
     $outputFile = (Resolve-Path -Path $OutputDir).path + "\VCFOps-Registered-Component-Details.json"
