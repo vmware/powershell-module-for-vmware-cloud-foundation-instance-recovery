@@ -16122,7 +16122,7 @@ Function Set-ServicesRuntimeScale {
     # states not to proceed with subsequent recovery tasks until this
     # completes, so this loop blocks the caller by design.
     # -------------------------------------------------------------------------
-    $terminalStates = @("Ready", "READY", "Completed", "COMPLETED", "Succeeded", "SUCCEEDED", "Reconciled")
+    $terminalStates = @("Ready", "READY", "Completed", "COMPLETED", "Succeeded", "SUCCEEDED", "Successful", "SUCCESSFUL", "Reconciled")
     $failureStates  = @("Failed", "FAILED", "Error", "ERROR")
     LogMessage -type INFO -message "[$jumpboxName] Monitoring pd/vmsp-platform rollout (polling every ${PollIntervalSeconds}s, timeout ${TimeoutMinutes}m)"
 
