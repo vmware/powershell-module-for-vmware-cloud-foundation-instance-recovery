@@ -3649,7 +3649,14 @@ $exitButton.Add_Click({
                 @($global:instanceComponentsGroup.StepRows) + @($global:fleetComponentsGroup.StepRows)
             # Checking PlanButton alone is enough -- PlanButton/ManualButton are always updated
             # together (see Set-StepButtonsState), so they can never disagree on Content.
-            $completedCmdlets = @($allRows | Where-Object { $_.PlanButton.Content -eq 'Done' } | ForEach-Object { $_.CmdletName })
+            #
+            # Keyed by CommandLine, not CmdletName -- CmdletName is just the first word of
+            # CommandLine (see New-StepRow), which collapses to the same generic value ("Read-Host",
+            # "New-Advisory") for every manual confirmation/advisory step in a plan. Resuming used to
+            # match on CmdletName alone, so completing even ONE "Read-Host" step marked every OTHER
+            # Read-Host step in the plan Done too on the next Resume, whether it had actually run or
+            # not. Full CommandLine text is what's actually unique per step in a real plan file.
+            $completedCommandLines = @($allRows | Where-Object { $_.PlanButton.Content -eq 'Done' } | ForEach-Object { $_.CommandLine })
 
             $currentPlanEntry = Get-CurrentRecoveryPlanEntry
             $state = [PSCustomObject]@{
@@ -3666,7 +3673,7 @@ $exitButton.Add_Click({
                     FleetComponents     = $global:fleetComponentsGroup.AnswersFilePath
                 }
                 SelectedDomainIndex       = $domainsListBox.SelectedIndex
-                CompletedCmdlets          = $completedCmdlets
+                CompletedCommandLines     = $completedCommandLines
             }
 
             $dialog = New-Object Microsoft.Win32.SaveFileDialog
@@ -3747,12 +3754,27 @@ $resumeButton.Add_Click({
                 Import-GroupVariablesAnswersFile $global:fleetComponentsGroup $state.VariablesAnswersFilePaths.FleetComponents
             }
 
-            $completedCmdlets = @($state.CompletedCmdlets)
             $allRows = @($global:domainRecoveryStepRows) + @($global:additionalClusterRecoveryStepRows) + @($global:recoverFleetStepRows) +
                 @($global:instanceComponentsGroup.StepRows) + @($global:fleetComponentsGroup.StepRows)
-            foreach ($row in $allRows) {
-                if ($completedCmdlets -contains $row.CmdletName) {
-                    Set-StepButtonsState @($row.PlanButton, $row.ManualButton) 'Done' ([System.Windows.Media.Brushes]::Green)
+            if ($state.CompletedCommandLines) {
+                # Current format -- see the matching comment on $completedCommandLines in the Exit
+                # handler for why this has to be the full CommandLine, not CmdletName.
+                $completedCommandLines = @($state.CompletedCommandLines)
+                foreach ($row in $allRows) {
+                    if ($completedCommandLines -contains $row.CommandLine) {
+                        Set-StepButtonsState @($row.PlanButton, $row.ManualButton) 'Done' ([System.Windows.Media.Brushes]::Green)
+                    }
+                }
+            } elseif ($state.CompletedCmdlets) {
+                # A save from before CompletedCommandLines existed. CmdletName is the best this old
+                # data can offer -- it still reproduces the old bug of marking every step sharing a
+                # generic CmdletName (every "Read-Host"/"New-Advisory" step) Done together, since the
+                # save file never recorded anything more specific than that.
+                $completedCmdlets = @($state.CompletedCmdlets)
+                foreach ($row in $allRows) {
+                    if ($completedCmdlets -contains $row.CmdletName) {
+                        Set-StepButtonsState @($row.PlanButton, $row.ManualButton) 'Done' ([System.Windows.Media.Brushes]::Green)
+                    }
                 }
             }
 
