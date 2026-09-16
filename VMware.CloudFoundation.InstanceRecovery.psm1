@@ -11572,7 +11572,7 @@ Function Restore-ServicesRuntimeComponentBackup {
     Write-Host " Restore Payload ($($payloadObject.components.Count) component(s)):" -ForegroundColor Cyan
     Write-Host " ----------------------------------------------------------------" -ForegroundColor Cyan
     foreach ($comp in $payloadObject.components) {
-        $componentName = ($comp.path -split '/') | Where-Object { $_ -in @("vsp", "vcf-fleet-lcm", "vcf-fleet-depot", "vcf-sddc-lcm", "salt", "salt-raas", "vidb", "ops-logs", "vcfa") } | Select-Object -First 1
+        $componentName = ($comp.path -split '/') | Where-Object { $_ -in @("vsp", "vcf-fleet-lcm", "vcf-fleet-depot", "vcf-sddc-lcm", "salt", "salt-raas", "vidb", "ops-logs", "vcfms-metrics-store", "vcf-obs-data-platform", "telemetry-acceptor", "vcfa", "vcd-migrator") } | Select-Object -First 1
         if (-not $componentName) { $componentName = "unknown" }
         Write-Host "   $componentName" -ForegroundColor Yellow -NoNewline
         Write-Host " -> point: $($comp.point)" -ForegroundColor White
