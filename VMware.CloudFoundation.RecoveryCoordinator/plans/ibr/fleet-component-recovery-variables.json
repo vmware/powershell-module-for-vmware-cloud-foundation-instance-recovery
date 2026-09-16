@@ -38,5 +38,10 @@
   "remoteHostFqdn": "",
   "originalConfigurationFile": "",
   "vcfaServicesRuntimeFqdn": "",
-  "vcfaServicesRuntimePassword": ""
+  "vcfaServicesRuntimePassword": "",
+  "vcfaIpv4Addresses": "",
+  "vcfaSize": "",
+  "vcfaNetworkMoId": "",
+  "vcfaGatewayCidrIpv4": "",
+  "vcfaInternalClusterCidrIpv4": ""
 }
