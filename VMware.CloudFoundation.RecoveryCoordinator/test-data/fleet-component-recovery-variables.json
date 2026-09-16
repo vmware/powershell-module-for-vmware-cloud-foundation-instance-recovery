@@ -29,6 +29,8 @@
   "internalClusterCidrIpv4": "198.18.0.0/15",
   "vcfmsServicesRuntimeFqdn": "sfo-sr01.sfo.rainpole.io",
   "vcfmsServicesRuntimePassword": "VMw@re1!VMw@re1!",
+  "KubeconfigPath": ".\\backup-yaml\\sfo-sr01.kubeconfig",
+  "BackupYamlDir": ".\\backup-yaml",
   "sftpHost": "10.167.173.134",
   "sftpUsername": "svc-vcf-bck",
   "sftpPassword": "VMw@re1!",

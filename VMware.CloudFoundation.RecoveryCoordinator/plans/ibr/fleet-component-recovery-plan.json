@@ -131,12 +131,21 @@
     "visible": true
   },
   {
-    "description": "Apply Services Runtime Configuration (manual step)",
-    "commandLine": "Read-Host 'Press Enter to confirm Services Runtime Configuration has been applied' | Out-Null; Write-Host 'Completed Task Read-Host'",
-    "displayName": "Confirm Manual Step: VCFMS Services Runtime Configuration has been applied",
+    "description": "Re-extract Runtime Configuration from the Services Runtime Backup and gather kubeconfig",
+    "commandLine": "New-ExtractVcfmsBackup -LocalArchivePath $LocalArchivePath -EncryptionPassphrase $encryptionPassphrase -OutputDir \".\\backup-yaml\" -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword",
+    "displayName": "Gather kubeconfig for VCFMS Services Runtime",
     "condition": [],
     "threadId": "",
-    "interactive": true,
+    "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "Apply Services Runtime Configuration",
+    "commandLine": "Set-ServicesRuntimeScale -KubeconfigPath $KubeconfigPath -BackupYamlDir $BackupYamlDir",
+    "displayName": "Apply Services Runtime Configuration",
+    "condition": [],
+    "threadId": "",
+    "interactive": false,
     "visible": true
   },
   {
