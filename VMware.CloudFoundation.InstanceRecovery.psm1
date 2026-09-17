@@ -208,6 +208,12 @@ Function Import-VCFIRAnswerFile {
     immediately if an answer set runs out of values or supplies one that fails that prompt's own validation, rather than hanging on a
     Read-Host or silently misusing a later answer. Call Clear-VCFIRAnswerFile to return to normal interactive behaviour.
 
+    Confirm-ManualStep is a special case, since it is a manual go/no-go gate confirming real-world work done OUTSIDE this tool, not a
+    configuration choice. Its answer-file entry (key "Confirm-ManualStep") is a single FLAT JSON array of pre-approved AnswerKey
+    strings (e.g. "Confirm-ManualStep": ["vcf-ops-restored", "license-server-redeployed"]), not an array-of-answer-sets like every
+    other entry in this file. Any gate whose -AnswerKey is not listed there always still prompts interactively and blocks for a real
+    Enter press -- by design, unlike every other cmdlet in this file, where a gap in the answer file fails hard instead.
+
     .EXAMPLE
     Import-VCFIRAnswerFile -Path ".\management-domain-answers.json"
 
@@ -313,6 +319,63 @@ Function Confirm-VCFIRAnswer {
         Throw "Answer file supplied invalid value '$Value' for $PromptDescription"
     }
 }
+
+Function Confirm-ManualStep {
+    <#
+    .SYNOPSIS
+    Pauses for operator confirmation that a manual, out-of-tool action has been completed, unless the answer file has explicitly pre-approved this specific gate
+
+    .DESCRIPTION
+    The Confirm-ManualStep cmdlet implements a manual go/no-go gate: a pause confirming that a real-world action was taken by the
+    operator OUTSIDE this tool (e.g. "confirm you redeployed the license server", or "confirm VCF Operations inventory has been
+    updated") before a recovery plan continues. This is deliberately different from every other interactive cmdlet in this module.
+    Those other cmdlets (see Import-VCFIRAnswerFile) prompt for configuration CHOICES -- which NIC, which disk, which backup -- where
+    an answer file supplying a value is exactly equivalent to a human typing it, so any gap in the answer file is treated as an error
+    and fails hard immediately via Get-VCFIRAnswerSet/Get-VCFIRAnswer/Confirm-VCFIRAnswer.
+
+    A manual gate is not a choice, it's a safety check that real-world work has actually happened. Loading an answer file for the
+    rest of the plan must NOT, by itself, cause a manual gate to be silently skipped -- the work it is confirming may genuinely not be
+    done yet. So Confirm-ManualStep does not use Get-VCFIRAnswerSet/Get-VCFIRAnswer/Confirm-VCFIRAnswer at all. Instead, a gate is only
+    skipped when the operator has explicitly pre-approved that SPECIFIC gate by name, by listing its -AnswerKey in the loaded answer
+    file's "Confirm-ManualStep" entry. Every other gate -- any -AnswerKey not in that list, or no -AnswerKey at all -- always still
+    blocks for a real Enter press, even while an answer file is loaded and driving every other cmdlet unattended.
+
+    .EXAMPLE
+    Confirm-ManualStep -Message 'Press Enter once the License Server has been redeployed' -AnswerKey 'license-server-redeployed'
+
+    .PARAMETER Message
+    The message to display while waiting for confirmation
+
+    .PARAMETER AnswerKey
+    Optional. If supplied and present in the loaded answer file's flat "Confirm-ManualStep" array of pre-approved keys, this gate is skipped automatically. If omitted, or not present in that array, this gate always waits for a real Enter press regardless of whether an answer file is loaded.
+    #>
+    Param(
+        [Parameter (Mandatory = $true)][String] $Message,
+        [Parameter (Mandatory = $false)][String] $AnswerKey
+    )
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+
+    $autoAnswered = $false
+    if ($AnswerKey -and $script:VCFIRAnswers -and $script:VCFIRAnswers.ContainsKey('Confirm-ManualStep')) {
+        if ($AnswerKey -in @($script:VCFIRAnswers['Confirm-ManualStep'])) {
+            $autoAnswered = $true
+        }
+    }
+    If ($autoAnswered) {
+        LogMessage -type INFO -message "[$jumpboxName] Answer file pre-approved manual gate '$AnswerKey' -- $Message"
+    } Else {
+        Write-Host ""; Write-Host " $Message" -ForegroundColor Yellow -nonewline
+        Read-Host | Out-Null
+    }
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+Export-ModuleMember -Function Confirm-ManualStep
 
 Function Move-VMKernel {
     Param (
@@ -2509,6 +2572,8 @@ Function Get-BackupsFromSFTPServer {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
+    [int]$__ansIdx = 0
 
     # -componentNames wins over -Type for the component list itself if both are supplied -- resolved into a SEPARATE
     # $resolvedComponentNames variable rather than reassigning $componentNames itself, since PowerShell re-checks a
@@ -2747,7 +2812,7 @@ Function Get-BackupsFromSFTPServer {
     $customMode = $false
     Do {
         Write-Host " Enter the ID of the backup group to use, or C to Cancel: " -ForegroundColor Yellow -NoNewline
-        $selection = Read-Host
+        $selection = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
         if ($selection -in @("C", "c")) {
             LogMessage -type INFO -message "[$jumpboxName] Cancelled by user."
             $StopWatch.Stop()
@@ -2764,6 +2829,7 @@ Function Get-BackupsFromSFTPServer {
         } else {
             Write-Host " Invalid selection. Enter a number between 1 and $($groupList.Count), or C to Cancel." -ForegroundColor Yellow
         }
+        Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid ($null -ne $selectedGroup) -Value $selection -PromptDescription "backup group selection"
     } Until ($null -ne $selectedGroup)
 
     # Build the final list of chosen entries: either the picked rank group, or a per-component custom selection
@@ -2789,7 +2855,7 @@ Function Get-BackupsFromSFTPServer {
             $chosenEntry = $null
             Do {
                 Write-Host " Enter the ID of the backup point to use for '$componentType', or C to Cancel: " -ForegroundColor Yellow -NoNewline
-                $optSelection = Read-Host
+                $optSelection = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
                 if ($optSelection -in @("C", "c")) {
                     LogMessage -type INFO -message "[$jumpboxName] Cancelled by user."
                     $StopWatch.Stop()
@@ -2803,6 +2869,7 @@ Function Get-BackupsFromSFTPServer {
                 } else {
                     Write-Host " Invalid selection. Enter a number between 1 and $($options.Count), or C to Cancel." -ForegroundColor Yellow
                 }
+                Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid ($null -ne $chosenEntry) -Value $optSelection -PromptDescription "backup point selection for component $componentType"
             } Until ($null -ne $chosenEntry)
 
             $finalEntries += $chosenEntry
@@ -2835,7 +2902,8 @@ Function Get-BackupsFromSFTPServer {
     # Offer to construct a restore JSON for the selected backup group
     Do {
         Write-Host " Would you like to construct a restore JSON for this backup group? (Y/N): " -ForegroundColor Yellow -NoNewline
-        $buildJson = Read-Host
+        $buildJson = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
+        Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid ($buildJson -in @("Y", "y", "N", "n")) -Value $buildJson -PromptDescription "restore JSON build confirmation"
     } Until ($buildJson -in @("Y", "y", "N", "n"))
 
     if ($buildJson -in @("Y", "y")) {
@@ -4585,6 +4653,8 @@ Function New-RebuiltVsanDatastore {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
+    [int]$__ansIdx = 0
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
@@ -4637,7 +4707,8 @@ Function New-RebuiltVsanDatastore {
         Write-Host ""; $remainingDisksDisplayObject | format-table -Property @{Expression = " " }, id, canonicalName, size, ssd, scsiLun -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
         Do {
             Write-Host ""; Write-Host " Enter the desired number of disk groups to create (between 1 and 5), or C to Cancel: " -ForegroundColor Yellow -nonewline
-            $diskGroupNumber = Read-Host
+            $diskGroupNumber = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
+            Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid (($diskGroupNumber -in "1", "2", "3", "4", "5") -or ($diskGroupNumber -eq "C")) -Value $diskGroupNumber -PromptDescription "disk group count"
         } Until (($diskGroupNumber -in "1", "2", "3", "4", "5") -or ($diskGroupNumber -eq "C"))
         If ($diskGroupNumber -eq "C") {
             Break
@@ -4652,7 +4723,8 @@ Function New-RebuiltVsanDatastore {
                 If ($i -gt 1) {
                     Write-Host ""
                 }; Write-Host " Enter the ID of disk to use as Cache Disk for Disk Group $i, or C to Cancel: " -ForegroundColor Yellow -nonewline
-                $cacheDiskSelection = Read-Host
+                $cacheDiskSelection = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
+                Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid (($cacheDiskSelection -in $remainingDisksDisplayObject.id) -OR ($cacheDiskSelection -eq "c")) -Value $cacheDiskSelection -PromptDescription "cache disk selection for disk group $i"
             } Until (($cacheDiskSelection -in $remainingDisksDisplayObject.id) -OR ($cacheDiskSelection -eq "c"))
             If ($cacheDiskSelection -eq "c") {
                 Break
@@ -4667,7 +4739,7 @@ Function New-RebuiltVsanDatastore {
             Write-Host ""; $remainingDisksDisplayObject | format-table -Property @{Expression = " " }, id, canonicalName, size, ssd -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
             Do {
                 Write-Host ""; Write-Host " Enter a comma seperated list of IDs to be used as Capacity Disks for Disk Group $i, or C to Cancel: " -ForegroundColor Yellow -nonewline
-                $capacityDiskSelection = Read-Host
+                $capacityDiskSelection = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
                 If ($capacityDiskSelection -ne "C") {
                     $capacityDiskSelectionInvalid = $false
                     $capacityDiskArray = $capacityDiskSelection -split (",")
@@ -4677,6 +4749,7 @@ Function New-RebuiltVsanDatastore {
                         }
                     }
                 }
+                Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid (($capacityDiskSelectionInvalid -eq $false) -OR ($capacityDiskSelection -eq "c")) -Value $capacityDiskSelection -PromptDescription "capacity disk selection for disk group $i"
             } Until (($capacityDiskSelectionInvalid -eq $false) -OR ($capacityDiskSelection -eq "c"))
             If ($capacityDiskSelection -eq "c") {
                 Break
@@ -4732,7 +4805,7 @@ Function New-RebuiltVsanDatastore {
         Write-Host ""; Write-Host " Proposed Disk Group Configuration " -ForegroundColor Yellow
         Write-Host ""; $proposedConfigDisplayObject | format-table -Property @{Expression = " " }, diskGroup, cacheDiskID, cacheDiskCN, cacheDiskCapacity, capacityDiskIDs, capacityCNs, capacityDiskSize -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
         Write-Host ""; Write-Host " Do you wish to proceed with the proposed configuration? (Y/N): " -ForegroundColor Yellow -nonewline
-        $proposedConfigAccepted = Read-Host
+        $proposedConfigAccepted = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
         $proposedConfigAccepted = $proposedConfigAccepted -replace "`t|`n|`r", ""
         If ($proposedConfigAccepted -eq "Y") {
             If ($clusterDetails.isStretched -eq 't') {
@@ -5669,6 +5742,8 @@ Function New-RebuiltVdsConfiguration {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
+    [int]$__ansIdx = 0
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
@@ -5876,7 +5951,7 @@ Function New-RebuiltVdsConfiguration {
                 }
                 Write-Host ""; Write-Host " Recreating " -ForegroundColor Yellow -nonewline; Write-Host "$($cluster.vdsDetails[$vdsConfigurationIndex].dvsName)" -ForegroundColor cyan -nonewline; Write-Host " which contained the networks: " -ForegroundColor Yellow -nonewline; Write-Host "$networksDisplay" -ForegroundColor Cyan
                 Write-Host " Enter a comma seperated list of IDs to use as vmnics for this VDS, or C to Cancel: " -ForegroundColor Yellow -nonewline
-                $nicSelection = Read-Host
+                $nicSelection = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
                 If ($nicSelection -ne "C") {
                     $nicSelectionInvalid = $false
                     $nicArray = $nicSelection -split (",")
@@ -5887,6 +5962,7 @@ Function New-RebuiltVdsConfiguration {
                         }
                     }
                 }
+                Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid (($nicSelectionInvalid -eq $false) -OR ($nicSelection -eq "c")) -Value $nicSelection -PromptDescription "vmnic selection for VDS $($cluster.vdsDetails[$vdsConfigurationIndex].dvsName)"
             } Until (($nicSelectionInvalid -eq $false) -OR ($nicSelection -eq "c"))
             If ($nicSelection -eq "c") {
                 Break
@@ -5938,7 +6014,7 @@ Function New-RebuiltVdsConfiguration {
         Write-Host ""; Write-Host " Proposed VDS Configuration " -ForegroundColor Yellow
         Write-Host ""; $proposedConfigDisplayObject | format-table -Property @{Expression = " " }, vdsName, nicnames, vdsNetworks, -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
         Write-Host ""; Write-Host " Do you wish to proceed with the proposed configuration? (Y/N): " -ForegroundColor Yellow -nonewline
-        $proposedConfigAccepted = Read-Host
+        $proposedConfigAccepted = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
         $proposedConfigAccepted = $proposedConfigAccepted -replace "`t|`n|`r", ""
     }
 
@@ -8610,6 +8686,8 @@ Function Add-AdditionalNSXManagers {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
+    [int]$__ansIdx = 0
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
@@ -8636,7 +8714,8 @@ Function Add-AdditionalNSXManagers {
     Write-Host ""; $nsxManagersDisplayObject | format-table -Property @{Expression = " " }, id, Manager -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
     Do {
         Write-Host ""; Write-Host " Enter the ID of the First NSX Manager (i.e. the one you peformed the restore on), or C to Cancel: " -ForegroundColor Yellow -nonewline
-        $nsxManagerSelection = Read-Host
+        $nsxManagerSelection = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
+        Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid (($nsxManagerSelection -in $nsxManagersDisplayObject.ID) -OR ($nsxManagerSelection -eq "c")) -Value $nsxManagerSelection -PromptDescription "First NSX Manager selection"
     } Until (($nsxManagerSelection -in $nsxManagersDisplayObject.ID) -OR ($nsxManagerSelection -eq "c"))
     If ($nsxManagerSelection -eq "c") { Break }
     $selectedNsxManager = $nsxNodes | Where-Object { $_.vmName -eq ($nsxManagersDisplayObject | Where-Object { $_.id -eq $nsxManagerSelection }).manager }
@@ -9997,6 +10076,8 @@ Function New-ServicesRuntime {
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
+    [int]$__ansIdx = 0
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     # Get authentication token
@@ -10114,7 +10195,8 @@ Function New-ServicesRuntime {
     if (-not $autoConfirm) {
         Do {
             Write-Host " Proceed with deployment? (Y/N): " -ForegroundColor Yellow -NoNewline
-            $confirmation = Read-Host
+            $confirmation = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
+            Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid ($confirmation -in @("Y", "y", "N", "n")) -Value $confirmation -PromptDescription "deployment confirmation"
         } Until ($confirmation -in @("Y", "y", "N", "n"))
 
         if ($confirmation -in @("N", "n")) {
@@ -11931,6 +12013,8 @@ Function Restore-ServicesRuntimeComponentBackup {
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
+    [int]$__ansIdx = 0
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     # Read and validate the payload file
@@ -11969,7 +12053,8 @@ Function Restore-ServicesRuntimeComponentBackup {
     if (-not $autoConfirm) {
         Do {
             Write-Host " Proceed with restore? (Y/N): " -ForegroundColor Yellow -NoNewline
-            $confirmation = Read-Host
+            $confirmation = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
+            Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid ($confirmation -in @("Y", "y", "N", "n")) -Value $confirmation -PromptDescription "restore confirmation"
         } Until ($confirmation -in @("Y", "y", "N", "n"))
 
         if ($confirmation -in @("N", "n")) {
@@ -13136,6 +13221,8 @@ Function Set-ServicesRuntimeComponentVips {
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
+    [int]$__ansIdx = 0
     $terminalStates = @(
         "COMPLETED", "Completed", "COMPLETE", "FAILED", "CANCELLED", "ERROR", "SUCCESS", "SUCCESSFUL",
         "Succeeded", "Failed"
@@ -13269,7 +13356,8 @@ Function Set-ServicesRuntimeComponentVips {
     if (-not $Force) {
         Do {
             Write-Host " Proceed with VIP update for component $componentId ? (Y/N): " -ForegroundColor Yellow -NoNewline
-            $confirmation = Read-Host
+            $confirmation = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
+            Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid ($confirmation -in @("Y", "y", "N", "n")) -Value $confirmation -PromptDescription "VIP update confirmation"
         } Until ($confirmation -in @("Y", "y", "N", "n"))
 
         if ($confirmation -in @("N", "n")) {
@@ -16182,6 +16270,8 @@ Function Set-ServicesRuntimeScale {
     $jumpboxName = hostname
     $StopWatch   = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
+    [int]$__ansIdx = 0
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     # -------------------------------------------------------------------------
@@ -16300,7 +16390,8 @@ Function Set-ServicesRuntimeScale {
     if (-not $Force) {
         Do {
             Write-Host " Proceed with scaling the recovery cluster to match the protected site? (Y/N): " -ForegroundColor Yellow -NoNewline
-            $confirmation = Read-Host
+            $confirmation = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
+            Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid ($confirmation -in @("Y", "y", "N", "n")) -Value $confirmation -PromptDescription "scaling confirmation"
         } Until ($confirmation -in @("Y", "y", "N", "n"))
 
         if ($confirmation -in @("N", "n")) {
@@ -16625,6 +16716,8 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
+    [int]$__ansIdx = 0
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     LogMessage -type INFO -message "[$jumpboxName] VCF Ops Host   : $VcfOpsFqdn"
     LogMessage -type INFO -message "[$jumpboxName] VIDB Host      : $VidbFqdn"
@@ -16737,7 +16830,8 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
             Do {
                 Write-Host ""
                 Write-Host " Enter the ID of the VCF instance to use, or C to Cancel: " -ForegroundColor Yellow -NoNewline
-                $vcfInstanceSelection = Read-Host
+                $vcfInstanceSelection = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
+                Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid (($vcfInstanceSelection -in $validIds) -or ($vcfInstanceSelection -ieq "C")) -Value $vcfInstanceSelection -PromptDescription "VCF instance selection"
             } Until (($vcfInstanceSelection -in $validIds) -or ($vcfInstanceSelection -ieq "C"))
 
             if ($vcfInstanceSelection -ieq "C") {
@@ -16810,7 +16904,8 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
                 Do {
                     Write-Host ""
                     Write-Host " Enter the ID of the SSO domain entry to remove, S to Skip, or C to Cancel: " -ForegroundColor Yellow -NoNewline
-                    $ssoSelection = Read-Host
+                    $ssoSelection = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
+                    Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid (($ssoSelection -in $validSsoIds) -or ($ssoSelection -ieq "S") -or ($ssoSelection -ieq "C")) -Value $ssoSelection -PromptDescription "SSO domain entry selection"
                 } Until (($ssoSelection -in $validSsoIds) -or ($ssoSelection -ieq "S") -or ($ssoSelection -ieq "C"))
 
                 if ($ssoSelection -ieq "C") {

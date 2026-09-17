@@ -1,0 +1,37 @@
+{
+  "_readme": [
+    "Sample answer file for the interactive tasks in fdr-failover-plan.json, consumed via Import-VCFIRAnswerFile.",
+    "Keyed by cmdlet name. Each value is an array of answer sets - one answer set per invocation of that cmdlet in the plan. This plan calls Get-BackupsFromSFTPServer, Restore-ServicesRuntimeComponentBackup and Set-ServicesRuntimeComponentVips 3 times each (once per fleet component: VCF Management Services, Log Management, VCF Automation), in that order.",
+    "Each answer set is an ordered array of the values you would otherwise type at that cmdlet's Read-Host prompts, in the same order the prompts appear.",
+    "Set-ServicesRuntimeScale/Restore-ServicesRuntimeComponentBackup/Set-ServicesRuntimeComponentVips/New-ServicesRuntime each have a single Y/N confirmation prompt that is already skippable via their own -Force/-autoConfirm switch - the answer file drives the SAME prompt, just conditionally (only when the toggle is on) rather than permanently.",
+    "Get-BackupsFromSFTPServer's own prompts (pick a backup group, optional per-component custom picks, final Y/N) vary with how many backups/components are found on the SFTP server - the values below assume a single matching backup and no custom overrides, and MUST be reviewed against your own environment's real prompts before use.",
+    "Invoke-VcfOpsVidbVcfInstanceUpdate has two independent prompts: a VCF instance ID selection, then a stale SSO domain selection (or 'S' to skip it entirely) - the sample below picks instance 1 and skips the SSO domain step.",
+    "Confirm-ManualStep is different from every other key here: its value is a single FLAT array of pre-approved -AnswerKey strings, not an array of answer sets. This plan has two manual 'Press Enter once X is done' gates - 'vcf-ops-inventory-updated' and 'log-management-state-updated'. Only 'vcf-ops-inventory-updated' is pre-approved below, on purpose: this demonstrates SELECTIVE answering - a gate whose key is omitted here always still blocks for a real Enter press, even with this answer file loaded and every other cmdlet running unattended. Add 'log-management-state-updated' to the array too if you also want that gate to auto-skip.",
+    "Run each task interactively once first to see its real prompts/IDs, then transcribe your answers here in the same order. An invalid or missing answer fails the run immediately rather than hanging (except Confirm-ManualStep, which is designed to fall back to a real prompt on any key not listed)."
+  ],
+  "Set-ServicesRuntimeScale": [
+    ["Y"]
+  ],
+  "Get-BackupsFromSFTPServer": [
+    ["1", "Y"],
+    ["1", "Y"],
+    ["1", "Y"]
+  ],
+  "Restore-ServicesRuntimeComponentBackup": [
+    ["Y"],
+    ["Y"],
+    ["Y"]
+  ],
+  "Set-ServicesRuntimeComponentVips": [
+    ["Y"],
+    ["Y"],
+    ["Y"]
+  ],
+  "Invoke-VcfOpsVidbVcfInstanceUpdate": [
+    ["1", "S"]
+  ],
+  "New-ServicesRuntime": [
+    ["Y"]
+  ],
+  "Confirm-ManualStep": ["vcf-ops-inventory-updated"]
+}

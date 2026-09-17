@@ -1,0 +1,21 @@
+{
+  "_readme": [
+    "Sample answer file for the interactive tasks in fleet-component-recovery-plan.json, consumed via Import-VCFIRAnswerFile.",
+    "Keyed by cmdlet name. Get-BackupsFromSFTPServer is called 4 times in this plan (VCFMS, Log Management, VCF Automation, Telemetry, in that order) - each value is an array of answer sets, one per invocation.",
+    "Get-BackupsFromSFTPServer's own prompts (pick a backup group, optional per-component custom picks, final Y/N) vary with how many backups/components are found on the SFTP server - the values below assume a single matching backup and no custom overrides, and MUST be reviewed against your own environment's real prompts before use.",
+    "Confirm-ManualStep is different from every other key here: its value is a single FLAT array of pre-approved -AnswerKey strings, not an array of answer sets. This plan has 7 manual 'Press Enter once X is done' gates (two - vcfms-binary-staging-complete/vcfa-binary-staging-complete - only run at all if originalVcfInstallerAvailable is false). Only 4 are pre-approved below, on purpose: this demonstrates SELECTIVE answering - a gate whose key is omitted always still blocks for a real Enter press, even with this answer file loaded and every other cmdlet running unattended. 'vcfms-binary-staging-complete', 'vcfa-binary-staging-complete' and 'license-server-redeployed' are deliberately left OUT here as an example of gates an operator might always want to confirm by hand regardless of what else is automated.",
+    "Run each task interactively once first to see its real prompts/IDs, then transcribe your answers here in the same order. An invalid or missing answer fails the run immediately rather than hanging (except Confirm-ManualStep, which is designed to fall back to a real prompt on any key not listed)."
+  ],
+  "Get-BackupsFromSFTPServer": [
+    ["1", "Y"],
+    ["1", "Y"],
+    ["1", "Y"],
+    ["1", "Y"]
+  ],
+  "Confirm-ManualStep": [
+    "vcf-operations-restored",
+    "vcf-operations-state-verified",
+    "log-management-state-updated",
+    "vcf-automation-connections-updated"
+  ]
+}

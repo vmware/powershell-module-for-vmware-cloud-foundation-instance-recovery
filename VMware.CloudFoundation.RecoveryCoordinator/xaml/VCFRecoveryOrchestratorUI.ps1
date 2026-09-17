@@ -121,6 +121,9 @@ $runAllRecoverFleetButton = $window.FindName('RunAllRecoverFleetButton')
 $runAllDomainRecoveryParallelCheckBox = $window.FindName('RunAllDomainRecoveryParallelCheckBox')
 $runAllAdditionalClusterRecoveryParallelCheckBox = $window.FindName('RunAllAdditionalClusterRecoveryParallelCheckBox')
 $runAllRecoverFleetParallelCheckBox = $window.FindName('RunAllRecoverFleetParallelCheckBox')
+$runAllDomainRecoveryAnswerFileCheckBox = $window.FindName('RunAllDomainRecoveryAnswerFileCheckBox')
+$runAllAdditionalClusterRecoveryAnswerFileCheckBox = $window.FindName('RunAllAdditionalClusterRecoveryAnswerFileCheckBox')
+$runAllRecoverFleetAnswerFileCheckBox = $window.FindName('RunAllRecoverFleetAnswerFileCheckBox')
 $overallRecoveryTimePanel = $window.FindName('OverallRecoveryTimePanel')
 $overallRecoveryTimeTextBlock = $window.FindName('OverallRecoveryTimeTextBlock')
 $loadVariablesButton = $window.FindName('LoadVariablesButton')
@@ -156,6 +159,7 @@ $runAllFleetComponentsParallelCheckBox = $window.FindName('RunAllFleetComponents
 $fleetComponentsPlanStepsListBox = $window.FindName('FleetComponentsPlanStepsListBox')
 $fleetComponentsManualStepsListBox = $window.FindName('FleetComponentsManualStepsListBox')
 $originalVcfInstallerAvailableCheckBox = $window.FindName('OriginalVcfInstallerAvailableCheckBox')
+$fleetComponentsAnswerFileCheckBox = $window.FindName('FleetComponentsAnswerFileCheckBox')
 
 # Posts $Message to the Advisories pane (below the Console pane) -- the single place every status/
 # error/informational message in this app surfaces to the operator, replacing the old single-line
@@ -202,6 +206,13 @@ function New-Advisory([string]$Message, [switch]$Failure) {
 $global:domainRecoveryStepRows = @()
 $global:additionalClusterRecoveryStepRows = @()
 $global:recoverFleetStepRows = @()
+# Set only via each pane's own "Use answer file for unattended interactive tasks" toggle (see
+# Register-AnswerFileToggleHandlers below) -- mirrors $global:instanceComponentsGroup/
+# $global:fleetComponentsGroup's own InteractiveAnswerFilePath field, for the three plans that use the
+# flat-global pattern instead of a Group hashtable.
+$global:domainRecoveryInteractiveAnswerFilePath = $null
+$global:additionalClusterRecoveryInteractiveAnswerFilePath = $null
+$global:recoverFleetInteractiveAnswerFilePath = $null
 # The step objects (see Get-RecoveryPlanSteps) currently backing each of the two IBR Steps panels,
 # kept separate because Domain Recovery (domain-driven) and Additional Cluster Recovery (Additional
 # Clusters-table-driven) are independent, mutually exclusive selections. Update-AllSteps combines
@@ -225,33 +236,34 @@ $global:allDiscoveredDomains = @()
 # underneath either way), not treated as two independently-scoped variables, since in practice
 # they're meant to be the same real credential.
 $global:instanceComponentsGroup = @{
-    PlanId                   = 'ManagementDomain'
-    Steps                    = @()
-    StepRows                 = @()
-    AnswersFilePath          = $null
-    AnswerMap                = $null
+    PlanId                    = 'ManagementDomain'
+    Steps                     = @()
+    StepRows                  = @()
+    AnswersFilePath           = $null
+    AnswerMap                 = $null
     InteractiveAnswerFilePath = $null
-    StepsListBox             = $instanceComponentsPlanStepsListBox
-    ManualStepsListBox       = $instanceComponentsManualStepsListBox
-    VariablesItemsPanel      = $instanceComponentsVariablesItemsPanel
-    LoadedVariablesText      = $instanceComponentsLoadedVariablesTextBlock
-    RunAllButton             = $runAllInstanceComponentsButton
-    ParallelCheckBox         = $runAllInstanceComponentsParallelCheckBox
-    VariablesStepsTabControl = $instanceComponentsVariablesStepsTabControl
+    StepsListBox              = $instanceComponentsPlanStepsListBox
+    ManualStepsListBox        = $instanceComponentsManualStepsListBox
+    VariablesItemsPanel       = $instanceComponentsVariablesItemsPanel
+    LoadedVariablesText       = $instanceComponentsLoadedVariablesTextBlock
+    RunAllButton              = $runAllInstanceComponentsButton
+    ParallelCheckBox          = $runAllInstanceComponentsParallelCheckBox
+    VariablesStepsTabControl  = $instanceComponentsVariablesStepsTabControl
 }
 $global:fleetComponentsGroup = @{
-    PlanId                   = 'FleetComponent'
-    Steps                    = @()
-    StepRows                 = @()
-    AnswersFilePath          = $null
-    AnswerMap                = $null
-    StepsListBox             = $fleetComponentsPlanStepsListBox
-    ManualStepsListBox       = $fleetComponentsManualStepsListBox
-    VariablesItemsPanel      = $fleetComponentsVariablesItemsPanel
-    LoadedVariablesText      = $fleetComponentsLoadedVariablesTextBlock
-    RunAllButton             = $runAllFleetComponentsButton
-    ParallelCheckBox         = $runAllFleetComponentsParallelCheckBox
-    VariablesStepsTabControl = $fleetComponentsVariablesStepsTabControl
+    PlanId                    = 'FleetComponent'
+    Steps                     = @()
+    StepRows                  = @()
+    AnswersFilePath           = $null
+    AnswerMap                 = $null
+    InteractiveAnswerFilePath = $null
+    StepsListBox              = $fleetComponentsPlanStepsListBox
+    ManualStepsListBox        = $fleetComponentsManualStepsListBox
+    VariablesItemsPanel       = $fleetComponentsVariablesItemsPanel
+    LoadedVariablesText       = $fleetComponentsLoadedVariablesTextBlock
+    RunAllButton              = $runAllFleetComponentsButton
+    ParallelCheckBox          = $runAllFleetComponentsParallelCheckBox
+    VariablesStepsTabControl  = $fleetComponentsVariablesStepsTabControl
 }
 # Variables the UI owns outright, so the operator never types them and they are never rendered as
 # editable rows: $extractedSDDCDataFile comes from the Data Source selection (pushed by
@@ -2249,34 +2261,54 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
 }
 
 # Recomputes each interactive step row's badge text ("Requires Input" vs "Auto Answered") for the
-# given group, based on whether its currently loaded interactive answer file (InteractiveAnswerFilePath,
-# see the answer-file toggle's Checked/Unchecked handlers) actually covers that step's specific
-# invocation. A plan can call the same cmdlet more than once (e.g. New-NSXManagerOvaDeployment for the
-# 1st/2nd/3rd NSX Manager), and the answer file's array-of-answer-sets for a given cmdlet name is
-# consumed in the SAME order Get-VCFIRAnswerSet dequeues it at runtime -- so this walks StepRows in
-# order and counts each cmdlet name's occurrences the same way, rather than just checking the key
-# exists, so only the occurrences actually covered by an answer set show "Auto Answered".
-function Update-StepRowAutoAnsweredBadges($Group) {
+# given StepRows, based on whether the given interactive answer file path (see each plan's answer-file
+# toggle's Checked/Unchecked handlers) actually covers that step's specific invocation. Takes StepRows/
+# AnswerFilePath directly rather than a Group object so every Recovery Plan pane can share this one
+# function -- Instance Components/Fleet Components have a $Group hashtable to pull these from, but
+# Domain Recovery/Additional Cluster Recovery/Recover Fleet only have flat globals.
+#
+# A plan can call the same cmdlet more than once (e.g. New-NSXManagerOvaDeployment for the 1st/2nd/3rd
+# NSX Manager), and the answer file's array-of-answer-sets for a given cmdlet name is consumed in the
+# SAME order Get-VCFIRAnswerSet dequeues it at runtime -- so this walks StepRows in order and counts
+# each cmdlet name's occurrences the same way, rather than just checking the key exists, so only the
+# occurrences actually covered by an answer set show "Auto Answered".
+#
+# Confirm-ManualStep (the manual "Press Enter once X is done" gates) is a deliberate exception to that
+# occurrence-counting: every such gate in a plan shares this one function name, but each has its own
+# distinct -AnswerKey, and coverage is membership in the answer file's flat "Confirm-ManualStep" array
+# of pre-approved keys -- not a position in a queue -- since an uncovered gate is meant to keep
+# blocking for a real Enter press by design (see Confirm-ManualStep's own module help), not fail hard.
+function Update-StepRowAutoAnsweredBadges($StepRows, [string]$AnswerFilePath) {
     $answerCounts = $null
-    if ($Group.InteractiveAnswerFilePath -and (Test-Path -LiteralPath $Group.InteractiveAnswerFilePath)) {
+    $manualStepPreApprovedKeys = $null
+    if ($AnswerFilePath -and (Test-Path -LiteralPath $AnswerFilePath)) {
         try {
-            $answers = Get-Content -LiteralPath $Group.InteractiveAnswerFilePath -Raw | ConvertFrom-Json
+            $answers = Get-Content -LiteralPath $AnswerFilePath -Raw | ConvertFrom-Json
             $answerCounts = @{}
             foreach ($property in $answers.PSObject.Properties) {
                 $answerCounts[$property.Name] = @($property.Value).Count
             }
+            if ($answers.PSObject.Properties.Name -contains 'Confirm-ManualStep') {
+                $manualStepPreApprovedKeys = @($answers.'Confirm-ManualStep')
+            }
         } catch {
             $answerCounts = $null
+            $manualStepPreApprovedKeys = $null
         }
     }
 
     $seenCounts = @{}
-    foreach ($row in $Group.StepRows) {
+    foreach ($row in $StepRows) {
         if (-not $row.Interactive) {
             continue
         }
-        $seenCounts[$row.CmdletName] = 1 + [int]$seenCounts[$row.CmdletName]
-        $isAutoAnswered = $answerCounts -and $answerCounts.ContainsKey($row.CmdletName) -and ($seenCounts[$row.CmdletName] -le $answerCounts[$row.CmdletName])
+        if ($row.CmdletName -eq 'Confirm-ManualStep') {
+            $keyMatch = [regex]::Match($row.CommandLine, "-AnswerKey\s+'([^']*)'")
+            $isAutoAnswered = $keyMatch.Success -and $manualStepPreApprovedKeys -and ($manualStepPreApprovedKeys -contains $keyMatch.Groups[1].Value)
+        } else {
+            $seenCounts[$row.CmdletName] = 1 + [int]$seenCounts[$row.CmdletName]
+            $isAutoAnswered = $answerCounts -and $answerCounts.ContainsKey($row.CmdletName) -and ($seenCounts[$row.CmdletName] -le $answerCounts[$row.CmdletName])
+        }
         $badgeText = if ($isAutoAnswered) { 'Auto Answered' } else { 'Requires Input' }
         foreach ($textBlock in @($row.PlanInteractiveBadgeText, $row.ManualInteractiveBadgeText)) {
             if ($textBlock) {
@@ -2284,6 +2316,37 @@ function Update-StepRowAutoAnsweredBadges($Group) {
             }
         }
     }
+}
+
+# Wires a "Use answer file for unattended interactive tasks" ToggleButton's Checked/Unchecked events,
+# shared by every Recovery Plan pane's own answer-file toggle. GetStepRows/GetAnswerFilePath/
+# SetAnswerFilePath are scriptblocks rather than a single $Group, so this works for both the
+# Group-hashtable panes (Fleet Components) and the flat-global panes (Domain Recovery/Additional
+# Cluster Recovery/Recover Fleet) -- Management Domain Recovery (Instance Components) predates this
+# helper and keeps its own hand-written, equivalent Add_Checked/Add_Unchecked pair rather than being
+# retrofitted onto it.
+function Register-AnswerFileToggleHandlers($CheckBox, [scriptblock]$GetStepRows, [scriptblock]$GetAnswerFilePath, [scriptblock]$SetAnswerFilePath) {
+    $CheckBox.Add_Checked({
+            $dialog = New-Object Microsoft.Win32.OpenFileDialog
+            $dialog.Filter = 'JSON files (*.json)|*.json|All files (*.*)|*.*'
+            $dialog.Title = 'Select interactive answer file'
+            if ($dialog.ShowDialog() -ne $true) {
+                $CheckBox.IsChecked = $false
+                return
+            }
+            & $SetAnswerFilePath $dialog.FileName
+            $escapedAnswerFilePath = Protect-SingleQuotes $dialog.FileName
+            Send-ToConsole "Import-VCFIRAnswerFile -Path '$escapedAnswerFilePath'"
+            Update-StepRowAutoAnsweredBadges (& $GetStepRows) (& $GetAnswerFilePath)
+        }.GetNewClosure())
+
+    $CheckBox.Add_Unchecked({
+            if (& $GetAnswerFilePath) {
+                Send-ToConsole "Clear-VCFIRAnswerFile"
+            }
+            & $SetAnswerFilePath $null
+            Update-StepRowAutoAnsweredBadges (& $GetStepRows) (& $GetAnswerFilePath)
+        }.GetNewClosure())
 }
 
 # Variable names referenced across $CommandLines (e.g. "$targetFqdn"), in order of first
@@ -2958,7 +3021,7 @@ $instanceComponentsAnswerFileCheckBox.Add_Checked({
         $global:instanceComponentsGroup.InteractiveAnswerFilePath = $dialog.FileName
         $escapedAnswerFilePath = Protect-SingleQuotes $dialog.FileName
         Send-ToConsole "Import-VCFIRAnswerFile -Path '$escapedAnswerFilePath'"
-        Update-StepRowAutoAnsweredBadges $global:instanceComponentsGroup
+        Update-StepRowAutoAnsweredBadges $global:instanceComponentsGroup.StepRows $global:instanceComponentsGroup.InteractiveAnswerFilePath
     }.GetNewClosure())
 
 $instanceComponentsAnswerFileCheckBox.Add_Unchecked({
@@ -2966,8 +3029,33 @@ $instanceComponentsAnswerFileCheckBox.Add_Unchecked({
             Send-ToConsole "Clear-VCFIRAnswerFile"
         }
         $global:instanceComponentsGroup.InteractiveAnswerFilePath = $null
-        Update-StepRowAutoAnsweredBadges $global:instanceComponentsGroup
+        Update-StepRowAutoAnsweredBadges $global:instanceComponentsGroup.StepRows $global:instanceComponentsGroup.InteractiveAnswerFilePath
     }.GetNewClosure())
+
+# The same "Use answer file for unattended interactive tasks" mechanism as Management Domain
+# Recovery's own toggle above, extended to every other Recovery Plan pane (see
+# Register-AnswerFileToggleHandlers). Domain Recovery/Additional Cluster Recovery/Recover Fleet use
+# the flat-global pattern (no Group hashtable), so their getters/setters close over the matching flat
+# globals directly; Fleet Components already has a Group hashtable, so it closes over that instead.
+Register-AnswerFileToggleHandlers $runAllDomainRecoveryAnswerFileCheckBox `
+    { $global:domainRecoveryStepRows } `
+    { $global:domainRecoveryInteractiveAnswerFilePath } `
+    { param($Path) $global:domainRecoveryInteractiveAnswerFilePath = $Path }
+
+Register-AnswerFileToggleHandlers $runAllAdditionalClusterRecoveryAnswerFileCheckBox `
+    { $global:additionalClusterRecoveryStepRows } `
+    { $global:additionalClusterRecoveryInteractiveAnswerFilePath } `
+    { param($Path) $global:additionalClusterRecoveryInteractiveAnswerFilePath = $Path }
+
+Register-AnswerFileToggleHandlers $runAllRecoverFleetAnswerFileCheckBox `
+    { $global:recoverFleetStepRows } `
+    { $global:recoverFleetInteractiveAnswerFilePath } `
+    { param($Path) $global:recoverFleetInteractiveAnswerFilePath = $Path }
+
+Register-AnswerFileToggleHandlers $fleetComponentsAnswerFileCheckBox `
+    { $global:fleetComponentsGroup.StepRows } `
+    { $global:fleetComponentsGroup.InteractiveAnswerFilePath } `
+    { param($Path) $global:fleetComponentsGroup.InteractiveAnswerFilePath = $Path }
 
 $fleetComponentsLoadVariablesButton.Add_Click({
         $dialog = New-Object Microsoft.Win32.OpenFileDialog
@@ -3126,6 +3214,10 @@ function Update-ExecutionVisibility {
 function Update-RevealedSteps([System.Collections.IDictionary]$Variables) {
     $global:domainRecoveryStepRows = Set-PlanStepsListBox $domainRecoveryPlanStepsListBox $domainRecoveryManualStepsListBox (Get-ApplicableSteps $global:domainRecoverySteps $Variables)
     $global:additionalClusterRecoveryStepRows = Set-PlanStepsListBox $additionalClusterRecoveryPlanStepsListBox $additionalClusterRecoveryManualStepsListBox (Get-ApplicableSteps $global:additionalClusterRecoverySteps $Variables)
+    # Set-PlanStepsListBox rebuilds StepRows from scratch (see the matching comment in
+    # Update-GroupRevealedSteps) -- re-apply each pane's own answer-file coverage state on top.
+    Update-StepRowAutoAnsweredBadges $global:domainRecoveryStepRows $global:domainRecoveryInteractiveAnswerFilePath
+    Update-StepRowAutoAnsweredBadges $global:additionalClusterRecoveryStepRows $global:additionalClusterRecoveryInteractiveAnswerFilePath
 }
 
 # Single-listbox counterpart to Update-RevealedSteps, for Instance Components/Fleet Components (see
@@ -3152,9 +3244,9 @@ function Update-GroupRevealedSteps($Group, [System.Collections.IDictionary]$Vari
     }
     $Group.StepRows = Set-PlanStepsListBox $Group.StepsListBox $Group.ManualStepsListBox (Get-ApplicableSteps $Group.Steps $Variables)
     # Set-PlanStepsListBox rebuilds StepRows from scratch (fresh "Requires Input" badges on every
-    # interactive row), so re-apply the answer-file coverage state on top -- a no-op for
-    # fleetComponentsGroup, which never sets InteractiveAnswerFilePath.
-    Update-StepRowAutoAnsweredBadges $Group
+    # interactive row), so re-apply the answer-file coverage state on top -- a no-op if this group's
+    # own answer-file toggle was never checked (InteractiveAnswerFilePath stays $null).
+    Update-StepRowAutoAnsweredBadges $Group.StepRows $Group.InteractiveAnswerFilePath
 }
 
 # Group counterpart to Import-VariablesAnswersFile, used only by Instance Components/Fleet
@@ -3569,6 +3661,7 @@ function Sync-RecoveryPlanSelection {
 
         $recoverFleetSteps = Get-ApplicableSteps (Get-RecoveryPlanSteps $entry.planFolder $entry.planFile) @{}
         $global:recoverFleetStepRows = Set-PlanStepsListBox $recoverFleetPlanStepsListBox $recoverFleetManualStepsListBox $recoverFleetSteps
+        Update-StepRowAutoAnsweredBadges $global:recoverFleetStepRows $global:recoverFleetInteractiveAnswerFilePath
         $global:allSteps = @($recoverFleetSteps)
         Set-RecoverFleetPanelsVisibility ([System.Windows.Visibility]::Visible)
 

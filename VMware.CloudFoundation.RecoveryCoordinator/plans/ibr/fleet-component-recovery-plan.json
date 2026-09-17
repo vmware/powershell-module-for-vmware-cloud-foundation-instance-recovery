@@ -1,7 +1,7 @@
 [
   {
     "description": "Restore VCF Operations from an Image-Based Backup (manual step)",
-    "commandLine": "Read-Host 'Press Enter once VCF Operations has been restored from an image-based backup' | Out-Null; Write-Host 'Completed Task Read-Host'",
+    "commandLine": "Confirm-ManualStep -Message 'Press Enter once VCF Operations has been restored from an image-based backup' -AnswerKey 'vcf-operations-restored'",
     "displayName": "Confirm Manual Step: VCF Operations has been restored",
     "condition": [],
     "threadId": "",
@@ -10,7 +10,7 @@
   },
   {
     "description": "Verify VCF Operations State (manual step)",
-    "commandLine": "Read-Host 'Press Enter once VCF Operations state has been verified' | Out-Null; Write-Host 'Completed Task Read-Host'",
+    "commandLine": "Confirm-ManualStep -Message 'Press Enter once VCF Operations state has been verified' -AnswerKey 'vcf-operations-state-verified'",
     "displayName": "Confirm Manual Step: VCF Operations state has been verified",
     "condition": [],
     "threadId": "",
@@ -134,7 +134,7 @@
   },
   {
     "description": "Stage Binaries (manual step)",
-    "commandLine": "Read-Host 'Press Enter to confirm Binary Staging to VCFMS Services Runtime is complete' | Out-Null; Write-Host 'Completed Task Read-Host'",
+    "commandLine": "Confirm-ManualStep -Message 'Press Enter to confirm Binary Staging to VCFMS Services Runtime is complete' -AnswerKey 'vcfms-binary-staging-complete'",
     "displayName": "Confirm Manual Step: Binary Staging to VCFMS Services Runtime is complete",
     "condition": [
       {
@@ -186,7 +186,7 @@
   },
   {
     "description": "Update Log Management State (manual step)",
-    "commandLine": "Read-Host 'Press Enter once Log Management state is updated' | Out-Null; Write-Host 'Completed Task Read-Host'",
+    "commandLine": "Confirm-ManualStep -Message 'Press Enter once Log Management state is updated' -AnswerKey 'log-management-state-updated'",
     "displayName": "Confirm Manual Step: Log Management state is updated",
     "condition": [],
     "threadId": "",
@@ -256,7 +256,7 @@
   },
   {
     "description": "Stage Binaries (manual step)",
-    "commandLine": "Read-Host 'Press Enter to confirm Binary Staging to VCFA Services Runtime is complete' | Out-Null; Write-Host 'Completed Task Read-Host'",
+    "commandLine": "Confirm-ManualStep -Message 'Press Enter to confirm Binary Staging to VCFA Services Runtime is complete' -AnswerKey 'vcfa-binary-staging-complete'",
     "displayName": "Confirm Manual Step: Binary Staging to VCFA Services Runtime is complete",
     "condition": [
       {
@@ -290,7 +290,7 @@
   },
   {
     "description": "Update Connections in VCF Automation (manual step)",
-    "commandLine": "Read-Host 'Press Enter once connections in VCF Automation have been updated' | Out-Null; Write-Host 'Completed Task Read-Host'",
+    "commandLine": "Confirm-ManualStep -Message 'Press Enter once connections in VCF Automation have been updated' -AnswerKey 'vcf-automation-connections-updated'",
     "displayName": "Confirm Manual Step: VCF Automation connections have been updated",
     "condition": [],
     "threadId": "",
@@ -299,7 +299,7 @@
   },
   {
     "description": "Redeploy License Server (manual step)",
-    "commandLine": "Read-Host 'Press Enter once the License Server has been redeployed' | Out-Null; Write-Host 'Completed Task Read-Host'",
+    "commandLine": "Confirm-ManualStep -Message 'Press Enter once the License Server has been redeployed' -AnswerKey 'license-server-redeployed'",
     "displayName": "Confirm Manual Step: License Server has been redeployed",
     "condition": [],
     "threadId": "",

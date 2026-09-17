@@ -91,7 +91,7 @@
   },
   {
     "description": "Update VCF Operations Inventory (manual step)",
-    "commandLine": "Read-Host 'Press Enter once VCF Operations inventory has been updated' | Out-Null; Write-Host 'Completed Task Read-Host'",
+    "commandLine": "Confirm-ManualStep -Message 'Press Enter once VCF Operations inventory has been updated' -AnswerKey 'vcf-ops-inventory-updated'",
     "displayName": "Confirm Manual Step: VCF Operations inventory has been updated",
     "condition": [],
     "threadId": "",
@@ -127,7 +127,7 @@
   },
   {
     "description": "Update the Log Management State (manual step)",
-    "commandLine": "Read-Host 'Press Enter once Log Management state is updated' | Out-Null; Write-Host 'Completed Task Read-Host'",
+    "commandLine": "Confirm-ManualStep -Message 'Press Enter once Log Management state is updated' -AnswerKey 'log-management-state-updated'",
     "displayName": "Confirm Manual Step: Log Management state is updated",
     "condition": [],
     "threadId": "",
