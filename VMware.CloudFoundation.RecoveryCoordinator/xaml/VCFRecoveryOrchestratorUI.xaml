@@ -23,6 +23,8 @@
         <SolidColorBrush x:Key="SubtleTextBrush" Color="#6B7280" />
         <SolidColorBrush x:Key="InactiveTabTextBrush" Color="#565656" />
         <SolidColorBrush x:Key="HoverBackgroundBrush" Color="#EAF6FC" />
+        <SolidColorBrush x:Key="ToggleOnBrush" Color="Green" />
+        <SolidColorBrush x:Key="ToggleOffBrush" Color="LightGray" />
 
         <Style TargetType="Window">
             <Setter Property="Background" Value="{StaticResource WindowBackgroundBrush}" />
@@ -104,6 +106,43 @@
                             </Trigger>
                             <Trigger Property="Content" Value="Skipped">
                                 <Setter TargetName="ButtonBorder" Property="Opacity" Value="1" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Compact on/off "chip" used for the per-plan Options subpane (Run Plan header row).
+             Replaces what used to be a row of CheckBoxes: same Content text, but a solid colored
+             block (green = on, light grey = off) instead of a checkmark, so a stack of them reads
+             clearly at a glance without taking up more width than the text itself needs. CheckBox
+             IS a ToggleButton subclass, so every existing Add_Checked/Add_Unchecked/.IsChecked
+             caller in the loader script keeps working unchanged against an actual ToggleButton. -->
+        <Style x:Key="OptionToggleButtonStyle" TargetType="ToggleButton">
+            <Setter Property="Width" Value="190" />
+            <Setter Property="Padding" Value="8,4" />
+            <Setter Property="Margin" Value="0,0,0,4" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="ToggleBorder"
+                                Background="{StaticResource ToggleOffBrush}"
+                                BorderBrush="{StaticResource PanelBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="3">
+                            <TextBlock Text="{TemplateBinding Content}"
+                                       TextWrapping="Wrap"
+                                       Margin="{TemplateBinding Padding}"
+                                       Foreground="{StaticResource HeaderTextBrush}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="ToggleBorder" Property="Background" Value="{StaticResource ToggleOnBrush}" />
+                                <Setter TargetName="ToggleBorder" Property="BorderBrush" Value="{StaticResource ToggleOnBrush}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -461,8 +500,16 @@
                                              New-StepRow). It holds whether or not the ListBox is
                                              showing a vertical scrollbar - the scrollbar narrows the
                                              header and the rows by the same amount. -->
-                                        <Button x:Name="RunAllDomainRecoveryButton" Content="Run Plan" Width="80" Margin="0,0,6,0" DockPanel.Dock="Right" VerticalAlignment="Center" />
-                                        <CheckBox x:Name="RunAllDomainRecoveryParallelCheckBox" Content="Run tasks using multiple threads (indicated by numbered circles)" IsChecked="True" VerticalAlignment="Center" DockPanel.Dock="Left" />
+                                        <!-- Options subpane docked Right BEFORE the Run Plan Button below so it
+                                             lands to the Button's right (DockPanel docks each successive
+                                             same-side child further from the edge than the previous one). -->
+                                        <Border DockPanel.Dock="Right" BorderBrush="{StaticResource PanelBorderBrush}" BorderThickness="1" CornerRadius="3" Padding="6" VerticalAlignment="Top">
+                                            <StackPanel>
+                                                <TextBlock Text="OPTIONS" FontSize="9" FontWeight="Bold" Foreground="{StaticResource SubtleTextBrush}" Margin="0,0,0,4" />
+                                                <ToggleButton x:Name="RunAllDomainRecoveryParallelCheckBox" Content="Run tasks using multiple threads (indicated by numbered circles)" IsChecked="True" Style="{StaticResource OptionToggleButtonStyle}" />
+                                            </StackPanel>
+                                        </Border>
+                                        <Button x:Name="RunAllDomainRecoveryButton" Content="Run Plan" Width="80" Margin="0,0,6,0" DockPanel.Dock="Right" VerticalAlignment="Top" />
                                     </DockPanel>
                                     <ListBox x:Name="DomainRecoveryPlanStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
                                 </DockPanel>
@@ -472,9 +519,15 @@
                                      also collapsed for FDR the same way as the other two. -->
                                 <DockPanel x:Name="AdditionalClusterRecoveryPlanPanel" Visibility="Collapsed">
                                     <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="0,0,0,8">
-                                        <!-- Margin as on RunAllDomainRecoveryButton above. -->
-                                        <Button x:Name="RunAllAdditionalClusterRecoveryButton" Content="Run Plan" Width="80" Margin="0,0,6,0" DockPanel.Dock="Right" VerticalAlignment="Center" />
-                                        <CheckBox x:Name="RunAllAdditionalClusterRecoveryParallelCheckBox" Content="Run parallel tasks using multiple threads (numbered circles)" IsChecked="True" VerticalAlignment="Center" DockPanel.Dock="Left" />
+                                        <!-- Margin as on RunAllDomainRecoveryButton above; Options subpane docked
+                                             Right BEFORE the Button for the same reason noted there. -->
+                                        <Border DockPanel.Dock="Right" BorderBrush="{StaticResource PanelBorderBrush}" BorderThickness="1" CornerRadius="3" Padding="6" VerticalAlignment="Top">
+                                            <StackPanel>
+                                                <TextBlock Text="OPTIONS" FontSize="9" FontWeight="Bold" Foreground="{StaticResource SubtleTextBrush}" Margin="0,0,0,4" />
+                                                <ToggleButton x:Name="RunAllAdditionalClusterRecoveryParallelCheckBox" Content="Run parallel tasks using multiple threads (numbered circles)" IsChecked="True" Style="{StaticResource OptionToggleButtonStyle}" />
+                                            </StackPanel>
+                                        </Border>
+                                        <Button x:Name="RunAllAdditionalClusterRecoveryButton" Content="Run Plan" Width="80" Margin="0,0,6,0" DockPanel.Dock="Right" VerticalAlignment="Top" />
                                     </DockPanel>
                                     <ListBox x:Name="AdditionalClusterRecoveryPlanStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
                                 </DockPanel>
@@ -485,9 +538,15 @@
                                      Fleet is picked (see the .ps1's Sync-RecoveryPlanSelection). -->
                                 <DockPanel x:Name="RecoverFleetPlanPanel" Visibility="Collapsed">
                                     <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="0,0,0,8">
-                                        <!-- Margin as on RunAllDomainRecoveryButton above. -->
-                                        <Button x:Name="RunAllRecoverFleetButton" Content="Run Plan" Width="80" Margin="0,0,6,0" DockPanel.Dock="Right" VerticalAlignment="Center" />
-                                        <CheckBox x:Name="RunAllRecoverFleetParallelCheckBox" Content="Run parallel tasks using multiple threads (numbered circles)" IsChecked="True" VerticalAlignment="Center" DockPanel.Dock="Left" />
+                                        <!-- Margin as on RunAllDomainRecoveryButton above; Options subpane docked
+                                             Right BEFORE the Button for the same reason noted there. -->
+                                        <Border DockPanel.Dock="Right" BorderBrush="{StaticResource PanelBorderBrush}" BorderThickness="1" CornerRadius="3" Padding="6" VerticalAlignment="Top">
+                                            <StackPanel>
+                                                <TextBlock Text="OPTIONS" FontSize="9" FontWeight="Bold" Foreground="{StaticResource SubtleTextBrush}" Margin="0,0,0,4" />
+                                                <ToggleButton x:Name="RunAllRecoverFleetParallelCheckBox" Content="Run parallel tasks using multiple threads (numbered circles)" IsChecked="True" Style="{StaticResource OptionToggleButtonStyle}" />
+                                            </StackPanel>
+                                        </Border>
+                                        <Button x:Name="RunAllRecoverFleetButton" Content="Run Plan" Width="80" Margin="0,0,6,0" DockPanel.Dock="Right" VerticalAlignment="Top" />
                                     </DockPanel>
                                     <ListBox x:Name="RecoverFleetPlanStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
                                 </DockPanel>
@@ -558,10 +617,16 @@
                         <TabItem Header="Recovery Plan">
                             <DockPanel Margin="0,8,0,0">
                                 <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="0,0,0,8">
-                                    <!-- Margin as on RunAllDomainRecoveryButton above. -->
-                                    <Button x:Name="RunAllInstanceComponentsButton" Content="Run Plan" Width="80" Margin="0,0,6,0" DockPanel.Dock="Right" VerticalAlignment="Center" />
-                                    <CheckBox x:Name="RunAllInstanceComponentsParallelCheckBox" Content="Run parallel tasks using multiple threads (numbered circles)" IsChecked="True" VerticalAlignment="Center" DockPanel.Dock="Left" />
-                                    <CheckBox x:Name="InstanceComponentsAnswerFileCheckBox" Content="Use answer file for unattended interactive tasks" VerticalAlignment="Center" Margin="12,0,0,0" DockPanel.Dock="Left" />
+                                    <!-- Margin as on RunAllDomainRecoveryButton above; Options subpane docked
+                                         Right BEFORE the Button for the same reason noted there. -->
+                                    <Border DockPanel.Dock="Right" BorderBrush="{StaticResource PanelBorderBrush}" BorderThickness="1" CornerRadius="3" Padding="6" VerticalAlignment="Top">
+                                        <StackPanel>
+                                            <TextBlock Text="OPTIONS" FontSize="9" FontWeight="Bold" Foreground="{StaticResource SubtleTextBrush}" Margin="0,0,0,4" />
+                                            <ToggleButton x:Name="RunAllInstanceComponentsParallelCheckBox" Content="Run parallel tasks using multiple threads (numbered circles)" IsChecked="True" Style="{StaticResource OptionToggleButtonStyle}" />
+                                            <ToggleButton x:Name="InstanceComponentsAnswerFileCheckBox" Content="Use answer file for unattended interactive tasks" Style="{StaticResource OptionToggleButtonStyle}" />
+                                        </StackPanel>
+                                    </Border>
+                                    <Button x:Name="RunAllInstanceComponentsButton" Content="Run Plan" Width="80" Margin="0,0,6,0" DockPanel.Dock="Right" VerticalAlignment="Top" />
                                 </DockPanel>
                                 <ListBox x:Name="InstanceComponentsPlanStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
                             </DockPanel>
@@ -595,10 +660,16 @@
                                      last child being handed the remaining (here, zero) width, which is what
                                      made a plain DockPanel unusable here previously. -->
                                 <DockPanel DockPanel.Dock="Top" LastChildFill="False" Margin="0,0,0,8">
-                                    <!-- Margin as on RunAllDomainRecoveryButton above. -->
-                                    <Button x:Name="RunAllFleetComponentsButton" Content="Run Plan" Width="80" Margin="0,0,6,0" DockPanel.Dock="Right" VerticalAlignment="Center" />
-                                    <CheckBox x:Name="RunAllFleetComponentsParallelCheckBox" Content="Run parallel tasks using multiple threads (numbered circles)" IsChecked="True" VerticalAlignment="Center" DockPanel.Dock="Left" />
-                                    <CheckBox x:Name="OriginalVcfInstallerAvailableCheckBox" Content="Original VCF Installer Available" IsChecked="True" VerticalAlignment="Center" Margin="12,0,0,0" DockPanel.Dock="Left" />
+                                    <!-- Margin as on RunAllDomainRecoveryButton above; Options subpane docked
+                                         Right BEFORE the Button for the same reason noted there. -->
+                                    <Border DockPanel.Dock="Right" BorderBrush="{StaticResource PanelBorderBrush}" BorderThickness="1" CornerRadius="3" Padding="6" VerticalAlignment="Top">
+                                        <StackPanel>
+                                            <TextBlock Text="OPTIONS" FontSize="9" FontWeight="Bold" Foreground="{StaticResource SubtleTextBrush}" Margin="0,0,0,4" />
+                                            <ToggleButton x:Name="RunAllFleetComponentsParallelCheckBox" Content="Run parallel tasks using multiple threads (numbered circles)" IsChecked="True" Style="{StaticResource OptionToggleButtonStyle}" />
+                                            <ToggleButton x:Name="OriginalVcfInstallerAvailableCheckBox" Content="Original VCF Installer Available" IsChecked="True" Style="{StaticResource OptionToggleButtonStyle}" />
+                                        </StackPanel>
+                                    </Border>
+                                    <Button x:Name="RunAllFleetComponentsButton" Content="Run Plan" Width="80" Margin="0,0,6,0" DockPanel.Dock="Right" VerticalAlignment="Top" />
                                 </DockPanel>
                                 <ListBox x:Name="FleetComponentsPlanStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
                             </DockPanel>
