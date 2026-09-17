@@ -189,6 +189,122 @@ Function VCFIRCreateHeader {
     Return $headers
 }
 
+Function Import-VCFIRAnswerFile {
+    <#
+    .SYNOPSIS
+    Loads a JSON answer file used to drive this module's interactive (Read-Host) recovery tasks without user input
+
+    .DESCRIPTION
+    The Import-VCFIRAnswerFile cmdlet loads a JSON file containing pre-recorded answers for the small number of cmdlets in this module
+    that otherwise prompt interactively (currently New-PrepareManagementHostNetworking, New-SingleHostVsanDatastore,
+    New-NSXManagerOvaDeployment and Invoke-NSXManagerRestore), allowing a full recovery plan to run unattended.
+
+    The JSON is a single object keyed by cmdlet name. Each value is an array of "answer sets" - one answer set per invocation of that
+    cmdlet, in the order the plan calls it (this matters for a cmdlet like New-NSXManagerOvaDeployment that a plan may call more than
+    once). Each answer set is itself an ordered array of the values that would otherwise be typed at that cmdlet's Read-Host prompts, in
+    the same order those prompts would appear.
+
+    Once loaded, every interactive cmdlet in this module consumes its next answer set automatically instead of prompting, and throws
+    immediately if an answer set runs out of values or supplies one that fails that prompt's own validation, rather than hanging on a
+    Read-Host or silently misusing a later answer. Call Clear-VCFIRAnswerFile to return to normal interactive behaviour.
+
+    .EXAMPLE
+    Import-VCFIRAnswerFile -Path ".\management-domain-answers.json"
+
+    .PARAMETER Path
+    Relative or absolute path to the JSON answer file
+    #>
+    Param(
+        [Parameter (Mandatory = $true)][String] $Path
+    )
+    $resolvedPath = (Resolve-Path -Path $Path).Path
+    $script:VCFIRAnswers = Get-Content $resolvedPath -Raw | ConvertFrom-Json -AsHashtable
+    LogMessage -type INFO -message "Loaded interactive answer file: $resolvedPath"
+}
+Export-ModuleMember -Function Import-VCFIRAnswerFile
+
+Function Clear-VCFIRAnswerFile {
+    <#
+    .SYNOPSIS
+    Clears any answer file previously loaded via Import-VCFIRAnswerFile, restoring normal interactive prompting
+
+    .DESCRIPTION
+    The Clear-VCFIRAnswerFile cmdlet clears any answer file previously loaded via Import-VCFIRAnswerFile, restoring normal interactive
+    prompting for this module's interactive cmdlets
+
+    .EXAMPLE
+    Clear-VCFIRAnswerFile
+    #>
+    $script:VCFIRAnswers = $null
+}
+Export-ModuleMember -Function Clear-VCFIRAnswerFile
+
+Function Get-VCFIRAnswerSet {
+    <#
+    .SYNOPSIS
+    Internal helper: returns (and dequeues) the next answer set for the named cmdlet from a loaded answer file, or $null if no answer
+    file is loaded
+    #>
+    Param(
+        [Parameter (Mandatory = $true)][String] $FunctionName
+    )
+    If (!$script:VCFIRAnswers) { Return $null }
+    If (!$script:VCFIRAnswers.ContainsKey($FunctionName) -or (@($script:VCFIRAnswers[$FunctionName]).Count -eq 0)) {
+        Throw "Answer file has no remaining answer set for $FunctionName"
+    }
+    $answerSet = @($script:VCFIRAnswers[$FunctionName])[0]
+    $script:VCFIRAnswers[$FunctionName] = @($script:VCFIRAnswers[$FunctionName] | Select-Object -Skip 1)
+    Return , @($answerSet)
+}
+
+Function Get-VCFIRAnswer {
+    <#
+    .SYNOPSIS
+    Internal helper: used in place of Read-Host at each interactive prompt in this module's interactive cmdlets
+
+    .DESCRIPTION
+    If an answer file is loaded (AnswerSet is non-null), consumes and returns its next value, throwing immediately if the answer set is
+    already exhausted. Otherwise, prompts interactively via Read-Host exactly as before. Callers should follow this with a call to
+    Confirm-VCFIRAnswer using the same validity check they already apply to a Read-Host answer, so an invalid value from the answer file
+    fails hard immediately instead of silently misaligning the remaining queued answers via a retry loop.
+    #>
+    Param(
+        [Parameter (Mandatory = $false)] $AnswerSet,
+        [Parameter (Mandatory = $true)] [ref] $Index
+    )
+    If ($null -ne $AnswerSet) {
+        If ($Index.Value -ge $AnswerSet.Count) {
+            Throw "Answer file ran out of answers for this task"
+        }
+        $answer = [String]$AnswerSet[$Index.Value]
+        $Index.Value++
+        Write-Host " $answer" -ForegroundColor Cyan
+        Return $answer
+    }
+    Return Read-Host
+}
+
+Function Confirm-VCFIRAnswer {
+    <#
+    .SYNOPSIS
+    Internal helper: called immediately after Get-VCFIRAnswer at each interactive prompt to fail hard on an invalid answer-file value
+
+    .DESCRIPTION
+    When an answer file is driving a prompt (AnswerSet is non-null) and IsValid is $false, throws immediately naming the offending value
+    and prompt, rather than letting the caller's own Do/Until loop silently consume the next queued answer as a retry. Has no effect
+    during normal interactive use (AnswerSet is $null).
+    #>
+    Param(
+        [Parameter (Mandatory = $false)] $AnswerSet,
+        [Parameter (Mandatory = $true)] [bool] $IsValid,
+        [Parameter (Mandatory = $true)] [String] $Value,
+        [Parameter (Mandatory = $true)] [String] $PromptDescription
+    )
+    If ($AnswerSet -and -not $IsValid) {
+        Throw "Answer file supplied invalid value '$Value' for $PromptDescription"
+    }
+}
+
 Function Move-VMKernel {
     Param (
         [object]$VMHost,
@@ -1801,6 +1917,8 @@ Function New-NSXManagerOvaDeployment {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
+    [int]$__ansIdx = 0
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
@@ -1828,7 +1946,8 @@ Function New-NSXManagerOvaDeployment {
     Write-Host ""; $nsxManagersDisplayObject | format-table -Property @{Expression = " " }, id, Manager -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
     Do {
         Write-Host ""; Write-Host " Enter the ID of the Manager you wish to redeploy, or C to Cancel: " -ForegroundColor Yellow -nonewline
-        $nsxManagerSelection = Read-Host
+        $nsxManagerSelection = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
+        Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid (($nsxManagerSelection -in $nsxManagersDisplayObject.ID) -OR ($nsxManagerSelection -eq "c")) -Value $nsxManagerSelection -PromptDescription "NSX Manager selection"
     } Until (($nsxManagerSelection -in $nsxManagersDisplayObject.ID) -OR ($nsxManagerSelection -eq "c"))
     If ($nsxManagerSelection -eq "c") { Break }
     $selectedNsxManager = $nsxNodes | Where-Object { $_.vmName -eq ($nsxManagersDisplayObject | Where-Object { $_.id -eq $nsxManagerSelection }).manager }
@@ -5241,6 +5360,8 @@ Function New-SingleHostVsanDatastore {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
+    [int]$__ansIdx = 0
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
@@ -5310,7 +5431,8 @@ Function New-SingleHostVsanDatastore {
         Write-Host ""; $remainingDisksDisplayObject | format-table -Property @{Expression = " " }, id, canonicalName, size, ssd, scsiLun -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
         Do {
             Write-Host ""; Write-Host " Enter the desired number of disk groups to create (between 1 and 5), or C to Cancel: " -ForegroundColor Yellow -nonewline
-            $diskGroupNumber = Read-Host
+            $diskGroupNumber = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
+            Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid (($diskGroupNumber -in "1", "2", "3", "4", "5") -or ($diskGroupNumber -eq "C")) -Value $diskGroupNumber -PromptDescription "disk group count"
         } Until (($diskGroupNumber -in "1", "2", "3", "4", "5") -or ($diskGroupNumber -eq "C"))
 
         #Loop Through Disk Group Creation
@@ -5322,7 +5444,8 @@ Function New-SingleHostVsanDatastore {
                 If ($i -gt 1) {
                     Write-Host ""
                 }; Write-Host " Enter the ID of disk to use as Cache Disk for Disk Group $i, or C to Cancel: " -ForegroundColor Yellow -nonewline
-                $cacheDiskSelection = Read-Host
+                $cacheDiskSelection = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
+                Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid (($cacheDiskSelection -in $remainingDisksDisplayObject.id) -OR ($cacheDiskSelection -eq "c")) -Value $cacheDiskSelection -PromptDescription "cache disk selection for disk group $i"
             } Until (($cacheDiskSelection -in $remainingDisksDisplayObject.id) -OR ($cacheDiskSelection -eq "c"))
             If ($cacheDiskSelection -eq "c") {
                 Break
@@ -5337,7 +5460,7 @@ Function New-SingleHostVsanDatastore {
             Write-Host ""; $remainingDisksDisplayObject | format-table -Property @{Expression = " " }, id, canonicalName, size, ssd -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
             Do {
                 Write-Host ""; Write-Host " Enter a comma seperated list of IDs to be used as Capacity Disks for Disk Group $i, or C to Cancel: " -ForegroundColor Yellow -nonewline
-                $capacityDiskSelection = Read-Host
+                $capacityDiskSelection = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
                 If ($capacityDiskSelection -ne "C") {
                     $capacityDiskSelectionInvalid = $false
                     $capacityDiskArray = $capacityDiskSelection -split (",")
@@ -5347,6 +5470,7 @@ Function New-SingleHostVsanDatastore {
                         }
                     }
                 }
+                Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid (($capacityDiskSelectionInvalid -eq $false) -OR ($capacityDiskSelection -eq "c")) -Value $capacityDiskSelection -PromptDescription "capacity disk selection for disk group $i"
             } Until (($capacityDiskSelectionInvalid -eq $false) -OR ($capacityDiskSelection -eq "c"))
             If ($capacityDiskSelection -eq "c") {
                 Break
@@ -5403,7 +5527,8 @@ Function New-SingleHostVsanDatastore {
         Write-Host ""; $proposedConfigDisplayObject | format-table -Property @{Expression = " " }, diskGroup, cacheDiskID, cacheDiskCN, cacheDiskCapacity, capacityDiskIDs, capacityCNs, capacityDiskSize -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
         Write-Host ""; Write-Host " Do you wish to proceed with the proposed configuration? (Y/N): " -ForegroundColor Yellow -nonewline
         Do {
-            $proposedConfigAccepted = Read-Host
+            $proposedConfigAccepted = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
+            Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid ($proposedConfigAccepted -in "Y", "M") -Value $proposedConfigAccepted -PromptDescription "proposed disk group configuration confirmation"
         } Until ($proposedConfigAccepted -in "Y", "M")
         $proposedConfigAccepted = $proposedConfigAccepted -replace "`t|`n|`r", ""
 
@@ -6188,6 +6313,8 @@ Function New-PrepareManagementHostNetworking {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
+    [int]$__ansIdx = 0
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
@@ -6339,7 +6466,7 @@ Function New-PrepareManagementHostNetworking {
                 Write-Host ""; Write-Host " Creating vSS " -ForegroundColor Yellow -nonewline; Write-Host "$vssName" -ForegroundColor cyan -nonewline; Write-Host " to match $ordinal VDS from backup" -ForegroundColor Yellow -nonewline; Write-Host " which contained the networks: " -ForegroundColor Yellow -nonewline; Write-Host "$networksDisplay" -ForegroundColor Cyan
                 Write-Host " Enter a comma seperated list of IDs to use as vmnics for this vSS, or C to Cancel: " -ForegroundColor Yellow -nonewline
             }
-            $nicSelection = Read-Host
+            $nicSelection = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
 
             If ($nicSelection -eq "") {
                 If ($isManagementVds -and $managementVss) {
@@ -6364,6 +6491,7 @@ Function New-PrepareManagementHostNetworking {
                     }
                 }
             }
+            Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid (($nicSelectionInvalid -eq $false) -OR ($nicSelection -eq "c")) -Value $nicSelection -PromptDescription "NIC selection for vSS $vssName"
         } Until (($nicSelectionInvalid -eq $false) -OR ($nicSelection -eq "c"))
         If ($nicSelection -eq "c") { Break }
 
@@ -6427,7 +6555,7 @@ Function New-PrepareManagementHostNetworking {
     }
 
     Write-Host ""; Write-Host " Do you wish to proceed with the proposed configuration? (Y/N): " -ForegroundColor Yellow -nonewline
-    $proposedConfigAccepted = Read-Host
+    $proposedConfigAccepted = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
     $proposedConfigAccepted = $proposedConfigAccepted -replace "`t|`n|`r", ""
     If ($proposedConfigAccepted -eq "Y") {
         Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false -ErrorAction SilentlyContinue
@@ -7810,6 +7938,8 @@ Function Invoke-NSXManagerRestore {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
+    [int]$__ansIdx = 0
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
@@ -7836,7 +7966,8 @@ Function Invoke-NSXManagerRestore {
     Write-Host ""; $nsxManagersDisplayObject | format-table -Property @{Expression = " " }, id, Manager -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
     Do {
         Write-Host ""; Write-Host " Enter the ID of the Manager you wish to restore, or C to Cancel: " -ForegroundColor Yellow -nonewline
-        $nsxManagerSelection = Read-Host
+        $nsxManagerSelection = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
+        Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid (($nsxManagerSelection -in $nsxManagersDisplayObject.ID) -OR ($nsxManagerSelection -eq "c")) -Value $nsxManagerSelection -PromptDescription "NSX Manager selection"
     } Until (($nsxManagerSelection -in $nsxManagersDisplayObject.ID) -OR ($nsxManagerSelection -eq "c"))
     If ($nsxManagerSelection -eq "c") { Break }
     $selectedNsxManager = $nsxNodes | Where-Object { $_.vmName -eq ($nsxManagersDisplayObject | Where-Object { $_.id -eq $nsxManagerSelection }).manager }
@@ -7930,7 +8061,8 @@ Function Invoke-NSXManagerRestore {
     Write-Host ""; $relevantbackupsDisplayObject | format-table -Property @{Expression = " " }, id, ipAddress, nodeId, humanTime -autosize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
     Do {
         Write-Host ""; Write-Host " Enter the ID of the Backup you wish to restore, or C to Cancel: " -ForegroundColor Yellow -nonewline
-        $backupSelection = Read-Host
+        $backupSelection = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
+        Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid (($backupSelection -in $relevantbackupsDisplayObject.ID) -OR ($backupSelection -eq "c")) -Value $backupSelection -PromptDescription "NSX Manager backup selection"
     } Until (($backupSelection -in $relevantbackupsDisplayObject.ID) -OR ($backupSelection -eq "c"))
     If ($backupSelection -eq "c") { Break }
 
