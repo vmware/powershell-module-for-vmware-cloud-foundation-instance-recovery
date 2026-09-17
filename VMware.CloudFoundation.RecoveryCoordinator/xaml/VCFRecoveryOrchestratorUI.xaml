@@ -611,7 +611,7 @@
                                         </StackPanel>
                                         <StackPanel Orientation="Horizontal">
                                             <ToggleButton x:Name="InstanceComponentsAnswerFileCheckBox" Style="{StaticResource ToggleSwitchStyle}" VerticalAlignment="Center" />
-                                            <TextBlock Text="Use answer file for unattended interactive tasks" VerticalAlignment="Center" Margin="8,0,0,0" />
+                                            <TextBlock Text="Use answer file for interactive tasks" VerticalAlignment="Center" Margin="8,0,0,0" />
                                         </StackPanel>
                                     </StackPanel>
                                     <!-- Layout/margin as on RunAllDomainRecoveryButton above. -->
