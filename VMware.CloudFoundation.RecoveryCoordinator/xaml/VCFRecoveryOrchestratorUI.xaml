@@ -488,17 +488,22 @@
                                                 <TextBlock Text="Run tasks using multiple threads (indicated by numbered circles)" VerticalAlignment="Center" Margin="8,0,0,0" />
                                             </StackPanel>
                                         </StackPanel>
-                                        <!-- Margin right=6 lines this button's right edge up with the right edge
-                                             of every step row's own status button in the ListBox below, so the
-                                             header button and the whole status column read as one right-hand
-                                             column. The 6px is the ListBox chrome the rows sit inside but this
-                                             button does not: ListBox Padding (1) + ListBoxItem Padding (3, see
-                                             the style above) + each row Grid's own Margin (2, set in
+                                        <!-- "Task List" heading + Run Plan share one row, below the toggle
+                                             stack and above the ListBox: heading docked Left, Button docked
+                                             Right, both VerticalAlignment="Center" so they line up with each
+                                             other. Margin right=6 on the Button lines its right edge up with
+                                             the right edge of every step row's own status button in the ListBox
+                                             below, so the header button and the whole status column read as one
+                                             right-hand column. The 6px is the ListBox chrome the rows sit inside
+                                             but this button does not: ListBox Padding (1) + ListBoxItem Padding
+                                             (3, see the style above) + each row Grid's own Margin (2, set in
                                              New-StepRow). It holds whether or not the ListBox is showing a
                                              vertical scrollbar - the scrollbar narrows the header and the rows
-                                             by the same amount. Docked Top (below the toggle stack above) rather
-                                             than Right, per the mockup putting Run Plan under the options. -->
-                                        <Button x:Name="RunAllDomainRecoveryButton" Content="Run Plan" Width="80" Margin="0,8,6,0" DockPanel.Dock="Top" HorizontalAlignment="Right" />
+                                             by the same amount. -->
+                                        <DockPanel DockPanel.Dock="Top" Margin="0,8,0,0" LastChildFill="False">
+                                            <TextBlock Text="Task List" FontWeight="Bold" FontSize="14" DockPanel.Dock="Left" VerticalAlignment="Center" />
+                                            <Button x:Name="RunAllDomainRecoveryButton" Content="Run Plan" Width="80" Margin="0,0,6,0" DockPanel.Dock="Right" VerticalAlignment="Center" />
+                                        </DockPanel>
                                     </DockPanel>
                                     <ListBox x:Name="DomainRecoveryPlanStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
                                 </DockPanel>
@@ -514,8 +519,11 @@
                                                 <TextBlock Text="Run parallel tasks using multiple threads (numbered circles)" VerticalAlignment="Center" Margin="8,0,0,0" />
                                             </StackPanel>
                                         </StackPanel>
-                                        <!-- Layout/margin as on RunAllDomainRecoveryButton above. -->
-                                        <Button x:Name="RunAllAdditionalClusterRecoveryButton" Content="Run Plan" Width="80" Margin="0,8,6,0" DockPanel.Dock="Top" HorizontalAlignment="Right" />
+                                        <!-- Layout as on RunAllDomainRecoveryButton above. -->
+                                        <DockPanel DockPanel.Dock="Top" Margin="0,8,0,0" LastChildFill="False">
+                                            <TextBlock Text="Task List" FontWeight="Bold" FontSize="14" DockPanel.Dock="Left" VerticalAlignment="Center" />
+                                            <Button x:Name="RunAllAdditionalClusterRecoveryButton" Content="Run Plan" Width="80" Margin="0,0,6,0" DockPanel.Dock="Right" VerticalAlignment="Center" />
+                                        </DockPanel>
                                     </DockPanel>
                                     <ListBox x:Name="AdditionalClusterRecoveryPlanStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
                                 </DockPanel>
@@ -532,8 +540,11 @@
                                                 <TextBlock Text="Run parallel tasks using multiple threads (numbered circles)" VerticalAlignment="Center" Margin="8,0,0,0" />
                                             </StackPanel>
                                         </StackPanel>
-                                        <!-- Layout/margin as on RunAllDomainRecoveryButton above. -->
-                                        <Button x:Name="RunAllRecoverFleetButton" Content="Run Plan" Width="80" Margin="0,8,6,0" DockPanel.Dock="Top" HorizontalAlignment="Right" />
+                                        <!-- Layout as on RunAllDomainRecoveryButton above. -->
+                                        <DockPanel DockPanel.Dock="Top" Margin="0,8,0,0" LastChildFill="False">
+                                            <TextBlock Text="Task List" FontWeight="Bold" FontSize="14" DockPanel.Dock="Left" VerticalAlignment="Center" />
+                                            <Button x:Name="RunAllRecoverFleetButton" Content="Run Plan" Width="80" Margin="0,0,6,0" DockPanel.Dock="Right" VerticalAlignment="Center" />
+                                        </DockPanel>
                                     </DockPanel>
                                     <ListBox x:Name="RecoverFleetPlanStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
                                 </DockPanel>
@@ -614,8 +625,11 @@
                                             <TextBlock Text="Use answer file for interactive tasks" VerticalAlignment="Center" Margin="8,0,0,0" />
                                         </StackPanel>
                                     </StackPanel>
-                                    <!-- Layout/margin as on RunAllDomainRecoveryButton above. -->
-                                    <Button x:Name="RunAllInstanceComponentsButton" Content="Run Plan" Width="80" Margin="0,8,6,0" DockPanel.Dock="Top" HorizontalAlignment="Right" />
+                                    <!-- Layout as on RunAllDomainRecoveryButton above. -->
+                                    <DockPanel DockPanel.Dock="Top" Margin="0,8,0,0" LastChildFill="False">
+                                        <TextBlock Text="Task List" FontWeight="Bold" FontSize="14" DockPanel.Dock="Left" VerticalAlignment="Center" />
+                                        <Button x:Name="RunAllInstanceComponentsButton" Content="Run Plan" Width="80" Margin="0,0,6,0" DockPanel.Dock="Right" VerticalAlignment="Center" />
+                                    </DockPanel>
                                 </DockPanel>
                                 <ListBox x:Name="InstanceComponentsPlanStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
                             </DockPanel>
@@ -657,8 +671,11 @@
                                             <TextBlock Text="Original VCF Installer Available" VerticalAlignment="Center" Margin="8,0,0,0" />
                                         </StackPanel>
                                     </StackPanel>
-                                    <!-- Layout/margin as on RunAllDomainRecoveryButton above. -->
-                                    <Button x:Name="RunAllFleetComponentsButton" Content="Run Plan" Width="80" Margin="0,8,6,0" DockPanel.Dock="Top" HorizontalAlignment="Right" />
+                                    <!-- Layout as on RunAllDomainRecoveryButton above. -->
+                                    <DockPanel DockPanel.Dock="Top" Margin="0,8,0,0" LastChildFill="False">
+                                        <TextBlock Text="Task List" FontWeight="Bold" FontSize="14" DockPanel.Dock="Left" VerticalAlignment="Center" />
+                                        <Button x:Name="RunAllFleetComponentsButton" Content="Run Plan" Width="80" Margin="0,0,6,0" DockPanel.Dock="Right" VerticalAlignment="Center" />
+                                    </DockPanel>
                                 </DockPanel>
                                 <ListBox x:Name="FleetComponentsPlanStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
                             </DockPanel>

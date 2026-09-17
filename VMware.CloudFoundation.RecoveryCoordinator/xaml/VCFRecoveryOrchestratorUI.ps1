@@ -2218,7 +2218,7 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
             [void]$variantPanel.Children.Add($variantInteractiveBadge)
         }
         [void]$variantPanel.Children.Add($variantButton)
-        return [PSCustomObject]@{ Panel = $variantPanel; Button = $variantButton }
+        return [PSCustomObject]@{ Panel = $variantPanel; Button = $variantButton; InteractiveBadgeText = $interactiveBadgeText }
     }
 
     $planVariant = & $buildVariant $true
@@ -2232,17 +2232,57 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
         }.GetNewClosure())
 
     return [PSCustomObject]@{
-        PlanPanel    = $planVariant.Panel
-        PlanButton   = $planVariant.Button
-        ManualPanel  = $manualVariant.Panel
-        ManualButton = $manualVariant.Button
-        CommandLine  = $CommandLine
-        CmdletName   = $cmdletName
-        DisplayName  = $DisplayName
-        ThreadId     = $ThreadId
-        Interactive  = $Interactive
-        Id           = $Id
-        Condition    = $Condition
+        PlanPanel                  = $planVariant.Panel
+        PlanButton                 = $planVariant.Button
+        PlanInteractiveBadgeText   = $planVariant.InteractiveBadgeText
+        ManualPanel                = $manualVariant.Panel
+        ManualButton               = $manualVariant.Button
+        ManualInteractiveBadgeText = $manualVariant.InteractiveBadgeText
+        CommandLine                = $CommandLine
+        CmdletName                 = $cmdletName
+        DisplayName                = $DisplayName
+        ThreadId                   = $ThreadId
+        Interactive                = $Interactive
+        Id                         = $Id
+        Condition                  = $Condition
+    }
+}
+
+# Recomputes each interactive step row's badge text ("Requires Input" vs "Auto Answered") for the
+# given group, based on whether its currently loaded interactive answer file (InteractiveAnswerFilePath,
+# see the answer-file toggle's Checked/Unchecked handlers) actually covers that step's specific
+# invocation. A plan can call the same cmdlet more than once (e.g. New-NSXManagerOvaDeployment for the
+# 1st/2nd/3rd NSX Manager), and the answer file's array-of-answer-sets for a given cmdlet name is
+# consumed in the SAME order Get-VCFIRAnswerSet dequeues it at runtime -- so this walks StepRows in
+# order and counts each cmdlet name's occurrences the same way, rather than just checking the key
+# exists, so only the occurrences actually covered by an answer set show "Auto Answered".
+function Update-StepRowAutoAnsweredBadges($Group) {
+    $answerCounts = $null
+    if ($Group.InteractiveAnswerFilePath -and (Test-Path -LiteralPath $Group.InteractiveAnswerFilePath)) {
+        try {
+            $answers = Get-Content -LiteralPath $Group.InteractiveAnswerFilePath -Raw | ConvertFrom-Json
+            $answerCounts = @{}
+            foreach ($property in $answers.PSObject.Properties) {
+                $answerCounts[$property.Name] = @($property.Value).Count
+            }
+        } catch {
+            $answerCounts = $null
+        }
+    }
+
+    $seenCounts = @{}
+    foreach ($row in $Group.StepRows) {
+        if (-not $row.Interactive) {
+            continue
+        }
+        $seenCounts[$row.CmdletName] = 1 + [int]$seenCounts[$row.CmdletName]
+        $isAutoAnswered = $answerCounts -and $answerCounts.ContainsKey($row.CmdletName) -and ($seenCounts[$row.CmdletName] -le $answerCounts[$row.CmdletName])
+        $badgeText = if ($isAutoAnswered) { 'Auto Answered' } else { 'Requires Input' }
+        foreach ($textBlock in @($row.PlanInteractiveBadgeText, $row.ManualInteractiveBadgeText)) {
+            if ($textBlock) {
+                $textBlock.Text = $badgeText
+            }
+        }
     }
 }
 
@@ -2918,6 +2958,7 @@ $instanceComponentsAnswerFileCheckBox.Add_Checked({
         $global:instanceComponentsGroup.InteractiveAnswerFilePath = $dialog.FileName
         $escapedAnswerFilePath = Protect-SingleQuotes $dialog.FileName
         Send-ToConsole "Import-VCFIRAnswerFile -Path '$escapedAnswerFilePath'"
+        Update-StepRowAutoAnsweredBadges $global:instanceComponentsGroup
     }.GetNewClosure())
 
 $instanceComponentsAnswerFileCheckBox.Add_Unchecked({
@@ -2925,6 +2966,7 @@ $instanceComponentsAnswerFileCheckBox.Add_Unchecked({
             Send-ToConsole "Clear-VCFIRAnswerFile"
         }
         $global:instanceComponentsGroup.InteractiveAnswerFilePath = $null
+        Update-StepRowAutoAnsweredBadges $global:instanceComponentsGroup
     }.GetNewClosure())
 
 $fleetComponentsLoadVariablesButton.Add_Click({
@@ -3109,6 +3151,10 @@ function Update-GroupRevealedSteps($Group, [System.Collections.IDictionary]$Vari
         $Variables['originalVcfInstallerAvailable'] = if ($originalVcfInstallerAvailableCheckBox.IsChecked) { 'true' } else { 'false' }
     }
     $Group.StepRows = Set-PlanStepsListBox $Group.StepsListBox $Group.ManualStepsListBox (Get-ApplicableSteps $Group.Steps $Variables)
+    # Set-PlanStepsListBox rebuilds StepRows from scratch (fresh "Requires Input" badges on every
+    # interactive row), so re-apply the answer-file coverage state on top -- a no-op for
+    # fleetComponentsGroup, which never sets InteractiveAnswerFilePath.
+    Update-StepRowAutoAnsweredBadges $Group
 }
 
 # Group counterpart to Import-VariablesAnswersFile, used only by Instance Components/Fleet
