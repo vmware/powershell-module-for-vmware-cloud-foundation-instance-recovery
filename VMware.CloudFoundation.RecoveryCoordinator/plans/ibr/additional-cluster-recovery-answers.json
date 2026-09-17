@@ -1,0 +1,21 @@
+{
+  "_readme": [
+    "Sample answer file for the interactive tasks in additional-cluster-recovery-plan.json, consumed via Import-VCFIRAnswerFile.",
+    "Keyed by cmdlet name. Each value is an array of answer sets - one answer set per invocation of that cmdlet in the plan. Each answer set is an ordered array of the values you would otherwise type at that cmdlet's Read-Host prompts, in the same order the prompts appear.",
+    "Every key below is OPTIONAL: if you omit a cmdlet entirely, it just prompts normally (exactly as if no answer file were loaded at all) if it's ever actually reached with a real prompt. Once you DO list a key, though, it's a real claim of coverage - an answer set that runs out of values, or supplies an invalid one, fails the run immediately rather than hanging or silently misusing a later answer. New-RebuiltVsanDatastore is marked interactive:false in THIS plan's JSON even though its prompt (for vSAN OSA) is genuinely reachable here - it's included below with a real answer so this plan can run fully unattended, but you can delete it if you'd rather that step always pause for a manual look instead.",
+    "New-RebuiltVsanDatastore prompts only apply to vSAN OSA (disk group count, then cache/capacity disk IDs per group, then Y/N) - it asks nothing at all for vSAN ESA, in which case you can just omit its key entirely instead of listing one.",
+    "New-RebuiltVdsConfiguration asks for one comma-separated NIC list per VDS discovered on the reference host, then a final Y/N - the sample below assumes a single VDS.",
+    "Invoke-NSXEdgeClusterRecoverySelective asks for one comma-separated list of Edge IDs to recover, or C to Cancel - the sample below recovers Edge 1 only.",
+    "The exact number of prompts (and so the length of each answer set) depends on your environment's discovered NIC/disk/VDS/edge counts - the values below MUST be reviewed against your own environment's real prompts before use. Run each task interactively once first to see its real prompts/IDs, then transcribe your answers here in the same order.",
+    "This key is ignored by Import-VCFIRAnswerFile - only the cmdlet-name keys below are read."
+  ],
+  "New-RebuiltVdsConfiguration": [
+    ["1,2", "Y"]
+  ],
+  "New-RebuiltVsanDatastore": [
+    ["1", "1", "2,3", "Y"]
+  ],
+  "Invoke-NSXEdgeClusterRecoverySelective": [
+    ["1"]
+  ]
+}

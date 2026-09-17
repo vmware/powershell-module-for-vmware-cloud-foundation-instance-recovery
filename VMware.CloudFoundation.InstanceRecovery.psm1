@@ -204,9 +204,17 @@ Function Import-VCFIRAnswerFile {
     once). Each answer set is itself an ordered array of the values that would otherwise be typed at that cmdlet's Read-Host prompts, in
     the same order those prompts would appear.
 
-    Once loaded, every interactive cmdlet in this module consumes its next answer set automatically instead of prompting, and throws
-    immediately if an answer set runs out of values or supplies one that fails that prompt's own validation, rather than hanging on a
-    Read-Host or silently misusing a later answer. Call Clear-VCFIRAnswerFile to return to normal interactive behaviour.
+    Once loaded, every interactive cmdlet in this module consumes its next answer set automatically instead of prompting, for any cmdlet
+    whose name is actually a key in the file. A cmdlet's key is entirely OPTIONAL: whether it ever actually needs to prompt at all often
+    depends on runtime state a plan's own JSON can't know ahead of time (e.g. vSAN OSA vs ESA, or whether any NSX Edges are found), and
+    some cmdlets used by a plan may structurally never prompt at all for that specific plan (e.g. New-RebuiltVdsConfiguration
+    auto-detects and skips its own prompt entirely when rebuilding the MANAGEMENT domain's own default cluster). Omitting a cmdlet's key
+    just means that cmdlet prompts normally, exactly as if no answer file were loaded, if it ever actually reaches a real prompt -- there
+    is no need to add a placeholder entry for every cmdlet a plan happens to call.
+
+    Once a key IS present, though, it's a real claim of coverage: an answer set that runs out of values, or supplies one that fails that
+    prompt's own validation, throws immediately rather than hanging on a Read-Host or silently misusing a later answer. Call
+    Clear-VCFIRAnswerFile to return to normal interactive behaviour entirely.
 
     Confirm-ManualStep is a special case, since it is a manual go/no-go gate confirming real-world work done OUTSIDE this tool, not a
     configuration choice. Its answer-file entry (key "Confirm-ManualStep") is a single FLAT JSON array of pre-approved AnswerKey
@@ -258,13 +266,26 @@ Function Get-VCFIRAnswerSet {
     <#
     .SYNOPSIS
     Internal helper: returns (and dequeues) the next answer set for the named cmdlet from a loaded answer file, or $null if no answer
-    file is loaded
+    file is loaded or this cmdlet's key simply isn't present in it
+
+    .DESCRIPTION
+    Every interactive cmdlet in this module calls this unconditionally near its own start, before it has any way of knowing yet whether
+    it will actually need to prompt for anything in this particular invocation (that often depends on runtime state - e.g. whether the
+    target cluster turns out to be vSAN OSA vs ESA, or whether any NSX Edges are actually found). A cmdlet's key is therefore entirely
+    OPTIONAL in an answer file: if it's missing, this returns $null exactly as if no answer file were loaded at all, so that cmdlet just
+    prompts normally if it turns out to actually need to - no need to add a placeholder entry for every cmdlet that MIGHT theoretically
+    run somewhere in a plan just to avoid an error on a cmdlet that will never actually prompt for this particular plan/environment.
+
+    Once a key IS present, though, it is a real claim of coverage and is held to it: an empty answer-set list, or one that runs out
+    mid-run, throws immediately rather than falling back to Read-Host - see Get-VCFIRAnswer's own comment for why silently reverting to
+    interactive input partway through would be worse than failing loudly.
     #>
     Param(
         [Parameter (Mandatory = $true)][String] $FunctionName
     )
     If (!$script:VCFIRAnswers) { Return $null }
-    If (!$script:VCFIRAnswers.ContainsKey($FunctionName) -or (@($script:VCFIRAnswers[$FunctionName]).Count -eq 0)) {
+    If (!$script:VCFIRAnswers.ContainsKey($FunctionName)) { Return $null }
+    If (@($script:VCFIRAnswers[$FunctionName]).Count -eq 0) {
         Throw "Answer file has no remaining answer set for $FunctionName"
     }
     $answerSet = @($script:VCFIRAnswers[$FunctionName])[0]
@@ -8434,6 +8455,8 @@ Function Invoke-NSXEdgeClusterRecoverySelective {
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
 
+    $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
+    [int]$__ansIdx = 0
     $vcenterConnection = Connect-VIServer -server $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
 
     $resourcePools = @(Get-Cluster -name $clusterName | Get-ResourcePool | Where-Object { $_.name -ne "Resources" })
@@ -8517,7 +8540,7 @@ Function Invoke-NSXEdgeClusterRecoverySelective {
     $edgeDisplayObject | Format-Table -Property @{Expression = " " }, ID, Location, Edge, Present -AutoSize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
     Write-Host ""
     Write-Host " Enter a comma-separated list of Edge IDs to recover (e.g. 1,3), or C to Cancel: " -ForegroundColor Yellow -NoNewline
-    $userInput = Read-Host
+    $userInput = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
 
     If ($userInput -match "^[Cc]$") {
         LogMessage -type INFO -message "[$jumpboxName] Recovery cancelled by user"

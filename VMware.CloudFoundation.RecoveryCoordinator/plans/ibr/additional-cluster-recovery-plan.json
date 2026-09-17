@@ -59,7 +59,7 @@
     "displayName": "Rebuild VDS Configuration",
     "condition": [],
     "threadId": "",
-    "interactive": false,
+    "interactive": true,
     "visible": true
   },
   {
@@ -111,7 +111,7 @@
     "displayName": "Invoke NSX Edge Cluster Recovery Selective",
     "condition": [],
     "threadId": "",
-    "interactive": false,
+    "interactive": true,
     "visible": true
   },
   {
