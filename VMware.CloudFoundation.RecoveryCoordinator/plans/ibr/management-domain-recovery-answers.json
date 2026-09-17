@@ -5,6 +5,7 @@
     "Each answer set is an ordered array of the values you would otherwise type at that cmdlet's Read-Host prompts, in the same order the prompts appear.",
     "The exact number of prompts (and so the length of each answer set) depends on your environment's discovered NIC/disk/VDS counts - the values below match a common 2-VDS, single-disk-group, 3-NSX-Manager management domain and MUST be reviewed against your own environment's prompts before use.",
     "Run each task interactively once first to see its real prompts/IDs, then transcribe your answers here in the same order. An invalid or missing answer fails the run immediately rather than hanging.",
+    "New-SingleHostVsanDatastore prompts only apply to vSAN OSA (disk group count, then cache/capacity disk IDs per group, then Y/N). For vSAN ESA it asks nothing at all, but the cmdlet still requires its key to be present - use an empty answer set, e.g. \"New-SingleHostVsanDatastore\": [[]], to declare 'one invocation, zero answers needed' for an ESA environment.",
     "This key is ignored by Import-VCFIRAnswerFile - only the cmdlet-name keys below are read."
   ],
   "New-PrepareManagementHostNetworking": [

@@ -144,6 +144,7 @@ $instanceComponentsLoadedVariablesTextBlock = $window.FindName('InstanceComponen
 $instanceComponentsVariablesItemsPanel = $window.FindName('InstanceComponentsVariablesItemsPanel')
 $runAllInstanceComponentsButton = $window.FindName('RunAllInstanceComponentsButton')
 $runAllInstanceComponentsParallelCheckBox = $window.FindName('RunAllInstanceComponentsParallelCheckBox')
+$instanceComponentsAnswerFileCheckBox = $window.FindName('InstanceComponentsAnswerFileCheckBox')
 $instanceComponentsPlanStepsListBox = $window.FindName('InstanceComponentsPlanStepsListBox')
 $instanceComponentsManualStepsListBox = $window.FindName('InstanceComponentsManualStepsListBox')
 $fleetComponentsLoadVariablesButton = $window.FindName('FleetComponentsLoadVariablesButton')
@@ -229,6 +230,7 @@ $global:instanceComponentsGroup = @{
     StepRows                 = @()
     AnswersFilePath          = $null
     AnswerMap                = $null
+    InteractiveAnswerFilePath = $null
     StepsListBox             = $instanceComponentsPlanStepsListBox
     ManualStepsListBox       = $instanceComponentsManualStepsListBox
     VariablesItemsPanel      = $instanceComponentsVariablesItemsPanel
@@ -1317,6 +1319,15 @@ function Initialize-ConsoleVariables($Console) {
             Send-ToConsole "Import-RecoveryVariables -Path '$escapedGroupAnswersPath'" $Console
             $lastCmdletSent = 'Import-RecoveryVariables'
         }
+    }
+    # Management Domain Recovery's own interactive-answer-file mechanism (see the "Use answer file
+    # for unattended interactive tasks" checkbox) -- primes it into every freshly spawned thread
+    # console too, since New-NSXManagerOvaDeployment/Invoke-NSXManagerRestore run in threadId 2/3
+    # consoles, not Main.
+    if ($global:instanceComponentsGroup.InteractiveAnswerFilePath) {
+        $escapedInteractiveAnswerPath = Protect-SingleQuotes $global:instanceComponentsGroup.InteractiveAnswerFilePath
+        Send-ToConsole "Import-VCFIRAnswerFile -Path '$escapedInteractiveAnswerPath'" $Console
+        $lastCmdletSent = 'Import-VCFIRAnswerFile'
     }
     if (-not $lastCmdletSent) {
         return
@@ -2888,6 +2899,32 @@ $instanceComponentsNewVariablesFileButton.Add_Click({
             return
         }
         New-GroupVariablesFile $global:instanceComponentsGroup $dialog.FileName
+    }.GetNewClosure())
+
+# Lets Management Domain Recovery's 4 interactive (Read-Host-driven) tasks run unattended: checking
+# this box picks a JSON answer file (see management-domain-recovery-answers.json under plans\ibr for
+# the expected shape) and primes it into the console via Import-VCFIRAnswerFile. Unchecking clears it
+# via Clear-VCFIRAnswerFile, restoring normal interactive prompting. See Initialize-ConsoleVariables
+# for how a later thread console (threadId 2/3, spawned only once Run Plan reaches an OVA/restore
+# step) gets the same answer file primed into it too.
+$instanceComponentsAnswerFileCheckBox.Add_Checked({
+        $dialog = New-Object Microsoft.Win32.OpenFileDialog
+        $dialog.Filter = 'JSON files (*.json)|*.json|All files (*.*)|*.*'
+        $dialog.Title = 'Select interactive answer file'
+        if ($dialog.ShowDialog() -ne $true) {
+            $instanceComponentsAnswerFileCheckBox.IsChecked = $false
+            return
+        }
+        $global:instanceComponentsGroup.InteractiveAnswerFilePath = $dialog.FileName
+        $escapedAnswerFilePath = Protect-SingleQuotes $dialog.FileName
+        Send-ToConsole "Import-VCFIRAnswerFile -Path '$escapedAnswerFilePath'"
+    }.GetNewClosure())
+
+$instanceComponentsAnswerFileCheckBox.Add_Unchecked({
+        if ($global:instanceComponentsGroup.InteractiveAnswerFilePath) {
+            Send-ToConsole "Clear-VCFIRAnswerFile"
+        }
+        $global:instanceComponentsGroup.InteractiveAnswerFilePath = $null
     }.GetNewClosure())
 
 $fleetComponentsLoadVariablesButton.Add_Click({

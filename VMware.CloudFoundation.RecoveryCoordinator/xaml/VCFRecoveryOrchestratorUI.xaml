@@ -561,6 +561,7 @@
                                     <!-- Margin as on RunAllDomainRecoveryButton above. -->
                                     <Button x:Name="RunAllInstanceComponentsButton" Content="Run Plan" Width="80" Margin="0,0,6,0" DockPanel.Dock="Right" VerticalAlignment="Center" />
                                     <CheckBox x:Name="RunAllInstanceComponentsParallelCheckBox" Content="Run parallel tasks using multiple threads (numbered circles)" IsChecked="True" VerticalAlignment="Center" DockPanel.Dock="Left" />
+                                    <CheckBox x:Name="InstanceComponentsAnswerFileCheckBox" Content="Use answer file for unattended interactive tasks" VerticalAlignment="Center" Margin="12,0,0,0" DockPanel.Dock="Left" />
                                 </DockPanel>
                                 <ListBox x:Name="InstanceComponentsPlanStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
                             </DockPanel>

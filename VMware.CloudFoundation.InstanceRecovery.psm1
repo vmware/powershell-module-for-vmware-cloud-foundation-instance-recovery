@@ -217,9 +217,18 @@ Function Import-VCFIRAnswerFile {
     Param(
         [Parameter (Mandatory = $true)][String] $Path
     )
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+
     $resolvedPath = (Resolve-Path -Path $Path).Path
     $script:VCFIRAnswers = Get-Content $resolvedPath -Raw | ConvertFrom-Json -AsHashtable
-    LogMessage -type INFO -message "Loaded interactive answer file: $resolvedPath"
+    LogMessage -type INFO -message "[$jumpboxName] Loaded interactive answer file: $resolvedPath"
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
 }
 Export-ModuleMember -Function Import-VCFIRAnswerFile
 
