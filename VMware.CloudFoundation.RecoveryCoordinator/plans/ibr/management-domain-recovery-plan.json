@@ -20,7 +20,7 @@
   {
     "description": "",
     "commandLine": "New-SingleHostVsanDatastore -extractedSDDCDataFile $extractedSDDCDataFile",
-    "displayName": "Create Single Host Vsan Datastore",
+    "displayName": "Create Single Host vSAN Datastore",
     "condition": [],
     "threadId": "",
     "interactive": true,
