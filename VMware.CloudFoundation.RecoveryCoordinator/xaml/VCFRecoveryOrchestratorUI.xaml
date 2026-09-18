@@ -489,7 +489,7 @@
                                             </StackPanel>
                                             <StackPanel Orientation="Horizontal">
                                                 <ToggleButton x:Name="RunAllDomainRecoveryAnswerFileCheckBox" Style="{StaticResource ToggleSwitchStyle}" VerticalAlignment="Center" />
-                                                <TextBlock Text="Use answer file for unattended interactive tasks" VerticalAlignment="Center" Margin="8,0,0,0" />
+                                                <TextBlock Text="Use answer file for interactive tasks" VerticalAlignment="Center" Margin="8,0,0,0" />
                                             </StackPanel>
                                         </StackPanel>
                                         <!-- "Task List" heading + Run Plan share one row, below the toggle
@@ -524,7 +524,7 @@
                                             </StackPanel>
                                             <StackPanel Orientation="Horizontal">
                                                 <ToggleButton x:Name="RunAllAdditionalClusterRecoveryAnswerFileCheckBox" Style="{StaticResource ToggleSwitchStyle}" VerticalAlignment="Center" />
-                                                <TextBlock Text="Use answer file for unattended interactive tasks" VerticalAlignment="Center" Margin="8,0,0,0" />
+                                                <TextBlock Text="Use answer file for interactive tasks" VerticalAlignment="Center" Margin="8,0,0,0" />
                                             </StackPanel>
                                         </StackPanel>
                                         <!-- Layout as on RunAllDomainRecoveryButton above. -->
@@ -549,7 +549,7 @@
                                             </StackPanel>
                                             <StackPanel Orientation="Horizontal">
                                                 <ToggleButton x:Name="RunAllRecoverFleetAnswerFileCheckBox" Style="{StaticResource ToggleSwitchStyle}" VerticalAlignment="Center" />
-                                                <TextBlock Text="Use answer file for unattended interactive tasks" VerticalAlignment="Center" Margin="8,0,0,0" />
+                                                <TextBlock Text="Use answer file for interactive tasks" VerticalAlignment="Center" Margin="8,0,0,0" />
                                             </StackPanel>
                                         </StackPanel>
                                         <!-- Layout as on RunAllDomainRecoveryButton above. -->
@@ -684,7 +684,7 @@
                                         </StackPanel>
                                         <StackPanel Orientation="Horizontal">
                                             <ToggleButton x:Name="FleetComponentsAnswerFileCheckBox" Style="{StaticResource ToggleSwitchStyle}" VerticalAlignment="Center" />
-                                            <TextBlock Text="Use answer file for unattended interactive tasks" VerticalAlignment="Center" Margin="8,0,0,0" />
+                                            <TextBlock Text="Use answer file for interactive tasks" VerticalAlignment="Center" Margin="8,0,0,0" />
                                         </StackPanel>
                                     </StackPanel>
                                     <!-- Layout as on RunAllDomainRecoveryButton above. -->
