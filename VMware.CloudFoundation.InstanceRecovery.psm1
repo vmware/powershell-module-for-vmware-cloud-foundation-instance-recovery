@@ -16200,15 +16200,16 @@ Function Set-ServicesRuntimeScale {
 
       1. Resolves the recovery cluster's KUBECONFIG (via the existing
          Get-VcfmsServicesRuntimeKubeconfig helper, unless -KubeconfigPath is supplied).
-      2. Determines the protected site's worker node size and cluster profile name — either
-         read directly from the vmsp-platform.yaml file produced by New-ExtractVcfmsBackup
-         against the protected site's backup (-BackupYamlDir), or supplied directly via
-         -WorkerSize and -ProfileName.
+      2. Determines the protected site's worker node size, machine type, and cluster profile
+         name — either read directly from the vmsp-platform.yaml file produced by
+         New-ExtractVcfmsBackup against the protected site's backup (-BackupYamlDir), or
+         supplied directly via -WorkerSize, -MachineType and -ProfileName.
       3. Displays the current and target values and prompts for confirmation (unless -Force
          is set).
       4. Patches the recovery cluster's vmsp-platform PackageDeployment (namespace
          vmsp-platform) via kubectl patch --type=merge, setting
-         spec.values.cluster.worker.size and spec.values.profiles.name.
+         spec.values.cluster.worker.size, spec.values.cluster.worker.machineType and
+         spec.values.profiles.name.
       5. Polls the PackageDeployment status until it reports a terminal Ready/Completed
          state, or until -TimeoutMinutes elapses — the source procedure explicitly calls
          out not to proceed with subsequent recovery tasks until this step has completed.
@@ -16221,11 +16222,12 @@ Function Set-ServicesRuntimeScale {
         -BackupYamlDir           "C:\backup-yaml"
 
     .EXAMPLE
-    # Supply the worker size and profile name directly
+    # Supply the worker size, machine type and profile name directly
     Set-ServicesRuntimeScale `
         -ServicesRuntimeFqdn     "lax-sr01.lax.rainpole.io" `
         -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
         -WorkerSize              "medium" `
+        -MachineType             "medium" `
         -ProfileName             "medium"
 
     .EXAMPLE
@@ -16253,18 +16255,23 @@ Function Set-ServicesRuntimeScale {
 
     .PARAMETER BackupYamlDir
     Directory containing the vmsp-platform.yaml file produced by New-ExtractVcfmsBackup
-    against the protected site's backup. Used to determine the target -WorkerSize and
-    -ProfileName when they are not supplied directly.
+    against the protected site's backup. Used to determine the target -WorkerSize,
+    -MachineType and -ProfileName when they are not supplied directly.
 
     .PARAMETER WorkerSize
     Target worker node size (e.g. "small", "medium", "large") to apply on the recovery
-    cluster, matching the protected site. When supplied, -ProfileName must also be supplied
-    and -BackupYamlDir is not required.
+    cluster, matching the protected site. When supplied, -MachineType and -ProfileName must
+    also be supplied and -BackupYamlDir is not required.
+
+    .PARAMETER MachineType
+    Target worker node machine type to apply on the recovery cluster, matching the protected
+    site. When supplied, -WorkerSize and -ProfileName must also be supplied and
+    -BackupYamlDir is not required.
 
     .PARAMETER ProfileName
     Target cluster profile name to apply on the recovery cluster, matching the protected
-    site. When supplied, -WorkerSize must also be supplied and -BackupYamlDir is not
-    required.
+    site. When supplied, -WorkerSize and -MachineType must also be supplied and
+    -BackupYamlDir is not required.
 
     .PARAMETER Force
     Skip the interactive confirmation prompt and proceed immediately.
@@ -16284,6 +16291,7 @@ Function Set-ServicesRuntimeScale {
         [Parameter(Mandatory = $false)][String] $KubeconfigOutputDir = ".",
         [Parameter(Mandatory = $false)][String] $BackupYamlDir,
         [Parameter(Mandatory = $false)][String] $WorkerSize,
+        [Parameter(Mandatory = $false)][String] $MachineType,
         [Parameter(Mandatory = $false)][String] $ProfileName,
         [Parameter(Mandatory = $false)][Switch] $Force,
         [Parameter(Mandatory = $false)][Int]    $PollIntervalSeconds = 30,
@@ -16306,17 +16314,17 @@ Function Set-ServicesRuntimeScale {
     }
 
     # -------------------------------------------------------------------------
-    # Resolve the target WorkerSize / ProfileName
+    # Resolve the target WorkerSize / MachineType / ProfileName
     # -------------------------------------------------------------------------
-    if ($WorkerSize -or $ProfileName) {
-        if (-not $WorkerSize -or -not $ProfileName) {
-            LogMessage -type ERROR -message "[$jumpboxName] -WorkerSize and -ProfileName must be supplied together."
+    if ($WorkerSize -or $MachineType -or $ProfileName) {
+        if (-not $WorkerSize -or -not $MachineType -or -not $ProfileName) {
+            LogMessage -type ERROR -message "[$jumpboxName] -WorkerSize, -MachineType and -ProfileName must be supplied together."
             $StopWatch.Stop(); return
         }
-        LogMessage -type INFO -message "[$jumpboxName] Using supplied target values — WorkerSize: $WorkerSize, ProfileName: $ProfileName"
+        LogMessage -type INFO -message "[$jumpboxName] Using supplied target values — WorkerSize: $WorkerSize, MachineType: $MachineType, ProfileName: $ProfileName"
     } else {
         if (-not $BackupYamlDir) {
-            LogMessage -type ERROR -message "[$jumpboxName] Supply either -BackupYamlDir, or both -WorkerSize and -ProfileName."
+            LogMessage -type ERROR -message "[$jumpboxName] Supply either -BackupYamlDir, or -WorkerSize, -MachineType and -ProfileName together."
             $StopWatch.Stop(); return
         }
         $resolvedYamlDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($BackupYamlDir)
@@ -16326,18 +16334,28 @@ Function Set-ServicesRuntimeScale {
             $StopWatch.Stop(); return
         }
 
-        LogMessage -type INFO -message "[$jumpboxName] Reading target worker size / profile name from $vmspPlatformYaml"
+        LogMessage -type INFO -message "[$jumpboxName] Reading target worker size / machine type / profile name from $vmspPlatformYaml"
         $yamlLines = Get-Content -Path $vmspPlatformYaml
 
         # Mirror the documented awk extraction: find the "worker:" block and take the first
-        # "size:" line under it; find the "profiles:" block and take the first "name:" line
-        # under it. Both blocks are indented further than their parent key.
+        # "size:"/"machineType:" line under it; find the "profiles:" block and take the first
+        # "name:" line under it. Both blocks are indented further than their parent key.
         $WorkerSize  = $null
         $inWorkerBlock = $false
         foreach ($line in $yamlLines) {
             if ($line -match '^\s*worker:\s*$') { $inWorkerBlock = $true; continue }
             if ($inWorkerBlock) {
                 if ($line -match '^\s*size:\s*(.+?)\s*$') { $WorkerSize = $Matches[1].Trim('"', "'"); break }
+                if ($line -notmatch '^\s{2,}\S') { $inWorkerBlock = $false }
+            }
+        }
+
+        $MachineType = $null
+        $inWorkerBlock = $false
+        foreach ($line in $yamlLines) {
+            if ($line -match '^\s*worker:\s*$') { $inWorkerBlock = $true; continue }
+            if ($inWorkerBlock) {
+                if ($line -match '^\s*machineType:\s*(.+?)\s*$') { $MachineType = $Matches[1].Trim('"', "'"); break }
                 if ($line -notmatch '^\s{2,}\S') { $inWorkerBlock = $false }
             }
         }
@@ -16352,11 +16370,11 @@ Function Set-ServicesRuntimeScale {
             }
         }
 
-        if (-not $WorkerSize -or -not $ProfileName) {
-            LogMessage -type ERROR -message "[$jumpboxName] Could not determine worker size / profile name from $vmspPlatformYaml (WorkerSize: '$WorkerSize', ProfileName: '$ProfileName'). Supply -WorkerSize and -ProfileName directly instead."
+        if (-not $WorkerSize -or -not $MachineType -or -not $ProfileName) {
+            LogMessage -type ERROR -message "[$jumpboxName] Could not determine worker size / machine type / profile name from $vmspPlatformYaml (WorkerSize: '$WorkerSize', MachineType: '$MachineType', ProfileName: '$ProfileName'). Supply -WorkerSize, -MachineType and -ProfileName directly instead."
             $StopWatch.Stop(); return
         }
-        LogMessage -type INFO -message "[$jumpboxName] Resolved from backup — WorkerSize: $WorkerSize, ProfileName: $ProfileName"
+        LogMessage -type INFO -message "[$jumpboxName] Resolved from backup — WorkerSize: $WorkerSize, MachineType: $MachineType, ProfileName: $ProfileName"
     }
 
     # -------------------------------------------------------------------------
@@ -16390,6 +16408,8 @@ Function Set-ServicesRuntimeScale {
     # -------------------------------------------------------------------------
     $currentWorkerSize = & kubectl --kubeconfig $resolvedKubeconfig get packagedeployment vmsp-platform -n vmsp-platform `
         -o jsonpath='{.spec.values.cluster.worker.size}' 2>$null
+    $currentMachineType = & kubectl --kubeconfig $resolvedKubeconfig get packagedeployment vmsp-platform -n vmsp-platform `
+        -o jsonpath='{.spec.values.cluster.worker.machineType}' 2>$null
     $currentProfileName = & kubectl --kubeconfig $resolvedKubeconfig get packagedeployment vmsp-platform -n vmsp-platform `
         -o jsonpath='{.spec.values.profiles.name}' 2>$null
 
@@ -16398,11 +16418,12 @@ Function Set-ServicesRuntimeScale {
     Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
     Write-Host ("  {0,-14} {1,-20} {2}" -f "", "Current", "Target") -ForegroundColor Gray
     Write-Host ("  {0,-14} {1,-20} {2}" -f "Worker size", $currentWorkerSize, $WorkerSize) -ForegroundColor White
+    Write-Host ("  {0,-14} {1,-20} {2}" -f "Machine type", $currentMachineType, $MachineType) -ForegroundColor White
     Write-Host ("  {0,-14} {1,-20} {2}" -f "Profile name", $currentProfileName, $ProfileName) -ForegroundColor White
     Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
     Write-Host ""
 
-    if ($currentWorkerSize -eq $WorkerSize -and $currentProfileName -eq $ProfileName) {
+    if ($currentWorkerSize -eq $WorkerSize -and $currentMachineType -eq $MachineType -and $currentProfileName -eq $ProfileName) {
         LogMessage -type INFO -message "[$jumpboxName] Recovery cluster already matches the target size/profile. Nothing to do."
         $StopWatch.Stop()
         $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
@@ -16429,13 +16450,13 @@ Function Set-ServicesRuntimeScale {
     $patch = @{
         spec = @{
             values = @{
-                cluster  = @{ worker = @{ size = $WorkerSize } }
+                cluster  = @{ worker = @{ size = $WorkerSize; machineType = $MachineType } }
                 profiles = @{ name = $ProfileName }
             }
         }
     } | ConvertTo-Json -Depth 6 -Compress
 
-    LogMessage -type INFO -message "[$jumpboxName] Patching pd/vmsp-platform (worker.size=$WorkerSize, profiles.name=$ProfileName)"
+    LogMessage -type INFO -message "[$jumpboxName] Patching pd/vmsp-platform (worker.size=$WorkerSize, worker.machineType=$MachineType, profiles.name=$ProfileName)"
     $patchOutput = & kubectl --kubeconfig $resolvedKubeconfig `
         patch packagedeployment vmsp-platform -n vmsp-platform `
         --type=merge -p $patch 2>&1
