@@ -1949,6 +1949,15 @@ function Invoke-Step($Buttons, [string]$CmdletName, [string]$CommandLine, [scrip
 # Currently used to re-enable every step's Run button (see Set-AllStepButtonsEnabled) once a Run
 # All run is fully finished, not before.
 function Invoke-StepChain([object[]]$Rows, [switch]$IgnoreThreads, [scriptblock]$OnChainComplete) {
+    # Skip any leading rows already marked Done -- lets a fresh Run All click (most notably right
+    # after Resume restores prior "Done" state from a saved session) continue from the next pending
+    # step instead of re-running the whole plan from the top. Only ever matters on the very first
+    # call a Run All button makes with its full row list: every recursive call below already strips
+    # off each row as it completes (Select-Object -Skip 1/-Skip $blockEnd), so $Rows here never
+    # starts with a Done row during normal step-by-step advancement.
+    while ($Rows.Count -gt 0 -and $Rows[0].PlanButton.Content -eq 'Done') {
+        $Rows = @($Rows | Select-Object -Skip 1)
+    }
     if ($Rows.Count -eq 0) {
         if ($OnChainComplete) {
             & $OnChainComplete $true

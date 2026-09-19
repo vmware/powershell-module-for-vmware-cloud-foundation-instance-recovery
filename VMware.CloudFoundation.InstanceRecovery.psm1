@@ -11993,6 +11993,12 @@ Function Restore-ServicesRuntimeComponentBackup {
 
     The function displays the payload for confirmation before submitting, then polls the restore status until completion.
 
+    Immediately after a preceding Set-ServicesRuntimeScale, the Services Runtime API can briefly return 503 (Service Unavailable) while the
+    scaled cluster is still coming up -- not a real failure, just not ready yet. If the component pre-fetch or the restore submission itself
+    fails, this cmdlet retries both every -ReadyRetryIntervalSeconds (default 2 minutes) for up to -ReadyTimeoutMinutes (default 30 minutes),
+    logging INFO for each retry, before ever reporting a WARNING/ERROR for either -- so a real failure is still reported exactly as before,
+    just not until genuine unreadiness has been ruled out.
+
     .EXAMPLE
     # Step 1: List available backups to find paths and restore points
     Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!"
@@ -12023,6 +12029,12 @@ Function Restore-ServicesRuntimeComponentBackup {
     .PARAMETER autoConfirm
     If specified, submits the proposed restore payload without prompting for confirmation.
 
+    .PARAMETER ReadyRetryIntervalSeconds
+    Seconds to wait between retries while the Services Runtime is not yet ready to accept a restore request (e.g. immediately after Set-ServicesRuntimeScale, before the scaled cluster has finished coming up). Default is 120 (2 minutes).
+
+    .PARAMETER ReadyTimeoutMinutes
+    Maximum total time in minutes to keep retrying before giving up and reporting the failure. Default is 30.
+
     #>
 
     Param(
@@ -12030,7 +12042,9 @@ Function Restore-ServicesRuntimeComponentBackup {
         [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
         [Parameter(Mandatory = $false)][String] $ServicesRuntimeUsername = "admin@vsp.local",
         [Parameter(Mandatory = $true)][String] $RestoreJsonFile,
-        [Parameter(Mandatory = $false)][Switch] $autoConfirm
+        [Parameter(Mandatory = $false)][Switch] $autoConfirm,
+        [Parameter(Mandatory = $false)][Int] $ReadyRetryIntervalSeconds = 120,
+        [Parameter(Mandatory = $false)][Int] $ReadyTimeoutMinutes = 30
     )
 
     $jumpboxName = hostname
@@ -12100,27 +12114,60 @@ Function Restore-ServicesRuntimeComponentBackup {
         "Accept"        = "application/json"
     }
 
-    # Build a componentId -> type name lookup for friendlier status reporting
-    $componentNameById = @{}
-    try {
-        $componentsResp = Invoke-RestMethod -Uri "https://$ServicesRuntimeFqdn/api/v1/components" -Method GET -Headers $headers -SkipCertificateCheck
-        foreach ($c in $componentsResp.components) {
-            if ($c.id -and $c.type) { $componentNameById[$c.id] = $c.type }
+    $restoreUri = "https://$ServicesRuntimeFqdn/api/v1/system/backups?action=restore"
+
+    # Immediately after a preceding Set-ServicesRuntimeScale, the Services Runtime API can briefly
+    # return 503 (Service Unavailable) on both the component pre-fetch and the restore submission
+    # itself while the scaled cluster is still coming up -- not a real failure, just not ready yet
+    # (confirmed directly: the exact same restore that fails here with 503 succeeds unmodified a few
+    # minutes later). Retry both together every -ReadyRetryIntervalSeconds for up to
+    # -ReadyTimeoutMinutes, logging only INFO for each retry -- neither the pre-fetch's own WARNING
+    # nor the submission's own ERROR is reported until that window is exhausted, so a genuine failure
+    # is still reported exactly as before, just not mistaken for one during a normal, brief warm-up.
+    $readyWaitStartUtc = [DateTime]::UtcNow
+    $readyAttempt = 0
+    Do {
+        $readyAttempt++
+
+        # Build a componentId -> type name lookup for friendlier status reporting
+        $componentNameById = @{}
+        $prefetchFailed = $false
+        try {
+            $componentsResp = Invoke-RestMethod -Uri "https://$ServicesRuntimeFqdn/api/v1/components" -Method GET -Headers $headers -SkipCertificateCheck
+            foreach ($c in $componentsResp.components) {
+                if ($c.id -and $c.type) { $componentNameById[$c.id] = $c.type }
+            }
+        } catch {
+            $prefetchFailed = $true
         }
-    } catch {
+
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Submitting restore request"
+        $submitFailed = $false
+        try {
+            $response = Invoke-RestMethod -Uri $restoreUri -Method POST -Headers $headers -Body $payloadContent -SkipCertificateCheck
+        } catch {
+            $submitFailed = $true
+            $submitError = $_
+        }
+
+        if (-not $submitFailed) { break }
+
+        $readyElapsedMinutes = ([DateTime]::UtcNow - $readyWaitStartUtc).TotalMinutes
+        if ($readyElapsedMinutes -ge $ReadyTimeoutMinutes) { break }
+
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Services Runtime not yet ready to accept a restore request (attempt $readyAttempt): $($submitError.Exception.Message). Retrying in $ReadyRetryIntervalSeconds seconds (timeout in $([Math]::Round($ReadyTimeoutMinutes - $readyElapsedMinutes, 1)) minutes)"
+        Start-Sleep -Seconds $ReadyRetryIntervalSeconds
+    } While ($true)
+
+    if ($prefetchFailed) {
         LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Could not pre-fetch component names; UUIDs will be used in status output"
     }
 
-    $restoreUri = "https://$ServicesRuntimeFqdn/api/v1/system/backups?action=restore"
-    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Submitting restore request"
-
-    try {
-        $response = Invoke-RestMethod -Uri $restoreUri -Method POST -Headers $headers -Body $payloadContent -SkipCertificateCheck
-    } catch {
-        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Restore request failed: $($_.Exception.Message)"
-        if ($_.Exception.Response) {
+    if ($submitFailed) {
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Restore request failed: $($submitError.Exception.Message)"
+        if ($submitError.Exception.Response) {
             try {
-                $errorStream = $_.Exception.Response.GetResponseStream()
+                $errorStream = $submitError.Exception.Response.GetResponseStream()
                 $reader = New-Object System.IO.StreamReader($errorStream)
                 $errorBody = $reader.ReadToEnd()
                 LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Response body: $errorBody"
