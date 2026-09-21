@@ -570,17 +570,13 @@ Function New-ExtractDataFromSDDCBackup {
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
     $backupFileFullPath = (Resolve-Path -Path $vcfBackupFilePath).path
-    $credentialsFileFullPath = (Resolve-Path -Path $credentialsFilePath).path
+    If ($credentialsFilePath)
+    {
+        $credentialsFileFullPath = (Resolve-Path -Path $credentialsFilePath).path
+    }
     $backupFileName = (Get-ChildItem -path $backupFileFullPath).name
     $parentFolder = Split-Path -Path $backupFileFullPath
     $extractedBackupFolder = ($backupFileName -Split (".tar.gz"))[0]
-
-    $filesToExtract = @(
-        "$extractedBackupFolder/metadata.json"
-        "$extractedBackupFolder/appliancemanager_dns_configuration.json"
-        "$extractedBackupFolder/appliancemanager_ntp_configuration.json"
-        "$extractedBackupFolder/database/sddc-postgres.bkp"
-    )
 
     Push-Location
     Set-Location "$parentFolder"
@@ -601,6 +597,14 @@ Function New-ExtractDataFromSDDCBackup {
         $inStream.Close()
     }
 
+    $filesToExtract = @(
+        "$extractedBackupFolder/metadata.json"
+        "$extractedBackupFolder/appliancemanager_dns_configuration.json"
+        "$extractedBackupFolder/appliancemanager_ntp_configuration.json"
+        "$extractedBackupFolder/database/sddc-postgres.bkp"
+    )
+
+
     $env:OPENSSL_FIPS = "1"
     try {
         $command = "openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -md sha256 -in `"$strippedHeaderFile`" -pass pass:`"$encryptionPassword`" -out `"$parentFolder\decrypted-sddc-manager-backup.tar.gz`""
@@ -612,6 +616,7 @@ Function New-ExtractDataFromSDDCBackup {
         $command = "openssl enc -d -aes-256-cbc -md sha256 -in $backupFileFullPath -pass pass:`"$encryptionPassword`" -out `"$parentFolder\decrypted-sddc-manager-backup.tar.gz`""
         Invoke-Expression "& $command" *>$null
         $model = "legacy"
+        $filesToExtract += "$extractedBackupFolder/security_password_vault.json"
     }
     finally {
         Remove-Item Env:\OPENSSL_FIPS -ErrorAction SilentlyContinue
