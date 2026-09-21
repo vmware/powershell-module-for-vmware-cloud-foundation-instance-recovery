@@ -10745,7 +10745,7 @@ Function Get-VcfOperationsRegisteredComponents {
     LogMessage -type INFO -message "[$VcfOperationsFqdn] Found $($filtered.Count) filtered component(s) of types: $($targetTypes -join ', '); $($vspComponents.Count) VSP instance(s)"
 
     $json = $result | ConvertTo-Json -Depth 10 | Out-File $outputFile
-
+    Write-Host $json
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
