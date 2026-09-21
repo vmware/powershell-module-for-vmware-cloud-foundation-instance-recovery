@@ -2974,7 +2974,7 @@ Function Get-BackupsFromSFTPServer {
         )
 
         $restorePayload = @{ components = $restoreComponents } | ConvertTo-Json -Depth 5
-        $outputFile = if ($PSBoundParameters.ContainsKey('Type')) { ".\$($Type)-restore-payload.json" } else { ".\component-restore-payload.json" }
+        $outputFile = if ($PSBoundParameters.ContainsKey('Type')) { ".\$($Type)-restore-payload.json" } else { ".\restore-payload.json" }
         $restorePayload | Out-File -FilePath $outputFile -Encoding utf8
         LogMessage -type INFO -message "[$jumpboxName] Restore JSON saved to $outputFile ($($restoreComponents.Count) component(s))"
         Write-Host ""
@@ -11612,7 +11612,7 @@ Function Get-ServicesRuntimeComponentBackups {
 
     When the resolved component list does not include "vsp" or "vcfa", the "Available Backup Groups" table includes an additional "Associated VSP Backup (UTC)" column showing the vsp backup whose timestamp is closest to each group, for reference when the vsp component itself is not part of the selection.
 
-    If you opt in to generating a restore JSON, it's saved as ".\<Type>-restore-payload.json" when -Type was used, or ".\component-restore-payload.json" when -Components was used.
+    If you opt in to generating a restore JSON, it's saved as ".\<Type>-restore-payload.json" when -Type was used, or ".\restore-payload.json" when -Components was used.
 
     .EXAMPLE
     Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -Components "vsp","salt"
@@ -12003,7 +12003,7 @@ Function Get-ServicesRuntimeComponentBackups {
         )
 
         $restorePayload = @{ components = $restoreComponents } | ConvertTo-Json -Depth 5
-        $outputFile = if ($PSBoundParameters.ContainsKey('Type')) { ".\$($Type)-restore-payload.json" } else { ".\component-restore-payload.json" }
+        $outputFile = if ($PSBoundParameters.ContainsKey('Type')) { ".\$($Type)-restore-payload.json" } else { ".\restore-payload.json" }
         $restorePayload | Out-File -FilePath $outputFile -Encoding utf8
         LogMessage -type INFO -message "[$jumpboxName] Restore JSON saved to $outputFile ($($restoreComponents.Count) component(s))"
         Write-Host ""
@@ -12040,7 +12040,7 @@ Function Restore-ServicesRuntimeComponentBackup {
     # Step 1: List available backups to find paths and restore points
     Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!"
 
-    # Step 2: Create a JSON file (component-restore-payload.json) with the desired components:
+    # Step 2: Create a JSON file (restore-payload.json) with the desired components:
     # {
     #   "components": [
     #     { "path": "sftp://svc-vcf-bck@10.167.173.126:22/media/backups/vcf/backups/.../vsp/.../2026-03-23T16-45-31Z", "point": "2026-03-23T16-45-31Z" },
@@ -12049,7 +12049,7 @@ Function Restore-ServicesRuntimeComponentBackup {
     # }
 
     # Step 3: Run the restore
-    Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -RestoreJsonFile ".\component-restore-payload.json"
+    Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -RestoreJsonFile ".\restore-payload.json"
 
     .PARAMETER ServicesRuntimeFqdn
     FQDN of the Services Runtime instance.
