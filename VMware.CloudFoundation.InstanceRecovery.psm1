@@ -604,19 +604,21 @@ Function New-ExtractDataFromSDDCBackup {
         "$extractedBackupFolder/database/sddc-postgres.bkp"
     )
 
-
     $env:OPENSSL_FIPS = "1"
     try {
         $command = "openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -md sha256 -in `"$strippedHeaderFile`" -pass pass:`"$encryptionPassword`" -out `"$parentFolder\decrypted-sddc-manager-backup.tar.gz`""
-        Invoke-Expression "& $command" *>$null
-        $model = "current"
-    }
-    catch
-    {
-        $command = "openssl enc -d -aes-256-cbc -md sha256 -in $backupFileFullPath -pass pass:`"$encryptionPassword`" -out `"$parentFolder\decrypted-sddc-manager-backup.tar.gz`""
-        Invoke-Expression "& $command" *>$null
-        $model = "legacy"
-        $filesToExtract += "$extractedBackupFolder/security_password_vault.json"
+        $decryptionAttemptResponse = Invoke-Expression "& $command" | Out-Null
+        If ($decryptionAttemptResponse -eq "bad magic number")
+        {
+            $model = "legacy"
+            $command = "openssl enc -d -aes-256-cbc -md sha256 -in $backupFileFullPath -pass pass:`"$encryptionPassword`" -out `"$parentFolder\decrypted-sddc-manager-backup.tar.gz`""
+            Invoke-Expression "& $command" | Out-Null
+            $filesToExtract += "$extractedBackupFolder/security_password_vault.json"
+        }
+        else
+        {
+            $model = "current"
+        }
     }
     finally {
         Remove-Item Env:\OPENSSL_FIPS -ErrorAction SilentlyContinue
