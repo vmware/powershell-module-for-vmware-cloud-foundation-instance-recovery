@@ -563,7 +563,7 @@ Function New-ExtractDataFromSDDCBackup {
     Param(
         [Parameter (Mandatory = $true)][String] $vcfBackupFilePath,
         [Parameter (Mandatory = $true)][String] $encryptionPassword,
-        [Parameter (Mandatory = $true)][String] $credentialsFilePath
+        [Parameter (Mandatory = $false)][String] $credentialsFilePath
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
