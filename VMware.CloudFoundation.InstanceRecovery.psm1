@@ -605,30 +605,67 @@ Function New-ExtractDataFromSDDCBackup {
     try {
         $command = "openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -md sha256 -in `"$strippedHeaderFile`" -pass pass:`"$encryptionPassword`" -out `"$parentFolder\decrypted-sddc-manager-backup.tar.gz`""
         Invoke-Expression "& $command" *>$null
-    } finally {
+        $model = "current"
+    }
+    catch
+    {
+        $command = "openssl enc -d -aes-256-cbc -md sha256 -in $backupFileFullPath -pass pass:`"$encryptionPassword`" -out `"$parentFolder\decrypted-sddc-manager-backup.tar.gz`""
+        Invoke-Expression "& $command" *>$null
+        $model = "legacy"
+    }
+    finally {
         Remove-Item Env:\OPENSSL_FIPS -ErrorAction SilentlyContinue
         Remove-Item -Path $strippedHeaderFile -Force -ErrorAction SilentlyContinue
     }
 
-    #Extract Required Files From Backup Leveraging Windows tar.exe
-    LogMessage -type INFO -message "[$jumpboxName] Extracting Backup"
-    tar -xzf "$parentFolder\decrypted-sddc-manager-backup.tar.gz" $filesToExtract
+    If ($model -in "current","legacy")
+    {
+        #Extract Required Files From Backup Leveraging Windows tar.exe
+        LogMessage -type INFO -message "[$jumpboxName] Extracting Backup"
+        tar -xzf "$parentFolder\decrypted-sddc-manager-backup.tar.gz" $filesToExtract
+    }
 
-    #Get Content of Credentials File (SDDC Manager credentials API output)
-    LogMessage -type INFO -message "[$jumpboxName] Reading Credentials File"
-    $credentialsJson = Get-Content $credentialsFileFullPath | ConvertFrom-JSON
-    $passwordVaultObject = @()
-    Foreach ($object in $credentialsJson) {
-        $passwordVaultObject += [pscustomobject]@{
-            'entityId'        = $object.resource.resourceId
-            'entityName'      = $object.resource.resourceName
-            'entityType'      = $object.resource.resourceType
-            'credentialType'  = $object.credentialType
-            'entityIpAddress' = $null
-            'username'        = $object.username
-            'domainName'      = $object.resource.domainName
-            'password'        = $object.password
+    If ($model -eq "current")
+    {
+        #Get Content of Credentials File (SDDC Manager credentials API output)
+        LogMessage -type INFO -message "[$jumpboxName] Reading Credentials File"
+        $credentialsJson = Get-Content $credentialsFileFullPath | ConvertFrom-JSON
+        $passwordVaultObject = @()
+        Foreach ($object in $credentialsJson) {
+            $passwordVaultObject += [pscustomobject]@{
+                'entityId'        = $object.resource.resourceId
+                'entityName'      = $object.resource.resourceName
+                'entityType'      = $object.resource.resourceType
+                'credentialType'  = $object.credentialType
+                'entityIpAddress' = $null
+                'username'        = $object.username
+                'domainName'      = $object.resource.domainName
+                'password'        = $object.password
+            }
         }
+    }
+    elseif ($model -eq "legacy")
+    {
+        #Get Content of Password Vault
+        LogMessage -type INFO -message "[$jumpboxName] Reading Password Vault"
+        $passwordVaultJson = Get-Content "$parentFolder\$extractedBackupFolder\security_password_vault.json" | ConvertFrom-JSON
+        $passwordVaultObject = @()
+        Foreach ($object in $passwordVaultJson) {
+            $passwordVaultObject += [pscustomobject]@{
+                'entityId'        = $object.entityId
+                'entityName'      = $object.entityName
+                'entityType'      = $object.entityType
+                'credentialType'  = $object.credentialType
+                'entityIpAddress' = $object.entityIpAddress
+                'username'        = $object.username
+                'domainName'      = $object.domainName
+                'password'        = $object.password
+            }
+        }
+    }
+    else
+    {
+        Return
     }
 
     #Get Management Domain Deployment Objects
