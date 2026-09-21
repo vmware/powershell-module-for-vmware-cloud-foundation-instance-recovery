@@ -10745,11 +10745,11 @@ Function Get-VcfOperationsRegisteredComponents {
     LogMessage -type INFO -message "[$VcfOperationsFqdn] Found $($filtered.Count) filtered component(s) of types: $($targetTypes -join ', '); $($vspComponents.Count) VSP instance(s)"
 
     $json = $result | ConvertTo-Json -Depth 10 | Out-File $outputFile
-    LogMessage -type INFO -message "[$VcfOperationsFqdn] VCF Management Services Runtime VSP ID: $($vsp.vspComponentUuid)"
+    LogMessage -type INFO -message "[$VcfOperationsFqdn] VCF Management Services Runtime VSP ID: $($vsp.id)"
     LogMessage -type INFO -message "[$VcfOperationsFqdn] VCF Management Services Runtime Component Version: $($vsp.componentVersion)"
     If ($vcfa)
     {
-        LogMessage -type INFO -message "[$VcfOperationsFqdn] VCF Automation Services Runtime VSP ID: $($vcfa.componentUuid)"
+        LogMessage -type INFO -message "[$VcfOperationsFqdn] VCF Automation Services Runtime VSP ID: $($vcfa.vspComponentUuid)"
         LogMessage -type INFO -message "[$VcfOperationsFqdn] VCF Automation Services Runtime Component Version: $($vcfa.componentVersion)"
     }
     $StopWatch.Stop()
