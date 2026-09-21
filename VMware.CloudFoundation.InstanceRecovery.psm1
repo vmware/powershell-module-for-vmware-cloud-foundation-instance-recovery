@@ -608,11 +608,11 @@ Function New-ExtractDataFromSDDCBackup {
     try {
         $command = "openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -md sha256 -in `"$strippedHeaderFile`" -pass pass:`"$encryptionPassword`" -out `"$parentFolder\decrypted-sddc-manager-backup.tar.gz`" 2>&1"
         $decryptionAttemptResponse = Invoke-Expression $command
-        If ($decryptionAttemptResponse -eq "bad magic number")
+        If ([string]$decryptionAttemptResponse -eq "bad magic number")
         {
             $model = "legacy"
             $command = "openssl enc -d -aes-256-cbc -md sha256 -in $backupFileFullPath -pass pass:`"$encryptionPassword`" -out `"$parentFolder\decrypted-sddc-manager-backup.tar.gz`""
-            Invoke-Expression "& $command" | Out-Null
+            Invoke-Expression "& $command" *>$null
             $filesToExtract += "$extractedBackupFolder/security_password_vault.json"
         }
         else
@@ -629,7 +629,7 @@ Function New-ExtractDataFromSDDCBackup {
     {
         #Extract Required Files From Backup Leveraging Windows tar.exe
         LogMessage -type INFO -message "[$jumpboxName] Extracting Backup"
-        tar -xzf "$parentFolder\decrypted-sddc-manager-backup.tar.gz" * $filesToExtract
+        tar -xzf "$parentFolder\decrypted-sddc-manager-backup.tar.gz" $filesToExtract
     }
 
     If ($model -eq "current")
