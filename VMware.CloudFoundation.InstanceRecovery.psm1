@@ -563,24 +563,20 @@ Function New-ExtractDataFromSDDCBackup {
     Param(
         [Parameter (Mandatory = $true)][String] $vcfBackupFilePath,
         [Parameter (Mandatory = $true)][String] $encryptionPassword,
-        [Parameter (Mandatory = $true)][String] $credentialsFilePath
+        [Parameter (Mandatory = $false)][String] $credentialsFilePath
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
     $backupFileFullPath = (Resolve-Path -Path $vcfBackupFilePath).path
-    $credentialsFileFullPath = (Resolve-Path -Path $credentialsFilePath).path
+    If ($credentialsFilePath)
+    {
+        $credentialsFileFullPath = (Resolve-Path -Path $credentialsFilePath).path
+    }
     $backupFileName = (Get-ChildItem -path $backupFileFullPath).name
     $parentFolder = Split-Path -Path $backupFileFullPath
     $extractedBackupFolder = ($backupFileName -Split (".tar.gz"))[0]
-
-    $filesToExtract = @(
-        "$extractedBackupFolder/metadata.json"
-        "$extractedBackupFolder/appliancemanager_dns_configuration.json"
-        "$extractedBackupFolder/appliancemanager_ntp_configuration.json"
-        "$extractedBackupFolder/database/sddc-postgres.bkp"
-    )
 
     Push-Location
     Set-Location "$parentFolder"
@@ -601,34 +597,82 @@ Function New-ExtractDataFromSDDCBackup {
         $inStream.Close()
     }
 
+    $filesToExtract = @(
+        "$extractedBackupFolder/metadata.json"
+        "$extractedBackupFolder/appliancemanager_dns_configuration.json"
+        "$extractedBackupFolder/appliancemanager_ntp_configuration.json"
+        "$extractedBackupFolder/database/sddc-postgres.bkp"
+    )
+
     $env:OPENSSL_FIPS = "1"
     try {
-        $command = "openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -md sha256 -in `"$strippedHeaderFile`" -pass pass:`"$encryptionPassword`" -out `"$parentFolder\decrypted-sddc-manager-backup.tar.gz`""
-        Invoke-Expression "& $command" *>$null
-    } finally {
+        $command = "openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -md sha256 -in `"$strippedHeaderFile`" -pass pass:`"$encryptionPassword`" -out `"$parentFolder\decrypted-sddc-manager-backup.tar.gz`" 2>&1"
+        $decryptionAttemptResponse = Invoke-Expression $command
+        If ([string]$decryptionAttemptResponse -eq "bad magic number")
+        {
+            $model = "legacy"
+            $command = "openssl enc -d -aes-256-cbc -md sha256 -in $backupFileFullPath -pass pass:`"$encryptionPassword`" -out `"$parentFolder\decrypted-sddc-manager-backup.tar.gz`""
+            Invoke-Expression "& $command" *>$null
+            $filesToExtract += "$extractedBackupFolder/security_password_vault.json"
+        }
+        else
+        {
+            $model = "current"
+        }
+    }
+    finally {
         Remove-Item Env:\OPENSSL_FIPS -ErrorAction SilentlyContinue
         Remove-Item -Path $strippedHeaderFile -Force -ErrorAction SilentlyContinue
     }
 
-    #Extract Required Files From Backup Leveraging Windows tar.exe
-    LogMessage -type INFO -message "[$jumpboxName] Extracting Backup"
-    tar -xzf "$parentFolder\decrypted-sddc-manager-backup.tar.gz" $filesToExtract
+    If ($model -in "current","legacy")
+    {
+        #Extract Required Files From Backup Leveraging Windows tar.exe
+        LogMessage -type INFO -message "[$jumpboxName] Extracting Backup"
+        tar -xzf "$parentFolder\decrypted-sddc-manager-backup.tar.gz" $filesToExtract
+    }
 
-    #Get Content of Credentials File (SDDC Manager credentials API output)
-    LogMessage -type INFO -message "[$jumpboxName] Reading Credentials File"
-    $credentialsJson = Get-Content $credentialsFileFullPath | ConvertFrom-JSON
-    $passwordVaultObject = @()
-    Foreach ($object in $credentialsJson) {
-        $passwordVaultObject += [pscustomobject]@{
-            'entityId'        = $object.resource.resourceId
-            'entityName'      = $object.resource.resourceName
-            'entityType'      = $object.resource.resourceType
-            'credentialType'  = $object.credentialType
-            'entityIpAddress' = $null
-            'username'        = $object.username
-            'domainName'      = $object.resource.domainName
-            'password'        = $object.password
+    If ($model -eq "current")
+    {
+        #Get Content of Credentials File (SDDC Manager credentials API output)
+        LogMessage -type INFO -message "[$jumpboxName] Reading Credentials File"
+        $credentialsJson = Get-Content $credentialsFileFullPath | ConvertFrom-JSON
+        $passwordVaultObject = @()
+        Foreach ($object in $credentialsJson) {
+            $passwordVaultObject += [pscustomobject]@{
+                'entityId'        = $object.resource.resourceId
+                'entityName'      = $object.resource.resourceName
+                'entityType'      = $object.resource.resourceType
+                'credentialType'  = $object.credentialType
+                'entityIpAddress' = $null
+                'username'        = $object.username
+                'domainName'      = $object.resource.domainName
+                'password'        = $object.password
+            }
         }
+    }
+    elseif ($model -eq "legacy")
+    {
+        #Get Content of Password Vault
+        LogMessage -type INFO -message "[$jumpboxName] Reading Password Vault"
+        $passwordVaultJson = Get-Content "$parentFolder\$extractedBackupFolder\security_password_vault.json" | ConvertFrom-JSON
+        $passwordVaultObject = @()
+        Foreach ($object in $passwordVaultJson) {
+            $passwordVaultObject += [pscustomobject]@{
+                'entityId'        = $object.entityId
+                'entityName'      = $object.entityName
+                'entityType'      = $object.entityType
+                'credentialType'  = $object.credentialType
+                'entityIpAddress' = $object.entityIpAddress
+                'username'        = $object.username
+                'domainName'      = $object.domainName
+                'password'        = $object.password
+            }
+        }
+    }
+    else
+    {
+        Return
     }
 
     #Get Management Domain Deployment Objects
@@ -2937,7 +2981,7 @@ Function Get-BackupsFromSFTPServer {
         )
 
         $restorePayload = @{ components = $restoreComponents } | ConvertTo-Json -Depth 5
-        $outputFile = if ($PSBoundParameters.ContainsKey('Type')) { ".\$($Type)-restore-payload.json" } else { ".\component-restore-payload.json" }
+        $outputFile = if ($PSBoundParameters.ContainsKey('Type')) { ".\$($Type)-restore-payload.json" } else { ".\restore-payload.json" }
         $restorePayload | Out-File -FilePath $outputFile -Encoding utf8
         LogMessage -type INFO -message "[$jumpboxName] Restore JSON saved to $outputFile ($($restoreComponents.Count) component(s))"
         Write-Host ""
@@ -10708,7 +10752,13 @@ Function Get-VcfOperationsRegisteredComponents {
     LogMessage -type INFO -message "[$VcfOperationsFqdn] Found $($filtered.Count) filtered component(s) of types: $($targetTypes -join ', '); $($vspComponents.Count) VSP instance(s)"
 
     $json = $result | ConvertTo-Json -Depth 10 | Out-File $outputFile
-
+    LogMessage -type INFO -message "[$VcfOperationsFqdn] VCF Management Services Runtime VSP ID: $($vsp.id)"
+    LogMessage -type INFO -message "[$VcfOperationsFqdn] VCF Management Services Runtime Component Version: $($vsp.componentVersion)"
+    If ($vcfa)
+    {
+        LogMessage -type INFO -message "[$VcfOperationsFqdn] VCF Automation Services Runtime VSP ID: $($vcfa.vspComponentUuid)"
+        LogMessage -type INFO -message "[$VcfOperationsFqdn] VCF Automation Services Runtime Component Version: $($vcfa.componentVersion)"
+    }
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
@@ -11575,7 +11625,7 @@ Function Get-ServicesRuntimeComponentBackups {
 
     When the resolved component list does not include "vsp" or "vcfa", the "Available Backup Groups" table includes an additional "Associated VSP Backup (UTC)" column showing the vsp backup whose timestamp is closest to each group, for reference when the vsp component itself is not part of the selection.
 
-    If you opt in to generating a restore JSON, it's saved as ".\<Type>-restore-payload.json" when -Type was used, or ".\component-restore-payload.json" when -Components was used.
+    If you opt in to generating a restore JSON, it's saved as ".\<Type>-restore-payload.json" when -Type was used, or ".\restore-payload.json" when -Components was used.
 
     .EXAMPLE
     Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -Components "vsp","salt"
@@ -11966,7 +12016,7 @@ Function Get-ServicesRuntimeComponentBackups {
         )
 
         $restorePayload = @{ components = $restoreComponents } | ConvertTo-Json -Depth 5
-        $outputFile = if ($PSBoundParameters.ContainsKey('Type')) { ".\$($Type)-restore-payload.json" } else { ".\component-restore-payload.json" }
+        $outputFile = if ($PSBoundParameters.ContainsKey('Type')) { ".\$($Type)-restore-payload.json" } else { ".\restore-payload.json" }
         $restorePayload | Out-File -FilePath $outputFile -Encoding utf8
         LogMessage -type INFO -message "[$jumpboxName] Restore JSON saved to $outputFile ($($restoreComponents.Count) component(s))"
         Write-Host ""
@@ -12003,7 +12053,7 @@ Function Restore-ServicesRuntimeComponentBackup {
     # Step 1: List available backups to find paths and restore points
     Get-ServicesRuntimeComponentBackups -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!"
 
-    # Step 2: Create a JSON file (component-restore-payload.json) with the desired components:
+    # Step 2: Create a JSON file (restore-payload.json) with the desired components:
     # {
     #   "components": [
     #     { "path": "sftp://svc-vcf-bck@10.167.173.126:22/media/backups/vcf/backups/.../vsp/.../2026-03-23T16-45-31Z", "point": "2026-03-23T16-45-31Z" },
@@ -12012,7 +12062,7 @@ Function Restore-ServicesRuntimeComponentBackup {
     # }
 
     # Step 3: Run the restore
-    Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -RestoreJsonFile ".\component-restore-payload.json"
+    Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn "sfo-sr01.sfo.rainpole.io" -ServicesRuntimePassword "VMw@re1!VMw@re1!" -RestoreJsonFile ".\restore-payload.json"
 
     .PARAMETER ServicesRuntimeFqdn
     FQDN of the Services Runtime instance.
