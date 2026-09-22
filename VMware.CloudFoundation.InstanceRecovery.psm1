@@ -16527,7 +16527,7 @@ Function Set-ServicesRuntimeScale {
 
     $elapsedSeconds = 0
     $timeoutSeconds = $TimeoutMinutes * 60
-    $lastStatusJson = ""
+    $lastSummary    = ""
     $finalPhase     = "UNKNOWN"
     Do {
         Start-Sleep -Seconds $PollIntervalSeconds
@@ -16540,9 +16540,32 @@ Function Set-ServicesRuntimeScale {
         if ([string]::IsNullOrWhiteSpace([string]$phase)) { $phase = "UNKNOWN" }
         $finalPhase = [string]$phase
 
-        if ($statusJson -ne $lastStatusJson) {
-            LogMessage -type INFO -message "[$jumpboxName] Status ($($elapsedSeconds)s elapsed): $statusJson"
-            $lastStatusJson = $statusJson
+        # Summarise rather than dumping the raw status blob: this PackageDeployment's
+        # status lists 30+ nested package/release entries, which prints as an
+        # unreadable wall of text (and is long enough to garble on some consoles).
+        $notReady = @()
+        try {
+            $statusObj = [string]$statusJson | ConvertFrom-Json -ErrorAction Stop
+            foreach ($pkg in $statusObj.packageDeployments) {
+                foreach ($rel in $pkg.releases) {
+                    if ($rel.ready -ne "True") {
+                        $notReady += "$($pkg.name)/$($rel.name):$($rel.reason)"
+                    }
+                }
+            }
+        } catch {
+            $notReady = @("<unable to parse status: $statusJson>")
+        }
+
+        $summary = if ($notReady.Count -gt 0) {
+            "Phase: $finalPhase, not ready: $($notReady -join ', ')"
+        } else {
+            "Phase: $finalPhase, all packages ready"
+        }
+
+        if ($summary -ne $lastSummary) {
+            LogMessage -type INFO -message "[$jumpboxName] Status (${elapsedSeconds}s elapsed): $summary"
+            $lastSummary = $summary
         } else {
             LogMessage -type INFO -message "[$jumpboxName] Phase: $finalPhase (${elapsedSeconds}s elapsed, no change since last poll)"
         }
