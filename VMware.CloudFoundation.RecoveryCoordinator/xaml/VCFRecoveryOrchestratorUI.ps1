@@ -2227,7 +2227,6 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
 
         $variantLabel = New-Object System.Windows.Controls.TextBlock
         $variantLabel.Text = $DisplayName
-        $variantLabel.FontFamily = New-Object System.Windows.Media.FontFamily('Consolas')
         $variantLabel.VerticalAlignment = 'Center'
         [System.Windows.Controls.Grid]::SetColumn($variantLabel, 0)
 
