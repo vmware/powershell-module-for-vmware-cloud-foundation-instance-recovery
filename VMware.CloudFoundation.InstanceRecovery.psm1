@@ -172,7 +172,11 @@ Function Test-MemberOfSubnet {
     [int]$Mask = [System.Net.IPAddress]::HostToNetworkOrder(-1 -shl ( 32 - $CIDRBits))
 
     # Determine whether the address is in the Subnet.
-    If (($BaseAddress -band $Mask) -eq ($Address -band $Mask)) { $true } else { $false }
+    If (($BaseAddress -band $Mask) -eq ($Address -band $Mask)) {
+        $true 
+    } else {
+        $false 
+    }
 }
 
 Function VCFIRCreateHeader {
@@ -283,8 +287,12 @@ Function Get-VCFIRAnswerSet {
     Param(
         [Parameter (Mandatory = $true)][String] $FunctionName
     )
-    If (!$script:VCFIRAnswers) { Return $null }
-    If (!$script:VCFIRAnswers.ContainsKey($FunctionName)) { Return $null }
+    If (!$script:VCFIRAnswers) {
+        Return $null 
+    }
+    If (!$script:VCFIRAnswers.ContainsKey($FunctionName)) {
+        Return $null 
+    }
     If (@($script:VCFIRAnswers[$FunctionName]).Count -eq 0) {
         Throw "Answer file has no remaining answer set for $FunctionName"
     }
@@ -502,7 +510,10 @@ Function Confirm-VCFInstanceRecoveryPreReqs {
     $installedSoftware = Get-InstalledSoftware
     If (!($installedSoftware -match "OpenSSL")) {
         $openSslUrlPath = "https://slproweb.com/products/Win32OpenSSL.html"
-        Try { $openSslLinks = Invoke-WebRequest $openSslUrlPath -UseBasicParsing -ErrorAction silentlycontinue }Catch {}
+        Try {
+            $openSslLinks = Invoke-WebRequest $openSslUrlPath -UseBasicParsing -ErrorAction silentlycontinue 
+        } Catch {
+        }
         $openSslLink = (($openSslLinks.Links | Where-Object { $_.href -like "/download/Win64OpenSSL_Light*.exe" }).href)[0]
         $Global:openSSLUrl = "https://slproweb.com" + $openSslLink
         If ($openSSLUrl) {
@@ -570,8 +581,7 @@ Function New-ExtractDataFromSDDCBackup {
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
     $backupFileFullPath = (Resolve-Path -Path $vcfBackupFilePath).path
-    If ($credentialsFilePath)
-    {
+    If ($credentialsFilePath) {
         $credentialsFileFullPath = (Resolve-Path -Path $credentialsFilePath).path
     }
     $backupFileName = (Get-ChildItem -path $backupFileFullPath).name
@@ -608,32 +618,26 @@ Function New-ExtractDataFromSDDCBackup {
     try {
         $command = "openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -md sha256 -in `"$strippedHeaderFile`" -pass pass:`"$encryptionPassword`" -out `"$parentFolder\decrypted-sddc-manager-backup.tar.gz`" 2>&1"
         $decryptionAttemptResponse = Invoke-Expression $command
-        If ([string]$decryptionAttemptResponse -eq "bad magic number")
-        {
+        If ([string]$decryptionAttemptResponse -eq "bad magic number") {
             $model = "legacy"
             $command = "openssl enc -d -aes-256-cbc -md sha256 -in $backupFileFullPath -pass pass:`"$encryptionPassword`" -out `"$parentFolder\decrypted-sddc-manager-backup.tar.gz`""
             Invoke-Expression "& $command" *>$null
             $filesToExtract += "$extractedBackupFolder/security_password_vault.json"
-        }
-        else
-        {
+        } else {
             $model = "current"
         }
-    }
-    finally {
+    } finally {
         Remove-Item Env:\OPENSSL_FIPS -ErrorAction SilentlyContinue
         Remove-Item -Path $strippedHeaderFile -Force -ErrorAction SilentlyContinue
     }
 
-    If ($model -in "current","legacy")
-    {
+    If ($model -in "current","legacy") {
         #Extract Required Files From Backup Leveraging Windows tar.exe
         LogMessage -type INFO -message "[$jumpboxName] Extracting Backup"
         tar -xzf "$parentFolder\decrypted-sddc-manager-backup.tar.gz" $filesToExtract
     }
 
-    If ($model -eq "current")
-    {
+    If ($model -eq "current") {
         #Get Content of Credentials File (SDDC Manager credentials API output)
         LogMessage -type INFO -message "[$jumpboxName] Reading Credentials File"
         $credentialsJson = Get-Content $credentialsFileFullPath | ConvertFrom-JSON
@@ -650,9 +654,7 @@ Function New-ExtractDataFromSDDCBackup {
                 'password'        = $object.password
             }
         }
-    }
-    elseif ($model -eq "legacy")
-    {
+    } elseif ($model -eq "legacy") {
         #Get Content of Password Vault
         LogMessage -type INFO -message "[$jumpboxName] Reading Password Vault"
         $passwordVaultJson = Get-Content "$parentFolder\$extractedBackupFolder\security_password_vault.json" | ConvertFrom-JSON
@@ -669,9 +671,7 @@ Function New-ExtractDataFromSDDCBackup {
                 'password'        = $object.password
             }
         }
-    }
-    else
-    {
+    } else {
         Return
     }
 
@@ -724,18 +724,28 @@ Function New-ExtractDataFromSDDCBackup {
     $sddcManagerVersion = $lineContent.split("`t")[$sddcManagerVersionColumn]
     $sddcManagerFqdn = $lineContent.split("`t")[$sddcManagerFqdnColumn]
     $sddcManagerVmName = $lineContent.split("`t")[$sddcManagerVmNameColumn]
-    If ($lineContent.split("`t")[$ceipStatusColumn] -eq 'ENABLED') { $ceipStatus = $true } else { $ceipStatus = $false }
+    If ($lineContent.split("`t")[$ceipStatusColumn] -eq 'ENABLED') {
+        $ceipStatus = $true 
+    } else {
+        $ceipStatus = $false 
+    }
 
     $sddcManagerObject = @()
     $sddcManagerObject += [pscustomobject]@{
         'fqdn'         = $sddcManagerFqdn
         'vmname'       = $sddcManagerVmName
-        'ip'           = If (Resolve-DnsName $sddcManagerFqdn -errorAction SilentlyContinue) { (Resolve-DnsName $sddcManagerFqdn | Where-Object { $_.section -eq "Answer" }).IPAddress } else { $null }
+        'ip'           = If (Resolve-DnsName $sddcManagerFqdn -errorAction SilentlyContinue) {
+            (Resolve-DnsName $sddcManagerFqdn | Where-Object { $_.section -eq "Answer" }).IPAddress 
+        } else {
+            $null 
+        }
         'fips_enabled' = $metadataJSON.fips_enabled
         'ceip_enabled' = $ceipStatus
         'version'      = $sddcManagerVersion
     }
-    If ($sddcManagerObject.ip -eq $null) { LogMessage -type WARNING -message "DNS Resolution for $($sddcManagerObject.fqdn) failed, please correct and retry" }
+    If ($sddcManagerObject.ip -eq $null) {
+        LogMessage -type WARNING -message "DNS Resolution for $($sddcManagerObject.fqdn) failed, please correct and retry" 
+    }
 
     LogMessage -type INFO -message "[$jumpboxName] Retrieving NSX Manager Details"
     #Get All NSX Manager Clusters
@@ -763,12 +773,18 @@ Function New-ExtractDataFromSDDCBackup {
                 }
             }
             $nsxtManagerCluster = [pscustomobject]@{
-                'clusterVip'  = If (Resolve-DnsName $lineContent.split("`t")[5] -erroraction SilentlyContinue) { (Resolve-DnsName $lineContent.split("`t")[5] | Where-Object { $_.section -eq "Answer" }).IPAddress } else { $null }
+                'clusterVip'  = If (Resolve-DnsName $lineContent.split("`t")[5] -erroraction SilentlyContinue) {
+                    (Resolve-DnsName $lineContent.split("`t")[5] | Where-Object { $_.section -eq "Answer" }).IPAddress 
+                } else {
+                    $null 
+                }
                 'clusterFqdn' = $lineContent.split("`t")[5]
                 'domainIDs'   = $nodeContent.domainIds
                 'nsxNodes'    = $nsxNodes
             }
-            If ($nsxtManagerCluster.clusterVip -eq $null) { LogMessage -type WARNING -message "DNS Resolution for $($nsxtManagerCluster.clusterFqdn) failed, please correct and retry" }
+            If ($nsxtManagerCluster.clusterVip -eq $null) {
+                LogMessage -type WARNING -message "DNS Resolution for $($nsxtManagerCluster.clusterFqdn) failed, please correct and retry" 
+            }
             $nsxtManagerClusters += $nsxtManagerCluster
         }
         $nsxManagerlineIndex++
@@ -796,7 +812,11 @@ Function New-ExtractDataFromSDDCBackup {
         If ($lineContent -ne '\.') {
             $hostId = $lineContent.split("`t")[$hostIdColumn]
             $hostName = $lineContent.split("`t")[$hostNameColumn]
-            $hostMgmtIp = If (Resolve-DnsName $lineContent.split("`t")[$hostnameColumn] -errorAction SilentlyContinue) { (Resolve-DnsName $lineContent.split("`t")[$hostnameColumn] | Where-Object { $_.section -eq "Answer" }).IPAddress } else { $null }
+            $hostMgmtIp = If (Resolve-DnsName $lineContent.split("`t")[$hostnameColumn] -errorAction SilentlyContinue) {
+                (Resolve-DnsName $lineContent.split("`t")[$hostnameColumn] | Where-Object { $_.section -eq "Answer" }).IPAddress 
+            } else {
+                $null 
+            }
             $hostVersion = $lineContent.split("`t")[$hostVersionColumn]
             $hostVmotionIp = $lineContent.split("`t")[$hostVmotionIpColumn]
             $hostVsanIP = $lineContent.split("`t")[$hostVsanIpColumn]
@@ -824,7 +844,9 @@ Function New-ExtractDataFromSDDCBackup {
                 'vsanIP'    = $hostVsanIP
             }
             $hosts += $hostInstance
-            If ($hostInstance.mgmtIp -eq $null) { LogMessage -type WARNING -message "DNS Resolution for $($hostInstance.hostName) failed, please correct and retry" }
+            If ($hostInstance.mgmtIp -eq $null) {
+                LogMessage -type WARNING -message "DNS Resolution for $($hostInstance.hostName) failed, please correct and retry" 
+            }
         }
         $hostsLineIndex++
     }
@@ -902,7 +924,11 @@ Function New-ExtractDataFromSDDCBackup {
             $vCenterID = $lineContent.split("`t")[$vCenterIDColumn]
             $vCenterVersion = $lineContent.split("`t")[$vCenterVersionColumn]
             $vCenterFqdn = $lineContent.split("`t")[$vCenterFqdnColumn]
-            $vCenterIp = If (Resolve-DnsName $vCenterFqdn -errorAction silentlyContinue) { (Resolve-DnsName $vCenterFqdn | Where-Object { $_.section -eq "Answer" }).IPAddress } else { $null }
+            $vCenterIp = If (Resolve-DnsName $vCenterFqdn -errorAction silentlyContinue) {
+                (Resolve-DnsName $vCenterFqdn | Where-Object { $_.section -eq "Answer" }).IPAddress 
+            } else {
+                $null 
+            }
             $vCenterVMname = $lineContent.split("`t")[$vCenterVMnameColumn]
             $vCenterDomainID = ($hostsAndDomains | Where-Object { $_.hostId -eq (($hostsandVcenters | Where-Object { $_.vCenterID -eq $vCenterID })[0].hostID) }).domainID
             $vCenter = [pscustomobject]@{
@@ -914,7 +940,9 @@ Function New-ExtractDataFromSDDCBackup {
                 'vCenterDomainID' = $vCenterDomainID
             }
             $vCenters += $vCenter
-            If ($vCenter.vCenterIp -eq $null) { LogMessage -type WARNING -message "DNS Resolution for $($vCenter.vCenterFqdn) failed, please correct and retry" }
+            If ($vCenter.vCenterIp -eq $null) {
+                LogMessage -type WARNING -message "DNS Resolution for $($vCenter.vCenterFqdn) failed, please correct and retry" 
+            }
         }
         $vCentersStartingLineNumber++
     }
@@ -1387,7 +1415,11 @@ Function New-ExtractDataFromSDDCBackup {
                 $vspDomainId = $lineContent.split("`t")[$vspDomainIdColumn]
                 $vspPrimaryFqdn = $lineContent.split("`t")[$vspPrimaryFqdnColumn]
                 $vspType = $lineContent.split("`t")[$vspTypeColumn]
-                $vspPrimaryIp = If (Resolve-DnsName $vspPrimaryFqdn -errorAction SilentlyContinue) { (Resolve-DnsName $vspPrimaryFqdn | Where-Object { $_.section -eq "Answer" }).IPAddress } else { $null }
+                $vspPrimaryIp = If (Resolve-DnsName $vspPrimaryFqdn -errorAction SilentlyContinue) {
+                    (Resolve-DnsName $vspPrimaryFqdn | Where-Object { $_.section -eq "Answer" }).IPAddress 
+                } else {
+                    $null 
+                }
                 $vspClusters += [pscustomobject]@{
                     'type'         = $vspType
                     'vspClusterID' = $vspClusterId
@@ -1395,7 +1427,9 @@ Function New-ExtractDataFromSDDCBackup {
                     'primaryFqdn'  = $vspPrimaryFqdn
                     'primaryIp'    = $vspPrimaryIp
                 }
-                If ($vspPrimaryIp -eq $null) { LogMessage -type WARNING -message "DNS Resolution for $vspPrimaryFqdn failed, please correct and retry" }
+                If ($vspPrimaryIp -eq $null) {
+                    LogMessage -type WARNING -message "DNS Resolution for $vspPrimaryFqdn failed, please correct and retry" 
+                }
             }
             $vspClustersLineIndex++
         }
@@ -2086,7 +2120,9 @@ Function New-NSXManagerOvaDeployment {
         $nsxManagerSelection = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
         Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid (($nsxManagerSelection -in $nsxManagersDisplayObject.ID) -OR ($nsxManagerSelection -eq "c")) -Value $nsxManagerSelection -PromptDescription "NSX Manager selection"
     } Until (($nsxManagerSelection -in $nsxManagersDisplayObject.ID) -OR ($nsxManagerSelection -eq "c"))
-    If ($nsxManagerSelection -eq "c") { Break }
+    If ($nsxManagerSelection -eq "c") {
+        Break 
+    }
     $selectedNsxManager = $nsxNodes | Where-Object { $_.vmName -eq ($nsxManagersDisplayObject | Where-Object { $_.id -eq $nsxManagerSelection }).manager }
 
     $vmDatastore = $extractedSDDCData.mgmtDomainInfrastructure.vsan_datastore
@@ -2134,7 +2170,9 @@ Function New-NSXManagerOvaDeployment {
 
     $scriptBlock = { Invoke-Expression "& $using:command" }
     $deploymentJob = Start-Job -scriptblock $scriptBlock -ArgumentList $command
-    Do { Sleep 1; $jobStatus = (Get-Job -id $deploymentJob.id).state } Until ($jobStatus -eq "Running" )
+    Do {
+        Sleep 1; $jobStatus = (Get-Job -id $deploymentJob.id).state 
+    } Until ($jobStatus -eq "Running" )
     Sleep 10
     $progress = @(Get-Job -id $deploymentJob.id | Receive-Job)
     Foreach ($line in $progress) {
@@ -2155,7 +2193,9 @@ Function New-NSXManagerOvaDeployment {
             }
         }
         $jobStatus = (Get-Job -id $deploymentJob.id).state
-        If ($jobStatus -eq "Running") { Sleep 60 }
+        If ($jobStatus -eq "Running") {
+            Sleep 60 
+        }
     } While ($jobStatus -eq "Running")
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
@@ -2240,7 +2280,11 @@ Function New-vCenterOvaDeployment {
     $restoredvCenterNetworkPrefix = 0
     [IPAddress] $ip = $extractedSddcData.mgmtDomainInfrastructure.netmask
     $octets = $ip.IPAddressToString.Split('.')
-    Foreach ($octet in $octets) { while (0 -ne $octet) { $octet = ($octet -shl 1) -band [byte]::MaxValue; $restoredvCenterNetworkPrefix++; } }
+    Foreach ($octet in $octets) {
+        while (0 -ne $octet) {
+            $octet = ($octet -shl 1) -band [byte]::MaxValue; $restoredvCenterNetworkPrefix++; 
+        } 
+    }
     $restoredvCenterDnsServers = "$($extractedSddcData.mgmtDomainInfrastructure.primaryDnsServer),$($extractedSddcData.mgmtDomainInfrastructure.secondaryDnsServer)"
     $restoredvCenterGateway = $extractedSddcData.mgmtDomainInfrastructure.gateway
     $restoredvCenterRootPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "VCENTER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "SSH") }).password
@@ -2255,7 +2299,9 @@ Function New-vCenterOvaDeployment {
     $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowExtraConfig --X:enableHiddenProperties --diskMode=thin --X:injectOvfEnv --powerOn --X:waitForIp --X:logFile=ovftool.log --name="' + $restoredvCenterVMName + '" --net:"Network 1"="' + $vmNetwork + '" --datastore="' + $vmDatastore + '" --deploymentOption="' + $restoredvCenterDeploymentSize + '" --prop:guestinfo.cis.appliance.net.addr.family="ipv4" --prop:guestinfo.cis.appliance.net.addr="' + $restoredvCenterIpAddress + '" --prop:guestinfo.cis.appliance.net.pnid="' + $restoredvCenterFqdn + '" --prop:guestinfo.cis.appliance.net.prefix="' + $restoredvCenterNetworkPrefix + '" --prop:guestinfo.cis.appliance.net.mode="static" --prop:guestinfo.cis.appliance.net.dns.servers="' + $restoredvCenterDnsServers + '" --prop:guestinfo.cis.appliance.net.gateway="' + $restoredvCenterGateway + '" --prop:guestinfo.cis.appliance.root.passwd="' + $restoredvCenterRootPassword + '" --prop:guestinfo.cis.appliance.ssh.enabled="True" "' + $vCenterOvaFile + '" ' + $targetUrl
     $scriptBlock = { Invoke-Expression "& $using:command" }
     $deploymentJob = Start-Job -scriptblock $scriptBlock -ArgumentList $command
-    Do { Sleep 1; $jobStatus = (Get-Job -id $deploymentJob.id).state } Until ($jobStatus -eq "Running" )
+    Do {
+        Sleep 1; $jobStatus = (Get-Job -id $deploymentJob.id).state 
+    } Until ($jobStatus -eq "Running" )
     Sleep 10
     $progress = @(Get-Job -id $deploymentJob.id | Receive-Job)
     Foreach ($line in $progress) {
@@ -2276,7 +2322,9 @@ Function New-vCenterOvaDeployment {
             }
         }
         $jobStatus = (Get-Job -id $deploymentJob.id).state
-        If ($jobStatus -eq "Running") { Sleep 60 }
+        If ($jobStatus -eq "Running") {
+            Sleep 60 
+        }
     } While ($jobStatus -eq "Running")
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
@@ -2380,7 +2428,9 @@ Function New-SDDCManagerOvaDeployment {
     $command = '"C:\Program Files\VMware\VMware OVF Tool\ovftool.exe" --noSSLVerify --acceptAllEulas --allowExtraConfig --diskMode=thin --X:enableHiddenProperties --X:injectOvfEnv --X:logFile=ovftool.log --X:waitForIp --powerOn --name="' + $sddcManagerVMName + '" --network="' + $vmNetwork + '" --datastore="' + $vmDatastore + '" --prop:vami.hostname="' + $sddcManagerHostName + '" --prop:vami.ip0.SDDC-Manager="' + $sddcManagerIp + '" --prop:vami.netmask0.SDDC-Manager="' + $sddcManagerNetworkMask + '" --prop:vami.DNS.SDDC-Manager="' + $sddcManagerDns + '" --prop:vami.gateway.SDDC-Manager="' + $sddcManagerGateway + '" --prop:BACKUP_PASSWORD="' + $sddcManagerBackupPassword + '" --prop:ROOT_PASSWORD="' + $rootUserPassword + '" --prop:VCF_PASSWORD="' + $vcfUserPassword + '" --prop:BASIC_AUTH_PASSWORD="' + $basicAuthUserPassword + '" --prop:LOCAL_USER_PASSWORD="' + $localUserPassword + '" --prop:vami.searchpath.SDDC-Manager="' + $sddcManagerDomainSearch + '" --prop:vami.domain.SDDC-Manager="' + $sddcManagerDnsDomain + '" --prop:guestinfo.ntp="' + $ntpServers + '" "' + $sddcManagerOvaFile + '" ' + $targetUrl
     $scriptBlock = { Invoke-Expression "& $using:command" }
     $deploymentJob = Start-Job -scriptblock $scriptBlock -ArgumentList $command
-    Do { Sleep 1; $jobStatus = (Get-Job -id $deploymentJob.id).state } Until ($jobStatus -eq "Running" )
+    Do {
+        Sleep 1; $jobStatus = (Get-Job -id $deploymentJob.id).state 
+    } Until ($jobStatus -eq "Running" )
     Sleep 10
     $progress = @(Get-Job -id $deploymentJob.id | Receive-Job)
     Foreach ($line in $progress) {
@@ -2401,7 +2451,9 @@ Function New-SDDCManagerOvaDeployment {
             }
         }
         $jobStatus = (Get-Job -id $deploymentJob.id).state
-        If ($jobStatus -eq "Running") { Sleep 60 }
+        If ($jobStatus -eq "Running") {
+            Sleep 60 
+        }
     } While ($jobStatus -eq "Running")
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
@@ -2513,9 +2565,13 @@ Function New-UploadAndModifySDDCManagerBackup {
 
         #Determine new SSH Keys
         $newNistKey = '"' + (($result | Where-Object { $_ -like "*ecdsa-sha2-nistp256*" }).split("ecdsa-sha2-nistp256 "))[1] + '"'
-        If ($newNistKey) { LogMessage -type INFO -message "[$sddcManagerFQDN] New ecdsa-sha2-nistp256 key for $mgmtVcenterFqdn retrieved" }
+        If ($newNistKey) {
+            LogMessage -type INFO -message "[$sddcManagerFQDN] New ecdsa-sha2-nistp256 key for $mgmtVcenterFqdn retrieved" 
+        }
         $newRSAKey = '"' + (($result | Where-Object { $_ -like "*ssh-rsa*" }).split("ssh-rsa "))[1] + '"'
-        If ($newRSAKey) { LogMessage -type INFO -message "[$sddcManagerFQDN] New ssh-rsa key for $mgmtVcenterFqdn retrieved" }
+        If ($newRSAKey) {
+            LogMessage -type INFO -message "[$sddcManagerFQDN] New ssh-rsa key for $mgmtVcenterFqdn retrieved" 
+        }
 
         #Close SSH Session
         Remove-SSHSession -SSHSession $sshSession | Out-Null
@@ -2664,7 +2720,11 @@ Function Get-BackupsFromSFTPServer {
         # Use as supplied.
     } elseif ($PSBoundParameters.ContainsKey('extractedSDDCDataFile')) {
         $vspClusterType = if ($PSBoundParameters.ContainsKey('Type')) {
-            if ($Type -eq 'vcfa') { 'CONSUMPTION' } else { 'MANAGEMENT' }
+            if ($Type -eq 'vcfa') {
+                'CONSUMPTION' 
+            } else {
+                'MANAGEMENT' 
+            }
         } elseif (($resolvedComponentNames -contains 'vcfa') -or ($resolvedComponentNames -contains 'vcd-migrator')) {
             'CONSUMPTION'
         } else {
@@ -2713,7 +2773,9 @@ Function Get-BackupsFromSFTPServer {
         $entries = @()
         Foreach ($versionFolder in $VersionFolders) {
             $componentPath = "$($versionFolder.FullName)/$ComponentName"
-            If (!(Test-SFTPPath -SessionId $sftpSession.SessionId -Path $componentPath)) { Continue }
+            If (!(Test-SFTPPath -SessionId $sftpSession.SessionId -Path $componentPath)) {
+                Continue 
+            }
 
             $subIdFolders = Get-SFTPChildItem -SessionId $sftpSession.SessionId -Path $componentPath | Where-Object { $_.IsDirectory }
             Foreach ($subIdFolder in $subIdFolders) {
@@ -2832,14 +2894,20 @@ Function Get-BackupsFromSFTPServer {
         $newest = $sortedEntries | Select-Object -First 1
         $oldest = $sortedEntries | Select-Object -Last 1
         $ageSpan = $now - $newest.BackupDate
-        $ageStr = if ($ageSpan.TotalDays -ge 1) { "$([math]::Floor($ageSpan.TotalDays)) Days" } else { "$([math]::Floor($ageSpan.TotalHours)) Hours" }
+        $ageStr = if ($ageSpan.TotalDays -ge 1) {
+            "$([math]::Floor($ageSpan.TotalDays)) Days" 
+        } else {
+            "$([math]::Floor($ageSpan.TotalHours)) Hours" 
+        }
         $uniqueTypes = @($group.Entries | Select-Object -ExpandProperty ComponentType | Sort-Object -Unique)
         $newestStr = $newest.BackupDate.ToString("yyyy-MM-dd HH:mm")
 
         $vspStr = "-"
         if ($showVspColumn) {
             $nearestVsp = $vspBackups | Sort-Object { [math]::Abs(($_.BackupDate - $newest.BackupDate).Ticks) } | Select-Object -First 1
-            if ($nearestVsp) { $vspStr = $nearestVsp.BackupDate.ToString("yyyy-MM-dd HH:mm") }
+            if ($nearestVsp) {
+                $vspStr = $nearestVsp.BackupDate.ToString("yyyy-MM-dd HH:mm") 
+            }
         }
 
         if ($isSingleComponent) {
@@ -2912,7 +2980,11 @@ Function Get-BackupsFromSFTPServer {
                 $opt = $options[$i]
                 $optStr = $opt.BackupDate.ToString("yyyy-MM-dd HH:mm")
                 $optAgeSpan = $now - $opt.BackupDate
-                $optAge = if ($optAgeSpan.TotalDays -ge 1) { "$([math]::Floor($optAgeSpan.TotalDays)) Days" } else { "$([math]::Floor($optAgeSpan.TotalHours)) Hours" }
+                $optAge = if ($optAgeSpan.TotalDays -ge 1) {
+                    "$([math]::Floor($optAgeSpan.TotalDays)) Days" 
+                } else {
+                    "$([math]::Floor($optAgeSpan.TotalHours)) Hours" 
+                }
                 Write-Host ("  {0,3}  {1,-20}  {2,-10}  {3}" -f ($i + 1), $optStr, $optAge, $opt.Version) -ForegroundColor White
             }
             Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
@@ -2948,12 +3020,20 @@ Function Get-BackupsFromSFTPServer {
         $oldestFinal = $sortedFinalEntries | Select-Object -Last 1
         $newestFinalStr = $newestFinal.BackupDate.ToString("yyyy-MM-dd HH:mm")
         $oldestFinalStr = $oldestFinal.BackupDate.ToString("yyyy-MM-dd HH:mm")
-        $groupLabel = if ($oldestFinalStr -eq $newestFinalStr) { $newestFinalStr } else { "$oldestFinalStr -> $newestFinalStr" }
+        $groupLabel = if ($oldestFinalStr -eq $newestFinalStr) {
+            $newestFinalStr 
+        } else {
+            "$oldestFinalStr -> $newestFinalStr" 
+        }
         LogMessage -type INFO -message "[$jumpboxName] Selected backup group $($selectedGroup.Index) ($groupLabel)"
     }
 
     # Show what is available in the selected backup group
-    $groupTitle = if ($customMode) { "Components in custom backup group" } else { "Components in backup group $($selectedGroup.Index) ($groupLabel)" }
+    $groupTitle = if ($customMode) {
+        "Components in custom backup group" 
+    } else {
+        "Components in backup group $($selectedGroup.Index) ($groupLabel)" 
+    }
     Write-Host ""
     Write-Host " $groupTitle" -ForegroundColor Cyan
     Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
@@ -2976,12 +3056,18 @@ Function Get-BackupsFromSFTPServer {
         $restoreComponents = @(
             foreach ($componentType in $resolvedComponentNames) {
                 $entry = $finalEntries | Where-Object { $_.ComponentType -eq $componentType } | Select-Object -First 1
-                if ($entry) { @{ path = "$sftpUriPrefix$($entry.Path)"; point = $entry.Name } }
+                if ($entry) {
+                    @{ path = "$sftpUriPrefix$($entry.Path)"; point = $entry.Name } 
+                }
             }
         )
 
         $restorePayload = @{ components = $restoreComponents } | ConvertTo-Json -Depth 5
-        $outputFile = if ($PSBoundParameters.ContainsKey('Type')) { ".\$($Type)-restore-payload.json" } else { ".\restore-payload.json" }
+        $outputFile = if ($PSBoundParameters.ContainsKey('Type')) {
+            ".\$($Type)-restore-payload.json" 
+        } else {
+            ".\restore-payload.json" 
+        }
         $restorePayload | Out-File -FilePath $outputFile -Encoding utf8
         LogMessage -type INFO -message "[$jumpboxName] Restore JSON saved to $outputFile ($($restoreComponents.Count) component(s))"
         Write-Host ""
@@ -3693,7 +3779,11 @@ Function Invoke-vCenterRestore {
 
             # Check if RPM install subtask exists and get its progress
             $rpmSubtask = $deployment.subtasks | Where-Object { $_.key -eq "rpminstall" }
-            $currentProgress = If ($rpmSubtask) { $rpmSubtask.value.progress.completed } Else { 0 }
+            $currentProgress = If ($rpmSubtask) {
+                $rpmSubtask.value.progress.completed 
+            } Else {
+                0 
+            }
 
             # RPM initialization is complete when:
             # 1. State is no longer NOT_INITIALIZED, OR
@@ -3708,7 +3798,11 @@ Function Invoke-vCenterRestore {
                 # Log progress updates when percentage changes or periodically
                 If ($currentProgress -ne $lastProgress) {
                     $lastProgress = $currentProgress
-                    $progressMsg = If ($rpmSubtask) { $rpmSubtask.value.progress.message.default_message } Else { "Initializing..." }
+                    $progressMsg = If ($rpmSubtask) {
+                        $rpmSubtask.value.progress.message.default_message 
+                    } Else {
+                        "Initializing..." 
+                    }
                     LogMessage -type INFO -message "[$restoredVcenterFqdn] RPM initialization progress: $currentProgress% - $progressMsg"
                 } ElseIf ($rpmAttempt % 12 -eq 0) {
                     LogMessage -type INFO -message "[$restoredVcenterFqdn] RPM initialization still in progress ($currentProgress%)... (attempt $rpmAttempt of $maxRpmAttempts)"
@@ -3857,7 +3951,11 @@ Function Invoke-vCenterRestore {
                     $currentSize = Get-CurrentApplianceSize -CurrentCPU $currentCPU -CurrentMemoryGB $currentMemoryGB
                     $recommendedSize = Get-RecommendedApplianceSize -RequiredCPU $requiredCPU -RequiredMemoryGB $requiredMemoryGB
 
-                    $currentSizeName = If ($currentSize) { $currentSize.Name } Else { "Unknown" }
+                    $currentSizeName = If ($currentSize) {
+                        $currentSize.Name 
+                    } Else {
+                        "Unknown" 
+                    }
 
                     LogMessage -type INFO -message "[$restoredVcenterFqdn] Current appliance size: $currentSizeName ($currentCPU vCPU, $($currentMemoryGB + 1) GB RAM)"
                     LogMessage -type INFO -message "[$restoredVcenterFqdn] Required appliance size: $($recommendedSize.Name) ($($recommendedSize.vCPU) vCPU, $($recommendedSize.MemoryGB) GB RAM)"
@@ -3919,7 +4017,8 @@ Function Invoke-vCenterRestore {
             If ($errorBody.messages) {
                 $errorMessage = ($errorBody.messages | ForEach-Object { Format-VAMIMessage -msg $_ }) -join "; "
             }
-        } Catch {}
+        } Catch {
+        }
 
         # Check for common error patterns and provide helpful guidance
         If ($errorMessage -match "list index out of range") {
@@ -5331,7 +5430,9 @@ Function Add-DiskgroupsToManagementHosts {
 
     Foreach ($peer in $vsanPeers) {
         $otherPeers = @($vsanPeers | Where-Object { $_.Name -ne $peer.Name })
-        if ($otherPeers.Count -eq 0) { continue }
+        if ($otherPeers.Count -eq 0) {
+            continue 
+        }
 
         $sshSession = $null
         Try {
@@ -5367,7 +5468,9 @@ Function Add-DiskgroupsToManagementHosts {
         } Catch {
             LogMessage -type ERROR -message "[$($peer.Name)] Failed to configure vSAN unicast agents: $($_.Exception.Message)"
         } Finally {
-            if ($sshSession) { Remove-SSHSession -SSHSession $sshSession | Out-Null }
+            if ($sshSession) {
+                Remove-SSHSession -SSHSession $sshSession | Out-Null 
+            }
         }
     }
 
@@ -6387,7 +6490,9 @@ Function Watch-NsxHostTransportNodeInstallation {
         $pendingNodes = @()
 
         Foreach ($transportNode in $clusterTransportNodes) {
-            If ($transportNode.id -in $completedIds) { Continue }
+            If ($transportNode.id -in $completedIds) {
+                Continue 
+            }
 
             $stateUri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($transportNode.id)/state"
             $statusUri = "https://$nsxManagerFqdn/api/v1/transport-nodes/$($transportNode.id)/status"
@@ -6564,7 +6669,27 @@ Function New-PrepareManagementHostNetworking {
             $networksList += "OVERLAY"
         }
         $networksDisplay = $networksList -join (",")
-        $ordinalDisplay = switch ($vdsIndex) { 1 { "1st" } 2 { "2nd" } 3 { "3rd" } 4 { "4th" } 5 { "5th" } 6 { "6th" } 7 { "7th" } 8 { "8th" } default { "$vdsIndex" + "th" } }
+        $ordinalDisplay = switch ($vdsIndex) {
+            1 {
+                "1st" 
+            } 2 {
+                "2nd" 
+            } 3 {
+                "3rd" 
+            } 4 {
+                "4th" 
+            } 5 {
+                "5th" 
+            } 6 {
+                "6th" 
+            } 7 {
+                "7th" 
+            } 8 {
+                "8th" 
+            } default {
+                "$vdsIndex" + "th" 
+            } 
+        }
         $vdsDisplayObject += [pscustomobject]@{
             'vdsName'  = "$ordinalDisplay VDS"
             'networks' = $networksDisplay
@@ -6595,7 +6720,27 @@ Function New-PrepareManagementHostNetworking {
             $networksList += "OVERLAY"
         }
         $networksDisplay = $networksList -join (",")
-        $ordinal = switch ($i) { 1 { "1st" } 2 { "2nd" } 3 { "3rd" } 4 { "4th" } 5 { "5th" } 6 { "6th" } 7 { "7th" } 8 { "8th" } default { "$i" + "th" } }
+        $ordinal = switch ($i) {
+            1 {
+                "1st" 
+            } 2 {
+                "2nd" 
+            } 3 {
+                "3rd" 
+            } 4 {
+                "4th" 
+            } 5 {
+                "5th" 
+            } 6 {
+                "6th" 
+            } 7 {
+                "7th" 
+            } 8 {
+                "8th" 
+            } default {
+                "$i" + "th" 
+            } 
+        }
 
         If ($isManagementVds -and $managementVss) {
             $vssName = $managementVss
@@ -6643,7 +6788,9 @@ Function New-PrepareManagementHostNetworking {
             }
             Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid (($nicSelectionInvalid -eq $false) -OR ($nicSelection -eq "c")) -Value $nicSelection -PromptDescription "NIC selection for vSS $vssName"
         } Until (($nicSelectionInvalid -eq $false) -OR ($nicSelection -eq "c"))
-        If ($nicSelection -eq "c") { Break }
+        If ($nicSelection -eq "c") {
+            Break 
+        }
 
         $allNicsForVss = $nicNamesArray
         If ($isManagementVds -and $managementVss) {
@@ -6657,7 +6804,11 @@ Function New-PrepareManagementHostNetworking {
             'newNicNames'     = $nicNamesArray
             'vdsNetworks'     = $networksList
             'isManagementVss' = $isManagementVds
-            'existingVssName' = If ($isManagementVds -and $managementVss) { $managementVss } else { $null }
+            'existingVssName' = If ($isManagementVds -and $managementVss) {
+                $managementVss 
+            } else {
+                $null 
+            }
         }
         $vssConfiguration += $individualVss
 
@@ -6670,7 +6821,9 @@ Function New-PrepareManagementHostNetworking {
             }
         }
     }
-    If (($nicSelection -eq "c") -or ($nicSelection -eq "C")) { Break }
+    If (($nicSelection -eq "c") -or ($nicSelection -eq "C")) {
+        Break 
+    }
 
     $proposedConfigDisplayObject = @()
     $configIndex = 1
@@ -6687,7 +6840,27 @@ Function New-PrepareManagementHostNetworking {
         'vdsNetworks' = "------------------------------"
     }
     Foreach ($config in $vssConfiguration) {
-        $ordinalDisplay = switch ($configIndex) { 1 { "1st" } 2 { "2nd" } 3 { "3rd" } 4 { "4th" } 5 { "5th" } 6 { "6th" } 7 { "7th" } 8 { "8th" } default { "$configIndex" + "th" } }
+        $ordinalDisplay = switch ($configIndex) {
+            1 {
+                "1st" 
+            } 2 {
+                "2nd" 
+            } 3 {
+                "3rd" 
+            } 4 {
+                "4th" 
+            } 5 {
+                "5th" 
+            } 6 {
+                "6th" 
+            } 7 {
+                "7th" 
+            } 8 {
+                "8th" 
+            } default {
+                "$configIndex" + "th" 
+            } 
+        }
         $proposedConfigDisplayObject += [pscustomobject]@{
             'vssName'     = $config.vssName
             'vdsName'     = "$ordinalDisplay VDS"
@@ -7560,9 +7733,25 @@ Function Backup-ClusterDRSGroupsAndRules {
             $vmNames = $vmNames -join (",")
             $VMHostAffinityRulesObject += [pscustomobject]@{
                 'name'          = $drsrule.name
-                'variant'       = If ($drsRule.ExtensionData.Mandatory -eq $true) { If ($drsRule.ExtensionData.AffineHostGroupName) { "MustRunOn" } else { "MustNotRunOn" } } else { If ($drsRule.ExtensionData.AffineHostGroupName) { "ShouldRunOn" } else { "ShouldNotRunOn" } }
+                'variant'       = If ($drsRule.ExtensionData.Mandatory -eq $true) {
+                    If ($drsRule.ExtensionData.AffineHostGroupName) {
+                        "MustRunOn" 
+                    } else {
+                        "MustNotRunOn" 
+                    } 
+                } else {
+                    If ($drsRule.ExtensionData.AffineHostGroupName) {
+                        "ShouldRunOn" 
+                    } else {
+                        "ShouldNotRunOn" 
+                    } 
+                }
                 'vmGroupName'   = $drsRule.ExtensionData.VmGroupName
-                'hostGroupName' = If ($drsRule.ExtensionData.AffineHostGroupName) { $drsRule.ExtensionData.AffineHostGroupName } else { $drsRule.ExtensionData.AntiAffineHostGroupName }
+                'hostGroupName' = If ($drsRule.ExtensionData.AffineHostGroupName) {
+                    $drsRule.ExtensionData.AffineHostGroupName 
+                } else {
+                    $drsRule.ExtensionData.AntiAffineHostGroupName 
+                }
             }
         }
         #$VMHostAffinityRulesObject | ConvertTo-Json -depth 10
@@ -7694,13 +7883,17 @@ Function Restore-ClusterVMOverrides {
                     $vmOverRideInstanceOrchestrationSpecSettings = @("readyCondition", "PostReadyDelay")
 
                     Foreach ($dasVmConfigSpecSetting in $dasVmConfigSpecSettings) {
-                        If ($vmOverRideInstance.$dasVmConfigSpecSetting -ne $null) { $dasVmConfigSpecRequired = $true }
+                        If ($vmOverRideInstance.$dasVmConfigSpecSetting -ne $null) {
+                            $dasVmConfigSpecRequired = $true 
+                        }
                     }
                     If (($vmOverRideInstance.DrsAutomationLevel -ne $null) -and ($vmOverRideInstance.DrsAutomationLevel -ne 'AsSpecifiedByCluster')) {
                         $drsVmConfigSpecRequired = $true
                     }
                     Foreach ($vmOverRideInstanceOrchestrationSpecSetting in $vmOverRideInstanceOrchestrationSpecSettings) {
-                        If ($vmOverRideInstance.$vmOverRideInstanceOrchestrationSpecSetting -ne $null) { $vmOverRideInstanceOrchestrationSpecRequired = $true }
+                        If ($vmOverRideInstance.$vmOverRideInstanceOrchestrationSpecSetting -ne $null) {
+                            $vmOverRideInstanceOrchestrationSpecRequired = $true 
+                        }
                     }
                     $cluster = Get-Cluster -Name $clusterName
                     $vm = Get-VM $vmOverRideInstance.name
@@ -7738,24 +7931,32 @@ Function Restore-ClusterVMOverrides {
                     $vmOverRideInstanceMonitoringSettings = @("VmMonitoring", "ClusterSettings", "FailureInterval", "MinUpTime", "MaxFailures", "MaxFailureWindow")
                     $vmOverRideInstanceMonitoringRequired = $false
                     Foreach ($vmOverRideInstanceMonitoringSetting in $vmOverRideInstanceMonitoringSettings) {
-                        If ($vmOverRideInstance.$vmOverRideInstanceMonitoringSetting -ne $null) { $vmOverRideInstanceMonitoringRequired = $true }
+                        If ($vmOverRideInstance.$vmOverRideInstanceMonitoringSetting -ne $null) {
+                            $vmOverRideInstanceMonitoringRequired = $true 
+                        }
                     }
                     If ($vmOverRideInstanceMonitoringRequired) {
                         $spec.dasVmConfigSpec[0].info.dasSettings.vmToolsMonitoringSettings = New-Object VMware.Vim.ClusterVmToolsMonitoringSettings
                         Foreach ($vmOverRideInstanceMonitoringSetting in $vmOverRideInstanceMonitoringSettings) {
-                            If ($vmOverRideInstance.$vmOverRideInstanceMonitoringSetting -ne $null) { $spec.dasVmConfigSpec[0].info.dasSettings.vmToolsMonitoringSettings.$vmOverRideInstanceMonitoringSetting = $vmOverRideInstance.$vmOverRideInstanceMonitoringSetting }
+                            If ($vmOverRideInstance.$vmOverRideInstanceMonitoringSetting -ne $null) {
+                                $spec.dasVmConfigSpec[0].info.dasSettings.vmToolsMonitoringSettings.$vmOverRideInstanceMonitoringSetting = $vmOverRideInstance.$vmOverRideInstanceMonitoringSetting 
+                            }
                         }
                     }
 
                     $vmOverRideInstanceComponentProtectionSettings = @("VmStorageProtectionForAPD", "VmTerminateDelayForAPDSec", "VmReactionOnAPDCleared", "VmStorageProtectionForPDL")
                     $vmOverRideInstanceComponentProtectionRequired = $false
                     Foreach ($vmOverRideInstanceComponentProtectionSetting in $vmOverRideInstanceComponentProtectionSettings) {
-                        If ($vmOverRideInstance.$vmOverRideInstanceComponentProtectionSetting -ne $null) { $vmOverRideInstanceComponentProtectionRequired = $true }
+                        If ($vmOverRideInstance.$vmOverRideInstanceComponentProtectionSetting -ne $null) {
+                            $vmOverRideInstanceComponentProtectionRequired = $true 
+                        }
                     }
                     If ($vmOverRideInstanceComponentProtectionRequired) {
                         $spec.dasVmConfigSpec[0].info.dasSettings.vmComponentProtectionSettings = New-Object VMware.Vim.ClusterVmComponentProtectionSettings
                         Foreach ($vmOverRideInstanceComponentProtectionSetting in $vmOverRideInstanceComponentProtectionSettings) {
-                            If ($vmOverRideInstance.$vmOverRideInstanceComponentProtectionSetting -ne $null) { $spec.dasVmConfigSpec[0].info.dasSettings.vmComponentProtectionSettings.$vmOverRideInstanceComponentProtectionSetting = $vmOverRideInstance.$vmOverRideInstanceComponentProtectionSetting }
+                            If ($vmOverRideInstance.$vmOverRideInstanceComponentProtectionSetting -ne $null) {
+                                $spec.dasVmConfigSpec[0].info.dasSettings.vmComponentProtectionSettings.$vmOverRideInstanceComponentProtectionSetting = $vmOverRideInstance.$vmOverRideInstanceComponentProtectionSetting 
+                            }
                         }
                     }
 
@@ -7769,13 +7970,17 @@ Function Restore-ClusterVMOverrides {
                     If ($vmOverRideInstanceOrchestrationSpecRequired) {
                         $spec.vmOrchestrationSpec[0].info.vmReadiness = New-Object VMware.Vim.ClusterVmReadiness
                         Foreach ($vmOverRideInstanceOrchestrationSpecSetting in $vmOverRideInstanceOrchestrationSpecSettings) {
-                            If ($vmOverRideInstance.$vmOverRideInstanceOrchestrationSpecSetting -ne $null) { $spec.vmOrchestrationSpec[0].info.vmReadiness.$vmOverRideInstanceOrchestrationSpecSetting = $vmOverRideInstance.$vmOverRideInstanceOrchestrationSpecSetting }
+                            If ($vmOverRideInstance.$vmOverRideInstanceOrchestrationSpecSetting -ne $null) {
+                                $spec.vmOrchestrationSpec[0].info.vmReadiness.$vmOverRideInstanceOrchestrationSpecSetting = $vmOverRideInstance.$vmOverRideInstanceOrchestrationSpecSetting 
+                            }
                         }
 
                     }
                     $haDasVmConfigSpecSettings = @("RestartPriority", "RestartPriorityTimeout", "IsolationResponse")
                     Foreach ($haDasVmConfigSpecSetting in $haDasVmConfigSpecSettings) {
-                        If ($vmOverRideInstance.$haDasVmConfigSpecSetting -ne $null) { $spec.dasVmConfigSpec[0].info.dasSettings.$haDasVmConfigSpecSetting = $vmOverRideInstance.$haDasVmConfigSpecSetting }
+                        If ($vmOverRideInstance.$haDasVmConfigSpecSetting -ne $null) {
+                            $spec.dasVmConfigSpec[0].info.dasSettings.$haDasVmConfigSpecSetting = $vmOverRideInstance.$haDasVmConfigSpecSetting 
+                        }
                     }
 
                     #Configure Cluster
@@ -8119,7 +8324,9 @@ Function Invoke-NSXManagerRestore {
         $nsxManagerSelection = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
         Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid (($nsxManagerSelection -in $nsxManagersDisplayObject.ID) -OR ($nsxManagerSelection -eq "c")) -Value $nsxManagerSelection -PromptDescription "NSX Manager selection"
     } Until (($nsxManagerSelection -in $nsxManagersDisplayObject.ID) -OR ($nsxManagerSelection -eq "c"))
-    If ($nsxManagerSelection -eq "c") { Break }
+    If ($nsxManagerSelection -eq "c") {
+        Break 
+    }
     $selectedNsxManager = $nsxNodes | Where-Object { $_.vmName -eq ($nsxManagersDisplayObject | Where-Object { $_.id -eq $nsxManagerSelection }).manager }
 
     $nsxManagerFQDN = $selectedNsxManager.hostname
@@ -8214,7 +8421,9 @@ Function Invoke-NSXManagerRestore {
         $backupSelection = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
         Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid (($backupSelection -in $relevantbackupsDisplayObject.ID) -OR ($backupSelection -eq "c")) -Value $backupSelection -PromptDescription "NSX Manager backup selection"
     } Until (($backupSelection -in $relevantbackupsDisplayObject.ID) -OR ($backupSelection -eq "c"))
-    If ($backupSelection -eq "c") { Break }
+    If ($backupSelection -eq "c") {
+        Break 
+    }
 
     #Start Restore
     LogMessage -type INFO -message "[$nsxManagerFQDN] Starting Restore"
@@ -8249,7 +8458,8 @@ Function Invoke-NSXManagerRestore {
             } else {
                 LogMessage -type INFO -message "[$nsxManagerFQDN] Restore is currently $($restoreStatus.status.value)"
             }
-        } Catch {}
+        } Catch {
+        }
     } Until ($restoreStatus.status.value -eq "SUCCESS")
     LogMessage -type INFO -message "[$nsxManagerFQDN] Restore finished with status: $($restoreStatus.status.value)"
     $StopWatch.Stop()
@@ -8563,7 +8773,11 @@ Function Invoke-NSXEdgeClusterRecoverySelective {
     $indexedEdges = @()
     Foreach ($edgeEntry in $allEdges) {
         $vmPresent = Get-VM -Name $edgeEntry.Edge.display_name -ErrorAction SilentlyContinue
-        $presentString = If ($vmPresent) { "Yes" } Else { "No" }
+        $presentString = If ($vmPresent) {
+            "Yes" 
+        } Else {
+            "No" 
+        }
         $edgeDisplayObject += [PSCustomObject]@{
             'ID'       = $edgeIndex
             'Location' = "$($edgeEntry.LocationType): $($edgeEntry.LocationName)"
@@ -8784,7 +8998,9 @@ Function Add-AdditionalNSXManagers {
         $nsxManagerSelection = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
         Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid (($nsxManagerSelection -in $nsxManagersDisplayObject.ID) -OR ($nsxManagerSelection -eq "c")) -Value $nsxManagerSelection -PromptDescription "First NSX Manager selection"
     } Until (($nsxManagerSelection -in $nsxManagersDisplayObject.ID) -OR ($nsxManagerSelection -eq "c"))
-    If ($nsxManagerSelection -eq "c") { Break }
+    If ($nsxManagerSelection -eq "c") {
+        Break 
+    }
     $selectedNsxManager = $nsxNodes | Where-Object { $_.vmName -eq ($nsxManagersDisplayObject | Where-Object { $_.id -eq $nsxManagerSelection }).manager }
     $otherNsxManagers = $nsxNodes | Where-Object { $_.vmName -ne ($nsxManagersDisplayObject | Where-Object { $_.id -eq $nsxManagerSelection }).manager }
 
@@ -8994,22 +9210,30 @@ Function ConvertFrom-VcfmsTaskTimestampToUtc {
     zone offset (often one hour vs UTC). VCFMS task times are UTC; Unspecified is treated as UTC.
     #>
     Param ($Timestamp)
-    if ($null -eq $Timestamp) { return $null }
+    if ($null -eq $Timestamp) {
+        return $null 
+    }
     try {
         if ($Timestamp -is [DateTimeOffset]) {
             return $Timestamp.UtcDateTime
         }
         if ($Timestamp -is [DateTime]) {
             switch ($Timestamp.Kind) {
-                ([DateTimeKind]::Utc) { return $Timestamp }
-                ([DateTimeKind]::Local) { return $Timestamp.ToUniversalTime() }
+                ([DateTimeKind]::Utc) {
+                    return $Timestamp 
+                }
+                ([DateTimeKind]::Local) {
+                    return $Timestamp.ToUniversalTime() 
+                }
                 default {
                     return [DateTime]::SpecifyKind($Timestamp, [DateTimeKind]::Utc)
                 }
             }
         }
         $s = ([string]$Timestamp).Trim()
-        if ([string]::IsNullOrWhiteSpace($s)) { return $null }
+        if ([string]::IsNullOrWhiteSpace($s)) {
+            return $null 
+        }
         return [DateTimeOffset]::Parse($s, [CultureInfo]::InvariantCulture,
             [System.Globalization.DateTimeStyles]::AssumeUniversal -bor
             [System.Globalization.DateTimeStyles]::AdjustToUniversal).UtcDateTime
@@ -9020,7 +9244,9 @@ Function ConvertFrom-VcfmsTaskTimestampToUtc {
 
 Function Format-TimeSpanElapsedColons {
     Param ([TimeSpan]$Span)
-    if ($Span -lt [TimeSpan]::Zero) { $Span = [TimeSpan]::Zero }
+    if ($Span -lt [TimeSpan]::Zero) {
+        $Span = [TimeSpan]::Zero 
+    }
     '{0:00}:{1:00}:{2:00}' -f [int][Math]::Floor($Span.TotalHours), $Span.Minutes, $Span.Seconds
 }
 
@@ -9548,7 +9774,11 @@ Function Update-ClusterHostSourceIDs {
         $plannedChanges += [PSCustomObject]@{
             Hostname          = $hostEntry.Hostname
             SddcManagerHostId = $sddcManagerHostId
-            CurrentSourceId   = if ($currentSourceId) { $currentSourceId } else { '(not set / NULL)' }
+            CurrentSourceId   = if ($currentSourceId) {
+                $currentSourceId 
+            } else {
+                '(not set / NULL)' 
+            }
             NewSourceId       = $hostEntry.NewMoRef
         }
     }
@@ -9913,16 +10143,26 @@ Function Invoke-SddcManagerSSHKeyRefresh {
             $skipped = $false
             $updated = $false
             Foreach ($token in $tokensForTarget) {
-                if ($failedFqdns -like "*$token*") { $failed = $true }
-                if ($notUpdatedFqdns -like "*$token*") { $notUpdated = $true }
-                if ($skippedFqdns -like "*$token*") { $skipped = $true }
+                if ($failedFqdns -like "*$token*") {
+                    $failed = $true 
+                }
+                if ($notUpdatedFqdns -like "*$token*") {
+                    $notUpdated = $true 
+                }
+                if ($skippedFqdns -like "*$token*") {
+                    $skipped = $true 
+                }
             }
             if (-not ($failed -or $notUpdated -or $skipped)) {
                 Foreach ($line in $mismatchLines) {
                     Foreach ($token in $tokensForTarget) {
-                        if ($line -like "*$token*") { $updated = $true; break }
+                        if ($line -like "*$token*") {
+                            $updated = $true; break 
+                        }
                     }
-                    if ($updated) { break }
+                    if ($updated) {
+                        break 
+                    }
                 }
             }
 
@@ -10198,24 +10438,20 @@ Function New-ServicesRuntime {
 
         # Look up the cluster ID by matching the platform FQDN against the vspClusters section of
         # the extracted SDDC data, rather than requiring it to be passed directly.
-        If (!$clusterId)
-        {
-            If ($extractedSDDCDataFile)
-            {
+        If (!$clusterId) {
+            If ($extractedSDDCDataFile) {
                 $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
                 $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-Json
                 $ClusterId = ($extractedSddcData.vspClusters | Where-Object { $_.primaryFqdn -eq $PlatformFqdn }).vspClusterID
-            }
-            elseif ($opsRegisteredComponentsFile)
-            {
+            } elseif ($opsRegisteredComponentsFile) {
                 $opsRegisteredComponentsFilePath = (Resolve-Path -Path $opsRegisteredComponentsFile).path
                 $opsRegisteredComponents = Get-Content $opsRegisteredComponentsFilePath | ConvertFrom-Json
                 $ClusterId = $opsRegisteredComponents.vcfa.vspComponentUuid
             }
         }
         if (-not $ClusterId) {
-        LogMessage -type ERROR -message "[$jumpboxName] No vspClusters entry in '$extractedSDDCDataFile' matches PlatformFqdn '$PlatformFqdn'. Aborting."
-        return
+            LogMessage -type ERROR -message "[$jumpboxName] No vspClusters entry in '$extractedSDDCDataFile' matches PlatformFqdn '$PlatformFqdn'. Aborting."
+            return
         }
         LogMessage -type INFO -message "[$jumpboxName] Resolved cluster ID '$ClusterId' for '$PlatformFqdn'"
 
@@ -10247,8 +10483,12 @@ Function New-ServicesRuntime {
             clusterId               = $ClusterId
             internalClusterCidrIpv4 = $InternalClusterCidrIpv4
         }
-        if (-not [string]::IsNullOrWhiteSpace($InstanceFqdn)) { $payloadHash['instanceFqdn'] = $InstanceFqdn }
-        if (-not [string]::IsNullOrWhiteSpace($FleetFqdn)) { $payloadHash['fleetFqdn'] = $FleetFqdn }
+        if (-not [string]::IsNullOrWhiteSpace($InstanceFqdn)) {
+            $payloadHash['instanceFqdn'] = $InstanceFqdn 
+        }
+        if (-not [string]::IsNullOrWhiteSpace($FleetFqdn)) {
+            $payloadHash['fleetFqdn'] = $FleetFqdn 
+        }
         $requestBody = $payloadHash | ConvertTo-Json -Depth 5
     }
 
@@ -10285,7 +10525,8 @@ Function New-ServicesRuntime {
                 $reader = New-Object System.IO.StreamReader($errorStream)
                 $errorBody = $reader.ReadToEnd()
                 LogMessage -type ERROR -message "[$SddcManagerFqdn] Response body: $errorBody"
-            } catch {}
+            } catch {
+            }
         }
         return
     }
@@ -10344,8 +10585,14 @@ Function New-ServicesRuntime {
         $errorDetailsFound = $false
 
         foreach ($err in @($taskResponse.errors)) {
-            if (-not $err) { continue }
-            $errMsg = if ($err.message) { $err.message } else { $err }
+            if (-not $err) {
+                continue 
+            }
+            $errMsg = if ($err.message) {
+                $err.message 
+            } else {
+                $err 
+            }
             LogMessage -type ERROR -message "[$SddcManagerFqdn] Error: $errMsg"
             if ($err.remediationMessage) {
                 LogMessage -type ERROR -message "[$SddcManagerFqdn] Remediation: $($err.remediationMessage)"
@@ -10364,7 +10611,11 @@ Function New-ServicesRuntime {
         }
 
         foreach ($subTask in @($taskResponse.subTasks | Where-Object { $_.status -eq "FAILED" })) {
-            $subTaskMessage = if ($subTask.errors) { (@($subTask.errors) | ForEach-Object { $_.message }) -join '; ' } else { $subTask.name }
+            $subTaskMessage = if ($subTask.errors) {
+                (@($subTask.errors) | ForEach-Object { $_.message }) -join '; ' 
+            } else {
+                $subTask.name 
+            }
             LogMessage -type ERROR -message "[$SddcManagerFqdn] Sub-task '$($subTask.name)' failed: $subTaskMessage"
             $errorDetailsFound = $true
         }
@@ -10442,12 +10693,19 @@ Function Get-ServicesRuntime {
                 $reader = New-Object System.IO.StreamReader($errorStream)
                 $errorBody = $reader.ReadToEnd()
                 LogMessage -type ERROR -message "[$SddcManagerFqdn] Response body: $errorBody"
-            } catch {}
+            } catch {
+            }
         }
         return
     }
 
-    $clusters = if ($response.elements) { $response.elements } elseif ($response -is [Array]) { $response } else { @($response) }
+    $clusters = if ($response.elements) {
+        $response.elements 
+    } elseif ($response -is [Array]) {
+        $response 
+    } else {
+        @($response) 
+    }
 
     if (-not $clusters -or $clusters.Count -eq 0) {
         LogMessage -type INFO -message "[$SddcManagerFqdn] No ServicesRuntime instances found."
@@ -10701,7 +10959,11 @@ Function Get-VcfOperationsRegisteredComponents {
         $allComponents |
             Where-Object { ($_.componentType).ToUpper() -eq 'VSP' } |
                 ForEach-Object {
-                    $ip = if ($_.properties.ip) { $_.properties.ip } else { $_.vcfInstance.ip }
+                    $ip = if ($_.properties.ip) {
+                        $_.properties.ip 
+                    } else {
+                        $_.vcfInstance.ip 
+                    }
                     [PSCustomObject]@{
                         id               = $_.componentUuid
                         componentVersion = $_.componentVersion
@@ -10754,8 +11016,7 @@ Function Get-VcfOperationsRegisteredComponents {
     $json = $result | ConvertTo-Json -Depth 10 | Out-File $outputFile
     LogMessage -type INFO -message "[$VcfOperationsFqdn] VCF Management Services Runtime VSP ID: $($vsp.id)"
     LogMessage -type INFO -message "[$VcfOperationsFqdn] VCF Management Services Runtime Component Version: $($vsp.componentVersion)"
-    If ($vcfa)
-    {
+    If ($vcfa) {
         LogMessage -type INFO -message "[$VcfOperationsFqdn] VCF Automation Services Runtime VSP ID: $($vcfa.vspComponentUuid)"
         LogMessage -type INFO -message "[$VcfOperationsFqdn] VCF Automation Services Runtime Component Version: $($vcfa.componentVersion)"
     }
@@ -10847,7 +11108,11 @@ Function Get-RegisteredComponentIds {
         $allComponents |
             Where-Object { ($_.componentType).ToUpper() -eq 'VSP' } |
                 ForEach-Object {
-                    $ip = if ($_.properties.ip) { $_.properties.ip } else { $_.vcfInstance.ip }
+                    $ip = if ($_.properties.ip) {
+                        $_.properties.ip 
+                    } else {
+                        $_.vcfInstance.ip 
+                    }
                     [PSCustomObject]@{
                         id              = $_.componentUuid
                         fqdn            = $_.properties.fqdn
@@ -11005,7 +11270,8 @@ Function Add-VcfmsTrustedCertificate {
                 $reader = New-Object System.IO.StreamReader($errorStream)
                 $errorBody = $reader.ReadToEnd()
                 LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Response body: $errorBody"
-            } catch {}
+            } catch {
+            }
         }
         return
     }
@@ -11229,7 +11495,8 @@ Function Set-ServicesRuntimeSftpBackupSettings {
                 $reader = New-Object System.IO.StreamReader($errorStream)
                 $errorBody = $reader.ReadToEnd()
                 LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Response body: $errorBody"
-            } catch {}
+            } catch {
+            }
         }
         return
     }
@@ -11422,17 +11689,28 @@ Function Set-ServicesRuntimeBackupSchedule {
         $response = Invoke-RestMethod -Uri $applyUri -Method POST -Headers $headers -Body $requestBody -SkipCertificateCheck
     } catch {
         $statusCode = $null
-        if ($_.Exception.Response) { $statusCode = [int]$_.Exception.Response.StatusCode }
+        if ($_.Exception.Response) {
+            $statusCode = [int]$_.Exception.Response.StatusCode 
+        }
 
         $errorMessage = $_.Exception.Message
         $rawErrorDetails = $_.ErrorDetails.Message
         if ($rawErrorDetails) {
             try {
                 $errorBody = $rawErrorDetails | ConvertFrom-Json
-                if ($errorBody.message) { $errorMessage = $errorBody.message }
-                elseif ($errorBody.messages) { $errorMessage = ($errorBody.messages | ForEach-Object { if ($_.default) { $_.default } else { $_ } }) -join '; ' }
-                elseif ($errorBody.error) { $errorMessage = $errorBody.error }
-                else { $errorMessage = $rawErrorDetails }
+                if ($errorBody.message) {
+                    $errorMessage = $errorBody.message 
+                } elseif ($errorBody.messages) {
+                    $errorMessage = ($errorBody.messages | ForEach-Object { if ($_.default) {
+                                $_.default 
+                            } else {
+                                $_ 
+                            } }) -join '; ' 
+                } elseif ($errorBody.error) {
+                    $errorMessage = $errorBody.error 
+                } else {
+                    $errorMessage = $rawErrorDetails 
+                }
             } catch {
                 $errorMessage = $rawErrorDetails
             }
@@ -11748,7 +12026,9 @@ Function Get-ServicesRuntimeComponentBackups {
     $now = Get-Date
 
     foreach ($backup in $allBackups) {
-        if ($backup.component.type -notin $resolvedComponents) { continue }
+        if ($backup.component.type -notin $resolvedComponents) {
+            continue 
+        }
         $backupName = $backup.name
         $normalizedName = $backupName -replace 'T(\d{2})-(\d{2})-(\d{2})Z', 'T$1:$2:$3Z'
         $backupDate = $null
@@ -11756,7 +12036,8 @@ Function Get-ServicesRuntimeComponentBackups {
         try {
             $backupDate = [datetime]::Parse($normalizedName, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal)
             $daysOld = [math]::Floor(($now - $backupDate).TotalDays)
-        } catch {}
+        } catch {
+        }
 
         $parsedBackups += [PSCustomObject]@{
             ComponentType  = $backup.component.type
@@ -11817,12 +12098,15 @@ Function Get-ServicesRuntimeComponentBackups {
     $vspBackups = @()
     if ($showVspColumn) {
         foreach ($backup in $allBackups) {
-            if ($backup.component.type -ne "vsp") { continue }
+            if ($backup.component.type -ne "vsp") {
+                continue 
+            }
             $vspNormalizedName = $backup.name -replace 'T(\d{2})-(\d{2})-(\d{2})Z', 'T$1:$2:$3Z'
             $vspBackupDate = $null
             try {
                 $vspBackupDate = [datetime]::Parse($vspNormalizedName, [System.Globalization.CultureInfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal)
-            } catch {}
+            } catch {
+            }
             if ($vspBackupDate) {
                 $vspBackups += [PSCustomObject]@{ Name = $backup.name; BackupDate = $vspBackupDate }
             }
@@ -11864,15 +12148,27 @@ Function Get-ServicesRuntimeComponentBackups {
         $oldest = $sortedEntries | Select-Object -Last 1
         $ageStr = if ($newest.BackupDate) {
             $ageSpan = $now - $newest.BackupDate
-            if ($ageSpan.TotalDays -ge 1) { "$([math]::Floor($ageSpan.TotalDays)) Days" } else { "$([math]::Floor($ageSpan.TotalHours)) Hours" }
-        } else { "unknown" }
+            if ($ageSpan.TotalDays -ge 1) {
+                "$([math]::Floor($ageSpan.TotalDays)) Days" 
+            } else {
+                "$([math]::Floor($ageSpan.TotalHours)) Hours" 
+            }
+        } else {
+            "unknown" 
+        }
         $uniqueTypes = @($group.Entries | Select-Object -ExpandProperty ComponentType | Sort-Object -Unique)
-        $newestStr = if ($newest.BackupDate) { $newest.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
+        $newestStr = if ($newest.BackupDate) {
+            $newest.BackupDate.ToString("yyyy-MM-dd HH:mm") 
+        } else {
+            "unknown" 
+        }
 
         $vspStr = "-"
         if ($showVspColumn -and $newest.BackupDate) {
             $nearestVsp = $vspBackups | Sort-Object { [math]::Abs(($_.BackupDate - $newest.BackupDate).Ticks) } | Select-Object -First 1
-            if ($nearestVsp) { $vspStr = $nearestVsp.BackupDate.ToString("yyyy-MM-dd HH:mm") }
+            if ($nearestVsp) {
+                $vspStr = $nearestVsp.BackupDate.ToString("yyyy-MM-dd HH:mm") 
+            }
         }
 
         if ($isSingleComponent) {
@@ -11882,7 +12178,11 @@ Function Get-ServicesRuntimeComponentBackups {
                 $rowLines.Add(("  {0,3}  {1,-20}  {2,-10}  {3} ({4})" -f $group.Index, $newestStr, $ageStr, ($uniqueTypes -join ', '), $uniqueTypes.Count))
             }
         } else {
-            $oldestStr = if ($oldest.BackupDate) { $oldest.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
+            $oldestStr = if ($oldest.BackupDate) {
+                $oldest.BackupDate.ToString("yyyy-MM-dd HH:mm") 
+            } else {
+                "unknown" 
+            }
             if ($showVspColumn) {
                 $rowLines.Add(("  {0,3}  {1,-18}  {2,-16}  {3,-10}  {4,-26}  {5} ({6})" -f $group.Index, $oldestStr, $newestStr, $ageStr, $vspStr, ($uniqueTypes -join ', '), $uniqueTypes.Count))
             } else {
@@ -11942,11 +12242,21 @@ Function Get-ServicesRuntimeComponentBackups {
             Write-Host ("  {0,3}  {1,-20}  {2,-10}  {3}" -f "ID", "Backup Time (UTC)", "Age", "Version") -ForegroundColor Gray
             for ($i = 0; $i -lt $options.Count; $i++) {
                 $opt = $options[$i]
-                $optStr = if ($opt.BackupDate) { $opt.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
+                $optStr = if ($opt.BackupDate) {
+                    $opt.BackupDate.ToString("yyyy-MM-dd HH:mm") 
+                } else {
+                    "unknown" 
+                }
                 $optAge = if ($opt.BackupDate) {
                     $optAgeSpan = $now - $opt.BackupDate
-                    if ($optAgeSpan.TotalDays -ge 1) { "$([math]::Floor($optAgeSpan.TotalDays)) Days" } else { "$([math]::Floor($optAgeSpan.TotalHours)) Hours" }
-                } else { "unknown" }
+                    if ($optAgeSpan.TotalDays -ge 1) {
+                        "$([math]::Floor($optAgeSpan.TotalDays)) Days" 
+                    } else {
+                        "$([math]::Floor($optAgeSpan.TotalHours)) Hours" 
+                    }
+                } else {
+                    "unknown" 
+                }
                 Write-Host ("  {0,3}  {1,-20}  {2,-10}  {3}" -f ($i + 1), $optStr, $optAge, $opt.Version) -ForegroundColor White
             }
             Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
@@ -11979,19 +12289,39 @@ Function Get-ServicesRuntimeComponentBackups {
         $sortedFinalEntries = $finalEntries | Sort-Object BackupDate -Descending
         $newestFinal = $sortedFinalEntries | Select-Object -First 1
         $oldestFinal = $sortedFinalEntries | Select-Object -Last 1
-        $newestFinalStr = if ($newestFinal.BackupDate) { $newestFinal.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
-        $oldestFinalStr = if ($oldestFinal.BackupDate) { $oldestFinal.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
-        $groupLabel = if ($oldestFinalStr -eq $newestFinalStr) { "$newestFinalStr UTC" } else { "$oldestFinalStr -> $newestFinalStr UTC" }
+        $newestFinalStr = if ($newestFinal.BackupDate) {
+            $newestFinal.BackupDate.ToString("yyyy-MM-dd HH:mm") 
+        } else {
+            "unknown" 
+        }
+        $oldestFinalStr = if ($oldestFinal.BackupDate) {
+            $oldestFinal.BackupDate.ToString("yyyy-MM-dd HH:mm") 
+        } else {
+            "unknown" 
+        }
+        $groupLabel = if ($oldestFinalStr -eq $newestFinalStr) {
+            "$newestFinalStr UTC" 
+        } else {
+            "$oldestFinalStr -> $newestFinalStr UTC" 
+        }
     }
 
     # Show what is available in the selected backup group
-    $groupTitle = if ($customMode) { "Components in custom backup group" } else { "Components in backup group $($selectedGroup.Index) ($groupLabel)" }
+    $groupTitle = if ($customMode) {
+        "Components in custom backup group" 
+    } else {
+        "Components in backup group $($selectedGroup.Index) ($groupLabel)" 
+    }
     Write-Host ""
     Write-Host " $groupTitle" -ForegroundColor Cyan
     Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
     Write-Host ("  {0,-16}  {1,-18}  {2}" -f "Component", "Version", "Backup Time") -ForegroundColor Gray
     $finalEntries | Sort-Object BackupDate -Descending | ForEach-Object {
-        $entryTimeStr = if ($_.BackupDate) { $_.BackupDate.ToString("yyyy-MM-dd HH:mm") } else { "unknown" }
+        $entryTimeStr = if ($_.BackupDate) {
+            $_.BackupDate.ToString("yyyy-MM-dd HH:mm") 
+        } else {
+            "unknown" 
+        }
         Write-Host ("  {0,-16}  {1,-18}  {2}" -f $_.ComponentType, $_.Version, $entryTimeStr) -ForegroundColor White
     }
     Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
@@ -12011,12 +12341,18 @@ Function Get-ServicesRuntimeComponentBackups {
         $restoreComponents = @(
             foreach ($componentType in $resolvedComponents) {
                 $entry = $finalEntries | Where-Object { $_.ComponentType -eq $componentType } | Select-Object -First 1
-                if ($entry) { @{ path = $entry.Path; point = $entry.Name } }
+                if ($entry) {
+                    @{ path = $entry.Path; point = $entry.Name } 
+                }
             }
         )
 
         $restorePayload = @{ components = $restoreComponents } | ConvertTo-Json -Depth 5
-        $outputFile = if ($PSBoundParameters.ContainsKey('Type')) { ".\$($Type)-restore-payload.json" } else { ".\restore-payload.json" }
+        $outputFile = if ($PSBoundParameters.ContainsKey('Type')) {
+            ".\$($Type)-restore-payload.json" 
+        } else {
+            ".\restore-payload.json" 
+        }
         $restorePayload | Out-File -FilePath $outputFile -Encoding utf8
         LogMessage -type INFO -message "[$jumpboxName] Restore JSON saved to $outputFile ($($restoreComponents.Count) component(s))"
         Write-Host ""
@@ -12130,7 +12466,9 @@ Function Restore-ServicesRuntimeComponentBackup {
     Write-Host " ----------------------------------------------------------------" -ForegroundColor Cyan
     foreach ($comp in $payloadObject.components) {
         $componentName = ($comp.path -split '/') | Where-Object { $_ -in @("vsp", "vcf-fleet-lcm", "vcf-fleet-depot", "vcf-sddc-lcm", "salt", "salt-raas", "vidb", "ops-logs", "vcfms-metrics-store", "vcf-obs-data-platform", "telemetry-acceptor", "vcfa", "vcd-migrator") } | Select-Object -First 1
-        if (-not $componentName) { $componentName = "unknown" }
+        if (-not $componentName) {
+            $componentName = "unknown" 
+        }
         Write-Host "   $componentName" -ForegroundColor Yellow -NoNewline
         Write-Host " -> point: $($comp.point)" -ForegroundColor White
         Write-Host "     path: $($comp.path)" -ForegroundColor Gray
@@ -12185,7 +12523,9 @@ Function Restore-ServicesRuntimeComponentBackup {
         try {
             $componentsResp = Invoke-RestMethod -Uri "https://$ServicesRuntimeFqdn/api/v1/components" -Method GET -Headers $headers -SkipCertificateCheck
             foreach ($c in $componentsResp.components) {
-                if ($c.id -and $c.type) { $componentNameById[$c.id] = $c.type }
+                if ($c.id -and $c.type) {
+                    $componentNameById[$c.id] = $c.type 
+                }
             }
         } catch {
             $prefetchFailed = $true
@@ -12200,10 +12540,14 @@ Function Restore-ServicesRuntimeComponentBackup {
             $submitError = $_
         }
 
-        if (-not $submitFailed) { break }
+        if (-not $submitFailed) {
+            break 
+        }
 
         $readyElapsedMinutes = ([DateTime]::UtcNow - $readyWaitStartUtc).TotalMinutes
-        if ($readyElapsedMinutes -ge $ReadyTimeoutMinutes) { break }
+        if ($readyElapsedMinutes -ge $ReadyTimeoutMinutes) {
+            break 
+        }
 
         LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Services Runtime not yet ready to accept a restore request (attempt $readyAttempt): $($submitError.Exception.Message). Retrying in $ReadyRetryIntervalSeconds seconds (timeout in $([Math]::Round($ReadyTimeoutMinutes - $readyElapsedMinutes, 1)) minutes)"
         Start-Sleep -Seconds $ReadyRetryIntervalSeconds
@@ -12221,7 +12565,8 @@ Function Restore-ServicesRuntimeComponentBackup {
                 $reader = New-Object System.IO.StreamReader($errorStream)
                 $errorBody = $reader.ReadToEnd()
                 LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Response body: $errorBody"
-            } catch {}
+            } catch {
+            }
         }
         return
     }
@@ -12287,7 +12632,9 @@ Function Restore-ServicesRuntimeComponentBackup {
             $taskStatus = $taskResponse.status
             if ($taskResponse.startTime) {
                 $reportedStart = ConvertFrom-VcfmsTaskTimestampToUtc -Timestamp $taskResponse.startTime
-                if ($reportedStart) { $taskStartedAtUtc = $reportedStart }
+                if ($reportedStart) {
+                    $taskStartedAtUtc = $reportedStart 
+                }
             }
             $statusChanged = $taskStatus -ne $lastLoggedStatus
             $quietIntervalElapsed = ([DateTime]::UtcNow - $lastStatusLoggedAt).TotalSeconds -ge 300
@@ -12306,14 +12653,20 @@ Function Restore-ServicesRuntimeComponentBackup {
                     if ($cid -and $cStatus) {
                         $prev = $reportedComponentStatuses[$cid]
                         if ($prev -ne $cStatus) {
-                            $cName = if ($componentNameById.ContainsKey($cid)) { $componentNameById[$cid] } else { $cid }
+                            $cName = if ($componentNameById.ContainsKey($cid)) {
+                                $componentNameById[$cid] 
+                            } else {
+                                $cid 
+                            }
                             $elapsedMsg = ""
                             if ($cStatus -in $terminalComponentStates) {
                                 # This API does not report a per-component start/end time, so this
                                 # reflects how long the overall restore task has been running, not
                                 # this component's own individual duration.
                                 $span = [DateTime]::UtcNow - $taskStartedAtUtc
-                                if ($span -lt [TimeSpan]::Zero) { $span = [TimeSpan]::Zero }
+                                if ($span -lt [TimeSpan]::Zero) {
+                                    $span = [TimeSpan]::Zero 
+                                }
                                 $totalMinutes = ($span.Hours * 60) + $span.Minutes
                                 $elapsedMsg = " ($totalMinutes minutes and $($span.Seconds) seconds since restore started)"
                             }
@@ -12345,7 +12698,11 @@ Function Restore-ServicesRuntimeComponentBackup {
         if ($failedGroups.Count -gt 0) {
             foreach ($group in $failedGroups) {
                 foreach ($check in @($group.prechecks | Where-Object { $_.status -eq "FAILED" })) {
-                    $issueMsg = if ($check.issue.message.default) { $check.issue.message.default } else { $check.name.default }
+                    $issueMsg = if ($check.issue.message.default) {
+                        $check.issue.message.default 
+                    } else {
+                        $check.name.default 
+                    }
                     $issueMsg = $issueMsg -replace '\s*\[[\w.]+\]\s*$', ''
                     LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] $issueMsg"
                 }
@@ -12511,7 +12868,11 @@ Function Get-VcfmsComponents {
     foreach ($comp in $filteredComponents) {
         # Include Fqdn on every row ($null when N/A) so Format-Table shows the column; otherwise the first
         # objects without Fqdn determine columns and runtime FQDNs are hidden.
-        $fqdn = if ($comp.componentTypeDescription -eq 'VCF services runtime') { $comp.fqdn } else { $null }
+        $fqdn = if ($comp.componentTypeDescription -eq 'VCF services runtime') {
+            $comp.fqdn 
+        } else {
+            $null 
+        }
         $results += [PSCustomObject]@{
             'Id'   = $comp.id
             'Type' = $comp.componentTypeDescription
@@ -12519,7 +12880,11 @@ Function Get-VcfmsComponents {
         }
     }
 
-    $filterMsg = if ($ComponentTypes) { "matching: $($ComponentTypes -join ', ')" } else { "(all)" }
+    $filterMsg = if ($ComponentTypes) {
+        "matching: $($ComponentTypes -join ', ')" 
+    } else {
+        "(all)" 
+    }
     LogMessage -type INFO -message "[$FleetLCMFqdn] Found $($results.Count) component(s) $filterMsg"
     Write-Host ""
     $results | Format-Table -AutoSize -Property Id, Type, Fqdn | Out-String | Write-Host
@@ -12775,7 +13140,8 @@ Function Stop-VcfmsTask {
                 $reader = New-Object System.IO.StreamReader($errorStream)
                 $errorBody = $reader.ReadToEnd()
                 LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Response body: $errorBody"
-            } catch {}
+            } catch {
+            }
         }
         return
     }
@@ -12906,8 +13272,16 @@ Function Start-ServicesRuntimeComponentBackup {
 
     $allComponentsList = [System.Collections.Generic.List[PSCustomObject]]::new()
     foreach ($comp in $allComponents) {
-        $fqdn = if ($comp.componentTypeDescription -eq 'VCF services runtime') { $comp.fqdn } else { $null }
-        $vcfInstanceName = if ($comp.vspCluster.fqdn) { $comp.vspCluster.fqdn } else { "Fleet-wide" }
+        $fqdn = if ($comp.componentTypeDescription -eq 'VCF services runtime') {
+            $comp.fqdn 
+        } else {
+            $null 
+        }
+        $vcfInstanceName = if ($comp.vspCluster.fqdn) {
+            $comp.vspCluster.fqdn 
+        } else {
+            "Fleet-wide" 
+        }
         $allComponentsList.Add([PSCustomObject]@{
                 Id          = $comp.id
                 Type        = $comp.componentTypeDescription
@@ -13076,7 +13450,8 @@ Function Start-ServicesRuntimeComponentBackup {
                 $reader = New-Object System.IO.StreamReader($errorStream)
                 $errorBody = $reader.ReadToEnd()
                 LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Response body: $errorBody"
-            } catch {}
+            } catch {
+            }
         }
         return
     }
@@ -13193,7 +13568,8 @@ Function Remove-VcfmsComponent {
                     $reader = New-Object System.IO.StreamReader($errorStream)
                     $errorBody = $reader.ReadToEnd()
                     LogMessage -type ERROR -message "[$FleetLCMFqdn] Response body: $errorBody"
-                } catch {}
+                } catch {
+                }
             }
             $results += [PSCustomObject]@{ ComponentId = $componentId; TaskId = $null; Status = "DELETE_FAILED" }
             $current++
@@ -13505,7 +13881,8 @@ Function Set-ServicesRuntimeComponentVips {
             try {
                 $errBody = (New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())).ReadToEnd()
                 LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Response body: $errBody"
-            } catch {}
+            } catch {
+            }
         }
         return
     }
@@ -13617,7 +13994,9 @@ Function Open-VcfmsSshSession {
     New-SSHTrustedHost -KnownHostStore $inmem -HostName $Fqdn `
         -FingerPrint ((Get-SSHHostKey -ComputerName $Fqdn).fingerprint) | Out-Null
     $session = $null
-    Do { $session = New-SSHSession -ComputerName $Fqdn -Credential $Creds -KnownHost $inmem }
+    Do {
+        $session = New-SSHSession -ComputerName $Fqdn -Credential $Creds -KnownHost $inmem 
+    }
     Until ($session)
     return $session
 }
@@ -13628,9 +14007,13 @@ Function Get-VcfmsRemoteFileContent {
     param([int]$SessionId, [String]$RemotePath, [String]$Pwd)
     $cmd = "echo '$Pwd' | sudo -S base64 -w 0 $RemotePath"
     $result = Invoke-SSHCommand -SessionId $SessionId -Command $cmd -TimeOut 30
-    if ($result.ExitStatus -ne 0) { return $null }
+    if ($result.ExitStatus -ne 0) {
+        return $null 
+    }
     $b64 = ($result.Output -join "") -replace '[^A-Za-z0-9+/=]', ''
-    if ([string]::IsNullOrWhiteSpace($b64)) { return $null }
+    if ([string]::IsNullOrWhiteSpace($b64)) {
+        return $null 
+    }
     return [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($b64))
 }
 
@@ -13740,7 +14123,9 @@ Function Get-VcfmsServicesRuntimeKubeconfig {
         LogMessage -type ERROR -message "[$jumpboxName] Failed to retrieve kubeconfig: $($_.Exception.Message)"
         return $null
     } finally {
-        if ($session) { Remove-SSHSession -SSHSession $session | Out-Null }
+        if ($session) {
+            Remove-SSHSession -SSHSession $session | Out-Null 
+        }
     }
 }
 
@@ -13749,9 +14134,19 @@ Function ConvertTo-VcfmsYaml {
     # Unexported — used by New-ExtractVcfmsBackup.
     param($obj, [int]$indent = 0)
     $pad = ' ' * $indent
-    if ($null -eq $obj) { return 'null' }
-    if ($obj -is [bool]) { if ($obj) { return 'true' } else { return 'false' } }
-    if ($obj -is [int] -or $obj -is [long] -or $obj -is [double]) { return "$obj" }
+    if ($null -eq $obj) {
+        return 'null' 
+    }
+    if ($obj -is [bool]) {
+        if ($obj) {
+            return 'true' 
+        } else {
+            return 'false' 
+        } 
+    }
+    if ($obj -is [int] -or $obj -is [long] -or $obj -is [double]) {
+        return "$obj" 
+    }
     if ($obj -is [string]) {
         if ($obj -eq '' -or
             $obj -match '^[\s]|[\s]$|^[>|!&*{}[\],#`@%]|: |^-\s|^[\d]' -or
@@ -13763,7 +14158,9 @@ Function ConvertTo-VcfmsYaml {
         return $obj
     }
     if ($obj -is [System.Collections.IDictionary]) {
-        if ($obj.Count -eq 0) { return '{}' }
+        if ($obj.Count -eq 0) {
+            return '{}' 
+        }
         $lines = @()
         foreach ($k in $obj.Keys) {
             $v = $obj[$k]
@@ -13785,7 +14182,9 @@ Function ConvertTo-VcfmsYaml {
         return $lines -join "`n"
     }
     if ($obj -is [System.Collections.IList]) {
-        if ($obj.Count -eq 0) { return '[]' }
+        if ($obj.Count -eq 0) {
+            return '[]' 
+        }
         $lines = @()
         foreach ($item in $obj) {
             if ($null -eq $item -or $item -is [bool] -or $item -is [int] -or $item -is [long] -or $item -is [double] -or $item -is [string]) {
@@ -13798,7 +14197,9 @@ Function ConvertTo-VcfmsYaml {
                 $firstLine = $inner.TrimStart()
                 $rest = ($inner -split "`n" | Select-Object -Skip 1) -join "`n"
                 $lines += "$pad- $firstLine"
-                if ($rest) { $lines += $rest }
+                if ($rest) {
+                    $lines += $rest 
+                }
             }
         }
         return $lines -join "`n"
@@ -13866,8 +14267,11 @@ Function Invoke-VcfmsOpensslDecrypt {
         $inStream, $decryptor,
         [System.Security.Cryptography.CryptoStreamMode]::Read)
     $outStream = [System.IO.File]::OpenWrite($OutPath)
-    try { $cryptoStream.CopyTo($outStream) }
-    finally { $cryptoStream.Close(); $outStream.Close(); $aes.Dispose() }
+    try {
+        $cryptoStream.CopyTo($outStream) 
+    } finally {
+        $cryptoStream.Close(); $outStream.Close(); $aes.Dispose() 
+    }
 }
 
 Function Expand-VcfmsTarGz {
@@ -13885,26 +14289,44 @@ Function Expand-VcfmsTarGz {
             $read = 0
             while ($read -lt 512) {
                 $n = $gz.Read($buf, $read, 512 - $read)
-                if ($n -eq 0) { return }
+                if ($n -eq 0) {
+                    return 
+                }
                 $read += $n
             }
             $allZero = $true
-            foreach ($b in $buf) { if ($b -ne 0) { $allZero = $false; break } }
-            if ($allZero) { return }
+            foreach ($b in $buf) {
+                if ($b -ne 0) {
+                    $allZero = $false; break 
+                } 
+            }
+            if ($allZero) {
+                return 
+            }
 
             $nameRaw = [System.Text.Encoding]::ASCII.GetString($buf, 0, 100).TrimEnd([char]0)
             $sizeOctal = [System.Text.Encoding]::ASCII.GetString($buf, 124, 12).Trim().TrimEnd([char]0)
             $typeFlag = [char]$buf[156]
             $prefixRaw = [System.Text.Encoding]::ASCII.GetString($buf, 345, 155).TrimEnd([char]0)
-            $entryName = if ($prefixRaw) { "$prefixRaw/$nameRaw" } else { $nameRaw }
-            $entrySize = if ($sizeOctal) { [Convert]::ToInt64($sizeOctal.Trim(), 8) } else { 0 }
+            $entryName = if ($prefixRaw) {
+                "$prefixRaw/$nameRaw" 
+            } else {
+                $nameRaw 
+            }
+            $entrySize = if ($sizeOctal) {
+                [Convert]::ToInt64($sizeOctal.Trim(), 8) 
+            } else {
+                0 
+            }
 
             $blocks = [int][Math]::Ceiling($entrySize / 512)
             $dataBytes = New-Object byte[] ($blocks * 512)
             $dataRead = 0
             while ($dataRead -lt $dataBytes.Length) {
                 $n = $gz.Read($dataBytes, $dataRead, $dataBytes.Length - $dataRead)
-                if ($n -eq 0) { break }
+                if ($n -eq 0) {
+                    break 
+                }
                 $dataRead += $n
             }
 
@@ -13928,7 +14350,9 @@ Function Resolve-VcfmsVeleroJson {
             (Join-Path $VeleroBase "resources\$ResourceKind\namespaces\$Namespace\$Stem.json"),
             (Join-Path $VeleroBase "resources\$ResourceKind\v1-preferredversion\namespaces\$Namespace\$Stem.json")
         )) {
-        if (Test-Path $layout) { return $layout }
+        if (Test-Path $layout) {
+            return $layout 
+        }
     }
     return $null
 }
@@ -13939,12 +14363,28 @@ Function New-VcfmsTlsSecretFromNdc {
     param([string]$NdcJsonPath, [string]$PlainStem)
     $ndc = Get-Content $NdcJsonPath -Raw | ConvertFrom-Json
     $data = $ndc.data
-    $certB64 = if ($data.cert) { $data.cert } elseif ($data.'tls.crt') { $data.'tls.crt' } else { $null }
-    $keyB64 = if ($data.key) { $data.key }  elseif ($data.'tls.key') { $data.'tls.key' } else { $null }
+    $certB64 = if ($data.cert) {
+        $data.cert 
+    } elseif ($data.'tls.crt') {
+        $data.'tls.crt' 
+    } else {
+        $null 
+    }
+    $keyB64 = if ($data.key) {
+        $data.key 
+    } elseif ($data.'tls.key') {
+        $data.'tls.key' 
+    } else {
+        $null 
+    }
     if (-not $certB64 -or -not $keyB64) {
         throw "NDC secret $NdcJsonPath has no cert/key in .data; cannot synthesize $PlainStem"
     }
-    $ns = if ($ndc.metadata.namespace) { $ndc.metadata.namespace } else { 'vmsp-platform' }
+    $ns = if ($ndc.metadata.namespace) {
+        $ndc.metadata.namespace 
+    } else {
+        'vmsp-platform' 
+    }
     $md = [ordered]@{
         name        = $PlainStem
         namespace   = $ns
@@ -13955,10 +14395,14 @@ Function New-VcfmsTlsSecretFromNdc {
     $ndcLabels = @{}
     if ($ndc.metadata.labels) {
         $ndc.metadata.labels.PSObject.Properties | ForEach-Object {
-            if ($_.Name -ne 'backup.vmsp.vmware.com/skip-restore') { $ndcLabels[$_.Name] = $_.Value }
+            if ($_.Name -ne 'backup.vmsp.vmware.com/skip-restore') {
+                $ndcLabels[$_.Name] = $_.Value 
+            }
         }
     }
-    if ($ndcLabels.Count -gt 0) { $md['labels'] = $ndcLabels }
+    if ($ndcLabels.Count -gt 0) {
+        $md['labels'] = $ndcLabels 
+    }
     return [ordered]@{
         apiVersion = 'v1'
         kind       = 'Secret'
@@ -14198,7 +14642,9 @@ Function New-ExtractVcfmsBackup {
 
     } finally {
         # Always clean up the temp work directory
-        if (Test-Path $workDir) { Remove-Item -Recurse -Force $workDir -ErrorAction SilentlyContinue }
+        if (Test-Path $workDir) {
+            Remove-Item -Recurse -Force $workDir -ErrorAction SilentlyContinue 
+        }
     }
 
     $StopWatch.Stop()
@@ -15155,8 +15601,12 @@ Function Set-VcfmsFleetIdentity {
     $tlsYaml = Join-Path $resolvedYamlDir "ingress-fleet-tls.yaml"
     $ndcYaml = Join-Path $resolvedYamlDir "ingress-fleet-tls-ndc.yaml"
     $missingFiles = @()
-    if (-not (Test-Path $tlsYaml)) { $missingFiles += $tlsYaml }
-    if (-not (Test-Path $ndcYaml)) { $missingFiles += $ndcYaml }
+    if (-not (Test-Path $tlsYaml)) {
+        $missingFiles += $tlsYaml 
+    }
+    if (-not (Test-Path $ndcYaml)) {
+        $missingFiles += $ndcYaml 
+    }
     if ($missingFiles.Count -gt 0) {
         foreach ($f in $missingFiles) {
             LogMessage -type ERROR -message "[$jumpboxName] Required YAML file not found: $f"
@@ -15716,9 +16166,15 @@ Function Invoke-VcfmsFleetComponentRegistration {
     $controlPlaneHost = $kubeconfigResult.ControlPlaneHost
     LogMessage -type INFO -message "[$jumpboxName] Control plane node  : $controlPlaneHost"
     switch ($PSCmdlet.ParameterSetName) {
-        "ByVcfInstance" { LogMessage -type INFO -message "[$jumpboxName] Target VCF instance : $TargetVcfInstance" }
-        "ByFqdn" { LogMessage -type INFO -message "[$jumpboxName] Target FQDN pattern : $TargetFqdn" }
-        "BySddcId" { LogMessage -type INFO -message "[$jumpboxName] Target SDDC LCM ID  : $TargetSddcId" }
+        "ByVcfInstance" {
+            LogMessage -type INFO -message "[$jumpboxName] Target VCF instance : $TargetVcfInstance" 
+        }
+        "ByFqdn" {
+            LogMessage -type INFO -message "[$jumpboxName] Target FQDN pattern : $TargetFqdn" 
+        }
+        "BySddcId" {
+            LogMessage -type INFO -message "[$jumpboxName] Target SDDC LCM ID  : $TargetSddcId" 
+        }
     }
     if ($DryRun) {
         LogMessage -type INFO -message "[$jumpboxName] Mode               : DRY RUN (no changes will be written)"
@@ -15760,11 +16216,19 @@ Function Invoke-VcfmsFleetComponentRegistration {
         # sudo boundary so every kubectl call inside the script uses admin.conf
         # -------------------------------------------------------------------------
         $scriptArgs = switch ($PSCmdlet.ParameterSetName) {
-            "ByVcfInstance" { "--target-fqdn '$TargetVcfInstance'" }
-            "ByFqdn" { "--target-fqdn '$TargetFqdn'" }
-            "BySddcId" { "--target-fqdn '$TargetSddcId'" }
+            "ByVcfInstance" {
+                "--target-fqdn '$TargetVcfInstance'" 
+            }
+            "ByFqdn" {
+                "--target-fqdn '$TargetFqdn'" 
+            }
+            "BySddcId" {
+                "--target-fqdn '$TargetSddcId'" 
+            }
         }
-        if ($DryRun) { $scriptArgs += " --dry-run" }
+        if ($DryRun) {
+            $scriptArgs += " --dry-run" 
+        }
 
         # -------------------------------------------------------------------------
         # Steps 5b (OPS) and 5c (OPS_NETWORKS) each prompt interactively for
@@ -15780,8 +16244,16 @@ Function Invoke-VcfmsFleetComponentRegistration {
         # Nesting the answers in their own `printf | ...` inside the already-
         # elevated shell makes this deterministic regardless of sudo caching.
         # -------------------------------------------------------------------------
-        $opsMoveAnswer = if ($ConfirmOpsMove) { "y" } else { "n" }
-        $opsNetworksMoveAnswer = if ($ConfirmOpsNetworksMove) { "y" } else { "n" }
+        $opsMoveAnswer = if ($ConfirmOpsMove) {
+            "y" 
+        } else {
+            "n" 
+        }
+        $opsNetworksMoveAnswer = if ($ConfirmOpsNetworksMove) {
+            "y" 
+        } else {
+            "n" 
+        }
 
         $innerCmd = "printf '%s\n%s\n' '$opsMoveAnswer' '$opsNetworksMoveAnswer' | env KUBECONFIG=/etc/kubernetes/admin.conf bash $remotePath $scriptArgs"
         $execCmd = "echo '$ServicesRuntimePassword' | sudo -S bash -c `"$innerCmd`" 2>&1"
@@ -16019,7 +16491,9 @@ Function Invoke-VcfmsVcfaRegistration {
         # line and avoid shell-quoting issues with special characters.
         # -------------------------------------------------------------------------
         $scriptArgs = "--vcfa-runtime-fqdn '$VcfaRuntimeFqdn' --ops-fqdn '$OpsFqdn'"
-        if ($DryRun) { $scriptArgs += " --dry-run" }
+        if ($DryRun) {
+            $scriptArgs += " --dry-run" 
+        }
 
         $execCmd = "echo '$ServicesRuntimePassword' | sudo -S env KUBECONFIG=/etc/kubernetes/admin.conf " +
         "VCFA_ADMIN_PASSWORD='$VspPassword' VCFA_SYSTEM_PASSWORD='$VcfaSystemPassword' OPS_ADMIN_PASSWORD='$OpsPassword' " +
@@ -16264,7 +16738,9 @@ Function Update-VcfmsVcfaRegistration {
         # command line and avoid shell-quoting issues with special characters.
         # -------------------------------------------------------------------------
         $scriptArgs = "--vcfa-runtime-fqdn '$VcfaRuntimeFqdn' --ops-fqdn '$OpsFqdn'"
-        if ($DryRun) { $scriptArgs += " --dry-run" }
+        if ($DryRun) {
+            $scriptArgs += " --dry-run" 
+        }
 
         $execCmd = "echo '$ServicesRuntimePassword' | sudo -S env KUBECONFIG=/etc/kubernetes/admin.conf " +
         "VCFA_ADMIN_PASSWORD='$VspPassword' VCFA_SYSTEM_PASSWORD='$VcfaSystemPassword' OPS_ADMIN_PASSWORD='$OpsPassword' " +
@@ -16736,30 +17212,48 @@ Function Set-ServicesRuntimeScale {
         $WorkerSize  = $null
         $inWorkerBlock = $false
         foreach ($line in $yamlLines) {
-            if ($line -match '^\s*worker:\s*$') { $inWorkerBlock = $true; continue }
+            if ($line -match '^\s*worker:\s*$') {
+                $inWorkerBlock = $true; continue 
+            }
             if ($inWorkerBlock) {
-                if ($line -match '^\s*size:\s*(.+?)\s*$') { $WorkerSize = $Matches[1].Trim('"', "'"); break }
-                if ($line -notmatch '^\s{2,}\S') { $inWorkerBlock = $false }
+                if ($line -match '^\s*size:\s*(.+?)\s*$') {
+                    $WorkerSize = $Matches[1].Trim('"', "'"); break 
+                }
+                if ($line -notmatch '^\s{2,}\S') {
+                    $inWorkerBlock = $false 
+                }
             }
         }
 
         $MachineType = $null
         $inWorkerBlock = $false
         foreach ($line in $yamlLines) {
-            if ($line -match '^\s*worker:\s*$') { $inWorkerBlock = $true; continue }
+            if ($line -match '^\s*worker:\s*$') {
+                $inWorkerBlock = $true; continue 
+            }
             if ($inWorkerBlock) {
-                if ($line -match '^\s*machineType:\s*(.+?)\s*$') { $MachineType = $Matches[1].Trim('"', "'"); break }
-                if ($line -notmatch '^\s{2,}\S') { $inWorkerBlock = $false }
+                if ($line -match '^\s*machineType:\s*(.+?)\s*$') {
+                    $MachineType = $Matches[1].Trim('"', "'"); break 
+                }
+                if ($line -notmatch '^\s{2,}\S') {
+                    $inWorkerBlock = $false 
+                }
             }
         }
 
         $ProfileName = $null
         $inProfilesBlock = $false
         foreach ($line in $yamlLines) {
-            if ($line -match '^\s*profiles:\s*$') { $inProfilesBlock = $true; continue }
+            if ($line -match '^\s*profiles:\s*$') {
+                $inProfilesBlock = $true; continue 
+            }
             if ($inProfilesBlock) {
-                if ($line -match '^\s*name:\s*(.+?)\s*$') { $ProfileName = $Matches[1].Trim('"', "'"); break }
-                if ($line -notmatch '^\s{2,}\S' -and $line -notmatch '^\s*-\s') { $inProfilesBlock = $false }
+                if ($line -match '^\s*name:\s*(.+?)\s*$') {
+                    $ProfileName = $Matches[1].Trim('"', "'"); break 
+                }
+                if ($line -notmatch '^\s{2,}\S' -and $line -notmatch '^\s*-\s') {
+                    $inProfilesBlock = $false 
+                }
             }
         }
 
@@ -16782,8 +17276,8 @@ Function Set-ServicesRuntimeScale {
         LogMessage -type INFO -message "[$jumpboxName] Retrieving kubeconfig from $ServicesRuntimeFqdn"
         $kubeconfigResult = Get-VcfmsServicesRuntimeKubeconfig `
             -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
-            -Password            $ServicesRuntimePassword `
-            -OutputDir           $KubeconfigOutputDir
+            -Password $ServicesRuntimePassword `
+            -OutputDir $KubeconfigOutputDir
         if (-not $kubeconfigResult) {
             LogMessage -type ERROR -message "[$jumpboxName] Could not retrieve kubeconfig. Aborting."
             $StopWatch.Stop(); return
@@ -16883,7 +17377,9 @@ Function Set-ServicesRuntimeScale {
             -o jsonpath='{.status}' 2>&1
         $phase = & kubectl --kubeconfig $resolvedKubeconfig get packagedeployment vmsp-platform -n vmsp-platform `
             -o jsonpath='{.status.phase}' 2>&1
-        if ([string]::IsNullOrWhiteSpace([string]$phase)) { $phase = "UNKNOWN" }
+        if ([string]::IsNullOrWhiteSpace([string]$phase)) {
+            $phase = "UNKNOWN" 
+        }
         $finalPhase = [string]$phase
 
         # Summarise rather than dumping the raw status blob: this PackageDeployment's
@@ -17881,7 +18377,9 @@ Function Remove-VcfmsRecoveredComponents {
                 -n vcf-sddc-lcm -i -- psql -U postgres -d vcfsddclcmdb -c $deleteTypes 2>&1
             $dbExit = $LASTEXITCODE
 
-            if ($dbOutput) { $dbOutput | ForEach-Object { Write-Host "   $_" } }
+            if ($dbOutput) {
+                $dbOutput | ForEach-Object { Write-Host "   $_" } 
+            }
 
             if ($dbExit -eq 0) {
                 LogMessage -type INFO -message "[$controlPlaneHost] DELETE succeeded on $dbPod (active pod)"
