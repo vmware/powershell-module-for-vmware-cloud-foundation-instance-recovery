@@ -1,15 +1,22 @@
 # Release History
 
+## v9.1.1.1002
+- Added `Update-VcfmsVcfaRegistration`
+- Updated `Invoke-VcfOpsVidbVcfInstanceUpdate`
+- Updated `Set-ServicesRuntimeScale`
+- Updated `Set-ServicesRuntimeSftpBackupSettings`
+- Updated `Get-ServicesRuntimeComponentBackups`
+- Fixed `Invoke-VcfmsFleetComponentRegistration`
+
 ## v9.1.1.1001
-> Released: 2026-xx-xx
+> Released: 2026-09-14
+- Initial support for VCF 9.1.1
 - Added `Get-BackupsFromSFTPServer` to find and interactively select VCF Fleet component backups directly from an SFTP server, with an option to generate a `restore-payload.json`.
 - Added `Set-ServicesRuntimeScale`
-- Updated `Invoke-VcfOpsVidbVcfInstanceUpdate` to run `vidb-sso-info.sh` and `migrate-vidb-vcf-instance.sh` (replacing `update-vidb-vcf-instance.sh`), matching the documented "Update the Identity Broker VCF Instance Association" procedure. The `-SsoDomainId` parameter is renamed `-SsoRealmId` and is now resolved from the VCF Operations SSO Realms API instead of the legacy `kv_vidb_sso_domain` table.
-- Fixed `Invoke-VcfmsFleetComponentRegistration` — Steps 5b/5c of `update_fleet_component_registration.sh` (moving the OPS/OPS_NETWORKS registrations) each prompt for confirmation, but the SSH command piped no stdin past the sudo password, so those prompts always silently defaulted to "skip". Added `-ConfirmOpsMove`/`-ConfirmOpsNetworksMove` switches that answer them explicitly, fed via a pipe nested inside the sudo'd shell (rather than appended after the sudo password on one shared stdin) so it no longer depends on whether `sudo -S` actually consumed a line — it can't if the sudo ticket is already cached, which was still skipping both prompts even with the switches set.
-- Added `Update-VcfmsVcfaRegistration`, running `update_vcfa_registration.sh` on the Services Runtime control plane node, per the "Update VCF Automation Registration to VCF Operations" procedure.
 
 ## v9.1.0.1003
-> Released: 2026-xx-xx
+> Released: 2026-07-29
+- Minor aesthetic fixes
 
 ## v9.1.0.1002
 > Released: 2026-06-29
