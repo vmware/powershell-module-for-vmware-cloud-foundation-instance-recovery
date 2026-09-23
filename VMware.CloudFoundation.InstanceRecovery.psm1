@@ -12324,7 +12324,7 @@ Function Restore-ServicesRuntimeComponentBackup {
                 }
             }
         } catch {
-            LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Error polling task (will retry): $($_.Exception.Message)"
+            LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Error polling task (will retry): $($_.Exception.Message)"
         }
     } While ($taskStatus -in @("IN_PROGRESS", "IN PROGRESS", "PENDING", "RUNNING", "RESTORING", "Running", "Pending", "Queued"))
 
