@@ -8525,7 +8525,7 @@ Function Invoke-NSXEdgeClusterRecovery {
 
     #Get all Resource Pool moRefs and add cluster moReg
     $resourcePools = @(Get-Cluster -name $clusterName | Get-ResourcePool | Where-Object { $_.name -ne "Resources" })
-    $cluster = (Get-Cluster -name $clusterName)
+    #$cluster = (Get-Cluster -name $clusterName)
 
     $edgeLocations = @()
     #$resourcePoolLocations = @()
@@ -8537,12 +8537,13 @@ Function Invoke-NSXEdgeClusterRecovery {
         }
         #$resourcePoolLocations += $resourcePool.extensionData.moref.value
     }
+    <#
     $edgeLocations += [PSCustomObject]@{
         'Type'  = 'Cluster'
         'Name'  = $cluster.Name
         'moRef' = $cluster.extensionData.moref.value
     }
-
+    #>
     Foreach ($edgeLocation in $edgeLocations) {
         #Get TransportNodes
         LogMessage -type INFO -message "[$nsxManagerFqdn] Looking for Edges to recover in $($edgeLocation.type): $($edgeLocation.name)"
@@ -8577,13 +8578,13 @@ Function Invoke-NSXEdgeClusterRecovery {
                 $cpuShareLevel = (($vmDeploymentConfig.reservation_info.cpu_reservation.reservation_in_shares -split ("_"))[0]).tolower()
                 $attachedNetworks = $vmDeploymentConfig.data_network_ids
                 $portgroup = (Get-VDPortGroup | Where-Object { $_.ExtensionData.MoRef.Value -eq $vmDeploymentConfig.management_network_id } | Select-Object Name).Name
-                $clusterVdsName = (Get-View -Id (Get-View -Id "DistributedVirtualPortgroup-$($vmDeploymentConfig.management_network_id)").Config.DistributedVirtualSwitch).Name
+                #$clusterVdsName = (Get-View -Id (Get-View -Id "DistributedVirtualPortgroup-$($vmDeploymentConfig.management_network_id)").Config.DistributedVirtualSwitch).Name
 
                 #Create Dummy VM
                 LogMessage -type INFO -message "[$($edge.display_name)] Preparing to Update Placement References"
                 If (!$portgroup) {
                     $portgroup = (($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).vdsdetails.portgroups | Where-Object { $_.transportType -eq 'MANAGEMENT' }).NAME
-                    $clusterVdsName = (($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).vdsdetails | Where-Object { $_.portgroups.transportType -eq 'MANAGEMENT' }).dvsName
+                    #$clusterVdsName = (($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).vdsdetails | Where-Object { $_.portgroups.transportType -eq 'MANAGEMENT' }).dvsName
                 }
                 $datastore = ($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).primaryDatastoreName
 
@@ -8714,7 +8715,7 @@ Function Invoke-NSXEdgeClusterRecoverySelective {
     $vcenterConnection = Connect-VIServer -server $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
 
     $resourcePools = @(Get-Cluster -name $clusterName | Get-ResourcePool | Where-Object { $_.name -ne "Resources" })
-    $cluster = (Get-Cluster -name $clusterName)
+    #$cluster = (Get-Cluster -name $clusterName)
 
     $edgeLocations = @()
     Foreach ($resourcePool in $resourcePools) {
@@ -8724,12 +8725,13 @@ Function Invoke-NSXEdgeClusterRecoverySelective {
             'moRef' = $resourcePool.extensionData.moref.value
         }
     }
+    <#
     $edgeLocations += [PSCustomObject]@{
         'Type'  = 'Cluster'
         'Name'  = $cluster.Name
         'moRef' = $cluster.extensionData.moref.value
     }
-
+    #>
     $headers = VCFIRCreateHeader -username $nsxManagerAdmin -password $nsxManagerAdminPassword
     $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/"
     $transportNodeContents = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
@@ -8830,12 +8832,12 @@ Function Invoke-NSXEdgeClusterRecoverySelective {
         $cpuShareLevel = (($vmDeploymentConfig.reservation_info.cpu_reservation.reservation_in_shares -split ("_"))[0]).tolower()
         $attachedNetworks = $vmDeploymentConfig.data_network_ids
         $portgroup = (Get-VDPortGroup | Where-Object { $_.ExtensionData.MoRef.Value -eq $vmDeploymentConfig.management_network_id } | Select-Object Name).Name
-        $clusterVdsName = (Get-View -Id (Get-View -Id "DistributedVirtualPortgroup-$($vmDeploymentConfig.management_network_id)").Config.DistributedVirtualSwitch).Name
+        #$clusterVdsName = (Get-View -Id (Get-View -Id "DistributedVirtualPortgroup-$($vmDeploymentConfig.management_network_id)").Config.DistributedVirtualSwitch).Name
 
         LogMessage -type INFO -message "[$($edge.display_name)] Preparing to Update Placement References"
         If (!$portgroup) {
             $portgroup = (($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).vdsdetails.portgroups | Where-Object { $_.transportType -eq 'MANAGEMENT' }).NAME
-            $clusterVdsName = (($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).vdsdetails | Where-Object { $_.portgroups.transportType -eq 'MANAGEMENT' }).dvsName
+            #$clusterVdsName = (($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).vdsdetails | Where-Object { $_.portgroups.transportType -eq 'MANAGEMENT' }).dvsName
         }
         $datastore = ($extractedSddcData.workloadDomains.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }).primaryDatastoreName
 
