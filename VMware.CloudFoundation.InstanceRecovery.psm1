@@ -8584,8 +8584,8 @@ Function Invoke-NSXEdgeClusterRecovery {
     $vcenterConnection = Connect-VIServer -server $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
 
     #Get all Resource Pool moRefs and add cluster moReg
-    $resourcePools = @(Get-Cluster -name $clusterName | Get-ResourcePool | Where-Object { $_.name -ne "Resources" })
-    #$cluster = (Get-Cluster -name $clusterName)
+    $resourcePools = @(Get-Cluster -name $clusterName | Get-ResourcePool)
+    $cluster = (Get-Cluster -name $clusterName)
 
     $edgeLocations = @()
     #$resourcePoolLocations = @()
@@ -8597,13 +8597,13 @@ Function Invoke-NSXEdgeClusterRecovery {
         }
         #$resourcePoolLocations += $resourcePool.extensionData.moref.value
     }
-    <#
+
     $edgeLocations += [PSCustomObject]@{
         'Type'  = 'Cluster'
         'Name'  = $cluster.Name
         'moRef' = $cluster.extensionData.moref.value
     }
-    #>
+
     Foreach ($edgeLocation in $edgeLocations) {
         #Get TransportNodes
         LogMessage -type INFO -message "[$nsxManagerFqdn] Looking for Edges to recover in $($edgeLocation.type): $($edgeLocation.name)"
@@ -8774,8 +8774,8 @@ Function Invoke-NSXEdgeClusterRecoverySelective {
     [int]$__ansIdx = 0
     $vcenterConnection = Connect-VIServer -server $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
 
-    $resourcePools = @(Get-Cluster -name $clusterName | Get-ResourcePool | Where-Object { $_.name -ne "Resources" })
-    #$cluster = (Get-Cluster -name $clusterName)
+    $resourcePools = @(Get-Cluster -name $clusterName | Get-ResourcePool)
+    $cluster = (Get-Cluster -name $clusterName)
 
     $edgeLocations = @()
     Foreach ($resourcePool in $resourcePools) {
@@ -8785,13 +8785,13 @@ Function Invoke-NSXEdgeClusterRecoverySelective {
             'moRef' = $resourcePool.extensionData.moref.value
         }
     }
-    <#
+
     $edgeLocations += [PSCustomObject]@{
         'Type'  = 'Cluster'
         'Name'  = $cluster.Name
         'moRef' = $cluster.extensionData.moref.value
     }
-    #>
+
     $headers = VCFIRCreateHeader -username $nsxManagerAdmin -password $nsxManagerAdminPassword
     $uri = "https://$nsxManagerFqdn/api/v1/transport-nodes/"
     $transportNodeContents = (Invoke-WebRequest -Method GET -URI $uri -ContentType application/json -headers $headers).content | ConvertFrom-Json
