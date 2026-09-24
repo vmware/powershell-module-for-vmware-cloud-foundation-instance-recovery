@@ -1,6 +1,11 @@
 # Release History
 
+## v9.1.1.1003
+- Updated `Invoke-NSXEdgeClusterRecovery`
+- Updated `Invoke-NSXEdgeClusterRecoverySelective`
+
 ## v9.1.1.1002
+> Released: 2026-09-24
 - Added `Update-VcfmsVcfaRegistration`
 - Updated `Invoke-VcfOpsVidbVcfInstanceUpdate`
 - Updated `Set-ServicesRuntimeScale`
