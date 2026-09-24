@@ -7853,7 +7853,16 @@ Function Restore-ClusterVMOverrides {
     The Restore-ClusterVMOverrides cmdlet restores the VM Overrides for the specified cluster
 
     .EXAMPLE
-    Restore-ClusterVMOverrides -clusterName "sfo-m01-cl01" -jsonFile ".\sfo-m01-cl01-vmOverrides.json"
+    Restore-ClusterVMOverrides -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01" -jsonFile ".\sfo-m01-cl01-vmOverrides.json"
+
+    .PARAMETER vCenterFQDN
+    FQDN of the vCenter instance hosting the cluster
+
+    .PARAMETER vCenterAdmin
+    Admin user of the vCenter instance hosting the cluster
+
+    .PARAMETER vCenterAdminPassword
+    Admin password for the vCenter instance hosting the cluster
 
     .PARAMETER clusterName
     Cluster whose VM Overrides you wish to restore
@@ -7863,6 +7872,9 @@ Function Restore-ClusterVMOverrides {
     #>
 
     Param(
+        [Parameter(Mandatory = $true)][String]$vCenterFQDN,
+        [Parameter(Mandatory = $true)][String]$vCenterAdmin,
+        [Parameter(Mandatory = $true)][String]$vCenterAdminPassword,
         [Parameter(Mandatory = $true)][String]$clusterName,
         [Parameter(Mandatory = $true)][String]$jsonFile
     )
@@ -7870,6 +7882,8 @@ Function Restore-ClusterVMOverrides {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    LogMessage -type INFO -message "[$vCenterFQDN] Connecting to vCenter"
+    Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop | Out-Null
     try {
         If (Test-Path -path $jsonFile) {
             $vmOverRideInstances = Get-Content -path $jsonFile | ConvertFrom-Json
@@ -7993,6 +8007,7 @@ Function Restore-ClusterVMOverrides {
     } catch {
         catchWriter -object $_
     }
+    Disconnect-VIServer -Server $vCenterFQDN -Force -Confirm:$false
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
@@ -8007,7 +8022,16 @@ Function Restore-ClusterVMLocations {
     The Restore-ClusterVMLocations cmdlet restores the VM Locations for the specified cluster
 
     .EXAMPLE
-    Restore-ClusterVMLocations -clusterName "sfo-m01-cl01" -jsonFile ".\sfo-m01-cl01-vmLocations.json"
+    Restore-ClusterVMLocations -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01" -jsonFile ".\sfo-m01-cl01-vmLocations.json"
+
+    .PARAMETER vCenterFQDN
+    FQDN of the vCenter instance hosting the cluster
+
+    .PARAMETER vCenterAdmin
+    Admin user of the vCenter instance hosting the cluster
+
+    .PARAMETER vCenterAdminPassword
+    Admin password for the vCenter instance hosting the cluster
 
     .PARAMETER clusterName
     Cluster whose VM Locations you wish to restore
@@ -8017,6 +8041,9 @@ Function Restore-ClusterVMLocations {
     #>
 
     Param(
+        [Parameter(Mandatory = $true)][String]$vCenterFQDN,
+        [Parameter(Mandatory = $true)][String]$vCenterAdmin,
+        [Parameter(Mandatory = $true)][String]$vCenterAdminPassword,
         [Parameter(Mandatory = $true)][String]$clusterName,
         [Parameter(Mandatory = $true)][String]$jsonFile
     )
@@ -8024,6 +8051,8 @@ Function Restore-ClusterVMLocations {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    LogMessage -type INFO -message "[$vCenterFQDN] Connecting to vCenter"
+    Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop | Out-Null
     try {
         If (Test-Path -path $jsonFile) {
             $vmLocations = Get-Content -path $jsonFile | ConvertFrom-Json
@@ -8051,6 +8080,7 @@ Function Restore-ClusterVMLocations {
     } catch {
         catchWriter -object $_
     }
+    Disconnect-VIServer -Server $vCenterFQDN -Force -Confirm:$false
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
@@ -8065,7 +8095,16 @@ Function Restore-ClusterDRSGroupsAndRules {
     The Restore-ClusterDRSGroupsAndRules cmdlet restores the DRS Groups and Rules for the specified cluster
 
     .EXAMPLE
-    Restore-ClusterDRSGroupsAndRules -clusterName "sfo-m01-cl01" -jsonFile ".\sfo-m01-cl01-drsConfiguration.json"
+    Restore-ClusterDRSGroupsAndRules -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01" -jsonFile ".\sfo-m01-cl01-drsConfiguration.json"
+
+    .PARAMETER vCenterFQDN
+    FQDN of the vCenter instance hosting the cluster
+
+    .PARAMETER vCenterAdmin
+    Admin user of the vCenter instance hosting the cluster
+
+    .PARAMETER vCenterAdminPassword
+    Admin password for the vCenter instance hosting the cluster
 
     .PARAMETER clusterName
     Cluster whose DRS Groups and Rules you wish to restore
@@ -8075,6 +8114,9 @@ Function Restore-ClusterDRSGroupsAndRules {
     #>
 
     Param(
+        [Parameter(Mandatory = $true)][String]$vCenterFQDN,
+        [Parameter(Mandatory = $true)][String]$vCenterAdmin,
+        [Parameter(Mandatory = $true)][String]$vCenterAdminPassword,
         [Parameter(Mandatory = $true)][String]$clusterName,
         [Parameter(Mandatory = $true)][String]$jsonFile
     )
@@ -8082,6 +8124,8 @@ Function Restore-ClusterDRSGroupsAndRules {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    LogMessage -type INFO -message "[$vCenterFQDN] Connecting to vCenter"
+    Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop | Out-Null
     try {
         If (Test-Path -path $jsonFile) {
             $drsRulesAndGroups = Get-Content -path $jsonFile | ConvertFrom-Json
@@ -8157,6 +8201,7 @@ Function Restore-ClusterDRSGroupsAndRules {
     } catch {
         catchWriter -object $_
     }
+    Disconnect-VIServer -Server $vCenterFQDN -Force -Confirm:$false
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
@@ -8171,7 +8216,16 @@ Function Restore-ClusterVMTags {
     The Restore-ClusterVMTags cmdlet restores the VM tags for the specified cluster
 
     .EXAMPLE
-    Restore-ClusterVMTags -clusterName "sfo-m01-cl01" -jsonFile ".\sfo-m01-cl01-vmTags.json"
+    Restore-ClusterVMTags -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -vCenterAdmin "administrator@vsphere.local" -vCenterAdminPassword "VMw@re1!" -clusterName "sfo-m01-cl01" -jsonFile ".\sfo-m01-cl01-vmTags.json"
+
+    .PARAMETER vCenterFQDN
+    FQDN of the vCenter instance hosting the cluster
+
+    .PARAMETER vCenterAdmin
+    Admin user of the vCenter instance hosting the cluster
+
+    .PARAMETER vCenterAdminPassword
+    Admin password for the vCenter instance hosting the cluster
 
     .PARAMETER clusterName
     Cluster whose VM tags you wish to restore
@@ -8181,6 +8235,9 @@ Function Restore-ClusterVMTags {
     #>
 
     Param(
+        [Parameter(Mandatory = $true)][String]$vCenterFQDN,
+        [Parameter(Mandatory = $true)][String]$vCenterAdmin,
+        [Parameter(Mandatory = $true)][String]$vCenterAdminPassword,
         [Parameter(Mandatory = $true)][String]$clusterName,
         [Parameter(Mandatory = $true)][String]$jsonFile
     )
@@ -8188,6 +8245,8 @@ Function Restore-ClusterVMTags {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    LogMessage -type INFO -message "[$vCenterFQDN] Connecting to vCenter"
+    Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop | Out-Null
     try {
         If (Test-Path -path $jsonFile) {
             $vmTags = Get-Content -path $jsonFile | ConvertFrom-Json
@@ -8209,6 +8268,7 @@ Function Restore-ClusterVMTags {
     } catch {
         catchWriter -object $_
     }
+    Disconnect-VIServer -Server $vCenterFQDN -Force -Confirm:$false
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
