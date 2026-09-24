@@ -1332,14 +1332,24 @@ function Initialize-ConsoleVariables($Console) {
             $lastCmdletSent = 'Import-RecoveryVariables'
         }
     }
-    # Management Domain Recovery's own interactive-answer-file mechanism (see the "Use answer file
-    # for unattended interactive tasks" checkbox) -- primes it into every freshly spawned thread
-    # console too, since New-NSXManagerOvaDeployment/Invoke-NSXManagerRestore run in threadId 2/3
-    # consoles, not Main.
-    if ($global:instanceComponentsGroup.InteractiveAnswerFilePath) {
-        $escapedInteractiveAnswerPath = Protect-SingleQuotes $global:instanceComponentsGroup.InteractiveAnswerFilePath
-        Send-ToConsole "Import-VCFIRAnswerFile -Path '$escapedInteractiveAnswerPath'" $Console
-        $lastCmdletSent = 'Import-VCFIRAnswerFile'
+    # Every pane's own interactive-answer-file mechanism (see the "Use answer file for unattended
+    # interactive tasks" checkbox, wired via Register-AnswerFileToggleHandlers) -- primes whichever
+    # one(s) are actually loaded into every freshly spawned thread console too, since some plans'
+    # interactive steps (e.g. Workload Domain Recovery's New-NSXManagerOvaDeployment/
+    # Invoke-NSXManagerRestore, threadId 3) run in a thread console, not Main. Without this, a thread
+    # console never runs Import-VCFIRAnswerFile, so $script:VCFIRAnswers stays $null there and
+    # Get-VCFIRAnswer/-AnswerSet silently fall back to real prompts -- even though the UI badge
+    # (computed statically from the answer file, not from what any console actually loaded) still
+    # shows "Auto Answered". Driven by $global:interactiveAnswerFileGetters rather than a hardcoded
+    # list of panes, so a future Recovery Plan pane that registers its own toggle via
+    # Register-AnswerFileToggleHandlers is covered automatically, with nothing to add here.
+    foreach ($getInteractiveAnswerFilePath in $global:interactiveAnswerFileGetters) {
+        $interactiveAnswerFilePath = & $getInteractiveAnswerFilePath
+        if ($interactiveAnswerFilePath) {
+            $escapedInteractiveAnswerPath = Protect-SingleQuotes $interactiveAnswerFilePath
+            Send-ToConsole "Import-VCFIRAnswerFile -Path '$escapedInteractiveAnswerPath'" $Console
+            $lastCmdletSent = 'Import-VCFIRAnswerFile'
+        }
     }
     if (-not $lastCmdletSent) {
         return
@@ -2326,14 +2336,23 @@ function Update-StepRowAutoAnsweredBadges($StepRows, [string]$AnswerFilePath) {
     }
 }
 
+# Every pane's $GetAnswerFilePath getter (registered below, once per call to
+# Register-AnswerFileToggleHandlers) lives here so Initialize-ConsoleVariables can re-prime a freshly
+# spawned thread console for whichever panes actually have an answer file loaded, without needing a
+# hardcoded, by-name list of panes that someone has to remember to extend when a new Recovery Plan
+# pane gets its own answer-file toggle -- adding a pane just means calling
+# Register-AnswerFileToggleHandlers for it, same as today, and priming follows automatically.
+$global:interactiveAnswerFileGetters = [System.Collections.Generic.List[scriptblock]]::new()
+
 # Wires a "Use answer file for unattended interactive tasks" ToggleButton's Checked/Unchecked events,
-# shared by every Recovery Plan pane's own answer-file toggle. GetStepRows/GetAnswerFilePath/
-# SetAnswerFilePath are scriptblocks rather than a single $Group, so this works for both the
-# Group-hashtable panes (Fleet Components) and the flat-global panes (Domain Recovery/Additional
-# Cluster Recovery/Recover Fleet) -- Management Domain Recovery (Instance Components) predates this
-# helper and keeps its own hand-written, equivalent Add_Checked/Add_Unchecked pair rather than being
-# retrofitted onto it.
+# shared by every Recovery Plan pane's own answer-file toggle, and registers its getter into
+# $global:interactiveAnswerFileGetters. GetStepRows/GetAnswerFilePath/SetAnswerFilePath are
+# scriptblocks rather than a single $Group, so this works for both the Group-hashtable panes
+# (Management Domain Recovery, Fleet Components) and the flat-global panes (Domain Recovery/
+# Additional Cluster Recovery/Recover Fleet).
 function Register-AnswerFileToggleHandlers($CheckBox, [scriptblock]$GetStepRows, [scriptblock]$GetAnswerFilePath, [scriptblock]$SetAnswerFilePath) {
+    $global:interactiveAnswerFileGetters.Add($GetAnswerFilePath)
+
     $CheckBox.Add_Checked({
             $dialog = New-Object Microsoft.Win32.OpenFileDialog
             $dialog.Filter = 'JSON files (*.json)|*.json|All files (*.*)|*.*'
@@ -3012,39 +3031,24 @@ $instanceComponentsNewVariablesFileButton.Add_Click({
         New-GroupVariablesFile $global:instanceComponentsGroup $dialog.FileName
     }.GetNewClosure())
 
-# Lets Management Domain Recovery's 4 interactive (Read-Host-driven) tasks run unattended: checking
+# Lets Management Domain Recovery's interactive (Read-Host-driven) tasks run unattended: checking
 # this box picks a JSON answer file (see management-domain-recovery-answers.json under plans\ibr for
 # the expected shape) and primes it into the console via Import-VCFIRAnswerFile. Unchecking clears it
 # via Clear-VCFIRAnswerFile, restoring normal interactive prompting. See Initialize-ConsoleVariables
 # for how a later thread console (threadId 2/3, spawned only once Run Plan reaches an OVA/restore
-# step) gets the same answer file primed into it too.
-$instanceComponentsAnswerFileCheckBox.Add_Checked({
-        $dialog = New-Object Microsoft.Win32.OpenFileDialog
-        $dialog.Filter = 'JSON files (*.json)|*.json|All files (*.*)|*.*'
-        $dialog.Title = 'Select interactive answer file'
-        if ($dialog.ShowDialog() -ne $true) {
-            $instanceComponentsAnswerFileCheckBox.IsChecked = $false
-            return
-        }
-        $global:instanceComponentsGroup.InteractiveAnswerFilePath = $dialog.FileName
-        $escapedAnswerFilePath = Protect-SingleQuotes $dialog.FileName
-        Send-ToConsole "Import-VCFIRAnswerFile -Path '$escapedAnswerFilePath'"
-        Update-StepRowAutoAnsweredBadges $global:instanceComponentsGroup.StepRows $global:instanceComponentsGroup.InteractiveAnswerFilePath
-    }.GetNewClosure())
+# step) gets the same answer file primed into it too -- via the getter registered below, not a
+# hardcoded reference to this pane.
+#
+# The same "Use answer file for unattended interactive tasks" mechanism is shared by every other
+# Recovery Plan pane too (see Register-AnswerFileToggleHandlers). Domain Recovery/Additional Cluster
+# Recovery/Recover Fleet use the flat-global pattern (no Group hashtable), so their getters/setters
+# close over the matching flat globals directly; Instance/Fleet Components already have a Group
+# hashtable, so they close over that instead.
+Register-AnswerFileToggleHandlers $instanceComponentsAnswerFileCheckBox `
+    { $global:instanceComponentsGroup.StepRows } `
+    { $global:instanceComponentsGroup.InteractiveAnswerFilePath } `
+    { param($Path) $global:instanceComponentsGroup.InteractiveAnswerFilePath = $Path }
 
-$instanceComponentsAnswerFileCheckBox.Add_Unchecked({
-        if ($global:instanceComponentsGroup.InteractiveAnswerFilePath) {
-            Send-ToConsole "Clear-VCFIRAnswerFile"
-        }
-        $global:instanceComponentsGroup.InteractiveAnswerFilePath = $null
-        Update-StepRowAutoAnsweredBadges $global:instanceComponentsGroup.StepRows $global:instanceComponentsGroup.InteractiveAnswerFilePath
-    }.GetNewClosure())
-
-# The same "Use answer file for unattended interactive tasks" mechanism as Management Domain
-# Recovery's own toggle above, extended to every other Recovery Plan pane (see
-# Register-AnswerFileToggleHandlers). Domain Recovery/Additional Cluster Recovery/Recover Fleet use
-# the flat-global pattern (no Group hashtable), so their getters/setters close over the matching flat
-# globals directly; Fleet Components already has a Group hashtable, so it closes over that instead.
 Register-AnswerFileToggleHandlers $runAllDomainRecoveryAnswerFileCheckBox `
     { $global:domainRecoveryStepRows } `
     { $global:domainRecoveryInteractiveAnswerFilePath } `
