@@ -213,6 +213,14 @@ $global:recoverFleetStepRows = @()
 $global:domainRecoveryInteractiveAnswerFilePath = $null
 $global:additionalClusterRecoveryInteractiveAnswerFilePath = $null
 $global:recoverFleetInteractiveAnswerFilePath = $null
+# Maps each flat-global-pattern plan's own Get-CurrentRecoveryPlanTarget string to its own answer-file
+# toggle -- populated once each checkbox exists (see the Register-AnswerFileToggleHandlers calls for
+# these three plans below). Import-VariablesAnswersFile/New-VariablesFile (the "Load Variables" flow
+# shared by all three, since they share one Variables tab) use this to force-uncheck whichever one is
+# current's own toggle whenever a fresh Variables file is loaded -- a newly loaded Variables file
+# almost always means a different recovery target (a different cluster/domain), so an interactive
+# answer file left over from the PREVIOUS target must not silently keep answering prompts for this one.
+$global:flatPlanAnswerFileCheckBoxes = @{}
 # The step objects (see Get-RecoveryPlanSteps) currently backing each of the two IBR Steps panels,
 # kept separate because Domain Recovery (domain-driven) and Additional Cluster Recovery (Additional
 # Clusters-table-driven) are independent, mutually exclusive selections. Update-AllSteps combines
@@ -242,6 +250,7 @@ $global:instanceComponentsGroup = @{
     AnswersFilePath           = $null
     AnswerMap                 = $null
     InteractiveAnswerFilePath = $null
+    AnswerFileCheckBox        = $instanceComponentsAnswerFileCheckBox
     StepsListBox              = $instanceComponentsPlanStepsListBox
     ManualStepsListBox        = $instanceComponentsManualStepsListBox
     VariablesItemsPanel       = $instanceComponentsVariablesItemsPanel
@@ -257,6 +266,7 @@ $global:fleetComponentsGroup = @{
     AnswersFilePath           = $null
     AnswerMap                 = $null
     InteractiveAnswerFilePath = $null
+    AnswerFileCheckBox        = $fleetComponentsAnswerFileCheckBox
     StepsListBox              = $fleetComponentsPlanStepsListBox
     ManualStepsListBox        = $fleetComponentsManualStepsListBox
     VariablesItemsPanel       = $fleetComponentsVariablesItemsPanel
@@ -1277,6 +1287,41 @@ function New-EmbeddedConsole([string]$TabHeader, [switch]$Bootstrap) {
     return $console
 }
 
+# Re-sends whichever interactive answer files are currently loaded (see
+# $global:interactiveAnswerFileGetters, populated by Register-AnswerFileToggleHandlers) into $Console.
+# Driven by that registry rather than a hardcoded list of panes, so a future Recovery Plan pane that
+# registers its own toggle is covered automatically, with nothing to add here. Returns whether
+# anything was actually sent, so callers that only care about presence (not the content) don't need
+# to duplicate this same loop just to find out. Shared by Initialize-ConsoleVariables (once, when a
+# console is first created) and Sync-InteractiveAnswerFiles (every time a Run All starts).
+function Send-InteractiveAnswerFiles($Console) {
+    $sentAny = $false
+    foreach ($getInteractiveAnswerFilePath in $global:interactiveAnswerFileGetters) {
+        $interactiveAnswerFilePath = & $getInteractiveAnswerFilePath
+        if ($interactiveAnswerFilePath) {
+            $escapedInteractiveAnswerPath = Protect-SingleQuotes $interactiveAnswerFilePath
+            Send-ToConsole "Import-VCFIRAnswerFile -Path '$escapedInteractiveAnswerPath'" $Console
+            $sentAny = $true
+        }
+    }
+    return $sentAny
+}
+
+# Resets every currently loaded interactive answer file back to a fresh, full copy in Main and in
+# every already-existing parallel/thread console -- called at the start of every "Run All" click.
+# Necessary because thread consoles persist across separate Run All invocations within the same UI
+# session (Invoke-StepThread reuses whatever's already in $global:threadConsoles for a given
+# threadId), and Get-VCFIRAnswerSet dequeues (mutates) $script:VCFIRAnswers as each interactive
+# cmdlet runs. Without this, a second run reusing an already-primed console just keeps draining
+# whatever answer sets were left over from the previous run instead of starting from the top of the
+# file again, eventually throwing "Answer file has no remaining answer set for ..." once a run needs
+# more answers than remained.
+function Sync-InteractiveAnswerFiles {
+    foreach ($console in @($global:mainConsole) + @($global:parallelConsoles)) {
+        Send-InteractiveAnswerFiles $console | Out-Null
+    }
+}
+
 # Re-sends a freshly spawned parallel console exactly what Main's own session already has -- the
 # extracted-data file path and the last-loaded/created variables answers file -- so a plan step run
 # there sees the same variables it would if it had been run in Main. Both are conditional on
@@ -1340,16 +1385,9 @@ function Initialize-ConsoleVariables($Console) {
     # console never runs Import-VCFIRAnswerFile, so $script:VCFIRAnswers stays $null there and
     # Get-VCFIRAnswer/-AnswerSet silently fall back to real prompts -- even though the UI badge
     # (computed statically from the answer file, not from what any console actually loaded) still
-    # shows "Auto Answered". Driven by $global:interactiveAnswerFileGetters rather than a hardcoded
-    # list of panes, so a future Recovery Plan pane that registers its own toggle via
-    # Register-AnswerFileToggleHandlers is covered automatically, with nothing to add here.
-    foreach ($getInteractiveAnswerFilePath in $global:interactiveAnswerFileGetters) {
-        $interactiveAnswerFilePath = & $getInteractiveAnswerFilePath
-        if ($interactiveAnswerFilePath) {
-            $escapedInteractiveAnswerPath = Protect-SingleQuotes $interactiveAnswerFilePath
-            Send-ToConsole "Import-VCFIRAnswerFile -Path '$escapedInteractiveAnswerPath'" $Console
-            $lastCmdletSent = 'Import-VCFIRAnswerFile'
-        }
+    # shows "Auto Answered".
+    if (Send-InteractiveAnswerFiles $Console) {
+        $lastCmdletSent = 'Import-VCFIRAnswerFile'
     }
     if (-not $lastCmdletSent) {
         return
@@ -2376,6 +2414,19 @@ function Register-AnswerFileToggleHandlers($CheckBox, [scriptblock]$GetStepRows,
         }.GetNewClosure())
 }
 
+# Force-unchecks an already-checked answer-file toggle (a no-op if it's $null or already unchecked) --
+# this fires the SAME Add_Unchecked handler Register-AnswerFileToggleHandlers wired above, so
+# Clear-VCFIRAnswerFile/badge updates all happen exactly as if the user had clicked it off themselves.
+# Called whenever a fresh Variables file is loaded for a plan (see Import-VariablesAnswersFile/
+# New-VariablesFile/Import-GroupVariablesAnswersFile/New-GroupVariablesFile): a new Variables file
+# almost always means a different recovery target, and an interactive answer file left checked over
+# from the PREVIOUS target must not silently keep answering prompts meant for this one.
+function Reset-AnswerFileToggle($CheckBox) {
+    if ($CheckBox -and $CheckBox.IsChecked) {
+        $CheckBox.IsChecked = $false
+    }
+}
+
 # Variable names referenced across $CommandLines (e.g. "$targetFqdn"), in order of first
 # appearance, deduplicated. Used to order the Variables panel by when each value is actually
 # needed as you work down the Steps list, rather than alphabetically or by answer-file order.
@@ -2897,6 +2948,10 @@ function Import-VariablesAnswersFile([string]$Path) {
 
         $loadedVariablesTextBlock.Text = "Loaded $($orderedNames.Count) variable(s) from $Path."
         $global:variablesAnswersFilePath = $Path
+        # A freshly loaded Variables file almost always means a different recovery target (a
+        # different cluster/domain) -- see Reset-AnswerFileToggle's own comment for why an interactive
+        # answer file left checked over from the PREVIOUS target must not be trusted for this one.
+        Reset-AnswerFileToggle $global:flatPlanAnswerFileCheckBoxes[(Get-CurrentRecoveryPlanTarget)]
 
         # Steps are only ever populated here or in New-VariablesFile -- selecting a domain/cluster
         # alone never puts Run buttons in front of anyone before values exist for them to use.
@@ -2966,6 +3021,9 @@ function New-VariablesFile([string]$Path) {
 
     $loadedVariablesTextBlock.Text = "Creating '$Path' -- values save automatically as you fill them in."
     $global:variablesAnswersFilePath = $Path
+    # See the matching comment in Import-VariablesAnswersFile -- a freshly created Variables file
+    # means a different recovery target too.
+    Reset-AnswerFileToggle $global:flatPlanAnswerFileCheckBoxes[(Get-CurrentRecoveryPlanTarget)]
 
     # Reveals Steps in the background (see Update-RevealedSteps) even though every value here still
     # starts blank -- each field is already wired to push its value to the console the moment it's
@@ -3053,16 +3111,19 @@ Register-AnswerFileToggleHandlers $runAllDomainRecoveryAnswerFileCheckBox `
     { $global:domainRecoveryStepRows } `
     { $global:domainRecoveryInteractiveAnswerFilePath } `
     { param($Path) $global:domainRecoveryInteractiveAnswerFilePath = $Path }
+$global:flatPlanAnswerFileCheckBoxes['WorkloadDomain'] = $runAllDomainRecoveryAnswerFileCheckBox
 
 Register-AnswerFileToggleHandlers $runAllAdditionalClusterRecoveryAnswerFileCheckBox `
     { $global:additionalClusterRecoveryStepRows } `
     { $global:additionalClusterRecoveryInteractiveAnswerFilePath } `
     { param($Path) $global:additionalClusterRecoveryInteractiveAnswerFilePath = $Path }
+$global:flatPlanAnswerFileCheckBoxes['AdditionalCluster'] = $runAllAdditionalClusterRecoveryAnswerFileCheckBox
 
 Register-AnswerFileToggleHandlers $runAllRecoverFleetAnswerFileCheckBox `
     { $global:recoverFleetStepRows } `
     { $global:recoverFleetInteractiveAnswerFilePath } `
     { param($Path) $global:recoverFleetInteractiveAnswerFilePath = $Path }
+$global:flatPlanAnswerFileCheckBoxes['RecoverFleet'] = $runAllRecoverFleetAnswerFileCheckBox
 
 Register-AnswerFileToggleHandlers $fleetComponentsAnswerFileCheckBox `
     { $global:fleetComponentsGroup.StepRows } `
@@ -3325,6 +3386,10 @@ function Import-GroupVariablesAnswersFile($Group, [string]$Path) {
         $Group.LoadedVariablesText.Text = "Loaded $($orderedNames.Count) variable(s) from $Path."
         $Group.AnswersFilePath = $Path
         $Group.AnswerMap = $answerMap
+        # See Reset-AnswerFileToggle's own comment -- a freshly loaded Variables file means a
+        # different recovery target, so this group's own interactive answer file (if any) must not
+        # be trusted for it.
+        Reset-AnswerFileToggle $Group.AnswerFileCheckBox
 
         Update-GroupRevealedSteps $Group $answerMap
 
@@ -3369,6 +3434,9 @@ function New-GroupVariablesFile($Group, [string]$Path) {
     $Group.LoadedVariablesText.Text = "Creating '$Path' -- values save automatically as you fill them in."
     $Group.AnswersFilePath = $Path
     $Group.AnswerMap = $values
+    # See Reset-AnswerFileToggle's own comment -- a freshly created Variables file means a different
+    # recovery target too.
+    Reset-AnswerFileToggle $Group.AnswerFileCheckBox
 
     Update-GroupRevealedSteps $Group $values
 
@@ -3743,6 +3811,7 @@ $recoveryTypeComboBox.SelectedIndex = 0
 $runAllDomainRecoveryButton.Add_Click({
         try {
             Set-AllStepButtonsEnabled $false
+            Sync-InteractiveAnswerFiles
             $runTimer = Start-RunTimer
             Invoke-StepChain $global:domainRecoveryStepRows -IgnoreThreads:(-not $runAllDomainRecoveryParallelCheckBox.IsChecked) -OnChainComplete {
                 Set-AllStepButtonsEnabled $true
@@ -3760,6 +3829,7 @@ $runAllDomainRecoveryButton.Add_Click({
 $runAllAdditionalClusterRecoveryButton.Add_Click({
         try {
             Set-AllStepButtonsEnabled $false
+            Sync-InteractiveAnswerFiles
             $runTimer = Start-RunTimer
             Invoke-StepChain $global:additionalClusterRecoveryStepRows -IgnoreThreads:(-not $runAllAdditionalClusterRecoveryParallelCheckBox.IsChecked) -OnChainComplete {
                 Set-AllStepButtonsEnabled $true
@@ -3777,6 +3847,7 @@ $runAllAdditionalClusterRecoveryButton.Add_Click({
 $runAllRecoverFleetButton.Add_Click({
         try {
             Set-AllStepButtonsEnabled $false
+            Sync-InteractiveAnswerFiles
             $runTimer = Start-RunTimer
             Invoke-StepChain $global:recoverFleetStepRows -IgnoreThreads:(-not $runAllRecoverFleetParallelCheckBox.IsChecked) -OnChainComplete {
                 Set-AllStepButtonsEnabled $true
@@ -3794,6 +3865,7 @@ $runAllRecoverFleetButton.Add_Click({
 $runAllInstanceComponentsButton.Add_Click({
         try {
             Set-AllStepButtonsEnabled $false
+            Sync-InteractiveAnswerFiles
             $runTimer = Start-RunTimer
             Invoke-StepChain $global:instanceComponentsGroup.StepRows -IgnoreThreads:(-not $global:instanceComponentsGroup.ParallelCheckBox.IsChecked) -OnChainComplete {
                 Set-AllStepButtonsEnabled $true
@@ -3811,6 +3883,7 @@ $runAllInstanceComponentsButton.Add_Click({
 $runAllFleetComponentsButton.Add_Click({
         try {
             Set-AllStepButtonsEnabled $false
+            Sync-InteractiveAnswerFiles
             $runTimer = Start-RunTimer
             Invoke-StepChain $global:fleetComponentsGroup.StepRows -IgnoreThreads:(-not $global:fleetComponentsGroup.ParallelCheckBox.IsChecked) -OnChainComplete {
                 Set-AllStepButtonsEnabled $true
