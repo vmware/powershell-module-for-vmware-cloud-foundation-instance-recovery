@@ -17374,8 +17374,9 @@ Function Set-ServicesRuntimeScale {
         -o jsonpath='{.spec.values.profiles.name}' 2>$null
 
     $currentColWidth = [Math]::Max(20, (@([string]$currentWorkerSize, [string]$currentMachineType, [string]$currentProfileName, "Current") | ForEach-Object { $_.Length } | Measure-Object -Maximum).Maximum + 2)
+    $targetColWidth  = (@([string]$WorkerSize, [string]$MachineType, [string]$ProfileName, "Target") | ForEach-Object { $_.Length } | Measure-Object -Maximum).Maximum
     $rowFormat = "  {0,-14} {1,-$currentColWidth} {2}"
-    $divider = " " + ("─" * ($currentColWidth + 18))
+    $divider = " " + ("─" * (18 + $currentColWidth + $targetColWidth))
 
     Write-Host ""
     Write-Host " Recovery Site Scale — pd/vmsp-platform (namespace vmsp-platform)" -ForegroundColor Cyan
@@ -17473,7 +17474,7 @@ Function Set-ServicesRuntimeScale {
         patch packagedeployment vmsp-platform -n vmsp-platform `
         --type=merge -p $patch 2>&1
     $exitCode = $LASTEXITCODE
-    $patchOutput | ForEach-Object { Write-Host "  $_" }
+    $patchOutput | ForEach-Object { LogMessage -type INFO -message "[$jumpboxName] $_" }
     if ($exitCode -ne 0) {
         LogMessage -type ERROR -message "[$jumpboxName] kubectl patch failed (exit $exitCode)"
         $StopWatch.Stop(); return
