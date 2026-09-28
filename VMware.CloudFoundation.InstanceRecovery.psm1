@@ -17373,14 +17373,18 @@ Function Set-ServicesRuntimeScale {
     $currentProfileName = & kubectl --kubeconfig $resolvedKubeconfig get packagedeployment vmsp-platform -n vmsp-platform `
         -o jsonpath='{.spec.values.profiles.name}' 2>$null
 
+    $currentColWidth = [Math]::Max(20, (@([string]$currentWorkerSize, [string]$currentMachineType, [string]$currentProfileName, "Current") | ForEach-Object { $_.Length } | Measure-Object -Maximum).Maximum + 2)
+    $rowFormat = "  {0,-14} {1,-$currentColWidth} {2}"
+    $divider   = " " + ("─" * ($currentColWidth + 18))
+
     Write-Host ""
     Write-Host " Recovery Site Scale — pd/vmsp-platform (namespace vmsp-platform)" -ForegroundColor Cyan
-    Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
-    Write-Host ("  {0,-14} {1,-20} {2}" -f "", "Current", "Target") -ForegroundColor Gray
-    Write-Host ("  {0,-14} {1,-20} {2}" -f "Worker size", $currentWorkerSize, $WorkerSize) -ForegroundColor White
-    Write-Host ("  {0,-14} {1,-20} {2}" -f "Machine type", $currentMachineType, $MachineType) -ForegroundColor White
-    Write-Host ("  {0,-14} {1,-20} {2}" -f "Profile name", $currentProfileName, $ProfileName) -ForegroundColor White
-    Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+    Write-Host $divider -ForegroundColor Cyan
+    Write-Host ($rowFormat -f "", "Current", "Target") -ForegroundColor Gray
+    Write-Host ($rowFormat -f "Worker size", $currentWorkerSize, $WorkerSize) -ForegroundColor White
+    Write-Host ($rowFormat -f "Machine type", $currentMachineType, $MachineType) -ForegroundColor White
+    Write-Host ($rowFormat -f "Profile name", $currentProfileName, $ProfileName) -ForegroundColor White
+    Write-Host $divider -ForegroundColor Cyan
     Write-Host ""
 
     if ($currentWorkerSize -eq $WorkerSize -and $currentMachineType -eq $MachineType -and $currentProfileName -eq $ProfileName) {
