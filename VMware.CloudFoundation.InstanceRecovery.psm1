@@ -17419,11 +17419,7 @@ Function Set-ServicesRuntimeScale {
     #            False / Unknown).
     # -------------------------------------------------------------------------
     $inProgressStatusText = "package deployment is in progress"
-<<<<<<< Updated upstream
-    $successStatusText    = "successful package deployment"
-=======
     $successStatusText = "successful package deployment"
->>>>>>> Stashed changes
 
     function Get-PdTest1Status {
         Param([Parameter(Mandatory = $true)][String] $Kubeconfig)
@@ -17442,18 +17438,10 @@ Function Set-ServicesRuntimeScale {
             $json = (& kubectl --kubeconfig $Kubeconfig get pd -n vmsp-platform -o json 2>&1) -join "`n"
             $obj = $json | ConvertFrom-Json -ErrorAction Stop
             foreach ($release in $obj.items.status.packagedeployments.releases) {
-<<<<<<< Updated upstream
-                $states[$release.name] = if ($null -eq $release.ready) {
-                    "Unknown"
-                } else {
-                    [string]$release.ready
-                }
-=======
                 # "Unreported" (no ready value present) is deliberately distinct from the
                 # real "Unknown" ready state — the two must not be conflated, or a missing
                 # field would be silently mistaken for a legitimate mid-rollout state.
                 $states[$release.name] = if ($null -eq $release.ready) { "Unreported" } else { [string]$release.ready }
->>>>>>> Stashed changes
             }
         } catch {
             LogMessage -type WARNING -message "[$jumpboxName] Unable to parse (component states) output: $($_.Exception.Message)"
@@ -17527,17 +17515,8 @@ Function Set-ServicesRuntimeScale {
 
                 $currentStates = Get-PdTest2ComponentStates -Kubeconfig $resolvedKubeconfig
                 foreach ($name in $currentStates.Keys) {
-<<<<<<< Updated upstream
-                    $previous = if ($componentStates.Contains($name)) {
-                        $componentStates[$name]
-                    } else {
-                        "Unknown"
-                    }
-                    $current  = $currentStates[$name]
-=======
                     $previous = if ($componentStates.Contains($name)) { $componentStates[$name] } else { "Unreported" }
                     $current = $currentStates[$name]
->>>>>>> Stashed changes
                     if ($current -ne $previous) {
                         LogMessage -type INFO -message "[$jumpboxName] Component '$name' changed state: $previous -> $current (${overallElapsedSeconds}s elapsed)"
                     }
