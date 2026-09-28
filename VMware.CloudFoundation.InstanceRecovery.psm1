@@ -17141,9 +17141,14 @@ Function Set-ServicesRuntimeScale {
          vmsp-platform) via kubectl patch --type=merge, setting
          spec.values.cluster.worker.size, spec.values.cluster.worker.machineType and
          spec.values.profiles.name.
-      5. Polls the PackageDeployment status until it reports a terminal Ready/Completed
-         state, or until -TimeoutMinutes elapses — the source procedure explicitly calls
-         out not to proceed with subsequent recovery tasks until this step has completed.
+      5. Monitors the rollout: while the package deployment reports "in progress",
+         polls every -PollIntervalSeconds for each component's ready state (per
+         "kubectl get pd -n vmsp-platform -o json") and logs only the components that
+         change state, up to -TimeoutMinutes per monitoring pass. Once that pass ends,
+         checks whether the deployment reports success; if not, re-checks which
+         components are not ready and restarts monitoring, bounded overall by
+         -OverallTimeoutMinutes — the source procedure explicitly calls out not to
+         proceed with subsequent recovery tasks until this step has completed.
 
     .EXAMPLE
     # Read the target worker size/profile from a previously extracted protected-site backup
@@ -17208,11 +17213,16 @@ Function Set-ServicesRuntimeScale {
     Skip the interactive confirmation prompt and proceed immediately.
 
     .PARAMETER PollIntervalSeconds
-    Interval in seconds between PackageDeployment status polls. Default is 30.
+    Interval in seconds between component ready-state polls while a monitoring pass is
+    running. Default is 3.
 
     .PARAMETER TimeoutMinutes
-    Maximum time in minutes to wait for the PackageDeployment to report a terminal state
-    before giving up and returning control to the caller. Default is 60.
+    Maximum time in minutes for a single monitoring pass to wait for all components to
+    reach a ready state before ending that pass. Default is 60.
+
+    .PARAMETER OverallTimeoutMinutes
+    Maximum total time in minutes, across all monitoring passes, before giving up and
+    returning control to the caller. Default is 120.
     #>
 
     Param(
@@ -17225,8 +17235,9 @@ Function Set-ServicesRuntimeScale {
         [Parameter(Mandatory = $false)][String] $MachineType,
         [Parameter(Mandatory = $false)][String] $ProfileName,
         [Parameter(Mandatory = $false)][Switch] $Force,
-        [Parameter(Mandatory = $false)][Int]    $PollIntervalSeconds = 30,
-        [Parameter(Mandatory = $false)][Int]    $TimeoutMinutes = 60
+        [Parameter(Mandatory = $false)][Int]    $PollIntervalSeconds = 3,
+        [Parameter(Mandatory = $false)][Int]    $TimeoutMinutes = 60,
+        [Parameter(Mandatory = $false)][Int]    $OverallTimeoutMinutes = 120
     )
 
     $jumpboxName = hostname
@@ -17394,6 +17405,51 @@ Function Set-ServicesRuntimeScale {
     }
 
     # -------------------------------------------------------------------------
+    # Test 1 / Test 2 helpers used to drive rollout monitoring below.
+    #   Test 1 - kubectl get pd -n vmsp-platform -o wide
+    #            Reports whether the package deployment is "in progress" or has
+    #            reached "successful package deployment".
+    #   Test 2 - kubectl get pd -n vmsp-platform -o json, walking
+    #            .items.status.packagedeployments.releases for each component's
+    #            name/ready state (Kubernetes condition-style string: True /
+    #            False / Unknown).
+    # -------------------------------------------------------------------------
+    $inProgressStatusText = "package depbyment is in progress"
+    $successStatusText    = "successful package deployment"
+
+    function Get-PdTest1Status {
+        Param([Parameter(Mandatory = $true)][String] $Kubeconfig)
+        $raw = (& kubectl --kubeconfig $Kubeconfig get pd -n vmsp-platform -o wide 2>&1) -join "`n"
+        [PSCustomObject]@{
+            Raw        = $raw
+            InProgress = [bool]($raw -match [regex]::Escape($inProgressStatusText))
+            Successful = [bool]($raw -match [regex]::Escape($successStatusText))
+        }
+    }
+
+    function Get-PdTest2ComponentStates {
+        Param([Parameter(Mandatory = $true)][String] $Kubeconfig)
+        $states = [ordered]@{}
+        try {
+            $json = (& kubectl --kubeconfig $Kubeconfig get pd -n vmsp-platform -o json 2>&1) -join "`n"
+            $obj  = $json | ConvertFrom-Json -ErrorAction Stop
+            foreach ($release in $obj.items.status.packagedeployments.releases) {
+                $states[$release.name] = if ($null -eq $release.ready) { "Unknown" } else { [string]$release.ready }
+            }
+        } catch {
+            LogMessage -type WARNING -message "[$jumpboxName] Unable to parse Test 2 (component states) output: $($_.Exception.Message)"
+        }
+        return $states
+    }
+
+    # -------------------------------------------------------------------------
+    # Test 2: capture each component's ready state before patching, so state
+    # changes can be reported once monitoring starts.
+    # -------------------------------------------------------------------------
+    $componentStates = Get-PdTest2ComponentStates -Kubeconfig $resolvedKubeconfig
+    LogMessage -type INFO -message "[$jumpboxName] Captured baseline state for $($componentStates.Count) component(s) before patching"
+
+    # -------------------------------------------------------------------------
     # Patch the PackageDeployment
     # -------------------------------------------------------------------------
     $patch = @{
@@ -17418,74 +17474,82 @@ Function Set-ServicesRuntimeScale {
     LogMessage -type INFO -message "[$jumpboxName] Patch applied successfully"
 
     # -------------------------------------------------------------------------
-    # Poll the PackageDeployment until it reports a terminal Ready/Completed
-    # state, or until TimeoutMinutes elapses. The source procedure explicitly
-    # states not to proceed with subsequent recovery tasks until this
-    # completes, so this loop blocks the caller by design.
+    # Monitor the rollout using Test 1 / Test 2:
+    #   - Test 1 gates whether a monitoring pass runs at all ("in progress"),
+    #     and afterwards whether the deployment has reached
+    #     "successful package deployment".
+    #   - Test 2 tracks each component's ready state (True > Unknown > False >
+    #     True is the expected cycle) every -PollIntervalSeconds, logging only
+    #     the components that changed since the previous poll.
+    #   - If Test 1 does not report success after a pass, Test 2 is re-checked
+    #     for components no longer ready and monitoring restarts, bounded
+    #     overall by -OverallTimeoutMinutes. The source procedure explicitly
+    #     states not to proceed with subsequent recovery tasks until this
+    #     completes, so this loop blocks the caller by design.
     # -------------------------------------------------------------------------
-    $terminalStates = @("Ready", "READY", "Completed", "COMPLETED", "Succeeded", "SUCCEEDED", "Successful", "SUCCESSFUL", "Reconciled")
-    $failureStates  = @("Failed", "FAILED", "Error", "ERROR")
-    LogMessage -type INFO -message "[$jumpboxName] Monitoring pd/vmsp-platform rollout (polling every ${PollIntervalSeconds}s, timeout ${TimeoutMinutes}m)"
+    LogMessage -type INFO -message "[$jumpboxName] Monitoring pd/vmsp-platform rollout (polling every ${PollIntervalSeconds}s, per-pass timeout ${TimeoutMinutes}m, overall timeout ${OverallTimeoutMinutes}m)"
 
-    $elapsedSeconds = 0
-    $timeoutSeconds = $TimeoutMinutes * 60
-    $lastSummary    = ""
-    $finalPhase     = "UNKNOWN"
+    $overallElapsedSeconds = 0
+    $overallTimeoutSeconds = $OverallTimeoutMinutes * 60
+    $succeeded             = $false
+
     Do {
-        Start-Sleep -Seconds $PollIntervalSeconds
-        $elapsedSeconds += $PollIntervalSeconds
+        $test1 = Get-PdTest1Status -Kubeconfig $resolvedKubeconfig
 
-        $statusJson = & kubectl --kubeconfig $resolvedKubeconfig get packagedeployment vmsp-platform -n vmsp-platform `
-            -o jsonpath='{.status}' 2>&1
-        $phase = & kubectl --kubeconfig $resolvedKubeconfig get packagedeployment vmsp-platform -n vmsp-platform `
-            -o jsonpath='{.status.phase}' 2>&1
-        if ([string]::IsNullOrWhiteSpace([string]$phase)) {
-            $phase = "UNKNOWN"
-        }
-        $finalPhase = [string]$phase
+        if ($test1.InProgress) {
+            LogMessage -type INFO -message "[$jumpboxName] Test 1: package deployment is in progress. Waiting for all components to reach ready=True (per-pass timeout ${TimeoutMinutes}m)"
 
-        # Summarise rather than dumping the raw status blob: this PackageDeployment's
-        # status lists 30+ nested package/release entries, which prints as an
-        # unreadable wall of text (and is long enough to garble on some consoles).
-        $notReady = @()
-        try {
-            $statusObj = [string]$statusJson | ConvertFrom-Json -ErrorAction Stop
-            foreach ($pkg in $statusObj.packageDeployments) {
-                foreach ($rel in $pkg.releases) {
-                    if ($rel.ready -ne "True") {
-                        $notReady += "$($pkg.name)/$($rel.name):$($rel.reason)"
+            $passElapsedSeconds = 0
+            $passTimeoutSeconds = $TimeoutMinutes * 60
+            Do {
+                Start-Sleep -Seconds $PollIntervalSeconds
+                $passElapsedSeconds    += $PollIntervalSeconds
+                $overallElapsedSeconds += $PollIntervalSeconds
+
+                $currentStates = Get-PdTest2ComponentStates -Kubeconfig $resolvedKubeconfig
+                foreach ($name in $currentStates.Keys) {
+                    $previous = if ($componentStates.Contains($name)) { $componentStates[$name] } else { "Unknown" }
+                    $current  = $currentStates[$name]
+                    if ($current -ne $previous) {
+                        LogMessage -type INFO -message "[$jumpboxName] Component '$name' changed state: $previous -> $current (${overallElapsedSeconds}s elapsed)"
                     }
                 }
+                $componentStates = $currentStates
+
+                $allReady = ($componentStates.Count -gt 0) -and (-not ($componentStates.Values | Where-Object { $_ -ne "True" }))
+            } Until ($allReady -or ($passElapsedSeconds -ge $passTimeoutSeconds) -or ($overallElapsedSeconds -ge $overallTimeoutSeconds))
+
+            if ($allReady) {
+                LogMessage -type INFO -message "[$jumpboxName] All components reported ready=True (${overallElapsedSeconds}s elapsed)"
+            } elseif ($overallElapsedSeconds -ge $overallTimeoutSeconds) {
+                break
+            } else {
+                LogMessage -type WARNING -message "[$jumpboxName] Per-pass timeout (${TimeoutMinutes}m) reached before all components reported ready=True"
             }
-        } catch {
-            $notReady = @("<unable to parse status: $statusJson>")
-        }
-
-        $summary = if ($notReady.Count -gt 0) {
-            "Phase: $finalPhase, not ready: $($notReady -join ', ')"
         } else {
-            "Phase: $finalPhase, all packages ready"
+            LogMessage -type INFO -message "[$jumpboxName] Test 1: package deployment is not reporting in-progress"
         }
 
-        if ($summary -ne $lastSummary) {
-            LogMessage -type INFO -message "[$jumpboxName] Status (${elapsedSeconds}s elapsed): $summary"
-            $lastSummary = $summary
-        } else {
-            LogMessage -type INFO -message "[$jumpboxName] Phase: $finalPhase (${elapsedSeconds}s elapsed, no change since last poll)"
-        }
-
-        if ($finalPhase -in $failureStates) {
-            LogMessage -type ERROR -message "[$jumpboxName] pd/vmsp-platform reports failure phase: $finalPhase"
+        $test1 = Get-PdTest1Status -Kubeconfig $resolvedKubeconfig
+        if ($test1.Successful) {
+            $succeeded = $true
+            LogMessage -type INFO -message "[$jumpboxName] Test 1: status is successful package deployment"
             break
         }
-    } Until (($finalPhase -in $terminalStates) -or ($elapsedSeconds -ge $timeoutSeconds))
 
-    if ($finalPhase -in $terminalStates) {
-        LogMessage -type INFO -message "[$jumpboxName] pd/vmsp-platform reached terminal state: $finalPhase"
-    } elseif ($finalPhase -in $failureStates) {
-        LogMessage -type ERROR -message "[$jumpboxName] Scaling failed — resolve the reported error before proceeding with subsequent recovery tasks."
+        LogMessage -type WARNING -message "[$jumpboxName] Test 1: status is not yet 'successful package deployment'. Re-checking Test 2 for components no longer ready=True"
+        $componentStates = Get-PdTest2ComponentStates -Kubeconfig $resolvedKubeconfig
+        $notReady = $componentStates.GetEnumerator() | Where-Object { $_.Value -ne "True" }
+        if ($notReady) {
+            LogMessage -type INFO -message "[$jumpboxName] Components not ready=True: $(($notReady | ForEach-Object { "$($_.Key):$($_.Value)" }) -join ', ')"
+        }
+        LogMessage -type INFO -message "[$jumpboxName] Restarting rollout monitoring (${overallElapsedSeconds}s elapsed of ${OverallTimeoutMinutes}m overall timeout)"
+    } Until ($overallElapsedSeconds -ge $overallTimeoutSeconds)
+
+    if ($succeeded) {
+        LogMessage -type INFO -message "[$jumpboxName] pd/vmsp-platform rollout completed: successful package deployment"
     } else {
-        LogMessage -type WARNING -message "[$jumpboxName] Timed out after ${TimeoutMinutes}m waiting for a terminal state (last phase: $finalPhase). Check 'kubectl get packagedeployment vmsp-platform -n vmsp-platform' manually before proceeding — do not continue with subsequent recovery tasks until this is confirmed Ready."
+        LogMessage -type WARNING -message "[$jumpboxName] Timed out after ${overallElapsedSeconds}s (overall timeout ${OverallTimeoutMinutes}m) waiting for 'successful package deployment' status. Check 'kubectl get pd -n vmsp-platform -o wide' manually before proceeding — do not continue with subsequent recovery tasks until this is confirmed successful."
     }
 
     $StopWatch.Stop()
