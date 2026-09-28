@@ -17418,7 +17418,7 @@ Function Set-ServicesRuntimeScale {
     #            name/ready state (Kubernetes condition-style string: True /
     #            False / Unknown).
     # -------------------------------------------------------------------------
-    $inProgressStatusText = "package depbyment is in progress"
+    $inProgressStatusText = "package deployment is in progress"
     $successStatusText    = "successful package deployment"
 
     function Get-PdTest1Status {
@@ -17438,7 +17438,11 @@ Function Set-ServicesRuntimeScale {
             $json = (& kubectl --kubeconfig $Kubeconfig get pd -n vmsp-platform -o json 2>&1) -join "`n"
             $obj  = $json | ConvertFrom-Json -ErrorAction Stop
             foreach ($release in $obj.items.status.packagedeployments.releases) {
-                $states[$release.name] = if ($null -eq $release.ready) { "Unknown" } else { [string]$release.ready }
+                $states[$release.name] = if ($null -eq $release.ready) {
+                    "Unknown"
+                } else {
+                    [string]$release.ready
+                }
             }
         } catch {
             LogMessage -type WARNING -message "[$jumpboxName] Unable to parse Test 2 (component states) output: $($_.Exception.Message)"
@@ -17512,7 +17516,11 @@ Function Set-ServicesRuntimeScale {
 
                 $currentStates = Get-PdTest2ComponentStates -Kubeconfig $resolvedKubeconfig
                 foreach ($name in $currentStates.Keys) {
-                    $previous = if ($componentStates.Contains($name)) { $componentStates[$name] } else { "Unknown" }
+                    $previous = if ($componentStates.Contains($name)) {
+                        $componentStates[$name]
+                    } else {
+                        "Unknown"
+                    }
                     $current  = $currentStates[$name]
                     if ($current -ne $previous) {
                         LogMessage -type INFO -message "[$jumpboxName] Component '$name' changed state: $previous -> $current (${overallElapsedSeconds}s elapsed)"
@@ -17528,7 +17536,7 @@ Function Set-ServicesRuntimeScale {
             } elseif ($overallElapsedSeconds -ge $overallTimeoutSeconds) {
                 break
             } else {
-                LogMessage -type WARNING -message "[$jumpboxName] Per-pass timeout (${TimeoutMinutes}m) reached before all components reported ready=True"
+                LogMessage -type INFO -message "[$jumpboxName] Per-pass timeout (${TimeoutMinutes}m) reached before all components reported ready=True"
             }
         } else {
             LogMessage -type INFO -message "[$jumpboxName] Test 1: package deployment is not reporting in-progress"
@@ -17541,7 +17549,7 @@ Function Set-ServicesRuntimeScale {
             break
         }
 
-        LogMessage -type WARNING -message "[$jumpboxName] Test 1: status is not yet 'successful package deployment'. Re-checking Test 2 for components no longer ready=True"
+        #LogMessage -type INFO -message "[$jumpboxName] Test 1: status is not yet 'successful package deployment'. Re-checking Test 2 for components no longer ready=True"
         $componentStates = Get-PdTest2ComponentStates -Kubeconfig $resolvedKubeconfig
         $notReady = $componentStates.GetEnumerator() | Where-Object { $_.Value -ne "True" }
         if ($notReady) {
@@ -17553,7 +17561,7 @@ Function Set-ServicesRuntimeScale {
     if ($succeeded) {
         LogMessage -type INFO -message "[$jumpboxName] pd/vmsp-platform rollout completed: successful package deployment"
     } else {
-        LogMessage -type WARNING -message "[$jumpboxName] Timed out after ${overallElapsedSeconds}s (overall timeout ${OverallTimeoutMinutes}m) waiting for 'successful package deployment' status. Check 'kubectl get pd -n vmsp-platform -o wide' manually before proceeding — do not continue with subsequent recovery tasks until this is confirmed successful."
+        LogMessage -type ERROR -message "[$jumpboxName] Timed out after ${overallElapsedSeconds}s (overall timeout ${OverallTimeoutMinutes}m) waiting for 'successful package deployment' status. Check 'kubectl get pd -n vmsp-platform -o wide' manually before proceeding — do not continue with subsequent recovery tasks until this is confirmed successful."
     }
 
     $StopWatch.Stop()
