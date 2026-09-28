@@ -74,6 +74,8 @@ if ($vmwLogoImage) {
 
 $resumeButton = $window.FindName('ResumeButton')
 $exitButton = $window.FindName('ExitButton')
+$userModeLink = $window.FindName('UserModeLink')
+$engineeringModeLink = $window.FindName('EngineeringModeLink')
 # Recovery Type/Recovery Plan/Data Source (see plans/recovery-plan-catalog.json and
 # Sync-RecoveryPlanSelection) -- replaced the old fixed set of RadioButtons/GroupBoxes below with
 # three catalog-driven ComboBoxes, so there's no longer one FindName per plan/scope.
@@ -206,6 +208,18 @@ function New-Advisory([string]$Message, [switch]$Failure) {
 $global:domainRecoveryStepRows = @()
 $global:additionalClusterRecoveryStepRows = @()
 $global:recoverFleetStepRows = @()
+# Engineering-mode pause point (see Add-EngineeringBreakPointStep/New-StepRow's drop-zone) -- one per
+# plan list, not one shared point across all of them. PausePointAfterStep holds a reference (compared
+# by identity, not value) to the step the synthetic "Engineering Break Point" row should be inserted
+# after, or $null for none; LastApplicableSteps caches the exact post-Get-ApplicableSteps array from
+# the most recent real render, so a pause-point click can re-render without needing $Variables again
+# (which isn't available at click time) or re-running condition filtering.
+$global:domainRecoveryPausePointAfterStep = $null
+$global:domainRecoveryLastApplicableSteps = @()
+$global:additionalClusterRecoveryPausePointAfterStep = $null
+$global:additionalClusterRecoveryLastApplicableSteps = @()
+$global:recoverFleetPausePointAfterStep = $null
+$global:recoverFleetLastApplicableSteps = @()
 # Set only via each pane's own "Use answer file for unattended interactive tasks" toggle (see
 # Register-AnswerFileToggleHandlers below) -- mirrors $global:instanceComponentsGroup/
 # $global:fleetComponentsGroup's own InteractiveAnswerFilePath field, for the three plans that use the
@@ -250,6 +264,10 @@ $global:instanceComponentsGroup = @{
     AnswersFilePath           = $null
     AnswerMap                 = $null
     InteractiveAnswerFilePath = $null
+    # See the matching comment on $global:domainRecoveryPausePointAfterStep above -- same pause-point
+    # convention, just carried on this group's own hashtable instead of a flat global.
+    PausePointAfterStep       = $null
+    LastApplicableSteps       = @()
     AnswerFileCheckBox        = $instanceComponentsAnswerFileCheckBox
     StepsListBox              = $instanceComponentsPlanStepsListBox
     ManualStepsListBox        = $instanceComponentsManualStepsListBox
@@ -266,6 +284,8 @@ $global:fleetComponentsGroup = @{
     AnswersFilePath           = $null
     AnswerMap                 = $null
     InteractiveAnswerFilePath = $null
+    PausePointAfterStep       = $null
+    LastApplicableSteps       = @()
     AnswerFileCheckBox        = $fleetComponentsAnswerFileCheckBox
     StepsListBox              = $fleetComponentsPlanStepsListBox
     ManualStepsListBox        = $fleetComponentsManualStepsListBox
@@ -438,46 +458,59 @@ function Test-EngineeringModePassword([string]$Candidate) {
 # Unlocking once unlocks Advanced on every Recovery Plan's tab control for the rest of the session,
 # not just the one that was clicked -- there's only one "engineering mode", not one per pane.
 $global:engineeringModeUnlocked = $false
+# 'User' (default) or 'Engineering' -- drives Advanced-tab visibility on every plan's TabControl and,
+# only in Engineering mode, the Recovery Plan tab's pause-point drop-zone (see New-StepRow's
+# $OnSetBreakPointAfter wiring). Distinct from $global:engineeringModeUnlocked: unlocking is a one-way,
+# once-per-session password gate, while this is a plain, freely reversible view toggle -- stepping back
+# to User just hides Advanced again, it does not re-lock or forget a pause point already set.
+$global:uiMode = 'User'
 
-function Register-EngineeringModeGate([System.Windows.Controls.TabControl]$TabControl) {
-    $advancedTab = $TabControl.Items | Where-Object { $_.Header -eq 'Advanced' } | Select-Object -First 1
-    if (-not $advancedTab) { return }
-    # A hashtable, not a bare variable: each firing of the SelectionChanged scriptblock below runs in
-    # its own new scope, so a plain "$lastSafeTab = ..." assignment would silently create a local
-    # shadow instead of updating the one captured by GetNewClosure() -- it would never actually
-    # persist between clicks. Mutating a key on this shared hashtable does persist, since it's the
-    # same object on every invocation.
-    $gateState = @{ LastSafeTab = $TabControl.SelectedItem }
-
-    $TabControl.Add_SelectionChanged({
-            param($eventSender, $eventArgs)
-            # SelectionChanged bubbles up from any nested Selector (e.g. a step ListBox inside a
-            # tab's own content), not just from the TabControl's own header strip -- ignore
-            # anything that didn't originate on this TabControl itself.
-            if (-not [object]::ReferenceEquals($eventArgs.Source, $TabControl)) { return }
-            if ($TabControl.SelectedItem -eq $advancedTab) {
-                if (-not $global:engineeringModeUnlocked) {
-                    if (-not $gateState.LastSafeTab) {
-                        $gateState.LastSafeTab = $TabControl.Items | Where-Object { $_ -ne $advancedTab } | Select-Object -First 1
-                    }
-                    $TabControl.SelectedItem = $gateState.LastSafeTab
-                    $entered = Show-PasswordPromptDialog -Title 'Unlock Engineering Mode' -Message 'Enter the engineering mode password to access the Advanced tab.'
-                    if ($entered -and (Test-EngineeringModePassword $entered)) {
-                        $global:engineeringModeUnlocked = $true
-                        $TabControl.SelectedItem = $advancedTab
-                    } elseif ($entered) {
-                        New-Advisory 'Incorrect engineering mode password.' -Failure
-                    }
-                }
-            } else {
-                $gateState.LastSafeTab = $TabControl.SelectedItem
-            }
-        }.GetNewClosure())
+# Shows/hides the "Advanced" TabItem on every plan's TabControl to match $Mode, and repaints the
+# User/Engineering header links (active side gets AccentBrush, the app's own "Clarity blue"; inactive
+# gets the same grey the header's "Recovery Coordinator" subtitle uses). Snaps a TabControl's selection
+# away from Advanced before hiding it -- a Collapsed TabItem left selected would leave that TabControl
+# showing no visible tab content at all.
+function Set-UIMode([string]$Mode) {
+    $global:uiMode = $Mode
+    $isEngineering = $Mode -eq 'Engineering'
+    $advancedVisibility = if ($isEngineering) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
+    foreach ($tabControl in @($stepsVariablesTabControl, $instanceComponentsVariablesStepsTabControl, $fleetComponentsVariablesStepsTabControl)) {
+        $advancedTab = $tabControl.Items | Where-Object { $_.Header -eq 'Advanced' } | Select-Object -First 1
+        if (-not $advancedTab) { continue }
+        if (-not $isEngineering -and $tabControl.SelectedItem -eq $advancedTab) {
+            $tabControl.SelectedItem = $tabControl.Items | Where-Object { $_ -ne $advancedTab } | Select-Object -First 1
+        }
+        $advancedTab.Visibility = $advancedVisibility
+    }
+    $accentBrush = $window.TryFindResource('AccentBrush')
+    $inactiveBrush = [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.Color]::FromRgb(0xB9, 0xC2, 0xCC))
+    $userModeLink.Foreground = if ($isEngineering) { $inactiveBrush } else { $accentBrush }
+    $engineeringModeLink.Foreground = if ($isEngineering) { $accentBrush } else { $inactiveBrush }
 }
 
-Register-EngineeringModeGate $stepsVariablesTabControl
-Register-EngineeringModeGate $instanceComponentsVariablesStepsTabControl
-Register-EngineeringModeGate $fleetComponentsVariablesStepsTabControl
+$userModeLink.Add_MouseLeftButtonUp({
+        Set-UIMode 'User'
+    }.GetNewClosure())
+
+$engineeringModeLink.Add_MouseLeftButtonUp({
+        if ($global:uiMode -eq 'Engineering') { return }
+        if ($global:engineeringModeUnlocked) {
+            Set-UIMode 'Engineering'
+            return
+        }
+        $entered = Show-PasswordPromptDialog -Title 'Unlock Engineering Mode' -Message 'Enter the engineering mode password to access the Advanced tab.'
+        if ($entered -and (Test-EngineeringModePassword $entered)) {
+            $global:engineeringModeUnlocked = $true
+            Set-UIMode 'Engineering'
+        } elseif ($entered) {
+            New-Advisory 'Incorrect engineering mode password.' -Failure
+        }
+    }.GetNewClosure())
+
+# Applies the default 'User' mode's Advanced-tab Visibility/link colors -- without this, the Advanced
+# TabItems stay at their XAML-default Visibility (Visible) until the very first mode switch, which
+# would leave Advanced reachable on first launch despite $global:uiMode already reading 'User'.
+Set-UIMode 'User'
 
 # --- Recovery Parameters catalog (plans/recovery-plan-catalog.json) ------------------------------
 # Drives the Recovery Type/Recovery Plan/Data Source combo boxes (see the XAML's "Recovery
@@ -810,7 +843,7 @@ function Get-StepReferenceText([object[]]$Steps) {
 # returned $rows array is what Run All/Set-AllStepButtonsEnabled/Exit/Resume all operate on; they
 # don't need to know or care that each row now has two visual representations, only that
 # $row.PlanButton/$row.ManualButton exist and are always updated together.
-function Set-PlanStepsListBox([System.Windows.Controls.ListBox]$PlanListBox, [System.Windows.Controls.ListBox]$ManualListBox, [object[]]$Steps) {
+function Set-PlanStepsListBox([System.Windows.Controls.ListBox]$PlanListBox, [System.Windows.Controls.ListBox]$ManualListBox, [object[]]$Steps, $OnSetBreakPointAfter = $null) {
     $PlanListBox.Items.Clear()
     $ManualListBox.Items.Clear()
     $rows = @()
@@ -826,7 +859,7 @@ function Set-PlanStepsListBox([System.Windows.Controls.ListBox]$PlanListBox, [Sy
         if ($step.ThreadId -and $step.ThreadId -ne $previousThreadId) {
             $colorAlt = -not $colorAlt
         }
-        $row = New-StepRow $step.CommandLine $step.ThreadId $step.Description $step.Interactive $colorAlt $step.Id $step.Condition $step.DisplayName
+        $row = New-StepRow $step.CommandLine $step.ThreadId $step.Description $step.Interactive $colorAlt $step.Id $step.Condition $step.DisplayName ([bool]$step.IsBreakPoint) $OnSetBreakPointAfter $step
         # Visible ($true unless a step explicitly sets "visible": false) governs only whether the
         # row is ADDED to the ListBoxes -- it's still built and still included in $rows below, so
         # Run All still runs it in sequence exactly like any other step. This is deliberately unlike
@@ -838,6 +871,47 @@ function Set-PlanStepsListBox([System.Windows.Controls.ListBox]$PlanListBox, [Sy
         $rows += $row
         $previousThreadId = $step.ThreadId
     }
+    return $rows
+}
+
+# Splices a synthetic "Engineering Break Point" step in immediately after $AfterStep, matched by
+# reference (not value) against $Steps -- the same object instances Get-ApplicableSteps passes
+# through (it filters via Where-Object, never clones), so this only ever matches the exact step that
+# was clicked, never a coincidentally-identical one. $AfterStep -eq $null, or no longer present in
+# $Steps (e.g. its own condition just turned false), both fall through to returning $Steps unchanged --
+# deliberately not an error: the pause point simply doesn't render until/unless that step is visible
+# again, self-healing with no separate reset needed. The synthetic step's shape exactly matches
+# Get-RecoveryPlanSteps's own output (plus IsBreakPoint), so it flows through New-StepRow/
+# Invoke-StepChain/Invoke-Step/Run All completely unmodified -- Confirm-ManualStep is already a real
+# cmdlet used this way by hand-authored plans (see e.g. plans/ibr/fleet-component-recovery-plan.json).
+function Add-EngineeringBreakPointStep([object[]]$Steps, $AfterStep) {
+    if (-not $AfterStep) { return $Steps }
+    $index = [array]::IndexOf($Steps, $AfterStep)
+    if ($index -lt 0) { return $Steps }
+    $breakPointStep = [PSCustomObject]@{
+        Id          = ''
+        Description = 'Engineering Break Point'
+        CommandLine = "Confirm-ManualStep -Message 'Press Enter to Continue'"
+        DisplayName = 'Engineering Break Point'
+        Condition   = @()
+        ThreadId    = ''
+        Interactive = $true
+        Visible     = $true
+        IsBreakPoint = $true
+    }
+    $before = if ($index -eq 0) { @() } else { @($Steps[0..($index - 1)]) }
+    $after = if ($index -eq $Steps.Count - 1) { @() } else { @($Steps[($index + 1)..($Steps.Count - 1)]) }
+    return @($before) + @($Steps[$index]) + @($breakPointStep) + @($after)
+}
+
+# Shared re-render path for the Recovery Plan tab's pause-point drop-zone: re-splices the cached,
+# already condition-filtered $ApplicableSteps against whatever pause point is currently set and
+# rebuilds both ListBoxes -- used both by the normal Variables-driven render (Update-RevealedSteps/
+# Update-GroupRevealedSteps) and by the drop-zone's own set/move/clear click handler, which has no
+# $Variables of its own to re-run Get-ApplicableSteps with.
+function Update-BucketStepsListBox([System.Windows.Controls.ListBox]$PlanListBox, [System.Windows.Controls.ListBox]$ManualListBox, [object[]]$ApplicableSteps, $PausePointAfterStep, [string]$InteractiveAnswerFilePath, $OnSetBreakPointAfter) {
+    $rows = Set-PlanStepsListBox $PlanListBox $ManualListBox (Add-EngineeringBreakPointStep $ApplicableSteps $PausePointAfterStep) $OnSetBreakPointAfter
+    Update-StepRowAutoAnsweredBadges $rows $InteractiveAnswerFilePath
     return $rows
 }
 
@@ -2151,7 +2225,7 @@ function Invoke-StepThreadChain([object[]]$Rows, $Console, [scriptblock]$OnCompl
 # the two tabs to show a different status for the same step. Id/Condition are carried through to
 # Invoke-Step so its stepStatus pre-flight gate (Test-StepStatusGate) applies identically regardless
 # of how a step's run was triggered.
-function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Description, $Interactive, [bool]$ThreadColorAlt = $false, [string]$Id = '', [object[]]$Condition = @(), [string]$DisplayName = '') {
+function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Description, $Interactive, [bool]$ThreadColorAlt = $false, [string]$Id = '', [object[]]$Condition = @(), [string]$DisplayName = '', [bool]$IsBreakPoint = $false, $OnSetBreakPointAfter = $null, $StepRef = $null) {
     # The full command line (with its parameters) stays in the module and is only ever sent to the
     # console, never rendered in the Steps list. Variable values referenced in it (e.g. $targetFqdn)
     # come from whatever was loaded via "Load Variables..." -- they're already set in the console
@@ -2286,7 +2360,78 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
             [void]$variantPanel.Children.Add($variantInteractiveBadge)
         }
         [void]$variantPanel.Children.Add($variantButton)
-        return [PSCustomObject]@{ Panel = $variantPanel; Button = $variantButton; InteractiveBadgeText = $interactiveBadgeText }
+
+        # Inline Radio Drop-Zone (Engineering mode's pause-point picker) -- Recovery Plan tab (the
+        # read-only, Run-All-driven variant) only, never Manual Steps: that's the tab Run All actually
+        # walks in order, so that's where marking "pause after this step" belongs. $global:uiMode is
+        # checked live inside each handler rather than only wiring these up when Engineering is active,
+        # so flipping modes takes effect on the very next hover/click with no re-render required.
+        $resultPanel = $variantPanel
+        if ($ReadOnly -and $IsBreakPoint) {
+            # This row IS the pause-point indicator: bright and permanent, not hover-gated. Clicking
+            # anywhere on it clears the pause point. A wrapping Border (not the Grid itself) carries
+            # the divider lines and the click handler -- the Grid's own "Pending" button still sits on
+            # top of it in column 3, but a Button marks its own MouseLeftButtonDown Handled before it
+            # bubbles, so this outer handler never fires for a click that landed on the button.
+            $variantLabel.Text = "$([char]0x23F8)  Pause Point - $DisplayName"
+            $variantLabel.FontWeight = 'Bold'
+            $variantLabel.Foreground = [System.Windows.Media.Brushes]::White
+            $variantPanel.Background = [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.Color]::FromRgb(0xFF, 0x8C, 0x00))
+            $breakPointBorder = New-Object System.Windows.Controls.Border
+            $breakPointBorder.BorderBrush = [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.Color]::FromRgb(0xC9, 0x63, 0x00))
+            $breakPointBorder.BorderThickness = '0,2,0,2'
+            $breakPointBorder.Cursor = 'Hand'
+            $breakPointBorder.Child = $variantPanel
+            if ($OnSetBreakPointAfter) {
+                $breakPointBorder.Add_MouseLeftButtonDown({
+                        if ($global:uiMode -eq 'Engineering') {
+                            & $OnSetBreakPointAfter $null
+                        }
+                    }.GetNewClosure())
+            }
+            $resultPanel = $breakPointBorder
+        } elseif ($ReadOnly -and $OnSetBreakPointAfter) {
+            # Ordinary row: add a thin second row beneath the existing 4-column content for the
+            # hover-reveal "Pause After This Step" strip. Sized Auto/0 by default (Collapsed), so it
+            # takes no extra space until MouseEnter reveals it.
+            $contentRow = New-Object System.Windows.Controls.RowDefinition
+            $contentRow.Height = New-Object System.Windows.GridLength(1, [System.Windows.GridUnitType]::Star)
+            $hoverRow = New-Object System.Windows.Controls.RowDefinition
+            $hoverRow.Height = New-Object System.Windows.GridLength(0, [System.Windows.GridUnitType]::Auto)
+            [void]$variantPanel.RowDefinitions.Add($contentRow)
+            [void]$variantPanel.RowDefinitions.Add($hoverRow)
+
+            $hoverStripText = New-Object System.Windows.Controls.TextBlock
+            $hoverStripText.Text = "Pause After This Step $([char]0x23F8)"
+            $hoverStripText.FontSize = 10.5
+            $hoverStripText.Foreground = [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.Color]::FromRgb(0x6B, 0x72, 0x80))
+            $hoverStripText.HorizontalAlignment = 'Center'
+            $hoverStrip = New-Object System.Windows.Controls.Border
+            $hoverStrip.Opacity = 0.55
+            $hoverStrip.Cursor = 'Hand'
+            $hoverStrip.Margin = '0,1,0,1'
+            $hoverStrip.Visibility = [System.Windows.Visibility]::Collapsed
+            $hoverStrip.Child = $hoverStripText
+            [System.Windows.Controls.Grid]::SetRow($hoverStrip, 1)
+            [System.Windows.Controls.Grid]::SetColumnSpan($hoverStrip, 4)
+            [void]$variantPanel.Children.Add($hoverStrip)
+
+            $variantPanel.Add_MouseEnter({
+                    if ($global:uiMode -eq 'Engineering') {
+                        $hoverStrip.Visibility = [System.Windows.Visibility]::Visible
+                    }
+                }.GetNewClosure())
+            $variantPanel.Add_MouseLeave({
+                    $hoverStrip.Visibility = [System.Windows.Visibility]::Collapsed
+                }.GetNewClosure())
+            $hoverStrip.Add_MouseLeftButtonDown({
+                    if ($global:uiMode -eq 'Engineering') {
+                        & $OnSetBreakPointAfter $StepRef
+                    }
+                }.GetNewClosure())
+        }
+
+        return [PSCustomObject]@{ Panel = $resultPanel; Button = $variantButton; InteractiveBadgeText = $interactiveBadgeText }
     }
 
     $planVariant = & $buildVariant $true
@@ -3277,6 +3422,35 @@ function Update-ExecutionVisibility {
     $stepsVariablesGroupBox.Visibility = if ($hasDomainSelected -or $hasClusterSelected -or $isStandaloneTargetReady) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
 }
 
+# One named callback per plan list (not a closure) -- New-StepRow invokes whichever one of these it's
+# given by name via "&", which works identically whether given a scriptblock or a command name. A
+# closure can't reference itself here: .GetNewClosure() snapshots the surrounding scope at the moment
+# it's called, which is BEFORE the variable meant to hold the closure has been assigned, so a
+# self-referential closure would only ever see $null for itself. Every one of these needs to pass
+# itself back into Update-BucketStepsListBox so the fresh rows that call produces still have a working
+# drop-zone for the NEXT click. A plain named function has no such problem -- PowerShell resolves a
+# function call by name at invocation time, never by capturing a reference up front.
+function Set-DomainRecoveryBreakPointAfter($StepOrNull) {
+    $global:domainRecoveryPausePointAfterStep = $StepOrNull
+    $global:domainRecoveryStepRows = Update-BucketStepsListBox $domainRecoveryPlanStepsListBox $domainRecoveryManualStepsListBox $global:domainRecoveryLastApplicableSteps $global:domainRecoveryPausePointAfterStep $global:domainRecoveryInteractiveAnswerFilePath 'Set-DomainRecoveryBreakPointAfter'
+}
+function Set-AdditionalClusterRecoveryBreakPointAfter($StepOrNull) {
+    $global:additionalClusterRecoveryPausePointAfterStep = $StepOrNull
+    $global:additionalClusterRecoveryStepRows = Update-BucketStepsListBox $additionalClusterRecoveryPlanStepsListBox $additionalClusterRecoveryManualStepsListBox $global:additionalClusterRecoveryLastApplicableSteps $global:additionalClusterRecoveryPausePointAfterStep $global:additionalClusterRecoveryInteractiveAnswerFilePath 'Set-AdditionalClusterRecoveryBreakPointAfter'
+}
+function Set-RecoverFleetBreakPointAfter($StepOrNull) {
+    $global:recoverFleetPausePointAfterStep = $StepOrNull
+    $global:recoverFleetStepRows = Update-BucketStepsListBox $recoverFleetPlanStepsListBox $recoverFleetManualStepsListBox $global:recoverFleetLastApplicableSteps $global:recoverFleetPausePointAfterStep $global:recoverFleetInteractiveAnswerFilePath 'Set-RecoverFleetBreakPointAfter'
+}
+function Set-InstanceComponentsBreakPointAfter($StepOrNull) {
+    $global:instanceComponentsGroup.PausePointAfterStep = $StepOrNull
+    $global:instanceComponentsGroup.StepRows = Update-BucketStepsListBox $global:instanceComponentsGroup.StepsListBox $global:instanceComponentsGroup.ManualStepsListBox $global:instanceComponentsGroup.LastApplicableSteps $global:instanceComponentsGroup.PausePointAfterStep $global:instanceComponentsGroup.InteractiveAnswerFilePath 'Set-InstanceComponentsBreakPointAfter'
+}
+function Set-FleetComponentsBreakPointAfter($StepOrNull) {
+    $global:fleetComponentsGroup.PausePointAfterStep = $StepOrNull
+    $global:fleetComponentsGroup.StepRows = Update-BucketStepsListBox $global:fleetComponentsGroup.StepsListBox $global:fleetComponentsGroup.ManualStepsListBox $global:fleetComponentsGroup.LastApplicableSteps $global:fleetComponentsGroup.PausePointAfterStep $global:fleetComponentsGroup.InteractiveAnswerFilePath 'Set-FleetComponentsBreakPointAfter'
+}
+
 # Populates the Domain Recovery/Additional Cluster Recovery ListBoxes from whatever
 # Sync-DomainSteps/Sync-AdditionalClusterSteps already resolved into $global:domainRecoverySteps
 # etc, filtered by each step's own condition against $Variables -- called only once variables have
@@ -3285,12 +3459,12 @@ function Update-ExecutionVisibility {
 # list the right names), but must not itself put Run buttons in front of anyone before values exist
 # for them to use.
 function Update-RevealedSteps([System.Collections.IDictionary]$Variables) {
-    $global:domainRecoveryStepRows = Set-PlanStepsListBox $domainRecoveryPlanStepsListBox $domainRecoveryManualStepsListBox (Get-ApplicableSteps $global:domainRecoverySteps $Variables)
-    $global:additionalClusterRecoveryStepRows = Set-PlanStepsListBox $additionalClusterRecoveryPlanStepsListBox $additionalClusterRecoveryManualStepsListBox (Get-ApplicableSteps $global:additionalClusterRecoverySteps $Variables)
-    # Set-PlanStepsListBox rebuilds StepRows from scratch (see the matching comment in
-    # Update-GroupRevealedSteps) -- re-apply each pane's own answer-file coverage state on top.
-    Update-StepRowAutoAnsweredBadges $global:domainRecoveryStepRows $global:domainRecoveryInteractiveAnswerFilePath
-    Update-StepRowAutoAnsweredBadges $global:additionalClusterRecoveryStepRows $global:additionalClusterRecoveryInteractiveAnswerFilePath
+    $global:domainRecoveryLastApplicableSteps = Get-ApplicableSteps $global:domainRecoverySteps $Variables
+    $global:additionalClusterRecoveryLastApplicableSteps = Get-ApplicableSteps $global:additionalClusterRecoverySteps $Variables
+    # Update-BucketStepsListBox rebuilds StepRows from scratch (see the matching comment in
+    # Update-GroupRevealedSteps) and re-applies each pane's own answer-file coverage state itself.
+    $global:domainRecoveryStepRows = Update-BucketStepsListBox $domainRecoveryPlanStepsListBox $domainRecoveryManualStepsListBox $global:domainRecoveryLastApplicableSteps $global:domainRecoveryPausePointAfterStep $global:domainRecoveryInteractiveAnswerFilePath 'Set-DomainRecoveryBreakPointAfter'
+    $global:additionalClusterRecoveryStepRows = Update-BucketStepsListBox $additionalClusterRecoveryPlanStepsListBox $additionalClusterRecoveryManualStepsListBox $global:additionalClusterRecoveryLastApplicableSteps $global:additionalClusterRecoveryPausePointAfterStep $global:additionalClusterRecoveryInteractiveAnswerFilePath 'Set-AdditionalClusterRecoveryBreakPointAfter'
 }
 
 # Single-listbox counterpart to Update-RevealedSteps, for Instance Components/Fleet Components (see
@@ -3315,11 +3489,12 @@ function Update-GroupRevealedSteps($Group, [System.Collections.IDictionary]$Vari
         $Variables = $cloned
         $Variables['originalVcfInstallerAvailable'] = if ($originalVcfInstallerAvailableCheckBox.IsChecked) { 'true' } else { 'false' }
     }
-    $Group.StepRows = Set-PlanStepsListBox $Group.StepsListBox $Group.ManualStepsListBox (Get-ApplicableSteps $Group.Steps $Variables)
-    # Set-PlanStepsListBox rebuilds StepRows from scratch (fresh "Requires Input" badges on every
-    # interactive row), so re-apply the answer-file coverage state on top -- a no-op if this group's
+    $Group.LastApplicableSteps = Get-ApplicableSteps $Group.Steps $Variables
+    # Update-BucketStepsListBox rebuilds StepRows from scratch (fresh "Requires Input" badges on every
+    # interactive row) and re-applies the answer-file coverage state itself -- a no-op if this group's
     # own answer-file toggle was never checked (InteractiveAnswerFilePath stays $null).
-    Update-StepRowAutoAnsweredBadges $Group.StepRows $Group.InteractiveAnswerFilePath
+    $breakPointCallback = if ($Group -eq $global:fleetComponentsGroup) { 'Set-FleetComponentsBreakPointAfter' } else { 'Set-InstanceComponentsBreakPointAfter' }
+    $Group.StepRows = Update-BucketStepsListBox $Group.StepsListBox $Group.ManualStepsListBox $Group.LastApplicableSteps $Group.PausePointAfterStep $Group.InteractiveAnswerFilePath $breakPointCallback
 }
 
 # Group counterpart to Import-VariablesAnswersFile, used only by Instance Components/Fleet
@@ -3740,8 +3915,10 @@ function Sync-RecoveryPlanSelection {
         Set-ActiveStepsVariablesPane $stepsVariablesTabControl
 
         $recoverFleetSteps = Get-ApplicableSteps (Get-RecoveryPlanSteps $entry.planFolder $entry.planFile) @{}
-        $global:recoverFleetStepRows = Set-PlanStepsListBox $recoverFleetPlanStepsListBox $recoverFleetManualStepsListBox $recoverFleetSteps
-        Update-StepRowAutoAnsweredBadges $global:recoverFleetStepRows $global:recoverFleetInteractiveAnswerFilePath
+        $global:recoverFleetLastApplicableSteps = $recoverFleetSteps
+        # A fresh plan load -- any pause point set against the previous plan's steps is meaningless here.
+        $global:recoverFleetPausePointAfterStep = $null
+        $global:recoverFleetStepRows = Update-BucketStepsListBox $recoverFleetPlanStepsListBox $recoverFleetManualStepsListBox $recoverFleetSteps $global:recoverFleetPausePointAfterStep $global:recoverFleetInteractiveAnswerFilePath 'Set-RecoverFleetBreakPointAfter'
         $global:allSteps = @($recoverFleetSteps)
         Set-RecoverFleetPanelsVisibility ([System.Windows.Visibility]::Visible)
 

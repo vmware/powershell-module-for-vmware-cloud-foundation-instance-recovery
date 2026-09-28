@@ -17509,20 +17509,37 @@ Function Set-ServicesRuntimeScale {
 
             $passElapsedSeconds = 0
             $passTimeoutSeconds = $TimeoutMinutes * 60
+            $secondsSinceLastReport = 0
+            $heartbeatIntervalSeconds = 300
             Do {
                 Start-Sleep -Seconds $PollIntervalSeconds
                 $passElapsedSeconds += $PollIntervalSeconds
                 $overallElapsedSeconds += $PollIntervalSeconds
+                $secondsSinceLastReport += $PollIntervalSeconds
 
                 $currentStates = Get-PdTest2ComponentStates -Kubeconfig $resolvedKubeconfig
+                $changedNames = @()
                 foreach ($name in $currentStates.Keys) {
                     $previous = if ($componentStates.Contains($name)) { $componentStates[$name] } else { "Unreported" }
                     $current = $currentStates[$name]
                     if ($current -ne $previous) {
+                        $changedNames += $name
                         LogMessage -type INFO -message "[$jumpboxName] Component '$name' changed state: $previous -> $current (${overallElapsedSeconds}s elapsed)"
                     }
                 }
                 $componentStates = $currentStates
+
+                if ($changedNames.Count -gt 0) {
+                    $secondsSinceLastReport = 0
+                } elseif ($secondsSinceLastReport -ge $heartbeatIntervalSeconds) {
+                    # No state changes for a full heartbeat interval — restate what's still
+                    # outstanding so a long, quiet wait doesn't look like the loop has stalled.
+                    $stillWaitingOn = ($componentStates.GetEnumerator() | Where-Object { $_.Value -ne "True" } | ForEach-Object { "$($_.Key):$($_.Value)" }) -join ', '
+                    if ($stillWaitingOn) {
+                        LogMessage -type INFO -message "[$jumpboxName] Still waiting on: $stillWaitingOn (${overallElapsedSeconds}s elapsed, no state change in the last ${heartbeatIntervalSeconds}s)"
+                    }
+                    $secondsSinceLastReport = 0
+                }
 
                 $allReady = ($componentStates.Count -gt 0) -and (-not ($componentStates.Values | Where-Object { $_ -ne "True" }))
             } Until ($allReady -or ($passElapsedSeconds -ge $passTimeoutSeconds) -or ($overallElapsedSeconds -ge $overallTimeoutSeconds))

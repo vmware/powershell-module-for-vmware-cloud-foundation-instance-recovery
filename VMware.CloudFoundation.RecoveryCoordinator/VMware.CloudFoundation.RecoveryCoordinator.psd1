@@ -12,7 +12,7 @@
     RootModule        = '.\VMware.CloudFoundation.RecoveryCoordinator.psm1'
 
     # Version number of this module.
-    ModuleVersion     = '1.0.0'
+    ModuleVersion     = '1.0.1'
 
     # Supported PSEditions
     # CompatiblePSEditions = @()
@@ -101,16 +101,16 @@
         PSData = @{
 
             # Tags applied to this module. These help with module discovery in online galleries.
-            Tags         = @('VMware', 'CloudFoundation', 'VMwareCloudFoundation')
+            Tags       = @('VMware', 'CloudFoundation', 'VMwareCloudFoundation')
 
             # A URL to the license for this module.
-            LicenseUri   = 'https://github.com/vmware/powershell-module-for-vmware-cloud-foundation-instance-recovery/blob/main/LICENSE'
+            LicenseUri = 'https://github.com/vmware/powershell-module-for-vmware-cloud-foundation-instance-recovery/blob/main/LICENSE'
 
             # A URL to the main website for this project.
-            ProjectUri   = 'https://vmware.github.io/powershell-module-for-vmware-cloud-foundation-instance-recovery'
+            ProjectUri = 'https://vmware.github.io/powershell-module-for-vmware-cloud-foundation-instance-recovery'
 
             # A URL to an icon representing this module.
-            IconUri      = 'https://raw.githubusercontent.com/vmware/powershell-module-for-vmware-cloud-foundation-instance-recovery/main/.github/icon-85px.svg'
+            IconUri    = 'https://raw.githubusercontent.com/vmware/powershell-module-for-vmware-cloud-foundation-instance-recovery/main/.github/icon-85px.svg'
 
             # ReleaseNotes of this module
             # ReleaseNotes = ''

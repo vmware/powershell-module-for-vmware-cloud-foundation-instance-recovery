@@ -264,6 +264,16 @@
         <Border Grid.Row="0" Background="{StaticResource HeaderBarBrush}" Padding="18,12">
             <DockPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <!-- User/Engineering mode switch: governs Advanced-tab visibility on every plan
+                         and, only in Engineering mode, the Recovery Plan tab's pause-point drop-zone
+                         (see Set-UIMode in the .ps1). Styled to match the header's own "Recovery
+                         Coordinator" subtitle: same FontSize, same grey (#B9C2CC) for whichever side
+                         is inactive; the active side uses AccentBrush, the app's "Clarity blue". -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,16,0" VerticalAlignment="Center">
+                        <TextBlock x:Name="UserModeLink" Text="User" Foreground="{StaticResource AccentBrush}" FontSize="14" Cursor="Hand" VerticalAlignment="Center" />
+                        <TextBlock Text=" | " Foreground="#B9C2CC" FontSize="14" VerticalAlignment="Center" />
+                        <TextBlock x:Name="EngineeringModeLink" Text="Engineering" Foreground="#B9C2CC" FontSize="14" Cursor="Hand" VerticalAlignment="Center" />
+                    </StackPanel>
                     <Button x:Name="ResumeButton" Content="Resume" Width="90" Margin="0,0,8,0" />
                     <Button x:Name="ExitButton" Content="Save &amp; Exit" Width="90" />
                 </StackPanel>
