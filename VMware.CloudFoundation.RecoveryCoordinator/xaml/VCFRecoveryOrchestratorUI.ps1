@@ -2363,16 +2363,31 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
 
         # Inline Radio Drop-Zone (Engineering mode's pause-point picker) -- Recovery Plan tab (the
         # read-only, Run-All-driven variant) only, never Manual Steps: that's the tab Run All actually
-        # walks in order, so that's where marking "pause after this step" belongs. $global:uiMode is
-        # checked live inside each handler rather than only wiring these up when Engineering is active,
-        # so flipping modes takes effect on the very next hover/click with no re-render required.
+        # walks in order, so that's where marking "pause after this step" belongs. No hover affordance
+        # and no extra row: an earlier version added a second, hover-revealed row under every step to
+        # show a "Pause After This Step" hint, but that grew each row's height the instant the mouse
+        # entered it, which shifted the row boundary down into the cursor -- firing MouseLeave, then
+        # MouseEnter on the row below, endlessly cascading down the list with nothing ever clickable.
+        # Instead: the row itself is the click target (no size change, ever), and the tooltip explains
+        # what a click does. $global:uiMode is checked live inside each handler rather than only wiring
+        # these up when Engineering is active, so flipping modes takes effect on the very next click
+        # with no re-render required.
+        # Plain local copies of the two params these closures need: $buildVariant runs in its own
+        # child scope (it's invoked via "&", not dot-sourced), so $OnSetBreakPointAfter/$StepRef are
+        # only reachable here by dynamic scope fallback to New-StepRow's own parameters, never truly
+        # local to THIS scope. GetNewClosure() only reliably snapshots variables that are local to the
+        # scope it's called from -- confirmed directly: without this copy, the closures below silently
+        # captured $null for $OnSetBreakPointAfter instead of the real value, and invoking "& $null"
+        # is exactly what throws "the expression after '&' ... produced an object that was not valid."
+        $localOnSetBreakPointAfter = $OnSetBreakPointAfter
+        $localStepRef = $StepRef
         $resultPanel = $variantPanel
         if ($ReadOnly -and $IsBreakPoint) {
-            # This row IS the pause-point indicator: bright and permanent, not hover-gated. Clicking
-            # anywhere on it clears the pause point. A wrapping Border (not the Grid itself) carries
-            # the divider lines and the click handler -- the Grid's own "Pending" button still sits on
-            # top of it in column 3, but a Button marks its own MouseLeftButtonDown Handled before it
-            # bubbles, so this outer handler never fires for a click that landed on the button.
+            # This row IS the pause-point indicator: bright and permanent. Clicking anywhere on it
+            # clears the pause point. A wrapping Border (not the Grid itself) carries the divider lines
+            # and the click handler -- the Grid's own "Pending" button still sits on top of it in
+            # column 3, but that button is always disabled on this (read-only) variant, so it never
+            # marks the click Handled or otherwise intercepts it.
             $variantLabel.Text = "$([char]0x23F8)  Pause Point - $DisplayName"
             $variantLabel.FontWeight = 'Bold'
             $variantLabel.Foreground = [System.Windows.Media.Brushes]::White
@@ -2381,58 +2396,25 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
             $breakPointBorder.BorderBrush = [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.Color]::FromRgb(0xC9, 0x63, 0x00))
             $breakPointBorder.BorderThickness = '0,2,0,2'
             $breakPointBorder.Cursor = 'Hand'
+            $breakPointBorder.ToolTip = 'Click to remove this pause point.'
             $breakPointBorder.Child = $variantPanel
-            if ($OnSetBreakPointAfter) {
+            if ($localOnSetBreakPointAfter) {
                 $breakPointBorder.Add_MouseLeftButtonDown({
                         if ($global:uiMode -eq 'Engineering') {
-                            & $OnSetBreakPointAfter $null
+                            & $localOnSetBreakPointAfter $null
                         }
                     }.GetNewClosure())
             }
             $resultPanel = $breakPointBorder
-        } elseif ($ReadOnly -and $OnSetBreakPointAfter) {
-            # Ordinary row: add a thin second row beneath the existing 4-column content for the
-            # hover-reveal "Pause After This Step" strip. FIXED pixel height, not Auto -- an Auto row
-            # measures to 0 while the strip is Collapsed and grows the instant MouseEnter reveals it,
-            # which shifts the row's own bottom edge down INTO the mouse cursor (which hasn't moved),
-            # firing MouseLeave on this row and MouseEnter on the row below it -- and that one repeats
-            # the same growth, cascading the "hover" down the whole list without ever landing anywhere
-            # clickable. A constant-height row means revealing/hiding the strip only changes what's
-            # drawn in that slot, never the slot's size, so the row boundary never moves under the
-            # cursor.
-            $contentRow = New-Object System.Windows.Controls.RowDefinition
-            $contentRow.Height = New-Object System.Windows.GridLength(1, [System.Windows.GridUnitType]::Star)
-            $hoverRow = New-Object System.Windows.Controls.RowDefinition
-            $hoverRow.Height = New-Object System.Windows.GridLength(18)
-            [void]$variantPanel.RowDefinitions.Add($contentRow)
-            [void]$variantPanel.RowDefinitions.Add($hoverRow)
-
-            $hoverStripText = New-Object System.Windows.Controls.TextBlock
-            $hoverStripText.Text = "Pause After This Step $([char]0x23F8)"
-            $hoverStripText.FontSize = 10.5
-            $hoverStripText.Foreground = [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.Color]::FromRgb(0x6B, 0x72, 0x80))
-            $hoverStripText.HorizontalAlignment = 'Center'
-            $hoverStrip = New-Object System.Windows.Controls.Border
-            $hoverStrip.Opacity = 0.55
-            $hoverStrip.Cursor = 'Hand'
-            $hoverStrip.Margin = '0,1,0,1'
-            $hoverStrip.Visibility = [System.Windows.Visibility]::Collapsed
-            $hoverStrip.Child = $hoverStripText
-            [System.Windows.Controls.Grid]::SetRow($hoverStrip, 1)
-            [System.Windows.Controls.Grid]::SetColumnSpan($hoverStrip, 4)
-            [void]$variantPanel.Children.Add($hoverStrip)
-
-            $variantPanel.Add_MouseEnter({
+        } elseif ($ReadOnly -and $localOnSetBreakPointAfter) {
+            # Ordinary row: clicking anywhere on it sets the pause point immediately after this step.
+            # Overrides (rather than appends to) the plain $Description tooltip set above, when there
+            # is one, so the click hint is never buried at the end of a long description.
+            $variantPanel.Cursor = 'Hand'
+            $variantPanel.ToolTip = if ($Description) { "$Description`n`nClick to pause the plan after this step." } else { 'Click to pause the plan after this step.' }
+            $variantPanel.Add_MouseLeftButtonDown({
                     if ($global:uiMode -eq 'Engineering') {
-                        $hoverStrip.Visibility = [System.Windows.Visibility]::Visible
-                    }
-                }.GetNewClosure())
-            $variantPanel.Add_MouseLeave({
-                    $hoverStrip.Visibility = [System.Windows.Visibility]::Collapsed
-                }.GetNewClosure())
-            $hoverStrip.Add_MouseLeftButtonDown({
-                    if ($global:uiMode -eq 'Engineering') {
-                        & $OnSetBreakPointAfter $StepRef
+                        & $localOnSetBreakPointAfter $localStepRef
                     }
                 }.GetNewClosure())
         }
