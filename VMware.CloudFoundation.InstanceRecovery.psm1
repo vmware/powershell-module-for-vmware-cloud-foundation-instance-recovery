@@ -631,7 +631,7 @@ Function New-ExtractDataFromSDDCBackup {
         Remove-Item -Path $strippedHeaderFile -Force -ErrorAction SilentlyContinue
     }
 
-    If ($model -in "current","legacy") {
+    If ($model -in "current", "legacy") {
         #Extract Required Files From Backup Leveraging Windows tar.exe
         LogMessage -type INFO -message "[$jumpboxName] Extracting Backup"
         tar -xzf "$parentFolder\decrypted-sddc-manager-backup.tar.gz" $filesToExtract
@@ -1461,10 +1461,10 @@ Function New-ExtractDataFromSDDCBackup {
                 $deploymentType = $lineContent.split("`t")[$deploymentTypeColumn]
                 $deploymentStatus = $lineContent.split("`t")[$deploymentStatusColumn]
                 $vcfManagementComponents += [pscustomobject]@{
-                    'componentType'     = $componentType
-                    'fqdn'              = $fqdn
-                    'deploymentType'    = $deploymentType
-                    'deploymentStatus'  = $deploymentStatus
+                    'componentType'    = $componentType
+                    'fqdn'             = $fqdn
+                    'deploymentType'   = $deploymentType
+                    'deploymentStatus' = $deploymentStatus
                 }
             }
             $vcfManagmentComponentLineIndex++
@@ -12708,7 +12708,7 @@ Function Restore-ServicesRuntimeComponentBackup {
 
             # Report any new or changed restoreResults entries
             if ($taskResponse.result -and $taskResponse.result.restoreResults) {
-                $terminalComponentStates = @("Succeeded","Failed","Cancelled","COMPLETED","FAILED","CANCELLED","SUCCESS","SUCCESSFUL","ERROR")
+                $terminalComponentStates = @("Succeeded", "Failed", "Cancelled", "COMPLETED", "FAILED", "CANCELLED", "SUCCESS", "SUCCESSFUL", "ERROR")
                 foreach ($entry in $taskResponse.result.restoreResults) {
                     $cid = $entry.componentId
                     $cStatus = $entry.status
@@ -17241,7 +17241,7 @@ Function Set-ServicesRuntimeScale {
     )
 
     $jumpboxName = hostname
-    $StopWatch   = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
     $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
     [int]$__ansIdx = 0
@@ -17282,7 +17282,7 @@ Function Set-ServicesRuntimeScale {
         # Mirror the documented awk extraction: find the "worker:" block and take the first
         # "size:"/"machineType:" line under it; find the "profiles:" block and take the first
         # "name:" line under it. Both blocks are indented further than their parent key.
-        $WorkerSize  = $null
+        $WorkerSize = $null
         $inWorkerBlock = $false
         foreach ($line in $yamlLines) {
             if ($line -match '^\s*worker:\s*$') {
@@ -17375,7 +17375,7 @@ Function Set-ServicesRuntimeScale {
 
     $currentColWidth = [Math]::Max(20, (@([string]$currentWorkerSize, [string]$currentMachineType, [string]$currentProfileName, "Current") | ForEach-Object { $_.Length } | Measure-Object -Maximum).Maximum + 2)
     $rowFormat = "  {0,-14} {1,-$currentColWidth} {2}"
-    $divider   = " " + ("─" * ($currentColWidth + 18))
+    $divider = " " + ("─" * ($currentColWidth + 18))
 
     Write-Host ""
     Write-Host " Recovery Site Scale — pd/vmsp-platform (namespace vmsp-platform)" -ForegroundColor Cyan
@@ -17419,7 +17419,11 @@ Function Set-ServicesRuntimeScale {
     #            False / Unknown).
     # -------------------------------------------------------------------------
     $inProgressStatusText = "package deployment is in progress"
+<<<<<<< Updated upstream
     $successStatusText    = "successful package deployment"
+=======
+    $successStatusText = "successful package deployment"
+>>>>>>> Stashed changes
 
     function Get-PdTest1Status {
         Param([Parameter(Mandatory = $true)][String] $Kubeconfig)
@@ -17436,13 +17440,20 @@ Function Set-ServicesRuntimeScale {
         $states = [ordered]@{}
         try {
             $json = (& kubectl --kubeconfig $Kubeconfig get pd -n vmsp-platform -o json 2>&1) -join "`n"
-            $obj  = $json | ConvertFrom-Json -ErrorAction Stop
+            $obj = $json | ConvertFrom-Json -ErrorAction Stop
             foreach ($release in $obj.items.status.packagedeployments.releases) {
+<<<<<<< Updated upstream
                 $states[$release.name] = if ($null -eq $release.ready) {
                     "Unknown"
                 } else {
                     [string]$release.ready
                 }
+=======
+                # "Unreported" (no ready value present) is deliberately distinct from the
+                # real "Unknown" ready state — the two must not be conflated, or a missing
+                # field would be silently mistaken for a legitimate mid-rollout state.
+                $states[$release.name] = if ($null -eq $release.ready) { "Unreported" } else { [string]$release.ready }
+>>>>>>> Stashed changes
             }
         } catch {
             LogMessage -type WARNING -message "[$jumpboxName] Unable to parse (component states) output: $($_.Exception.Message)"
@@ -17499,7 +17510,7 @@ Function Set-ServicesRuntimeScale {
 
     $overallElapsedSeconds = 0
     $overallTimeoutSeconds = $OverallTimeoutMinutes * 60
-    $succeeded             = $false
+    $succeeded = $false
 
     Do {
         $test1 = Get-PdTest1Status -Kubeconfig $resolvedKubeconfig
@@ -17511,17 +17522,22 @@ Function Set-ServicesRuntimeScale {
             $passTimeoutSeconds = $TimeoutMinutes * 60
             Do {
                 Start-Sleep -Seconds $PollIntervalSeconds
-                $passElapsedSeconds    += $PollIntervalSeconds
+                $passElapsedSeconds += $PollIntervalSeconds
                 $overallElapsedSeconds += $PollIntervalSeconds
 
                 $currentStates = Get-PdTest2ComponentStates -Kubeconfig $resolvedKubeconfig
                 foreach ($name in $currentStates.Keys) {
+<<<<<<< Updated upstream
                     $previous = if ($componentStates.Contains($name)) {
                         $componentStates[$name]
                     } else {
                         "Unknown"
                     }
                     $current  = $currentStates[$name]
+=======
+                    $previous = if ($componentStates.Contains($name)) { $componentStates[$name] } else { "Unreported" }
+                    $current = $currentStates[$name]
+>>>>>>> Stashed changes
                     if ($current -ne $previous) {
                         LogMessage -type INFO -message "[$jumpboxName] Component '$name' changed state: $previous -> $current (${overallElapsedSeconds}s elapsed)"
                     }
@@ -17936,9 +17952,9 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
             $StopWatch.Stop(); return
         }
         $apiHeaders = @{
-            "Authorization"                      = "vRealizeOpsToken $apiToken"
+            "Authorization"                     = "vRealizeOpsToken $apiToken"
             "x-vrealizeops-api-use-unsupported" = "true"
-            "Accept"                             = "application/json"
+            "Accept"                            = "application/json"
         }
 
         # =====================================================================
