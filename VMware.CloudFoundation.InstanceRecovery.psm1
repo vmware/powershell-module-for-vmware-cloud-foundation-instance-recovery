@@ -17445,7 +17445,7 @@ Function Set-ServicesRuntimeScale {
                 }
             }
         } catch {
-            LogMessage -type WARNING -message "[$jumpboxName] Unable to parse Test 2 (component states) output: $($_.Exception.Message)"
+            LogMessage -type WARNING -message "[$jumpboxName] Unable to parse (component states) output: $($_.Exception.Message)"
         }
         return $states
     }
@@ -17505,7 +17505,7 @@ Function Set-ServicesRuntimeScale {
         $test1 = Get-PdTest1Status -Kubeconfig $resolvedKubeconfig
 
         if ($test1.InProgress) {
-            LogMessage -type INFO -message "[$jumpboxName] Test 1: package deployment is in progress. Waiting for all components to reach ready=True (per-pass timeout ${TimeoutMinutes}m)"
+            LogMessage -type INFO -message "[$jumpboxName] Package deployment is in progress. Waiting for all components to reach ready=True (per-pass timeout ${TimeoutMinutes}m)"
 
             $passElapsedSeconds = 0
             $passTimeoutSeconds = $TimeoutMinutes * 60
@@ -17539,17 +17539,16 @@ Function Set-ServicesRuntimeScale {
                 LogMessage -type INFO -message "[$jumpboxName] Per-pass timeout (${TimeoutMinutes}m) reached before all components reported ready=True"
             }
         } else {
-            LogMessage -type INFO -message "[$jumpboxName] Test 1: package deployment is not reporting in-progress"
+            LogMessage -type INFO -message "[$jumpboxName] Package deployment is not reporting in-progress"
         }
 
         $test1 = Get-PdTest1Status -Kubeconfig $resolvedKubeconfig
         if ($test1.Successful) {
             $succeeded = $true
-            LogMessage -type INFO -message "[$jumpboxName] Test 1: status is successful package deployment"
+            LogMessage -type INFO -message "[$jumpboxName] Status: successful package deployment"
             break
         }
 
-        #LogMessage -type INFO -message "[$jumpboxName] Test 1: status is not yet 'successful package deployment'. Re-checking Test 2 for components no longer ready=True"
         $componentStates = Get-PdTest2ComponentStates -Kubeconfig $resolvedKubeconfig
         $notReady = $componentStates.GetEnumerator() | Where-Object { $_.Value -ne "True" }
         if ($notReady) {
