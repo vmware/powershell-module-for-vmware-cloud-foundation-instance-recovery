@@ -17500,11 +17500,20 @@ Function Set-ServicesRuntimeScale {
     $overallElapsedSeconds = 0
     $overallTimeoutSeconds = $OverallTimeoutMinutes * 60
     $succeeded = $false
+    # Guards against a stale Test 1 read immediately after patching, before the controller
+    # has reconciled the change: "successful" is only trusted once we've either seen the
+    # deployment actually report in-progress, or seen at least one component move away from
+    # its pre-patch baseline state.
+    $observedInProgress = $false
+    $everChanged = $false
 
     Do {
         $test1 = Get-PdTest1Status -Kubeconfig $resolvedKubeconfig
+        $ranInnerLoop = $false
 
         if ($test1.InProgress) {
+            $observedInProgress = $true
+            $ranInnerLoop = $true
             LogMessage -type INFO -message "[$jumpboxName] Package deployment is in progress. Waiting for all components to reach ready=True (per-pass timeout ${TimeoutMinutes}m)"
 
             $passElapsedSeconds = 0
@@ -17524,6 +17533,7 @@ Function Set-ServicesRuntimeScale {
                     $current = $currentStates[$name]
                     if ($current -ne $previous) {
                         $changedNames += $name
+                        $everChanged = $true
                         LogMessage -type INFO -message "[$jumpboxName] Component '$name' changed state: $previous -> $current (${overallElapsedSeconds}s elapsed)"
                     }
                 }
@@ -17553,21 +17563,44 @@ Function Set-ServicesRuntimeScale {
             }
         } else {
             LogMessage -type INFO -message "[$jumpboxName] Package deployment is not reporting in-progress"
+
+            # Still re-check Test 2 here so a stale "successful" read below (e.g. immediately
+            # after patching, before the controller has reconciled) can be caught: if nothing
+            # has moved since the last known state, treat it as not yet started.
+            $currentStates = Get-PdTest2ComponentStates -Kubeconfig $resolvedKubeconfig
+            foreach ($name in $currentStates.Keys) {
+                $previous = if ($componentStates.Contains($name)) { $componentStates[$name] } else { "Unreported" }
+                $current = $currentStates[$name]
+                if ($current -ne $previous) {
+                    $everChanged = $true
+                    LogMessage -type INFO -message "[$jumpboxName] Component '$name' changed state: $previous -> $current (${overallElapsedSeconds}s elapsed)"
+                }
+            }
+            $componentStates = $currentStates
         }
 
         $test1 = Get-PdTest1Status -Kubeconfig $resolvedKubeconfig
-        if ($test1.Successful) {
+        if ($test1.Successful -and ($observedInProgress -or $everChanged)) {
             $succeeded = $true
             LogMessage -type INFO -message "[$jumpboxName] Status: successful package deployment"
             break
         }
 
-        $componentStates = Get-PdTest2ComponentStates -Kubeconfig $resolvedKubeconfig
-        $notReady = $componentStates.GetEnumerator() | Where-Object { $_.Value -ne "True" }
-        if ($notReady) {
-            LogMessage -type INFO -message "[$jumpboxName] Components not ready=True: $(($notReady | ForEach-Object { "$($_.Key):$($_.Value)" }) -join ', ')"
+        if ($test1.Successful) {
+            LogMessage -type INFO -message "[$jumpboxName] Status reports 'successful package deployment', but no component has moved from its pre-patch baseline yet — treating this as a stale read until the rollout is confirmed to have started"
+        } else {
+            $componentStates = Get-PdTest2ComponentStates -Kubeconfig $resolvedKubeconfig
+            $notReady = $componentStates.GetEnumerator() | Where-Object { $_.Value -ne "True" }
+            if ($notReady) {
+                LogMessage -type INFO -message "[$jumpboxName] Components not ready=True: $(($notReady | ForEach-Object { "$($_.Key):$($_.Value)" }) -join ', ')"
+            }
+            LogMessage -type INFO -message "[$jumpboxName] Restarting rollout monitoring (${overallElapsedSeconds}s elapsed of ${OverallTimeoutMinutes}m overall timeout)"
         }
-        LogMessage -type INFO -message "[$jumpboxName] Restarting rollout monitoring (${overallElapsedSeconds}s elapsed of ${OverallTimeoutMinutes}m overall timeout)"
+
+        if (-not $ranInnerLoop) {
+            Start-Sleep -Seconds $PollIntervalSeconds
+            $overallElapsedSeconds += $PollIntervalSeconds
+        }
     } Until ($overallElapsedSeconds -ge $overallTimeoutSeconds)
 
     if ($succeeded) {
