@@ -515,7 +515,7 @@
                                              vertical scrollbar - the scrollbar narrows the header and the rows
                                              by the same amount. -->
                                         <DockPanel DockPanel.Dock="Top" Margin="0,8,0,0" LastChildFill="False">
-                                            <TextBlock Text="Task List" FontWeight="Bold" FontSize="14" DockPanel.Dock="Left" VerticalAlignment="Center" />
+                                            <TextBlock x:Name="DomainRecoveryTaskListHeader" Text="Task List" FontWeight="Bold" FontSize="14" DockPanel.Dock="Left" VerticalAlignment="Center" />
                                             <Button x:Name="RunAllDomainRecoveryButton" Content="Run Plan" Width="80" Margin="0,0,6,0" DockPanel.Dock="Right" VerticalAlignment="Center" />
                                         </DockPanel>
                                     </DockPanel>
@@ -539,7 +539,7 @@
                                         </StackPanel>
                                         <!-- Layout as on RunAllDomainRecoveryButton above. -->
                                         <DockPanel DockPanel.Dock="Top" Margin="0,8,0,0" LastChildFill="False">
-                                            <TextBlock Text="Task List" FontWeight="Bold" FontSize="14" DockPanel.Dock="Left" VerticalAlignment="Center" />
+                                            <TextBlock x:Name="AdditionalClusterRecoveryTaskListHeader" Text="Task List" FontWeight="Bold" FontSize="14" DockPanel.Dock="Left" VerticalAlignment="Center" />
                                             <Button x:Name="RunAllAdditionalClusterRecoveryButton" Content="Run Plan" Width="80" Margin="0,0,6,0" DockPanel.Dock="Right" VerticalAlignment="Center" />
                                         </DockPanel>
                                     </DockPanel>
@@ -564,7 +564,7 @@
                                         </StackPanel>
                                         <!-- Layout as on RunAllDomainRecoveryButton above. -->
                                         <DockPanel DockPanel.Dock="Top" Margin="0,8,0,0" LastChildFill="False">
-                                            <TextBlock Text="Task List" FontWeight="Bold" FontSize="14" DockPanel.Dock="Left" VerticalAlignment="Center" />
+                                            <TextBlock x:Name="RecoverFleetTaskListHeader" Text="Task List" FontWeight="Bold" FontSize="14" DockPanel.Dock="Left" VerticalAlignment="Center" />
                                             <Button x:Name="RunAllRecoverFleetButton" Content="Run Plan" Width="80" Margin="0,0,6,0" DockPanel.Dock="Right" VerticalAlignment="Center" />
                                         </DockPanel>
                                     </DockPanel>
@@ -649,7 +649,7 @@
                                     </StackPanel>
                                     <!-- Layout as on RunAllDomainRecoveryButton above. -->
                                     <DockPanel DockPanel.Dock="Top" Margin="0,8,0,0" LastChildFill="False">
-                                        <TextBlock Text="Task List" FontWeight="Bold" FontSize="14" DockPanel.Dock="Left" VerticalAlignment="Center" />
+                                        <TextBlock x:Name="InstanceComponentsTaskListHeader" Text="Task List" FontWeight="Bold" FontSize="14" DockPanel.Dock="Left" VerticalAlignment="Center" />
                                         <Button x:Name="RunAllInstanceComponentsButton" Content="Run Plan" Width="80" Margin="0,0,6,0" DockPanel.Dock="Right" VerticalAlignment="Center" />
                                     </DockPanel>
                                 </DockPanel>
@@ -699,7 +699,7 @@
                                     </StackPanel>
                                     <!-- Layout as on RunAllDomainRecoveryButton above. -->
                                     <DockPanel DockPanel.Dock="Top" Margin="0,8,0,0" LastChildFill="False">
-                                        <TextBlock Text="Task List" FontWeight="Bold" FontSize="14" DockPanel.Dock="Left" VerticalAlignment="Center" />
+                                        <TextBlock x:Name="FleetComponentsTaskListHeader" Text="Task List" FontWeight="Bold" FontSize="14" DockPanel.Dock="Left" VerticalAlignment="Center" />
                                         <Button x:Name="RunAllFleetComponentsButton" Content="Run Plan" Width="80" Margin="0,0,6,0" DockPanel.Dock="Right" VerticalAlignment="Center" />
                                     </DockPanel>
                                 </DockPanel>
