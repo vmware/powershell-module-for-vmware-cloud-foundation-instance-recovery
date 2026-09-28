@@ -2392,12 +2392,18 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
             $resultPanel = $breakPointBorder
         } elseif ($ReadOnly -and $OnSetBreakPointAfter) {
             # Ordinary row: add a thin second row beneath the existing 4-column content for the
-            # hover-reveal "Pause After This Step" strip. Sized Auto/0 by default (Collapsed), so it
-            # takes no extra space until MouseEnter reveals it.
+            # hover-reveal "Pause After This Step" strip. FIXED pixel height, not Auto -- an Auto row
+            # measures to 0 while the strip is Collapsed and grows the instant MouseEnter reveals it,
+            # which shifts the row's own bottom edge down INTO the mouse cursor (which hasn't moved),
+            # firing MouseLeave on this row and MouseEnter on the row below it -- and that one repeats
+            # the same growth, cascading the "hover" down the whole list without ever landing anywhere
+            # clickable. A constant-height row means revealing/hiding the strip only changes what's
+            # drawn in that slot, never the slot's size, so the row boundary never moves under the
+            # cursor.
             $contentRow = New-Object System.Windows.Controls.RowDefinition
             $contentRow.Height = New-Object System.Windows.GridLength(1, [System.Windows.GridUnitType]::Star)
             $hoverRow = New-Object System.Windows.Controls.RowDefinition
-            $hoverRow.Height = New-Object System.Windows.GridLength(0, [System.Windows.GridUnitType]::Auto)
+            $hoverRow.Height = New-Object System.Windows.GridLength(18)
             [void]$variantPanel.RowDefinitions.Add($contentRow)
             [void]$variantPanel.RowDefinitions.Add($hoverRow)
 
