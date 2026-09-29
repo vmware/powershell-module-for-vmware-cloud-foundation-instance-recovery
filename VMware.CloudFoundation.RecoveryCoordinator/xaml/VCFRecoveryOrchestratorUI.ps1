@@ -947,13 +947,40 @@ function Add-EngineeringBreakPointStep([object[]]$Steps, $AfterStep) {
     return @($before) + @($Steps[$index]) + @($breakPointStep) + @($after)
 }
 
+# Set-PlanStepsListBox always rebuilds every row from scratch (fresh Button objects, starting back at
+# 'Pending') -- fine for a Variables edit, since nothing has run yet at that point, but a rebuild
+# triggered by the pause-point drop-zone can happen AFTER Resume has already restored prior "Done"
+# (or live "Failed"/"Skipped"/"Running") state onto the OLD row objects. Without this, clicking to set
+# or clear a pause point would silently wipe every one of those states back to blank, making a resumed
+# -- or actively running -- plan look like it had never started. Matches on CommandLine, same as
+# Resume's own CompletedCommandLines restore (see the Resume handler) -- same accepted limitation
+# noted there: two steps sharing an identical CommandLine are indistinguishable by this matching alone.
+function Copy-StepRowCompletionState([object[]]$PreviousRows, [object[]]$NewRows) {
+    if (-not $PreviousRows) { return }
+    $completedStates = @{}
+    foreach ($row in $PreviousRows) {
+        if ($row.PlanButton.Content -in @('Done', 'Failed', 'Skipped', 'Running')) {
+            $completedStates[$row.CommandLine] = @{ Content = $row.PlanButton.Content; Background = $row.PlanButton.Background }
+        }
+    }
+    if ($completedStates.Count -eq 0) { return }
+    foreach ($row in $NewRows) {
+        if ($completedStates.ContainsKey($row.CommandLine)) {
+            $state = $completedStates[$row.CommandLine]
+            Set-StepButtonsState @($row.PlanButton, $row.ManualButton) $state.Content $state.Background
+        }
+    }
+}
+
 # Shared re-render path for the Recovery Plan tab's pause-point drop-zone: re-splices the cached,
 # already condition-filtered $ApplicableSteps against whatever pause point is currently set and
 # rebuilds both ListBoxes -- used both by the normal Variables-driven render (Update-RevealedSteps/
 # Update-GroupRevealedSteps) and by the drop-zone's own set/move/clear click handler, which has no
-# $Variables of its own to re-run Get-ApplicableSteps with.
-function Update-BucketStepsListBox([System.Windows.Controls.ListBox]$PlanListBox, [System.Windows.Controls.ListBox]$ManualListBox, [object[]]$ApplicableSteps, $PausePointAfterStep, [string]$InteractiveAnswerFilePath, $OnSetBreakPointAfter, [System.Windows.Controls.TextBlock]$HeaderTextBlock) {
+# $Variables of its own to re-run Get-ApplicableSteps with. $PreviousRows (the bucket's own StepRows
+# from before THIS call) is optional/$null for a fresh plan load, where there's nothing to carry over.
+function Update-BucketStepsListBox([System.Windows.Controls.ListBox]$PlanListBox, [System.Windows.Controls.ListBox]$ManualListBox, [object[]]$ApplicableSteps, $PausePointAfterStep, [string]$InteractiveAnswerFilePath, $OnSetBreakPointAfter, [System.Windows.Controls.TextBlock]$HeaderTextBlock, [object[]]$PreviousRows = $null) {
     $rows = Set-PlanStepsListBox $PlanListBox $ManualListBox (Add-EngineeringBreakPointStep $ApplicableSteps $PausePointAfterStep) $OnSetBreakPointAfter
+    Copy-StepRowCompletionState $PreviousRows $rows
     Update-StepRowAutoAnsweredBadges $rows $InteractiveAnswerFilePath
     Update-TaskListHeaderText $HeaderTextBlock $PausePointAfterStep
     return $rows
@@ -2455,10 +2482,15 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
         } elseif ($ReadOnly -and $localOnSetBreakPointAfter) {
             # Ordinary row: clicking anywhere on it sets the pause point immediately after this step.
             # Cursor only, no tooltip -- leaves whatever plain $Description tooltip this row already
-            # got above (if any) completely untouched.
+            # got above (if any) completely untouched. Blocked once THIS row's own button reads
+            # anything other than 'Pending' -- i.e. it already ran (Done/Failed/Skipped) or is running
+            # right now, most commonly right after Resume restores prior "Done" state from a saved
+            # session (see Invoke-StepChain's own front-of-queue Done-skip logic, which this mirrors).
+            # Pausing "after" a step that's already finished (or is mid-run) doesn't mean anything --
+            # only ever meaningful on a step that hasn't run yet.
             $variantPanel.Cursor = 'Hand'
             $variantPanel.Add_MouseLeftButtonDown({
-                    if ($global:uiMode -eq 'Engineering') {
+                    if ($global:uiMode -eq 'Engineering' -and $variantButton.Content -eq 'Pending') {
                         & $localOnSetBreakPointAfter $localStepRef
                     }
                 }.GetNewClosure())
@@ -3466,27 +3498,27 @@ function Update-ExecutionVisibility {
 function Set-DomainRecoveryBreakPointAfter($StepOrNull) {
     if ($global:recoveryRunStarted) { return }
     $global:domainRecoveryPausePointAfterStep = $StepOrNull
-    $global:domainRecoveryStepRows = Update-BucketStepsListBox $domainRecoveryPlanStepsListBox $domainRecoveryManualStepsListBox $global:domainRecoveryLastApplicableSteps $global:domainRecoveryPausePointAfterStep $global:domainRecoveryInteractiveAnswerFilePath 'Set-DomainRecoveryBreakPointAfter' $domainRecoveryTaskListHeader
+    $global:domainRecoveryStepRows = Update-BucketStepsListBox $domainRecoveryPlanStepsListBox $domainRecoveryManualStepsListBox $global:domainRecoveryLastApplicableSteps $global:domainRecoveryPausePointAfterStep $global:domainRecoveryInteractiveAnswerFilePath 'Set-DomainRecoveryBreakPointAfter' $domainRecoveryTaskListHeader $global:domainRecoveryStepRows
 }
 function Set-AdditionalClusterRecoveryBreakPointAfter($StepOrNull) {
     if ($global:recoveryRunStarted) { return }
     $global:additionalClusterRecoveryPausePointAfterStep = $StepOrNull
-    $global:additionalClusterRecoveryStepRows = Update-BucketStepsListBox $additionalClusterRecoveryPlanStepsListBox $additionalClusterRecoveryManualStepsListBox $global:additionalClusterRecoveryLastApplicableSteps $global:additionalClusterRecoveryPausePointAfterStep $global:additionalClusterRecoveryInteractiveAnswerFilePath 'Set-AdditionalClusterRecoveryBreakPointAfter' $additionalClusterRecoveryTaskListHeader
+    $global:additionalClusterRecoveryStepRows = Update-BucketStepsListBox $additionalClusterRecoveryPlanStepsListBox $additionalClusterRecoveryManualStepsListBox $global:additionalClusterRecoveryLastApplicableSteps $global:additionalClusterRecoveryPausePointAfterStep $global:additionalClusterRecoveryInteractiveAnswerFilePath 'Set-AdditionalClusterRecoveryBreakPointAfter' $additionalClusterRecoveryTaskListHeader $global:additionalClusterRecoveryStepRows
 }
 function Set-RecoverFleetBreakPointAfter($StepOrNull) {
     if ($global:recoveryRunStarted) { return }
     $global:recoverFleetPausePointAfterStep = $StepOrNull
-    $global:recoverFleetStepRows = Update-BucketStepsListBox $recoverFleetPlanStepsListBox $recoverFleetManualStepsListBox $global:recoverFleetLastApplicableSteps $global:recoverFleetPausePointAfterStep $global:recoverFleetInteractiveAnswerFilePath 'Set-RecoverFleetBreakPointAfter' $recoverFleetTaskListHeader
+    $global:recoverFleetStepRows = Update-BucketStepsListBox $recoverFleetPlanStepsListBox $recoverFleetManualStepsListBox $global:recoverFleetLastApplicableSteps $global:recoverFleetPausePointAfterStep $global:recoverFleetInteractiveAnswerFilePath 'Set-RecoverFleetBreakPointAfter' $recoverFleetTaskListHeader $global:recoverFleetStepRows
 }
 function Set-InstanceComponentsBreakPointAfter($StepOrNull) {
     if ($global:recoveryRunStarted) { return }
     $global:instanceComponentsGroup.PausePointAfterStep = $StepOrNull
-    $global:instanceComponentsGroup.StepRows = Update-BucketStepsListBox $global:instanceComponentsGroup.StepsListBox $global:instanceComponentsGroup.ManualStepsListBox $global:instanceComponentsGroup.LastApplicableSteps $global:instanceComponentsGroup.PausePointAfterStep $global:instanceComponentsGroup.InteractiveAnswerFilePath 'Set-InstanceComponentsBreakPointAfter' $global:instanceComponentsGroup.TaskListHeader
+    $global:instanceComponentsGroup.StepRows = Update-BucketStepsListBox $global:instanceComponentsGroup.StepsListBox $global:instanceComponentsGroup.ManualStepsListBox $global:instanceComponentsGroup.LastApplicableSteps $global:instanceComponentsGroup.PausePointAfterStep $global:instanceComponentsGroup.InteractiveAnswerFilePath 'Set-InstanceComponentsBreakPointAfter' $global:instanceComponentsGroup.TaskListHeader $global:instanceComponentsGroup.StepRows
 }
 function Set-FleetComponentsBreakPointAfter($StepOrNull) {
     if ($global:recoveryRunStarted) { return }
     $global:fleetComponentsGroup.PausePointAfterStep = $StepOrNull
-    $global:fleetComponentsGroup.StepRows = Update-BucketStepsListBox $global:fleetComponentsGroup.StepsListBox $global:fleetComponentsGroup.ManualStepsListBox $global:fleetComponentsGroup.LastApplicableSteps $global:fleetComponentsGroup.PausePointAfterStep $global:fleetComponentsGroup.InteractiveAnswerFilePath 'Set-FleetComponentsBreakPointAfter' $global:fleetComponentsGroup.TaskListHeader
+    $global:fleetComponentsGroup.StepRows = Update-BucketStepsListBox $global:fleetComponentsGroup.StepsListBox $global:fleetComponentsGroup.ManualStepsListBox $global:fleetComponentsGroup.LastApplicableSteps $global:fleetComponentsGroup.PausePointAfterStep $global:fleetComponentsGroup.InteractiveAnswerFilePath 'Set-FleetComponentsBreakPointAfter' $global:fleetComponentsGroup.TaskListHeader $global:fleetComponentsGroup.StepRows
 }
 
 # Populates the Domain Recovery/Additional Cluster Recovery ListBoxes from whatever
@@ -3501,8 +3533,8 @@ function Update-RevealedSteps([System.Collections.IDictionary]$Variables) {
     $global:additionalClusterRecoveryLastApplicableSteps = Get-ApplicableSteps $global:additionalClusterRecoverySteps $Variables
     # Update-BucketStepsListBox rebuilds StepRows from scratch (see the matching comment in
     # Update-GroupRevealedSteps) and re-applies each pane's own answer-file coverage state itself.
-    $global:domainRecoveryStepRows = Update-BucketStepsListBox $domainRecoveryPlanStepsListBox $domainRecoveryManualStepsListBox $global:domainRecoveryLastApplicableSteps $global:domainRecoveryPausePointAfterStep $global:domainRecoveryInteractiveAnswerFilePath 'Set-DomainRecoveryBreakPointAfter' $domainRecoveryTaskListHeader
-    $global:additionalClusterRecoveryStepRows = Update-BucketStepsListBox $additionalClusterRecoveryPlanStepsListBox $additionalClusterRecoveryManualStepsListBox $global:additionalClusterRecoveryLastApplicableSteps $global:additionalClusterRecoveryPausePointAfterStep $global:additionalClusterRecoveryInteractiveAnswerFilePath 'Set-AdditionalClusterRecoveryBreakPointAfter' $additionalClusterRecoveryTaskListHeader
+    $global:domainRecoveryStepRows = Update-BucketStepsListBox $domainRecoveryPlanStepsListBox $domainRecoveryManualStepsListBox $global:domainRecoveryLastApplicableSteps $global:domainRecoveryPausePointAfterStep $global:domainRecoveryInteractiveAnswerFilePath 'Set-DomainRecoveryBreakPointAfter' $domainRecoveryTaskListHeader $global:domainRecoveryStepRows
+    $global:additionalClusterRecoveryStepRows = Update-BucketStepsListBox $additionalClusterRecoveryPlanStepsListBox $additionalClusterRecoveryManualStepsListBox $global:additionalClusterRecoveryLastApplicableSteps $global:additionalClusterRecoveryPausePointAfterStep $global:additionalClusterRecoveryInteractiveAnswerFilePath 'Set-AdditionalClusterRecoveryBreakPointAfter' $additionalClusterRecoveryTaskListHeader $global:additionalClusterRecoveryStepRows
 }
 
 # Single-listbox counterpart to Update-RevealedSteps, for Instance Components/Fleet Components (see
@@ -3532,7 +3564,7 @@ function Update-GroupRevealedSteps($Group, [System.Collections.IDictionary]$Vari
     # interactive row) and re-applies the answer-file coverage state itself -- a no-op if this group's
     # own answer-file toggle was never checked (InteractiveAnswerFilePath stays $null).
     $breakPointCallback = if ($Group -eq $global:fleetComponentsGroup) { 'Set-FleetComponentsBreakPointAfter' } else { 'Set-InstanceComponentsBreakPointAfter' }
-    $Group.StepRows = Update-BucketStepsListBox $Group.StepsListBox $Group.ManualStepsListBox $Group.LastApplicableSteps $Group.PausePointAfterStep $Group.InteractiveAnswerFilePath $breakPointCallback $Group.TaskListHeader
+    $Group.StepRows = Update-BucketStepsListBox $Group.StepsListBox $Group.ManualStepsListBox $Group.LastApplicableSteps $Group.PausePointAfterStep $Group.InteractiveAnswerFilePath $breakPointCallback $Group.TaskListHeader $Group.StepRows
 }
 
 # Group counterpart to Import-VariablesAnswersFile, used only by Instance Components/Fleet
