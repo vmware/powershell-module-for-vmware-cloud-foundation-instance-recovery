@@ -17445,7 +17445,7 @@ Function Set-ServicesRuntimeScale {
                 $states[$release.name] = if ($null -eq $release.ready) { "Unreported" } else { [string]$release.ready }
             }
         } catch {
-            LogMessage -type WARNING -message "[$jumpboxName] Unable to parse (component states) output: $($_.Exception.Message)"
+            LogMessage -type INFO -message "[$jumpboxName] Unable to parse (component states) output. Will retry"
         }
         return $states
     }
