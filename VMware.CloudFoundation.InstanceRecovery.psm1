@@ -12615,10 +12615,6 @@ Function Restore-ServicesRuntimeComponentBackup {
         Start-Sleep -Seconds $ReadyRetryIntervalSeconds
     } While ($true)
 
-    if ($prefetchFailed) {
-        LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Could not pre-fetch component names; UUIDs will be used in status output"
-    }
-
     if ($submitFailed) {
         LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Restore request failed: $($submitError.Exception.Message)"
         if ($submitError.Exception.Response) {
@@ -12634,6 +12630,31 @@ Function Restore-ServicesRuntimeComponentBackup {
     }
 
     LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Restore request accepted"
+
+    if ($prefetchFailed -or $componentNameById.Count -eq 0) {
+        # Retry once now that the restore request has actually been accepted -- proof the API is
+        # genuinely up -- since the earlier prefetch runs in lockstep with each submit retry attempt
+        # and can transiently 503 on exactly the iteration whose submit succeeds a moment later, once
+        # the service finishes warming up. Left unretried, that one bad-timing 503 permanently loses
+        # every component name for the rest of this run (status lines fall back to the raw componentId
+        # GUID) even though the restore itself went through fine.
+        try {
+            $componentsResp = Invoke-RestMethod -Uri "https://$ServicesRuntimeFqdn/api/v1/components" -Method GET -Headers $headers -SkipCertificateCheck
+            $componentNameById = @{}
+            foreach ($c in $componentsResp.components) {
+                if ($c.id -and $c.type) {
+                    $componentNameById[$c.id] = $c.type
+                }
+            }
+            $prefetchFailed = $false
+        } catch {
+            $prefetchFailed = $true
+        }
+    }
+
+    if ($prefetchFailed) {
+        LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Could not pre-fetch component names; UUIDs will be used in status output"
+    }
 
     # Check for a task ID in the POST response
     $taskId = $response.id
