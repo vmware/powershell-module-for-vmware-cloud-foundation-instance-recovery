@@ -12692,10 +12692,14 @@ Function Restore-ServicesRuntimeComponentBackup {
     $reportedComponentStatuses = @{}
     $lastStatusLoggedAt = [DateTime]::MinValue
     $lastLoggedStatus = ""
-    # The restoreResults entries returned by this API only carry componentId and status —
-    # no per-component start/end time — so elapsed time is reported against the overall
-    # restore task's own start time instead of a (unmeasurable) per-component duration.
+    # The restoreResults entries returned by this API only carry componentId and status — no
+    # per-component start/end time of its own. Approximated instead as the time between consecutive
+    # components reaching a terminal state (components restore one at a time, so the clock since the
+    # previous one finished -- or since the restore started, for the first -- is that component's own
+    # duration). $lastComponentTerminalAtUtc is only set once a component actually finishes; $null
+    # until then means "nothing has finished yet, so measure from the restore's own start."
     $taskStartedAtUtc = $tokenFetchedAt
+    $lastComponentTerminalAtUtc = $null
     Do {
         Start-Sleep -Seconds 60
 
@@ -12743,15 +12747,20 @@ Function Restore-ServicesRuntimeComponentBackup {
                             }
                             $elapsedMsg = ""
                             if ($cStatus -in $terminalComponentStates) {
-                                # This API does not report a per-component start/end time, so this
-                                # reflects how long the overall restore task has been running, not
-                                # this component's own individual duration.
-                                $span = [DateTime]::UtcNow - $taskStartedAtUtc
+                                # Duration of THIS component -- the time since the previous component
+                                # finished (or since the restore started, for the first one) -- not the
+                                # overall restore's running total (see the comment above
+                                # $lastComponentTerminalAtUtc for why this is the best available proxy
+                                # given the API reports no per-component start/end time of its own).
+                                $componentStartedAtUtc = if ($null -ne $lastComponentTerminalAtUtc) { $lastComponentTerminalAtUtc } else { $taskStartedAtUtc }
+                                $nowUtc = [DateTime]::UtcNow
+                                $span = $nowUtc - $componentStartedAtUtc
                                 if ($span -lt [TimeSpan]::Zero) {
                                     $span = [TimeSpan]::Zero
                                 }
                                 $totalMinutes = ($span.Hours * 60) + $span.Minutes
-                                $elapsedMsg = " ($totalMinutes minutes and $($span.Seconds) seconds since restore started)"
+                                $elapsedMsg = " (took $totalMinutes minutes and $($span.Seconds) seconds)"
+                                $lastComponentTerminalAtUtc = $nowUtc
                             }
                             LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Component $cName status: $cStatus$elapsedMsg"
                             $reportedComponentStatuses[$cid] = $cStatus
