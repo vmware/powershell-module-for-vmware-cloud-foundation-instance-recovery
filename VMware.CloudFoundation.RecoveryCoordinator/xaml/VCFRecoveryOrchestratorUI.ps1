@@ -850,16 +850,27 @@ function Add-EngineeringBreakPointStep([object[]]$Steps, $AfterStep) {
 # noted there: two steps sharing an identical CommandLine are indistinguishable by this matching alone.
 function Copy-StepRowCompletionState([object[]]$PreviousRows, [object[]]$NewRows) {
     if (-not $PreviousRows) { return }
+    # Keyed on CommandLine PLUS which occurrence of that CommandLine the row is (1st, 2nd, ...), so a
+    # command that appears several times in a plan (e.g. Get VCF Operations Registered Components)
+    # carries over each instance's own state instead of every copy inheriting whichever one was
+    # recorded last -- previously one Done instance marked all of them Done.
     $completedStates = @{}
+    $occurrences = @{}
     foreach ($row in $PreviousRows) {
+        $occurrence = [int]$occurrences[$row.CommandLine] + 1
+        $occurrences[$row.CommandLine] = $occurrence
         if ($row.PlanButton.Content -in @('Done', 'Failed', 'Skipped', 'Running')) {
-            $completedStates[$row.CommandLine] = @{ Content = $row.PlanButton.Content; Background = $row.PlanButton.Background }
+            $completedStates["$($row.CommandLine)`0$occurrence"] = @{ Content = $row.PlanButton.Content; Background = $row.PlanButton.Background }
         }
     }
     if ($completedStates.Count -eq 0) { return }
+    $occurrences = @{}
     foreach ($row in $NewRows) {
-        if ($completedStates.ContainsKey($row.CommandLine)) {
-            $state = $completedStates[$row.CommandLine]
+        $occurrence = [int]$occurrences[$row.CommandLine] + 1
+        $occurrences[$row.CommandLine] = $occurrence
+        $key = "$($row.CommandLine)`0$occurrence"
+        if ($completedStates.ContainsKey($key)) {
+            $state = $completedStates[$key]
             Set-StepButtonsState @($row.PlanButton, $row.ManualButton) $state.Content $state.Background
         }
     }
@@ -2579,8 +2590,14 @@ function New-VariableRow([string]$Name, [string]$Value, [scriptblock]$OnValueCha
     # console's own transcript log in the clear forever for a password field. The fallback below
     # (no $OnValueChanged given) preserves the old direct-assignment behavior for any future caller
     # that doesn't need file persistence.
+    $lastApplied = @{ Value = $Value }
     $applyEdit = {
         $currentValue = if ($isPassword) { $valueBox.Password } else { $valueBox.Text }
+        # LostFocus fires on every focus pass through the box, edited or not -- without this, merely
+        # clicking into Variables and back out re-sent Import-RecoveryVariables to the console and
+        # rebuilt the whole Recovery Plan list (see Update-RevealedSteps), even mid-run.
+        if ($currentValue -ceq $lastApplied.Value) { return }
+        $lastApplied.Value = $currentValue
         if ($OnValueChanged) {
             & $OnValueChanged $Name $currentValue
         } else {
@@ -3314,6 +3331,12 @@ function Update-RevealedSteps([System.Collections.IDictionary]$Variables) {
         }
     }
     $global:currentPlanContext.LastApplicableSteps = Get-ApplicableSteps $global:currentPlanContext.Steps $Variables
+    # Rebuilding the rows mid-run orphans everything holding the old row objects (the Run All chain's
+    # remaining rows, active step watches), so their Running/Done updates would never reach the UI.
+    if ($global:recoveryRunStarted) {
+        New-Advisory 'Variable change saved; the task list was not re-filtered because a run is in progress.'
+        return
+    }
     # Update-BucketStepsListBox rebuilds StepRows from scratch (fresh "Requires Input" badges on
     # every interactive row) and re-applies the answer-file coverage state itself -- a no-op if the
     # current plan's own answer-file toggle was never checked (InteractiveAnswerFilePath stays $null).
