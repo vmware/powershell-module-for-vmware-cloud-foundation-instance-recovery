@@ -191,6 +191,12 @@ function Reset-CurrentRecoveryPlanContext([string]$PlanId) {
     $recoveryManualStepsListBox.Items.Clear()
     $variablesItemsPanel.Children.Clear()
     $loadedVariablesTextBlock.Text = 'No variables loaded yet.'
+    # Snaps back to the Variables tab -- $stepsVariablesTabControl remembers its own last-selected
+    # tab across selections, so without this, switching to a plan/domain/cluster with nothing loaded
+    # yet could leave an earlier plan's "Steps" tab selected, showing a blank Steps list instead of
+    # the Variables tab there's actually something to do on. Callers that immediately have real Steps
+    # to show (e.g. a plan needing no data source at all) explicitly re-select "Steps" right after.
+    $stepsVariablesTabControl.SelectedIndex = 0
 }
 # Raw, unfiltered domain list from the currently loaded extracted-sddc-data.json (see
 # Import-ExtractedSddcDataFile) -- Sync-RecoveryPlanSelection re-filters this into
