@@ -22,6 +22,13 @@
     }
   ],
   "_targetComment": "target is one of: managementDomain | workloadDomain | additionalCluster | fleetComponent | recoverFleet -- see Sync-RecoveryPlanSelection in the .ps1 for what each one does. Exactly one plan should claim a given target; two plans claiming the same one will fight over the same panel.",
+  "_extraToggleComment": "extraToggleDefinitions defines every optional plan-specific toggle once (id + label), the same way recoveryTypes/dataSources are defined once above. A plan opts in to a toggle by listing its id + defaultChecked under its own extraToggles array; the toggle's id doubles as the variable name injected into step-condition evaluation and is excluded from that plan's persisted answers file.",
+  "extraToggleDefinitions": [
+    {
+      "id": "originalVcfInstallerAvailable",
+      "label": "Original VCF Installer Available"
+    }
+  ],
   "recoveryPlans": [
     {
       "id": "ManagementDomain",
@@ -36,7 +43,10 @@
         "ExtractBackup",
         "LoadExtractedData"
       ],
-      "defaultDataSource": "ExtractBackup"
+      "defaultDataSource": "ExtractBackup",
+      "selectionList": "domains",
+      "domainFilter": "MANAGEMENT",
+      "tabHeaderLabel": "Management Domain"
     },
     {
       "id": "FleetComponent",
@@ -50,7 +60,14 @@
       "dataSources": [
         "LoadExtractedData"
       ],
-      "defaultDataSource": "LoadExtractedData"
+      "defaultDataSource": "LoadExtractedData",
+      "selectionList": "none",
+      "extraToggles": [
+        {
+          "id": "originalVcfInstallerAvailable",
+          "defaultChecked": true
+        }
+      ]
     },
     {
       "id": "WorkloadDomain",
@@ -63,7 +80,10 @@
       "dataSources": [
         "LoadExtractedData"
       ],
-      "defaultDataSource": "LoadExtractedData"
+      "defaultDataSource": "LoadExtractedData",
+      "selectionList": "domains",
+      "domainFilter": "NOT_MANAGEMENT",
+      "tabHeaderLabel": "Workload Domains"
     },
     {
       "id": "AdditionalCluster",
@@ -76,7 +96,8 @@
       "dataSources": [
         "LoadExtractedData"
       ],
-      "defaultDataSource": "LoadExtractedData"
+      "defaultDataSource": "LoadExtractedData",
+      "selectionList": "clusters"
     },
     {
       "id": "RecoverFleet",
@@ -88,7 +109,8 @@
       "planFolder": "fdr",
       "planFile": "fdr-failover-plan.json",
       "variablesFile": "fdr-failover-variables.json",
-      "dataSources": []
+      "dataSources": [],
+      "selectionList": "none"
     }
   ]
 }

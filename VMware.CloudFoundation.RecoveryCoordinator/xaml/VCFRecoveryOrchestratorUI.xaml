@@ -456,18 +456,25 @@
                 <!-- Steps and Variables share one card as tabs: each gets the whole remaining
                      pane's height instead of splitting it permanently, since you're typically
                      working in one or the other, not both at once. -->
+                <!-- One single Steps/Variables pane for whichever plan is currently selected (see
+                     plans/recovery-plan-catalog.json and the .ps1's Sync-RecoveryPlanSelection) -
+                     every plan, regardless of id, is rendered through this exact same set of
+                     controls. A plan that needs an extra plan-specific toggle (e.g. Fleet Component
+                     Recovery's "Original VCF Installer Available") declares it in the catalog's
+                     extraToggleDefinitions/extraToggles rather than getting its own hand-authored
+                     control here - see ExtraTogglesPanel below and Update-ExtraTogglesPanel in the
+                     .ps1. -->
                 <GroupBox x:Name="StepsVariablesGroupBox" Grid.Row="2" Header="Recovery Tasks" Visibility="Collapsed">
-                    <Grid>
                     <TabControl x:Name="StepsVariablesTabControl" Background="Transparent" BorderThickness="0" Margin="0,-8,0,0">
                         <TabItem Header="Variables">
                             <DockPanel Margin="0,8,0,0">
                                 <!-- New Variables File starts from the variables the currently-loaded
-                                     plan(s) actually reference (see Get-ReferencedVariableNames), not a
+                                     plan's steps actually reference (see Get-ReferencedVariableNames), not a
                                      fixed template file, so it's always in sync with whatever's on the
-                                     Steps tab right now, IBR domain-specific or FDR's Recover Fleet alike.
-                                     It reuses this same panel/rows (New-VariableRow) to capture values, and
-                                     saves to the chosen file automatically as each field loses focus, so
-                                     there's no separate "Save" step to remember. -->
+                                     Steps tab right now, for any plan. It reuses this same panel/rows
+                                     (New-VariableRow) to capture values, and saves to the chosen file
+                                     automatically as each field loses focus, so there's no separate "Save"
+                                     step to remember. -->
                                 <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
                                     <Button x:Name="LoadVariablesButton" Content="Load Variables File" Margin="0,0,8,0" />
                                     <Button x:Name="NewVariablesFileButton" Content="New Variables File" />
@@ -479,181 +486,49 @@
                             </DockPanel>
                         </TabItem>
                         <TabItem Header="Recovery Plan">
-                            <!-- Plain Visibility-toggled siblings, not tabs; see the matching comment on
-                                 the Advanced TabItem below for why (same reasoning, split across both
-                                 tabs now instead of one). Each panel here is the READ-ONLY, Run-All-driven
-                                 view of the exact same steps Advanced shows interactively: every row's
-                                 button starts as a disabled, grey "Pending" placeholder (see New-StepRow's
-                                 -ReadOnly variant) and is updated to Running/Done/Failed/Skipped by the very
-                                 same Invoke-Step/Add-StepWatch code that drives Advanced' own buttons;
-                                 both are just two Button references on one underlying row object (see
-                                 New-StepRow's PlanButton/ManualButton), always kept in sync regardless of
-                                 which tab (or Run All) actually triggered the change. -->
-                            <Grid Margin="0,8,0,0">
-                                <DockPanel x:Name="DomainRecoveryPlanPanel" Visibility="Collapsed">
-                                    <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
-                                        <StackPanel DockPanel.Dock="Top">
-                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                                                <ToggleButton x:Name="RunAllDomainRecoveryParallelCheckBox" IsChecked="True" Style="{StaticResource ToggleSwitchStyle}" VerticalAlignment="Center" />
-                                                <TextBlock Text="Run tasks using multiple threads (indicated by numbered circles)" VerticalAlignment="Center" Margin="8,0,0,0" />
-                                            </StackPanel>
-                                            <StackPanel Orientation="Horizontal">
-                                                <ToggleButton x:Name="RunAllDomainRecoveryAnswerFileCheckBox" Style="{StaticResource ToggleSwitchStyle}" VerticalAlignment="Center" />
-                                                <TextBlock Text="Use answer file for interactive tasks" VerticalAlignment="Center" Margin="8,0,0,0" />
-                                            </StackPanel>
-                                        </StackPanel>
-                                        <!-- "Task List" heading + Run Plan share one row, below the toggle
-                                             stack and above the ListBox: heading docked Left, Button docked
-                                             Right, both VerticalAlignment="Center" so they line up with each
-                                             other. Margin right=6 on the Button lines its right edge up with
-                                             the right edge of every step row's own status button in the ListBox
-                                             below, so the header button and the whole status column read as one
-                                             right-hand column. The 6px is the ListBox chrome the rows sit inside
-                                             but this button does not: ListBox Padding (1) + ListBoxItem Padding
-                                             (3, see the style above) + each row Grid's own Margin (2, set in
-                                             New-StepRow). It holds whether or not the ListBox is showing a
-                                             vertical scrollbar - the scrollbar narrows the header and the rows
-                                             by the same amount. -->
-                                        <DockPanel DockPanel.Dock="Top" Margin="0,8,0,0" LastChildFill="False">
-                                            <TextBlock x:Name="DomainRecoveryTaskListHeader" Text="Task List" FontWeight="Bold" FontSize="14" DockPanel.Dock="Left" VerticalAlignment="Center" />
-                                            <Button x:Name="RunAllDomainRecoveryButton" Content="Run Plan" Width="80" Margin="0,0,6,0" DockPanel.Dock="Right" VerticalAlignment="Center" />
-                                        </DockPanel>
-                                    </DockPanel>
-                                    <ListBox x:Name="DomainRecoveryPlanStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
-                                </DockPanel>
-                                <!-- Populated by selecting a row in Discovered Infrastructure's Additional
-                                     Clusters tab (plans/ibr/additional-cluster-recovery-plan.json). Mutually
-                                     exclusive with the domain panel above, per the comment there. IBR-only;
-                                     also collapsed for FDR the same way as the other two. -->
-                                <DockPanel x:Name="AdditionalClusterRecoveryPlanPanel" Visibility="Collapsed">
-                                    <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
-                                        <StackPanel DockPanel.Dock="Top">
-                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                                                <ToggleButton x:Name="RunAllAdditionalClusterRecoveryParallelCheckBox" IsChecked="True" Style="{StaticResource ToggleSwitchStyle}" VerticalAlignment="Center" />
-                                                <TextBlock Text="Run parallel tasks using multiple threads (numbered circles)" VerticalAlignment="Center" Margin="8,0,0,0" />
-                                            </StackPanel>
-                                            <StackPanel Orientation="Horizontal">
-                                                <ToggleButton x:Name="RunAllAdditionalClusterRecoveryAnswerFileCheckBox" Style="{StaticResource ToggleSwitchStyle}" VerticalAlignment="Center" />
-                                                <TextBlock Text="Use answer file for interactive tasks" VerticalAlignment="Center" Margin="8,0,0,0" />
-                                            </StackPanel>
-                                        </StackPanel>
-                                        <!-- Layout as on RunAllDomainRecoveryButton above. -->
-                                        <DockPanel DockPanel.Dock="Top" Margin="0,8,0,0" LastChildFill="False">
-                                            <TextBlock x:Name="AdditionalClusterRecoveryTaskListHeader" Text="Task List" FontWeight="Bold" FontSize="14" DockPanel.Dock="Left" VerticalAlignment="Center" />
-                                            <Button x:Name="RunAllAdditionalClusterRecoveryButton" Content="Run Plan" Width="80" Margin="0,0,6,0" DockPanel.Dock="Right" VerticalAlignment="Center" />
-                                        </DockPanel>
-                                    </DockPanel>
-                                    <ListBox x:Name="AdditionalClusterRecoveryPlanStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
-                                </DockPanel>
-                                <!-- Recover Fleet, FDR's single whole-fleet plan
-                                     (plans/fdr/fdr-failover-plan.json), loaded as soon as it's selected on the
-                                     Recovery Plan combo, since there's no domain selection for it to wait on.
-                                     Collapsed by default; shown instead of the two panels above when Recover
-                                     Fleet is picked (see the .ps1's Sync-RecoveryPlanSelection). -->
-                                <DockPanel x:Name="RecoverFleetPlanPanel" Visibility="Collapsed">
-                                    <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
-                                        <StackPanel DockPanel.Dock="Top">
-                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                                                <ToggleButton x:Name="RunAllRecoverFleetParallelCheckBox" IsChecked="True" Style="{StaticResource ToggleSwitchStyle}" VerticalAlignment="Center" />
-                                                <TextBlock Text="Run parallel tasks using multiple threads (numbered circles)" VerticalAlignment="Center" Margin="8,0,0,0" />
-                                            </StackPanel>
-                                            <StackPanel Orientation="Horizontal">
-                                                <ToggleButton x:Name="RunAllRecoverFleetAnswerFileCheckBox" Style="{StaticResource ToggleSwitchStyle}" VerticalAlignment="Center" />
-                                                <TextBlock Text="Use answer file for interactive tasks" VerticalAlignment="Center" Margin="8,0,0,0" />
-                                            </StackPanel>
-                                        </StackPanel>
-                                        <!-- Layout as on RunAllDomainRecoveryButton above. -->
-                                        <DockPanel DockPanel.Dock="Top" Margin="0,8,0,0" LastChildFill="False">
-                                            <TextBlock x:Name="RecoverFleetTaskListHeader" Text="Task List" FontWeight="Bold" FontSize="14" DockPanel.Dock="Left" VerticalAlignment="Center" />
-                                            <Button x:Name="RunAllRecoverFleetButton" Content="Run Plan" Width="80" Margin="0,0,6,0" DockPanel.Dock="Right" VerticalAlignment="Center" />
-                                        </DockPanel>
-                                    </DockPanel>
-                                    <ListBox x:Name="RecoverFleetPlanStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
-                                </DockPanel>
-                            </Grid>
-                        </TabItem>
-                        <TabItem Header="Advanced">
-                            <!-- Plain Visibility-toggled siblings, not tabs. The management/workload domain
-                                 restore and default-cluster-recovery plans are now concatenated into one
-                                 combined plan each (management-domain-recovery-plan.json /
-                                 workload-domain-recovery-plan.json), so there's only ever one operation's
-                                 worth of steps to show for whichever selection is currently active (a domain,
-                                 an additional cluster, or FDR's whole-fleet plan) and a tab strip has nothing
-                                 left to switch between. All three start Collapsed; whichever applies is
-                                 revealed by Sync-DomainSteps/Sync-AdditionalClusterSteps/the Recovery Type
-                                 Checked handlers in the .ps1 once something is actually selected. Stacking
-                                 them in one plain Grid (rather than each getting its own row/cell) is what
-                                 lets them overlap in place: only the one that's actually Visible takes up
-                                 any space or renders at all. No Run All button or parallel checkbox here;
-                                 those live on Recovery Plan, since this tab is deliberately only ever
-                                 driven one row at a time, by hand. -->
-                            <Grid Margin="0,8,0,0">
-                                <DockPanel x:Name="DomainRecoveryManualPanel" Visibility="Collapsed">
-                                    <Border DockPanel.Dock="Top" Background="#FFF3CD" BorderBrush="#E0A800" BorderThickness="1" CornerRadius="3" Padding="10,7" Margin="0,0,0,8">
-                                        <TextBlock TextWrapping="Wrap" FontWeight="SemiBold" Foreground="#664D03" Text="FOR ADVANCED USE ONLY: Use only on advice from Broadcom Support. Running a step out of sequence may leave the environment in an inconsistent state." />
-                                    </Border>
-                                    <ListBox x:Name="DomainRecoveryManualStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
-                                </DockPanel>
-                                <DockPanel x:Name="AdditionalClusterRecoveryManualPanel" Visibility="Collapsed">
-                                    <Border DockPanel.Dock="Top" Background="#FFF3CD" BorderBrush="#E0A800" BorderThickness="1" CornerRadius="3" Padding="10,7" Margin="0,0,0,8">
-                                        <TextBlock TextWrapping="Wrap" FontWeight="SemiBold" Foreground="#664D03" Text="FOR ADVANCED USE ONLY: Use only on advice from Broadcom Support. Running a step out of sequence may leave the environment in an inconsistent state." />
-                                    </Border>
-                                    <ListBox x:Name="AdditionalClusterRecoveryManualStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
-                                </DockPanel>
-                                <DockPanel x:Name="RecoverFleetManualPanel" Visibility="Collapsed">
-                                    <Border DockPanel.Dock="Top" Background="#FFF3CD" BorderBrush="#E0A800" BorderThickness="1" CornerRadius="3" Padding="10,7" Margin="0,0,0,8">
-                                        <TextBlock TextWrapping="Wrap" FontWeight="SemiBold" Foreground="#664D03" Text="FOR ADVANCED USE ONLY: Use only on advice from Broadcom Support. Running a step out of sequence may leave the environment in an inconsistent state." />
-                                    </Border>
-                                    <ListBox x:Name="RecoverFleetManualStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
-                                </DockPanel>
-                            </Grid>
-                        </TabItem>
-                    </TabControl>
-                    <!-- Shown INSTEAD of StepsVariablesTabControl (see the .ps1's
-                         Set-ActiveStepsVariablesPane) when Recovery Plan is Management Domain
-                         Recovery / Fleet Component Recovery respectively - these were originally one
-                         combined "MANAGEMENT domain selected" flow with both nested together as tabs
-                         under one shared container; they're now two fully independent top-level
-                         panes (picked directly via the Recovery Plan combo box, not inferred from a
-                         selected domain's type), each keeping its own Steps AND its own Variables/answers
-                         file, same as Workload Domain Recovery and Additional Cluster Recovery
-                         already keep from each other. "Fleet Components" here is an IBR, Fleet
-                         Component Recovery sub-plan (fleet-component-recovery-plan.json) - unrelated
-                         to the FDR "Recover Fleet" feature (RecoverFleetPanel above) despite the
-                         similar name. -->
-                    <TabControl x:Name="InstanceComponentsVariablesStepsTabControl" Background="Transparent" BorderThickness="0" Margin="0,-8,0,0" Visibility="Collapsed">
-                        <TabItem Header="Variables">
-                            <DockPanel Margin="0,8,0,0">
-                                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
-                                    <Button x:Name="InstanceComponentsLoadVariablesButton" Content="Load Variables File" Margin="0,0,8,0" />
-                                    <Button x:Name="InstanceComponentsNewVariablesFileButton" Content="New Variables File" />
-                                </StackPanel>
-                                <TextBlock x:Name="InstanceComponentsLoadedVariablesTextBlock" DockPanel.Dock="Top" Margin="0,0,0,8" TextWrapping="Wrap" Foreground="{StaticResource SubtleTextBrush}" Text="No variables loaded yet." />
-                                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                    <StackPanel x:Name="InstanceComponentsVariablesItemsPanel" />
-                                </ScrollViewer>
-                            </DockPanel>
-                        </TabItem>
-                        <TabItem Header="Recovery Plan">
+                            <!-- READ-ONLY, Run-All-driven view of the exact same steps Advanced shows
+                                 interactively: every row's button starts as a disabled, grey "Pending"
+                                 placeholder (see New-StepRow's -ReadOnly variant) and is updated to
+                                 Running/Done/Failed/Skipped by the very same Invoke-Step/Add-StepWatch
+                                 code that drives Advanced's own buttons; both are just two Button
+                                 references on one underlying row object (see New-StepRow's
+                                 PlanButton/ManualButton), always kept in sync regardless of which tab
+                                 (or Run All) actually triggered the change. -->
                             <DockPanel Margin="0,8,0,0">
                                 <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
                                     <StackPanel DockPanel.Dock="Top">
                                         <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                                            <ToggleButton x:Name="RunAllInstanceComponentsParallelCheckBox" IsChecked="True" Style="{StaticResource ToggleSwitchStyle}" VerticalAlignment="Center" />
+                                            <ToggleButton x:Name="RunAllParallelCheckBox" IsChecked="True" Style="{StaticResource ToggleSwitchStyle}" VerticalAlignment="Center" />
                                             <TextBlock Text="Run parallel tasks using multiple threads (numbered circles)" VerticalAlignment="Center" Margin="8,0,0,0" />
                                         </StackPanel>
+                                        <!-- Populated dynamically from the current plan's catalog
+                                             "extraToggles" (resolved against the catalog's top-level
+                                             "extraToggleDefinitions") by Update-ExtraTogglesPanel in the
+                                             .ps1 - empty and takes no space for a plan that declares none. -->
+                                        <StackPanel x:Name="ExtraTogglesPanel" />
                                         <StackPanel Orientation="Horizontal">
-                                            <ToggleButton x:Name="InstanceComponentsAnswerFileCheckBox" Style="{StaticResource ToggleSwitchStyle}" VerticalAlignment="Center" />
+                                            <ToggleButton x:Name="RunAllAnswerFileCheckBox" Style="{StaticResource ToggleSwitchStyle}" VerticalAlignment="Center" />
                                             <TextBlock Text="Use answer file for interactive tasks" VerticalAlignment="Center" Margin="8,0,0,0" />
                                         </StackPanel>
                                     </StackPanel>
-                                    <!-- Layout as on RunAllDomainRecoveryButton above. -->
+                                    <!-- "Task List" heading + Run Plan share one row, below the toggle
+                                         stack and above the ListBox: heading docked Left, Button docked
+                                         Right, both VerticalAlignment="Center" so they line up with each
+                                         other. Margin right=6 on the Button lines its right edge up with
+                                         the right edge of every step row's own status button in the ListBox
+                                         below, so the header button and the whole status column read as one
+                                         right-hand column. The 6px is the ListBox chrome the rows sit inside
+                                         but this button does not: ListBox Padding (1) + ListBoxItem Padding
+                                         (3, see the style above) + each row Grid's own Margin (2, set in
+                                         New-StepRow). It holds whether or not the ListBox is showing a
+                                         vertical scrollbar - the scrollbar narrows the header and the rows
+                                         by the same amount. -->
                                     <DockPanel DockPanel.Dock="Top" Margin="0,8,0,0" LastChildFill="False">
-                                        <TextBlock x:Name="InstanceComponentsTaskListHeader" Text="Task List" FontWeight="Bold" FontSize="14" DockPanel.Dock="Left" VerticalAlignment="Center" />
-                                        <Button x:Name="RunAllInstanceComponentsButton" Content="Run Plan" Width="80" Margin="0,0,6,0" DockPanel.Dock="Right" VerticalAlignment="Center" />
+                                        <TextBlock x:Name="RecoveryTaskListHeader" Text="Task List" FontWeight="Bold" FontSize="14" DockPanel.Dock="Left" VerticalAlignment="Center" />
+                                        <Button x:Name="RunAllButton" Content="Run Plan" Width="80" Margin="0,0,6,0" DockPanel.Dock="Right" VerticalAlignment="Center" />
                                     </DockPanel>
                                 </DockPanel>
-                                <ListBox x:Name="InstanceComponentsPlanStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
+                                <ListBox x:Name="RecoveryPlanStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
                             </DockPanel>
                         </TabItem>
                         <TabItem Header="Advanced">
@@ -661,61 +536,10 @@
                                 <Border DockPanel.Dock="Top" Background="#FFF3CD" BorderBrush="#E0A800" BorderThickness="1" CornerRadius="3" Padding="10,7" Margin="0,0,0,8">
                                     <TextBlock TextWrapping="Wrap" FontWeight="SemiBold" Foreground="#664D03" Text="FOR ADVANCED USE ONLY: Use only on advice from Broadcom Support. Running a step out of sequence may leave the environment in an inconsistent state." />
                                 </Border>
-                                <ListBox x:Name="InstanceComponentsManualStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
+                                <ListBox x:Name="RecoveryManualStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
                             </DockPanel>
                         </TabItem>
                     </TabControl>
-                    <TabControl x:Name="FleetComponentsVariablesStepsTabControl" Background="Transparent" BorderThickness="0" Margin="0,-8,0,0" Visibility="Collapsed">
-                        <TabItem Header="Variables">
-                            <DockPanel Margin="0,8,0,0">
-                                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,8">
-                                    <Button x:Name="FleetComponentsLoadVariablesButton" Content="Load Variables File" Margin="0,0,8,0" />
-                                    <Button x:Name="FleetComponentsNewVariablesFileButton" Content="New Variables File" />
-                                </StackPanel>
-                                <TextBlock x:Name="FleetComponentsLoadedVariablesTextBlock" DockPanel.Dock="Top" Margin="0,0,0,8" TextWrapping="Wrap" Foreground="{StaticResource SubtleTextBrush}" Text="No variables loaded yet." />
-                                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                    <StackPanel x:Name="FleetComponentsVariablesItemsPanel" />
-                                </ScrollViewer>
-                            </DockPanel>
-                        </TabItem>
-                        <TabItem Header="Recovery Plan">
-                            <DockPanel Margin="0,8,0,0">
-                                <!-- DockPanel, matching the other four Recovery Plan header rows: toggle
-                                     stack docked Top, Run Plan docked Top below it (right-aligned). -->
-                                <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
-                                    <StackPanel DockPanel.Dock="Top">
-                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                                            <ToggleButton x:Name="RunAllFleetComponentsParallelCheckBox" IsChecked="True" Style="{StaticResource ToggleSwitchStyle}" VerticalAlignment="Center" />
-                                            <TextBlock Text="Run parallel tasks using multiple threads (numbered circles)" VerticalAlignment="Center" Margin="8,0,0,0" />
-                                        </StackPanel>
-                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                                            <ToggleButton x:Name="OriginalVcfInstallerAvailableCheckBox" IsChecked="True" Style="{StaticResource ToggleSwitchStyle}" VerticalAlignment="Center" />
-                                            <TextBlock Text="Original VCF Installer Available" VerticalAlignment="Center" Margin="8,0,0,0" />
-                                        </StackPanel>
-                                        <StackPanel Orientation="Horizontal">
-                                            <ToggleButton x:Name="FleetComponentsAnswerFileCheckBox" Style="{StaticResource ToggleSwitchStyle}" VerticalAlignment="Center" />
-                                            <TextBlock Text="Use answer file for interactive tasks" VerticalAlignment="Center" Margin="8,0,0,0" />
-                                        </StackPanel>
-                                    </StackPanel>
-                                    <!-- Layout as on RunAllDomainRecoveryButton above. -->
-                                    <DockPanel DockPanel.Dock="Top" Margin="0,8,0,0" LastChildFill="False">
-                                        <TextBlock x:Name="FleetComponentsTaskListHeader" Text="Task List" FontWeight="Bold" FontSize="14" DockPanel.Dock="Left" VerticalAlignment="Center" />
-                                        <Button x:Name="RunAllFleetComponentsButton" Content="Run Plan" Width="80" Margin="0,0,6,0" DockPanel.Dock="Right" VerticalAlignment="Center" />
-                                    </DockPanel>
-                                </DockPanel>
-                                <ListBox x:Name="FleetComponentsPlanStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
-                            </DockPanel>
-                        </TabItem>
-                        <TabItem Header="Advanced">
-                            <DockPanel Margin="0,8,0,0">
-                                <Border DockPanel.Dock="Top" Background="#FFF3CD" BorderBrush="#E0A800" BorderThickness="1" CornerRadius="3" Padding="10,7" Margin="0,0,0,8">
-                                    <TextBlock TextWrapping="Wrap" FontWeight="SemiBold" Foreground="#664D03" Text="FOR ADVANCED USE ONLY: Use only on advice from Broadcom Support. Running a step out of sequence may leave the environment in an inconsistent state." />
-                                </Border>
-                                <ListBox x:Name="FleetComponentsManualStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
-                            </DockPanel>
-                        </TabItem>
-                    </TabControl>
-                    </Grid>
                 </GroupBox>
 
             </Grid>

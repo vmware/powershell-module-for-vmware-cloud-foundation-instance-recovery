@@ -94,45 +94,23 @@ $domainsListBox = $window.FindName('WorkloadDomainsListBox')
 $additionalClustersListBox = $window.FindName('AdditionalClustersListBox')
 $stepsVariablesGroupBox = $window.FindName('StepsVariablesGroupBox')
 $stepsVariablesTabControl = $window.FindName('StepsVariablesTabControl')
-# Each of these three (Domain Recovery/Additional Cluster Recovery/Recover Fleet) now has TWO
-# panels, not one: …PlanPanel under the Recovery Plan tab (Run All/checkbox + read-only,
-# Run-All-driven buttons) and …ManualPanel under Manual Steps (no Run All, individually-clickable
-# buttons). Both panels of a pair are always shown/hidden together -- see
-# Set-DomainRecoveryPanelsVisibility/Set-AdditionalClusterRecoveryPanelsVisibility/
-# Set-RecoverFleetPanelsVisibility.
-$domainRecoveryPlanPanel = $window.FindName('DomainRecoveryPlanPanel')
-$domainRecoveryManualPanel = $window.FindName('DomainRecoveryManualPanel')
-$additionalClusterRecoveryPlanPanel = $window.FindName('AdditionalClusterRecoveryPlanPanel')
-$additionalClusterRecoveryManualPanel = $window.FindName('AdditionalClusterRecoveryManualPanel')
-$recoverFleetPlanPanel = $window.FindName('RecoverFleetPlanPanel')
-$recoverFleetManualPanel = $window.FindName('RecoverFleetManualPanel')
-# …PlanStepsListBox (Recovery Plan tab) holds read-only rows driven by Run All;
-# …ManualStepsListBox (Manual Steps tab) holds the same steps with real, individually-clickable Run
-# buttons. Both are populated together by Set-PlanStepsListBox from the same $rows -- see
-# New-StepRow's PlanButton/ManualButton for how one logical step ends up with two Button references
-# that are always kept in sync.
-$domainRecoveryPlanStepsListBox = $window.FindName('DomainRecoveryPlanStepsListBox')
-$domainRecoveryManualStepsListBox = $window.FindName('DomainRecoveryManualStepsListBox')
-$additionalClusterRecoveryPlanStepsListBox = $window.FindName('AdditionalClusterRecoveryPlanStepsListBox')
-$additionalClusterRecoveryManualStepsListBox = $window.FindName('AdditionalClusterRecoveryManualStepsListBox')
-$recoverFleetPlanStepsListBox = $window.FindName('RecoverFleetPlanStepsListBox')
-$recoverFleetManualStepsListBox = $window.FindName('RecoverFleetManualStepsListBox')
-$runAllDomainRecoveryButton = $window.FindName('RunAllDomainRecoveryButton')
-$runAllAdditionalClusterRecoveryButton = $window.FindName('RunAllAdditionalClusterRecoveryButton')
-$runAllRecoverFleetButton = $window.FindName('RunAllRecoverFleetButton')
+# One single physical Recovery Plan/Manual Steps pane, shared by every plan in the catalog -- see
+# New-RecoveryPlanContext/$global:currentPlanContext below. …PlanStepsListBox (Recovery Plan tab)
+# holds read-only rows driven by Run All; …ManualStepsListBox (Manual Steps tab, "Advanced") holds
+# the same steps with real, individually-clickable Run buttons. Both are populated together by
+# Set-PlanStepsListBox from the same $rows -- see New-StepRow's PlanButton/ManualButton for how one
+# logical step ends up with two Button references that are always kept in sync.
+$recoveryPlanStepsListBox = $window.FindName('RecoveryPlanStepsListBox')
+$recoveryManualStepsListBox = $window.FindName('RecoveryManualStepsListBox')
+$runAllButton = $window.FindName('RunAllButton')
 # "Task List" heading -- Update-TaskListHeaderText rewrites this in Engineering mode to say whether
 # clicking a step inserts a pause point or, once one is already set, clicking it removes it.
-$domainRecoveryTaskListHeader = $window.FindName('DomainRecoveryTaskListHeader')
-$additionalClusterRecoveryTaskListHeader = $window.FindName('AdditionalClusterRecoveryTaskListHeader')
-$recoverFleetTaskListHeader = $window.FindName('RecoverFleetTaskListHeader')
-$instanceComponentsTaskListHeader = $window.FindName('InstanceComponentsTaskListHeader')
-$fleetComponentsTaskListHeader = $window.FindName('FleetComponentsTaskListHeader')
-$runAllDomainRecoveryParallelCheckBox = $window.FindName('RunAllDomainRecoveryParallelCheckBox')
-$runAllAdditionalClusterRecoveryParallelCheckBox = $window.FindName('RunAllAdditionalClusterRecoveryParallelCheckBox')
-$runAllRecoverFleetParallelCheckBox = $window.FindName('RunAllRecoverFleetParallelCheckBox')
-$runAllDomainRecoveryAnswerFileCheckBox = $window.FindName('RunAllDomainRecoveryAnswerFileCheckBox')
-$runAllAdditionalClusterRecoveryAnswerFileCheckBox = $window.FindName('RunAllAdditionalClusterRecoveryAnswerFileCheckBox')
-$runAllRecoverFleetAnswerFileCheckBox = $window.FindName('RunAllRecoverFleetAnswerFileCheckBox')
+$recoveryTaskListHeader = $window.FindName('RecoveryTaskListHeader')
+$runAllParallelCheckBox = $window.FindName('RunAllParallelCheckBox')
+$runAllAnswerFileCheckBox = $window.FindName('RunAllAnswerFileCheckBox')
+# Populated dynamically from the current plan's catalog "extraToggles" -- see
+# Update-ExtraTogglesPanel below. Empty for a plan that declares none.
+$extraTogglesPanel = $window.FindName('ExtraTogglesPanel')
 $overallRecoveryTimePanel = $window.FindName('OverallRecoveryTimePanel')
 $overallRecoveryTimeTextBlock = $window.FindName('OverallRecoveryTimeTextBlock')
 $loadVariablesButton = $window.FindName('LoadVariablesButton')
@@ -140,35 +118,6 @@ $newVariablesFileButton = $window.FindName('NewVariablesFileButton')
 $loadedVariablesTextBlock = $window.FindName('LoadedVariablesTextBlock')
 $variablesItemsPanel = $window.FindName('VariablesItemsPanel')
 $consoleTabControl = $window.FindName('ConsoleTabControl')
-
-# Shown instead of $stepsVariablesTabControl when Recovery Scope is Management Domain Recovery /
-# Fleet Component Recovery respectively -- see Set-ActiveStepsVariablesPane and
-# $global:instanceComponentsGroup/$global:fleetComponentsGroup below. Each is a full, independent
-# copy of the Variables+Steps pairing above (own Load/New Variables buttons, own
-# VariablesItemsPanel, own Run All/checkbox/ListBox) rather than sharing one Variables tab the way
-# Domain Recovery and Additional Cluster Recovery do, since these two are genuinely separate plans/
-# operations, not mutually exclusive alternates of the same selection.
-$instanceComponentsVariablesStepsTabControl = $window.FindName('InstanceComponentsVariablesStepsTabControl')
-$fleetComponentsVariablesStepsTabControl = $window.FindName('FleetComponentsVariablesStepsTabControl')
-$instanceComponentsLoadVariablesButton = $window.FindName('InstanceComponentsLoadVariablesButton')
-$instanceComponentsNewVariablesFileButton = $window.FindName('InstanceComponentsNewVariablesFileButton')
-$instanceComponentsLoadedVariablesTextBlock = $window.FindName('InstanceComponentsLoadedVariablesTextBlock')
-$instanceComponentsVariablesItemsPanel = $window.FindName('InstanceComponentsVariablesItemsPanel')
-$runAllInstanceComponentsButton = $window.FindName('RunAllInstanceComponentsButton')
-$runAllInstanceComponentsParallelCheckBox = $window.FindName('RunAllInstanceComponentsParallelCheckBox')
-$instanceComponentsAnswerFileCheckBox = $window.FindName('InstanceComponentsAnswerFileCheckBox')
-$instanceComponentsPlanStepsListBox = $window.FindName('InstanceComponentsPlanStepsListBox')
-$instanceComponentsManualStepsListBox = $window.FindName('InstanceComponentsManualStepsListBox')
-$fleetComponentsLoadVariablesButton = $window.FindName('FleetComponentsLoadVariablesButton')
-$fleetComponentsNewVariablesFileButton = $window.FindName('FleetComponentsNewVariablesFileButton')
-$fleetComponentsLoadedVariablesTextBlock = $window.FindName('FleetComponentsLoadedVariablesTextBlock')
-$fleetComponentsVariablesItemsPanel = $window.FindName('FleetComponentsVariablesItemsPanel')
-$runAllFleetComponentsButton = $window.FindName('RunAllFleetComponentsButton')
-$runAllFleetComponentsParallelCheckBox = $window.FindName('RunAllFleetComponentsParallelCheckBox')
-$fleetComponentsPlanStepsListBox = $window.FindName('FleetComponentsPlanStepsListBox')
-$fleetComponentsManualStepsListBox = $window.FindName('FleetComponentsManualStepsListBox')
-$originalVcfInstallerAvailableCheckBox = $window.FindName('OriginalVcfInstallerAvailableCheckBox')
-$fleetComponentsAnswerFileCheckBox = $window.FindName('FleetComponentsAnswerFileCheckBox')
 
 # Posts $Message to the Advisories pane (below the Console pane) -- the single place every status/
 # error/informational message in this app surfaces to the operator, replacing the old single-line
@@ -209,101 +158,51 @@ function New-Advisory([string]$Message, [switch]$Failure) {
     $advisoriesRichTextBox.ScrollToHome()
 }
 
-# Populated once a domain is selected (see Sync-DomainSteps below), an additional cluster is picked
-# (see Sync-AdditionalClusterSteps), or FDR's own Recover Fleet plan is loaded (see the FDR
-# Recovery Type Checked handler); initialized here so Run All never sees $null before that happens.
-$global:domainRecoveryStepRows = @()
-$global:additionalClusterRecoveryStepRows = @()
-$global:recoverFleetStepRows = @()
-# Engineering-mode pause point (see Add-EngineeringBreakPointStep/New-StepRow's drop-zone) -- one per
-# plan list, not one shared point across all of them. PausePointAfterStep holds a reference (compared
-# by identity, not value) to the step the synthetic "Engineering Break Point" row should be inserted
+# One single state bundle for whichever plan is currently selected -- every plan in the catalog,
+# regardless of id, is represented the exact same way, since only one plan is ever "loaded" at a
+# time (see Sync-RecoveryPlanSelection). PausePointAfterStep holds a reference (compared by
+# identity, not value) to the step the synthetic "Engineering Break Point" row should be inserted
 # after, or $null for none; LastApplicableSteps caches the exact post-Get-ApplicableSteps array from
 # the most recent real render, so a pause-point click can re-render without needing $Variables again
-# (which isn't available at click time) or re-running condition filtering.
-$global:domainRecoveryPausePointAfterStep = $null
-$global:domainRecoveryLastApplicableSteps = @()
-$global:additionalClusterRecoveryPausePointAfterStep = $null
-$global:additionalClusterRecoveryLastApplicableSteps = @()
-$global:recoverFleetPausePointAfterStep = $null
-$global:recoverFleetLastApplicableSteps = @()
-# Set only via each pane's own "Use answer file for unattended interactive tasks" toggle (see
-# Register-AnswerFileToggleHandlers below) -- mirrors $global:instanceComponentsGroup/
-# $global:fleetComponentsGroup's own InteractiveAnswerFilePath field, for the three plans that use the
-# flat-global pattern instead of a Group hashtable.
-$global:domainRecoveryInteractiveAnswerFilePath = $null
-$global:additionalClusterRecoveryInteractiveAnswerFilePath = $null
-$global:recoverFleetInteractiveAnswerFilePath = $null
-# Maps each flat-global-pattern plan's own Get-CurrentRecoveryPlanTarget string to its own answer-file
-# toggle -- populated once each checkbox exists (see the Register-AnswerFileToggleHandlers calls for
-# these three plans below). Import-VariablesAnswersFile/New-VariablesFile (the "Load Variables" flow
-# shared by all three, since they share one Variables tab) use this to force-uncheck whichever one is
-# current's own toggle whenever a fresh Variables file is loaded -- a newly loaded Variables file
-# almost always means a different recovery target (a different cluster/domain), so an interactive
-# answer file left over from the PREVIOUS target must not silently keep answering prompts for this one.
-$global:flatPlanAnswerFileCheckBoxes = @{}
-# The step objects (see Get-RecoveryPlanSteps) currently backing each of the two IBR Steps panels,
-# kept separate because Domain Recovery (domain-driven) and Additional Cluster Recovery (Additional
-# Clusters-table-driven) are independent, mutually exclusive selections. Update-AllSteps combines
-# both into $global:allSteps, which is what the Variables tab actually reads from.
-$global:domainRecoverySteps = @()
-$global:additionalClusterRecoverySteps = @()
+# (which isn't available at click time) or re-running condition filtering. InteractiveAnswerFilePath
+# is set only via the "Use answer file for unattended interactive tasks" toggle (see
+# Register-AnswerFileToggleHandlers below); AnswersFilePath/AnswerMap are set once a Variables file is
+# loaded/created (see Import-VariablesAnswersFile/New-VariablesFile).
+function New-RecoveryPlanContext([string]$PlanId) {
+    return @{
+        PlanId                    = $PlanId
+        Steps                     = @()
+        StepRows                  = @()
+        LastApplicableSteps       = @()
+        PausePointAfterStep       = $null
+        InteractiveAnswerFilePath = $null
+        AnswersFilePath           = $null
+        AnswerMap                 = $null
+    }
+}
+$global:currentPlanContext = New-RecoveryPlanContext $null
+# Clears the one physical Steps/Variables pane and starts a fresh context for $PlanId -- called by
+# Sync-RecoveryPlanSelection/Sync-DomainSteps/Sync-AdditionalClusterSteps/Import-ExtractedSddcDataFile
+# any time the operator picks a different plan or a different domain/cluster within one, so a stale
+# row/value from whatever was selected before can never survive into the new selection.
+function Reset-CurrentRecoveryPlanContext([string]$PlanId) {
+    $global:currentPlanContext = New-RecoveryPlanContext $PlanId
+    $recoveryPlanStepsListBox.Items.Clear()
+    $recoveryManualStepsListBox.Items.Clear()
+    $variablesItemsPanel.Children.Clear()
+    $loadedVariablesTextBlock.Text = 'No variables loaded yet.'
+}
 # Raw, unfiltered domain list from the currently loaded extracted-sddc-data.json (see
 # Import-ExtractedSddcDataFile) -- Sync-RecoveryPlanSelection re-filters this into
-# $domainsListBox every time the selected Recovery Plan changes (MANAGEMENT-only for Management
-# Domain Recovery, non-MANAGEMENT for Workload Domain Recovery), without needing to re-read the file.
+# $domainsListBox every time the selected Recovery Plan changes, per that plan's own catalog
+# "domainFilter" (MANAGEMENT/NOT_MANAGEMENT/none), without needing to re-read the file.
 $global:allDiscoveredDomains = @()
-# One state bundle per MANAGEMENT-domain sub-plan (Instance Components / Fleet Components) -- each
-# is a genuinely independent operation with its own Steps, its own Run All row-tracking, and (unlike
-# Domain Recovery/Additional Cluster Recovery, which share one Variables tab) its own separate
-# answers file, so a hashtable groups everything one plan needs together rather than tripling the
-# flat-global pattern above. Hashtables are reference types -- Import-GroupVariablesAnswersFile/
-# New-GroupVariablesFile/Update-GroupRevealedSteps mutate these in place, so callers (Set-
-# AllStepButtonsEnabled, Exit, Resume) always see the current values with no -Scope Global needed.
-# Both plans do reference some of the same variable names (e.g. $sddcManagerFqdn, $vcfUserPassword)
-# -- deliberately accepted as one shared value between them (there's only one PowerShell session
-# underneath either way), not treated as two independently-scoped variables, since in practice
-# they're meant to be the same real credential.
-$global:instanceComponentsGroup = @{
-    PlanId                    = 'ManagementDomain'
-    Steps                     = @()
-    StepRows                  = @()
-    AnswersFilePath           = $null
-    AnswerMap                 = $null
-    InteractiveAnswerFilePath = $null
-    # See the matching comment on $global:domainRecoveryPausePointAfterStep above -- same pause-point
-    # convention, just carried on this group's own hashtable instead of a flat global.
-    PausePointAfterStep       = $null
-    LastApplicableSteps       = @()
-    TaskListHeader            = $instanceComponentsTaskListHeader
-    AnswerFileCheckBox        = $instanceComponentsAnswerFileCheckBox
-    StepsListBox              = $instanceComponentsPlanStepsListBox
-    ManualStepsListBox        = $instanceComponentsManualStepsListBox
-    VariablesItemsPanel       = $instanceComponentsVariablesItemsPanel
-    LoadedVariablesText       = $instanceComponentsLoadedVariablesTextBlock
-    RunAllButton              = $runAllInstanceComponentsButton
-    ParallelCheckBox          = $runAllInstanceComponentsParallelCheckBox
-    VariablesStepsTabControl  = $instanceComponentsVariablesStepsTabControl
-}
-$global:fleetComponentsGroup = @{
-    PlanId                    = 'FleetComponent'
-    Steps                     = @()
-    StepRows                  = @()
-    AnswersFilePath           = $null
-    AnswerMap                 = $null
-    InteractiveAnswerFilePath = $null
-    PausePointAfterStep       = $null
-    LastApplicableSteps       = @()
-    TaskListHeader            = $fleetComponentsTaskListHeader
-    AnswerFileCheckBox        = $fleetComponentsAnswerFileCheckBox
-    StepsListBox              = $fleetComponentsPlanStepsListBox
-    ManualStepsListBox        = $fleetComponentsManualStepsListBox
-    VariablesItemsPanel       = $fleetComponentsVariablesItemsPanel
-    LoadedVariablesText       = $fleetComponentsLoadedVariablesTextBlock
-    RunAllButton              = $runAllFleetComponentsButton
-    ParallelCheckBox          = $runAllFleetComponentsParallelCheckBox
-    VariablesStepsTabControl  = $fleetComponentsVariablesStepsTabControl
-}
+# Live ToggleButton controls currently shown in $extraTogglesPanel, keyed by their catalog
+# "extraToggleDefinitions" id -- rebuilt by Update-ExtraTogglesPanel every time the selected plan
+# changes. Update-RevealedSteps reads each one's IsChecked to inject that id as a pseudo-variable
+# into condition evaluation (see the matching comment there) without needing to know in advance
+# which, if any, extra toggles a given plan declares.
+$global:extraToggleCheckBoxes = @{}
 # Variables the UI owns outright, so the operator never types them and they are never rendered as
 # editable rows: $extractedSDDCDataFile comes from the Data Source selection (pushed by
 # Set-ExportedSDDCDataFilePath), and $workloadDomain/$clusterName from the domain/additional-cluster
@@ -340,9 +239,6 @@ $global:stepRunStatus = @{}
 # from Discovered Infrastructure's own Visibility so switching from FDR back to IBR (see
 # Sync-RecoveryPlanSelection) knows whether to reveal it again or leave it collapsed.
 $global:extractedDataLoaded = $false
-# Path to the last-loaded variable answers file, if any -- tracked separately from the textbox-less
-# Load Variables flow so Exit can record it, and Resume can pass it straight back to the same loader.
-$global:variablesAnswersFilePath = $null
 # Set the instant any step's Run is first clicked (manually, or via Run All/a background thread --
 # see Invoke-Step) and never cleared for the rest of this process's life. Switching Discovered
 # Infrastructure's domain/cluster selection mid-run would leave whatever's already running (or
@@ -503,11 +399,10 @@ function Set-UIMode([string]$Mode) {
     $global:uiMode = $Mode
     $isEngineering = $Mode -eq 'Engineering'
     $advancedVisibility = if ($isEngineering) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
-    foreach ($tabControl in @($stepsVariablesTabControl, $instanceComponentsVariablesStepsTabControl, $fleetComponentsVariablesStepsTabControl)) {
-        $advancedTab = $tabControl.Items | Where-Object { $_.Header -eq 'Advanced' } | Select-Object -First 1
-        if (-not $advancedTab) { continue }
-        if (-not $isEngineering -and $tabControl.SelectedItem -eq $advancedTab) {
-            $tabControl.SelectedItem = $tabControl.Items | Where-Object { $_ -ne $advancedTab } | Select-Object -First 1
+    $advancedTab = $stepsVariablesTabControl.Items | Where-Object { $_.Header -eq 'Advanced' } | Select-Object -First 1
+    if ($advancedTab) {
+        if (-not $isEngineering -and $stepsVariablesTabControl.SelectedItem -eq $advancedTab) {
+            $stepsVariablesTabControl.SelectedItem = $stepsVariablesTabControl.Items | Where-Object { $_ -ne $advancedTab } | Select-Object -First 1
         }
         $advancedTab.Visibility = $advancedVisibility
     }
@@ -516,19 +411,11 @@ function Set-UIMode([string]$Mode) {
     $userModeLink.Foreground = if ($isEngineering) { $inactiveBrush } else { $accentBrush }
     $engineeringModeLink.Foreground = if ($isEngineering) { $accentBrush } else { $inactiveBrush }
 
-    # Every "Task List" heading reflects the NEW mode immediately, not just on the next click/render --
-    # switching to User mode must revert every bucket's heading back to plain "Task List" right away,
-    # and switching to Engineering must immediately show whichever instruction (insert vs remove)
-    # matches that bucket's own already-set pause point, if any.
-    foreach ($bucket in @(
-            @{ Header = $domainRecoveryTaskListHeader; PausePoint = $global:domainRecoveryPausePointAfterStep },
-            @{ Header = $additionalClusterRecoveryTaskListHeader; PausePoint = $global:additionalClusterRecoveryPausePointAfterStep },
-            @{ Header = $recoverFleetTaskListHeader; PausePoint = $global:recoverFleetPausePointAfterStep },
-            @{ Header = $global:instanceComponentsGroup.TaskListHeader; PausePoint = $global:instanceComponentsGroup.PausePointAfterStep },
-            @{ Header = $global:fleetComponentsGroup.TaskListHeader; PausePoint = $global:fleetComponentsGroup.PausePointAfterStep }
-        )) {
-        Update-TaskListHeaderText $bucket.Header $bucket.PausePoint
-    }
+    # The "Task List" heading reflects the NEW mode immediately, not just on the next click/render --
+    # switching to User mode must revert it back to plain "Task List" right away, and switching to
+    # Engineering must immediately show whichever instruction (insert vs remove) matches the current
+    # plan's own already-set pause point, if any.
+    Update-TaskListHeaderText $recoveryTaskListHeader $global:currentPlanContext.PausePointAfterStep
 }
 
 $userModeLink.Add_MouseLeftButtonUp({
@@ -974,10 +861,10 @@ function Copy-StepRowCompletionState([object[]]$PreviousRows, [object[]]$NewRows
 
 # Shared re-render path for the Recovery Plan tab's pause-point drop-zone: re-splices the cached,
 # already condition-filtered $ApplicableSteps against whatever pause point is currently set and
-# rebuilds both ListBoxes -- used both by the normal Variables-driven render (Update-RevealedSteps/
-# Update-GroupRevealedSteps) and by the drop-zone's own set/move/clear click handler, which has no
-# $Variables of its own to re-run Get-ApplicableSteps with. $PreviousRows (the bucket's own StepRows
-# from before THIS call) is optional/$null for a fresh plan load, where there's nothing to carry over.
+# rebuilds both ListBoxes -- used both by the normal Variables-driven render (Update-RevealedSteps)
+# and by the drop-zone's own set/move/clear click handler, which has no $Variables of its own to
+# re-run Get-ApplicableSteps with. $PreviousRows (the current plan's own StepRows from before THIS
+# call) is optional/$null for a fresh plan load, where there's nothing to carry over.
 function Update-BucketStepsListBox([System.Windows.Controls.ListBox]$PlanListBox, [System.Windows.Controls.ListBox]$ManualListBox, [object[]]$ApplicableSteps, $PausePointAfterStep, [string]$InteractiveAnswerFilePath, $OnSetBreakPointAfter, [System.Windows.Controls.TextBlock]$HeaderTextBlock, [object[]]$PreviousRows = $null) {
     $rows = Set-PlanStepsListBox $PlanListBox $ManualListBox (Add-EngineeringBreakPointStep $ApplicableSteps $PausePointAfterStep) $OnSetBreakPointAfter
     Copy-StepRowCompletionState $PreviousRows $rows
@@ -1507,20 +1394,13 @@ function Initialize-ConsoleVariables($Console) {
         Send-ToConsole "Set-SelectedRecoveryTarget $($cmdArgs -join ' ')" $Console
         $lastCmdletSent = 'Set-SelectedRecoveryTarget'
     }
-    if ($global:variablesAnswersFilePath) {
-        $escapedAnswersPath = Protect-SingleQuotes $global:variablesAnswersFilePath
+    # Some plans have real parallel-thread steps (e.g. management-domain-recovery-plan.json's
+    # threadId 2/3/4 blocks) that spawn a fresh console via this same function -- without priming it
+    # from the current plan's own answers file too, those threads would run with no variables at all.
+    if ($global:currentPlanContext.AnswersFilePath) {
+        $escapedAnswersPath = Protect-SingleQuotes $global:currentPlanContext.AnswersFilePath
         Send-ToConsole "Import-RecoveryVariables -Path '$escapedAnswersPath'" $Console
         $lastCmdletSent = 'Import-RecoveryVariables'
-    }
-    # Instance/Fleet Components each have real parallel-thread steps (management-domain-recovery-plan.json's
-    # threadId 2/3/4 blocks) that spawn a fresh console via this same function -- without priming it from
-    # each group's own answers file too, those threads would run with no variables at all.
-    foreach ($group in @($global:instanceComponentsGroup, $global:fleetComponentsGroup)) {
-        if ($group.AnswersFilePath) {
-            $escapedGroupAnswersPath = Protect-SingleQuotes $group.AnswersFilePath
-            Send-ToConsole "Import-RecoveryVariables -Path '$escapedGroupAnswersPath'" $Console
-            $lastCmdletSent = 'Import-RecoveryVariables'
-        }
     }
     # Every pane's own interactive-answer-file mechanism (see the "Use answer file for unattended
     # interactive tasks" checkbox, wired via Register-AnswerFileToggleHandlers) -- primes whichever
@@ -1945,20 +1825,14 @@ function Unlock-ElementSelection {
 # not just the panel the active run happens to be in -- Lock-ElementSelection already treats the
 # whole app as "one run in progress" rather than a per-panel thing, and this matches that.
 function Set-AllStepButtonsEnabled([bool]$Enabled) {
-    $allRows = @($global:domainRecoveryStepRows) + @($global:additionalClusterRecoveryStepRows) + @($global:recoverFleetStepRows) +
-        @($global:instanceComponentsGroup.StepRows) + @($global:fleetComponentsGroup.StepRows)
     # Only ManualButton -- PlanButton is permanently IsEnabled=$false (see New-StepRow) regardless
     # of Run All's own state, so it stays visually correct (its status colors render even while
     # disabled -- see the shared Button style's ControlTemplate.Triggers) without ever needing to be
     # toggled here.
-    foreach ($row in $allRows) {
+    foreach ($row in @($global:currentPlanContext.StepRows)) {
         $row.ManualButton.IsEnabled = $Enabled
     }
-    $runAllDomainRecoveryButton.IsEnabled = $Enabled
-    $runAllAdditionalClusterRecoveryButton.IsEnabled = $Enabled
-    $runAllRecoverFleetButton.IsEnabled = $Enabled
-    $global:instanceComponentsGroup.RunAllButton.IsEnabled = $Enabled
-    $global:fleetComponentsGroup.RunAllButton.IsEnabled = $Enabled
+    $runAllButton.IsEnabled = $Enabled
 }
 
 # Elapsed-time display for a Run All run -- hidden until the first run this session, then left
@@ -2628,9 +2502,9 @@ function Register-AnswerFileToggleHandlers($CheckBox, [scriptblock]$GetStepRows,
 # this fires the SAME Add_Unchecked handler Register-AnswerFileToggleHandlers wired above, so
 # Clear-VCFIRAnswerFile/badge updates all happen exactly as if the user had clicked it off themselves.
 # Called whenever a fresh Variables file is loaded for a plan (see Import-VariablesAnswersFile/
-# New-VariablesFile/Import-GroupVariablesAnswersFile/New-GroupVariablesFile): a new Variables file
-# almost always means a different recovery target, and an interactive answer file left checked over
-# from the PREVIOUS target must not silently keep answering prompts meant for this one.
+# New-VariablesFile): a new Variables file almost always means a different recovery target, and an
+# interactive answer file left checked over from the PREVIOUS target must not silently keep
+# answering prompts meant for this one.
 function Reset-AnswerFileToggle($CheckBox) {
     if ($CheckBox -and $CheckBox.IsChecked) {
         $CheckBox.IsChecked = $false
@@ -2787,32 +2661,14 @@ function Start-StepCompletionWatcher {
 function Import-ExtractedSddcDataFile([string]$Path) {
     $domainsListBox.Items.Clear()
     $additionalClustersListBox.Items.Clear()
-    $domainRecoveryPlanStepsListBox.Items.Clear()
-    $domainRecoveryManualStepsListBox.Items.Clear()
-    $additionalClusterRecoveryPlanStepsListBox.Items.Clear()
-    $additionalClusterRecoveryManualStepsListBox.Items.Clear()
-    $variablesItemsPanel.Children.Clear()
-    $loadedVariablesTextBlock.Text = 'No variables loaded yet.'
-    $stepsVariablesGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
-    foreach ($group in @($global:instanceComponentsGroup, $global:fleetComponentsGroup)) {
-        $group.StepsListBox.Items.Clear()
-        $group.ManualStepsListBox.Items.Clear()
-        $group.VariablesItemsPanel.Children.Clear()
-        $group.LoadedVariablesText.Text = 'No variables loaded yet.'
-        $group.Steps = @()
-        $group.StepRows = @()
-        $group.AnswersFilePath = $null
-        $group.AnswerMap = $null
-    }
-    Set-ActiveStepsVariablesPane $stepsVariablesTabControl
+    Reset-CurrentRecoveryPlanContext $null
+    Update-ExtraTogglesPanel $null
     # Nothing meaningful to show until a load actually succeeds below -- collapsed here covers
     # every early-return failure path (bad JSON, missing workloadDomains) without repeating this
     # line at each one.
+    $stepsVariablesGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
     $discoveredInfrastructureGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
     $global:extractedDataLoaded = $false
-    $global:domainRecoverySteps = @()
-    $global:additionalClusterRecoverySteps = @()
-    $global:allSteps = @()
     $global:conditionDataContext = @{}
     $global:stepRunStatus = @{}
 
@@ -2974,24 +2830,9 @@ $dataSourceComboBox.Add_SelectionChanged({
         $selectedSource = $dataSourceComboBox.SelectedItem
         if ($null -eq $selectedSource -or [string]$selectedSource.Tag -ne 'ExtractBackup') { return }
 
-        $global:domainRecoveryStepRows = Set-PlanStepsListBox $domainRecoveryPlanStepsListBox $domainRecoveryManualStepsListBox @()
-        $global:additionalClusterRecoveryStepRows = Set-PlanStepsListBox $additionalClusterRecoveryPlanStepsListBox $additionalClusterRecoveryManualStepsListBox @()
-        $variablesItemsPanel.Children.Clear()
-        $loadedVariablesTextBlock.Text = 'No variables loaded yet.'
+        Reset-CurrentRecoveryPlanContext $null
+        Update-ExtraTogglesPanel $null
         $stepsVariablesGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
-        foreach ($group in @($global:instanceComponentsGroup, $global:fleetComponentsGroup)) {
-            $group.StepsListBox.Items.Clear()
-            $group.ManualStepsListBox.Items.Clear()
-            $group.VariablesItemsPanel.Children.Clear()
-            $group.LoadedVariablesText.Text = 'No variables loaded yet.'
-            $group.Steps = @()
-            $group.StepRows = @()
-            $group.AnswersFilePath = $null
-        }
-        Set-ActiveStepsVariablesPane $stepsVariablesTabControl
-        $global:domainRecoverySteps = @()
-        $global:additionalClusterRecoverySteps = @()
-        $global:allSteps = @()
         $global:conditionDataContext = @{}
         $global:stepRunStatus = @{}
     }.GetNewClosure())
@@ -3071,9 +2912,8 @@ function Get-VariablesTemplateKeys($CatalogEntry) {
 # $TemplateKeys already is) against the plan's template key set and describes the mismatch, or
 # returns $null if they match -- order and values don't matter, only which variables are defined.
 # Guards against loading a variables file meant for a different plan (or hand-edited into a different
-# shape): without this, Import-VariablesAnswersFile/Import-GroupVariablesAnswersFile would otherwise
-# happily accept it, silently dropping unrecognized names to the bottom of the list instead of
-# rejecting the file outright.
+# shape): without this, Import-VariablesAnswersFile would otherwise happily accept it, silently
+# dropping unrecognized names to the bottom of the list instead of rejecting the file outright.
 function Get-VariablesStructureMismatch([string[]]$AnswerMapKeys, [string[]]$TemplateKeys) {
     $missing = @($TemplateKeys | Where-Object { $_ -notin $AnswerMapKeys })
     $extra = @($AnswerMapKeys | Where-Object { $_ -notin $TemplateKeys })
@@ -3128,7 +2968,7 @@ function Import-VariablesAnswersFile([string]$Path) {
             return
         }
 
-        $orderedNames = @(Get-ReferencedVariableNames (Get-StepReferenceText $global:allSteps) | Where-Object { $answerMap.Contains($_) })
+        $orderedNames = @(Get-ReferencedVariableNames (Get-StepReferenceText $global:currentPlanContext.Steps) | Where-Object { $answerMap.Contains($_) })
         $orderedNames += @($answerMap.Keys | Where-Object { $orderedNames -notcontains $_ })
 
         foreach ($name in $orderedNames) {
@@ -3157,11 +2997,12 @@ function Import-VariablesAnswersFile([string]$Path) {
         Send-ToConsole "Import-RecoveryVariables -Path '$escapedAnswersPath'"
 
         $loadedVariablesTextBlock.Text = "Loaded $($orderedNames.Count) variable(s) from $Path."
-        $global:variablesAnswersFilePath = $Path
+        $global:currentPlanContext.AnswersFilePath = $Path
+        $global:currentPlanContext.AnswerMap = $answerMap
         # A freshly loaded Variables file almost always means a different recovery target (a
         # different cluster/domain) -- see Reset-AnswerFileToggle's own comment for why an interactive
         # answer file left checked over from the PREVIOUS target must not be trusted for this one.
-        Reset-AnswerFileToggle $global:flatPlanAnswerFileCheckBoxes[(Get-CurrentRecoveryPlanTarget)]
+        Reset-AnswerFileToggle $runAllAnswerFileCheckBox
 
         # Steps are only ever populated here or in New-VariablesFile -- selecting a domain/cluster
         # alone never puts Run buttons in front of anyone before values exist for them to use.
@@ -3187,17 +3028,21 @@ $loadVariablesButton.Add_Click({
         Import-VariablesAnswersFile $dialog.FileName
     }.GetNewClosure())
 
-# Starts from whatever variables the currently-loaded plan(s) actually reference -- the same
+# Starts from whatever variables the currently-loaded plan's steps actually reference -- the same
 # Get-ReferencedVariableNames call Import-VariablesAnswersFile already uses to order its rows --
-# rather than a specific template file, so it's always right for IBR (domain-specific) or FDR
-# (Recover Fleet) alike without having to know which plan file(s) are behind it. The chosen file is
-# created empty immediately (so it exists on disk right away, not only once something's typed) and
-# rewritten in full every time a field loses focus -- no separate "Save" action to remember.
+# rather than a specific template file, so it's always right for any plan without having to know
+# which plan file is behind it. The chosen file is created empty immediately (so it exists on disk
+# right away, not only once something's typed) and rewritten in full every time a field loses focus
+# -- no separate "Save" action to remember.
 function New-VariablesFile([string]$Path) {
-    # Excludes the UI-owned, selection-driven names ($extractedSDDCDataFile, $clusterName) so a newly
-    # created answers file never contains a row the console would ignore -- see
-    # $script:selectionDrivenVariables.
-    $variableNames = @(Get-ReferencedVariableNames (Get-StepReferenceText $global:allSteps) | Where-Object { $_ -notin $script:selectionDrivenVariables })
+    # Excludes the UI-owned, selection-driven names ($extractedSDDCDataFile, $clusterName) plus the
+    # current plan's own extra-toggle ids (e.g. Fleet Component Recovery's
+    # "originalVcfInstallerAvailable") so a newly created answers file never contains a row the
+    # console would ignore, or a UI-toggle-driven pseudo-variable that isn't meant to be operator-typed
+    # -- see $script:selectionDrivenVariables and the catalog's extraToggleDefinitions/extraToggles.
+    $entry = Get-CurrentRecoveryPlanEntry
+    $excludedNames = @($script:selectionDrivenVariables) + @(if ($entry -and $entry.extraToggles) { @($entry.extraToggles.id) } else { @() })
+    $variableNames = @(Get-ReferencedVariableNames (Get-StepReferenceText $global:currentPlanContext.Steps) | Where-Object { $_ -notin $excludedNames })
     if ($variableNames.Count -eq 0) {
         New-Advisory 'No steps are currently loaded, so there are no variables to create a file for.'
         return
@@ -3230,10 +3075,11 @@ function New-VariablesFile([string]$Path) {
     }
 
     $loadedVariablesTextBlock.Text = "Creating '$Path' -- values save automatically as you fill them in."
-    $global:variablesAnswersFilePath = $Path
+    $global:currentPlanContext.AnswersFilePath = $Path
+    $global:currentPlanContext.AnswerMap = $values
     # See the matching comment in Import-VariablesAnswersFile -- a freshly created Variables file
     # means a different recovery target too.
-    Reset-AnswerFileToggle $global:flatPlanAnswerFileCheckBoxes[(Get-CurrentRecoveryPlanTarget)]
+    Reset-AnswerFileToggle $runAllAnswerFileCheckBox
 
     # Reveals Steps in the background (see Update-RevealedSteps) even though every value here still
     # starts blank -- each field is already wired to push its value to the console the moment it's
@@ -3249,7 +3095,7 @@ function New-VariablesFile([string]$Path) {
 $newVariablesFileButton.Add_Click({
         # Checked here too, before showing a dialog only to fail right after picking a location --
         # New-VariablesFile also checks on its own, so it's still safe if ever called another way.
-        if (@(Get-ReferencedVariableNames (Get-StepReferenceText $global:allSteps)).Count -eq 0) {
+        if (@(Get-ReferencedVariableNames (Get-StepReferenceText $global:currentPlanContext.Steps)).Count -eq 0) {
             New-Advisory 'No steps are currently loaded, so there are no variables to create a file for.'
             return
         }
@@ -3257,11 +3103,9 @@ $newVariablesFileButton.Add_Click({
         $dialog.Filter = 'JSON files (*.json)|*.json|All files (*.*)|*.*'
         $dialog.Title = 'Save new variables file'
         # Defaults to the currently selected plan's own catalog-listed variables file name (see
-        # plans/recovery-plan-catalog.json) so the suggested name always matches whichever of
-        # Workload Domain Recovery/Additional Cluster Recovery/Recover Fleet is actually active,
-        # rather than one generic name regardless of plan. Falls back to the old generic name if
-        # no plan is selected yet (shouldn't normally happen -- this button is only reachable once
-        # Recovery Tasks itself is visible, which requires a plan).
+        # plans/recovery-plan-catalog.json), rather than one generic name regardless of plan. Falls
+        # back to a generic name if no plan is selected yet (shouldn't normally happen -- this
+        # button is only reachable once Recovery Tasks itself is visible, which requires a plan).
         $currentEntryForFileName = Get-CurrentRecoveryPlanEntry
         $dialog.FileName = if ($currentEntryForFileName -and $currentEntryForFileName.variablesFile) { $currentEntryForFileName.variablesFile } else { 'variables.json' }
         if ($dialog.ShowDialog() -ne $true) {
@@ -3270,117 +3114,64 @@ $newVariablesFileButton.Add_Click({
         New-VariablesFile $dialog.FileName
     }.GetNewClosure())
 
-$instanceComponentsLoadVariablesButton.Add_Click({
-        $dialog = New-Object Microsoft.Win32.OpenFileDialog
-        $dialog.Filter = 'JSON files (*.json)|*.json|All files (*.*)|*.*'
-        $dialog.Title = 'Select variable answers file'
-        if ($dialog.ShowDialog() -ne $true) {
-            return
-        }
-        Import-GroupVariablesAnswersFile $global:instanceComponentsGroup $dialog.FileName
-    }.GetNewClosure())
+# Lets the current plan's interactive (Read-Host-driven) tasks run unattended: checking this box
+# picks a JSON answer file (see e.g. management-domain-recovery-answers.json under plans\ibr for the
+# expected shape) and primes it into the console via Import-VCFIRAnswerFile. Unchecking clears it via
+# Clear-VCFIRAnswerFile, restoring normal interactive prompting. See Initialize-ConsoleVariables for
+# how a later thread console (spawned only once Run Plan reaches an OVA/restore step) gets the same
+# answer file primed into it too -- via the getter registered below, not a hardcoded reference to
+# this pane. One registration, against the one shared toggle/StepRows/context -- every plan goes
+# through this same getter/setter closure, since there is only ever one plan's context live at a
+# time (see $global:currentPlanContext).
+Register-AnswerFileToggleHandlers $runAllAnswerFileCheckBox `
+    { $global:currentPlanContext.StepRows } `
+    { $global:currentPlanContext.InteractiveAnswerFilePath } `
+    { param($Path) $global:currentPlanContext.InteractiveAnswerFilePath = $Path }
 
-$instanceComponentsNewVariablesFileButton.Add_Click({
-        if (@(Get-ReferencedVariableNames (Get-StepReferenceText $global:instanceComponentsGroup.Steps)).Count -eq 0) {
-            New-Advisory 'No steps are currently loaded, so there are no variables to create a file for.'
-            return
-        }
-        $dialog = New-Object Microsoft.Win32.SaveFileDialog
-        $dialog.Filter = 'JSON files (*.json)|*.json|All files (*.*)|*.*'
-        $dialog.Title = 'Save new variables file'
-        # See the matching comment on $newVariablesFileButton above -- this pane is always
-        # Management Domain Recovery specifically, so its catalog entry can be looked up by id
-        # directly rather than via Get-CurrentRecoveryPlanEntry.
-        $managementDomainEntryForFileName = Get-RecoveryPlanCatalogEntry 'ManagementDomain'
-        $dialog.FileName = if ($managementDomainEntryForFileName -and $managementDomainEntryForFileName.variablesFile) { $managementDomainEntryForFileName.variablesFile } else { 'instance-components-variables.json' }
-        if ($dialog.ShowDialog() -ne $true) {
-            return
-        }
-        New-GroupVariablesFile $global:instanceComponentsGroup $dialog.FileName
-    }.GetNewClosure())
+# Rebuilds $extraTogglesPanel (the generic slot for a plan-specific toggle like Fleet Component
+# Recovery's "Original VCF Installer Available") from $Entry's own catalog "extraToggles" -- resolved
+# against the catalog's top-level "extraToggleDefinitions" for the label -- so a plan declares this
+# purely as data, with no hand-authored XAML control or code branch of its own. $Entry may be $null
+# (nothing selected/no steps loaded yet), which just empties the panel.
+function Update-ExtraTogglesPanel($Entry) {
+    $extraTogglesPanel.Children.Clear()
+    $global:extraToggleCheckBoxes = @{}
+    if (-not $Entry -or -not $Entry.extraToggles) { return }
+    $definitions = (Get-RecoveryPlanCatalog).extraToggleDefinitions
+    foreach ($toggleRef in @($Entry.extraToggles)) {
+        $toggleId = [string]$toggleRef.id
+        $definition = $definitions | Where-Object { $_.id -eq $toggleId } | Select-Object -First 1
+        if (-not $definition) { continue }
 
-# Lets Management Domain Recovery's interactive (Read-Host-driven) tasks run unattended: checking
-# this box picks a JSON answer file (see management-domain-recovery-answers.json under plans\ibr for
-# the expected shape) and primes it into the console via Import-VCFIRAnswerFile. Unchecking clears it
-# via Clear-VCFIRAnswerFile, restoring normal interactive prompting. See Initialize-ConsoleVariables
-# for how a later thread console (threadId 2/3, spawned only once Run Plan reaches an OVA/restore
-# step) gets the same answer file primed into it too -- via the getter registered below, not a
-# hardcoded reference to this pane.
-#
-# The same "Use answer file for unattended interactive tasks" mechanism is shared by every other
-# Recovery Plan pane too (see Register-AnswerFileToggleHandlers). Domain Recovery/Additional Cluster
-# Recovery/Recover Fleet use the flat-global pattern (no Group hashtable), so their getters/setters
-# close over the matching flat globals directly; Instance/Fleet Components already have a Group
-# hashtable, so they close over that instead.
-Register-AnswerFileToggleHandlers $instanceComponentsAnswerFileCheckBox `
-    { $global:instanceComponentsGroup.StepRows } `
-    { $global:instanceComponentsGroup.InteractiveAnswerFilePath } `
-    { param($Path) $global:instanceComponentsGroup.InteractiveAnswerFilePath = $Path }
+        $stack = New-Object System.Windows.Controls.StackPanel
+        $stack.Orientation = 'Horizontal'
+        $stack.Margin = '0,0,0,6'
+        $toggle = New-Object System.Windows.Controls.Primitives.ToggleButton
+        $toggle.Style = $window.TryFindResource('ToggleSwitchStyle')
+        $toggle.VerticalAlignment = 'Center'
+        $toggle.IsChecked = [bool]$toggleRef.defaultChecked
+        [void]$stack.Children.Add($toggle)
+        $label = New-Object System.Windows.Controls.TextBlock
+        $label.Text = [string]$definition.label
+        $label.VerticalAlignment = 'Center'
+        $label.Margin = '8,0,0,0'
+        [void]$stack.Children.Add($label)
+        [void]$extraTogglesPanel.Children.Add($stack)
 
-Register-AnswerFileToggleHandlers $runAllDomainRecoveryAnswerFileCheckBox `
-    { $global:domainRecoveryStepRows } `
-    { $global:domainRecoveryInteractiveAnswerFilePath } `
-    { param($Path) $global:domainRecoveryInteractiveAnswerFilePath = $Path }
-$global:flatPlanAnswerFileCheckBoxes['WorkloadDomain'] = $runAllDomainRecoveryAnswerFileCheckBox
-
-Register-AnswerFileToggleHandlers $runAllAdditionalClusterRecoveryAnswerFileCheckBox `
-    { $global:additionalClusterRecoveryStepRows } `
-    { $global:additionalClusterRecoveryInteractiveAnswerFilePath } `
-    { param($Path) $global:additionalClusterRecoveryInteractiveAnswerFilePath = $Path }
-$global:flatPlanAnswerFileCheckBoxes['AdditionalCluster'] = $runAllAdditionalClusterRecoveryAnswerFileCheckBox
-
-Register-AnswerFileToggleHandlers $runAllRecoverFleetAnswerFileCheckBox `
-    { $global:recoverFleetStepRows } `
-    { $global:recoverFleetInteractiveAnswerFilePath } `
-    { param($Path) $global:recoverFleetInteractiveAnswerFilePath = $Path }
-$global:flatPlanAnswerFileCheckBoxes['RecoverFleet'] = $runAllRecoverFleetAnswerFileCheckBox
-
-Register-AnswerFileToggleHandlers $fleetComponentsAnswerFileCheckBox `
-    { $global:fleetComponentsGroup.StepRows } `
-    { $global:fleetComponentsGroup.InteractiveAnswerFilePath } `
-    { param($Path) $global:fleetComponentsGroup.InteractiveAnswerFilePath = $Path }
-
-$fleetComponentsLoadVariablesButton.Add_Click({
-        $dialog = New-Object Microsoft.Win32.OpenFileDialog
-        $dialog.Filter = 'JSON files (*.json)|*.json|All files (*.*)|*.*'
-        $dialog.Title = 'Select variable answers file'
-        if ($dialog.ShowDialog() -ne $true) {
-            return
-        }
-        Import-GroupVariablesAnswersFile $global:fleetComponentsGroup $dialog.FileName
-    }.GetNewClosure())
-
-$fleetComponentsNewVariablesFileButton.Add_Click({
-        if (@(Get-ReferencedVariableNames (Get-StepReferenceText $global:fleetComponentsGroup.Steps)).Count -eq 0) {
-            New-Advisory 'No steps are currently loaded, so there are no variables to create a file for.'
-            return
-        }
-        $dialog = New-Object Microsoft.Win32.SaveFileDialog
-        $dialog.Filter = 'JSON files (*.json)|*.json|All files (*.*)|*.*'
-        $dialog.Title = 'Save new variables file'
-        # See the matching comment on $newVariablesFileButton above -- this pane is always Fleet
-        # Component Recovery specifically, so its catalog entry can be looked up by id directly
-        # rather than via Get-CurrentRecoveryPlanEntry.
-        $fleetComponentEntryForFileName = Get-RecoveryPlanCatalogEntry 'FleetComponent'
-        $dialog.FileName = if ($fleetComponentEntryForFileName -and $fleetComponentEntryForFileName.variablesFile) { $fleetComponentEntryForFileName.variablesFile } else { 'fleet-components-variables.json' }
-        if ($dialog.ShowDialog() -ne $true) {
-            return
-        }
-        New-GroupVariablesFile $global:fleetComponentsGroup $dialog.FileName
-    }.GetNewClosure())
-
-# Toggling "Original VCF Installer Available" re-filters Fleet Components' own Steps list right
-# away (see Update-GroupRevealedSteps's fleetComponentsGroup-only override) so "Add VCFMS Trusted
-# Certificate" / "Confirm Binary Staging is complete" swap places immediately, without waiting for
-# some unrelated variable edit to trigger the next re-filter. A no-op before Load/New Variables has
-# ever populated $global:fleetComponentsGroup.AnswerMap -- there's no Steps list to re-filter yet.
-$applyOriginalVcfInstallerAvailable = {
-    if ($global:fleetComponentsGroup.AnswerMap) {
-        Update-GroupRevealedSteps $global:fleetComponentsGroup $global:fleetComponentsGroup.AnswerMap
+        $global:extraToggleCheckBoxes[$toggleId] = $toggle
+        # Re-filters the current plan's Steps list immediately on toggle (see Update-RevealedSteps's
+        # own injection of every extra-toggle id as a pseudo-variable), the same way Fleet Component
+        # Recovery's toggle used to re-filter only its own group. A no-op before Load/New Variables
+        # has populated $global:currentPlanContext.AnswerMap -- there's no Steps list to re-filter yet.
+        $applyToggle = {
+            if ($global:currentPlanContext.AnswerMap) {
+                Update-RevealedSteps $global:currentPlanContext.AnswerMap
+            }
+        }.GetNewClosure()
+        $toggle.Add_Checked($applyToggle)
+        $toggle.Add_Unchecked($applyToggle)
     }
 }
-$originalVcfInstallerAvailableCheckBox.Add_Checked($applyOriginalVcfInstallerAvailable)
-$originalVcfInstallerAvailableCheckBox.Add_Unchecked($applyOriginalVcfInstallerAvailable)
 
 # Pushes the current selection into the console session as $workloadDomain/$clusterName. Both come
 # from one selection, so they go in ONE call -- two separate cmdlets would double the "Starting
@@ -3455,342 +3246,100 @@ function Update-SelectedClusterNameFromDisk {
     Set-SelectedTargetInConsole ([string]$domainName) ([string]$freshDefaultCluster.name)
 }
 
-# Shared by the domain SelectionChanged handler and by switching back to IBR from FDR (see
-# Sync-RecoveryPlanSelection below) -- re-selecting the same domain doesn't refire
-# SelectionChanged, so switching recovery plan has to be able to re-derive Execution's state from
-# whatever's currently selected on its own, not only react to an actual selection change.
-# Recomputes $global:allSteps as the union of every currently-populated IBR Steps panel (Domain
-# Recovery, Additional Cluster Recovery) -- these are two independent, mutually exclusive
-# selections (a domain, or separately an additional cluster), so the Variables tab needs to see
-# whichever one is currently populated.
-function Update-AllSteps {
-    $global:allSteps = @($global:domainRecoverySteps) + @($global:additionalClusterRecoverySteps)
-}
-
-# Recovery Tasks has to stay visible if EITHER a domain or an additional cluster is currently
-# selected -- neither selection's own handler can safely collapse it just because it has nothing
-# selected, since the other one might.
+# Recovery Tasks has to stay visible once the current plan's own selection/data requirement is met:
+# a domain or additional cluster picked (for a plan with a selection list), or immediately/once data
+# is loaded (for a plan with none -- see the catalog's own "selectionList"/"dataSources" per plan).
 function Update-ExecutionVisibility {
     $hasDomainSelected = $null -ne $domainsListBox.SelectedItem
     $hasClusterSelected = $additionalClustersListBox.SelectedItem -is [System.Windows.Controls.ListBoxItem]
-    # Fleet Component Recovery and Recover Fleet (FDR) have no domain/cluster selection at all to
-    # hang this off of -- either one's own Recovery Tasks pane is ready to show as soon as its own
-    # data requirement is met (extracted data loaded, for a plan that needs a data source at all;
-    # immediately for one that doesn't -- see the catalog's own "dataSources" per plan). Generalized
-    # over $entry.target rather than a hardcoded "-eq 'FleetComponent'" so a future plan reusing
-    # 'fleetComponent'/'recoverFleet' picks this up automatically.
     $entry = Get-CurrentRecoveryPlanEntry
     $isStandaloneTargetReady = $false
-    if ($entry -and $entry.target -in @('FleetComponent', 'RecoverFleet')) {
+    if ($entry -and $entry.selectionList -eq 'none') {
         $isStandaloneTargetReady = (@($entry.dataSources).Count -eq 0) -or $global:extractedDataLoaded
     }
     $stepsVariablesGroupBox.Visibility = if ($hasDomainSelected -or $hasClusterSelected -or $isStandaloneTargetReady) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
 }
 
-# One named callback per plan list (not a closure) -- New-StepRow invokes whichever one of these it's
-# given by name via "&", which works identically whether given a scriptblock or a command name. A
-# closure can't reference itself here: .GetNewClosure() snapshots the surrounding scope at the moment
-# it's called, which is BEFORE the variable meant to hold the closure has been assigned, so a
-# self-referential closure would only ever see $null for itself. Every one of these needs to pass
-# itself back into Update-BucketStepsListBox so the fresh rows that call produces still have a working
-# drop-zone for the NEXT click. A plain named function has no such problem -- PowerShell resolves a
-# function call by name at invocation time, never by capturing a reference up front.
-function Set-DomainRecoveryBreakPointAfter($StepOrNull) {
+# A plain named function (not a closure) -- New-StepRow invokes it by name via "&", which works
+# identically whether given a scriptblock or a command name. A closure can't reference itself here:
+# .GetNewClosure() snapshots the surrounding scope at the moment it's called, which is BEFORE the
+# variable meant to hold the closure has been assigned, so a self-referential closure would only
+# ever see $null for itself. This needs to pass itself back into Update-BucketStepsListBox so the
+# fresh rows that call produces still have a working drop-zone for the NEXT click. A plain named
+# function has no such problem -- PowerShell resolves a function call by name at invocation time,
+# never by capturing a reference up front. One function for every plan, since there is only ever one
+# plan's context live at a time (see $global:currentPlanContext).
+function Set-BreakPointAfter($StepOrNull) {
     if ($global:recoveryRunStarted) { return }
-    $global:domainRecoveryPausePointAfterStep = $StepOrNull
-    $global:domainRecoveryStepRows = Update-BucketStepsListBox $domainRecoveryPlanStepsListBox $domainRecoveryManualStepsListBox $global:domainRecoveryLastApplicableSteps $global:domainRecoveryPausePointAfterStep $global:domainRecoveryInteractiveAnswerFilePath 'Set-DomainRecoveryBreakPointAfter' $domainRecoveryTaskListHeader $global:domainRecoveryStepRows
-}
-function Set-AdditionalClusterRecoveryBreakPointAfter($StepOrNull) {
-    if ($global:recoveryRunStarted) { return }
-    $global:additionalClusterRecoveryPausePointAfterStep = $StepOrNull
-    $global:additionalClusterRecoveryStepRows = Update-BucketStepsListBox $additionalClusterRecoveryPlanStepsListBox $additionalClusterRecoveryManualStepsListBox $global:additionalClusterRecoveryLastApplicableSteps $global:additionalClusterRecoveryPausePointAfterStep $global:additionalClusterRecoveryInteractiveAnswerFilePath 'Set-AdditionalClusterRecoveryBreakPointAfter' $additionalClusterRecoveryTaskListHeader $global:additionalClusterRecoveryStepRows
-}
-function Set-RecoverFleetBreakPointAfter($StepOrNull) {
-    if ($global:recoveryRunStarted) { return }
-    $global:recoverFleetPausePointAfterStep = $StepOrNull
-    $global:recoverFleetStepRows = Update-BucketStepsListBox $recoverFleetPlanStepsListBox $recoverFleetManualStepsListBox $global:recoverFleetLastApplicableSteps $global:recoverFleetPausePointAfterStep $global:recoverFleetInteractiveAnswerFilePath 'Set-RecoverFleetBreakPointAfter' $recoverFleetTaskListHeader $global:recoverFleetStepRows
-}
-function Set-InstanceComponentsBreakPointAfter($StepOrNull) {
-    if ($global:recoveryRunStarted) { return }
-    $global:instanceComponentsGroup.PausePointAfterStep = $StepOrNull
-    $global:instanceComponentsGroup.StepRows = Update-BucketStepsListBox $global:instanceComponentsGroup.StepsListBox $global:instanceComponentsGroup.ManualStepsListBox $global:instanceComponentsGroup.LastApplicableSteps $global:instanceComponentsGroup.PausePointAfterStep $global:instanceComponentsGroup.InteractiveAnswerFilePath 'Set-InstanceComponentsBreakPointAfter' $global:instanceComponentsGroup.TaskListHeader $global:instanceComponentsGroup.StepRows
-}
-function Set-FleetComponentsBreakPointAfter($StepOrNull) {
-    if ($global:recoveryRunStarted) { return }
-    $global:fleetComponentsGroup.PausePointAfterStep = $StepOrNull
-    $global:fleetComponentsGroup.StepRows = Update-BucketStepsListBox $global:fleetComponentsGroup.StepsListBox $global:fleetComponentsGroup.ManualStepsListBox $global:fleetComponentsGroup.LastApplicableSteps $global:fleetComponentsGroup.PausePointAfterStep $global:fleetComponentsGroup.InteractiveAnswerFilePath 'Set-FleetComponentsBreakPointAfter' $global:fleetComponentsGroup.TaskListHeader $global:fleetComponentsGroup.StepRows
+    $global:currentPlanContext.PausePointAfterStep = $StepOrNull
+    $global:currentPlanContext.StepRows = Update-BucketStepsListBox $recoveryPlanStepsListBox $recoveryManualStepsListBox $global:currentPlanContext.LastApplicableSteps $global:currentPlanContext.PausePointAfterStep $global:currentPlanContext.InteractiveAnswerFilePath 'Set-BreakPointAfter' $recoveryTaskListHeader $global:currentPlanContext.StepRows
 }
 
-# Populates the Domain Recovery/Additional Cluster Recovery ListBoxes from whatever
-# Sync-DomainSteps/Sync-AdditionalClusterSteps already resolved into $global:domainRecoverySteps
-# etc, filtered by each step's own condition against $Variables -- called only once variables have
-# actually been loaded or created (Import-VariablesAnswersFile/New-VariablesFile), never from
-# selection alone. Selecting a domain or cluster still resolves which plan applies (so Variables can
-# list the right names), but must not itself put Run buttons in front of anyone before values exist
-# for them to use.
+# Populates the one Recovery Plan/Manual Steps pane from whatever Sync-DomainSteps/
+# Sync-AdditionalClusterSteps/Sync-RecoveryPlanSelection already resolved into
+# $global:currentPlanContext.Steps, filtered by each step's own condition against $Variables --
+# called only once variables have actually been loaded or created (Import-VariablesAnswersFile/
+# New-VariablesFile), never from selection alone. Selecting a domain or cluster still resolves which
+# plan applies (so Variables can list the right names), but must not itself put Run buttons in front
+# of anyone before values exist for them to use.
 function Update-RevealedSteps([System.Collections.IDictionary]$Variables) {
-    $global:domainRecoveryLastApplicableSteps = Get-ApplicableSteps $global:domainRecoverySteps $Variables
-    $global:additionalClusterRecoveryLastApplicableSteps = Get-ApplicableSteps $global:additionalClusterRecoverySteps $Variables
-    # Update-BucketStepsListBox rebuilds StepRows from scratch (see the matching comment in
-    # Update-GroupRevealedSteps) and re-applies each pane's own answer-file coverage state itself.
-    $global:domainRecoveryStepRows = Update-BucketStepsListBox $domainRecoveryPlanStepsListBox $domainRecoveryManualStepsListBox $global:domainRecoveryLastApplicableSteps $global:domainRecoveryPausePointAfterStep $global:domainRecoveryInteractiveAnswerFilePath 'Set-DomainRecoveryBreakPointAfter' $domainRecoveryTaskListHeader $global:domainRecoveryStepRows
-    $global:additionalClusterRecoveryStepRows = Update-BucketStepsListBox $additionalClusterRecoveryPlanStepsListBox $additionalClusterRecoveryManualStepsListBox $global:additionalClusterRecoveryLastApplicableSteps $global:additionalClusterRecoveryPausePointAfterStep $global:additionalClusterRecoveryInteractiveAnswerFilePath 'Set-AdditionalClusterRecoveryBreakPointAfter' $additionalClusterRecoveryTaskListHeader $global:additionalClusterRecoveryStepRows
-}
-
-# Single-listbox counterpart to Update-RevealedSteps, for Instance Components/Fleet Components (see
-# $global:instanceComponentsGroup/$global:fleetComponentsGroup) -- one group is exactly one plan
-# file, so there's only ever one ListBox to populate, not two.
-function Update-GroupRevealedSteps($Group, [System.Collections.IDictionary]$Variables) {
-    # Fleet Component Recovery's own "Original VCF Installer Available" checkbox (see
-    # $originalVcfInstallerAvailableCheckBox) gates two of its steps via an ordinary "variable"-typed
-    # condition (see Test-StepCondition), but that checkbox is deliberately never written into the
-    # answers file/Variables tab -- it's a UI toggle, not an operator-typed value. A clone (not a
-    # mutation of $Variables itself) carries its current state into just this one filtering pass, so
-    # the caller's own dictionary -- which IS what gets persisted back to the answers file on every
-    # real variable edit -- never picks up this UI-only key.
-    if ($Group -eq $global:fleetComponentsGroup) {
-        # Not $Variables.Clone() -- System.Collections.Specialized.OrderedDictionary (what
-        # [ordered]@{} produces, see $answerMap/$values in Import-GroupVariablesAnswersFile/
-        # New-GroupVariablesFile) doesn't expose a public Clone() method on this runtime; confirmed
-        # directly (a real test run threw "does not contain a method named 'Clone'" here). A
-        # hand-built copy works regardless of the concrete IDictionary implementation.
+    $entry = Get-CurrentRecoveryPlanEntry
+    $extraToggleIds = @(if ($entry -and $entry.extraToggles) { @($entry.extraToggles.id) } else { @() })
+    if ($extraToggleIds.Count -gt 0) {
+        # A plan's own extra toggles (e.g. Fleet Component Recovery's "Original VCF Installer
+        # Available") gate steps via an ordinary "variable"-typed condition (see Test-StepCondition),
+        # but are deliberately never written into the answers file/Variables tab -- they're UI
+        # toggles, not operator-typed values. A clone (not a mutation of $Variables itself) carries
+        # their current state into just this one filtering pass, so the caller's own dictionary --
+        # which IS what gets persisted back to the answers file on every real variable edit -- never
+        # picks up these UI-only keys. Not $Variables.Clone() -- System.Collections.Specialized.
+        # OrderedDictionary (what [ordered]@{} produces, see $answerMap/$values in
+        # Import-VariablesAnswersFile/New-VariablesFile) doesn't expose a public Clone() method on
+        # this runtime; confirmed directly (a real test run threw "does not contain a method named
+        # 'Clone'" here). A hand-built copy works regardless of the concrete IDictionary
+        # implementation.
         $cloned = [ordered]@{}
         foreach ($key in $Variables.Keys) { $cloned[$key] = $Variables[$key] }
         $Variables = $cloned
-        $Variables['originalVcfInstallerAvailable'] = if ($originalVcfInstallerAvailableCheckBox.IsChecked) { 'true' } else { 'false' }
-    }
-    $Group.LastApplicableSteps = Get-ApplicableSteps $Group.Steps $Variables
-    # Update-BucketStepsListBox rebuilds StepRows from scratch (fresh "Requires Input" badges on every
-    # interactive row) and re-applies the answer-file coverage state itself -- a no-op if this group's
-    # own answer-file toggle was never checked (InteractiveAnswerFilePath stays $null).
-    $breakPointCallback = if ($Group -eq $global:fleetComponentsGroup) { 'Set-FleetComponentsBreakPointAfter' } else { 'Set-InstanceComponentsBreakPointAfter' }
-    $Group.StepRows = Update-BucketStepsListBox $Group.StepsListBox $Group.ManualStepsListBox $Group.LastApplicableSteps $Group.PausePointAfterStep $Group.InteractiveAnswerFilePath $breakPointCallback $Group.TaskListHeader $Group.StepRows
-}
-
-# Group counterpart to Import-VariablesAnswersFile, used only by Instance Components/Fleet
-# Components -- each of those is a fully independent plan/answers-file pair, not a shared Variables
-# tab, so $Group.Steps stands in for $global:allSteps and $Group's own panel/textblock/answers-path
-# fields stand in for the flat globals the shared flow above uses. Deliberately a near-duplicate of
-# Import-VariablesAnswersFile rather than a generalization of it -- Domain Recovery/Additional
-# Cluster Recovery populate TWO listboxes from ONE shared variable set, which a single-$Group
-# parameter can't represent without restructuring code that already works; these two new groups are
-# twins born together, unlike those three existing, independent flows.
-#
-# Instance Components and Fleet Components do reference some of the same variable names (e.g.
-# $sddcManagerFqdn, $vcfUserPassword) -- accepted as one shared value between them, not two
-# independently-scoped ones, since there's only one PowerShell session underneath either way and in
-# practice they're meant to be the same real credential, not two different ones that happen to share
-# a name.
-function Import-GroupVariablesAnswersFile($Group, [string]$Path) {
-    try {
-        $answers = Get-Content -Path $Path -Raw | ConvertFrom-Json
-        $answerMap = [ordered]@{}
-        foreach ($property in $answers.PSObject.Properties) {
-            $answerMap[$property.Name] = [string]$property.Value
-        }
-        foreach ($ownedName in $script:selectionDrivenVariables) { $answerMap.Remove($ownedName) }
-
-        # See the matching comment in Import-VariablesAnswersFile -- same reject-before-anything-
-        # changes structural check, against this group's own plan (Group.PlanId).
-        $templateKeys = Get-VariablesTemplateKeys (Get-RecoveryPlanCatalogEntry $Group.PlanId)
-        if ($null -ne $templateKeys) {
-            $mismatch = Get-VariablesStructureMismatch @($answerMap.Keys) $templateKeys
-            if ($null -ne $mismatch) {
-                New-Advisory "Load Variables failed: '$Path' does not match the selected plan's variables structure ($mismatch)." -Failure
-                return
+        foreach ($toggleId in $extraToggleIds) {
+            if ($global:extraToggleCheckBoxes.ContainsKey($toggleId)) {
+                $Variables[$toggleId] = if ($global:extraToggleCheckBoxes[$toggleId].IsChecked) { 'true' } else { 'false' }
             }
         }
-
-        $Group.VariablesItemsPanel.Children.Clear()
-
-        if ($answerMap.Count -eq 0) {
-            $Group.LoadedVariablesText.Text = "No variables found in '$Path'."
-            return
-        }
-
-        $orderedNames = @(Get-ReferencedVariableNames (Get-StepReferenceText $Group.Steps) | Where-Object { $answerMap.Contains($_) })
-        $orderedNames += @($answerMap.Keys | Where-Object { $orderedNames -notcontains $_ })
-
-        foreach ($name in $orderedNames) {
-            # See the matching comment in Import-VariablesAnswersFile -- edits persist back to this
-            # group's own answers file and re-apply live the same safe way the bulk load below does.
-            $onValueChanged = {
-                param($changedName, $changedValue)
-                $answerMap[$changedName] = $changedValue
-                $answerMap | ConvertTo-Json | Set-Content -LiteralPath $Path -Encoding utf8
-                $escapedAnswersPath = Protect-SingleQuotes $Path
-                Send-ToConsole "Import-RecoveryVariables -Path '$escapedAnswersPath'"
-                Update-GroupRevealedSteps $Group $answerMap
-            }.GetNewClosure()
-            [void]$Group.VariablesItemsPanel.Children.Add((New-VariableRow $name $answerMap[$name] $onValueChanged))
-        }
-
-        $escapedAnswersPath = Protect-SingleQuotes $Path
-        Send-ToConsole "Import-RecoveryVariables -Path '$escapedAnswersPath'"
-
-        $Group.LoadedVariablesText.Text = "Loaded $($orderedNames.Count) variable(s) from $Path."
-        $Group.AnswersFilePath = $Path
-        $Group.AnswerMap = $answerMap
-        # See Reset-AnswerFileToggle's own comment -- a freshly loaded Variables file means a
-        # different recovery target, so this group's own interactive answer file (if any) must not
-        # be trusted for it.
-        Reset-AnswerFileToggle $Group.AnswerFileCheckBox
-
-        Update-GroupRevealedSteps $Group $answerMap
-
-        $Group.VariablesStepsTabControl.SelectedIndex = 1
-    } catch {
-        New-Advisory "Load Variables failed: $($_.Exception.Message)" -Failure
     }
-}
-
-# Group counterpart to New-VariablesFile -- see Import-GroupVariablesAnswersFile's own comment for
-# why this is a near-duplicate rather than a generalization of the existing shared-flow function.
-function New-GroupVariablesFile($Group, [string]$Path) {
-    # "originalVcfInstallerAvailable" is referenced only via the two Fleet Component Recovery steps'
-    # own "variable"-typed condition (see Update-GroupRevealedSteps), never in a step's commandLine --
-    # it's driven entirely by $originalVcfInstallerAvailableCheckBox, so it must never turn into an
-    # ordinary answers-file text row here the way every other referenced variable name does.
-    $variableNames = @(Get-ReferencedVariableNames (Get-StepReferenceText $Group.Steps) | Where-Object { $_ -ne 'originalVcfInstallerAvailable' -and $_ -notin $script:selectionDrivenVariables })
-    if ($variableNames.Count -eq 0) {
-        New-Advisory 'No steps are currently loaded, so there are no variables to create a file for.'
-        return
-    }
-
-    $values = [ordered]@{}
-    foreach ($name in $variableNames) {
-        $values[$name] = ''
-    }
-    $values | ConvertTo-Json | Set-Content -LiteralPath $Path -Encoding utf8
-
-    $Group.VariablesItemsPanel.Children.Clear()
-    foreach ($name in $variableNames) {
-        $onValueChanged = {
-            param($changedName, $changedValue)
-            $values[$changedName] = $changedValue
-            $values | ConvertTo-Json | Set-Content -LiteralPath $Path -Encoding utf8
-            $escapedPath = Protect-SingleQuotes $Path
-            Send-ToConsole "Import-RecoveryVariables -Path '$escapedPath'"
-            Update-GroupRevealedSteps $Group $values
-        }.GetNewClosure()
-        [void]$Group.VariablesItemsPanel.Children.Add((New-VariableRow $name $values[$name] $onValueChanged))
-    }
-
-    $Group.LoadedVariablesText.Text = "Creating '$Path' -- values save automatically as you fill them in."
-    $Group.AnswersFilePath = $Path
-    $Group.AnswerMap = $values
-    # See Reset-AnswerFileToggle's own comment -- a freshly created Variables file means a different
-    # recovery target too.
-    Reset-AnswerFileToggle $Group.AnswerFileCheckBox
-
-    Update-GroupRevealedSteps $Group $values
-
-    $Group.VariablesStepsTabControl.SelectedIndex = 0
-}
-
-# Picks which ONE of the three top-level Recovery Tasks panes is shown: the flat Variables/Steps
-# pair ($stepsVariablesTabControl -- Workload Domain Recovery, Additional Cluster Recovery, FDR),
-# or one of the two independent panes Management Domain Recovery / Fleet Component Recovery each
-# keep to themselves ($instanceComponentsVariablesStepsTabControl /
-# $fleetComponentsVariablesStepsTabControl). $PaneToShow may be $null to hide all three (used for
-# "nothing to show yet" resets); centralized here, rather than repeating the if/else at each call
-# site, so every caller can never drift out of sync with the others about which one is shown.
-#
-# Also resets the newly-shown pane's own SelectedIndex back to 0 ("Variables") -- each of the three
-# is a separate TabControl instance that remembers its own last-selected tab even while Collapsed,
-# so without this, switching Recovery Scope could land on a "Steps" tab left over from an earlier
-# variables load in THIS SAME pane, showing a blank Steps list (nothing's been loaded yet for the
-# newly-activated scope) instead of the Variables tab there's actually something to do on. Callers
-# that immediately have real Steps to show already override this right after (e.g. FDR's own
-# handler explicitly re-selects "Steps" once its plan is loaded).
-function Set-ActiveStepsVariablesPane($PaneToShow) {
-    foreach ($pane in @($stepsVariablesTabControl, $instanceComponentsVariablesStepsTabControl, $fleetComponentsVariablesStepsTabControl)) {
-        $pane.Visibility = if ($pane -eq $PaneToShow) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
-    }
-    if ($null -ne $PaneToShow) {
-        $PaneToShow.SelectedIndex = 0
-    }
-}
-
-# Each of Domain Recovery/Additional Cluster Recovery/Recover Fleet now has TWO panels (Recovery
-# Plan's read-only view and Manual Steps' interactive one -- see New-StepRow), not one, but they are
-# still shown/hidden as a single unit exactly like the old single panel was: whichever workflow is
-# active shows on BOTH tabs at once, never just one. These three tiny wrappers are the single place
-# that pairing is written out, so Sync-DomainSteps/Sync-AdditionalClusterSteps/the Recovery Type
-# Checked handlers never risk toggling one half of a pair and forgetting the other.
-function Set-DomainRecoveryPanelsVisibility([System.Windows.Visibility]$Visibility) {
-    $domainRecoveryPlanPanel.Visibility = $Visibility
-    $domainRecoveryManualPanel.Visibility = $Visibility
-}
-function Set-AdditionalClusterRecoveryPanelsVisibility([System.Windows.Visibility]$Visibility) {
-    $additionalClusterRecoveryPlanPanel.Visibility = $Visibility
-    $additionalClusterRecoveryManualPanel.Visibility = $Visibility
-}
-function Set-RecoverFleetPanelsVisibility([System.Windows.Visibility]$Visibility) {
-    $recoverFleetPlanPanel.Visibility = $Visibility
-    $recoverFleetManualPanel.Visibility = $Visibility
+    $global:currentPlanContext.LastApplicableSteps = Get-ApplicableSteps $global:currentPlanContext.Steps $Variables
+    # Update-BucketStepsListBox rebuilds StepRows from scratch (fresh "Requires Input" badges on
+    # every interactive row) and re-applies the answer-file coverage state itself -- a no-op if the
+    # current plan's own answer-file toggle was never checked (InteractiveAnswerFilePath stays $null).
+    $global:currentPlanContext.StepRows = Update-BucketStepsListBox $recoveryPlanStepsListBox $recoveryManualStepsListBox $global:currentPlanContext.LastApplicableSteps $global:currentPlanContext.PausePointAfterStep $global:currentPlanContext.InteractiveAnswerFilePath 'Set-BreakPointAfter' $recoveryTaskListHeader $global:currentPlanContext.StepRows
 }
 
 function Sync-DomainSteps {
-    $domainRecoveryPlanStepsListBox.Items.Clear()
-    $domainRecoveryManualStepsListBox.Items.Clear()
-    $variablesItemsPanel.Children.Clear()
-    $loadedVariablesTextBlock.Text = 'No variables loaded yet.'
-    $global:domainRecoverySteps = @()
+    $planEntry = Get-CurrentRecoveryPlanEntry
+    Reset-CurrentRecoveryPlanContext ([string]$planEntry.id)
     # A step id is only unique within one plan file, and the very same plan legitimately re-runs
     # against a different domain later in this same session -- clear unconditionally on every
     # (re)selection, not just when nothing ends up selected, so a stepStatus condition never sees
     # stale Success/Failed left over from a previous domain's run of an identically-id'd step.
     $global:stepRunStatus = @{}
 
-    # Reset both MANAGEMENT-only groups on every domain (re)selection, not just when a MANAGEMENT
-    # domain happens to be picked -- otherwise switching from one MANAGEMENT domain to a VI domain
-    # (or to nothing) would leave a stale Button object, a stale AnswersFilePath, or stale rows from
-    # the previous domain sitting in $global:instanceComponentsGroup/$global:fleetComponentsGroup.
-    foreach ($group in @($global:instanceComponentsGroup, $global:fleetComponentsGroup)) {
-        $group.StepsListBox.Items.Clear()
-        $group.ManualStepsListBox.Items.Clear()
-        $group.VariablesItemsPanel.Children.Clear()
-        $group.LoadedVariablesText.Text = 'No variables loaded yet.'
-        $group.Steps = @()
-        $group.StepRows = @()
-        $group.AnswersFilePath = $null
-        $group.AnswerMap = $null
-    }
-
     $selected = $domainsListBox.SelectedItem
     if ($null -ne $selected) {
         # A domain and an additional cluster are mutually exclusive selections -- picking a domain
         # always deselects whichever additional cluster was picked before, which (via
-        # Sync-AdditionalClusterSteps) collapses its panel so only the domain's own panel shows.
+        # Sync-AdditionalClusterSteps) resets the shared context so only the domain's own steps show.
         if ($null -ne $additionalClustersListBox.SelectedItem) {
             $additionalClustersListBox.SelectedItem = $null
         }
 
-        # Management Domain Recovery is really two independent operations -- restoring the domain's
-        # own instance components, and separately recovering the VCF Management Services fleet
-        # components -- each with its own Steps and its own Variables (see
-        # $global:instanceComponentsGroup/$global:fleetComponentsGroup and
-        # Set-ActiveStepsVariablesPane), not the single combined plan Workload Domain Recovery uses.
-        # $domainsListBox is only ever populated with MANAGEMENT-type domains under this scope (see
-        # Sync-RecoveryPlanSelection's own filtering), so checking the current plan's own target
-        # here is equivalent to (and doesn't depend on re-inspecting) $selected.Tag.domainType.
-        $planEntry = Get-CurrentRecoveryPlanEntry
-        if ($planEntry -and $planEntry.target -eq 'ManagementDomain') {
-            Set-DomainRecoveryPanelsVisibility ([System.Windows.Visibility]::Collapsed)
-            Set-ActiveStepsVariablesPane $instanceComponentsVariablesStepsTabControl
-            $global:instanceComponentsGroup.Steps = Get-RecoveryPlanSteps $planEntry.planFolder $planEntry.planFile
-        } elseif ($planEntry) {
-            Set-DomainRecoveryPanelsVisibility ([System.Windows.Visibility]::Visible)
-            Set-ActiveStepsVariablesPane $stepsVariablesTabControl
-            $global:domainRecoverySteps = Get-RecoveryPlanSteps $planEntry.planFolder $planEntry.planFile
+        if ($planEntry) {
+            $global:currentPlanContext.Steps = Get-RecoveryPlanSteps $planEntry.planFolder $planEntry.planFile
         }
+        Update-ExtraTogglesPanel $planEntry
 
-        # The default-cluster-recovery portion of either plan runs against the domain's default
+        # The default-cluster-recovery portion of the plan runs against the domain's default
         # cluster (isDefault 't'), not any of the "additional" ones -- see
-        # Sync-AdditionalClusterSteps for the other half of this same mechanism. Shared by both
-        # domain types (and both MANAGEMENT groups): Instance Components' own condition (e.g.
-        # "$isStretched -eq 't'") needs exactly the same derived facts a VI domain's plan does.
+        # Sync-AdditionalClusterSteps for the other half of this same mechanism.
         $defaultCluster = $selected.Tag.vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' } | Select-Object -First 1
         # Normalized (camelCase) so a "dataPath" condition (e.g. "selectedCluster.isStretched")
         # resolves identically here and in Sync-AdditionalClusterSteps, regardless of which raw shape
@@ -3811,17 +3360,14 @@ function Sync-DomainSteps {
         # while $workloadDomain is the selected domain itself.
         Set-SelectedTargetInConsole ([string]$selected.Tag.domainName) ([string]$defaultCluster.name)
     } else {
-        Set-DomainRecoveryPanelsVisibility ([System.Windows.Visibility]::Collapsed)
-        Set-ActiveStepsVariablesPane $stepsVariablesTabControl
+        Update-ExtraTogglesPanel $null
         $global:conditionDataContext = @{}
     }
 
-    # Deliberately not populated here -- Update-RevealedSteps/Update-GroupRevealedSteps does that,
-    # only once variables have actually been loaded or created for this selection (see their own
-    # comments). The ListBoxes were already cleared above, so a domain change with no variables
-    # loaded yet leaves every Steps list empty.
-    $global:domainRecoveryStepRows = @()
-    Update-AllSteps
+    # Deliberately not populated here -- Update-RevealedSteps does that, only once variables have
+    # actually been loaded or created for this selection (see its own comment). The pane was already
+    # cleared by Reset-CurrentRecoveryPlanContext above, so a domain change with no variables loaded
+    # yet leaves the Steps list empty.
     Update-ExecutionVisibility
 }
 
@@ -3839,17 +3385,11 @@ $domainsListBox.Add_SelectionChanged({
 # plain string, not a ListBoxItem -- see Import-ExtractedSddcDataFile) is deliberately not treated
 # as a real selection here.
 function Sync-AdditionalClusterSteps {
-    $additionalClusterRecoveryPlanStepsListBox.Items.Clear()
-    $additionalClusterRecoveryManualStepsListBox.Items.Clear()
-    $variablesItemsPanel.Children.Clear()
-    $loadedVariablesTextBlock.Text = 'No variables loaded yet.'
-    $global:additionalClusterRecoverySteps = @()
+    $planEntry = Get-CurrentRecoveryPlanEntry
+    Reset-CurrentRecoveryPlanContext ([string]$planEntry.id)
     # See the matching comment in Sync-DomainSteps -- unconditional so switching directly between two
     # additional clusters (not just to "nothing selected") never leaks stale stepStatus.
     $global:stepRunStatus = @{}
-    # Additional Cluster Recovery always uses the flat Variables/Steps pair -- never the two
-    # independent panes exclusive to Management Domain Recovery / Fleet Component Recovery.
-    Set-ActiveStepsVariablesPane $stepsVariablesTabControl
 
     $selected = $additionalClustersListBox.SelectedItem
     $isRealClusterSelected = $selected -is [System.Windows.Controls.ListBoxItem]
@@ -3857,11 +3397,10 @@ function Sync-AdditionalClusterSteps {
         if ($null -ne $domainsListBox.SelectedItem) {
             $domainsListBox.SelectedItem = $null
         }
-        Set-AdditionalClusterRecoveryPanelsVisibility ([System.Windows.Visibility]::Visible)
-        $planEntry = Get-CurrentRecoveryPlanEntry
         if ($planEntry) {
-            $global:additionalClusterRecoverySteps = Get-RecoveryPlanSteps $planEntry.planFolder $planEntry.planFile
+            $global:currentPlanContext.Steps = Get-RecoveryPlanSteps $planEntry.planFolder $planEntry.planFile
         }
+        Update-ExtraTogglesPanel $planEntry
         # See the matching comment in Sync-DomainSteps -- $selected.Tag here is the cluster
         # PSCustomObject built in Import-ExtractedSddcDataFile, not a raw domain object, so no
         # isDefault lookup is needed: this row already IS the one cluster in question.
@@ -3887,13 +3426,11 @@ function Sync-AdditionalClusterSteps {
         # screen. An additional-cluster row carries its owning domain, so both come from this one row.
         Set-SelectedTargetInConsole ([string]$selected.Tag.DomainName) ([string]$selected.Tag.ClusterName)
     } else {
-        Set-AdditionalClusterRecoveryPanelsVisibility ([System.Windows.Visibility]::Collapsed)
+        Update-ExtraTogglesPanel $null
         $global:conditionDataContext = @{}
     }
 
     # Deliberately not populated here -- see the matching comment in Sync-DomainSteps.
-    $global:additionalClusterRecoveryStepRows = @()
-    Update-AllSteps
     Update-ExecutionVisibility
 }
 
@@ -3918,32 +3455,16 @@ $additionalClustersListBox.Add_SelectionChanged({
 # recoverFleet-clearing half of the old IbrRecoveryTypeRadio Checked handler) now that all five
 # plans -- including Recover Fleet -- are just catalog entries picked from the same one combo.
 function Sync-RecoveryPlanSelection {
-    # Reset both MANAGEMENT-only groups unconditionally, same reasoning as Sync-DomainSteps's own
-    # identical reset: whichever plan was previously active (including Recover Fleet, which has no
-    # selection of its own to trigger Sync-DomainSteps's copy of this) might have left stale rows
-    # behind. Recover Fleet's own rows/panel are reset unconditionally too, right below, for the
-    # same reason -- neither $domainsListBox nor $additionalClustersListBox selection changing
-    # (further down) would ever clear those.
-    foreach ($group in @($global:instanceComponentsGroup, $global:fleetComponentsGroup)) {
-        $group.StepsListBox.Items.Clear()
-        $group.ManualStepsListBox.Items.Clear()
-        $group.VariablesItemsPanel.Children.Clear()
-        $group.LoadedVariablesText.Text = 'No variables loaded yet.'
-        $group.Steps = @()
-        $group.StepRows = @()
-        $group.AnswersFilePath = $null
-        $group.AnswerMap = $null
-    }
-    Set-RecoverFleetPanelsVisibility ([System.Windows.Visibility]::Collapsed)
-    $global:recoverFleetStepRows = Set-PlanStepsListBox $recoverFleetPlanStepsListBox $recoverFleetManualStepsListBox @()
+    $entry = Get-CurrentRecoveryPlanEntry
+    Reset-CurrentRecoveryPlanContext ([string]($entry.id))
+    Update-ExtraTogglesPanel $null
 
     # Clearing selection (rather than leaving stale rows selected under a since-rebuilt list)
-    # re-triggers Sync-DomainSteps/Sync-AdditionalClusterSteps, which already reset their own flat
-    # state and hide their own panel when nothing is selected -- no need to duplicate that here.
+    # re-triggers Sync-DomainSteps/Sync-AdditionalClusterSteps, which reset their own context and
+    # clear their own conditionDataContext when nothing is selected -- no need to duplicate that here.
     if ($null -ne $domainsListBox.SelectedItem) { $domainsListBox.SelectedItem = $null }
     if ($null -ne $additionalClustersListBox.SelectedItem) { $additionalClustersListBox.SelectedItem = $null }
 
-    $entry = Get-CurrentRecoveryPlanEntry
     if (-not $entry) { return }
 
     # Data Source: hidden entirely for a plan that permits none at all (Recover Fleet, FDR's only
@@ -3973,24 +3494,20 @@ function Sync-RecoveryPlanSelection {
     }
 
     if (-not $requiresDataSource) {
-        # Recover Fleet (FDR): no data source, no discovery, loads immediately -- same as the old
-        # dedicated FdrRecoveryTypeRadio Checked handler this folds in. No variable values are known
-        # yet at this point, so conditional steps fail open (see Test-StepCondition) and show
-        # unconditionally until Load Variables/New Variables File re-filters them for real.
+        # A plan that permits no data source at all (Recover Fleet/FDR): no discovery, loads
+        # immediately. No variable values are known yet at this point, so conditional steps fail
+        # open (see Test-StepCondition) and show unconditionally until Load Variables/New Variables
+        # File re-filters them for real.
         $discoveredInfrastructureGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
-        $variablesItemsPanel.Children.Clear()
-        $loadedVariablesTextBlock.Text = 'No variables loaded yet.'
         $global:conditionDataContext = @{}
         $global:stepRunStatus = @{}
-        Set-ActiveStepsVariablesPane $stepsVariablesTabControl
 
-        $recoverFleetSteps = Get-ApplicableSteps (Get-RecoveryPlanSteps $entry.planFolder $entry.planFile) @{}
-        $global:recoverFleetLastApplicableSteps = $recoverFleetSteps
-        # A fresh plan load -- any pause point set against the previous plan's steps is meaningless here.
-        $global:recoverFleetPausePointAfterStep = $null
-        $global:recoverFleetStepRows = Update-BucketStepsListBox $recoverFleetPlanStepsListBox $recoverFleetManualStepsListBox $recoverFleetSteps $global:recoverFleetPausePointAfterStep $global:recoverFleetInteractiveAnswerFilePath 'Set-RecoverFleetBreakPointAfter' $recoverFleetTaskListHeader
-        $global:allSteps = @($recoverFleetSteps)
-        Set-RecoverFleetPanelsVisibility ([System.Windows.Visibility]::Visible)
+        $steps = Get-RecoveryPlanSteps $entry.planFolder $entry.planFile
+        $global:currentPlanContext.Steps = $steps
+        $applicableSteps = Get-ApplicableSteps $steps @{}
+        $global:currentPlanContext.LastApplicableSteps = $applicableSteps
+        $global:currentPlanContext.StepRows = Update-BucketStepsListBox $recoveryPlanStepsListBox $recoveryManualStepsListBox $applicableSteps $null $null 'Set-BreakPointAfter' $recoveryTaskListHeader
+        Update-ExtraTogglesPanel $entry
 
         $stepsVariablesGroupBox.Visibility = [System.Windows.Visibility]::Visible
         $stepsVariablesTabControl.SelectedIndex = 1   # "Steps"
@@ -4004,34 +3521,52 @@ function Sync-RecoveryPlanSelection {
         return
     }
 
-    if ($entry.target -eq 'FleetComponent') {
-        # No discovery/selection step at all -- fleet-component-recovery-plan.json never references
-        # $extractedSDDCDataFile, but Data Source is still shown beforehand for flow consistency
-        # across every plan that has one (a deliberate choice, not an oversight).
+    if ($entry.selectionList -eq 'none') {
+        # Needs a data source loaded, but has no discovery/selection step of its own (e.g. Fleet
+        # Component Recovery) -- Data Source is still shown beforehand for flow consistency across
+        # every plan that has one (a deliberate choice, not an oversight).
         $discoveredInfrastructureGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
-        $global:fleetComponentsGroup.Steps = Get-RecoveryPlanSteps $entry.planFolder $entry.planFile
-        Set-ActiveStepsVariablesPane $fleetComponentsVariablesStepsTabControl
+        $global:currentPlanContext.Steps = Get-RecoveryPlanSteps $entry.planFolder $entry.planFile
+        Update-ExtraTogglesPanel $entry
         Update-ExecutionVisibility
         return
     }
 
     $discoveredInfrastructureGroupBox.Visibility = [System.Windows.Visibility]::Visible
 
-    if ($entry.target -eq 'AdditionalCluster') {
+    if ($entry.selectionList -eq 'clusters') {
         $workloadDomainsTabItem.Visibility = [System.Windows.Visibility]::Collapsed
         $additionalClustersTabItem.Visibility = [System.Windows.Visibility]::Visible
         $discoveredInfrastructureTabControl.SelectedItem = $additionalClustersTabItem
         # AdditionalClustersListBox's own contents are unaffected by which plan is active --
-        # already populated by Import-ExtractedSddcDataFile.
+        # already populated by Import-ExtractedSddcDataFile. There's only ever at most one match in
+        # the common case (a single additional cluster) -- auto-select it rather than making the
+        # user click the sole row in an otherwise-empty-feeling list.
+        $realClusterItems = @($additionalClustersListBox.Items | Where-Object { $_ -is [System.Windows.Controls.ListBoxItem] })
+        if ($realClusterItems.Count -eq 1) {
+            $additionalClustersListBox.SelectedItem = $realClusterItems[0]
+        }
     } else {
+        # 'domains' -- e.g. Management Domain Recovery/Workload Domain Recovery.
         $additionalClustersTabItem.Visibility = [System.Windows.Visibility]::Collapsed
         $workloadDomainsTabItem.Visibility = [System.Windows.Visibility]::Visible
         $discoveredInfrastructureTabControl.SelectedItem = $workloadDomainsTabItem
-        $workloadDomainsTabItem.Header = if ($entry.target -eq 'ManagementDomain') { 'Management Domain' } else { 'Workload Domains' }
+        $workloadDomainsTabItem.Header = if ($entry.tabHeaderLabel) { [string]$entry.tabHeaderLabel } else { 'Workload Domains' }
 
         $domainsListBox.Items.Clear()
+        # Note the $candidateDomain capture before the switch -- "switch" rebinds $_ to its own test
+        # value for the duration of its case blocks, which would otherwise silently shadow
+        # Where-Object's own $_ here (confirmed directly: without this capture, every domain was
+        # filtered out, since $_.domainType inside the switch resolved against $entry.domainFilter's
+        # string value, not the domain object).
+        $domainFilter = [string]$entry.domainFilter
         $filteredDomains = @($global:allDiscoveredDomains | Where-Object {
-                if ($entry.target -eq 'ManagementDomain') { $_.domainType -eq 'MANAGEMENT' } else { $_.domainType -ne 'MANAGEMENT' }
+                $candidateDomain = $_
+                switch ($domainFilter) {
+                    'MANAGEMENT' { $candidateDomain.domainType -eq 'MANAGEMENT' }
+                    'NOT_MANAGEMENT' { $candidateDomain.domainType -ne 'MANAGEMENT' }
+                    default { $true }
+                }
             })
         foreach ($domain in $filteredDomains) {
             $item = New-Object System.Windows.Controls.ListBoxItem
@@ -4039,9 +3574,9 @@ function Sync-RecoveryPlanSelection {
             $item.Tag = $domain
             [void]$domainsListBox.Items.Add($item)
         }
-        # There's only ever at most one MANAGEMENT domain -- auto-select it rather than making the
-        # user click the sole row in an otherwise-empty-feeling list.
-        if ($entry.target -eq 'ManagementDomain' -and $domainsListBox.Items.Count -gt 0) {
+        # Auto-select the sole match, same reasoning as the clusters list above -- innate behavior
+        # of this selection list, not a flag any one plan has to declare.
+        if ($domainsListBox.Items.Count -eq 1) {
             $domainsListBox.SelectedIndex = 0
         }
     }
@@ -4055,84 +3590,12 @@ function Sync-RecoveryPlanSelection {
 # gives $script:lastSafeRecoveryTypeId/$script:lastSafeRecoveryPlanId their real starting values.
 $recoveryTypeComboBox.SelectedIndex = 0
 
-$runAllDomainRecoveryButton.Add_Click({
+$runAllButton.Add_Click({
         try {
             Set-AllStepButtonsEnabled $false
             Sync-InteractiveAnswerFiles
             $runTimer = Start-RunTimer
-            Invoke-StepChain $global:domainRecoveryStepRows -IgnoreThreads:(-not $runAllDomainRecoveryParallelCheckBox.IsChecked) -OnChainComplete {
-                Set-AllStepButtonsEnabled $true
-                Unlock-ElementSelection
-                Stop-RunTimer $runTimer
-            }.GetNewClosure()
-        } catch {
-            New-Advisory "Run All failed: $($_.Exception.Message)" -Failure
-            Set-AllStepButtonsEnabled $true
-            Unlock-ElementSelection
-            Stop-RunTimer $runTimer
-        }
-    }.GetNewClosure())
-
-$runAllAdditionalClusterRecoveryButton.Add_Click({
-        try {
-            Set-AllStepButtonsEnabled $false
-            Sync-InteractiveAnswerFiles
-            $runTimer = Start-RunTimer
-            Invoke-StepChain $global:additionalClusterRecoveryStepRows -IgnoreThreads:(-not $runAllAdditionalClusterRecoveryParallelCheckBox.IsChecked) -OnChainComplete {
-                Set-AllStepButtonsEnabled $true
-                Unlock-ElementSelection
-                Stop-RunTimer $runTimer
-            }.GetNewClosure()
-        } catch {
-            New-Advisory "Run All failed: $($_.Exception.Message)" -Failure
-            Set-AllStepButtonsEnabled $true
-            Unlock-ElementSelection
-            Stop-RunTimer $runTimer
-        }
-    }.GetNewClosure())
-
-$runAllRecoverFleetButton.Add_Click({
-        try {
-            Set-AllStepButtonsEnabled $false
-            Sync-InteractiveAnswerFiles
-            $runTimer = Start-RunTimer
-            Invoke-StepChain $global:recoverFleetStepRows -IgnoreThreads:(-not $runAllRecoverFleetParallelCheckBox.IsChecked) -OnChainComplete {
-                Set-AllStepButtonsEnabled $true
-                Unlock-ElementSelection
-                Stop-RunTimer $runTimer
-            }.GetNewClosure()
-        } catch {
-            New-Advisory "Run All failed: $($_.Exception.Message)" -Failure
-            Set-AllStepButtonsEnabled $true
-            Unlock-ElementSelection
-            Stop-RunTimer $runTimer
-        }
-    }.GetNewClosure())
-
-$runAllInstanceComponentsButton.Add_Click({
-        try {
-            Set-AllStepButtonsEnabled $false
-            Sync-InteractiveAnswerFiles
-            $runTimer = Start-RunTimer
-            Invoke-StepChain $global:instanceComponentsGroup.StepRows -IgnoreThreads:(-not $global:instanceComponentsGroup.ParallelCheckBox.IsChecked) -OnChainComplete {
-                Set-AllStepButtonsEnabled $true
-                Unlock-ElementSelection
-                Stop-RunTimer $runTimer
-            }.GetNewClosure()
-        } catch {
-            New-Advisory "Run All failed: $($_.Exception.Message)" -Failure
-            Set-AllStepButtonsEnabled $true
-            Unlock-ElementSelection
-            Stop-RunTimer $runTimer
-        }
-    }.GetNewClosure())
-
-$runAllFleetComponentsButton.Add_Click({
-        try {
-            Set-AllStepButtonsEnabled $false
-            Sync-InteractiveAnswerFiles
-            $runTimer = Start-RunTimer
-            Invoke-StepChain $global:fleetComponentsGroup.StepRows -IgnoreThreads:(-not $global:fleetComponentsGroup.ParallelCheckBox.IsChecked) -OnChainComplete {
+            Invoke-StepChain $global:currentPlanContext.StepRows -IgnoreThreads:(-not $runAllParallelCheckBox.IsChecked) -OnChainComplete {
                 Set-AllStepButtonsEnabled $true
                 Unlock-ElementSelection
                 Stop-RunTimer $runTimer
@@ -4151,17 +3614,16 @@ $runAllFleetComponentsButton.Add_Click({
 # already reached Done. Only the file paths and cmdlet names are saved, never variable values or
 # command lines themselves -- Resume re-derives everything else by re-running the exact same loaders
 # Browse/Load Variables use.
-# Named groups of Steps rows, exactly the five lists both the Exit and Resume handlers below need
-# to walk in lockstep -- kept as one function, called by both, so they can never drift out of sync
-# with each other (e.g. one adding a group the other forgot).
+# Keyed by the current plan's own catalog id, not a hardcoded name -- since only one plan is ever
+# loaded at a time (see $global:currentPlanContext), there's only ever one entry, but the shape
+# (an id-keyed dictionary) is kept so a save file naturally distinguishes which plan it was saved
+# against.
 function Get-StepRowGroups {
-    return [ordered]@{
-        DomainRecovery            = @($global:domainRecoveryStepRows)
-        AdditionalClusterRecovery = @($global:additionalClusterRecoveryStepRows)
-        RecoverFleet              = @($global:recoverFleetStepRows)
-        InstanceComponents        = @($global:instanceComponentsGroup.StepRows)
-        FleetComponents           = @($global:fleetComponentsGroup.StepRows)
+    $groups = [ordered]@{}
+    if ($global:currentPlanContext.PlanId) {
+        $groups[$global:currentPlanContext.PlanId] = @($global:currentPlanContext.StepRows)
     }
+    return $groups
 }
 
 $exitButton.Add_Click({
@@ -4192,20 +3654,16 @@ $exitButton.Add_Click({
 
             $currentPlanEntry = Get-CurrentRecoveryPlanEntry
             $state = [PSCustomObject]@{
-                ExtractedDataFilePath     = $filePathTextBox.Text
+                ExtractedDataFilePath    = $filePathTextBox.Text
                 # RecoveryPlanId is the catalog id (e.g. "ManagementDomain", "RecoverFleet") of
                 # whichever plan was selected on the Recovery Plan combo -- see Resume below, which
                 # also still recognizes the older IbrRecoveryScope field name a save from before
                 # this combo-box refactor would have used (the two are the same string values for
                 # every IBR plan, so no migration is needed for those).
-                RecoveryPlanId            = if ($currentPlanEntry) { $currentPlanEntry.id } else { $null }
-                VariablesAnswersFilePaths = [PSCustomObject]@{
-                    Shared              = $global:variablesAnswersFilePath
-                    InstanceComponents  = $global:instanceComponentsGroup.AnswersFilePath
-                    FleetComponents     = $global:fleetComponentsGroup.AnswersFilePath
-                }
-                SelectedDomainIndex       = $domainsListBox.SelectedIndex
-                CompletedSteps            = $completedSteps
+                RecoveryPlanId           = if ($currentPlanEntry) { $currentPlanEntry.id } else { $null }
+                VariablesAnswersFilePath = $global:currentPlanContext.AnswersFilePath
+                SelectedDomainIndex      = $domainsListBox.SelectedIndex
+                CompletedSteps           = $completedSteps
             }
 
             $dialog = New-Object Microsoft.Win32.SaveFileDialog
@@ -4276,14 +3734,15 @@ $resumeButton.Add_Click({
                 $domainsListBox.SelectedIndex = $state.SelectedDomainIndex
             }
 
-            if ($state.VariablesAnswersFilePaths.Shared) {
-                Import-VariablesAnswersFile $state.VariablesAnswersFilePaths.Shared
-            }
-            if ($state.VariablesAnswersFilePaths.InstanceComponents) {
-                Import-GroupVariablesAnswersFile $global:instanceComponentsGroup $state.VariablesAnswersFilePaths.InstanceComponents
-            }
-            if ($state.VariablesAnswersFilePaths.FleetComponents) {
-                Import-GroupVariablesAnswersFile $global:fleetComponentsGroup $state.VariablesAnswersFilePaths.FleetComponents
+            # VariablesAnswersFilePath is this refactor's own field name; VariablesAnswersFilePaths.Shared
+            # is read as a fallback for a state file saved before every plan got its own independent
+            # context (older saves only ever populated .Shared for the plans that used the flat-global
+            # pattern -- a save with a Group-hashtable-pattern plan's answers file predates this fallback
+            # entirely and simply won't restore its Variables tab, same as any other accepted save-format
+            # break from this refactor).
+            $savedAnswersPath = if ($state.VariablesAnswersFilePath) { [string]$state.VariablesAnswersFilePath } elseif ($state.VariablesAnswersFilePaths.Shared) { [string]$state.VariablesAnswersFilePaths.Shared } else { $null }
+            if ($savedAnswersPath) {
+                Import-VariablesAnswersFile $savedAnswersPath
             }
 
             $stepRowGroups = Get-StepRowGroups
