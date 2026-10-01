@@ -12523,6 +12523,10 @@ Function Restore-ServicesRuntimeComponentBackup {
     }
 
     # Display the payload for confirmation
+    # componentId -> name taken from the payload's own backup paths (.../<name>/<componentId>/<version>/
+    # <point>). /api/v1/components only knows components already deployed on the Services Runtime, so
+    # during a restore it can resolve vsp alone and leaves every other component to show as a GUID.
+    $payloadComponentNameById = @{}
     Write-Host ""
     Write-Host " Restore Payload ($($payloadObject.components.Count) component(s)):" -ForegroundColor Cyan
     Write-Host " ----------------------------------------------------------------" -ForegroundColor Cyan
@@ -12530,6 +12534,12 @@ Function Restore-ServicesRuntimeComponentBackup {
         $componentName = ($comp.path -split '/') | Where-Object { $_ -in @("vsp", "vcf-fleet-lcm", "vcf-fleet-depot", "vcf-sddc-lcm", "salt", "salt-raas", "vidb", "ops-logs", "vcfms-metrics-store", "vcf-obs-data-platform", "telemetry-acceptor", "vcfa", "vcd-migrator") } | Select-Object -First 1
         if (-not $componentName) {
             $componentName = "unknown"
+        } else {
+            $pathSegments = @($comp.path -split '/')
+            $nameIndex = [Array]::IndexOf($pathSegments, $componentName)
+            if ($nameIndex -ge 0 -and $nameIndex + 1 -lt $pathSegments.Count) {
+                $payloadComponentNameById[$pathSegments[$nameIndex + 1]] = $componentName
+            }
         }
         Write-Host "   $componentName" -ForegroundColor Yellow -NoNewline
         Write-Host " -> point: $($comp.point)" -ForegroundColor White
@@ -12652,7 +12662,7 @@ Function Restore-ServicesRuntimeComponentBackup {
         }
     }
 
-    if ($prefetchFailed) {
+    if ($prefetchFailed -and $payloadComponentNameById.Count -eq 0) {
         LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Could not pre-fetch component names; UUIDs will be used in status output"
     }
 
@@ -12742,6 +12752,8 @@ Function Restore-ServicesRuntimeComponentBackup {
                         if ($prev -ne $cStatus) {
                             $cName = if ($componentNameById.ContainsKey($cid)) {
                                 $componentNameById[$cid]
+                            } elseif ($payloadComponentNameById.ContainsKey($cid)) {
+                                $payloadComponentNameById[$cid]
                             } else {
                                 $cid
                             }
