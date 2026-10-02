@@ -6601,7 +6601,8 @@ Function New-PrepareManagementHostNetworking {
 
     Param(
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
-        [Parameter (Mandatory = $false)][String] $mtu = "9000"
+        [Parameter (Mandatory = $false)][String] $mtu = "9000",
+        [Parameter (Mandatory = $false)][String] $esxiRootPassword
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
@@ -6622,7 +6623,14 @@ Function New-PrepareManagementHostNetworking {
     $az1Hosts = $cluster.azHostMapping.az1
     $hostFQDN = $az1Hosts[0]
     $hostAdmin = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $hostFQDN) -and ($_.username -eq "root") }).username
-    $hostAdminPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $hostFQDN) -and ($_.username -eq "root") }).password
+    If (!$esxiRootPassword)
+    {
+        $hostAdminPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $hostFQDN) -and ($_.username -eq "root") }).password
+    }
+    else
+    {
+        $hostAdminPassword = $esxiRootPassword
+    }
 
     LogMessage -type INFO -message "[$jumpboxName] Connecting to Reference Host: $hostFQDN"
     $hostConnection = Connect-ViServer $hostFQDN -user $hostAdmin -password $hostAdminPassword
@@ -6935,8 +6943,14 @@ Function New-PrepareManagementHostNetworking {
             Foreach ($clusterHost in $clusterHostDetails) {
                 $currentHostFQDN = $clusterHost.hostname
                 $currentHostAdmin = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $currentHostFQDN) -and ($_.username -eq "root") }).username
-                $currentHostPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $currentHostFQDN) -and ($_.username -eq "root") }).password
-
+                If (!$esxiRootPassword)
+                {
+                    $currentHostPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $currentHostFQDN) -and ($_.username -eq "root") }).password
+                }
+                else
+                {
+                    $currentHostPassword = $esxiRootPassword
+                }
                 LogMessage -type INFO -message "[$currentHostFQDN] Connecting to host"
                 $hostConnection = Connect-ViServer $currentHostFQDN -user $currentHostAdmin -password $currentHostPassword -ErrorAction Stop
 
