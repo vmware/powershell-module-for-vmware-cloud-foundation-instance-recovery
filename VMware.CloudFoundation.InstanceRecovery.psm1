@@ -1679,6 +1679,45 @@ Function New-ExtractDataFromSDDCBackup {
 }
 Export-ModuleMember -Function New-ExtractDataFromSDDCBackup
 
+Function New-RetriveVCFCredentials
+{
+    Param (
+        [Parameter (Mandatory = $true)] [String]$sddcManagerFQDN,
+        [Parameter (Mandatory = $true)] [String]$sddcManagerAdmin,
+        [Parameter (Mandatory = $true)] [String]$sddcManagerAdminPassword
+    )
+
+    Try
+    {
+        $jumpboxName = hostname
+        LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+        $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+        $StopWatch.Start()
+
+        $sddcManagerConnection = Connect-VcfSddcManagerServer -server $sddcManagerFQDN -User $sddcManagerAdmin -Password $sddcManagerAdminPassword
+        $uri     = "https://$sddcManagerFQDN/v1/credentials"
+        $headers = @{ "Accept" = "application/json"; "Authorization" = "Bearer $Global:accessToken" }
+
+        LogMessage -Type INFO -Message "[$sddcManagerFQDN] Requesting credentials from SDDC Manager"
+        $response = Invoke-RestMethod -Method GET -Uri $uri -Headers $headers -ContentType "application/json" -SkipCertificateCheck
+
+        LogMessage -Type INFO -Message "[$sddcManagerFQDN] Retrieved $($response.elements.Count) credential records from SDDC Manager"
+        $timestamp     = Get-Date -Format "yyyyMMdd-HHmmss"
+        $fileName      = "vcf-credentials-$domainLabel-$timestamp.json"
+        $response.elements | ConvertTo-Json -Depth 10 | Set-Content -Path $fileName -Encoding UTF8
+        LogMessage -Type INFO -Message "[$sddcManagerFQDN] Credentials file written to: $fileName"
+        LogMessage -Type NOTE -Message "[$sddcManagerFQDN] Finished the process of retrieving credentials from SDDC Manager"
+
+        $StopWatch.Stop()
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    }
+    Catch
+    {
+        Write-CaughtException -object $_
+    }
+}
+Export-ModuleMember -Function New-RetriveVCFCredentials
+
 Function Update-ExtractedSDDCData {
     <#
     .SYNOPSIS
