@@ -76,7 +76,7 @@
     "commandLine": "New-RetrieveVCFCredentials -sddcManagerFqdn $sddcManagerFqdn -sddcManagerAdmin 'admin@local' -sddcManagerAdminPassword $newSddcManagerPassword",
     "displayName": "Retrieve SDDC Credentials Payload",
     "condition": [],
-    "threadId": "",
+    "threadId": "2",
     "interactive": false,
     "visible": true
   },
