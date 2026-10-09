@@ -23,7 +23,6 @@
   "sftpServerBackupPath": "",
   "nsxBackupPassphrase": "",
   "vcfbackupFilePath": "",
-  "encryptionPassword": "",
   "sddcManagerFQDN": "",
   "sddcManagerAdmin": "",
   "sddcManagerAdminPassword": "",

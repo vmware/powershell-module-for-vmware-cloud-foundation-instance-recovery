@@ -565,21 +565,29 @@ Function New-ExtractDataFromSDDCBackup {
     Relative or absolute to the VMware Cloud Foundation SDDC manager backup file somewhere on the local filesystem
 
     .PARAMETER encryptionPassword
-    The password that should be used to decrypt the VMware Cloud Foundation SDDC manager backup file ie the password that was used to encrypt it originally.
+    The password that should be used to decrypt the VMware Cloud Foundation SDDC manager backup file ie the password that was used to encrypt it originally. Mutually exclusive with secureEncryptionPassword.
+
+    .PARAMETER secureEncryptionPassword
+    The same password as a SecureString, e.g. (ConvertTo-SecureString '<output of ConvertFrom-SecureString>'), so the plain text never has to appear on the command line. Mutually exclusive with encryptionPassword.
 
     .PARAMETER credentialsFilePath
     Relative or absolute path to a JSON file containing the credentials returned by the SDDC Manager credentials API (GET /v1/credentials). Used in place of security_password_vault.json, which is no longer included in the SDDC Manager backup.
     #>
 
+    [CmdletBinding(DefaultParameterSetName = 'PlainPassword')]
     Param(
         [Parameter (Mandatory = $true)][String] $vcfBackupFilePath,
-        [Parameter (Mandatory = $true)][String] $encryptionPassword,
+        [Parameter (Mandatory = $true, ParameterSetName = 'PlainPassword')][String] $encryptionPassword,
+        [Parameter (Mandatory = $false, ParameterSetName = 'SecurePassword')][SecureString] $secureEncryptionPassword,
         [Parameter (Mandatory = $false)][String] $credentialsFilePath
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    If ($PSCmdlet.ParameterSetName -eq 'SecurePassword') {
+        $encryptionPassword = [System.Net.NetworkCredential]::new('', $secureEncryptionPassword).Password
+    }
     $backupFileFullPath = (Resolve-Path -Path $vcfBackupFilePath).path
     If ($credentialsFilePath) {
         $credentialsFileFullPath = (Resolve-Path -Path $credentialsFilePath).path
@@ -2566,7 +2574,10 @@ Function New-UploadAndModifySDDCManagerBackup {
     Relative or absolute to the VMware Cloud Foundation SDDC manager backup file somewhere on the local filesystem
 
     .PARAMETER encryptionPassword
-    The password that should be used to decrypt the VMware Cloud Foundation SDDC manager backup file ie the password that was used to encrypt it originally.
+    The password that should be used to decrypt the VMware Cloud Foundation SDDC manager backup file ie the password that was used to encrypt it originally. Mutually exclusive with secureEncryptionPassword.
+
+    .PARAMETER secureEncryptionPassword
+    The same password as a SecureString, e.g. (ConvertTo-SecureString '<output of ConvertFrom-SecureString>'), so the plain text never has to appear on the command line. Mutually exclusive with encryptionPassword.
 
     .PARAMETER extractedSDDCDataFile
     Relative or absolute to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup) somewhere on the local filesystem
@@ -2585,11 +2596,13 @@ Function New-UploadAndModifySDDCManagerBackup {
 
     #>
 
+    [CmdletBinding(DefaultParameterSetName = 'PlainPassword')]
     Param(
         [Parameter (Mandatory = $true)][String] $rootUserPassword,
         [Parameter (Mandatory = $true)][String] $vcfUserPassword,
         [Parameter (Mandatory = $true)][String] $backupFilePath,
-        [Parameter (Mandatory = $true)][String] $encryptionPassword,
+        [Parameter (Mandatory = $true, ParameterSetName = 'PlainPassword')][String] $encryptionPassword,
+        [Parameter (Mandatory = $false, ParameterSetName = 'SecurePassword')][SecureString] $secureEncryptionPassword,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
         [Parameter (Mandatory = $true)][String] $targetFqdn,
         [Parameter (Mandatory = $true)][String] $targetAdmin,
@@ -2600,6 +2613,9 @@ Function New-UploadAndModifySDDCManagerBackup {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    If ($PSCmdlet.ParameterSetName -eq 'SecurePassword') {
+        $encryptionPassword = [System.Net.NetworkCredential]::new('', $secureEncryptionPassword).Password
+    }
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
@@ -3195,21 +3211,29 @@ Function Invoke-SDDCManagerRestore {
     Password for the root user on the newly deployed appliance
 
     .PARAMETER encryptionPassword
-    Password to decrypt an encrypted SDDC Manager backup
+    Password to decrypt an encrypted SDDC Manager backup. Mutually exclusive with secureEncryptionPassword.
+
+    .PARAMETER secureEncryptionPassword
+    The same password as a SecureString, e.g. (ConvertTo-SecureString '<output of ConvertFrom-SecureString>'), so the plain text never has to appear on the command line. Mutually exclusive with encryptionPassword.
 
     #>
+    [CmdletBinding(DefaultParameterSetName = 'PlainPassword')]
     Param(
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
         [Parameter (Mandatory = $true)][String] $backupFilePath,
         [Parameter (Mandatory = $true)][String] $vcfUserPassword,
         [Parameter (Mandatory = $true)][String] $localUserPassword,
         [Parameter (Mandatory = $true)][String] $rootUserPassword,
-        [Parameter (Mandatory = $true)][String] $encryptionPassword
+        [Parameter (Mandatory = $true, ParameterSetName = 'PlainPassword')][String] $encryptionPassword,
+        [Parameter (Mandatory = $false, ParameterSetName = 'SecurePassword')][SecureString] $secureEncryptionPassword
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    If ($PSCmdlet.ParameterSetName -eq 'SecurePassword') {
+        $encryptionPassword = [System.Net.NetworkCredential]::new('', $secureEncryptionPassword).Password
+    }
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON

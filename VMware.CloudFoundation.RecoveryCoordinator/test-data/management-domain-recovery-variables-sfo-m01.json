@@ -22,7 +22,6 @@
   "sftpServerBackupPath": "/media/backups",
   "nsxBackupPassphrase": "VMw@re1!VMw@re1!",
   "vcfbackupFilePath": "F:\\VCFIR\\current\\sddc-manager-backup\\vcf-backup-sfo-vcf01-sfo-rainpole-io-2026-08-20-08-00-30.tar.gz",
-  "encryptionPassword": "VMw@re1!VMw@re1!",
   "sddcManagerFQDN": "sfo-vcf01.sfo.rainpole.io",
   "sddcManagerAdmin": "administrator@vsphere.local",
   "sddcManagerAdminPassword": "VMw@re1!VMw@re1!",

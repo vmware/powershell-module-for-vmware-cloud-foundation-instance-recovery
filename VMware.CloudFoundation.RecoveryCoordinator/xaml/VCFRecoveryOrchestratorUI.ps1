@@ -221,7 +221,10 @@ $global:extraToggleCheckBoxes = @{}
 # NOT in this list and do not need to be: they never become variables at all, because
 # Get-StepReferenceText no longer synthesizes a name for a dataPath condition. They are resolved
 # straight out of $global:conditionDataContext below.
-$script:selectionDrivenVariables = @('extractedSDDCDataFile', 'workloadDomain', 'clusterName')
+# secureEncryptionPassword is UI-owned too: defined in each console, on demand, from the password the
+# operator enters (see Get-SecureEncryptionPasswordAssignment) -- never typed on, nor saved to, the
+# Variables tab.
+$script:selectionDrivenVariables = @('extractedSDDCDataFile', 'workloadDomain', 'clusterName', 'secureEncryptionPassword')
 # The live "selectedDomain"/"selectedCluster" data a "dataPath" condition (see Test-DataPathCondition)
 # walks into generically, e.g. "selectedCluster.isStretched" -- set in Sync-DomainSteps/
 # Sync-AdditionalClusterSteps, exposing the WHOLE selected object so a new plan condition can
@@ -1929,6 +1932,30 @@ function Set-StepButtonsState($Buttons, [string]$Content, $Background) {
     }
 }
 
+# The backup encryption password, held only as a DPAPI-encrypted SecureString blob (decryptable by
+# this user on this machine only -- which the console processes, being children of this one, are).
+# Captured when the UI extracts a backup, or on demand by Get-SecureEncryptionPasswordAssignment the
+# first time a step needs it. The plain text is never kept here, nor sent to a console.
+$script:secureEncryptionPasswordBlob = $null
+
+function Set-SecureEncryptionPasswordFromPlainText([string]$PlainText) {
+    $script:secureEncryptionPasswordBlob = ConvertFrom-SecureString (ConvertTo-SecureString $PlainText -AsPlainText -Force)
+}
+
+# Returns the console statement that defines $secureEncryptionPassword from the stored blob,
+# prompting for the password first if none has been entered yet. Returns $null if that prompt is
+# cancelled.
+function Get-SecureEncryptionPasswordAssignment {
+    if (-not $script:secureEncryptionPasswordBlob) {
+        $entered = Show-PasswordPromptDialog -Title 'Encryption Password' -Message 'Enter the backup encryption password:'
+        if ($null -eq $entered) {
+            return $null
+        }
+        Set-SecureEncryptionPasswordFromPlainText $entered
+    }
+    return "`$secureEncryptionPassword = ConvertTo-SecureString '$($script:secureEncryptionPasswordBlob)'"
+}
+
 function Invoke-Step($Buttons, [string]$CmdletName, [string]$CommandLine, [scriptblock]$OnStepComplete, $Console, $Interactive, [string]$Id, [object[]]$Condition) {
     if ($null -eq $Console) {
         $Console = $global:mainConsole
@@ -1968,6 +1995,25 @@ function Invoke-Step($Buttons, [string]$CmdletName, [string]$CommandLine, [scrip
             $window.Dispatcher.BeginInvoke([System.Windows.Threading.DispatcherPriority]::Background, [System.Action] { & $OnStepComplete $true }.GetNewClosure()) | Out-Null
         }
         return
+    }
+    # A step that references $secureEncryptionPassword gets it defined, in whichever console it runs
+    # in, by a statement prefixed onto its own command line (so it also works in a thread console, or
+    # after a console restart, where the variable would not otherwise exist). Prompts for the
+    # password first if the UI doesn't hold one yet; cancelling that fails the step.
+    if ($CommandLine -match '\$secureEncryptionPassword\b') {
+        $assignment = Get-SecureEncryptionPasswordAssignment
+        if ($null -eq $assignment) {
+            Set-StepButtonsState $Buttons 'Failed' ([System.Windows.Media.Brushes]::Firebrick)
+            if ($Id) {
+                $global:stepRunStatus[$Id] = 'Failed'
+            }
+            New-Advisory "$CmdletName was not run: no encryption password was entered." -Failure
+            if ($OnStepComplete) {
+                $window.Dispatcher.BeginInvoke([System.Windows.Threading.DispatcherPriority]::Background, [System.Action] { & $OnStepComplete $false }.GetNewClosure()) | Out-Null
+            }
+            return
+        }
+        $CommandLine = "$assignment; $CommandLine"
     }
     Lock-ElementSelection
     Set-StepButtonsState $Buttons 'Running' ([System.Windows.Media.Brushes]::Orange)
@@ -2872,15 +2918,12 @@ function Invoke-ExtractSDDCManagerBackup([string]$BackupFilePath) {
         return
     }
 
-    # The password must never appear in the command line the console echoes back. It is handed over
-    # as a one-variable answers file instead (the same Import-RecoveryVariables path every other
-    # secret already takes), deleted by the very same command line right after it is loaded, so the
-    # console session ends up with $encryptionPassword set and the extract references it by name.
     $escapedBackupFilePath = Protect-SingleQuotes $BackupFilePath
-    $passwordFile = Join-Path ([System.IO.Path]::GetTempPath()) "vcfir-$([guid]::NewGuid().ToString('N')).json"
-    @{ encryptionPassword = $encryptionPassword } | ConvertTo-Json | Set-Content -LiteralPath $passwordFile -Encoding UTF8
-    $escapedPasswordFile = Protect-SingleQuotes $passwordFile
-    Send-ToConsole "Import-RecoveryVariables -Path '$escapedPasswordFile'; Remove-Item -LiteralPath '$escapedPasswordFile' -Force; New-ExtractDataFromSDDCBackup -vcfBackupFilePath '$escapedBackupFilePath' -encryptionPassword `$encryptionPassword"
+    # Sent as a DPAPI-encrypted SecureString blob (decryptable only by this user on this machine,
+    # which the console process is), never the plain text, so nothing readable is echoed to the
+    # console or written to its transcript.
+    Set-SecureEncryptionPasswordFromPlainText $encryptionPassword
+    Send-ToConsole "`$secureEncryptionPassword = ConvertTo-SecureString '$($script:secureEncryptionPasswordBlob)'; New-ExtractDataFromSDDCBackup -vcfBackupFilePath '$escapedBackupFilePath' -secureEncryptionPassword `$secureEncryptionPassword"
 
     # New-ExtractDataFromSDDCBackup always writes extracted-sddc-data.json next to the backup file
     # it read -- computed here rather than asked for, since it's fully determined by BackupFilePath.

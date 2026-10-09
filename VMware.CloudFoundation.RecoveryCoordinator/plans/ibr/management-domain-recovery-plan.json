@@ -55,7 +55,7 @@
   },
   {
     "description": "",
-    "commandLine": "New-UploadAndModifySDDCManagerBackup -targetType $targetType -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -rootUserPassword $newSddcManagerPassword -vcfUserPassword $newSddcManagerPassword -backupFilePath $vcfbackupFilePath -encryptionPassword $encryptionPassword -extractedSDDCDataFile $extractedSDDCDataFile",
+    "commandLine": "New-UploadAndModifySDDCManagerBackup -targetType $targetType -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -rootUserPassword $newSddcManagerPassword -vcfUserPassword $newSddcManagerPassword -backupFilePath $vcfbackupFilePath -secureEncryptionPassword $secureEncryptionPassword -extractedSDDCDataFile $extractedSDDCDataFile",
     "displayName": "Upload and Modify SDDC Manager Backup",
     "condition": [],
     "threadId": "2",
@@ -64,7 +64,7 @@
   },
   {
     "description": "",
-    "commandLine": "Invoke-SDDCManagerRestore -extractedSDDCDataFile $extractedSDDCDataFile -backupFilePath $vcfbackupFilePath -vcfUserPassword $newSddcManagerPassword -localUserPassword $newSddcManagerPassword -rootUserPassword $newSddcManagerPassword -encryptionPassword $encryptionPassword",
+    "commandLine": "Invoke-SDDCManagerRestore -extractedSDDCDataFile $extractedSDDCDataFile -backupFilePath $vcfbackupFilePath -vcfUserPassword $newSddcManagerPassword -localUserPassword $newSddcManagerPassword -rootUserPassword $newSddcManagerPassword -secureEncryptionPassword $secureEncryptionPassword",
     "displayName": "Partial SDDC Manager Restore",
     "condition": [],
     "threadId": "2",
@@ -82,7 +82,7 @@
   },
   {
     "description": "",
-    "commandLine": "New-ExtractDataFromSDDCBackup -vcfBackupFilePath $vcfBackupFilePath -encryptionPassword $encryptionPassword -credentialsFilePath $credentialsFilePath",
+    "commandLine": "New-ExtractDataFromSDDCBackup -vcfBackupFilePath $vcfBackupFilePath -secureEncryptionPassword $secureEncryptionPassword -credentialsFilePath $credentialsFilePath",
     "displayName": "Merge Extracted Data and Credentials Payload",
     "condition": [],
     "threadId": "",
@@ -109,7 +109,7 @@
   },
   {
     "description": "",
-    "commandLine": "Invoke-SDDCManagerRestore -extractedSDDCDataFile $extractedSDDCDataFile -backupFilePath $vcfbackupFilePath -vcfUserPassword $vcfUserPassword -localUserPassword $localUserPassword -rootUserPassword $rootUserPassword -encryptionPassword $encryptionPassword",
+    "commandLine": "Invoke-SDDCManagerRestore -extractedSDDCDataFile $extractedSDDCDataFile -backupFilePath $vcfbackupFilePath -vcfUserPassword $vcfUserPassword -localUserPassword $localUserPassword -rootUserPassword $rootUserPassword -secureEncryptionPassword $secureEncryptionPassword",
     "displayName": "Full SDDC Manager Restore",
     "condition": [],
     "threadId": "3",
