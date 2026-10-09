@@ -1305,6 +1305,10 @@ function New-EmbeddedConsole([string]$TabHeader, [switch]$Bootstrap) {
         # Set-ToConsole's own leading-blank-line delimiter (see its comment) is skipped for whichever
         # command is the first one ever sent to this specific console -- nothing to separate it from yet.
         HasSentCommand = $false
+        # Which $script:secureEncryptionPasswordBlob this console's session already has defined as
+        # $secureEncryptionPassword, so Invoke-Step only sends the assignment when it is missing or
+        # stale -- a new/restarted console is a new object, so it starts out $null here.
+        SecureEncryptionPasswordBlob = $null
     }
 
     # ConsoleHwndHost doesn't implement IKeyboardInputSink, so WPF's own keyboard-focus tracking has
@@ -1932,14 +1936,20 @@ function Set-StepButtonsState($Buttons, [string]$Content, $Background) {
     }
 }
 
-# The backup encryption password, held only as a DPAPI-encrypted SecureString blob (decryptable by
-# this user on this machine only -- which the console processes, being children of this one, are).
+# The backup encryption password, held only as a DPAPI-protected, base64 blob (decryptable by this
+# user on this machine only -- which the console processes, being children of this one, are).
 # Captured when the UI extracts a backup, or on demand by Get-SecureEncryptionPasswordAssignment the
 # first time a step needs it. The plain text is never kept here, nor sent to a console.
 $script:secureEncryptionPasswordBlob = $null
 
 function Set-SecureEncryptionPasswordFromPlainText([string]$PlainText) {
-    $script:secureEncryptionPasswordBlob = ConvertFrom-SecureString (ConvertTo-SecureString $PlainText -AsPlainText -Force)
+    Add-Type -AssemblyName System.Security -ErrorAction SilentlyContinue
+    $plainBytes = [System.Text.Encoding]::UTF8.GetBytes($PlainText)
+    try {
+        $script:secureEncryptionPasswordBlob = [Convert]::ToBase64String([System.Security.Cryptography.ProtectedData]::Protect($plainBytes, $null, [System.Security.Cryptography.DataProtectionScope]::CurrentUser))
+    } finally {
+        [Array]::Clear($plainBytes, 0, $plainBytes.Length)
+    }
 }
 
 # Returns the console statement that defines $secureEncryptionPassword from the stored blob,
@@ -1953,7 +1963,7 @@ function Get-SecureEncryptionPasswordAssignment {
         }
         Set-SecureEncryptionPasswordFromPlainText $entered
     }
-    return "`$secureEncryptionPassword = ConvertTo-SecureString '$($script:secureEncryptionPasswordBlob)'"
+    return "`$secureEncryptionPassword = ConvertFrom-VCFIRProtectedString '$($script:secureEncryptionPasswordBlob)'"
 }
 
 function Invoke-Step($Buttons, [string]$CmdletName, [string]$CommandLine, [scriptblock]$OnStepComplete, $Console, $Interactive, [string]$Id, [object[]]$Condition) {
@@ -2000,6 +2010,7 @@ function Invoke-Step($Buttons, [string]$CmdletName, [string]$CommandLine, [scrip
     # in, by a statement prefixed onto its own command line (so it also works in a thread console, or
     # after a console restart, where the variable would not otherwise exist). Prompts for the
     # password first if the UI doesn't hold one yet; cancelling that fails the step.
+    $preCommand = $null
     if ($CommandLine -match '\$secureEncryptionPassword\b') {
         $assignment = Get-SecureEncryptionPasswordAssignment
         if ($null -eq $assignment) {
@@ -2013,7 +2024,9 @@ function Invoke-Step($Buttons, [string]$CmdletName, [string]$CommandLine, [scrip
             }
             return
         }
-        $CommandLine = "$assignment; $CommandLine"
+        if ($Console.SecureEncryptionPasswordBlob -ne $script:secureEncryptionPasswordBlob) {
+            $preCommand = $assignment
+        }
     }
     Lock-ElementSelection
     Set-StepButtonsState $Buttons 'Running' ([System.Windows.Media.Brushes]::Orange)
@@ -2039,6 +2052,12 @@ function Invoke-Step($Buttons, [string]$CmdletName, [string]$CommandLine, [scrip
     if ($Interactive) {
         $consoleTabControl.SelectedItem = $Console.TabItem
         Set-ConsoleFocus
+    }
+    # Sent as its own line ahead of the step's command, not joined to it with ";" -- a separate Enter
+    # press, so the (long) assignment and the command that matters each read as their own line.
+    if ($preCommand) {
+        Send-ToConsole $preCommand $Console
+        $Console.SecureEncryptionPasswordBlob = $script:secureEncryptionPasswordBlob
     }
     Send-ToConsole $CommandLine $Console
 }
@@ -2919,11 +2938,13 @@ function Invoke-ExtractSDDCManagerBackup([string]$BackupFilePath) {
     }
 
     $escapedBackupFilePath = Protect-SingleQuotes $BackupFilePath
-    # Sent as a DPAPI-encrypted SecureString blob (decryptable only by this user on this machine,
-    # which the console process is), never the plain text, so nothing readable is echoed to the
-    # console or written to its transcript.
+    # Sent as a DPAPI-protected blob (decryptable only by this user on this machine, which the
+    # console process is), never the plain text, so nothing readable is echoed to the console or
+    # written to its transcript.
     Set-SecureEncryptionPasswordFromPlainText $encryptionPassword
-    Send-ToConsole "`$secureEncryptionPassword = ConvertTo-SecureString '$($script:secureEncryptionPasswordBlob)'; New-ExtractDataFromSDDCBackup -vcfBackupFilePath '$escapedBackupFilePath' -secureEncryptionPassword `$secureEncryptionPassword"
+    Send-ToConsole "`$secureEncryptionPassword = ConvertFrom-VCFIRProtectedString '$($script:secureEncryptionPasswordBlob)'"
+    $global:mainConsole.SecureEncryptionPasswordBlob = $script:secureEncryptionPasswordBlob
+    Send-ToConsole "New-ExtractDataFromSDDCBackup -vcfBackupFilePath '$escapedBackupFilePath' -secureEncryptionPassword `$secureEncryptionPassword"
 
     # New-ExtractDataFromSDDCBackup always writes extracted-sddc-data.json next to the backup file
     # it read -- computed here rather than asked for, since it's fully determined by BackupFilePath.

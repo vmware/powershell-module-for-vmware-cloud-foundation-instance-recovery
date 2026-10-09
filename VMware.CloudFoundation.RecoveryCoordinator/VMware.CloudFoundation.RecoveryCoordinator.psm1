@@ -119,6 +119,36 @@ Function Import-RecoveryVariables {
 }
 Export-ModuleMember -Function Import-RecoveryVariables
 
+Function ConvertFrom-VCFIRProtectedString {
+    <#
+    .SYNOPSIS
+    Turns a DPAPI-protected string, as produced by the Recovery Coordinator UI, back into a SecureString
+
+    .DESCRIPTION
+    The ConvertFrom-VCFIRProtectedString cmdlet reverses the UI's protection of a secret: a base64 string
+    encrypted with the current user's Windows DPAPI key. It can only succeed as the same user on the same
+    machine, which a console started by the UI always is. Used so the plain text of a secret never has to
+    appear on a console command line.
+
+    .PARAMETER ProtectedValue
+    Base64 string produced by the UI's DPAPI protection of the secret.
+
+    .EXAMPLE
+    $secureEncryptionPassword = ConvertFrom-VCFIRProtectedString 'AQAAANCMnd8BFdERjHoA...'
+    #>
+    Param(
+        [Parameter (Mandatory = $true, Position = 0)][String] $ProtectedValue
+    )
+    Add-Type -AssemblyName System.Security -ErrorAction SilentlyContinue
+    $bytes = [System.Security.Cryptography.ProtectedData]::Unprotect([Convert]::FromBase64String($ProtectedValue), $null, [System.Security.Cryptography.DataProtectionScope]::CurrentUser)
+    try {
+        return (ConvertTo-SecureString -String ([System.Text.Encoding]::UTF8.GetString($bytes)) -AsPlainText -Force)
+    } finally {
+        [Array]::Clear($bytes, 0, $bytes.Length)
+    }
+}
+Export-ModuleMember -Function ConvertFrom-VCFIRProtectedString
+
 Function Set-ExportedSDDCDataFilePath {
     <#
     .SYNOPSIS

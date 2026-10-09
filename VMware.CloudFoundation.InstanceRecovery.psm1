@@ -1723,7 +1723,7 @@ Function New-RetrieveVCFCredentials
                 $sddcManagerConnection = Connect-VcfSddcManagerServer -server $sddcManagerFQDN -User $sddcManagerAdmin -Password $sddcManagerAdminPassword -ErrorAction Continue
                 If ($sddcManagerConnection)
                 {
-                    $AccessToken = $VcfConnection.SessionSecret
+                    $AccessToken = $sddcManagerConnection.SessionSecret
                 }
             }
             Catch
