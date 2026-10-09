@@ -31,8 +31,26 @@
     "commandLine": "New-SDDCManagerOvaDeployment -targetType $targetType -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -sddcManagerOvaFile $sddcManagerOvaFile -rootUserPassword $newSddcManagerPassword -vcfUserPassword $newSddcManagerPassword -localUserPassword $newSddcManagerPassword -basicAuthUserPassword $newSddcManagerPassword",
     "displayName": "SDDC Manager OVA Deployment",
     "condition": [],
-    "threadId": "",
+    "threadId": "2",
     "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "",
+    "commandLine": "New-vCenterOvaDeployment -targetType $targetType -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -restoredvCenterDeploymentSize $restoredvCenterDeploymentSize -vCenterOvaFile $vCenterOvaFile",
+    "displayName": "vCenter OVA Deployment",
+    "condition": [],
+    "threadId": "3",
+    "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "",
+    "commandLine": "New-NSXManagerOvaDeployment -targetType $targetType -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -restoredNsxManagerDeploymentSize $restoredNsxManagerDeploymentSize -nsxManagerOvaFile $nsxManagerOvaFile",
+    "displayName": "First NSX Manager OVA Deployment",
+    "condition": [],
+    "threadId": "4",
+    "interactive": true,
     "visible": true
   },
   {
@@ -40,7 +58,7 @@
     "commandLine": "New-UploadAndModifySDDCManagerBackup -targetType $targetType -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -rootUserPassword $newSddcManagerPassword -vcfUserPassword $newSddcManagerPassword -backupFilePath $vcfbackupFilePath -encryptionPassword $encryptionPassword -extractedSDDCDataFile $extractedSDDCDataFile",
     "displayName": "Upload and Modify SDDC Manager Backup",
     "condition": [],
-    "threadId": "",
+    "threadId": "2",
     "interactive": false,
     "visible": true
   },
@@ -49,7 +67,7 @@
     "commandLine": "Invoke-SDDCManagerRestore -extractedSDDCDataFile $extractedSDDCDataFile -backupFilePath $vcfbackupFilePath -vcfUserPassword $newSddcManagerPassword -localUserPassword $newSddcManagerPassword -rootUserPassword $newSddcManagerPassword -encryptionPassword $encryptionPassword",
     "displayName": "Partial SDDC Manager Restore",
     "condition": [],
-    "threadId": "",
+    "threadId": "2",
     "interactive": false,
     "visible": true
   },
@@ -58,7 +76,7 @@
     "commandLine": "New-RetriveVCFCredentials -sddcManagerFqdn $sddcManagerFqdn -sddcManagerAdmin $sddcManagerAdmin -sddcManagerAdminPassword $newSddcManagerPassword",
     "displayName": "Retrieve SDDC Credentials Payload",
     "condition": [],
-    "threadId": "",
+    "threadId": "2",
     "interactive": false,
     "visible": true
   },
@@ -66,15 +84,6 @@
     "description": "",
     "commandLine": "New-ExtractDataFromSDDCBackup -vcfBackupFilePath $vcfBackupFilePath -encryptionPassword $encryptionPassword -credentialsFilePath $credentialsFilePath",
     "displayName": "Merge Extracted Data and Credentials Payload",
-    "condition": [],
-    "threadId": "",
-    "interactive": false,
-    "visible": true
-  },
-  {
-    "description": "",
-    "commandLine": "New-vCenterOvaDeployment -targetType $targetType -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -restoredvCenterDeploymentSize $restoredvCenterDeploymentSize -vCenterOvaFile $vCenterOvaFile",
-    "displayName": "vCenter OVA Deployment",
     "condition": [],
     "threadId": "2",
     "interactive": false,
@@ -85,17 +94,8 @@
     "commandLine": "Invoke-vCenterRestore -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -vCenterBackupPath $vCenterBackupPath -locationtype $locationtype -locationUser $locationUser -locationPassword $locationPassword",
     "displayName": "Invoke vCenter Restore",
     "condition": [],
-    "threadId": "2",
-    "interactive": false,
-    "visible": true
-  },
-  {
-    "description": "",
-    "commandLine": "New-NSXManagerOvaDeployment -targetType $targetType -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -restoredNsxManagerDeploymentSize $restoredNsxManagerDeploymentSize -nsxManagerOvaFile $nsxManagerOvaFile",
-    "displayName": "First NSX Manager OVA Deployment",
-    "condition": [],
     "threadId": "3",
-    "interactive": true,
+    "interactive": false,
     "visible": true
   },
   {
@@ -103,7 +103,7 @@
     "commandLine": "Invoke-NSXManagerRestore -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -sftpServer $sftpServer -sftpUser $sftpUser -sftpPassword $sftpPassword -sftpServerBackupPath $sftpServerBackupPath -backupPassphrase $nsxBackupPassphrase",
     "displayName": "Invoke NSX Manager Restore",
     "condition": [],
-    "threadId": "3",
+    "threadId": "4",
     "interactive": true,
     "visible": true
   },
