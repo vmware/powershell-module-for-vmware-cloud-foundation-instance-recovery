@@ -1688,7 +1688,7 @@ Function New-ExtractDataFromSDDCBackup {
 }
 Export-ModuleMember -Function New-ExtractDataFromSDDCBackup
 
-Function New-RetriveVCFCredentials
+Function New-RetrieveVCFCredentials
 {
     Param (
         [Parameter (Mandatory = $true)] [String]$sddcManagerFQDN,
@@ -1712,7 +1712,7 @@ Function New-RetriveVCFCredentials
             Try
             {
                 Try { DisConnect-VcfSddcManagerServer -Server $sddcManagerFQDN -ErrorAction SilentlyContinue } Catch {}
-                $sddcManagerConnection = Connect-VcfSddcManagerServer -server $sddcManagerFQDN -User $sddcManagerAdmin -Password $sddcManagerAdminPassword -ErrorAction Stop
+                $sddcManagerConnection = Connect-VcfSddcManagerServer -server $sddcManagerFQDN -User $sddcManagerAdmin -Password $sddcManagerAdminPassword -ErrorAction Continue
                 If ($sddcManagerConnection)
                 {
                     $AccessToken = $VcfConnection.SessionSecret
@@ -1759,7 +1759,7 @@ Function New-RetriveVCFCredentials
         Write-CaughtException -object $_
     }
 }
-Export-ModuleMember -Function New-RetriveVCFCredentials
+Export-ModuleMember -Function New-RetrieveVCFCredentials
 
 Function Update-ExtractedSDDCData {
     <#

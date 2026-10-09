@@ -112,7 +112,7 @@
     "commandLine": "Invoke-SDDCManagerRestore -extractedSDDCDataFile $extractedSDDCDataFile -backupFilePath $vcfbackupFilePath -vcfUserPassword $vcfUserPassword -localUserPassword $localUserPassword -rootUserPassword $rootUserPassword -encryptionPassword $encryptionPassword",
     "displayName": "Full SDDC Manager Restore",
     "condition": [],
-    "threadId": "",
+    "threadId": "3",
     "interactive": false,
     "visible": true
   },

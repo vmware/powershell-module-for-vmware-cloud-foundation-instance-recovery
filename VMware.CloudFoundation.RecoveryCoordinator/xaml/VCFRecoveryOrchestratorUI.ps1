@@ -2872,9 +2872,15 @@ function Invoke-ExtractSDDCManagerBackup([string]$BackupFilePath) {
         return
     }
 
+    # The password must never appear in the command line the console echoes back. It is handed over
+    # as a one-variable answers file instead (the same Import-RecoveryVariables path every other
+    # secret already takes), deleted by the very same command line right after it is loaded, so the
+    # console session ends up with $encryptionPassword set and the extract references it by name.
     $escapedBackupFilePath = Protect-SingleQuotes $BackupFilePath
-    $escapedEncryptionPassword = Protect-SingleQuotes $encryptionPassword
-    Send-ToConsole "New-ExtractDataFromSDDCBackup -vcfBackupFilePath '$escapedBackupFilePath' -encryptionPassword '$escapedEncryptionPassword'"
+    $passwordFile = Join-Path ([System.IO.Path]::GetTempPath()) "vcfir-$([guid]::NewGuid().ToString('N')).json"
+    @{ encryptionPassword = $encryptionPassword } | ConvertTo-Json | Set-Content -LiteralPath $passwordFile -Encoding UTF8
+    $escapedPasswordFile = Protect-SingleQuotes $passwordFile
+    Send-ToConsole "Import-RecoveryVariables -Path '$escapedPasswordFile'; Remove-Item -LiteralPath '$escapedPasswordFile' -Force; New-ExtractDataFromSDDCBackup -vcfBackupFilePath '$escapedBackupFilePath' -encryptionPassword `$encryptionPassword"
 
     # New-ExtractDataFromSDDCBackup always writes extracted-sddc-data.json next to the backup file
     # it read -- computed here rather than asked for, since it's fully determined by BackupFilePath.
