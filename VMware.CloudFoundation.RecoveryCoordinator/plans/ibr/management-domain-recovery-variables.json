@@ -12,6 +12,7 @@
   "vcfUserPassword": "",
   "localUserPassword": "",
   "basicAuthUserPassword": "",
+  "newSddcManagerPassword": "",
   "vCenterBackupPath": "",
   "locationtype": "",
   "locationUser": "",
