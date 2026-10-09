@@ -1744,6 +1744,8 @@ Function New-RetriveVCFCredentials
         $fileName      = "vcf-credentials-$domainLabel-$timestamp.json"
         $response.elements | ConvertTo-Json -Depth 10 | Set-Content -Path $fileName -Encoding UTF8
         LogMessage -Type INFO -Message "[$sddcManagerFQDN] Credentials file written to: $fileName"
+        Set-Variable -Name 'credentialsFilePath' -Value (Resolve-Path -Path $fileName).Path -Scope Global
+        LogMessage -Type INFO -Message "[$sddcManagerFQDN] Set `$credentialsFilePath to '$credentialsFilePath'"
         LogMessage -Type NOTE -Message "[$sddcManagerFQDN] Finished the process of retrieving credentials from SDDC Manager"
 
         $StopWatch.Stop()

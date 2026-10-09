@@ -2860,26 +2860,19 @@ $dataSourceComboBox.Add_SelectionChanged({
         $global:stepRunStatus = @{}
     }.GetNewClosure())
 
-# Prompts for the backup's credentials file and encryption password right here (rather than via
-# the Variables tab -- there's no plan/Execution context for this action at all) and runs it
-# immediately. Cancelling either prompt aborts without sending anything to the console.
+# Prompts for the backup's encryption password right here (rather than via the Variables tab --
+# there's no plan/Execution context for this action at all) and runs it immediately. Cancelling the
+# prompt aborts without sending anything to the console. No credentials file is asked for: the
+# plan's New-RetriveVCFCredentials step creates one and sets $credentialsFilePath itself.
 function Invoke-ExtractSDDCManagerBackup([string]$BackupFilePath) {
-    $credentialsDialog = New-Object Microsoft.Win32.OpenFileDialog
-    $credentialsDialog.Filter = 'JSON files (*.json)|*.json|All files (*.*)|*.*'
-    $credentialsDialog.Title = 'Select credentials file'
-    if ($credentialsDialog.ShowDialog() -ne $true) {
-        return
-    }
-
     $encryptionPassword = Show-PasswordPromptDialog -Title 'Encryption Password' -Message 'Enter the backup encryption password:'
     if ($null -eq $encryptionPassword) {
         return
     }
 
     $escapedBackupFilePath = Protect-SingleQuotes $BackupFilePath
-    $escapedCredentialsFilePath = Protect-SingleQuotes $credentialsDialog.FileName
     $escapedEncryptionPassword = Protect-SingleQuotes $encryptionPassword
-    Send-ToConsole "New-ExtractDataFromSDDCBackup -vcfBackupFilePath '$escapedBackupFilePath' -encryptionPassword '$escapedEncryptionPassword' -credentialsFilePath '$escapedCredentialsFilePath'"
+    Send-ToConsole "New-ExtractDataFromSDDCBackup -vcfBackupFilePath '$escapedBackupFilePath' -encryptionPassword '$escapedEncryptionPassword'"
 
     # New-ExtractDataFromSDDCBackup always writes extracted-sddc-data.json next to the backup file
     # it read -- computed here rather than asked for, since it's fully determined by BackupFilePath.
