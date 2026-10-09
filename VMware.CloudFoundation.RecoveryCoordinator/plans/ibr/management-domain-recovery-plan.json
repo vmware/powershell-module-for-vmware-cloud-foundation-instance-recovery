@@ -103,7 +103,7 @@
     "commandLine": "Invoke-NSXManagerRestore -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -sftpServer $sftpServer -sftpUser $sftpUser -sftpPassword $sftpPassword -sftpServerBackupPath $sftpServerBackupPath -backupPassphrase $nsxBackupPassphrase",
     "displayName": "Invoke NSX Manager Restore",
     "condition": [],
-    "threadId": "4",
+    "threadId": "3",
     "interactive": true,
     "visible": true
   },

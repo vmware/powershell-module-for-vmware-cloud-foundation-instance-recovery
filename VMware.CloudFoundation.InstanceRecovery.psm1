@@ -5703,13 +5703,15 @@ Function New-SingleHostVsanDatastore {
     $cluster = $workloadDomain.vsphereClusterDetails | Where-Object { $_.isDefault -eq "t" }
     $azHosts = $cluster.azHostMapping.az1
     $esxHostFqdn = ($cluster.hosts | where-object { $_.hostname -in $azHosts })[0].hostname
-    $esxHostAdmin = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $esxHostFqdn) -and ($_.username -eq "root") }).username
+
     If (!$esxiRootPassword)
     {
+        $esxHostAdmin = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $esxHostFqdn) -and ($_.username -eq "root") }).username
         $esxHostPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $esxHostFqdn) -and ($_.username -eq "root") }).password
     }
     else
     {
+        $esxHostAdmin = "root"
         $esxHostPassword = $esxiRootPassword
     }
 
@@ -6670,16 +6672,17 @@ Function New-PrepareManagementHostNetworking {
     $clusterVdsDetails = $cluster.vdsDetails
 
     $vmMgmtVlanId = ($cluster.vdsDetails.portgroups | Where-Object { $_.transportType -eq "VM_MANAGEMENT" }).vlanId
-
     $az1Hosts = $cluster.azHostMapping.az1
     $hostFQDN = $az1Hosts[0]
-    $hostAdmin = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $hostFQDN) -and ($_.username -eq "root") }).username
+
     If (!$esxiRootPassword)
     {
+        $hostAdmin = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $hostFQDN) -and ($_.username -eq "root") }).username
         $hostAdminPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $hostFQDN) -and ($_.username -eq "root") }).password
     }
     else
     {
+        $hostAdmin = "root"
         $hostAdminPassword = $esxiRootPassword
     }
 
@@ -7168,13 +7171,15 @@ Function Add-VMKernelsToManagementHosts {
 
         Foreach ($clusterHost in $vmHosts) {
             $currentHostFQDN = $clusterHost.hostname
-            $currentHostAdmin = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $currentHostFQDN) -and ($_.username -eq "root") }).username
+
             If (!$esxiRootPassword)
             {
+                $currentHostAdmin = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $currentHostFQDN) -and ($_.username -eq "root") }).username
                 $currentHostPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $currentHostFQDN) -and ($_.username -eq "root") }).password
             }
             else
             {
+                $currentHostAdmin = "root"
                 $currentHostPassword = $esxiRootPassword
             }
 
