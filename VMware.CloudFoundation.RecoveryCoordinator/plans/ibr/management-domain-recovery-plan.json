@@ -73,10 +73,10 @@
   },
   {
     "description": "",
-    "commandLine": "New-RetriveVCFCredentials -sddcManagerFqdn $sddcManagerFqdn -sddcManagerAdmin $sddcManagerAdmin -sddcManagerAdminPassword $newSddcManagerPassword",
+    "commandLine": "New-RetrieveVCFCredentials -sddcManagerFqdn $sddcManagerFqdn -sddcManagerAdmin 'admin@local' -sddcManagerAdminPassword $newSddcManagerPassword",
     "displayName": "Retrieve SDDC Credentials Payload",
     "condition": [],
-    "threadId": "2",
+    "threadId": "",
     "interactive": false,
     "visible": true
   },
@@ -85,7 +85,7 @@
     "commandLine": "New-ExtractDataFromSDDCBackup -vcfBackupFilePath $vcfBackupFilePath -encryptionPassword $encryptionPassword -credentialsFilePath $credentialsFilePath",
     "displayName": "Merge Extracted Data and Credentials Payload",
     "condition": [],
-    "threadId": "2",
+    "threadId": "",
     "interactive": false,
     "visible": true
   },

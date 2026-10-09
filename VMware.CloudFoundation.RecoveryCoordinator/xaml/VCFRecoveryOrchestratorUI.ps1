@@ -783,19 +783,8 @@ function Set-PlanStepsListBox([System.Windows.Controls.ListBox]$PlanListBox, [Sy
     $PlanListBox.Items.Clear()
     $ManualListBox.Items.Clear()
     $rows = @()
-    # Flips every time a new consecutive run of same-ThreadId rows starts (including a ThreadId
-    # value repeating later, non-consecutively -- that is a distinct thread block, not a
-    # continuation of the earlier one, exactly matching Invoke-StepThreadChain's own grouping) so
-    # New-StepRow's thread circle can alternate colors between blocks. Applied to every step
-    # regardless of Visible, so an invisible step in the middle of a thread block doesn't throw off
-    # the alternation of the visible rows around it.
-    $previousThreadId = $null
-    $colorAlt = $false
     foreach ($step in $Steps) {
-        if ($step.ThreadId -and $step.ThreadId -ne $previousThreadId) {
-            $colorAlt = -not $colorAlt
-        }
-        $row = New-StepRow $step.CommandLine $step.ThreadId $step.Description $step.Interactive $colorAlt $step.Id $step.Condition $step.DisplayName ([bool]$step.IsBreakPoint) $OnSetBreakPointAfter $step
+        $row = New-StepRow $step.CommandLine $step.ThreadId $step.Description $step.Interactive $step.Id $step.Condition $step.DisplayName ([bool]$step.IsBreakPoint) $OnSetBreakPointAfter $step
         # Visible ($true unless a step explicitly sets "visible": false) governs only whether the
         # row is ADDED to the ListBoxes -- it's still built and still included in $rows below, so
         # Run All still runs it in sequence exactly like any other step. This is deliberately unlike
@@ -2168,6 +2157,25 @@ function Invoke-StepThreadChain([object[]]$Rows, $Console, [scriptblock]$OnCompl
     }.GetNewClosure() $Console $row.Interactive $row.Id $row.Condition
 }
 
+# One fixed color per thread number: 2 green, 3 blue, then violet and orchid for 4 and 5. Deliberately
+# no reds, oranges or ambers -- those read as warnings/errors. Any other number wraps around the same
+# four colors; a non-numeric ThreadId gets a neutral slate.
+function Get-ThreadCircleColor([string]$ThreadId) {
+    $palette = @(
+        @(0x2F, 0x9E, 0x8C),  # green
+        @(0x3E, 0x6B, 0xB8),  # blue
+        @(0x7E, 0x5B, 0xB5),  # violet
+        @(0xB0, 0x68, 0x9A)   # orchid
+    )
+    $number = 0
+    if ([int]::TryParse($ThreadId, [ref]$number)) {
+        $rgb = $palette[(($number - 2) % $palette.Count + $palette.Count) % $palette.Count]
+    } else {
+        $rgb = @(0x6B, 0x7A, 0x8F)
+    }
+    return [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.Color]::FromRgb($rgb[0], $rgb[1], $rgb[2]))
+}
+
 # Returns [PSCustomObject]@{ PlanPanel; PlanButton; ManualPanel; ManualButton; CommandLine;
 # CmdletName; DisplayName; ThreadId; Interactive; Id; Condition } -- ONE logical step, rendered as
 # TWO separate visual rows (a WPF element can only ever belong to one parent, so the name/thread
@@ -2187,7 +2195,7 @@ function Invoke-StepThreadChain([object[]]$Rows, $Console, [scriptblock]$OnCompl
 # the two tabs to show a different status for the same step. Id/Condition are carried through to
 # Invoke-Step so its stepStatus pre-flight gate (Test-StepStatusGate) applies identically regardless
 # of how a step's run was triggered.
-function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Description, $Interactive, [bool]$ThreadColorAlt = $false, [string]$Id = '', [object[]]$Condition = @(), [string]$DisplayName = '', [bool]$IsBreakPoint = $false, $OnSetBreakPointAfter = $null, $StepRef = $null) {
+function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Description, $Interactive, [string]$Id = '', [object[]]$Condition = @(), [string]$DisplayName = '', [bool]$IsBreakPoint = $false, $OnSetBreakPointAfter = $null, $StepRef = $null) {
     # The full command line (with its parameters) stays in the module and is only ever sent to the
     # console, never rendered in the Steps list. Variable values referenced in it (e.g. $targetFqdn)
     # come from whatever was loaded via "Load Variables..." -- they're already set in the console
@@ -2206,7 +2214,7 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
     # wire its Add_Click (Manual only) or leave it alone (Plan). No .GetNewClosure() needed here:
     # this scriptblock is invoked synchronously, twice, within this same function call, never stored
     # for later -- normal PowerShell parent-scope variable capture already sees $ThreadId/
-    # $ThreadColorAlt/$Description/$Interactive/$DisplayName correctly without it.
+    # $Description/$Interactive/$DisplayName correctly without it.
     $buildVariant = {
         param([bool]$ReadOnly)
 
@@ -2258,10 +2266,8 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
         # Run All bundles a consecutive run of rows carrying a ThreadId into background threads (see
         # Invoke-StepThread); manually clicking Run on a single row never does, even if it has one.
         # A numbered circle, not a "[1]" text badge -- easier to scan at a glance, and its
-        # background alternates between two colors (set by the caller, Set-PlanStepsListBox, via
-        # $ThreadColorAlt) each time a new consecutive run of same-ThreadId rows starts, so where
-        # one thread's block of steps ends and the next begins is visible without having to read the
-        # numbers themselves.
+        # background color is fixed per thread number (see Get-ThreadCircleColor), so each thread is
+        # recognizable at a glance without having to read the numbers themselves.
         $variantThreadCircle = $null
         if ($ThreadId) {
             $threadCircleText = New-Object System.Windows.Controls.TextBlock
@@ -2275,11 +2281,7 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
             $variantThreadCircle.Width = 22
             $variantThreadCircle.Height = 22
             $variantThreadCircle.CornerRadius = 11
-            $variantThreadCircle.Background = if ($ThreadColorAlt) {
-                [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.Color]::FromRgb(0x2F, 0x9E, 0x8C))
-            } else {
-                [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.Color]::FromRgb(0x3E, 0x6B, 0xB8))
-            }
+            $variantThreadCircle.Background = Get-ThreadCircleColor $ThreadId
             $variantThreadCircle.HorizontalAlignment = 'Center'
             $variantThreadCircle.VerticalAlignment = 'Center'
             $variantThreadCircle.Child = $threadCircleText
