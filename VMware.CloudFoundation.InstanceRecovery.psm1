@@ -637,7 +637,7 @@ Function New-ExtractDataFromSDDCBackup {
         tar -xzf "$parentFolder\decrypted-sddc-manager-backup.tar.gz" $filesToExtract
     }
 
-    If ($model -eq "current") {
+    If (($model -eq "current") -and ($credentialsFilePath)) {
         #Get Content of Credentials File (SDDC Manager credentials API output)
         LogMessage -type INFO -message "[$jumpboxName] Reading Credentials File"
         $credentialsJson = Get-Content $credentialsFileFullPath | ConvertFrom-JSON
@@ -1632,9 +1632,12 @@ Function New-ExtractDataFromSDDCBackup {
             $nsxClusterDetailsObject = New-Object -type psobject
             $nsxClusterDetailsObject | Add-Member -NotePropertyName 'clusterVip' -NotePropertyValue ($nsxtManagerClusters | Where-Object { $_.domainIDs -contains $domainId }).clusterVip
             $nsxClusterDetailsObject | Add-Member -NotePropertyName 'clusterFqdn' -NotePropertyValue ($nsxtManagerClusters | Where-Object { $_.domainIDs -contains $domainId }).clusterFqdn
-            $nsxClusterDetailsObject | Add-Member -NotePropertyName 'rootNsxtManagerPassword' -NotePropertyValue ($passwordVaultObject | Where-Object { ($_.entityName -eq ($nsxtManagerClusters | Where-Object { $_.domainIDs -contains $domainId }).clusterFqdn) -and ($_.credentialType -eq 'SSH') }).password
-            $nsxClusterDetailsObject | Add-Member -NotePropertyName 'nsxtAdminPassword' -NotePropertyValue ($passwordVaultObject | Where-Object { ($_.entityName -eq ($nsxtManagerClusters | Where-Object { $_.domainIDs -contains $domainId }).clusterFqdn) -and ($_.credentialType -eq 'API') -and ($_.username -eq 'admin') }).password
-            $nsxClusterDetailsObject | Add-Member -NotePropertyName 'nsxtAuditPassword' -NotePropertyValue ($passwordVaultObject | Where-Object { ($_.entityName -eq ($nsxtManagerClusters | Where-Object { $_.domainIDs -contains $domainId }).clusterFqdn) -and ($_.credentialType -eq 'AUDIT') }).password
+            If (($model -eq "legacy") -or (($model -eq "current") -and ($credentialsFilePath)))
+            {
+                $nsxClusterDetailsObject | Add-Member -NotePropertyName 'rootNsxtManagerPassword' -NotePropertyValue ($passwordVaultObject | Where-Object { ($_.entityName -eq ($nsxtManagerClusters | Where-Object { $_.domainIDs -contains $domainId }).clusterFqdn) -and ($_.credentialType -eq 'SSH') }).password
+                $nsxClusterDetailsObject | Add-Member -NotePropertyName 'nsxtAdminPassword' -NotePropertyValue ($passwordVaultObject | Where-Object { ($_.entityName -eq ($nsxtManagerClusters | Where-Object { $_.domainIDs -contains $domainId }).clusterFqdn) -and ($_.credentialType -eq 'API') -and ($_.username -eq 'admin') }).password
+                $nsxClusterDetailsObject | Add-Member -NotePropertyName 'nsxtAuditPassword' -NotePropertyValue ($passwordVaultObject | Where-Object { ($_.entityName -eq ($nsxtManagerClusters | Where-Object { $_.domainIDs -contains $domainId }).clusterFqdn) -and ($_.credentialType -eq 'AUDIT') }).password
+            }
 
             If (($licenseModels | Where-Object { $_.resourceId -eq $domainID }).licensingMode) {
                 $licenseModel = ($licenseModels | Where-Object { $_.resourceId -eq $domainID }).licensingMode
@@ -1665,7 +1668,10 @@ Function New-ExtractDataFromSDDCBackup {
     $sddcDataObject | Add-Member -notepropertyname 'workloadDomains' -notepropertyvalue $workloadDomains
     $sddcDataObject | Add-Member -notepropertyname 'vspClusters' -notepropertyvalue $vspClusters
     $sddcDataObject | Add-Member -notepropertyname 'vcfManagementComponents' -notepropertyvalue $vcfManagementComponents
-    $sddcDataObject | Add-Member -notepropertyname 'passwords' -notepropertyvalue $passwordVaultObject
+    If (($model -eq "legacy") -or (($model -eq "current") -and ($credentialsFilePath)))
+    {
+        $sddcDataObject | Add-Member -notepropertyname 'passwords' -notepropertyvalue $passwordVaultObject
+    }
     $sddcDataObject | ConvertTo-Json -Depth 10 | Out-File "$parentFolder\extracted-sddc-data.json"
 
     #Cleanup
@@ -1694,7 +1700,39 @@ Function New-RetriveVCFCredentials
         $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
         $StopWatch.Start()
 
-        $sddcManagerConnection = Connect-VcfSddcManagerServer -server $sddcManagerFQDN -User $sddcManagerAdmin -Password $sddcManagerAdminPassword
+        $timeoutMinutes = 15
+        $retryIntervalSeconds = 10
+        $tokenTimer = [System.Diagnostics.Stopwatch]::StartNew()
+        $AccessToken = $null
+        While (!$AccessToken)
+        {
+            Try
+            {
+                Try { DisConnect-VcfSddcManagerServer -Server $sddcManagerFQDN -ErrorAction SilentlyContinue } Catch {}
+                $sddcManagerConnection = Connect-VcfSddcManagerServer -server $sddcManagerFQDN -User $sddcManagerAdmin -Password $sddcManagerAdminPassword -ErrorAction Stop
+                If ($sddcManagerConnection)
+                {
+                    $AccessToken = $VcfConnection.SessionSecret
+                }
+            }
+            Catch
+            {
+                LogMessage -Type INFO -Message "[$sddcManagerFQDN] Connection attempt failed: $($_.Exception.Message)"
+            }
+            If ($AccessToken) { break }
+            If ($tokenTimer.Elapsed.TotalMinutes -ge $timeoutMinutes)
+            {
+                Throw "Timed out after $timeoutMinutes minutes waiting for an SDDC Manager token from $sddcManagerFQDN"
+            }
+            LogMessage -Type INFO -Message "[$sddcManagerFQDN] Unable to get a token yet, retrying in $retryIntervalSeconds seconds"
+            Start-Sleep -Seconds $retryIntervalSeconds
+        }
+        $domainLabel = (Invoke-VcfGetDomains -Server $sddcManagerConnection | Select-Object -ExpandProperty Elements | Where-Object { $_.Type -eq "MANAGEMENT" }).Name
+        If (!$domainLabel)
+        {
+            Throw "Unable to find the MANAGEMENT domain on $sddcManagerFQDN"
+        }
+
         $uri     = "https://$sddcManagerFQDN/v1/credentials"
         $headers = @{ "Accept" = "application/json"; "Authorization" = "Bearer $Global:accessToken" }
 
@@ -5643,7 +5681,8 @@ Function New-SingleHostVsanDatastore {
     #>
 
     Param(
-        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
+        [Parameter (Mandatory = $false)][String] $esxiRootPassword
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
@@ -5660,7 +5699,14 @@ Function New-SingleHostVsanDatastore {
     $azHosts = $cluster.azHostMapping.az1
     $esxHostFqdn = ($cluster.hosts | where-object { $_.hostname -in $azHosts })[0].hostname
     $esxHostAdmin = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $esxHostFqdn) -and ($_.username -eq "root") }).username
-    $esxHostPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $esxHostFqdn) -and ($_.username -eq "root") }).password
+    If (!$esxiRootPassword)
+    {
+        $esxHostPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $esxHostFqdn) -and ($_.username -eq "root") }).password
+    }
+    else
+    {
+        $esxHostPassword = $esxiRootPassword
+    }
 
     $datastoreName = $extractedSddcData.mgmtDomainInfrastructure.vsan_datastore
     $datastoreType = $cluster.primaryDatastoreType
@@ -7060,7 +7106,8 @@ Function Add-VMKernelsToManagementHosts {
     #>
 
     Param(
-        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile
+        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
+        [Parameter (Mandatory = $false)][String] $esxiRootPassword
     )
 
     $jumpboxName = hostname
@@ -7117,7 +7164,14 @@ Function Add-VMKernelsToManagementHosts {
         Foreach ($clusterHost in $vmHosts) {
             $currentHostFQDN = $clusterHost.hostname
             $currentHostAdmin = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $currentHostFQDN) -and ($_.username -eq "root") }).username
-            $currentHostPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $currentHostFQDN) -and ($_.username -eq "root") }).password
+            If (!$esxiRootPassword)
+            {
+                $currentHostPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $currentHostFQDN) -and ($_.username -eq "root") }).password
+            }
+            else
+            {
+                $currentHostPassword = $esxiRootPassword
+            }
 
             $vmotionIP = $clusterHost.vmotionIP
             $vsanIP = $clusterHost.vsanIP
