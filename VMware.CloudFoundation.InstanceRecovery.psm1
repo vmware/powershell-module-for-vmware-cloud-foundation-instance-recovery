@@ -6996,13 +6996,15 @@ Function New-PrepareManagementHostNetworking {
 
             Foreach ($clusterHost in $clusterHostDetails) {
                 $currentHostFQDN = $clusterHost.hostname
-                $currentHostAdmin = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $currentHostFQDN) -and ($_.username -eq "root") }).username
+
                 If (!$esxiRootPassword)
                 {
+                    $currentHostAdmin = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $currentHostFQDN) -and ($_.username -eq "root") }).username
                     $currentHostPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $currentHostFQDN) -and ($_.username -eq "root") }).password
                 }
                 else
                 {
+                    $currentHostAdmin = "root"
                     $currentHostPassword = $esxiRootPassword
                 }
                 LogMessage -type INFO -message "[$currentHostFQDN] Connecting to host"
