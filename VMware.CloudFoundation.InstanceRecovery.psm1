@@ -6996,14 +6996,10 @@ Function New-PrepareManagementHostNetworking {
 
             Foreach ($clusterHost in $clusterHostDetails) {
                 $currentHostFQDN = $clusterHost.hostname
-
-                If (!$esxiRootPassword)
-                {
+                If (!$esxiRootPassword) {
                     $currentHostAdmin = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $currentHostFQDN) -and ($_.username -eq "root") }).username
                     $currentHostPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "ESXI") -and ($_.entityName -eq $currentHostFQDN) -and ($_.username -eq "root") }).password
-                }
-                else
-                {
+                } else {
                     $currentHostAdmin = "root"
                     $currentHostPassword = $esxiRootPassword
                 }
