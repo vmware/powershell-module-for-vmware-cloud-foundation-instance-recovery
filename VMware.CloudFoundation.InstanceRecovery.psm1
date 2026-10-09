@@ -671,6 +671,9 @@ Function New-ExtractDataFromSDDCBackup {
                 'password'        = $object.password
             }
         }
+    } elseif ($model -eq "current") {
+        #No credentials file supplied yet (it is merged in by a later run) -- extract everything else
+        LogMessage -type INFO -message "[$jumpboxName] No credentials file supplied, extracting without passwords"
     } else {
         Return
     }
