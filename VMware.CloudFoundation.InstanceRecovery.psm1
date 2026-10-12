@@ -4259,8 +4259,13 @@ Function Invoke-vCenterRestore {
             }
         } Catch {
             $consecutiveFailures++
+            $pollError = $_.Exception.Message
+            If ($_.Exception.Response) {
+                $pollError = "HTTP $([int]$_.Exception.Response.StatusCode): $pollError"
+            }
             If ($consecutiveFailures -ge $maxConsecutiveFailures) {
-                LogMessage -type WARNING -message "[$restoredVcenterFqdn] Lost connection to VAMI API after $maxConsecutiveFailures attempts. This may be normal during restore reboot phase."
+                # INFO, not WARNING: the appliance reboots during the restore, so this is expected, and a [WARNING] tag fails the step in the Recovery Coordinator (see Test-StepTranscriptClean).
+                LogMessage -type INFO -message "[$restoredVcenterFqdn] Lost connection to VAMI API after $maxConsecutiveFailures attempts. This is normal during the restore reboot phase."
                 LogMessage -type WAIT -message "[$restoredVcenterFqdn] Waiting for appliance to come back online after restore..."
 
                 # Wait for appliance to come back online
@@ -4282,8 +4287,12 @@ Function Invoke-vCenterRestore {
                                 LogMessage -type INFO -message "[$restoredVcenterFqdn] Appliance is back online"
                             }
                         } Catch {
+                            $healthError = $_.Exception.Message
+                            If ($_.Exception.Response) {
+                                $healthError = "HTTP $([int]$_.Exception.Response.StatusCode): $healthError"
+                            }
                             If ($rebootWaitAttempts % 6 -eq 0) {
-                                LogMessage -type INFO -message "[$restoredVcenterFqdn] Appliance responding to ping but VAMI not yet available... (attempt $rebootWaitAttempts of $maxRebootWaitAttempts)"
+                                LogMessage -type INFO -message "[$restoredVcenterFqdn] Appliance responding to ping but VAMI not yet available... (attempt $rebootWaitAttempts of $maxRebootWaitAttempts): $healthError"
                             }
                         }
                     }
@@ -4298,7 +4307,7 @@ Function Invoke-vCenterRestore {
                     Break
                 }
             } Else {
-                LogMessage -type INFO -message "[$restoredVcenterFqdn] Waiting for VAMI API during service restart (attempt $consecutiveFailures of $maxConsecutiveFailures)"
+                LogMessage -type INFO -message "[$restoredVcenterFqdn] Waiting for VAMI API during service restart (attempt $consecutiveFailures of $maxConsecutiveFailures): $pollError"
             }
         }
     } Until ($state -eq "SUCCEEDED" -or $state -eq "FAILED")
