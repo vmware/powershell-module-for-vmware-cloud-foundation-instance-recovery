@@ -1309,6 +1309,8 @@ function New-EmbeddedConsole([string]$TabHeader, [switch]$Bootstrap) {
         # $secureEncryptionPassword, so Invoke-Step only sends the assignment when it is missing or
         # stale -- a new/restarted console is a new object, so it starts out $null here.
         SecureEncryptionPasswordBlob = $null
+        # Same idea for $credentialsFilePath: which path this console's session already has.
+        CredentialsFilePath = $null
     }
 
     # ConsoleHwndHost doesn't implement IKeyboardInputSink, so WPF's own keyboard-focus tracking has
@@ -1398,6 +1400,7 @@ function Initialize-ConsoleVariables($Console) {
     }
     if ($script:credentialsFilePath) {
         Send-ToConsole "Set-VCFCredentialsFilePath -Path '$(Protect-SingleQuotes $script:credentialsFilePath)'" $Console
+        $Console.CredentialsFilePath = $script:credentialsFilePath
         $lastCmdletSent = 'Set-VCFCredentialsFilePath'
     }
     # $workloadDomain/$clusterName are set via Set-SelectedRecoveryTarget, not a file (see
@@ -1951,13 +1954,24 @@ $script:secureEncryptionPasswordBlob = $null
 # Resume) and re-sends it to consoles with Set-VCFCredentialsFilePath.
 $script:credentialsFilePath = $null
 
+# Newest vcf-credentials-*.json in the working directory (where New-RetrieveVCFCredentials writes,
+# since every console starts there), or $null.
+function Find-LatestCredentialsFile {
+    $latest = Get-ChildItem -LiteralPath $WorkingDirectory -Filter 'vcf-credentials-*.json' -File -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($latest) { return $latest.FullName }
+    return $null
+}
+
 # Reads the path New-RetrieveVCFCredentials logged ("Credentials file written to: <full path>") out
 # of $Console's transcript -- the last such line, so a re-run wins. Returns $null if there isn't one.
+# LogMessage ends every line with an ANSI reset (ESC[0m), which the transcript records verbatim, so the
+# capture stops at the first ESC character as well as at end of line.
 function Get-CredentialsFilePathFromTranscript($Console) {
     if (-not $Console -or -not (Test-Path -LiteralPath $Console.TranscriptPath)) { return $null }
     $text = Get-Content -LiteralPath $Console.TranscriptPath -Raw -ErrorAction SilentlyContinue
     if (-not $text) { return $null }
-    $pathMatches = [regex]::Matches($text, 'Credentials file written to: (?<path>[^\r\n]+)')
+    $pathMatches = [regex]::Matches($text, 'Credentials file written to: (?<path>[^\r\n\x1b]+)')
     if ($pathMatches.Count -eq 0) { return $null }
     return $pathMatches[$pathMatches.Count - 1].Groups['path'].Value.Trim()
 }
@@ -2030,7 +2044,7 @@ function Invoke-Step($Buttons, [string]$CmdletName, [string]$CommandLine, [scrip
     # in, by a statement prefixed onto its own command line (so it also works in a thread console, or
     # after a console restart, where the variable would not otherwise exist). Prompts for the
     # password first if the UI doesn't hold one yet; cancelling that fails the step.
-    $preCommand = $null
+    $preCommands = @()
     if ($CommandLine -match '\$secureEncryptionPassword\b') {
         $assignment = Get-SecureEncryptionPasswordAssignment
         if ($null -eq $assignment) {
@@ -2045,7 +2059,22 @@ function Invoke-Step($Buttons, [string]$CmdletName, [string]$CommandLine, [scrip
             return
         }
         if ($Console.SecureEncryptionPasswordBlob -ne $script:secureEncryptionPasswordBlob) {
-            $preCommand = $assignment
+            $preCommands += $assignment
+        }
+    }
+    # Likewise $credentialsFilePath: the console that runs this step may never have run
+    # New-RetrieveVCFCredentials itself (UI restarted and resumed from a state saved before the path
+    # was recorded, a thread console, ...), so make sure it is defined first. With no path remembered
+    # yet, fall back to the newest vcf-credentials-*.json the Retrieve step left in the working
+    # directory -- where it writes. If there is none, nothing is sent and a step using
+    # -requireCredentials fails loudly.
+    if ($CommandLine -match '\$credentialsFilePath\b') {
+        if (-not $script:credentialsFilePath) {
+            $script:credentialsFilePath = Find-LatestCredentialsFile
+        }
+        if ($script:credentialsFilePath -and $Console.CredentialsFilePath -ne $script:credentialsFilePath) {
+            $preCommands += "Set-VCFCredentialsFilePath -Path '$(Protect-SingleQuotes $script:credentialsFilePath)'"
+            $Console.CredentialsFilePath = $script:credentialsFilePath
         }
     }
     Lock-ElementSelection
@@ -2075,6 +2104,7 @@ function Invoke-Step($Buttons, [string]$CmdletName, [string]$CommandLine, [scrip
                 $retrievedPath = Get-CredentialsFilePathFromTranscript $Console
                 if ($retrievedPath) {
                     $script:credentialsFilePath = $retrievedPath
+                    $Console.CredentialsFilePath = $retrievedPath
                 }
             }
             if ($OnStepComplete) {
@@ -2089,8 +2119,10 @@ function Invoke-Step($Buttons, [string]$CmdletName, [string]$CommandLine, [scrip
     }
     # Sent as its own line ahead of the step's command, not joined to it with ";" -- a separate Enter
     # press, so the (long) assignment and the command that matters each read as their own line.
-    if ($preCommand) {
+    foreach ($preCommand in $preCommands) {
         Send-ToConsole $preCommand $Console
+    }
+    if ($CommandLine -match '\$secureEncryptionPassword\b') {
         $Console.SecureEncryptionPasswordBlob = $script:secureEncryptionPasswordBlob
     }
     Send-ToConsole $CommandLine $Console
@@ -3906,6 +3938,7 @@ $resumeButton.Add_Click({
                     $script:credentialsFilePath = [string]$state.CredentialsFilePath
                     foreach ($resumeConsole in (@($global:mainConsole) + @($global:parallelConsoles))) {
                         Send-ToConsole "Set-VCFCredentialsFilePath -Path '$(Protect-SingleQuotes $script:credentialsFilePath)'" $resumeConsole
+                        $resumeConsole.CredentialsFilePath = $script:credentialsFilePath
                     }
                 } else {
                     New-Advisory "The credentials file '$($state.CredentialsFilePath)' from the saved state no longer exists -- re-run Retrieve SDDC Credentials Payload." -Failure
