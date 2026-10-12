@@ -2180,6 +2180,15 @@ Function New-NSXManagerOvaDeployment {
 
     .PARAMETER targetType
     Specifies the deployment target type. Valid values are 'vcenter' or 'esx'. Default is 'vcenter'.
+
+    .PARAMETER nsxAdminPassword
+    Optional. Password to set for the NSX Manager admin user. If omitted, it is read from the extracted SDDC data (which only holds it once the credentials have been merged in). When supplied and the extracted data has no admin username, "admin" is used.
+
+    .PARAMETER nsxCliPassword
+    Optional. Password to set for the NSX Manager CLI. If omitted, it is read from the extracted SDDC data.
+
+    .PARAMETER nsxAuditPassword
+    Optional. Password to set for the NSX Manager audit user. If omitted, it is read from the extracted SDDC data. When supplied and the extracted data has no audit username, "audit" is used.
     #>
 
     Param(
@@ -2190,7 +2199,10 @@ Function New-NSXManagerOvaDeployment {
         [Parameter (Mandatory = $true)][String] $workloadDomain,
         [Parameter (Mandatory = $true)][String] $restoredNsxManagerDeploymentSize,
         [Parameter (Mandatory = $true)][String] $nsxManagerOvaFile,
-        [Parameter (Mandatory = $false)][ValidateSet("vcenter", "esx")][String] $targetType = "vcenter"
+        [Parameter (Mandatory = $false)][ValidateSet("vcenter", "esx")][String] $targetType = "vcenter",
+        [Parameter (Mandatory = $false)][String] $nsxAdminPassword,
+        [Parameter (Mandatory = $false)][String] $nsxCliPassword,
+        [Parameter (Mandatory = $false)][String] $nsxAuditPassword
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
@@ -2261,6 +2273,26 @@ Function New-NSXManagerOvaDeployment {
     $nsxManagerCliPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain) -and ($_.username -eq "admin") }).password
     $nsxManagerCliAuditUsername = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "AUDIT") }).username
     $nsxManagerCliAuditPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "AUDIT") }).password
+    If ($nsxAdminPassword)
+    {
+        $nsxManagerAdminPassword = $nsxAdminPassword
+        If (!$nsxManagerAdminUsername)
+        {
+            $nsxManagerAdminUsername = "admin"
+        }
+    }
+    If ($nsxCliPassword)
+    {
+        $nsxManagerCliPassword = $nsxCliPassword
+    }
+    If ($nsxAuditPassword)
+    {
+        $nsxManagerCliAuditPassword = $nsxAuditPassword
+        If (!$nsxManagerCliAuditUsername)
+        {
+            $nsxManagerCliAuditUsername = "audit"
+        }
+    }
 
     LogMessage -type INFO -message "[$jumpboxName] Deploying NSX Manager OVA to $targetType target"
 
@@ -2347,6 +2379,9 @@ Function New-vCenterOvaDeployment {
 
     .PARAMETER targetType
     Specifies the deployment target type. Valid values are 'vcenter' or 'esx'. Default is 'vcenter'.
+
+    .PARAMETER vCenterRootPassword
+    Optional. Root password to set on the deployed vCenter appliance. If omitted, it is read from the extracted SDDC data (which only holds it once the credentials have been merged in).
     #>
 
     Param(
@@ -2357,7 +2392,8 @@ Function New-vCenterOvaDeployment {
         [Parameter (Mandatory = $true)][String] $workloadDomain,
         [Parameter (Mandatory = $true)][String] $restoredvCenterDeploymentSize,
         [Parameter (Mandatory = $true)][String] $vCenterOvaFile,
-        [Parameter (Mandatory = $false)][ValidateSet("vcenter", "esx")][String] $targetType = "vcenter"
+        [Parameter (Mandatory = $false)][ValidateSet("vcenter", "esx")][String] $targetType = "vcenter",
+        [Parameter (Mandatory = $false)][String] $vCenterRootPassword
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
@@ -2395,7 +2431,14 @@ Function New-vCenterOvaDeployment {
     }
     $restoredvCenterDnsServers = "$($extractedSddcData.mgmtDomainInfrastructure.primaryDnsServer),$($extractedSddcData.mgmtDomainInfrastructure.secondaryDnsServer)"
     $restoredvCenterGateway = $extractedSddcData.mgmtDomainInfrastructure.gateway
-    $restoredvCenterRootPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "VCENTER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "SSH") }).password
+    If (!$vCenterRootPassword)
+    {
+        $restoredvCenterRootPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "VCENTER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "SSH") }).password
+    }
+    else
+    {
+        $restoredvCenterRootPassword = $vCenterRootPassword
+    }
     LogMessage -type INFO -message "[$jumpboxName] Deploying vCenter OVA to $targetType target"
 
     If ($targetType -eq "vcenter") {
@@ -3824,6 +3867,9 @@ Function Invoke-vCenterRestore {
 
     .PARAMETER backupPassword
     Password to decrypt an encrypted vCenter Server backup file
+
+    .PARAMETER vCenterRootPassword
+    Optional. Root password of the deployed vCenter appliance, used to authenticate to its VAMI API. Must match the password the appliance was deployed with. If omitted, it is read from the extracted SDDC data. The SSO administrator credential for the restore is always read from the extracted SDDC data.
     #>
 
     Param(
@@ -3833,7 +3879,8 @@ Function Invoke-vCenterRestore {
         [Parameter (Mandatory = $true)][ValidateSet("FTP", "FTPS", "HTTP", "HTTPS", "SFTP", "NFS", "SMB")][String] $locationtype,
         [Parameter (Mandatory = $true)][String] $locationUser,
         [Parameter (Mandatory = $true)][String] $locationPassword,
-        [Parameter (Mandatory = $false)][String] $backupPassword
+        [Parameter (Mandatory = $false)][String] $backupPassword,
+        [Parameter (Mandatory = $false)][String] $vCenterRootPassword
     )
 
     $jumpboxName = hostname
@@ -3846,7 +3893,14 @@ Function Invoke-vCenterRestore {
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
 
     $restoredVcenterFqdn = ($extractedSddcData.workloadDomains | Where-Object { $_.domainName -eq $workloadDomain }).vCenterDetails.fqdn
-    $restoredvCenterRootPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "VCENTER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "SSH") }).password
+    If (!$vCenterRootPassword)
+    {
+        $restoredvCenterRootPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "VCENTER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "SSH") }).password
+    }
+    else
+    {
+        $restoredvCenterRootPassword = $vCenterRootPassword
+    }
     $ssoDomain = ($extractedSddcData.workloadDomains | Where-Object { $_.domainName -eq $workloadDomain }).ssoDomain
     $ssoAdminUserName = ($extractedSddcData.passwords | Where-Object { $_.entityType -eq "PSC" -and $_.username -like "*$($ssoDomain)" -and $_.domainName -eq $workloadDomain }).username
     $ssoAdminUserPassword = ($extractedSddcData.passwords | Where-Object { $_.entityType -eq "PSC" -and $_.username -like "*$($ssoDomain)" -and $_.domainName -eq $workloadDomain }).password
@@ -8496,6 +8550,9 @@ Function Invoke-NSXManagerRestore {
 
     .PARAMETER extractedSDDCDataFile
     Relative or absolute to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup) somewhere on the local filesystem
+
+    .PARAMETER nsxAdminPassword
+    Optional. Password of the NSX Manager admin user, used to authenticate to its API. Must match the password the NSX Manager was deployed with. If omitted, it is read from the extracted SDDC data. When supplied and the extracted data has no admin username, "admin" is used.
     #>
     Param(
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
@@ -8504,7 +8561,8 @@ Function Invoke-NSXManagerRestore {
         [Parameter (Mandatory = $true)][String] $sftpUser,
         [Parameter (Mandatory = $true)][String] $sftpPassword,
         [Parameter (Mandatory = $true)][String] $sftpServerBackupPath,
-        [Parameter (Mandatory = $true)][String] $backupPassphrase
+        [Parameter (Mandatory = $true)][String] $backupPassphrase,
+        [Parameter (Mandatory = $false)][String] $nsxAdminPassword
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
@@ -8550,6 +8608,14 @@ Function Invoke-NSXManagerRestore {
     $nsxManagerIP = $selectedNsxManager.ip
     $nsxManagerAdminUsername = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain) -and ($_.username -eq "admin") }).username
     $nsxManagerAdminPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "NSXT_MANAGER") -and ($_.domainName -eq $workloadDomain) -and ($_.username -eq "admin") }).password
+    If ($nsxAdminPassword)
+    {
+        $nsxManagerAdminPassword = $nsxAdminPassword
+        If (!$nsxManagerAdminUsername)
+        {
+            $nsxManagerAdminUsername = "admin"
+        }
+    }
 
     #Retrieve Key of SFTP Server
     LogMessage -type INFO -message "[$jumpboxName] Retrieving SSH Fingerprint of $sftpServer"
