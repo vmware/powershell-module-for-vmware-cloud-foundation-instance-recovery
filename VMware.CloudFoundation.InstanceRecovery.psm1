@@ -1745,7 +1745,7 @@ Function New-RetrieveVCFCredentials
         }
 
         $uri     = "https://$sddcManagerFQDN/v1/credentials"
-        $headers = @{ "Accept" = "application/json"; "Authorization" = "Bearer $Global:accessToken" }
+        $headers = @{ "Accept" = "application/json"; "Authorization" = "Bearer $AccessToken" }
 
         LogMessage -Type INFO -Message "[$sddcManagerFQDN] Requesting credentials from SDDC Manager"
         $response = Invoke-RestMethod -Method GET -Uri $uri -Headers $headers -ContentType "application/json" -SkipCertificateCheck
@@ -1764,7 +1764,10 @@ Function New-RetrieveVCFCredentials
     }
     Catch
     {
-        Write-CaughtException -object $_
+        # Write-CaughtException only exists in the test helper, not in this module -- calling it here
+        # threw "term not recognized" and masked the real error, so report it directly instead.
+        LogMessage -Type EXCEPTION -Message "[$sddcManagerFQDN] Error at Script Line $($_.InvocationInfo.ScriptLineNumber)"
+        LogMessage -Type EXCEPTION -Message "[$sddcManagerFQDN] Error Message: $($_.Exception.Message)"
     }
 }
 Export-ModuleMember -Function New-RetrieveVCFCredentials
