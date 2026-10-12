@@ -182,6 +182,40 @@ Function Set-ExportedSDDCDataFilePath {
 }
 Export-ModuleMember -Function Set-ExportedSDDCDataFilePath
 
+Function Set-VCFCredentialsFilePath {
+    <#
+    .SYNOPSIS
+    Sets $credentialsFilePath in the current session
+
+    .DESCRIPTION
+    The Set-VCFCredentialsFilePath cmdlet sets $credentialsFilePath to the given path, so steps that
+    reference it (e.g. the merge of retrieved credentials into the extracted SDDC data) work in a
+    console that did not itself run New-RetrieveVCFCredentials, such as after the Recovery Coordinator
+    UI has been restarted and a saved state resumed.
+
+    .PARAMETER Path
+    Path to the credentials JSON file written by New-RetrieveVCFCredentials.
+
+    .EXAMPLE
+    Set-VCFCredentialsFilePath -Path 'F:\VCFIR\vcf-credentials-sfo-m01-20261009-181800.json'
+    #>
+    Param(
+        [Parameter (Mandatory = $true)][String] $Path
+    )
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+
+    LogMessage -type INFO -message "[$jumpboxName] Setting credentials file path to '$Path'"
+    Set-Variable -Name 'credentialsFilePath' -Value $Path -Scope Global
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+Export-ModuleMember -Function Set-VCFCredentialsFilePath
+
 Function Set-SelectedRecoveryTarget {
     <#
     .SYNOPSIS

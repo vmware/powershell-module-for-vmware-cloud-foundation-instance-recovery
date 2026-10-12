@@ -572,6 +572,9 @@ Function New-ExtractDataFromSDDCBackup {
 
     .PARAMETER credentialsFilePath
     Relative or absolute path to a JSON file containing the credentials returned by the SDDC Manager credentials API (GET /v1/credentials). Used in place of security_password_vault.json, which is no longer included in the SDDC Manager backup.
+
+    .PARAMETER requireCredentials
+    Fail if credentialsFilePath is empty instead of extracting without passwords. Use when the extracted data must include the credentials (e.g. when merging them in after they have been retrieved).
     #>
 
     [CmdletBinding(DefaultParameterSetName = 'PlainPassword')]
@@ -579,12 +582,20 @@ Function New-ExtractDataFromSDDCBackup {
         [Parameter (Mandatory = $true)][String] $vcfBackupFilePath,
         [Parameter (Mandatory = $true, ParameterSetName = 'PlainPassword')][String] $encryptionPassword,
         [Parameter (Mandatory = $false, ParameterSetName = 'SecurePassword')][SecureString] $secureEncryptionPassword,
-        [Parameter (Mandatory = $false)][String] $credentialsFilePath
+        [Parameter (Mandatory = $false)][String] $credentialsFilePath,
+        [Parameter (Mandatory = $false)][Switch] $requireCredentials
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    If ($requireCredentials -and !$credentialsFilePath) {
+        # Logs the usual completion line too: the Recovery Coordinator UI only decides a step has
+        # finished when it sees "Completed Task <cmdlet>", and it is the ERROR tag that marks it failed.
+        LogMessage -type ERROR -message "[$jumpboxName] -requireCredentials was specified but no credentials file path was supplied (is `$credentialsFilePath set? Run New-RetrieveVCFCredentials first)"
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in 0 minutes and 0 seconds"
+        Return
+    }
     If ($PSCmdlet.ParameterSetName -eq 'SecurePassword') {
         $encryptionPassword = [System.Net.NetworkCredential]::new('', $secureEncryptionPassword).Password
     }
@@ -1754,9 +1765,13 @@ Function New-RetrieveVCFCredentials
         $timestamp     = Get-Date -Format "yyyyMMdd-HHmmss"
         $fileName      = "vcf-credentials-$domainLabel-$timestamp.json"
         $response.elements | ConvertTo-Json -Depth 10 | Set-Content -Path $fileName -Encoding UTF8
-        LogMessage -Type INFO -Message "[$sddcManagerFQDN] Credentials file written to: $fileName"
-        Set-Variable -Name 'credentialsFilePath' -Value (Resolve-Path -Path $fileName).Path -Scope Global
-        LogMessage -Type INFO -Message "[$sddcManagerFQDN] Set `$credentialsFilePath to '$credentialsFilePath'"
+        $fullFilePath = (Resolve-Path -Path $fileName).Path
+        # The recovery coordinator UI reads this exact line (full path, to end of line) from the
+        # console transcript to remember the file across a save/resume -- keep its wording and the
+        # full path intact.
+        LogMessage -Type INFO -Message "[$sddcManagerFQDN] Credentials file written to: $fullFilePath"
+        Set-Variable -Name 'credentialsFilePath' -Value $fullFilePath -Scope Global
+        LogMessage -Type INFO -Message "[$sddcManagerFQDN] Set `$credentialsFilePath to '$fullFilePath'"
         LogMessage -Type NOTE -Message "[$sddcManagerFQDN] Finished the process of retrieving credentials from SDDC Manager"
 
         $StopWatch.Stop()

@@ -82,7 +82,7 @@
   },
   {
     "description": "",
-    "commandLine": "New-ExtractDataFromSDDCBackup -vcfBackupFilePath $vcfBackupFilePath -secureEncryptionPassword $secureEncryptionPassword -credentialsFilePath $credentialsFilePath",
+    "commandLine": "New-ExtractDataFromSDDCBackup -vcfBackupFilePath $vcfBackupFilePath -secureEncryptionPassword $secureEncryptionPassword -credentialsFilePath $credentialsFilePath -requireCredentials",
     "displayName": "Merge Extracted Data and Credentials Payload",
     "condition": [],
     "threadId": "",

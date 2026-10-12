@@ -1396,6 +1396,10 @@ function Initialize-ConsoleVariables($Console) {
         Send-ToConsole "Set-ExportedSDDCDataFilePath -Path '$escapedPath'" $Console
         $lastCmdletSent = 'Set-ExportedSDDCDataFilePath'
     }
+    if ($script:credentialsFilePath) {
+        Send-ToConsole "Set-VCFCredentialsFilePath -Path '$(Protect-SingleQuotes $script:credentialsFilePath)'" $Console
+        $lastCmdletSent = 'Set-VCFCredentialsFilePath'
+    }
     # $workloadDomain/$clusterName are set via Set-SelectedRecoveryTarget, not a file (see
     # $script:selectionDrivenVariables) -- neither the "extracted data" priming above nor the
     # "variables answers file" priming below ever carries them, so a freshly spawned thread console
@@ -1942,6 +1946,22 @@ function Set-StepButtonsState($Buttons, [string]$Content, $Background) {
 # first time a step needs it. The plain text is never kept here, nor sent to a console.
 $script:secureEncryptionPasswordBlob = $null
 
+# Full path of the credentials file New-RetrieveVCFCredentials last wrote, or $null. Console
+# variables don't survive a UI restart, so the UI remembers it itself (saved by Exit, restored by
+# Resume) and re-sends it to consoles with Set-VCFCredentialsFilePath.
+$script:credentialsFilePath = $null
+
+# Reads the path New-RetrieveVCFCredentials logged ("Credentials file written to: <full path>") out
+# of $Console's transcript -- the last such line, so a re-run wins. Returns $null if there isn't one.
+function Get-CredentialsFilePathFromTranscript($Console) {
+    if (-not $Console -or -not (Test-Path -LiteralPath $Console.TranscriptPath)) { return $null }
+    $text = Get-Content -LiteralPath $Console.TranscriptPath -Raw -ErrorAction SilentlyContinue
+    if (-not $text) { return $null }
+    $pathMatches = [regex]::Matches($text, 'Credentials file written to: (?<path>[^\r\n]+)')
+    if ($pathMatches.Count -eq 0) { return $null }
+    return $pathMatches[$pathMatches.Count - 1].Groups['path'].Value.Trim()
+}
+
 function Set-SecureEncryptionPasswordFromPlainText([string]$PlainText) {
     Add-Type -AssemblyName System.Security -ErrorAction SilentlyContinue
     $plainBytes = [System.Text.Encoding]::UTF8.GetBytes($PlainText)
@@ -2042,6 +2062,20 @@ function Invoke-Step($Buttons, [string]$CmdletName, [string]$CommandLine, [scrip
             param($isClean)
             if ($isClean) {
                 Update-SelectedClusterNameFromDisk
+            }
+            if ($OnStepComplete) {
+                & $OnStepComplete $isClean
+            }
+        }.GetNewClosure()
+    }
+    if ($CmdletName -eq 'New-RetrieveVCFCredentials') {
+        $effectiveOnStepComplete = {
+            param($isClean)
+            if ($isClean) {
+                $retrievedPath = Get-CredentialsFilePathFromTranscript $Console
+                if ($retrievedPath) {
+                    $script:credentialsFilePath = $retrievedPath
+                }
             }
             if ($OnStepComplete) {
                 & $OnStepComplete $isClean
@@ -2560,6 +2594,8 @@ function Register-AnswerFileToggleHandlers($CheckBox, [scriptblock]$GetStepRows,
     $global:interactiveAnswerFileGetters.Add($GetAnswerFilePath)
 
     $CheckBox.Add_Checked({
+            # Resume re-checks the box itself with the saved path already set -- see the Resume handler.
+            if ($script:restoringInteractiveAnswerFile) { return }
             $dialog = New-Object Microsoft.Win32.OpenFileDialog
             $dialog.Filter = 'JSON files (*.json)|*.json|All files (*.*)|*.*'
             $dialog.Title = 'Select interactive answer file'
@@ -3756,6 +3792,10 @@ $exitButton.Add_Click({
                 # every IBR plan, so no migration is needed for those).
                 RecoveryPlanId           = if ($currentPlanEntry) { $currentPlanEntry.id } else { $null }
                 VariablesAnswersFilePath = $global:currentPlanContext.AnswersFilePath
+                CredentialsFilePath      = $script:credentialsFilePath
+                # The interactive (unattended Read-Host) answer file behind the Run Plan toggle -- a
+                # different file from VariablesAnswersFilePath above.
+                InteractiveAnswerFilePath = $global:currentPlanContext.InteractiveAnswerFilePath
                 SelectedDomainIndex      = $domainsListBox.SelectedIndex
                 CompletedSteps           = $completedSteps
             }
@@ -3837,6 +3877,39 @@ $resumeButton.Add_Click({
             $savedAnswersPath = if ($state.VariablesAnswersFilePath) { [string]$state.VariablesAnswersFilePath } elseif ($state.VariablesAnswersFilePaths.Shared) { [string]$state.VariablesAnswersFilePaths.Shared } else { $null }
             if ($savedAnswersPath) {
                 Import-VariablesAnswersFile $savedAnswersPath
+            }
+
+            # After Import-VariablesAnswersFile, not before: loading a Variables file deliberately
+            # unchecks the interactive answer-file toggle (see Reset-AnswerFileToggle). Re-checks it
+            # here without its file dialog (the path is already known), then primes every console.
+            if ($state.InteractiveAnswerFilePath) {
+                $savedInteractivePath = [string]$state.InteractiveAnswerFilePath
+                if (Test-Path -LiteralPath $savedInteractivePath) {
+                    $global:currentPlanContext.InteractiveAnswerFilePath = $savedInteractivePath
+                    $script:restoringInteractiveAnswerFile = $true
+                    try {
+                        $runAllAnswerFileCheckBox.IsChecked = $true
+                    } finally {
+                        $script:restoringInteractiveAnswerFile = $false
+                    }
+                    Sync-InteractiveAnswerFiles
+                    Update-StepRowAutoAnsweredBadges $global:currentPlanContext.StepRows $savedInteractivePath
+                } else {
+                    New-Advisory "The interactive answer file '$savedInteractivePath' from the saved state no longer exists -- re-select it with the answer file toggle." -Failure
+                }
+            }
+
+            # Console variables did not survive the restart, so re-send the credentials file path the
+            # Retrieve step produced last time (if it is still on disk) to every existing console.
+            if ($state.CredentialsFilePath) {
+                if (Test-Path -LiteralPath ([string]$state.CredentialsFilePath)) {
+                    $script:credentialsFilePath = [string]$state.CredentialsFilePath
+                    foreach ($resumeConsole in (@($global:mainConsole) + @($global:parallelConsoles))) {
+                        Send-ToConsole "Set-VCFCredentialsFilePath -Path '$(Protect-SingleQuotes $script:credentialsFilePath)'" $resumeConsole
+                    }
+                } else {
+                    New-Advisory "The credentials file '$($state.CredentialsFilePath)' from the saved state no longer exists -- re-run Retrieve SDDC Credentials Payload." -Failure
+                }
             }
 
             $stepRowGroups = Get-StepRowGroups
