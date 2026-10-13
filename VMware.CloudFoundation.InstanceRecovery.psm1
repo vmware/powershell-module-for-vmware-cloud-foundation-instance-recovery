@@ -4206,7 +4206,7 @@ Function Invoke-vCenterRestore {
         } Catch {
             $consecutiveFailures++
             If ($consecutiveFailures -ge $maxConsecutiveFailures) {
-                LogMessage -type WARNING -message "[$restoredVcenterFqdn] Lost connection to VAMI API after $maxConsecutiveFailures attempts. This may be normal during restore reboot phase."
+                LogMessage -type INFO -message "[$restoredVcenterFqdn] Lost connection to VAMI API after $maxConsecutiveFailures attempts. This may be normal during restore reboot phase."
                 LogMessage -type WAIT -message "[$restoredVcenterFqdn] Waiting for appliance to come back online after restore..."
 
                 # Wait for appliance to come back online
