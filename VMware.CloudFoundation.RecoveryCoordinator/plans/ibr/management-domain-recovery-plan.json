@@ -109,7 +109,7 @@
   },
   {
     "description": "",
-    "commandLine": "Invoke-SDDCManagerRestore -extractedSDDCDataFile $extractedSDDCDataFile -backupFilePath $vcfbackupFilePath -vcfUserPassword $vcfUserPassword -localUserPassword $localUserPassword -rootUserPassword $rootUserPassword -secureEncryptionPassword $secureEncryptionPassword",
+    "commandLine": "Invoke-SDDCManagerRestore -extractedSDDCDataFile $extractedSDDCDataFile -backupFilePath $vcfbackupFilePath -vcfUserPassword $newSddcManagerPassword -localUserPassword $newSddcManagerPassword -rootUserPassword $newSddcManagerPassword -secureEncryptionPassword $secureEncryptionPassword",
     "displayName": "Full SDDC Manager Restore",
     "condition": [],
     "threadId": "3",
