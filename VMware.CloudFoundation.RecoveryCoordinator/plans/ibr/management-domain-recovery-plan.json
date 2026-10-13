@@ -37,24 +37,6 @@
   },
   {
     "description": "",
-    "commandLine": "New-vCenterOvaDeployment -targetType $targetType -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -restoredvCenterDeploymentSize $restoredvCenterDeploymentSize -vCenterOvaFile $vCenterOvaFile",
-    "displayName": "vCenter OVA Deployment",
-    "condition": [],
-    "threadId": "3",
-    "interactive": false,
-    "visible": true
-  },
-  {
-    "description": "",
-    "commandLine": "New-NSXManagerOvaDeployment -targetType $targetType -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -restoredNsxManagerDeploymentSize $restoredNsxManagerDeploymentSize -nsxManagerOvaFile $nsxManagerOvaFile",
-    "displayName": "First NSX Manager OVA Deployment",
-    "condition": [],
-    "threadId": "4",
-    "interactive": true,
-    "visible": true
-  },
-  {
-    "description": "",
     "commandLine": "New-UploadAndModifySDDCManagerBackup -targetType $targetType -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -rootUserPassword $newSddcManagerPassword -vcfUserPassword $newSddcManagerPassword -backupFilePath $vcfbackupFilePath -secureEncryptionPassword $secureEncryptionPassword -extractedSDDCDataFile $extractedSDDCDataFile",
     "displayName": "Upload and Modify SDDC Manager Backup",
     "condition": [],
@@ -87,6 +69,24 @@
     "condition": [],
     "threadId": "",
     "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "",
+    "commandLine": "New-vCenterOvaDeployment -targetType $targetType -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -restoredvCenterDeploymentSize $restoredvCenterDeploymentSize -vCenterOvaFile $vCenterOvaFile",
+    "displayName": "vCenter OVA Deployment",
+    "condition": [],
+    "threadId": "3",
+    "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "",
+    "commandLine": "New-NSXManagerOvaDeployment -targetType $targetType -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -restoredNsxManagerDeploymentSize $restoredNsxManagerDeploymentSize -nsxManagerOvaFile $nsxManagerOvaFile",
+    "displayName": "First NSX Manager OVA Deployment",
+    "condition": [],
+    "threadId": "4",
+    "interactive": true,
     "visible": true
   },
   {
