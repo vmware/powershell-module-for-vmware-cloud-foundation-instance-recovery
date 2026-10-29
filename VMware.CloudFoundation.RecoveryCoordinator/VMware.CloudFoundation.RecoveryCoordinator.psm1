@@ -275,6 +275,54 @@ Export-ModuleMember -Function Set-SelectedRecoveryTarget
 
 #EndRegion Recovery Variables
 
+#Region Update Check
+
+Function Get-VCFIRModuleUpdateStatus {
+    <#
+    .SYNOPSIS
+    Writes each module's latest available version to a result file, for the Recovery Coordinator UI's update banner
+
+    .DESCRIPTION
+    The Get-VCFIRModuleUpdateStatus cmdlet looks up, for each "Name|InstalledVersion" pair in -Module,
+    the repository that module was actually installed from (Get-InstalledModule) and the newest
+    version available there (Find-Module -Repository <that repository>) -- no hard-coded repository
+    name, so this works the same way whether that repository is the public PSGallery or an internal
+    one. One "Name|Installed|Latest|Repository" line per module is written to -ResultPath, or
+    "Name|Installed|ERROR|message" if that module's own lookup failed.
+
+    Exists as a real, named cmdlet -- not an inline script block -- specifically so the single line
+    the orchestrator UI types into its embedded console (see Start-UpdateCheck there) reads as a
+    normal command, not a sprawling foreach/try/catch one-liner spanning the whole console width.
+
+    .PARAMETER Module
+    One or more "Name|InstalledVersion" strings, e.g. 'VMware.CloudFoundation.RecoveryCoordinator|1.0.3'.
+
+    .PARAMETER ResultPath
+    Path to write the pipe-delimited result lines to.
+
+    .EXAMPLE
+    Get-VCFIRModuleUpdateStatus -Module 'VMware.CloudFoundation.RecoveryCoordinator|1.0.3' -ResultPath 'C:\Temp\vcfir-updatecheck.txt'
+    #>
+    Param(
+        [Parameter (Mandatory = $true)][String[]] $Module,
+        [Parameter (Mandatory = $true)][String] $ResultPath
+    )
+    $lines = foreach ($entry in $Module) {
+        $name, $installed = $entry -split '\|', 2
+        try {
+            $installedInfo = Get-InstalledModule -Name $name -ErrorAction Stop | Sort-Object Version -Descending | Select-Object -First 1
+            $latest = Find-Module -Name $name -Repository $installedInfo.Repository -ErrorAction Stop
+            "$name|$installed|$($latest.Version)|$($installedInfo.Repository)"
+        } catch {
+            "$name|$installed|ERROR|$($_.Exception.Message -replace '\r?\n', ' ')"
+        }
+    }
+    $lines | Set-Content -LiteralPath $ResultPath
+}
+Export-ModuleMember -Function Get-VCFIRModuleUpdateStatus
+
+#EndRegion Update Check
+
 #Region UI Orchestrator
 
 Function Start-VCFRecoveryCoordinator {

@@ -1684,8 +1684,12 @@ function Start-UpdateCheck {
 
     $resultPath = Join-Path ([System.IO.Path]::GetTempPath()) "vcfir-updatecheck-$PID.txt"
     Remove-Item -LiteralPath $resultPath -Force -ErrorAction SilentlyContinue
-    $moduleList = ($modules | ForEach-Object { "'$($_.Name)|$($_.Version)'" }) -join ','
-    $command = "& { foreach (`$m in $moduleList) { `$n, `$v = `$m -split '\|'; try { `$i = Get-InstalledModule -Name `$n -ErrorAction Stop | Sort-Object Version -Descending | Select-Object -First 1; `$l = Find-Module -Name `$n -Repository `$i.Repository -ErrorAction Stop; `"`$n|`$v|`$(`$l.Version)|`$(`$i.Repository)`" } catch { `"`$n|`$v|ERROR|`$(`$_.Exception.Message -replace '\r?\n',' ')`" } } } | Set-Content -LiteralPath '$(Protect-SingleQuotes $resultPath)'"
+    # A real, named cmdlet (Get-VCFIRModuleUpdateStatus, exported by this module's own .psm1), not an
+    # inline foreach/try/catch one-liner typed directly into the console -- that used to render as a
+    # sprawling, unreadable wall of PowerShell internals wrapping across the whole console width every
+    # time this ran. This way the operator sees one short, ordinary-looking command.
+    $moduleArgs = ($modules | ForEach-Object { "'$(Protect-SingleQuotes "$($_.Name)|$($_.Version)")'" }) -join ','
+    $command = "Get-VCFIRModuleUpdateStatus -Module $moduleArgs -ResultPath '$(Protect-SingleQuotes $resultPath)'"
 
     New-Advisory 'Checking for updates to the Recovery Coordinator and InstanceRecovery modules...'
     Send-ToConsole $command $global:mainConsole
