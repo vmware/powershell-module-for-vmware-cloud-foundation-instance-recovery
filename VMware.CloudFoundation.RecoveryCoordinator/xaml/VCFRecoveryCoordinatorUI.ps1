@@ -1657,7 +1657,7 @@ function Show-UpdateBanner {
     if ($global:updateBannerIndex -ge $items.Count) { $global:updateBannerIndex = 0 }
     if ($global:updateBannerIndex -lt 0) { $global:updateBannerIndex = $items.Count - 1 }
     $item = $items[$global:updateBannerIndex]
-    $updateBannerText.Text = "A newer version of $($item.Name) is available in the $($item.Repository) repository: $($item.Installed) -> $($item.Latest)."
+    $updateBannerText.Text = "A newer version of $($item.Name) is available in the $($item.Repository) repository: $($item.Installed) -> $($item.Latest). Before upgrading, refer to help files to ensure the newer release supports the VCF version you are recovering."
     $updateBannerPager.Visibility = if ($items.Count -gt 1) { 'Visible' } else { 'Collapsed' }
     $updateBannerCounter.Text = "$($global:updateBannerIndex + 1) of $($items.Count)"
     $updateBanner.Visibility = 'Visible'
