@@ -127,11 +127,11 @@ $consoleTabControl = $window.FindName('ConsoleTabControl')
 # next. Kept as a running history instead: nothing here ever clears it, so an earlier warning stays
 # visible (scroll down) even after something later succeeds.
 #
-# NEWEST FIRST: each advisory is inserted ABOVE the previous one, so the most recent message is
-# always the one on screen without needing to scroll, and the pane is scrolled back to the top to
-# guarantee it's in view. Every message is prefixed with a timestamp in the same
-# "MM-dd-yyyy HH:mm:ss" format LogMessage stamps its console output with, so an advisory here can be
-# lined up against the matching line in a console transcript.
+# NEWEST LAST: each advisory is appended BELOW the previous one, so the history reads top-to-bottom
+# in the order it happened, and the pane is scrolled to the end so the most recent message is still
+# the one in view without the operator needing to scroll. Every message is prefixed with a timestamp
+# in the same "MM-dd-yyyy HH:mm:ss" format LogMessage stamps its console output with, so an advisory
+# here can be lined up against the matching line in a console transcript.
 #
 # -Failure renders the message bold RED; everything else is plain BLACK. This is a deliberate explicit
 # switch rather than sniffing the text for words like "failed": several genuine failures don't
@@ -148,16 +148,12 @@ function New-Advisory([string]$Message, [switch]$Failure) {
 
     $blocks = $advisoriesRichTextBox.Document.Blocks
     # A RichTextBox's document starts life with one empty Paragraph already in it; reusing that for
-    # the first advisory (rather than inserting before it) avoids a leading blank line.
+    # the first advisory (rather than adding another one after it) avoids a leading blank line.
     if ($blocks.Count -eq 1 -and $blocks.FirstBlock -is [System.Windows.Documents.Paragraph] -and $blocks.FirstBlock.Inlines.Count -eq 0) {
         $blocks.Clear()
     }
-    if ($blocks.Count -gt 0) {
-        $blocks.InsertBefore($blocks.FirstBlock, $paragraph)
-    } else {
-        $blocks.Add($paragraph)
-    }
-    $advisoriesRichTextBox.ScrollToHome()
+    $blocks.Add($paragraph)
+    $advisoriesRichTextBox.ScrollToEnd()
 }
 
 # One single state bundle for whichever plan is currently selected -- every plan in the catalog,
