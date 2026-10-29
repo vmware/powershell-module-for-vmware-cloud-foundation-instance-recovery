@@ -284,7 +284,7 @@ Function Start-VCFRecoveryCoordinator {
 
     .DESCRIPTION
     The Start-VCFRecoveryCoordinator cmdlet opens a WPF window -- built by a standalone script
-    (xaml\VCFRecoveryOrchestratorUI.ps1) that lets you pick an extracted-sddc-data.json file,
+    (xaml\VCFRecoveryCoordinatorUI.ps1) that lets you pick an extracted-sddc-data.json file,
     lists the workload domains it contains, and runs the recovery steps for the selected domain in an
     embedded console. That console is a plain read-only output pane plus a single-line input box fed
     by a second, ordinary pwsh.exe process with redirected stdin/stdout/stderr -- not a terminal
@@ -315,8 +315,8 @@ Function Start-VCFRecoveryCoordinator {
     Param()
 
     $moduleRoot = $PSScriptRoot
-    $xamlPath = Join-Path $moduleRoot 'xaml\VCFRecoveryOrchestratorUI.xaml'
-    $uiScriptPath = Join-Path $moduleRoot 'xaml\VCFRecoveryOrchestratorUI.ps1'
+    $xamlPath = Join-Path $moduleRoot 'xaml\VCFRecoveryCoordinatorUI.xaml'
+    $uiScriptPath = Join-Path $moduleRoot 'xaml\VCFRecoveryCoordinatorUI.ps1'
     # Recovery plans (Management Domain Restores, Recover Default Cluster, etc) live here as a JSON
     # array of step objects (commandLine/condition/threadId) per plan file -- see
     # Get-RecoveryPlanSteps in the UI script. Kept outside both the .psm1 and the UI script so
@@ -340,26 +340,6 @@ Function Start-VCFRecoveryCoordinator {
     if (-not (Test-Path $plansPath)) {
         LogMessage -type ERROR -message "Cannot find plans folder '$plansPath'."
         return
-    }
-
-    # Check for newer versions of this module and InstanceRecovery, each in the repository it was
-    # installed from (PowerShellGet records that), so no repository name is hard-coded. A module not
-    # installed through PowerShellGet (e.g. imported from a folder) or an unreachable repository is
-    # skipped. Passed to the UI as "Name|Installed|Latest|Repository" entries for its update banner.
-    $updates = @()
-    foreach ($module in @(
-            @{ Name = 'VMware.CloudFoundation.RecoveryCoordinator'; Version = $MyInvocation.MyCommand.Module.Version }
-            @{ Name = 'VMware.CloudFoundation.InstanceRecovery'; Version = (Get-Module -Name 'VMware.CloudFoundation.InstanceRecovery' | Select-Object -First 1).Version }
-        )) {
-        try {
-            $installed = Get-InstalledModule -Name $module.Name -ErrorAction Stop | Sort-Object Version -Descending | Select-Object -First 1
-            $latest = Find-Module -Name $module.Name -Repository $installed.Repository -ErrorAction Stop
-            if ([version]$latest.Version -gt [version]$module.Version) {
-                $updates += "$($module.Name)|$($module.Version)|$($latest.Version)|$($installed.Repository)"
-            }
-        } catch {
-            LogMessage -type INFO -message "Update check skipped for $($module.Name): $($_.Exception.Message)"
-        }
     }
 
     $pwshPath = (Get-Process -Id $PID).Path   # same pwsh.exe/powershell.exe build this session is running under
@@ -392,12 +372,11 @@ Function Start-VCFRecoveryCoordinator {
     $startInfo.ArgumentList.Add($launchDirectory)
     $startInfo.ArgumentList.Add('-PlansPath')
     $startInfo.ArgumentList.Add($plansPath)
-    # Omitted entirely when empty: a trailing empty argument after a switch name can be dropped by
-    # the command line, leaving "-Updates" without a value.
-    if ($updates.Count -gt 0) {
-        $startInfo.ArgumentList.Add('-Updates')
-        $startInfo.ArgumentList.Add($updates -join ';')
-    }
+    # Installed versions, for the UI's "newer version available?" check (see Start-UpdateCheck there).
+    $startInfo.ArgumentList.Add('-CoordinatorVersion')
+    $startInfo.ArgumentList.Add("$($MyInvocation.MyCommand.Module.Version)")
+    $startInfo.ArgumentList.Add('-InstanceRecoveryVersion')
+    $startInfo.ArgumentList.Add("$((Get-Module -Name 'VMware.CloudFoundation.InstanceRecovery' | Select-Object -First 1).Version)")
 
     # Redirected only so a fast, unhandled failure (e.g. an exception thrown before Application.Run()
     # ever starts pumping messages) has somewhere to be read back from below -- not read from at all

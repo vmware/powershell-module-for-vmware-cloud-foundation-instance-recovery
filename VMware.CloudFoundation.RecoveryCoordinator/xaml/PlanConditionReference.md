@@ -1,7 +1,7 @@
 # Plan step condition reference
 
 Reference for anyone hand-authoring `"condition"` entries in a recovery plan JSON file
-(`plans\ibr\*.json`, `plans\fdr\*.json`). Implemented in `VCFRecoveryOrchestratorUI.ps1`
+(`plans\ibr\*.json`, `plans\fdr\*.json`). Implemented in `VCFRecoveryCoordinatorUI.ps1`
 (`Test-StepCondition`, `Test-ConditionOperator`, `Resolve-ConditionDataPath`,
 `Test-DataPathCondition`, `Test-StepStatusGate`, `Get-RecoveryPlanSteps`).
 
