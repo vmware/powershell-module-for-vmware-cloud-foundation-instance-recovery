@@ -257,6 +257,7 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
@@ -287,11 +288,27 @@
             </DockPanel>
         </Border>
 
+        <!-- Update banner: hidden unless the background check (see Start-UpdateCheck in the .ps1) finds
+             a newer Recovery Coordinator and/or InstanceRecovery module in the Development repository.
+             With two updates pending, the chevrons page between them; X dismisses the one on show for
+             this session only (it returns on the next launch while the update is still pending). -->
+        <Border x:Name="UpdateBanner" Grid.Row="1" Background="#F57C00" Padding="18,8" Visibility="Collapsed">
+            <DockPanel>
+                <Button x:Name="UpdateBannerCloseButton" DockPanel.Dock="Right" Content="&#x2715;" Background="Transparent" Foreground="White" FontSize="14" Padding="6,0" ToolTip="Dismiss" VerticalAlignment="Center" />
+                <StackPanel x:Name="UpdateBannerPager" DockPanel.Dock="Left" Orientation="Horizontal" Margin="0,0,14,0" VerticalAlignment="Center">
+                    <Button x:Name="UpdateBannerPrevButton" Content="&#x2039;" Background="Transparent" Foreground="White" FontSize="20" FontWeight="Bold" Padding="6,0" />
+                    <TextBlock x:Name="UpdateBannerCounter" Foreground="White" FontSize="12" VerticalAlignment="Center" Margin="4,0" />
+                    <Button x:Name="UpdateBannerNextButton" Content="&#x203A;" Background="Transparent" Foreground="White" FontSize="20" FontWeight="Bold" Padding="6,0" />
+                </StackPanel>
+                <TextBlock x:Name="UpdateBannerText" Foreground="White" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap" />
+            </DockPanel>
+        </Border>
+
         <!-- Left rail (30%) and console (70%) are two independent columns, not one big stacked
              column including the console, specifically so the console's size never depends on how
              tall the left rail's panes get (that coupling used to push the console off the bottom
              of the window once Steps/Variables appeared). -->
-        <Grid Grid.Row="1" Margin="14">
+        <Grid Grid.Row="2" Margin="14">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="3*" />
                 <ColumnDefinition Width="12" />

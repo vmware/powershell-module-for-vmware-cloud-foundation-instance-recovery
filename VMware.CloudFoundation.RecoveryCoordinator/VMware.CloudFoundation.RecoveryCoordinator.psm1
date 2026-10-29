@@ -372,6 +372,14 @@ Function Start-VCFRecoveryCoordinator {
     $startInfo.ArgumentList.Add($launchDirectory)
     $startInfo.ArgumentList.Add('-PlansPath')
     $startInfo.ArgumentList.Add($plansPath)
+    # Installed versions, for the UI's background "newer version available?" check against the
+    # Development repository (see Start-UpdateCheck in the UI script).
+    $coordinatorVersion = $MyInvocation.MyCommand.Module.Version
+    $instanceRecoveryVersion = (Get-Module -Name 'VMware.CloudFoundation.InstanceRecovery' | Select-Object -First 1).Version
+    $startInfo.ArgumentList.Add('-CoordinatorVersion')
+    $startInfo.ArgumentList.Add("$coordinatorVersion")
+    $startInfo.ArgumentList.Add('-InstanceRecoveryVersion')
+    $startInfo.ArgumentList.Add("$instanceRecoveryVersion")
 
     # Redirected only so a fast, unhandled failure (e.g. an exception thrown before Application.Run()
     # ever starts pumping messages) has somewhere to be read back from below -- not read from at all

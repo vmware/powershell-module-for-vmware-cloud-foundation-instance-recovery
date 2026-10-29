@@ -26,7 +26,9 @@
 param(
     [string]$XamlPath,
     [string]$WorkingDirectory,
-    [string]$PlansPath
+    [string]$PlansPath,
+    [string]$CoordinatorVersion,
+    [string]$InstanceRecoveryVersion
 )
 
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Xaml
@@ -1579,6 +1581,100 @@ function Set-ConsoleFocus {
         }
     }
 }
+
+# --- Update banner -----------------------------------------------------------------------------
+# Checks the 'Development' PSRepository for newer builds of this module and of InstanceRecovery.
+# The lookup runs on a background runspace (a repository round-trip can take seconds, or time out
+# when offline) and is polled by a DispatcherTimer, so the window never waits on it. Any failure
+# (repository not registered, no network) is silently treated as "no update" -- the banner is a
+# convenience, not something that should ever surface an error. Dismissal is in-memory only, so the
+# banner reappears on next launch while a newer version is still found.
+$updateBanner = $window.FindName('UpdateBanner')
+$updateBannerText = $window.FindName('UpdateBannerText')
+$updateBannerPager = $window.FindName('UpdateBannerPager')
+$updateBannerCounter = $window.FindName('UpdateBannerCounter')
+$updateBannerPrevButton = $window.FindName('UpdateBannerPrevButton')
+$updateBannerNextButton = $window.FindName('UpdateBannerNextButton')
+$updateBannerCloseButton = $window.FindName('UpdateBannerCloseButton')
+$global:updateBannerItems = @()
+$global:updateBannerIndex = 0
+
+function Show-UpdateBanner {
+    $items = @($global:updateBannerItems)
+    if ($items.Count -eq 0) {
+        $updateBanner.Visibility = 'Collapsed'
+        return
+    }
+    if ($global:updateBannerIndex -ge $items.Count) { $global:updateBannerIndex = 0 }
+    if ($global:updateBannerIndex -lt 0) { $global:updateBannerIndex = $items.Count - 1 }
+    $item = $items[$global:updateBannerIndex]
+    $updateBannerText.Text = "A newer version of $($item.Name) is available in the Development repository: $($item.Installed) -> $($item.Latest)."
+    $updateBannerPager.Visibility = if ($items.Count -gt 1) { 'Visible' } else { 'Collapsed' }
+    $updateBannerCounter.Text = "$($global:updateBannerIndex + 1) of $($items.Count)"
+    $updateBanner.Visibility = 'Visible'
+}
+
+$updateBannerPrevButton.Add_Click({ $global:updateBannerIndex--; Show-UpdateBanner })
+$updateBannerNextButton.Add_Click({ $global:updateBannerIndex++; Show-UpdateBanner })
+$updateBannerCloseButton.Add_Click({
+        $items = @($global:updateBannerItems)
+        if ($items.Count -gt 0) {
+            $global:updateBannerItems = @($items | Where-Object { $_.Name -ne $items[$global:updateBannerIndex].Name })
+        }
+        Show-UpdateBanner
+    })
+
+function Start-UpdateCheck {
+    $candidates = @(
+        @{ Name = 'VMware.CloudFoundation.RecoveryCoordinator'; Installed = $CoordinatorVersion }
+        @{ Name = 'VMware.CloudFoundation.InstanceRecovery'; Installed = $InstanceRecoveryVersion }
+    ) | Where-Object { $_.Installed }
+    if (-not $candidates) { return }
+
+    $runspace = [runspacefactory]::CreateRunspace()
+    $runspace.Open()
+    $ps = [powershell]::Create()
+    $ps.Runspace = $runspace
+    [void]$ps.AddScript({
+            param($Candidates)
+            foreach ($candidate in $Candidates) {
+                try {
+                    if (Get-Command Find-PSResource -ErrorAction SilentlyContinue) {
+                        $found = Find-PSResource -Name $candidate.Name -Repository 'Development' -ErrorAction Stop | Sort-Object Version -Descending | Select-Object -First 1
+                    } else {
+                        $found = Find-Module -Name $candidate.Name -Repository 'Development' -ErrorAction Stop | Sort-Object Version -Descending | Select-Object -First 1
+                    }
+                    if ($found) {
+                        [pscustomobject]@{ Name = $candidate.Name; Installed = $candidate.Installed; Latest = "$($found.Version)" }
+                    }
+                } catch { }
+            }
+        }).AddArgument($candidates)
+    $handle = $ps.BeginInvoke()
+
+    $timer = New-Object System.Windows.Threading.DispatcherTimer
+    $timer.Interval = [TimeSpan]::FromMilliseconds(500)
+    $timer.Add_Tick({
+            if (-not $handle.IsCompleted) { return }
+            $timer.Stop()
+            try {
+                $results = @($ps.EndInvoke($handle))
+                $global:updateBannerItems = @($results | Where-Object {
+                        $latest = $null; $installed = $null
+                        [version]::TryParse(($_.Latest -replace '[-+].*$', ''), [ref]$latest) -and
+                        [version]::TryParse(($_.Installed -replace '[-+].*$', ''), [ref]$installed) -and
+                        $latest -gt $installed
+                    })
+                Show-UpdateBanner
+            } catch { } finally {
+                $ps.Dispose()
+                $runspace.Dispose()
+            }
+        }.GetNewClosure())
+    $timer.Start()
+}
+
+$window.Add_Loaded({ Start-UpdateCheck })
 
 $global:mainConsole = New-EmbeddedConsole -TabHeader 'Main Thread'
 $consoleTabControl.SelectedIndex = 0
