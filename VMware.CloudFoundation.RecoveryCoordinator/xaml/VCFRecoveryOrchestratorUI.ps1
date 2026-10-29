@@ -1585,9 +1585,8 @@ function Set-ConsoleFocus {
 # --- Update banner -----------------------------------------------------------------------------
 # Checks the 'Development' PSRepository for newer builds of this module and of InstanceRecovery.
 # The lookup runs on a background runspace (a repository round-trip can take seconds, or time out
-# when offline) and is polled by a DispatcherTimer, so the window never waits on it. Any failure
-# (repository not registered, no network) is silently treated as "no update" -- the banner is a
-# convenience, not something that should ever surface an error. Dismissal is in-memory only, so the
+# when offline) and is polled by a DispatcherTimer, so the window never waits on it. A failed lookup
+# (repository not registered, no network) shows no banner and is reported in the Advisories pane. Dismissal is in-memory only, so the
 # banner reappears on next launch while a newer version is still found.
 $updateBanner = $window.FindName('UpdateBanner')
 $updateBannerText = $window.FindName('UpdateBannerText')
@@ -1625,11 +1624,25 @@ $updateBannerCloseButton.Add_Click({
     })
 
 function Start-UpdateCheck {
+    # Normally passed in by Start-VCFRecoveryCoordinator; if it wasn't (e.g. the launcher module
+    # loaded in the caller's session predates these parameters), fall back to reading the
+    # Coordinator's own manifest and the highest installed InstanceRecovery.
+    if (-not $CoordinatorVersion) {
+        $manifest = Get-ChildItem -Path (Split-Path -Parent (Split-Path -Parent $XamlPath)) -Filter 'VMware.CloudFoundation.RecoveryCoordinator.psd1' -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($manifest) { $CoordinatorVersion = "$((Import-PowerShellDataFile -Path $manifest.FullName).ModuleVersion)" }
+    }
+    if (-not $InstanceRecoveryVersion) {
+        $installed = Get-Module -ListAvailable -Name 'VMware.CloudFoundation.InstanceRecovery' | Sort-Object Version -Descending | Select-Object -First 1
+        if ($installed) { $InstanceRecoveryVersion = "$($installed.Version)" }
+    }
     $candidates = @(
         @{ Name = 'VMware.CloudFoundation.RecoveryCoordinator'; Installed = $CoordinatorVersion }
         @{ Name = 'VMware.CloudFoundation.InstanceRecovery'; Installed = $InstanceRecoveryVersion }
     ) | Where-Object { $_.Installed }
-    if (-not $candidates) { return }
+    if (-not $candidates) {
+        New-Advisory 'Update check skipped: could not determine installed module versions.'
+        return
+    }
 
     $runspace = [runspacefactory]::CreateRunspace()
     $runspace.Open()
@@ -1646,8 +1659,12 @@ function Start-UpdateCheck {
                     }
                     if ($found) {
                         [pscustomobject]@{ Name = $candidate.Name; Installed = $candidate.Installed; Latest = "$($found.Version)" }
+                    } else {
+                        [pscustomobject]@{ Name = $candidate.Name; Error = "not found in repository 'Development'" }
                     }
-                } catch { }
+                } catch {
+                    [pscustomobject]@{ Name = $candidate.Name; Error = $_.Exception.Message }
+                }
             }
         }).AddArgument($candidates)
     $handle = $ps.BeginInvoke()
@@ -1659,6 +1676,12 @@ function Start-UpdateCheck {
             $timer.Stop()
             try {
                 $results = @($ps.EndInvoke($handle))
+                # A failed lookup is surfaced as an advisory rather than hidden: otherwise "no banner"
+                # can't be told apart from "couldn't check".
+                foreach ($failed in @($results | Where-Object { $_.Error })) {
+                    New-Advisory "Update check for $($failed.Name) failed: $($failed.Error)"
+                }
+                $results = @($results | Where-Object { -not $_.Error })
                 $global:updateBannerItems = @($results | Where-Object {
                         $latest = $null; $installed = $null
                         [version]::TryParse(($_.Latest -replace '[-+].*$', ''), [ref]$latest) -and
@@ -1666,7 +1689,9 @@ function Start-UpdateCheck {
                         $latest -gt $installed
                     })
                 Show-UpdateBanner
-            } catch { } finally {
+            } catch {
+                New-Advisory "Update check failed: $($_.Exception.Message)"
+            } finally {
                 $ps.Dispose()
                 $runspace.Dispose()
             }
