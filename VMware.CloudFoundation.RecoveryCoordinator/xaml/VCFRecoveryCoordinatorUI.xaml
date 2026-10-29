@@ -288,8 +288,9 @@
             </DockPanel>
         </Border>
 
-        <!-- Update banner: hidden unless the background check (see Start-UpdateCheck in the .ps1) finds
-             a newer Recovery Coordinator and/or InstanceRecovery module in the Development repository.
+        <!-- Update banner: hidden unless the check (see Show-ModuleUpdateStatus in the .ps1, run before
+             this process ever started -- see Start-VCFRecoveryCoordinator) finds a newer Recovery
+             Coordinator and/or InstanceRecovery module in the repository it was installed from.
              With two updates pending, the chevrons page between them; X dismisses the one on show for
              this session only (it returns on the next launch while the update is still pending). -->
         <Border x:Name="UpdateBanner" Grid.Row="1" Background="#F57C00" Padding="18,8" Visibility="Collapsed">

@@ -28,7 +28,16 @@ param(
     [string]$WorkingDirectory,
     [string]$PlansPath,
     [string]$CoordinatorVersion,
-    [string]$InstanceRecoveryVersion
+    [string]$InstanceRecoveryVersion,
+    # Already-computed "Name|Installed|Latest|Repository" (or "...|ERROR|message") results from
+    # Get-VCFIRModuleUpdateStatus, run by Start-VCFRecoveryCoordinator in its own console BEFORE this
+    # process was even started -- see Show-ModuleUpdateStatus below. Two separate scalar parameters,
+    # not one array parameter, because a pwsh.exe -File launch does not bind multiple ArgumentList
+    # entries under one parameter name into an array the way an ordinary in-process call would
+    # (confirmed directly: only the first value ever arrived; repeating the parameter name instead
+    # throws "specified more than once").
+    [string]$CoordinatorUpdateStatus,
+    [string]$InstanceRecoveryUpdateStatus
 )
 
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Xaml
@@ -1626,9 +1635,9 @@ function Set-ConsoleFocus {
 }
 
 # --- Update banner -----------------------------------------------------------------------------
-# Checked once the window is up (see Start-UpdateCheck): each module is looked up, in the Main
-# console, in the repository it was installed from. Dismissal is in-memory only, so the banner
-# reappears on next launch while a newer version exists.
+# Shown once the window is up (see Show-ModuleUpdateStatus): the lookup itself already ran before
+# this process started, in the repository each module was installed from. Dismissal is in-memory
+# only, so the banner reappears on next launch while a newer version exists.
 $updateBanner = $window.FindName('UpdateBanner')
 $updateBannerText = $window.FindName('UpdateBannerText')
 $updateBannerPager = $window.FindName('UpdateBannerPager')
@@ -1664,76 +1673,44 @@ $updateBannerCloseButton.Add_Click({
         Show-UpdateBanner
     })
 
-# Runs the lookup in the Main console -- a real console that already exists, so it can't pop up a
-# window of its own the way a lookup from this console-less process could -- and has it write one
-# "Name|Installed|Latest|Repository" line per module to a temp file, which a timer here polls for.
-# Latest is "ERROR" and Repository holds the message when a module couldn't be looked up.
-function Start-UpdateCheck {
-    $modules = @(
-        @{ Name = 'VMware.CloudFoundation.RecoveryCoordinator'; Version = $CoordinatorVersion }
-        @{ Name = 'VMware.CloudFoundation.InstanceRecovery'; Version = $InstanceRecoveryVersion }
-    ) | Where-Object { $_.Version }
-    if ($modules.Count -eq 0) {
+# The lookup itself already ran, in Start-VCFRecoveryCoordinator's own console, BEFORE this process
+# was even started -- -CoordinatorUpdateStatus/-InstanceRecoveryUpdateStatus already hold its results
+# ("Name|Installed|Latest|Repository", or "Name|Installed|ERROR|message" if that module's own lookup
+# failed). This used to be the other way around -- the UI typed a lookup command into its own embedded
+# console after launch and polled a temp file for an answer -- which meant a real wait on every launch
+# with nothing on screen to show for it. Nothing here does any actual lookup work; it only parses
+# already-known answers and posts the resulting advisories/banner, which is instant.
+function Show-ModuleUpdateStatus {
+    $lines = @($CoordinatorUpdateStatus, $InstanceRecoveryUpdateStatus) | Where-Object { $_ }
+    if ($lines.Count -eq 0) {
         New-Advisory 'Update check skipped: no installed module versions were passed to the UI.'
         return
     }
 
-    $resultPath = Join-Path ([System.IO.Path]::GetTempPath()) "vcfir-updatecheck-$PID.txt"
-    Remove-Item -LiteralPath $resultPath -Force -ErrorAction SilentlyContinue
-    # A real, named cmdlet (Get-VCFIRModuleUpdateStatus, exported by this module's own .psm1), not an
-    # inline foreach/try/catch one-liner typed directly into the console -- that used to render as a
-    # sprawling, unreadable wall of PowerShell internals wrapping across the whole console width every
-    # time this ran. This way the operator sees one short, ordinary-looking command.
-    $moduleArgs = ($modules | ForEach-Object { "'$(Protect-SingleQuotes "$($_.Name)|$($_.Version)")'" }) -join ','
-    $command = "Get-VCFIRModuleUpdateStatus -Module $moduleArgs -ResultPath '$(Protect-SingleQuotes $resultPath)'"
-
-    New-Advisory 'Checking for updates to the Recovery Coordinator and InstanceRecovery modules...'
-    Send-ToConsole $command $global:mainConsole
-
-    $deadline = (Get-Date).AddSeconds(120)
-    $timer = New-Object System.Windows.Threading.DispatcherTimer
-    $timer.Interval = [TimeSpan]::FromMilliseconds(500)
-    $timer.Add_Tick({
-            $lines = $null
-            if (Test-Path -LiteralPath $resultPath) {
-                try { $lines = @(Get-Content -LiteralPath $resultPath -ErrorAction Stop | Where-Object { $_ }) } catch { return }
-                if ($lines.Count -lt $modules.Count) { return }
-            } elseif ((Get-Date) -lt $deadline) {
-                return
-            }
-            $timer.Stop()
-            if ($null -eq $lines) {
-                New-Advisory 'Update check timed out: no result from the console after 120 seconds.'
-                return
-            }
-            Remove-Item -LiteralPath $resultPath -Force -ErrorAction SilentlyContinue
-
-            $updates = @()
-            $failures = 0
-            foreach ($line in $lines) {
-                $name, $installed, $latest, $detail = $line -split '\|', 4
-                if ($latest -eq 'ERROR') {
-                    $failures++
-                    New-Advisory "Update check for $name failed: $detail"
-                    continue
-                }
-                $latestVersion = $null; $installedVersion = $null
-                if ([version]::TryParse(($latest -replace '[-+].*$', ''), [ref]$latestVersion) -and
-                    [version]::TryParse(($installed -replace '[-+].*$', ''), [ref]$installedVersion) -and
-                    $latestVersion -gt $installedVersion) {
-                    New-Advisory "$name $installed can be updated to $latest (repository '$detail')."
-                    $updates += [pscustomobject]@{ Name = $name; Installed = $installed; Latest = $latest; Repository = $detail }
-                } else {
-                    New-Advisory "$name $installed is up to date."
-                }
-            }
-            if ($updates.Count -eq 0 -and $failures -eq 0) {
-                New-Advisory 'All modules are up to date.'
-            }
-            $global:updateBannerItems = $updates
-            Show-UpdateBanner
-        }.GetNewClosure())
-    $timer.Start()
+    $updates = @()
+    $failures = 0
+    foreach ($line in $lines) {
+        $name, $installed, $latest, $detail = $line -split '\|', 4
+        if ($latest -eq 'ERROR') {
+            $failures++
+            New-Advisory "Update check for $name failed: $detail"
+            continue
+        }
+        $latestVersion = $null; $installedVersion = $null
+        if ([version]::TryParse(($latest -replace '[-+].*$', ''), [ref]$latestVersion) -and
+            [version]::TryParse(($installed -replace '[-+].*$', ''), [ref]$installedVersion) -and
+            $latestVersion -gt $installedVersion) {
+            New-Advisory "$name $installed can be updated to $latest (repository '$detail')."
+            $updates += [pscustomobject]@{ Name = $name; Installed = $installed; Latest = $latest; Repository = $detail }
+        } else {
+            New-Advisory "$name $installed is up to date."
+        }
+    }
+    if ($updates.Count -eq 0 -and $failures -eq 0) {
+        New-Advisory 'All modules are up to date.'
+    }
+    $global:updateBannerItems = $updates
+    Show-UpdateBanner
 }
 
 $global:mainConsole = New-EmbeddedConsole -TabHeader 'Main Thread'
@@ -1772,7 +1749,7 @@ $consoleTabControl.Add_SelectionChanged({
 # own. RDW_ALLCHILDREN matters here specifically -- the console is a child HWND (via ConsoleHwndHost),
 # not painted by this process, so the redraw has to be told to reach into it, not just this window.
 $window.Add_ContentRendered({
-        Start-UpdateCheck
+        Show-ModuleUpdateStatus
         if ($global:mainConsole -and $global:mainConsole.Hwnd -ne [IntPtr]::Zero) {
             $redrawFlags = [VCFIRConsole.NativeMethods]::RDW_INVALIDATE -bor [VCFIRConsole.NativeMethods]::RDW_ERASE -bor [VCFIRConsole.NativeMethods]::RDW_UPDATENOW -bor [VCFIRConsole.NativeMethods]::RDW_ALLCHILDREN
             [VCFIRConsole.NativeMethods]::RedrawWindow($global:mainConsole.Hwnd, [IntPtr]::Zero, [IntPtr]::Zero, $redrawFlags) | Out-Null

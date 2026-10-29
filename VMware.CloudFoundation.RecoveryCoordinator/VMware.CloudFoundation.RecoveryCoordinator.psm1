@@ -280,15 +280,22 @@ Export-ModuleMember -Function Set-SelectedRecoveryTarget
 Function Get-VCFIRModuleUpdateStatus {
     <#
     .SYNOPSIS
-    Writes each module's latest available version to a result file, for the Recovery Coordinator UI's update banner
+    Returns each module's latest available version, for the Recovery Coordinator UI's update banner
 
     .DESCRIPTION
     The Get-VCFIRModuleUpdateStatus cmdlet looks up, for each "Name|InstalledVersion" pair in -Module,
     the repository that module was actually installed from and the newest version available there
     (Find-Module -Repository <that repository>) -- no hard-coded repository name, so this works the
     same way whether that repository is the public PSGallery or an internal one. One
-    "Name|Installed|Latest|Repository" line per module is written to -ResultPath, or
-    "Name|Installed|ERROR|message" if that module's own lookup failed.
+    "Name|Installed|Latest|Repository" string is returned per module, or "Name|Installed|ERROR|message"
+    if that module's own lookup failed.
+
+    Called from Start-VCFRecoveryCoordinator, in the caller's own interactive console, BEFORE the UI
+    process is ever started -- not from inside the UI itself. The UI used to run this lookup later, in
+    its own embedded console via injected keystrokes, polling a result file for an answer; running it
+    here instead means the UI can be launched already knowing the answer (see
+    -CoordinatorUpdateStatus/-InstanceRecoveryUpdateStatus there), with no console injection, no
+    temp file, and no polling delay at all.
 
     Local install info comes from Get-Module -ListAvailable, not Get-InstalledModule -- confirmed
     directly (Measure-Command) that Get-InstalledModule takes ~3.9s per module here regardless of
@@ -298,24 +305,16 @@ Function Get-VCFIRModuleUpdateStatus {
     per-module record -- read directly from the ModuleBase's own PSGetModuleInfo.xml (the file
     Install-Module itself already writes there) rather than via Get-InstalledModule's full scan.
 
-    Exists as a real, named cmdlet -- not an inline script block -- specifically so the single line
-    the orchestrator UI types into its embedded console (see Start-UpdateCheck there) reads as a
-    normal command, not a sprawling foreach/try/catch one-liner spanning the whole console width.
-
     .PARAMETER Module
     One or more "Name|InstalledVersion" strings, e.g. 'VMware.CloudFoundation.RecoveryCoordinator|1.0.3'.
 
-    .PARAMETER ResultPath
-    Path to write the pipe-delimited result lines to.
-
     .EXAMPLE
-    Get-VCFIRModuleUpdateStatus -Module 'VMware.CloudFoundation.RecoveryCoordinator|1.0.3' -ResultPath 'C:\Temp\vcfir-updatecheck.txt'
+    Get-VCFIRModuleUpdateStatus -Module 'VMware.CloudFoundation.RecoveryCoordinator|1.0.3'
     #>
     Param(
-        [Parameter (Mandatory = $true)][String[]] $Module,
-        [Parameter (Mandatory = $true)][String] $ResultPath
+        [Parameter (Mandatory = $true)][String[]] $Module
     )
-    $lines = foreach ($entry in $Module) {
+    foreach ($entry in $Module) {
         $name, $installed = $entry -split '\|', 2
         try {
             $installedModule = Get-Module -ListAvailable -Name $name -ErrorAction Stop | Sort-Object Version -Descending | Select-Object -First 1
@@ -333,7 +332,6 @@ Function Get-VCFIRModuleUpdateStatus {
             "$name|$installed|ERROR|$($_.Exception.Message -replace '\r?\n', ' ')"
         }
     }
-    $lines | Set-Content -LiteralPath $ResultPath
 }
 Export-ModuleMember -Function Get-VCFIRModuleUpdateStatus
 
@@ -436,11 +434,25 @@ Function Start-VCFRecoveryCoordinator {
     $startInfo.ArgumentList.Add($launchDirectory)
     $startInfo.ArgumentList.Add('-PlansPath')
     $startInfo.ArgumentList.Add($plansPath)
-    # Installed versions, for the UI's "newer version available?" check (see Start-UpdateCheck there).
+    $coordinatorVersion = "$($MyInvocation.MyCommand.Module.Version)"
+    $instanceRecoveryVersion = "$((Get-Module -Name 'VMware.CloudFoundation.InstanceRecovery' | Select-Object -First 1).Version)"
     $startInfo.ArgumentList.Add('-CoordinatorVersion')
-    $startInfo.ArgumentList.Add("$($MyInvocation.MyCommand.Module.Version)")
+    $startInfo.ArgumentList.Add($coordinatorVersion)
     $startInfo.ArgumentList.Add('-InstanceRecoveryVersion')
-    $startInfo.ArgumentList.Add("$((Get-Module -Name 'VMware.CloudFoundation.InstanceRecovery' | Select-Object -First 1).Version)")
+    $startInfo.ArgumentList.Add($instanceRecoveryVersion)
+
+    # Run BEFORE the UI exists, in this cmdlet's own already-open console, rather than from inside the
+    # UI's embedded console (the old design): the UI can then show its update banner the instant it
+    # renders, with no console injection, no temp file, and no polling delay. Get-VCFIRModuleUpdateStatus
+    # never throws for a single module's own failed lookup -- it reports an "ERROR" entry instead -- so
+    # a lookup problem here can't prevent the UI from launching.
+    LogMessage -type NOTE -message "Checking installed module versions..."
+    $coordinatorUpdateStatus = Get-VCFIRModuleUpdateStatus -Module "VMware.CloudFoundation.RecoveryCoordinator|$coordinatorVersion"
+    $instanceRecoveryUpdateStatus = Get-VCFIRModuleUpdateStatus -Module "VMware.CloudFoundation.InstanceRecovery|$instanceRecoveryVersion"
+    $startInfo.ArgumentList.Add('-CoordinatorUpdateStatus')
+    $startInfo.ArgumentList.Add($coordinatorUpdateStatus)
+    $startInfo.ArgumentList.Add('-InstanceRecoveryUpdateStatus')
+    $startInfo.ArgumentList.Add($instanceRecoveryUpdateStatus)
 
     # Redirected only so a fast, unhandled failure (e.g. an exception thrown before Application.Run()
     # ever starts pumping messages) has somewhere to be read back from below -- not read from at all
