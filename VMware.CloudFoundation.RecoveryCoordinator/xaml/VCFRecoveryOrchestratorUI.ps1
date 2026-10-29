@@ -1639,10 +1639,12 @@ function Start-UpdateCheck {
             param($Candidates)
             foreach ($candidate in $Candidates) {
                 try {
-                    if (Get-Command Find-PSResource -ErrorAction SilentlyContinue) {
-                        $found = Find-PSResource -Name $candidate.Name -Repository 'Development' -ErrorAction Stop | Sort-Object Version -Descending | Select-Object -First 1
-                    } else {
+                    # Find-Module first: 'Development' is registered with PowerShellGet (Get-PSRepository),
+                    # which PSResourceGet's Find-PSResource keeps a separate list from and can't resolve.
+                    if (Get-Command Find-Module -ErrorAction SilentlyContinue) {
                         $found = Find-Module -Name $candidate.Name -Repository 'Development' -ErrorAction Stop | Sort-Object Version -Descending | Select-Object -First 1
+                    } else {
+                        $found = Find-PSResource -Name $candidate.Name -Repository 'Development' -ErrorAction Stop | Sort-Object Version -Descending | Select-Object -First 1
                     }
                     if ($found) {
                         [pscustomobject]@{ Name = $candidate.Name; Installed = $candidate.Installed; Latest = "$($found.Version)" }
