@@ -284,11 +284,19 @@ Function Get-VCFIRModuleUpdateStatus {
 
     .DESCRIPTION
     The Get-VCFIRModuleUpdateStatus cmdlet looks up, for each "Name|InstalledVersion" pair in -Module,
-    the repository that module was actually installed from (Get-InstalledModule) and the newest
-    version available there (Find-Module -Repository <that repository>) -- no hard-coded repository
-    name, so this works the same way whether that repository is the public PSGallery or an internal
-    one. One "Name|Installed|Latest|Repository" line per module is written to -ResultPath, or
+    the repository that module was actually installed from and the newest version available there
+    (Find-Module -Repository <that repository>) -- no hard-coded repository name, so this works the
+    same way whether that repository is the public PSGallery or an internal one. One
+    "Name|Installed|Latest|Repository" line per module is written to -ResultPath, or
     "Name|Installed|ERROR|message" if that module's own lookup failed.
+
+    Local install info comes from Get-Module -ListAvailable, not Get-InstalledModule -- confirmed
+    directly (Measure-Command) that Get-InstalledModule takes ~3.9s per module here regardless of
+    cold/warm cache, a known PowerShellGet v2 performance issue, versus ~1.6s for Get-Module
+    -ListAvailable. The repository a module was installed from isn't part of a module's own manifest
+    (Get-Module has no notion of it), so that one piece still has to come from PowerShellGet's own
+    per-module record -- read directly from the ModuleBase's own PSGetModuleInfo.xml (the file
+    Install-Module itself already writes there) rather than via Get-InstalledModule's full scan.
 
     Exists as a real, named cmdlet -- not an inline script block -- specifically so the single line
     the orchestrator UI types into its embedded console (see Start-UpdateCheck there) reads as a
@@ -310,9 +318,17 @@ Function Get-VCFIRModuleUpdateStatus {
     $lines = foreach ($entry in $Module) {
         $name, $installed = $entry -split '\|', 2
         try {
-            $installedInfo = Get-InstalledModule -Name $name -ErrorAction Stop | Sort-Object Version -Descending | Select-Object -First 1
-            $latest = Find-Module -Name $name -Repository $installedInfo.Repository -ErrorAction Stop
-            "$name|$installed|$($latest.Version)|$($installedInfo.Repository)"
+            $installedModule = Get-Module -ListAvailable -Name $name -ErrorAction Stop | Sort-Object Version -Descending | Select-Object -First 1
+            if (-not $installedModule) {
+                throw "No installed module named '$name' was found."
+            }
+            $metadataPath = Join-Path $installedModule.ModuleBase 'PSGetModuleInfo.xml'
+            if (-not (Test-Path -LiteralPath $metadataPath)) {
+                throw "'$name' has no PSGetModuleInfo.xml (not installed via Install-Module) -- its repository can't be determined."
+            }
+            $repository = (Import-Clixml -LiteralPath $metadataPath).Repository
+            $latest = Find-Module -Name $name -Repository $repository -ErrorAction Stop
+            "$name|$installed|$($latest.Version)|$repository"
         } catch {
             "$name|$installed|ERROR|$($_.Exception.Message -replace '\r?\n', ' ')"
         }
