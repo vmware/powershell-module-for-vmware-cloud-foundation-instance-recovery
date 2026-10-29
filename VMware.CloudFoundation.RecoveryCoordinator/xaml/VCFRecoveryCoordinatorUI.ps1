@@ -1040,6 +1040,11 @@ namespace VCFIRConsole {
 
     public delegate IntPtr LowLevelMouseProc(int nCode, IntPtr wParam, IntPtr lParam);
 
+    // For Find-ConsoleWindowHandle -- unlike System.Diagnostics.Process.MainWindowHandle (which only
+    // ever considers VISIBLE top-level windows), EnumWindows finds a window regardless of visibility,
+    // which is exactly what's needed to locate a console launched already hidden (see New-EmbeddedConsole).
+    public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
     public static class NativeMethods {
         public const int GWL_STYLE = -16;
         public const long WS_CHILD = 0x40000000L;
@@ -1099,6 +1104,15 @@ namespace VCFIRConsole {
 
         [DllImport("user32.dll", SetLastError = true)]
         public static extern uint GetWindowThreadProcessId(IntPtr hWnd, IntPtr lpdwProcessId);
+
+        // Separate overload (real out-param) from the one above (which only ever wants the thread id
+        // and passes IntPtr.Zero for this) -- used by Find-ConsoleWindowHandle to match a window to
+        // the process id that owns it.
+        [DllImport("user32.dll", SetLastError = true, EntryPoint = "GetWindowThreadProcessId")]
+        public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
 
         [DllImport("kernel32.dll")]
         public static extern uint GetCurrentThreadId();
@@ -1238,6 +1252,26 @@ function Disable-ConsoleQuickEditMode($Console) {
     }
 }
 
+# Finds the one top-level window owned by $ProcessId, via EnumWindows -- NOT
+# System.Diagnostics.Process.MainWindowHandle, which only ever considers VISIBLE top-level windows
+# and so can never find a window started hidden (see New-EmbeddedConsole's own -WindowStyle Hidden).
+function Find-ConsoleWindowHandle([int]$ProcessId) {
+    $found = [IntPtr]::Zero
+    $callback = [VCFIRConsole.EnumWindowsProc]{
+        param($hWnd, $lParam)
+        $ownerId = 0
+        [void][VCFIRConsole.NativeMethods]::GetWindowThreadProcessId($hWnd, [ref]$ownerId)
+        if ($ownerId -eq $ProcessId) {
+            $script:found = $hWnd
+            return $false
+        }
+        return $true
+    }
+    $script:found = [IntPtr]::Zero
+    [void][VCFIRConsole.NativeMethods]::EnumWindows($callback, [IntPtr]::Zero)
+    return $script:found
+}
+
 function New-EmbeddedConsole([string]$TabHeader, [switch]$Bootstrap) {
     $global:consoleSequence++
     $transcriptPath = Join-Path $WorkingDirectory "vcfir-transcript-$(Get-Date -Format 'yyyyMMdd-HHmmss')-$PID-$($global:consoleSequence).log"
@@ -1261,15 +1295,26 @@ function New-EmbeddedConsole([string]$TabHeader, [switch]$Bootstrap) {
     # console window, verified with the exact same arguments. Argument/path quoting with spaces (the
     # original reason this launcher moved off Start-Process) was re-verified separately and is fine
     # here: -Command is a single array element regardless of the spaces inside it.
-    $process = Start-Process -FilePath (Get-Process -Id $PID).Path -ArgumentList @('-NoLogo', '-NoProfile', '-NoExit', '-Command', $consoleStartupCommand) -WorkingDirectory $WorkingDirectory -PassThru
+    #
+    # -WindowStyle Hidden matters, not just the later ShowWindow(SW_HIDE) below: confirmed by direct
+    # test (window-flash probe sampling IsWindowVisible every 2ms through a real launch) that without
+    # it, the console's window is genuinely visible on screen for however long it takes this process
+    # to poll and hide it -- anywhere from 0ms up to 100+ms depending on system timing, a real,
+    # intermittent flash a user can see. -WindowStyle Hidden sets the window's initial show state at
+    # CreateProcess time itself, before a single frame is ever composited, so there is no window of
+    # visibility to race at all.
+    $process = Start-Process -FilePath (Get-Process -Id $PID).Path -ArgumentList @('-NoLogo', '-NoProfile', '-NoExit', '-Command', $consoleStartupCommand) -WorkingDirectory $WorkingDirectory -WindowStyle Hidden -PassThru
 
     # Bounded wait for the console's own window to exist -- Main's own creation happens well before
     # the main window is shown (Application.Run() hasn't been called yet), so blocking briefly there
     # is fine, the same way Start-VCFRecoveryCoordinator briefly waits for this whole process to
     # start; a parallel console's creation happens on a UI-thread event handler instead, so this
-    # briefly blocks the UI too, same trade-off Send-ToConsole already accepts elsewhere. Hidden
-    # immediately once found, so it never visibly flashes as a free-floating window before
-    # ConsoleHwndHost embeds it.
+    # briefly blocks the UI too, same trade-off Send-ToConsole already accepts elsewhere.
+    #
+    # Find-ConsoleWindowHandle, not $process.MainWindowHandle -- confirmed directly that .NET's
+    # MainWindowHandle never resolves for a window started via -WindowStyle Hidden above (it only
+    # ever considers visible top-level windows), which would otherwise make this loop spin for the
+    # full 10-second timeout on every single console this app creates.
     $hwnd = [IntPtr]::Zero
     $deadline = (Get-Date).AddSeconds(10)
     while ((Get-Date) -lt $deadline) {
@@ -1278,9 +1323,9 @@ function New-EmbeddedConsole([string]$TabHeader, [switch]$Bootstrap) {
             New-Advisory "Console process exited before its window appeared." -Failure
             break
         }
-        $hwnd = $process.MainWindowHandle
+        $hwnd = Find-ConsoleWindowHandle $process.Id
         if ($hwnd -ne [IntPtr]::Zero) { break }
-        Start-Sleep -Milliseconds 50
+        Start-Sleep -Milliseconds 20
     }
 
     $tabItem = New-Object System.Windows.Controls.TabItem
@@ -1291,6 +1336,8 @@ function New-EmbeddedConsole([string]$TabHeader, [switch]$Bootstrap) {
     [void]$consoleTabControl.Items.Add($tabItem)
 
     if ($hwnd -ne [IntPtr]::Zero) {
+        # Already hidden from creation (see -WindowStyle Hidden above) -- this is just a defensive
+        # no-op belt-and-braces in case that initial show state was ever overridden before this runs.
         [VCFIRConsole.NativeMethods]::ShowWindow($hwnd, [VCFIRConsole.NativeMethods]::SW_HIDE) | Out-Null
         $hwndHost = New-Object VCFIRConsole.ConsoleHwndHost($hwnd)
         $hostBorder.Child = $hwndHost
