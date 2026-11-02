@@ -3450,6 +3450,9 @@ Function Set-SDDCManagerOfflineDepot {
         [Parameter(Mandatory = $true)] [String] $sddcManagerFqdn,
         [Parameter(Mandatory = $true)] [String] $sddcManagerUser,
         [Parameter(Mandatory = $true)] [String] $sddcManagerPassword,
+        [Parameter(Mandatory = $true)] [String] $vcfUserPassword,
+        [Parameter(Mandatory = $true)] [String] $localUserPassword,
+        [Parameter(Mandatory = $true)] [String] $rootPassword,
         [Parameter(Mandatory = $true)] [String] $offlineDepotFqdn,
         [Parameter(Mandatory = $true)] [INT] $offlineDepotPort,
         [Parameter(Mandatory = $true)] [String] $offlineDepotUsername,
@@ -3485,13 +3488,13 @@ Function Set-SDDCManagerOfflineDepot {
     $currentDepotServicesConfig | ConvertTo-Json -depth 10 > originalDepotServicesconfig.json
 
     #Delete Services Configuration
-    LogMessage -type INFO -message "[$sddcManagerFqdn] Removing Original Depot Fleet Depot Configuration"
-    $deleteServicesConfigURI = "https://$sddcManagerFqdn/v1/services-config/$($currentDepotServicesConfig.services.key)"
-    Invoke-RestMethod -Uri $deleteServicesConfigURI -Method DELETE -Headers $headers -SkipCertificateCheck *>$null
+    #LogMessage -type INFO -message "[$sddcManagerFqdn] Removing Original Depot Fleet Depot Configuration"
+    #$deleteServicesConfigURI = "https://$sddcManagerFqdn/v1/services-config/$($currentDepotServicesConfig.services.key)"
+    #Invoke-RestMethod -Uri $deleteServicesConfigURI -Method DELETE -Headers $headers -SkipCertificateCheck *>$null
 
     #Trust Depot Cert on SDDC Manager
     LogMessage -type INFO -message "[$sddcManagerFqdn] Trusting Offline Depot Certificate"
-    $SecurePassword = ConvertTo-SecureString -String $sddcManagerPassword -AsPlainText -Force
+    $SecurePassword = ConvertTo-SecureString -String $vcfUserPassword -AsPlainText -Force
     $mycreds = New-Object System.Management.Automation.PSCredential ('vcf', $SecurePassword)
     $inmem = New-SSHMemoryKnownHost
     New-SSHTrustedHost -KnownHostStore $inmem -HostName $sddcManagerFqdn -FingerPrint ((Get-SSHHostKey -ComputerName $sddcManagerFqdn).fingerprint) | Out-Null
@@ -3505,13 +3508,13 @@ Function Set-SDDCManagerOfflineDepot {
     # Switch to root
     $stream.WriteLine("su -")
     Start-Sleep 2
-    $stream.WriteLine($sddcManagerPassword)  # Or use a separate $rootPassword variable if different
+    $stream.WriteLine($rootPassword)
     Start-Sleep 2
 
     # Build the command to trust the depot certificate
     $scriptCommand = [System.Text.StringBuilder]::new()
     [void]$scriptCommand.AppendLine("echo '{ ""certificate"" : '`$(openssl s_client -connect ${offlineDepotFqdn}:${offlineDepotPort} 2>/dev/null </dev/null | sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' | jq -sR)',""certificateUsageType"" : ""TRUSTED_FOR_OUTBOUND""}' > /tmp/trusted-cert-spec.json && \")
-    [void]$scriptCommand.AppendLine("token=`$(curl -k --location ""https://localhost/v1/tokens"" --header 'Content-Type: application/json' --header 'Accept: application/json' --data-raw '{""username"" : ""admin@local"",""password"" : ""$sddcManagerPassword""}' | jq -r '.accessToken') && \")
+    [void]$scriptCommand.AppendLine("token=`$(curl -k --location ""https://localhost/v1/tokens"" --header 'Content-Type: application/json' --header 'Accept: application/json' --data-raw '{""username"" : ""admin@local"",""password"" : ""$localUserPassword""}' | jq -r '.accessToken') && \")
     [void]$scriptCommand.AppendLine("curl -k --location --request POST ""https://localhost/v1/sddc-manager/trusted-certificates"" --header 'Content-Type: application/json' --header ""Authorization: Bearer `$token"" -d@/tmp/trusted-cert-spec.json && \")
     [void]$scriptCommand.Append("rm -f /tmp/trusted-cert-spec.json")
 

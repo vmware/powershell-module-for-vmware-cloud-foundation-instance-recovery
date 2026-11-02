@@ -7,7 +7,7 @@ Configures SDDC Manager to use an offline depot for VCF bundle downloads.
 ## Syntax
 
 ```powershell
-Set-SDDCManagerOfflineDepot [-sddcManagerFqdn] <String> [-sddcManagerUser] <String> [-sddcManagerPassword] <String> [-offlineDepotFqdn] <String> [-offlineDepotPort] <Int32> [-offlineDepotUsername] <String> [-offlineDepotPassword] <String> [<CommonParameters>]
+Set-SDDCManagerOfflineDepot [-sddcManagerFqdn] <String> [-sddcManagerUser] <String> [-sddcManagerPassword] <String> [-vcfUserPassword] <String> [-localUserPassword] <String> [-rootPassword] <String> [-offlineDepotFqdn] <String> [-offlineDepotPort] <Int32> [-offlineDepotUsername] <String> [-offlineDepotPassword] <String> [<CommonParameters>]
 ```
 
 ## Description
@@ -25,6 +25,9 @@ Set-SDDCManagerOfflineDepot `
     -sddcManagerFqdn     "sfo-vcf01.sfo.rainpole.io" `
     -sddcManagerUser     "administrator@vsphere.local" `
     -sddcManagerPassword "VMw@re1!VMw@re1!" `
+    -vcfUserPassword     "VMw@re1!" `
+    -localUserPassword   "VMw@re1!VMw@re1!" `
+    -rootPassword        "VMw@re1!" `
     -offlineDepotFqdn    "depot.rainpole.io" `
     -offlineDepotPort    443 `
     -offlineDepotUsername "svc-depot" `
@@ -67,7 +70,7 @@ Accept wildcard characters: False
 
 ### -sddcManagerPassword
 
-Password for the SDDC Manager admin user. Also used for SSH access and root elevation on the appliance.
+Password for the SDDC Manager admin user. 
 
 ```yaml
 Type: String
@@ -76,6 +79,54 @@ Aliases:
 
 Required: True
 Position: 3
+Default value: None
+Accept pipeline input: False
+Accept wildcard characters: False
+```
+
+### -vcfUserPassword
+
+Password for the `vcf` local user, used for SSH access to the SDDC Manager appliance.
+
+```yaml
+Type: String
+Parameter Sets: (All)
+Aliases:
+
+Required: True
+Position: 4
+Default value: None
+Accept pipeline input: False
+Accept wildcard characters: False
+```
+
+### -localUserPassword
+
+Password for the SDDC Manager `admin@local` user, used to obtain an API token from the appliance when trusting the offline depot certificate.
+
+```yaml
+Type: String
+Parameter Sets: (All)
+Aliases:
+
+Required: True
+Position: 5
+Default value: None
+Accept pipeline input: False
+Accept wildcard characters: False
+```
+
+### -rootPassword
+
+Password for the `root` user, used to elevate (`su -`) after the SSH session to the SDDC Manager appliance is established.
+
+```yaml
+Type: String
+Parameter Sets: (All)
+Aliases:
+
+Required: True
+Position: 6
 Default value: None
 Accept pipeline input: False
 Accept wildcard characters: False

@@ -64,7 +64,7 @@
   },
   {
     "description": "Repoint SDDC Manager to the Offline Depot",
-    "commandLine": "Set-SDDCManagerOfflineDepot -sddcManagerFqdn $sddcManagerFqdn -sddcManagerUser $sddcManagerAdmin -sddcManagerPassword $sddcManagerAdminPassword -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort -offlineDepotUsername $offlineDepotUsername -offlineDepotPassword $offlineDepotPassword",
+    "commandLine": "Set-SDDCManagerOfflineDepot -sddcManagerFqdn $sddcManagerFqdn -sddcManagerUser $sddcManagerAdmin -sddcManagerPassword $sddcManagerAdminPassword -vcfUserPassword $vcfUserPassword -localUserPassword $localUserPassword -rootPassword $rootPassword -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort -offlineDepotUsername $offlineDepotUsername -offlineDepotPassword $offlineDepotPassword",
     "displayName": "Set SDDC Manager Offline Depot",
     "condition": [],
     "threadId": "",

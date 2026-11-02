@@ -11,6 +11,7 @@
   "offlineDepotUsername": "",
   "offlineDepotPassword": "",
   "vcfUserPassword": "",
+  "localUserPassword": "",
   "rootPassword": "",
   "adminPassword": "",
   "VcfVersion": "",

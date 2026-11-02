@@ -11,6 +11,7 @@
   "offlineDepotUsername": "depot",
   "offlineDepotPassword": "vmware",
   "vcfUserPassword": "VMw@re1!VMw@re1!",
+  "localUserPassword": "VMw@re1!VMw@re1!",
   "rootPassword": "VMw@re1!VMw@re1!",
   "adminPassword": "VMw@re1!VMw@re1!",
   "VcfVersion": "9.1.1.0",
