@@ -618,12 +618,12 @@ Function Update-VCFVariableJsonFiles {
 
         # Backups - VCF fleet (VCF Operations / services runtime) archive
         $fleetBackupRoot = Join-Path -Path $backupsPath -ChildPath "vcf\backups"
-        $fleetArchiveFile = Get-ChildItem -Path $fleetBackupRoot -Filter "*.base.tgz" -File -Recurse -ErrorAction SilentlyContinue | Sort-Object -Property LastWriteTime -Descending | Select-Object -First 1
+        $fleetArchiveFile = Get-ChildItem -Path $fleetBackupRoot -Filter "*.base.tgz" -File -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '[\\/]vsp[\\/]' } | Sort-Object -Property LastWriteTime -Descending | Select-Object -First 1
         If ($fleetArchiveFile) {
             $fleetUpdates["LocalArchivePath"] = $fleetArchiveFile.FullName
             Write-LogMessage -Type INFO -Message "Found fleet backup archive $($fleetArchiveFile.Name)"
         } else {
-            Write-LogMessage -Type WARNING -Message "No *.base.tgz archive found under $fleetBackupRoot - leaving LocalArchivePath unchanged"
+            Write-LogMessage -Type WARNING -Message "No vsp *.base.tgz archive found under $fleetBackupRoot - leaving LocalArchivePath unchanged"
         }
 
         foreach ($target in @(@{ file = $managementJsonFile; updates = $managementUpdates }, @{ file = $fleetJsonFile; updates = $fleetUpdates })) {
