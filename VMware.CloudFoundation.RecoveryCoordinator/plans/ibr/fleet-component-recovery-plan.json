@@ -281,7 +281,7 @@
   },
   {
     "description": "Restore Telemetry",
-    "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -RestoreJsonFile \".\\component-restore-payload.json\" -autoConfirm",
+    "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -RestoreJsonFile \".\\restore-payload.json\" -autoConfirm",
     "displayName": "Restore Telemetry Backup",
     "condition": [],
     "threadId": "",
