@@ -9,8 +9,11 @@ Start-VCFRecoveryCoordinatorWeb            # starts 127.0.0.1:<free port>, opens
 Start-VCFRecoveryCoordinatorWeb -NoBrowser -Port 8765
 ```
 
-Use **Quit** in the page to stop the server (or kill the `pwsh` process it started). `Start-VCFRecoveryCoordinatorWeb -New`
-always starts a new instance; several can run at once, each with its own launch folder.
+**Closing the window ends the session**, as it does in the WPF UI: about 3 seconds after the last window goes away (`-CloseGraceSeconds`; it only has to outlast a delayed
+poll or a console reconnecting) the server exits and takes every console, and anything still running in them, with it. **Save & Exit**
+saves a state file first. Closing the window while a step is running asks for confirmation. If no window is ever opened (`-NoBrowser`, or the
+browser failed to start) the server exits after 10 minutes (`-IdleTimeoutMinutes`). Several instances can run at once, each with its own
+launch folder.
 
 ## How it works
 
@@ -29,27 +32,26 @@ always starts a new instance; several can run at once, each with its own launch 
 - Run All honours `threadId` blocks like the WPF UI: consecutive rows with a threadId form a block,
   threads in a block run concurrently, the main sequence continues when all finish cleanly. The server drives it (see below).
 
-## Closing the window
+## State and the window
 
-The window is only a view. The server owns the state, so closing or reloading the window loses nothing:
+The server, not the page, holds the session state, so a **reload** of the window (Ctrl+R, or a browser tab if the default browser isn't Chromium) loses nothing as long as it reconnects within the grace period:
 
 - step statuses, the pause point, the Advisories log, the Overall Recovery Time, the selected plan and data source, and the
-  extra toggles are held by the server and redrawn when a window connects;
-- **Run Plan runs on the server** (it starts each step, watches the console for completion, walks the thread blocks), so a plan
-  keeps going with no window open. A step that needs the backup password waits until a window is there to ask for it;
+  extra toggles are redrawn from the server when the page reconnects;
+- **Run Plan runs on the server** (it starts each step, watches the console for completion, walks the thread blocks), so a
+  reload does not interrupt it. A step that needs the backup password waits until a window is there to ask for it;
 - the consoles keep running and replay their scrollback.
 
-An instance writes a small private record (port, token, process id; mode 0600 under `~/.vcfir-webui/instances`) and removes it
-on exit. When you run `Start-VCFRecoveryCoordinatorWeb`, instances that are running **with no window open** are listed and you
-can reconnect to one by number, or press Enter to start a new one. An instance that has a window open is never offered, and it
-refuses a second window ("Already open in another window"; that page connects by itself within about 3 seconds of the first
-closing). Page loads and WebSockets carry a per-window id for this; a script holding the token without an id is not blocked.
+None of this outlives the window: with the window closed the server and its consoles are gone (see above), so there is no headless
+instance to reconnect to. Only one window may drive a server at a time: each window has an id (kept in `sessionStorage`, so a
+reload is the same window), and a second window is refused ("Already open in another window") until the first closes.
 
 The window opens in its own window of the default browser: an app-style window (no tabs or address bar, the page's own icon) for
 Chromium-based browsers (Chrome, Edge, Brave, Vivaldi, Opera, Chromium), a new window for Firefox, and the ordinary open-URL
-behaviour for anything else (Safari, unknown). On macOS the Dock still shows the browser's icon for an app-style window; a
-custom Dock icon would need a real .app wrapper, which this does not build. Closing a tab or window while a step is running asks
-for confirmation (the browser's own prompt).
+behaviour for anything else (Safari, unknown). Chromium browsers are started with a small profile of their own
+(`~/.vcfir-webui/browser-profile`, no sign-in, no extensions), which keeps the window free of the signed-in profile's badge and
+separate from the person's other browser windows. The page icon is the official mark as 32/64/256 px PNGs. On macOS the Dock still
+shows the browser's icon for an app-style window; a custom Dock icon would need a real .app wrapper, which this does not build.
 
 ## Security
 

@@ -33,8 +33,11 @@ param(
     # Start-VCFRecoveryCoordinatorWeb before this server starts -- same hand-off the WPF UI uses for its update banner.
     [string]$CoordinatorUpdateStatus,
     [string]$InstanceRecoveryUpdateStatus,
-    # Exit by itself after this many minutes with no browser connected and nothing running (the WPF window ends its
-    # consoles when closed; a closed browser tab can't tell us, so this is the equivalent). 0 disables it.
+    # The server lives and dies with its window, like the WPF UI: once a page has been opened, the server exits (ending every
+    # console and anything still running) this many seconds after it last heard from a window. The page polls every 0.7 s and
+    # keeps a WebSocket open, so this only has to outlast a delayed poll or a console reconnecting -- not a person's actions.
+    [double]$CloseGraceSeconds = 3,
+    # If no page is ever opened (-NoBrowser, or the browser failed to start), exit after this many minutes. 0 disables it.
     [double]$IdleTimeoutMinutes = 10,
     # Refuse commands typed into the console between steps (the page then shows no command line). The token and
     # loopback-only limits apply either way; this switch is for sites that want the server to accept only plan steps.
@@ -67,6 +70,7 @@ $script:varsFilePath = ''
 $script:answerMap = $null                # ordered name -> value of the ACTIVE variables file ($null until one is loaded/created)
 $script:interactiveAnswerFile = $null    # the "use answer file for interactive tasks" file, per Import-VCFIRAnswerFile
 $script:lastClientSeen = [DateTime]::UtcNow
+$script:lastTick = [DateTime]::UtcNow
 # What the PAGE used to hold and now lives here, so a closed or reloaded window loses nothing: step statuses, the pause point,
 # the Advisories log, the Run Plan timer and the Run Plan itself (which the server drives, so it survives the window).
 $script:ui = @{
@@ -80,7 +84,7 @@ $script:ui = @{
 # One window at a time: the first page to talk to the server owns it (its random client id). Another page is refused while the
 # owner is alive -- it has a console WebSocket open, or it made a request within the last few seconds.
 $script:activeClient = @{ Id = ''; LastSeen = [DateTime]::MinValue }
-$script:instanceRecord = ''
+$script:pageSeen = $false              # a page has been served at least once (the server then follows that window's life)
 # Names the operator never types (they come from the Data Source / the selection / a password prompt): the WPF UI drops
 # them from answers files and never lists them on the Variables tab.
 $script:selectionDriven = @('extractedSDDCDataFile', 'workloadDomain', 'clusterName', 'secureEncryptionPassword')
@@ -1152,10 +1156,10 @@ function Test-RequestAllowed($Context) {
 }
 
 # The page and its WebSockets identify themselves (X-VCFIR-Client header / client= query). The page itself, the public vendor files
-# and the presence probe are exempt, so a second window can load far enough to say why it is refused.
+# are exempt, so a second window can load far enough to say why it is refused.
 function Test-PageOwner($Context) {
     $req = $Context.Request; $path = $req.Url.AbsolutePath
-    if ($path -eq '/' -or $path.StartsWith('/vendor/') -or $path -eq '/api/presence') { return $true }
+    if ($path -eq '/' -or $path.StartsWith('/vendor/')) { return $true }
     $id = if ($path -eq '/ws') { [string]$req.QueryString['client'] } else { [string]$req.Headers['X-VCFIR-Client'] }
     return (Test-ClientAllowed $id)
 }
@@ -1179,9 +1183,8 @@ function Invoke-Route($Context) {
     }
 
     switch ("$method $path") {
-        'GET /' { Send-Response $Context ([IO.File]::ReadAllBytes($script:htmlPath)) 'text/html; charset=utf-8' }
+        'GET /' { $script:pageSeen = $true; Send-Response $Context ([IO.File]::ReadAllBytes($script:htmlPath)) 'text/html; charset=utf-8' }
         'GET /api/catalog' { Send-Json $Context $script:catalog }
-        'GET /api/presence' { Send-Json $Context @{ connected = (Test-ActiveClientLive); workingDirectory = $WorkingDirectory } }
         'GET /api/plan' { Send-Json $Context (Get-PlanPayload $req.QueryString['id']) }
         'GET /api/info' {
             # Lets the page (and a screenshot of it) say exactly which build, OS and console backend is running.
@@ -1451,17 +1454,6 @@ $listener = [System.Net.HttpListener]::new()
 $listener.Prefixes.Add("http://127.0.0.1:$Port/")
 $listener.Start()
 
-# Lets Start-VCFRecoveryCoordinatorWeb (in another session) find this instance again after its window was closed. Holds the token,
-# so it is private to the user; removed on exit.
-try {
-    $registry = Join-Path (Join-Path ([Environment]::GetFolderPath('UserProfile')) '.vcfir-webui') 'instances'
-    [void](New-Item -ItemType Directory -Path $registry -Force)
-    if (-not $script:onWindows) { [IO.File]::SetUnixFileMode((Split-Path $registry -Parent), [IO.UnixFileMode]'UserRead,UserWrite,UserExecute'); [IO.File]::SetUnixFileMode($registry, [IO.UnixFileMode]'UserRead,UserWrite,UserExecute') }
-    $script:instanceRecord = Join-Path $registry "$PID.json"
-    [IO.File]::WriteAllText($script:instanceRecord, (@{ pid = $PID; port = $Port; token = $Token; workingDirectory = $WorkingDirectory; started = [DateTimeOffset]::UtcNow.ToString('o') } | ConvertTo-Json -Compress))
-    if (-not $script:onWindows) { [IO.File]::SetUnixFileMode($script:instanceRecord, [IO.UnixFileMode]'UserRead,UserWrite') }
-} catch { $script:instanceRecord = '' }
-
 try {
     [void](New-ConsoleSession 'main' 'Main Thread')
     $pending = $listener.GetContextAsync()
@@ -1492,13 +1484,15 @@ try {
             $script:ui.needPassword = $false
         }
         Update-Clients
-        if ($script:wsClients.Count -gt 0) { $script:lastClientSeen = [DateTime]::UtcNow }       # a connected tab counts as "seen"
-        if ($IdleTimeoutMinutes -gt 0 -and ([DateTime]::UtcNow - $script:lastClientSeen).TotalMinutes -ge $IdleTimeoutMinutes -and -not ($script:watches.Values | Where-Object { $_.Status -eq 'Running' })) {
-            $script:shutdown = $true
-        }
+        if ($script:wsClients.Count -gt 0) { $script:lastClientSeen = [DateTime]::UtcNow }       # a connected window counts as "seen"
+        # A jump in the loop's own clock means the machine slept: the window could not have spoken while it was suspended.
+        if (([DateTime]::UtcNow - $script:lastTick).TotalSeconds -gt 5) { $script:lastClientSeen = [DateTime]::UtcNow }
+        $script:lastTick = [DateTime]::UtcNow
+        $quiet = ([DateTime]::UtcNow - $script:lastClientSeen).TotalSeconds
+        if ($script:pageSeen) { if ($quiet -ge $CloseGraceSeconds) { $script:shutdown = $true } }      # the window was closed: so is everything it was running
+        elseif ($IdleTimeoutMinutes -gt 0 -and $quiet -ge ($IdleTimeoutMinutes * 60)) { $script:shutdown = $true }
     }
 } finally {
-    if ($script:instanceRecord) { Remove-Item -LiteralPath $script:instanceRecord -Force -ErrorAction SilentlyContinue }
     foreach ($c in $script:consoles.Values) { try { & $c.Pty.Kill } catch { }; Remove-Item -LiteralPath $c.QueueDir -Recurse -Force -ErrorAction SilentlyContinue }
     $listener.Stop()
     $listener.Close()
