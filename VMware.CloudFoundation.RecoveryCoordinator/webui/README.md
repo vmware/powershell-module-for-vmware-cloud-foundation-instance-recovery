@@ -37,37 +37,48 @@ Variable values live in server memory only.
 
 ## What matches the WPF UI now
 
-Layout (header, Recovery Parameters / Discovered Infrastructure / Recovery Tasks on the left, Console and
-Advisories on the right), Discovered Infrastructure from an extracted-sddc-data.json (domain list filtered per
-plan, additional clusters with Storage / Stretched / Dependent On), selection driving `$workloadDomain` and
-`$clusterName` and `dataPath` step conditions, Recovery Tasks hidden until something is selected, Variables vs.
-Recovery Plan vs. Advanced tabs, the User | Engineering switch (same password gate; Advanced is Engineering only),
-plan-specific extra toggles, Save & Exit / Resume, Run Plan with thread blocks and the overall timer.
+Layout (header, Recovery Parameters / Discovered Infrastructure / Recovery Tasks on the left, Console and Advisories on the
+right) and the row/switch/tab styling; Discovered Infrastructure from an extracted-sddc-data.json; selection driving
+`$workloadDomain`/`$clusterName` and `dataPath` step conditions; Recovery Tasks hidden until something is selected; the
+Variables tab (empty until a variables file is loaded -- validated against the plan's template -- or created with Save As;
+every edit is written back to that file); the interactive answer file switch with "Auto Answered" badges; the
+engineering-only gate on the FDR type / Recover Fleet plan; the User | Engineering switch with Advanced and pause points
+(click a Pending step to insert an "Engineering Break Point"); the backup-encryption-password prompt; the update banner;
+Save & Exit / Resume (including the answer file); Run Plan with thread blocks, the overall timer and the WPF messages.
 
-The console is a persistent `pwsh` on a real pseudo-terminal (xterm.js in the page). Steps reach it through a
-private queue directory read by `console-repl.ps1`, not by typing into its stdin: terminal cursor-position replies
-and injected text interleave on stdin and corrupted long commands. The consequence: the console answers prompts
-(`Read-Host`) but is not a free-typing shell between steps. Ctrl+C ends that console; the page restarts it.
+Consoles are plain `pwsh` hosts (see below) fed by a queue; the web server also exits by itself after 10 minutes with no
+browser connected and nothing running (`-IdleTimeoutMinutes`), the equivalent of closing the WPF window.
 
 **Browse** is an in-page file browser (`GET /api/fs`), not a native OS dialog: a browser can't hand a page a file's
 full path, and driving the native dialogs from the server proved unreliable (focus, screen grabbing, macOS Automation
 permission prompts). It lists folders with plain .NET calls, so it behaves the same on Windows (drives, UNC paths),
-macOS and Linux. It returns names, sizes and dates only -- never file contents -- for folders the server's account can
-already read, behind the same per-launch token as the rest of the API. The `.json` filter is by extension, with a
-"Show all files" escape hatch; typing a path into its box also works.
+macOS and Linux, always opens in the launch folder, and doubles as Save As. It returns names, sizes and dates only --
+never file contents -- for folders the server's account can already read, behind the same per-launch token as the rest of
+the API. The `.json` filter is by extension, with a "Show all files" escape hatch.
+
+## Console backends
+
+`-ConsoleBackend Auto|Pty|Pipe`. **Pipe** (the default on Windows) is a plain `pwsh` with redirected input and output:
+steps arrive through a file queue (`console-repl.ps1`), so nothing is typed into a shell, and the only input is answers to
+prompts, which the page echoes itself. **Pty** (the default on macOS/Linux) puts that same queue-driven `pwsh` on a real
+pseudo-terminal (`script(1)`; ConPTY on Windows, which has never been run). A plain *interactive* `pwsh` under xterm.js was
+tried and rejected: its cursor-position round trips interleave with injected text and corrupt it, and bracketed paste is
+not honoured. Consequence either way: the console answers prompts but is not a free-typing shell between steps, and
+Ctrl+C ends the console (the page restarts it).
 
 ## Not done yet
 
-- **Data Source "Extract SDDC Manager Backup"** only remembers the backup path; the extraction flow (and its
-  password prompt) is not ported. Use "Load Extracted SDDC Data".
-- Pause points / breakpoints, the "use answer file for interactive tasks" toggle and its auto-answered badges,
-  and `Update-SelectedClusterNameFromDisk` (re-resolving the cluster name after `Update-ExtractedSDDCData`).
-- The module update banner and credentials-file auto-discovery beyond the Retrieve step hand-off.
-- Save & Exit writes `vcfibr-state-<timestamp>.json` to the launch directory (a browser has no native save
-  dialog); Resume lists those files.
-- **Windows ConPTY (`ConPty.cs`) compiles but has never been run on Windows.** macOS is the only platform this has
-  been exercised on. Linux uses the same `script(1)` path as macOS but is untested.
-- Passwords entered in the page are held in server memory and handed to a console through a private 0600 file
-  that the console deletes immediately; a per-session-key scheme is still needed to replace the Windows DPAPI use.
-- The IR module itself still has Windows-only code paths (OVF Tool path, `tar.exe`/registry checks,
-  `Resolve-DnsName`, backslash paths); steps that hit them will fail on macOS/Linux until fixed.
+- **Free typing between steps.** Proposed: the page acts as the command line while a console is idle and sends the line
+  through the same queue (same session, no input race). Not built.
+- **"Extract SDDC Manager Backup"** runs `New-ExtractDataFromSDDCBackup` in the Main console, but that cmdlet still calls
+  `Resolve-DnsName` (10 times), which does not exist on macOS/Linux, so extraction is expected to fail there. It has
+  never run against a real backup. Use "Load Extracted SDDC Data" for now.
+- **Windows and Linux are untested** (macOS is the only platform exercised): the Pipe backend on Windows, the ConPTY
+  code, `script(1)` on Linux, the Windows drive/UNC handling in the file browser.
+- The InstanceRecovery module itself still has Windows-only code (OVF Tool path, `tar.exe`/registry checks,
+  `Resolve-DnsName`, backslash paths); steps that hit them will fail on macOS/Linux.
+- A file created with "New Variables File" holds only the names the plan's steps reference, while the shipped template
+  also lists names no step references (e.g. `rootUserPassword`), so loading that file back fails the structure check
+  (by reading the WPF code, it does the same there).
+- Passwords entered in the page are held in server memory and handed to a console through a private 0600 file that the
+  console deletes immediately; `Read-Host` echoes an answer back in plain text after Enter.

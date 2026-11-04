@@ -28,7 +28,14 @@ param(
     # Pipe = a plain pwsh with redirected stdin/stdout/stderr, which is all the queue-driven console needs (steps arrive
     # through a file queue and the only input is answers to prompts) and has no native dependencies. Auto picks Pipe on
     # Windows (the ConPTY code has never been run there) and Pty elsewhere.
-    [ValidateSet('Auto', 'Pty', 'Pipe')][string]$ConsoleBackend = 'Auto'
+    [ValidateSet('Auto', 'Pty', 'Pipe')][string]$ConsoleBackend = 'Auto',
+    # "Name|Installed|Latest|Repository" (or "...|ERROR|message") results from Get-VCFIRModuleUpdateStatus, computed by
+    # Start-VCFRecoveryCoordinatorWeb before this server starts -- same hand-off the WPF UI uses for its update banner.
+    [string]$CoordinatorUpdateStatus,
+    [string]$InstanceRecoveryUpdateStatus,
+    # Exit by itself after this many minutes with no browser connected and nothing running (the WPF window ends its
+    # consoles when closed; a closed browser tab can't tell us, so this is the equivalent). 0 disables it.
+    [double]$IdleTimeoutMinutes = 10
 )
 
 $ErrorActionPreference = 'Stop'
@@ -53,11 +60,14 @@ $script:allDomains = @()
 $script:selection = $null              # @{ kind = 'domain'|'cluster'; domain; cluster }
 $script:conditionContext = @{}         # what "dataPath" step conditions resolve against (selectedDomain / selectedCluster)
 $script:varsFilePath = ''
+$script:answerMap = $null                # ordered name -> value of the ACTIVE variables file ($null until one is loaded/created)
+$script:interactiveAnswerFile = $null    # the "use answer file for interactive tasks" file, per Import-VCFIRAnswerFile
+$script:lastClientSeen = [DateTime]::UtcNow
+# Names the operator never types (they come from the Data Source / the selection / a password prompt): the WPF UI drops
+# them from answers files and never lists them on the Variables tab.
+$script:selectionDriven = @('extractedSDDCDataFile', 'workloadDomain', 'clusterName', 'secureEncryptionPassword')
 $script:uiMode = 'User'
 $script:engineeringUnlocked = $false
-# Variables the operator never types: they come from the Data Source / the infrastructure selection (as in the
-# WPF UI, where an answers file's values for them are ignored so a stale file can't retarget a run).
-$script:readonlyVariables = @('extractedSDDCDataFile', 'workloadDomain', 'clusterName')
 $script:pwshPath = (Get-Process -Id $PID).Path
 $script:ignoredVariableNames = @('true', 'false', 'null', '_', 'env', 'PSScriptRoot', 'PSItem', 'args', 'input')
 $script:defaultCols = 120
@@ -152,42 +162,103 @@ function Test-StepStatusGate($Step) {
 
 function Get-ReferencedVariableNames([string[]]$CommandLines) {
     $names = [System.Collections.Generic.List[string]]::new()
+    # PowerShell variable names are case-insensitive ($sddcManagerFqdn and $sddcManagerFQDN are one variable), so a name
+    # seen again in a different case must not become a second row.
+    $seen = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
     foreach ($commandLine in $CommandLines) {
         foreach ($m in [regex]::Matches($commandLine, '\$([A-Za-z_][A-Za-z0-9_]*)')) {
             $n = $m.Groups[1].Value
-            if ($n -notin $script:ignoredVariableNames -and -not $names.Contains($n)) { [void]$names.Add($n) }
+            if ($n -notin $script:ignoredVariableNames -and $seen.Add($n)) { [void]$names.Add($n) }
         }
     }
-    return , $names
+    return $names.ToArray()
 }
 
-function Import-VariablesTemplate($Entry) {
-    # Seed (never overwrite) the shared variable store with the plan's template keys.
-    if (-not $Entry.variablesFile) { return }
-    $path = Join-Path (Join-Path $PlansPath $Entry.planFolder) $Entry.variablesFile
-    if (-not (Test-Path -LiteralPath $path)) { return }
-    $template = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json -AsHashtable
-    foreach ($k in $template.Keys) {
-        if (-not $script:vars.Contains($k)) { $script:vars[$k] = if ($null -eq $template[$k]) { '' } else { [string]$template[$k] } }
+# Every command line plus a '$name' fragment for each "variable" condition, so a variable that only ever appears in a
+# condition still gets a row (Get-StepReferenceText in the WPF UI).
+function Get-StepReferenceText($Steps) {
+    $lines = [System.Collections.Generic.List[string]]::new()
+    foreach ($step in $Steps) {
+        $lines.Add($step.CommandLine)
+        foreach ($c in $step.Condition) { if ($null -ne $c -and $c -isnot [string] -and $c.type -eq 'variable') { $lines.Add('$' + [string]$c.name) } }
     }
+    return , $lines.ToArray()
+}
+
+function Get-VariablesTemplateKeys($Entry) {
+    if (-not $Entry -or -not $Entry.variablesFile) { return $null }
+    $path = Join-Path (Join-Path $PlansPath $Entry.planFolder) $Entry.variablesFile
+    if (-not (Test-Path -LiteralPath $path)) { return $null }
+    return @((Get-Content -LiteralPath $path -Raw | ConvertFrom-Json).PSObject.Properties.Name)
+}
+
+function Get-VariablesStructureMismatch([string[]]$AnswerMapKeys, [string[]]$TemplateKeys) {
+    $missing = @($TemplateKeys | Where-Object { $_ -notin $AnswerMapKeys })
+    $extra = @($AnswerMapKeys | Where-Object { $_ -notin $TemplateKeys })
+    if ($missing.Count -eq 0 -and $extra.Count -eq 0) { return $null }
+    $parts = @()
+    if ($missing.Count -gt 0) { $parts += "missing $($missing -join ', ')" }
+    if ($extra.Count -gt 0) { $parts += "unexpected $($extra -join ', ')" }
+    return $parts -join '; '
+}
+
+function Test-PlanAllowed($Entry) {
+    if ($Entry.engineeringOnly -and -not $script:engineeringUnlocked) { throw "'$($Entry.label)' is engineering-only: unlock engineering mode first." }
+}
+
+# Which interactive steps the interactive answer file already covers ("Auto Answered" vs "Requires Input"), counting each
+# cmdlet's occurrences in plan order exactly the way Get-VCFIRAnswerSet dequeues them (Update-StepRowAutoAnsweredBadges).
+function Get-AutoAnsweredIndexes($Steps) {
+    $covered = [System.Collections.Generic.HashSet[int]]::new()
+    if (-not $script:interactiveAnswerFile -or -not (Test-Path -LiteralPath $script:interactiveAnswerFile)) { return , $covered }
+    $counts = $null; $preApproved = $null
+    try {
+        $answers = Get-Content -LiteralPath $script:interactiveAnswerFile -Raw | ConvertFrom-Json
+        $counts = @{}
+        foreach ($property in $answers.PSObject.Properties) { $counts[$property.Name] = @($property.Value).Count }
+        if ($answers.PSObject.Properties.Name -contains 'Confirm-ManualStep') { $preApproved = @($answers.'Confirm-ManualStep') }
+    } catch { return , $covered }
+    $seen = @{}
+    foreach ($step in $Steps) {
+        if (-not $step.Interactive) { continue }
+        $cmdlet = ($step.CommandLine -split '\s+', 2)[0]
+        if ($cmdlet -eq 'Confirm-ManualStep') {
+            $m = [regex]::Match($step.CommandLine, "-AnswerKey\s+'([^']*)'")
+            $auto = $m.Success -and $preApproved -and ($preApproved -contains $m.Groups[1].Value)
+        } else {
+            $seen[$cmdlet] = 1 + [int]$seen[$cmdlet]
+            $auto = $counts.ContainsKey($cmdlet) -and ($seen[$cmdlet] -le $counts[$cmdlet])
+        }
+        if ($auto) { [void]$covered.Add([int]$step.Index) }
+    }
+    return , $covered
 }
 
 function Get-PlanPayload([string]$PlanId) {
     $entry = Get-CatalogEntry $PlanId
     if (-not $entry) { throw "Unknown plan '$PlanId'" }
-    Import-VariablesTemplate $entry
+    Test-PlanAllowed $entry
     $steps = @(Get-PlanSteps $entry | Where-Object { $_.Visible })
-    $names = Get-ReferencedVariableNames @($steps.CommandLine)
+    $applicable = @($steps | Where-Object { Test-StepApplicable $_ })
+    $autoAnswered = Get-AutoAnsweredIndexes $applicable
+    # The Variables tab lists only the active variables file's own names (none until one is loaded or created), ordered
+    # like the WPF UI: names the steps reference first, then whatever else the file holds.
+    $rows = @()
+    if ($script:answerMap) {
+        $referenced = @(@(Get-ReferencedVariableNames (Get-StepReferenceText $steps)) | Where-Object { $script:answerMap.Contains($_) })
+        $rows = @($referenced) + @($script:answerMap.Keys | Where-Object { $referenced -notcontains $_ })
+    }
     return @{
         plan      = $entry
         steps     = @($steps | ForEach-Object {
                 @{ index = $_.Index; id = $_.Id; name = $_.DisplayName; description = $_.Description; commandLine = $_.CommandLine
-                    threadId = $_.ThreadId; interactive = $_.Interactive; applicable = (Test-StepApplicable $_) }
+                    threadId = $_.ThreadId; interactive = $_.Interactive; applicable = (Test-StepApplicable $_); autoAnswered = $autoAnswered.Contains([int]$_.Index) }
             })
-        variables = @($names | ForEach-Object {
-                @{ name = $_; value = $(if ($script:vars.Contains($_)) { $script:vars[$_] } else { '' }); secret = ($_ -match 'password|passphrase'); readonly = ($_ -in $script:readonlyVariables) }
-            })
+        variables = @($rows | ForEach-Object { @{ name = $_; value = $(if ($script:vars.Contains($_)) { $script:vars[$_] } else { '' }); secret = ($_ -match 'password|passphrase') } })
+        variablesLoaded = [bool]$script:answerMap
         mode      = $script:uiMode
+        unlocked  = $script:engineeringUnlocked
+        answerFile = $script:interactiveAnswerFile
         infrastructure = (Get-InfrastructurePayload $entry)
         varsFile  = $script:varsFilePath
     }
@@ -230,6 +301,14 @@ function Get-ClusterDependencies($Domain, $Cluster, [object[]]$AllDomains) {
     return ($dependencies -join ', ')
 }
 
+# A new data file, plan or selection starts a fresh plan context: no variables file, no interactive answer file
+# (Reset-CurrentRecoveryPlanContext in the WPF UI).
+function Reset-PlanContext {
+    $script:answerMap = $null
+    $script:varsFilePath = ''
+    $script:interactiveAnswerFile = $null
+}
+
 function Import-ExtractedData([string]$Path) {
     if ([string]::IsNullOrWhiteSpace($Path)) { throw 'No file path was entered.' }
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "File not found on the machine running this server: $Path" }
@@ -244,6 +323,7 @@ function Import-ExtractedData([string]$Path) {
     $script:vars['extractedSDDCDataFile'] = $Path
     $script:vars['workloadDomain'] = ''
     $script:vars['clusterName'] = ''
+    Reset-PlanContext
 }
 
 function Get-InfrastructurePayload($Entry) {
@@ -286,6 +366,7 @@ function Set-InfrastructureSelection([string]$Kind, [string]$DomainName, [string
     $script:stepLedger = @{}
     $script:selection = $null
     $script:conditionContext = @{}
+    Reset-PlanContext
     $script:vars['workloadDomain'] = ''
     $script:vars['clusterName'] = ''
     $domain = $script:allDomains | Where-Object { $_.domainName -eq $DomainName } | Select-Object -First 1
@@ -310,20 +391,84 @@ function Set-InfrastructureSelection([string]$Kind, [string]$DomainName, [string
     $script:vars['clusterName'] = [string]$cluster.name
 }
 
-function Import-VariablesFile([string]$Path) {
+function Import-VariablesFile([string]$Path, $Entry) {
     if ([string]::IsNullOrWhiteSpace($Path)) { throw 'No file path was entered.' }
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "File not found on the machine running this server: $Path" }
     $file = (Resolve-Path -LiteralPath $Path).Path
-    $loaded = Get-Content -LiteralPath $file -Raw | ConvertFrom-Json -AsHashtable
-    foreach ($k in $loaded.Keys) {
-        $v = $loaded[$k]
-        # Scalars only (string/number/bool/null); nested objects aren't variables. Selection/Data-Source-driven names are ignored.
-        if ($k -match '^[A-Za-z_][A-Za-z0-9_]*$' -and $k -notin $script:readonlyVariables -and ($null -eq $v -or $v -is [string] -or $v -is [ValueType])) {
-            $script:vars[$k] = if ($null -eq $v) { '' } else { [string]$v }
-        }
+    $loaded = Get-Content -LiteralPath $file -Raw | ConvertFrom-Json
+    $map = [ordered]@{}
+    foreach ($property in $loaded.PSObject.Properties) {
+        $v = $property.Value
+        # Scalars only (string/number/bool/null); nested objects aren't variables.
+        if ($property.Name -match '^[A-Za-z_][A-Za-z0-9_]*$' -and ($null -eq $v -or $v -is [string] -or $v -is [ValueType])) { $map[$property.Name] = if ($null -eq $v) { '' } else { [string]$v } }
     }
+    foreach ($owned in $script:selectionDriven) { $map.Remove($owned) }
+    $templateKeys = Get-VariablesTemplateKeys $Entry
+    if ($null -ne $templateKeys) {
+        $mismatch = Get-VariablesStructureMismatch @($map.Keys) $templateKeys
+        if ($null -ne $mismatch) { throw "Load Variables failed: '$file' does not match the selected plan's variables structure ($mismatch)." }
+    }
+    if ($map.Count -eq 0) { return @{ file = $file; count = 0 } }
+    foreach ($k in $map.Keys) { $script:vars[$k] = $map[$k] }
+    $script:answerMap = $map
     $script:varsFilePath = $file
-    return @{ file = $file; count = $loaded.Count }
+    $script:interactiveAnswerFile = $null          # Reset-AnswerFileToggle: a new variables file starts without an answer file
+    return @{ file = $file; count = $map.Count }
+}
+
+# New Variables File: starts from the variables the current plan's steps reference (so it is always in sync with the task
+# list), blank, and every later edit is written straight back to the file (Set-VariablesFromPage).
+function New-VariablesFile([string]$Path, $Entry, [bool]$Overwrite) {
+    if ([string]::IsNullOrWhiteSpace($Path)) { throw 'No file path was entered.' }
+    $steps = @(Get-PlanSteps $Entry | Where-Object { $_.Visible })
+    $excluded = @($script:selectionDriven) + @(if ($Entry.extraToggles) { @($Entry.extraToggles.id) } else { @() })
+    $names = @(@(Get-ReferencedVariableNames (Get-StepReferenceText $steps)) | Where-Object { $_ -notin $excluded })
+    if ($names.Count -eq 0) { throw 'No steps are currently loaded, so there are no variables to create a file for.' }
+    if ((Test-Path -LiteralPath $Path) -and -not $Overwrite) { throw "EXISTS:$Path" }
+    $dir = Split-Path -Path $Path -Parent
+    if ($dir -and -not (Test-Path -LiteralPath $dir -PathType Container)) { throw "Folder not found: $dir" }
+    $map = [ordered]@{}
+    foreach ($n in $names) { $map[$n] = ''; $script:vars[$n] = '' }
+    $map | ConvertTo-Json | Set-Content -LiteralPath $Path -Encoding utf8
+    $script:answerMap = $map
+    $script:varsFilePath = (Resolve-Path -LiteralPath $Path).Path
+    $script:interactiveAnswerFile = $null
+    return @{ file = $script:varsFilePath; count = $map.Count }
+}
+
+# Values typed on the Variables tab: held for the session AND, for names the active variables file owns, written back to
+# that file immediately (the WPF UI saves on every edit).
+function Set-VariablesFromPage($Values) {
+    $dirty = $false
+    foreach ($k in $Values.Keys) {
+        if ($k -notmatch '^[A-Za-z_][A-Za-z0-9_]*$') { throw "Invalid variable name '$k'" }
+        $script:vars[$k] = [string]$Values[$k]
+        if ($script:answerMap -and $script:answerMap.Contains($k) -and $script:answerMap[$k] -cne [string]$Values[$k]) { $script:answerMap[$k] = [string]$Values[$k]; $dirty = $true }
+    }
+    if ($dirty -and $script:varsFilePath) { $script:answerMap | ConvertTo-Json | Set-Content -LiteralPath $script:varsFilePath -Encoding utf8 }
+}
+
+function Set-InteractiveAnswerFile([string]$Path) {
+    if ([string]::IsNullOrWhiteSpace($Path)) { $script:interactiveAnswerFile = $null; return }
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "File not found on the machine running this server: $Path" }
+    $file = (Resolve-Path -LiteralPath $Path).Path
+    [void](Get-Content -LiteralPath $file -Raw | ConvertFrom-Json)       # must at least be valid JSON
+    $script:interactiveAnswerFile = $file
+}
+
+# After Update-ExtractedSDDCData the cluster name is resolved against live vCenter and written back to the data file:
+# re-read it so $clusterName (and the dataPath context) stop being stale (Update-SelectedClusterNameFromDisk).
+function Update-SelectedClusterNameFromDisk {
+    if (-not $script:extractedPath -or -not $script:selection -or $script:selection.kind -ne 'domain') { return }
+    try { $fresh = Get-Content -LiteralPath $script:extractedPath -Raw | ConvertFrom-Json } catch { return }
+    $domainName = [string]$script:selection.domain
+    $freshDomain = $fresh.workloadDomains | Where-Object { $_.domainName -eq $domainName } | Select-Object -First 1
+    $freshDefault = $freshDomain.vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' } | Select-Object -First 1
+    if ($null -eq $freshDefault -or [string]::IsNullOrWhiteSpace($freshDefault.name)) { return }
+    $stale = ($script:allDomains | Where-Object { $_.domainName -eq $domainName } | Select-Object -First 1).vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' } | Select-Object -First 1
+    if ($stale) { $stale.name = $freshDefault.name }
+    if ($script:conditionContext.selectedCluster) { $script:conditionContext.selectedCluster.name = $freshDefault.name }
+    $script:vars['clusterName'] = [string]$freshDefault.name
 }
 
 # Same obfuscated check as the WPF UI (Test-EngineeringModePassword) -- a speed bump against accidents, not security.
@@ -367,7 +512,7 @@ function Get-DirectoryListing([string]$Path, [string]$Filter, [bool]$ShowHidden)
     }
     if (-not (Test-Path -LiteralPath $full -PathType Container)) { throw "Folder not found: $full" }
     $parentInfo = [IO.Directory]::GetParent($full)
-    $result = @{ path = $full; parent = $(if ($parentInfo) { $parentInfo.FullName } else { $null }); roots = (Get-BrowseRoots); selected = $selected }
+    $result = @{ path = $full; parent = $(if ($parentInfo) { $parentInfo.FullName } else { $null }); roots = (Get-BrowseRoots); selected = $selected; sep = [string][IO.Path]::DirectorySeparatorChar }
     try { $items = @(Get-ChildItem -LiteralPath $full -Force -ErrorAction Stop) }
     catch { $result.entries = @(); $result.error = "Cannot read this folder: $($_.Exception.Message)"; return $result }
     $onWindows = $IsWindows -or $PSVersionTable.PSEdition -eq 'Desktop'
@@ -487,7 +632,7 @@ function New-ConsoleSession([string]$Id, [string]$Label) {
         Out = [System.Collections.Generic.List[byte]]::new(); Base = [long]0
         Buf = [byte[]]::new(8192); ReadTask = $null; Exited = $false; SentVars = @{}
         InBuf = [System.Collections.Generic.List[byte]]::new(); EverAttached = $false
-        ErrBuf = [byte[]]::new(8192); ErrTask = $null
+        ErrBuf = [byte[]]::new(8192); ErrTask = $null; AnswerFileSent = $null
     }
     $c.ReadTask = $pty.Output.ReadAsync($c.Buf, 0, $c.Buf.Length)
     if ($pty.Error) { $c.ErrTask = $pty.Error.ReadAsync($c.ErrBuf, 0, $c.ErrBuf.Length) }
@@ -601,6 +746,7 @@ function Complete-Watch($Watch, [string]$Status, $Clean, [string]$Slice) {
     $Watch.Status = $Status
     $Watch.Clean = $Clean
     if ($Watch.StepId) { $script:stepLedger[$Watch.StepId] = if ($Status -eq 'Done') { 'Success' } else { 'Failed' } }
+    if ($Status -eq 'Done' -and $Watch.Cmdlet -eq 'Update-ExtractedSDDCData') { Update-SelectedClusterNameFromDisk }
     if ($Status -eq 'Done' -and $Watch.Cmdlet -eq 'New-RetrieveVCFCredentials') {
         # Same hand-off the WPF UI does (Get-CredentialsFilePathFromTranscript): remember the file the step wrote.
         $m = [regex]::Matches($Slice, 'Credentials file written to: (?<path>[^\r\n\x1b]+)')
@@ -629,11 +775,26 @@ function Update-Watches {
     }
 }
 
-function Start-Step([string]$PlanId, [int]$StepIndex, [string]$ConsoleId) {
+# Makes the console's copy of the interactive answer file match the current one (Import-VCFIRAnswerFile / Clear-VCFIRAnswerFile),
+# like Sync-InteractiveAnswerFiles does for every console before a run.
+function Get-AnswerFileSync($Console) {
+    if ($script:interactiveAnswerFile -eq $Console.AnswerFileSent) { return $null }
+    if ($script:interactiveAnswerFile) { return "Import-VCFIRAnswerFile -Path '$(Protect-SingleQuotes $script:interactiveAnswerFile)'" }
+    return 'Clear-VCFIRAnswerFile'
+}
+
+function Start-Step([string]$PlanId, [int]$StepIndex, [string]$ConsoleId, [bool]$Breakpoint = $false) {
     $entry = Get-CatalogEntry $PlanId
     if (-not $entry) { throw "Unknown plan '$PlanId'" }
-    $step = Get-PlanSteps $entry | Where-Object { $_.Index -eq $StepIndex } | Select-Object -First 1
-    if (-not $step) { throw "Unknown step $StepIndex in plan '$PlanId'" }
+    Test-PlanAllowed $entry
+    if ($Breakpoint) {
+        # The synthetic pause point (Add-EngineeringBreakPointStep): a manual go/no-go gate, Engineering mode only.
+        if ($script:uiMode -ne 'Engineering') { throw 'Breakpoints are only available in Engineering mode.' }
+        $step = [PSCustomObject]@{ Index = -1; Id = ''; DisplayName = 'Engineering Break Point'; CommandLine = "Confirm-ManualStep -Message 'Press Enter to Continue'"; Condition = @(); ThreadId = ''; Interactive = $true }
+    } else {
+        $step = Get-PlanSteps $entry | Where-Object { $_.Index -eq $StepIndex } | Select-Object -First 1
+        if (-not $step) { throw "Unknown step $StepIndex in plan '$PlanId'" }
+    }
 
     if (-not (Test-StepStatusGate $step)) {
         if ($step.Id) { $script:stepLedger[$step.Id] = 'Skipped' }
@@ -646,6 +807,11 @@ function Start-Step([string]$PlanId, [int]$StepIndex, [string]$ConsoleId) {
         return @{ advisory = ($adv.Groups[1].Value -replace "''", "'") }
     }
 
+    # A step that references $secureEncryptionPassword needs the backup password; ask for it (once) if we don't hold it.
+    if ($step.CommandLine -match '\$secureEncryptionPassword\b' -and [string]::IsNullOrEmpty($script:vars['secureEncryptionPassword'])) {
+        return @{ needPassword = $true }
+    }
+
     # Same fallback as the WPF UI: with no credentials path remembered, use the newest one the Retrieve step left behind.
     if ($step.CommandLine -match '\$credentialsFilePath\b' -and [string]::IsNullOrEmpty($script:vars['credentialsFilePath'])) {
         $latest = Get-ChildItem -LiteralPath $WorkingDirectory -Filter 'vcf-credentials-*.json' -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
@@ -655,6 +821,8 @@ function Start-Step([string]$PlanId, [int]$StepIndex, [string]$ConsoleId) {
     $console = Get-OrNewConsole $ConsoleId
     if ($console.Exited) { throw "Console '$ConsoleId' has exited; restart it first." }
     $init = Get-VariableInit $console $step
+    $answerSync = Get-AnswerFileSync $console
+    $initScript = (@($init.Script, $answerSync) | Where-Object { $_ }) -join "`n"
     $cmdlet = ($step.CommandLine -split '\s+', 2)[0]
     $script:watchSeq++
     $id = [string]$script:watchSeq
@@ -662,8 +830,9 @@ function Start-Step([string]$PlanId, [int]$StepIndex, [string]$ConsoleId) {
         Id = $id; ConsoleId = $ConsoleId; StepId = $step.Id; Cmdlet = $cmdlet; Target = "Completed Task $cmdlet"
         Offset = (Get-TranscriptLength $console.Transcript); Status = 'Running'; Clean = $null
     }
-    Submit-ConsoleCommand $console $init.Script $step.CommandLine $id
+    Submit-ConsoleCommand $console $initScript $step.CommandLine $id
     foreach ($k in $init.Pending.Keys) { $console.SentVars[$k] = $init.Pending[$k] }
+    $console.AnswerFileSent = $script:interactiveAnswerFile
     return @{ watchId = $id; consoleId = $ConsoleId }
 }
 
@@ -814,6 +983,8 @@ function Invoke-Route($Context) {
                 pwsh    = $PSVersionTable.PSVersion.ToString()
                 backend = $script:consoleBackend
                 workingDirectory = $WorkingDirectory
+                unlocked = $script:engineeringUnlocked
+                updates  = @(@($CoordinatorUpdateStatus, $InstanceRecoveryUpdateStatus) | Where-Object { $_ })
             }
         }
         'GET /api/consoles' {
@@ -846,17 +1017,35 @@ function Invoke-Route($Context) {
             Send-Json $Context @{ ok = $true }
         }
         'POST /api/variables' {
-            $body = Read-JsonBody $Context
-            foreach ($k in $body.values.Keys) {
-                if ($k -notmatch '^[A-Za-z_][A-Za-z0-9_]*$') { throw "Invalid variable name '$k'" }
-                $script:vars[$k] = [string]$body.values[$k]
-            }
+            Set-VariablesFromPage (Read-JsonBody $Context).values
             Send-Json $Context @{ ok = $true }
         }
         'POST /api/variables/load' {
             $body = Read-JsonBody $Context
-            $r = Import-VariablesFile ([string]$body.path)
+            $r = Import-VariablesFile ([string]$body.path) (Get-CatalogEntry ([string]$body.planId))
             Send-Json $Context @{ ok = $true; count = $r.count; file = $r.file }
+        }
+        'POST /api/variables/new' {
+            $body = Read-JsonBody $Context
+            try { $r = New-VariablesFile ([string]$body.path) (Get-CatalogEntry ([string]$body.planId)) ([bool]$body.overwrite) }
+            catch { if ($_.Exception.Message -like 'EXISTS:*') { Send-Json $Context @{ exists = $true; file = $_.Exception.Message.Substring(7) }; return }; throw }
+            Send-Json $Context @{ ok = $true; count = $r.count; file = $r.file }
+        }
+        'POST /api/answerfile' {
+            Set-InteractiveAnswerFile ([string](Read-JsonBody $Context).path)
+            Send-Json $Context @{ ok = $true; file = $script:interactiveAnswerFile }
+        }
+        'POST /api/secret' {
+            # The backup encryption password, asked for by the page the first time a step needs it. Held in memory only.
+            $value = [string](Read-JsonBody $Context).value
+            if ([string]::IsNullOrEmpty($value)) { throw 'No encryption password was entered.' }
+            $script:vars['secureEncryptionPassword'] = $value
+            Send-Json $Context @{ ok = $true }
+        }
+        'POST /api/unlock' {
+            if (-not (Test-EngineeringModePassword ([string](Read-JsonBody $Context).password))) { Send-Json $Context @{ error = 'Incorrect engineering mode password.' } 403; return }
+            $script:engineeringUnlocked = $true
+            Send-Json $Context @{ unlocked = $true }
         }
         'POST /api/datasource' {
             # Stand-in for the WPF Data Source panel. "Load Extracted SDDC Data" parses the file (domains, clusters,
@@ -920,6 +1109,7 @@ function Invoke-Route($Context) {
                 RecoveryPlanId           = [string]$body.planId
                 VariablesAnswersFilePath = $script:varsFilePath
                 CredentialsFilePath      = $(if ($script:vars.Contains('credentialsFilePath')) { $script:vars['credentialsFilePath'] } else { '' })
+                InteractiveAnswerFilePath = $script:interactiveAnswerFile
                 Selection                = $script:selection
                 CompletedSteps           = @($body.completed)
             }
@@ -940,11 +1130,21 @@ function Invoke-Route($Context) {
             $path = (Resolve-Path -LiteralPath ([string]$body.path)).Path
             if ((Split-Path $path -Parent) -ne (Resolve-Path -LiteralPath $WorkingDirectory).Path -or (Split-Path $path -Leaf) -notlike 'vcfibr-state-*.json') { throw 'Only vcfibr-state-*.json files in the launch directory can be resumed.' }
             $state = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
-            if ($state.ExtractedDataFilePath) { Import-ExtractedData ([string]$state.ExtractedDataFilePath) }
-            if ($state.VariablesAnswersFilePath) { [void](Import-VariablesFile ([string]$state.VariablesAnswersFilePath)) }
-            if ($state.CredentialsFilePath) { $script:vars['credentialsFilePath'] = [string]$state.CredentialsFilePath }
-            if ($state.Selection) { Set-InfrastructureSelection ([string]$state.Selection.kind) ([string]$state.Selection.domain) ([string]$state.Selection.cluster) }
             $entry = Get-CatalogEntry ([string]$state.RecoveryPlanId)
+            $warnings = [System.Collections.Generic.List[string]]::new()
+            if ($state.ExtractedDataFilePath) { Import-ExtractedData ([string]$state.ExtractedDataFilePath) }
+            if ($state.Selection) { Set-InfrastructureSelection ([string]$state.Selection.kind) ([string]$state.Selection.domain) ([string]$state.Selection.cluster) }
+            if ($state.VariablesAnswersFilePath) {
+                try { [void](Import-VariablesFile ([string]$state.VariablesAnswersFilePath) $entry) } catch { $warnings.Add($_.Exception.Message) }
+            }
+            if ($state.InteractiveAnswerFilePath) {
+                if (Test-Path -LiteralPath ([string]$state.InteractiveAnswerFilePath)) { Set-InteractiveAnswerFile ([string]$state.InteractiveAnswerFilePath) }
+                else { $warnings.Add("The interactive answer file '$($state.InteractiveAnswerFilePath)' from the saved state no longer exists -- re-select it with the answer file toggle.") }
+            }
+            if ($state.CredentialsFilePath) {
+                if (Test-Path -LiteralPath ([string]$state.CredentialsFilePath)) { $script:vars['credentialsFilePath'] = [string]$state.CredentialsFilePath }
+                else { $warnings.Add("The credentials file '$($state.CredentialsFilePath)' from the saved state no longer exists -- re-run Retrieve SDDC Credentials Payload.") }
+            }
             $completed = @()
             if ($entry) {
                 $steps = Get-PlanSteps $entry
@@ -956,11 +1156,11 @@ function Invoke-Route($Context) {
                     }
                 }
             }
-            Send-Json $Context @{ ok = $true; planId = [string]$state.RecoveryPlanId; completed = $completed; file = $path }
+            Send-Json $Context @{ ok = $true; planId = [string]$state.RecoveryPlanId; completed = $completed; file = $path; warnings = @($warnings) }
         }
         'POST /api/step/run' {
             $body = Read-JsonBody $Context
-            Send-Json $Context (Start-Step ([string]$body.planId) ([int]$body.index) ([string]$body.consoleId))
+            Send-Json $Context (Start-Step ([string]$body.planId) ([int]$body.index) ([string]$body.consoleId) ([bool]$body.breakpoint))
         }
         'GET /api/step' {
             $w = $script:watches[$req.QueryString['id']]
@@ -991,6 +1191,7 @@ try {
     while (-not $script:shutdown) {
         $got = try { $pending.Wait(25) } catch { break }
         if ($got) {
+            $script:lastClientSeen = [DateTime]::UtcNow
             $context = $pending.Result
             $pending = $listener.GetContextAsync()
             try {
@@ -1006,6 +1207,10 @@ try {
         Update-Consoles
         Update-Watches
         Update-Clients
+        if ($script:wsClients.Count -gt 0) { $script:lastClientSeen = [DateTime]::UtcNow }       # a connected tab counts as "seen"
+        if ($IdleTimeoutMinutes -gt 0 -and ([DateTime]::UtcNow - $script:lastClientSeen).TotalMinutes -ge $IdleTimeoutMinutes -and -not ($script:watches.Values | Where-Object { $_.Status -eq 'Running' })) {
+            $script:shutdown = $true
+        }
     }
 } finally {
     foreach ($c in $script:consoles.Values) { try { & $c.Pty.Kill } catch { }; Remove-Item -LiteralPath $c.QueueDir -Recurse -Force -ErrorAction SilentlyContinue }

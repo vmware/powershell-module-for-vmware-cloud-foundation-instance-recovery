@@ -13,7 +13,7 @@
   * { box-sizing:border-box; }
   html, body { height:100%; }
   body { margin:0; font:13px "Segoe UI", system-ui, -apple-system, Roboto, sans-serif; color:var(--ink); background:var(--bg);
-         display:grid; grid-template-rows:auto 1fr; overflow:hidden; }
+         display:flex; flex-direction:column; overflow:hidden; }
   button { font:inherit; cursor:pointer; border:0; background:var(--accent); color:#fff; padding:5px 10px; border-radius:3px; }
   button:hover:not(:disabled) { background:var(--accent-hover); }
   button:disabled { opacity:.5; cursor:default; }
@@ -39,8 +39,16 @@
   .mode a { cursor:pointer; color:#B9C2CC; }
   .mode a.on { color:var(--accent); }
 
+  /* update banner (orange, white semibold text, pager when there is more than one update, X dismisses the one on show) */
+  #updateBanner { display:none; background:#F57C00; color:#fff; padding:8px 18px; align-items:center; font-size:14px; font-weight:600; }
+  #updateBanner.show { display:flex; }
+  #updateBanner .txt { flex:1; }
+  #updateBanner button { background:transparent; color:#fff; font-size:20px; font-weight:700; padding:0 6px; line-height:1; }
+  #updateBanner .pager { display:flex; align-items:center; margin-right:14px; font-size:12px; font-weight:400; }
+  #updateBanner .pager span { margin:0 4px; }
+
   /* 3* | 12 | 7*, margin 14 */
-  main { display:grid; grid-template-columns:3fr 7fr; gap:12px; padding:14px; min-height:0; }
+  main { display:grid; grid-template-columns:3fr 7fr; gap:12px; padding:14px; min-height:0; flex:1; }
   .rail { overflow-y:auto; display:flex; flex-direction:column; gap:12px; padding-right:2px; }
   .rail .card { flex:none; }
   .right { display:grid; grid-template-rows:1fr auto; gap:12px; min-height:0; }
@@ -87,6 +95,10 @@
   .listhead button { width:80px; margin-right:6px; }
   .step { display:grid; grid-template-columns:1fr 30px 100px 86px; align-items:center; margin:0 2px; padding:1px 3px; border-radius:3px; min-height:34px; }
   .step:hover { background:var(--hover); }
+  .step.clickable { cursor:pointer; }
+  /* the pause point: bright, permanent, orange with darker rules above and below; click it to remove it */
+  .step.bprow, .step.bprow:hover { background:#FF8C00; border-top:2px solid #C96300; border-bottom:2px solid #C96300; border-radius:0; color:#fff; }
+  .step.bprow .sn { font-weight:700; color:#fff; }
   .step .sn { overflow-wrap:anywhere; }
   .step .sc { display:flex; justify-content:center; }
   .thread { display:inline-flex; width:22px; height:22px; border-radius:11px; align-items:center; justify-content:center; color:#fff; font-size:10px; font-weight:700; }
@@ -134,6 +146,7 @@
   .fsrow .m, .fsrow .z { color:var(--muted); font-size:12px; }
   .fsopts { display:flex; gap:16px; align-items:center; padding:8px 16px; }
   .fsopts .toggle { margin:0; }
+  #fsSaveRow { display:none; padding:8px 16px 0; } #fsSaveRow input { flex:1; }
   #fsMsg { color:#C00; padding:0 16px 4px; min-height:16px; }
   #fsModal .foot { padding:10px 16px; text-align:right; } #fsModal .foot button + button { margin-left:8px; }
 
@@ -161,6 +174,12 @@
   <button id="resume" title="Restore a state saved by Save &amp; Exit">Resume</button>
   <button id="exit" title="Saves your progress, then stops the local server and every console it started">Save &amp; Exit</button>
 </header>
+
+<div id="updateBanner">
+  <div class="pager" id="ubPager"><button id="ubPrev" title="Previous">&#8249;</button><span id="ubCounter"></span><button id="ubNext" title="Next">&#8250;</button></div>
+  <div class="txt" id="ubText"></div>
+  <button id="ubClose" title="Dismiss" style="font-size:14px">&#10005;</button>
+</div>
 
 <main>
   <!-- left rail -->
@@ -209,7 +228,8 @@
         <div class="pane" id="panePlan">
           <label class="toggle"><input type="checkbox" class="switch" id="useThreads" checked><span>Run parallel tasks using multiple threads (numbered circles)</span></label>
           <div id="toggles"></div>
-          <div class="listhead"><b>Task List</b><button id="stopPlan" style="display:none;width:60px;margin-right:8px">Stop</button><button id="runAll">Run Plan</button></div>
+          <label class="toggle"><input type="checkbox" class="switch" id="useAnswers"><span>Use answer file for interactive tasks</span></label>
+          <div class="listhead"><b id="taskListHead">Task List</b><button id="stopPlan" style="display:none;width:60px;margin-right:8px">Stop</button><button id="runAll">Run Plan</button></div>
           <div id="steps"><div class="empty">Load or create a variables file (Variables tab) to see the task list.</div></div>
         </div>
         <div class="pane" id="paneAdv">
@@ -242,6 +262,7 @@
   <div id="fsMsg"></div>
   <div id="fsList"></div>
   <div class="fsopts"><label class="check" id="fsAllWrap"><input type="checkbox" id="fsAll"> Show all files (not just .json)</label><label class="check"><input type="checkbox" id="fsHidden"> Show hidden files</label></div>
+  <div class="fsnav" id="fsSaveRow"><input type="text" id="fsName" placeholder="File name" autocomplete="off"></div>
   <div class="foot"><button class="ghost" id="fsCancel">Cancel</button> <button id="fsOpen" disabled>Open</button></div>
 </div></div>
 <div id="pwModal" style="position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;z-index:60">
@@ -281,6 +302,37 @@ function advisory(text, failure) {
   const stamp = `[${p(d.getMonth() + 1)}-${p(d.getDate())}-${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}]`;
   $('advisories').prepend(el('div', failure ? { className: 'fail' } : {}, `${stamp} ${text}`));
 }
+
+// ------------------------------------------------------------ update banner (Show-UpdateBanner / Show-ModuleUpdateStatus)
+let updateItems = [], updateIndex = 0;
+function showUpdateBanner() {
+  const banner = $('updateBanner');
+  if (!updateItems.length) { banner.classList.remove('show'); return; }
+  if (updateIndex >= updateItems.length) updateIndex = 0;
+  if (updateIndex < 0) updateIndex = updateItems.length - 1;
+  const it = updateItems[updateIndex];
+  $('ubText').textContent = `A newer version of ${it.name} is available in the ${it.repository} repository: ${it.installed} -> ${it.latest}. Before upgrading, refer to help files to ensure the newer release supports the VCF version you are recovering.`;
+  $('ubPager').style.display = updateItems.length > 1 ? 'flex' : 'none';
+  $('ubCounter').textContent = `${updateIndex + 1} of ${updateItems.length}`;
+  banner.classList.add('show');
+}
+function showModuleUpdateStatus(lines) {
+  if (!lines.length) { advisory('Update check skipped: no installed module versions were passed to the UI.'); return; }
+  const parts = v => String(v).replace(/[-+].*$/, '').split('.').map(n => parseInt(n, 10) || 0);
+  const newer = (a, b) => { const x = parts(a), y = parts(b); for (let i = 0; i < Math.max(x.length, y.length); i++) { const d = (x[i] || 0) - (y[i] || 0); if (d) return d > 0; } return false; };
+  let failures = 0; updateItems = [];
+  for (const line of lines) {
+    const [name, installed, latest, ...rest] = line.split('|'); const detail = rest.join('|');
+    if (latest === 'ERROR') { failures++; advisory(`Update check for ${name} failed: ${detail}`); continue; }
+    if (newer(latest, installed)) { advisory(`${name} ${installed} can be updated to ${latest} (repository '${detail}').`); updateItems.push({ name, installed, latest, repository: detail }); }
+    else advisory(`${name} ${installed} is up to date.`);
+  }
+  if (!updateItems.length && !failures) advisory('All modules are up to date.');
+  showUpdateBanner();
+}
+$('ubPrev').onclick = () => { updateIndex--; showUpdateBanner(); };
+$('ubNext').onclick = () => { updateIndex++; showUpdateBanner(); };
+$('ubClose').onclick = () => { if (updateItems.length) updateItems = updateItems.filter((_, i) => i !== updateIndex); showUpdateBanner(); };
 
 // ------------------------------------------------------------ tabs
 function wireTabs(tabsEl, scope) {
@@ -392,34 +444,59 @@ setInterval(() => refreshConsoles().catch(() => {}), 1000);
 // ------------------------------------------------------------ plan / infrastructure state
 let catalog, current = null;
 let variablesReady = false;
+let unlocked = false;                          // engineering mode unlocked for this session (shared with the Engineering link)
+let lastSafe = { type: null, plan: null };     // last plan pick the engineering-only gate did not reject
+let pausePointAfter = null;                    // index of the step a breakpoint sits directly after (Engineering mode)
 let toggleState = {};
+let varsNote = 'No variables loaded yet.';
 const rows = new Map();     // step index -> { step, buttons[] }  (rebuilt on every render)
 const statuses = new Map(); // step index -> Running/Done/Failed/Skipped/Stopped (survives re-renders; cleared when the plan/selection changes)
+const eoTag = o => o.engineeringOnly ? '  [ENGINEERING-ONLY]' : '';
+const cmdletOf = s => (s.commandLine || '').split(/\s+/)[0];
 
 async function init() {
   catalog = await api('/api/catalog');
-  for (const t of catalog.recoveryTypes) $('typeSel').add(new Option(t.label, t.id));
+  for (const t of catalog.recoveryTypes) $('typeSel').add(new Option(t.label + eoTag(t), t.id));
   $('typeSel').onchange = () => { fillPlans(); onPlanChosen(); };
   $('planSel').onchange = onPlanChosen;
-  try { const i = await api('/api/info'); advisory(`Web UI build ${i.build} \u00B7 ${i.os} \u00B7 PowerShell ${i.pwsh} \u00B7 console backend: ${i.backend}`); } catch { }
+  try {
+    const i = await api('/api/info'); unlocked = !!i.unlocked;
+    advisory(`Web UI build ${i.build} · ${i.os} · PowerShell ${i.pwsh} · console backend: ${i.backend}`);
+    showModuleUpdateStatus(i.updates || []);
+  } catch { }
   await refreshConsoles();
   fillPlans(); await loadPlan();
+  lastSafe = { type: current.plan.recoveryType, plan: current.plan.id };
 }
 function fillPlans(selectId) {
   const planSel = $('planSel'); planSel.length = 0;
   const plans = catalog.recoveryPlans.filter(p => p.recoveryType === $('typeSel').value);
-  for (const p of plans) planSel.add(new Option(p.label, p.id));
+  for (const p of plans) planSel.add(new Option(p.label + eoTag(p), p.id));
   const def = plans.find(p => p.default); if (def) planSel.value = def.id;
   if (selectId) planSel.value = selectId;
 }
+// Engineering-only plans (and the type that leads to them) need the engineering password, asked for in a masked dialog.
+// A rejected or cancelled pick reverts to where you were (mirrors the WPF RecoveryPlanComboBox handler).
 async function onPlanChosen() {
+  const plan = catalog.recoveryPlans.find(p => p.id === $('planSel').value);
+  if (!plan) return;
+  if (plan.engineeringOnly && !unlocked) {
+    if (lastSafe.plan) { $('typeSel').value = lastSafe.type; fillPlans(lastSafe.plan); }
+    const pw = await askPassword(`Enter the engineering mode password to select ${plan.label}.`);
+    if (pw === null) return;
+    try { await api('/api/unlock', { password: pw }); unlocked = true; }
+    catch { advisory('Incorrect engineering mode password.', true); return; }
+    $('typeSel').value = plan.recoveryType; fillPlans(plan.id);
+  }
+  lastSafe = { type: plan.recoveryType, plan: plan.id };
   // A different plan: clear the selection (the extracted data stays loaded), like Sync-RecoveryPlanSelection.
   await api('/api/select', { kind: 'none' }).catch(() => {});
-  variablesReady = false; statuses.clear();
+  statuses.clear(); pausePointAfter = null;
   await loadPlan();
 }
 async function loadPlan() {
   current = await api('/api/plan?id=' + encodeURIComponent($('planSel').value));
+  unlocked = !!current.unlocked;
   const plan = current.plan;
   // Data Source row
   const allowed = plan.dataSources || [];
@@ -432,32 +509,42 @@ async function loadPlan() {
   toggleState = {};
   for (const t of (plan.extraToggles || [])) toggleState[t.id] = !!t.defaultChecked;
   await pushToggles();
+  // The task list shows once a variables file has been loaded or created -- except a plan with no data source at all
+  // (Recover Fleet), whose steps show straight away.
+  variablesReady = current.variablesLoaded || (plan.selectionList === 'none' && !allowed.length);
+  if (!current.variablesLoaded) varsNote = 'No variables loaded yet.';
+  $('varsNote').textContent = varsNote;
+  $('useAnswers').checked = !!current.answerFile; $('useAnswers').title = current.answerFile || '';
   applyMode(current.mode);
   renderInfrastructure(); updateVisibility(); renderToggles(); renderSteps(); renderVars();
-  if (current.varsFile) $('varsNote').textContent = 'Loaded ' + current.varsFile;
 }
 // In-page file browser (the folder listing comes from GET /api/fs on the machine running the server). Resolves to the
 // chosen file's full path, or null if cancelled. Folder single-click navigates; a file single-click selects it and
 // double-click (or Open) picks it. Typing a path into the box and pressing Enter works too -- a file path picks it.
-function browseForFile(title, filter) {
+// opts.save turns it into a Save As: a file name box, "Save" instead of "Open", and a replace-existing confirmation.
+function browseForFile(title, filter, opts = {}) {
   return new Promise(resolve => {
     const modal = $('fsModal'); let current = null, selected = null, quickDone = false;
     $('fsTitle').textContent = title;
     $('fsAllWrap').style.display = filter === 'json' ? '' : 'none';
     $('fsAll').checked = false;
+    $('fsSaveRow').style.display = opts.save ? 'flex' : 'none';
+    $('fsOpen').textContent = opts.save ? 'Save' : 'Open';
+    $('fsName').value = opts.defaultName || '';
     const effectiveFilter = () => (filter === 'json' && !$('fsAll').checked) ? 'json' : 'any';
     const finish = v => {
       modal.style.display = 'none';
-      $('fsCancel').onclick = $('fsOpen').onclick = $('fsUp').onclick = $('fsAll').onchange = $('fsHidden').onchange = $('fsPath').onkeydown = modal.onkeydown = null;
+      $('fsCancel').onclick = $('fsOpen').onclick = $('fsUp').onclick = $('fsAll').onchange = $('fsHidden').onchange = $('fsPath').onkeydown = $('fsName').oninput = $('fsName').onkeydown = modal.onkeydown = null;
       resolve(v);
     };
-    const setSelected = path => { selected = path; $('fsOpen').disabled = !path; };
+    const refreshOpen = () => { $('fsOpen').disabled = opts.save ? !$('fsName').value.trim() : !selected; };
+    const setSelected = path => { selected = path; refreshOpen(); };
     async function go(path) {
       $('fsMsg').textContent = '';
       let r;
       try { r = await api('/api/fs?' + new URLSearchParams({ path: path || '', filter: effectiveFilter(), hidden: $('fsHidden').checked ? '1' : '0' })); }
       catch (e) { $('fsMsg').textContent = e.message; return; }
-      if (r.selected && path) { finish(r.selected); return; }                // typed a file path
+      if (r.selected && path && !opts.save) { finish(r.selected); return; }      // typed a file path
       current = r; $('fsPath').value = r.path; setSelected(null);
       if (r.error) $('fsMsg').textContent = r.error;
       if (r.truncated) $('fsMsg').textContent = 'Only the first 2000 entries are shown.';
@@ -475,26 +562,35 @@ function browseForFile(title, filter) {
           el('div', { className: 'z', textContent: e.dir ? '' : (e.size < 1024 ? e.size + ' B' : e.size < 1048576 ? (e.size / 1024).toFixed(1) + ' KB' : (e.size / 1048576).toFixed(1) + ' MB') }));
         row.onclick = () => {
           if (e.dir) { go(e.path); return; }
-          for (const x of list.children) x.classList.remove('sel'); row.classList.add('sel'); setSelected(e.path);
+          for (const x of list.children) x.classList.remove('sel'); row.classList.add('sel');
+          if (opts.save) $('fsName').value = e.name; setSelected(e.path);
         };
-        row.ondblclick = () => { if (!e.dir) finish(e.path); };
+        row.ondblclick = () => { if (!e.dir) { if (opts.save) { $('fsName').value = e.name; saveNow(); } else finish(e.path); } };
         list.append(row);
       }
     }
+    function saveNow() {
+      let name = $('fsName').value.trim(); if (!name || !current) return;
+      if (filter === 'json' && !/\.[^.\\/]+$/.test(name)) name += '.json';
+      if (current.entries.some(e => !e.dir && e.name.toLowerCase() === name.toLowerCase()) && !confirm(`${name} already exists. Do you want to replace it?`)) return;
+      finish(current.path + (current.path.endsWith(current.sep) ? '' : current.sep) + name);
+    }
     $('fsCancel').onclick = () => finish(null);
-    $('fsOpen').onclick = () => { if (selected) finish(selected); };
+    $('fsOpen').onclick = () => { if (opts.save) saveNow(); else if (selected) finish(selected); };
     $('fsUp').onclick = () => { if (current && current.parent) go(current.parent); };
     $('fsAll').onchange = $('fsHidden').onchange = () => go(current ? current.path : '');
     $('fsPath').onkeydown = e => { if (e.key === 'Enter') go($('fsPath').value.trim()); };
+    $('fsName').oninput = refreshOpen;
+    $('fsName').onkeydown = e => { if (e.key === 'Enter') saveNow(); };
     modal.onkeydown = e => { if (e.key === 'Escape') finish(null); };
     modal.style.display = 'flex'; modal.tabIndex = -1; modal.focus();
-    go('');
+    refreshOpen(); go('');
   });
 }
 async function loadDataSource(path) {
   try {
     const r = await api('/api/datasource', { kind: $('dsSel').value, path });
-    $('dsPath').value = r.file; $('dsNote').textContent = ''; variablesReady = false; statuses.clear();
+    $('dsPath').value = r.file; $('dsNote').textContent = ''; statuses.clear(); pausePointAfter = null;
     advisory(`Loaded ${r.file}`); await loadPlan();
     if (current.infrastructure && current.infrastructure.loaded) advisory(`VCF Instance runs Fleet Components : ${current.infrastructure.runsFleetComponents}`);
   } catch (e) { advisory('Could not use that file: ' + e.message, true); }
@@ -576,7 +672,7 @@ function renderInfrastructure() {
 async function choose(sel) {
   if (busy) return;
   await api('/api/select', sel);
-  variablesReady = false; statuses.clear();
+  statuses.clear(); pausePointAfter = null;
   advisory(`Selected ${sel.kind === 'cluster' ? 'cluster ' + sel.cluster + ' (' + sel.domain + ')' : 'domain ' + sel.domain}.`);
   await loadPlan();
   showTab($('taskTabs'), $('tasksCard'), 'paneVars');
@@ -585,25 +681,31 @@ async function choose(sel) {
 function updateVisibility() {
   const plan = current.plan, infra = current.infrastructure || {};
   const standalone = plan.selectionList === 'none' && ((plan.dataSources || []).length === 0 || infra.loaded);
-  const noDataSource = (plan.dataSources || []).length === 0;
-  if (noDataSource && plan.selectionList === 'none') variablesReady = true;     // Recover Fleet: steps show straight away
   $('tasksCard').classList.toggle('hidden', !(infra.selection || standalone));
 }
 
 // ------------------------------------------------------------ Mode (User / Engineering)
+// Engineering mode shows the Advanced tab and lets you drop a pause point into the Recovery Plan list.
 function applyMode(mode) {
   const eng = mode === 'Engineering';
+  if (current) current.mode = mode;
   $('modeUser').classList.toggle('on', !eng); $('modeEng').classList.toggle('on', eng);
   $('tabAdvanced').classList.toggle('hidden', !eng);
   if (!eng && $('tabAdvanced').classList.contains('active')) showTab($('taskTabs'), $('tasksCard'), 'paneVars');
+  if (current && current.steps) renderSteps();
 }
 $('modeUser').onclick = async () => { const r = await api('/api/mode', { mode: 'User' }); applyMode(r.mode); };
 $('modeEng').onclick = async () => {
+  if (current && current.mode === 'Engineering') return;
   try {
     let r;
-    try { r = await api('/api/mode', { mode: 'Engineering' }); }
-    catch { const pw = prompt('Enter the engineering mode password to access the Advanced tab.'); if (!pw) return; r = await api('/api/mode', { mode: 'Engineering', password: pw }); }
-    applyMode(r.mode);
+    try { r = await api('/api/mode', { mode: 'Engineering' }); }                  // already unlocked this session?
+    catch {
+      const pw = await askPassword('Enter the engineering mode password to access the Advanced tab.');
+      if (pw === null) return;
+      r = await api('/api/mode', { mode: 'Engineering', password: pw });
+    }
+    unlocked = true; applyMode(r.mode);
   } catch (e) { advisory(e.message, true); }
 };
 
@@ -627,6 +729,22 @@ function renderToggles() {
 const threadPalette = ['#2F9E8C', '#3E6BB8', '#7E5BB5', '#B0689A'];
 const threadColour = id => { const n = parseInt(id, 10); return Number.isNaN(n) ? '#6B7A8F' : threadPalette[(((n - 2) % 4) + 4) % 4]; };
 
+// The synthetic pause point (Add-EngineeringBreakPointStep): a manual go/no-go step spliced in right after the step you
+// clicked. Only one exists at a time. It never exists in a plan file; the server runs a fixed Confirm-ManualStep for it.
+const BP_STEP = { index: 'bp', name: 'Engineering Break Point', description: 'Engineering Break Point', interactive: true, breakpoint: true, threadId: '', applicable: true, autoAnswered: false,
+                  commandLine: "Confirm-ManualStep -Message 'Press Enter to Continue'" };
+function displaySteps() {
+  const out = [];
+  for (const s of current.steps) if (s.applicable) { out.push(s); if (pausePointAfter !== null && s.index === pausePointAfter) out.push(BP_STEP); }
+  return out;
+}
+// The heading is the only place the pause-point instruction is shown (Update-TaskListHeaderText).
+function updateTaskListHeader() {
+  const eng = current && current.mode === 'Engineering';
+  $('taskListHead').textContent = !eng ? 'Task List'
+    : displaySteps().some(s => s.breakpoint) ? 'Task List (Click on Breakpoint to remove it)' : 'Task List (Click on Step to Insert Breakpoint)';
+}
+
 // One logical step is built twice, like New-StepRow does: a READ-ONLY row for the Recovery Plan tab (button is a
 // disabled, grey "Pending" until Run Plan drives it) and a CLICKABLE row for Advanced. Both buttons always show the
 // same status. Every row has all four cells (empty or not) so the columns line up down the list.
@@ -634,10 +752,23 @@ function buildStepRow(s, host, readOnly) {
   const circle = el('div', { className: 'sc' });
   if (s.threadId) circle.append(el('span', { className: 'thread', textContent: s.threadId, style: 'background:' + threadColour(s.threadId) }));
   const pill = el('div', { className: 'sp' });
-  if (s.interactive) pill.append(el('span', { className: 'pill', textContent: 'Requires Input' }));
+  if (s.interactive) pill.append(el('span', { className: 'pill', textContent: s.autoAnswered ? 'Auto Answered' : 'Requires Input' }));
   const btn = el('button', { className: 'runbtn' + (readOnly ? ' plan' : ''), disabled: readOnly, textContent: readOnly ? 'Pending' : 'Run' });
   if (readOnly) btn.classList.add('Pending'); else btn.onclick = () => runSingle(s);
-  host.append(el('div', { className: 'step', title: s.description || '' }, el('div', { className: 'sn', textContent: s.name }), circle, pill, btn));
+  const isBp = readOnly && s.breakpoint;
+  const row = el('div', { className: 'step' + (isBp ? ' bprow' : ''), title: s.description || '' },
+    el('div', { className: 'sn', textContent: (isBp ? '⏸  ' : '') + s.name }), circle, pill, btn);
+  // Engineering mode, Recovery Plan tab: click a step that has not run yet to put the pause point right after it; click the
+  // pause point to remove it.
+  if (readOnly && current.mode === 'Engineering' && (s.breakpoint || !statuses.has(s.index))) {
+    row.classList.add('clickable');
+    row.onclick = () => {
+      if (busy || current.mode !== 'Engineering') return;
+      if (s.breakpoint) pausePointAfter = null; else if (!statuses.has(s.index)) pausePointAfter = s.index; else return;
+      renderSteps();
+    };
+  }
+  host.append(row);
   const entry = rows.get(s.index) || { step: s, buttons: [] };
   entry.step = s; entry.buttons.push(btn); rows.set(s.index, entry);
   if (statuses.has(s.index)) paintButton(btn, statuses.get(s.index));
@@ -647,7 +778,8 @@ function renderSteps() {
   if (!variablesReady) host.append(el('div', { className: 'empty', textContent: 'Load or create a variables file (Variables tab) to see the task list.' }));
   else if (!current.steps.some(s => s.applicable)) host.append(el('div', { className: 'empty', textContent: 'No applicable tasks.' }));
   // Both tabs show the same applicable steps (Advanced is the interactive twin of Recovery Plan).
-  if (variablesReady) for (const s of current.steps) if (s.applicable) { buildStepRow(s, host, true); buildStepRow(s, manual, false); }
+  if (variablesReady) for (const s of displaySteps()) { buildStepRow(s, host, true); buildStepRow(s, manual, false); }
+  updateTaskListHeader();
 }
 function paintButton(btn, status) { btn.textContent = status; btn.className = 'runbtn ' + status + (btn.classList.contains('plan') ? ' plan' : ''); }
 function setStatus(index, status) {
@@ -663,12 +795,13 @@ function setBusy(on) {
 }
 
 // ------------------------------------------------------------ variables
+// Like the WPF Variables tab: empty until a variables file is loaded (checked against the plan's template) or created
+// (Save As), and every edit is written straight back to that file by the server.
 let pushTimer = null;
 function renderVars() {
   const host = $('vars'); host.textContent = '';
   for (const v of current.variables) {
-    const input = el('input', { type: v.secret ? 'password' : 'text', value: v.value, autocomplete: 'off', disabled: !!v.readonly,
-                                title: v.readonly ? 'Set from the Data Source / the infrastructure you selected' : '' });
+    const input = el('input', { type: v.secret ? 'password' : 'text', value: v.value, autocomplete: 'off' });
     input.oninput = () => { v.value = input.value; clearTimeout(pushTimer); pushTimer = setTimeout(pushVars, 400); };
     host.append(el('div', { className: 'var' }, el('label', { textContent: v.name, title: v.name }), input));
   }
@@ -680,21 +813,44 @@ async function refreshApplicability() {
   if (fresh.steps.map(s => s.applicable).join() !== before && !busy) renderSteps();
 }
 async function pushVars() {
-  await api('/api/variables', { values: Object.fromEntries(current.variables.filter(v => !v.readonly).map(v => [v.name, v.value])) });
+  await api('/api/variables', { values: Object.fromEntries(current.variables.map(v => [v.name, v.value])) });
   await refreshApplicability();
 }
 $('loadVars').onclick = async () => {
-  const path = await browseForFile('Select variables file', 'json');
+  const path = await browseForFile('Select variable answers file', 'json');
   if (!path) return;
   try {
-    const r = await api('/api/variables/load', { path });
-    $('varsNote').textContent = `Loaded ${r.file}`; variablesReady = true; await loadPlan();
-    showTab($('taskTabs'), $('tasksCard'), 'panePlan');
-  } catch (e) { advisory('Could not load variables: ' + e.message, true); }
+    const r = await api('/api/variables/load', { path, planId: current.plan.id });
+    statuses.clear(); pausePointAfter = null;
+    varsNote = r.count === 0 ? `No variables found in '${r.file}'.` : `Loaded ${r.count} variable(s) from ${r.file}.`;
+    await loadPlan();
+    if (r.count > 0) showTab($('taskTabs'), $('tasksCard'), 'panePlan');
+  } catch (e) { advisory(/^Load Variables failed/.test(e.message) ? e.message : 'Load Variables failed: ' + e.message, true); }
 };
 $('newVars').onclick = async () => {
-  $('varsNote').textContent = 'New variables file: fill in the values below.'; variablesReady = true; renderSteps();
-  showTab($('taskTabs'), $('tasksCard'), 'paneVars');
+  const path = await browseForFile('Save new variables file', 'json', { save: true, defaultName: current.plan.variablesFile || 'variables.json' });
+  if (!path) return;          // the dialog already asked before replacing an existing file
+  try {
+    const r = await api('/api/variables/new', { path, planId: current.plan.id, overwrite: true });
+    statuses.clear(); pausePointAfter = null;
+    varsNote = `Creating '${r.file}' -- values save automatically as you fill them in.`;
+    await loadPlan();
+    showTab($('taskTabs'), $('tasksCard'), 'paneVars');
+  } catch (e) { advisory(e.message, true); }
+};
+
+// "Use answer file for interactive tasks": ticking it asks for the file; unticking clears it. Covered steps then read
+// "Auto Answered" instead of "Requires Input".
+$('useAnswers').onchange = async () => {
+  const box = $('useAnswers');
+  try {
+    if (box.checked) {
+      const path = await browseForFile('Select interactive answer file', 'json');
+      if (!path) { box.checked = false; return; }
+      await api('/api/answerfile', { path });
+    } else await api('/api/answerfile', { path: '' });
+    await loadPlan();
+  } catch (e) { box.checked = false; advisory(e.message, true); }
 };
 
 // ------------------------------------------------------------ running steps
@@ -703,9 +859,17 @@ $('newVars').onclick = async () => {
 async function runStep(step, consoleId) {
   await pushVars();
   setStatus(step.index, 'Running');
+  const payload = { planId: current.plan.id, index: step.breakpoint ? -1 : step.index, consoleId, breakpoint: !!step.breakpoint };
   let r;
-  try { r = await api('/api/step/run', { planId: current.plan.id, index: step.index, consoleId }); }
-  catch (e) { setStatus(step.index, 'Failed'); advisory(`${step.name} was not run: ${e.message}`, true); return false; }
+  try {
+    r = await api('/api/step/run', payload);
+    if (r.needPassword) {            // a step that uses $secureEncryptionPassword: ask for it once, keep it in memory
+      const pw = await askPassword('Enter the backup encryption password:');
+      if (!pw) { setStatus(step.index, 'Failed'); advisory(`${cmdletOf(step)} was not run: no encryption password was entered.`, true); return false; }
+      await api('/api/secret', { value: pw });
+      r = await api('/api/step/run', payload);
+    }
+  } catch (e) { setStatus(step.index, 'Failed'); advisory(`${step.name} was not run: ${e.message}`, true); return false; }
   if (r.skipped) { setStatus(step.index, 'Skipped'); return true; }
   if (r.advisory) { advisory(r.advisory); setStatus(step.index, 'Done'); return true; }
   await refreshConsoles();
@@ -715,7 +879,6 @@ async function runStep(step, consoleId) {
     const w = await api('/api/step?id=' + r.watchId);
     if (w.status === 'Running') continue;
     setStatus(step.index, w.status);
-    if (w.status === 'Failed') advisory(`${step.name} did not finish cleanly -- see the console.`, true);
     return w.status === 'Done';
   }
 }
@@ -737,10 +900,11 @@ function buildBlocks(steps, useThreads) {
   }
   return blocks;
 }
+// Runs one thread's rows in order; resolves to null when all went cleanly, or to the step that stopped it.
 async function runThread(list, threadId) {
   const consoleId = threadId ? 'thread-' + threadId : 'main';
-  for (const s of list) { if (abortPlan || !(await runStep(s, consoleId))) return false; }
-  return true;
+  for (const s of list) { if (abortPlan) return s; if (!(await runStep(s, consoleId))) return s; }
+  return null;
 }
 let abortPlan = false, timerHandle = null;
 function startTimer() {
@@ -755,18 +919,23 @@ $('runAll').onclick = async () => {
   if (busy || !variablesReady) return;
   abortPlan = false; setBusy(true); $('stopPlan').style.display = ''; startTimer();
   advisory('Run Started. Navigation to other domains/clusters disabled.');
-  let ok = true;
   try {
-    // Like the WPF chain: rows already Done are skipped, so Run Plan resumes where a previous run stopped.
-    const todo = current.steps.filter(s => s.applicable && statuses.get(s.index) !== 'Done');
+    // Like the WPF chain: leading rows already Done are skipped, so Run Plan continues from the next pending step.
+    const todo = displaySteps().filter(s => s.applicable);
+    while (todo.length && statuses.get(todo[0].index) === 'Done') todo.shift();
     for (const block of buildBlocks(todo, $('useThreads').checked)) {
-      if (abortPlan) { ok = false; break; }
-      const results = await Promise.all([...block.threads].map(([tid, list]) => runThread(list, tid)));
-      if (results.some(r => !r)) { ok = false; break; }
+      if (abortPlan) { advisory('Run stopped.', true); break; }
+      const failed = (await Promise.all([...block.threads].map(([tid, list]) => runThread(list, tid)))).filter(Boolean);
+      if (failed.length) {
+        advisory(block.threaded ? 'Run All stopped: one or more threads did not complete cleanly -- check each console/transcript before retrying.'
+                                : `Run All stopped: ${cmdletOf(failed[0])} did not complete cleanly -- check the console/transcript for warnings, errors, or a PowerShell error record before retrying.`, true);
+        break;
+      }
+      if (block.threaded) selectConsole('main');        // a thread step may have left its own tab in front
     }
   } finally {
     clearInterval(timerHandle); $('stopPlan').style.display = 'none'; setBusy(false);
-    advisory(ok ? 'Run Finished. Navigation to other domains/clusters re-enabled.' : 'Run stopped before completing.', !ok);
+    advisory('Run Finished. Navigation to other domains/clusters re-enabled.');
   }
 };
 $('stopPlan').onclick = async () => {
@@ -789,7 +958,7 @@ $('exit').onclick = async () => {
   if (!confirm('Save your progress and exit? This stops the local server and every console it started.')) return;
   try {
     const completed = [];
-    for (const [index, st] of statuses) if (st === 'Done') { const r = rows.get(index); if (r) completed.push({ index, commandLine: r.step.commandLine }); }
+    for (const [index, st] of statuses) if (st === 'Done' && typeof index === 'number') { const r = rows.get(index); if (r) completed.push({ index, commandLine: r.step.commandLine }); }
     const saved = await api('/api/state/save', { planId: current.plan.id, completed });
     try { await api('/api/shutdown', {}); } catch {}
     document.body.textContent = 'Saved state to ' + saved.file + '. Recovery Coordinator stopped; you can close this tab.';
@@ -803,10 +972,20 @@ $('resume').onclick = async () => {
       try {
         const r = await api('/api/state/resume', { path: pick.path });
         const plan = catalog.recoveryPlans.find(p => p.id === r.planId);
-        if (plan) { $('typeSel').value = plan.recoveryType; fillPlans(r.planId); }
-        statuses.clear(); await loadPlan();
-        variablesReady = true;
+        if (plan) {
+          // Selecting the saved plan goes through the same engineering-only gate as picking it by hand.
+          let allowed = !plan.engineeringOnly || unlocked;
+          if (!allowed) {
+            const pw = await askPassword(`Enter the engineering mode password to select ${plan.label}.`);
+            if (pw !== null) { try { await api('/api/unlock', { password: pw }); unlocked = true; allowed = true; } catch { advisory('Incorrect engineering mode password.', true); } }
+          }
+          if (allowed) { $('typeSel').value = plan.recoveryType; fillPlans(r.planId); lastSafe = { type: plan.recoveryType, plan: plan.id }; }
+        }
+        statuses.clear(); pausePointAfter = null;
+        await loadPlan();
         for (const i of r.completed) statuses.set(i, 'Done');
+        for (const w of (r.warnings || [])) advisory(w, true);
+        if (current.variablesLoaded) { varsNote = `Loaded ${current.variables.length} variable(s) from ${current.varsFile}.`; $('varsNote').textContent = varsNote; }
         renderSteps(); renderInfrastructure(); updateVisibility();
         showTab($('taskTabs'), $('tasksCard'), 'panePlan');
         advisory(`Resumed state from '${r.file}'.`);

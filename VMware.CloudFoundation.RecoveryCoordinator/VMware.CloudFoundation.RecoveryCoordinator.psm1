@@ -549,6 +549,15 @@ Function Start-VCFRecoveryCoordinatorWeb {
     if ($instanceRecoveryModule) {
         $arguments += '-InstanceRecoveryModulePath', (Join-Path $instanceRecoveryModule.ModuleBase 'VMware.CloudFoundation.InstanceRecovery.psd1')
     }
+
+    # Same hand-off the WPF launcher makes: look up newer module versions HERE, in the caller's own console, BEFORE the
+    # server starts, so the page can show its update banner the moment it renders. Get-VCFIRModuleUpdateStatus never
+    # throws for a single module's own failed lookup -- it reports an "ERROR" entry instead -- so this can't stop a launch.
+    LogMessage -type NOTE -message "Checking installed module versions..."
+    $coordinatorVersion = "$($MyInvocation.MyCommand.Module.Version)"
+    $instanceRecoveryVersion = "$($instanceRecoveryModule.Version)"
+    $arguments += '-CoordinatorUpdateStatus', (Get-VCFIRModuleUpdateStatus -Module "VMware.CloudFoundation.RecoveryCoordinator|$coordinatorVersion")
+    $arguments += '-InstanceRecoveryUpdateStatus', (Get-VCFIRModuleUpdateStatus -Module "VMware.CloudFoundation.InstanceRecovery|$instanceRecoveryVersion")
     foreach ($argument in $arguments) { $startInfo.ArgumentList.Add([string]$argument) }
 
     $process = [System.Diagnostics.Process]::Start($startInfo)
