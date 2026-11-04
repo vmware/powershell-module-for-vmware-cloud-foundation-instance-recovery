@@ -11,7 +11,43 @@
 #
 # Trade-off, deliberately accepted: at the idle moment between steps nothing reads stdin, so this console
 # answers prompts but is not a free-typing shell. Ctrl+C ends this process; the page restarts the console.
-param([Parameter(Mandatory)][string]$QueueDir)
+param([Parameter(Mandatory)][string]$QueueDir, [switch]$HostShims)
+
+# Pipe backend only (stdin/stdout are redirected, there is no terminal). Two things a real console host does that a redirected
+# pwsh does not, both needed to look and behave like the WPF console:
+#   * Write-Host -ForegroundColor/-BackgroundColor: a redirected host drops the colour, so the module's yellow prompts
+#     ("Enter the ID of the Manager ...") would come out plain. This stand-in turns the colours into ANSI codes, which the
+#     page's terminal renders. (Functions defined here are global, so the module's own Write-Host calls resolve to it.)
+#   * Read-Host: with redirected input, the real one echoes the line it read back to the output, so an answer would appear
+#     twice (the page already shows what you type). This one reads a line without echoing it.
+if ($HostShims) {
+    function global:Write-Host {
+        [CmdletBinding()]
+        param(
+            [Parameter(Position = 0, ValueFromPipeline = $true, ValueFromRemainingArguments = $true)][object[]]$Object,
+            [switch]$NoNewline, [object]$Separator, [ConsoleColor]$ForegroundColor, [ConsoleColor]$BackgroundColor
+        )
+        process {
+            $sep = if ($PSBoundParameters.ContainsKey('Separator')) { [string]$Separator } else { ' ' }
+            $text = (@($Object) | ForEach-Object { if ($null -eq $_) { '' } else { "$_" } }) -join $sep
+            $ansi = @(30, 34, 32, 36, 31, 35, 33, 37, 90, 94, 92, 96, 91, 95, 93, 97)       # ConsoleColor 0..15 -> SGR foreground
+            $esc = [char]27; $prefix = ''
+            if ($PSBoundParameters.ContainsKey('ForegroundColor')) { $prefix += "$esc[$($ansi[[int]$ForegroundColor])m" }
+            if ($PSBoundParameters.ContainsKey('BackgroundColor')) { $prefix += "$esc[$($ansi[[int]$BackgroundColor] + 10)m" }
+            if ($prefix) { $text = $prefix + $text + "$esc[0m" }
+            Microsoft.PowerShell.Utility\Write-Host -Object $text -NoNewline:$NoNewline
+        }
+    }
+    function global:Read-Host {
+        [CmdletBinding()]
+        param([Parameter(Position = 0)][object]$Prompt, [switch]$AsSecureString, [switch]$MaskInput)
+        if ($null -ne $Prompt -and "$Prompt" -ne '') { Microsoft.PowerShell.Utility\Write-Host -Object ("$Prompt" + ': ') -NoNewline }
+        $line = [Console]::In.ReadLine()
+        if ($null -eq $line) { $line = '' }
+        if ($AsSecureString) { return (ConvertTo-SecureString -String $line -AsPlainText -Force) }
+        return $line
+    }
+}
 
 $ErrorView = 'NormalView'          # keeps "+ CategoryInfo" in error output (the step cleanliness gate looks for it)
 $ErrorActionPreference = 'Continue'

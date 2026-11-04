@@ -624,7 +624,7 @@ function New-ConsoleSession([string]$Id, [string]$Label) {
         $(if ($InstanceRecoveryModulePath) { "[Console]::WriteLine('Loading VMware.CloudFoundation.InstanceRecovery (this can take a minute)...'); Import-Module -Force '$(Protect-SingleQuotes $InstanceRecoveryModulePath)'" })
         $(if ($CoordinatorModulePath) { "[Console]::WriteLine('Loading VMware.CloudFoundation.RecoveryCoordinator...'); Import-Module -Force '$(Protect-SingleQuotes $CoordinatorModulePath)'" })
         "Start-Transcript -Path '$(Protect-SingleQuotes $transcript)' | Out-Null"
-        ". '$(Protect-SingleQuotes (Join-Path $PSScriptRoot 'console-repl.ps1'))' -QueueDir '$(Protect-SingleQuotes $queueDir)'"
+        ". '$(Protect-SingleQuotes (Join-Path $PSScriptRoot 'console-repl.ps1'))' -QueueDir '$(Protect-SingleQuotes $queueDir)'$(if ($script:consoleBackend -eq 'Pipe') { ' -HostShims' })"
     ) -join '; '
     $pty = New-PtyProcess $startup $script:defaultCols $script:defaultRows
     $c = @{
@@ -640,7 +640,7 @@ function New-ConsoleSession([string]$Id, [string]$Label) {
     return $c
 }
 
-function Get-ConsoleLabel([string]$Id) { if ($Id -eq 'main') { 'Main' } else { 'Thread ' + $Id.Substring('thread-'.Length) } }
+function Get-ConsoleLabel([string]$Id) { if ($Id -eq 'main') { 'Main Thread' } else { 'Thread ' + $Id.Substring('thread-'.Length) } }
 
 function Get-OrNewConsole([string]$Id) {
     if ($Id -notmatch '^(main|thread-[A-Za-z0-9_-]+)$') { throw "Invalid console id '$Id'" }
@@ -1186,7 +1186,7 @@ $listener.Prefixes.Add("http://127.0.0.1:$Port/")
 $listener.Start()
 
 try {
-    [void](New-ConsoleSession 'main' 'Main')
+    [void](New-ConsoleSession 'main' 'Main Thread')
     $pending = $listener.GetContextAsync()
     while (-not $script:shutdown) {
         $got = try { $pending.Wait(25) } catch { break }

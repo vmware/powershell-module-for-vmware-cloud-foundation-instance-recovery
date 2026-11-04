@@ -93,18 +93,19 @@
   .listhead { display:flex; align-items:center; margin:8px 0 8px; }
   .listhead b { flex:1; font-size:14px; }
   .listhead button { width:80px; margin-right:6px; }
-  .step { display:grid; grid-template-columns:1fr 30px 100px 86px; align-items:center; margin:0 2px; padding:1px 3px; border-radius:3px; min-height:34px; }
+  .step { display:grid; grid-template-columns:1fr 30px 100px 86px; align-items:center; margin:0 2px; padding:1px 3px; border-radius:3px; }
   .step:hover { background:var(--hover); }
   .step.clickable { cursor:pointer; }
   /* the pause point: bright, permanent, orange with darker rules above and below; click it to remove it */
   .step.bprow, .step.bprow:hover { background:#FF8C00; border-top:2px solid #C96300; border-bottom:2px solid #C96300; border-radius:0; color:#fff; }
   .step.bprow .sn { font-weight:700; color:#fff; }
-  .step .sn { overflow-wrap:anywhere; }
+  .step .sn { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; }
   .step .sc { display:flex; justify-content:center; }
   .thread { display:inline-flex; width:22px; height:22px; border-radius:11px; align-items:center; justify-content:center; color:#fff; font-size:10px; font-weight:700; }
   .step .sp { display:flex; }
   .pill { background:#708090; color:#fff; font-size:10.5px; font-weight:600; border-radius:8px; padding:1px 6px; margin:0 6px 0 8px; white-space:nowrap; }
   .runbtn { width:80px; margin-left:6px; padding:2px 6px; justify-self:end; }
+  .runbtn.plan { color:#000; }
   .runbtn.Pending { background:#D3D3D3; color:#000; }
   /* Orange / Green / Firebrick / Gray are real status indicators, so they stay full colour even while disabled */
   .runbtn.Running { background:#FFA500; } .runbtn.Done { background:#008000; } .runbtn.Failed { background:#B22222; } .runbtn.Skipped, .runbtn.Stopped { background:#808080; }
@@ -125,9 +126,9 @@
   #terms { position:relative; flex:1; min-height:0; background:#0C0C0C; margin:0 10px 10px; }
   .term { position:absolute; inset:0; padding:6px 0 0 8px; display:none; }
   .term.active { display:block; }
-  /* advisories: ~60px tall, bold, newest on top, "[MM-dd-yyyy HH:mm:ss] message", failures bold red */
-  #advisories { height:60px; overflow-y:auto; font-weight:700; margin:0 10px 10px; border:1px solid var(--line); padding:2px 4px; }
-  #advisories div.fail { color:#FF0000; }
+  /* advisories: ~60px tall, "[MM-dd-yyyy HH:mm:ss] message", normal weight, oldest first and scrolled to the end; failures bold red (New-Advisory) */
+  #advisories { height:60px; overflow-y:auto; font-weight:400; color:#000; margin:0 10px 10px; border:1px solid var(--line); padding:2px 4px; }
+  #advisories div.fail { color:#FF0000; font-weight:700; }
 
   /* file browser */
   #fsModal { position:fixed; inset:0; background:rgba(0,0,0,.35); display:none; align-items:center; justify-content:center; z-index:55; }
@@ -296,11 +297,13 @@ async function api(path, body) {
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids); return e; };
 
-// ------------------------------------------------------------ advisories (newest on top, like New-Advisory)
+// ------------------------------------------------------------ advisories (appended, scrolled to the end -- New-Advisory)
 function advisory(text, failure) {
   const d = new Date(), p = n => String(n).padStart(2, '0');
   const stamp = `[${p(d.getMonth() + 1)}-${p(d.getDate())}-${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}]`;
-  $('advisories').prepend(el('div', failure ? { className: 'fail' } : {}, `${stamp} ${text}`));
+  const box = $('advisories');
+  box.append(el('div', failure ? { className: 'fail' } : {}, `${stamp} ${text}`));
+  box.scrollTop = box.scrollHeight;                      // ScrollToEnd: the newest line is the one in view
 }
 
 // ------------------------------------------------------------ update banner (Show-UpdateBanner / Show-ModuleUpdateStatus)
