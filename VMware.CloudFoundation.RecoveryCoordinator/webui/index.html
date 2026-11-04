@@ -2,88 +2,265 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>VCF Recovery Coordinator (web spike)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VMware Cloud Foundation Recovery Coordinator</title>
+<link rel="stylesheet" href="vendor/xterm.css">
 <style>
-  :root { --bg:#f4f6f8; --panel:#fff; --line:#d5dbe1; --ink:#1d2730; --muted:#6b7886; --accent:#0a5ea8;
-          --ok:#2e7d32; --warn:#e68a00; --bad:#b3261e; --run:#e68a00; }
+  /* Matches xaml\VCFRecoveryCoordinatorUI.xaml: brushes, Segoe UI 13, flat white cards with a bold title on the card
+     itself, solid accent buttons, flat underline tabs, flat hover rows (no separators). */
+  :root { --header:#1D2731; --accent:#0095D3; --accent-hover:#0077AA; --panel:#fff; --bg:#F5F5F5; --line:#E0E0E0;
+          --ink:#22313F; --muted:#6B7280; --tab:#565656; --hover:#EAF6FC; --toggle-on:#43A047; --toggle-off:#D3D3D3; }
   * { box-sizing:border-box; }
-  body { margin:0; font:14px system-ui,-apple-system,Segoe UI,sans-serif; color:var(--ink); background:var(--bg);
-         height:100vh; display:grid; grid-template-rows:auto 1fr 38vh; }
-  header { background:#0b2540; color:#fff; padding:8px 14px; display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
-  header h1 { font-size:15px; margin:0 12px 0 0; font-weight:600; }
-  header label { font-size:12px; opacity:.8; }
-  select, input, button { font:inherit; }
-  select, input[type=text], input[type=password] { padding:4px 6px; border:1px solid var(--line); border-radius:4px; }
-  button { padding:4px 12px; border:1px solid var(--accent); background:var(--accent); color:#fff; border-radius:4px; cursor:pointer; }
-  button.secondary { background:#fff; color:var(--accent); }
-  button:disabled { opacity:.45; cursor:default; }
-  main { display:grid; grid-template-columns:minmax(380px,1fr) minmax(320px,1fr); gap:10px; padding:10px; min-height:0; }
-  section { background:var(--panel); border:1px solid var(--line); border-radius:6px; display:flex; flex-direction:column; min-height:0; }
-  section > h2 { font-size:13px; margin:0; padding:8px 12px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:8px; }
-  section > h2 .spacer { flex:1; }
-  .scroll { overflow:auto; flex:1; }
-  .step { display:grid; grid-template-columns:28px 1fr auto auto; gap:8px; align-items:center; padding:7px 12px; border-bottom:1px solid #eef1f4; }
-  .step.hidden { display:none; }
-  .step .n { color:var(--muted); font-size:12px; text-align:right; }
-  .step .name { font-weight:500; }
-  .step .sub { color:var(--muted); font-size:12px; }
-  .badge { font-size:11px; padding:1px 7px; border-radius:10px; background:#e3e8ed; color:#33414f; }
-  .badge.Running { background:var(--run); color:#fff; } .badge.Done { background:var(--ok); color:#fff; }
-  .badge.Failed { background:var(--bad); color:#fff; } .badge.Attention { background:var(--warn); color:#fff; }
-  .badge.Stopped, .badge.Skipped { background:#888; color:#fff; }
-  .thread { display:inline-block; width:16px; height:16px; line-height:16px; border-radius:50%; text-align:center; font-size:10px; color:#fff; margin-right:4px; }
-  .var { display:grid; grid-template-columns:minmax(120px,38%) 1fr; gap:8px; align-items:center; padding:4px 12px; }
-  .var label { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; overflow:hidden; text-overflow:ellipsis; }
-  .var input { width:100%; }
-  .tools { padding:8px 12px; display:flex; gap:6px; border-bottom:1px solid var(--line); }
-  .tools input { flex:1; }
-  #bottom { margin:0 10px 10px; }
-  .tabs { display:flex; gap:2px; padding:6px 8px 0; border-bottom:1px solid var(--line); overflow-x:auto; }
-  .tab { padding:4px 10px; border:1px solid var(--line); border-bottom:none; border-radius:4px 4px 0 0; background:#eef1f4; cursor:pointer; white-space:nowrap; font-size:12px; }
-  .tab.active { background:#0d1117; color:#fff; border-color:#0d1117; }
-  pre.term { margin:0; flex:1; overflow:auto; background:#0d1117; color:#d6dde4; padding:8px 12px; font:12.5px/1.35 ui-monospace,Menlo,Consolas,monospace; white-space:pre-wrap; word-break:break-word; }
-  .inputrow { display:flex; gap:6px; padding:6px 8px; border-top:1px solid var(--line); }
-  .inputrow input { flex:1; }
-  .empty { color:var(--muted); padding:14px; }
+  html, body { height:100%; }
+  body { margin:0; font:13px "Segoe UI", system-ui, -apple-system, Roboto, sans-serif; color:var(--ink); background:var(--bg);
+         display:grid; grid-template-rows:auto 1fr; overflow:hidden; }
+  button { font:inherit; cursor:pointer; border:0; background:var(--accent); color:#fff; padding:5px 10px; border-radius:3px; }
+  button:hover:not(:disabled) { background:var(--accent-hover); }
+  button:disabled { opacity:.5; cursor:default; }
+  select, input[type=text], input[type=password] { font:inherit; padding:4px 6px; border:1px solid var(--line); border-radius:0; background:#fff; color:var(--ink); min-width:0; }
+  select.full { width:100%; padding:4px 6px; }
+  input[readonly] { background:#fff; }
+  input:disabled { background:#F1F3F5; color:#555; }
+
+  /* always-visible scrollbars (macOS hides overlay scrollbars, which made clipped lists look broken) */
+  .rail, #advisories, .tablewrap { scrollbar-width:thin; scrollbar-color:#B6BDC4 #EEF0F2; }
+  .rail::-webkit-scrollbar, #advisories::-webkit-scrollbar, .tablewrap::-webkit-scrollbar { width:11px; height:11px; }
+  .rail::-webkit-scrollbar-track, #advisories::-webkit-scrollbar-track, .tablewrap::-webkit-scrollbar-track { background:#EEF0F2; }
+  .rail::-webkit-scrollbar-thumb, #advisories::-webkit-scrollbar-thumb, .tablewrap::-webkit-scrollbar-thumb { background:#B6BDC4; border-radius:6px; border:2px solid #EEF0F2; }
+
+  /* header bar: padding 18,12; logo 34 with 10 right margin; buttons are the ordinary solid accent, 90 wide */
+  header { background:var(--header); padding:12px 18px; display:flex; align-items:center; }
+  header svg { width:34px; height:34px; flex:none; margin-right:10px; }
+  header .t1 { color:#fff; font-size:15px; font-weight:600; line-height:1.25; }
+  header .t2 { color:#B9C2CC; font-size:14px; line-height:1.25; }
+  header .spacer { flex:1; }
+  header button { width:90px; margin-left:8px; }
+  .mode { color:#B9C2CC; font-size:14px; margin-right:16px; user-select:none; white-space:pre; }
+  .mode a { cursor:pointer; color:#B9C2CC; }
+  .mode a.on { color:var(--accent); }
+
+  /* 3* | 12 | 7*, margin 14 */
+  main { display:grid; grid-template-columns:3fr 7fr; gap:12px; padding:14px; min-height:0; }
+  .rail { overflow-y:auto; display:flex; flex-direction:column; gap:12px; padding-right:2px; }
+  .rail .card { flex:none; }
+  .right { display:grid; grid-template-rows:1fr auto; gap:12px; min-height:0; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:4px; display:flex; flex-direction:column; min-height:0; }
+  .card.hidden { display:none; }
+  .card > h2 { margin:0; padding:10px 10px 8px; font-size:15px; font-weight:700; }
+  .card > .body { padding:0 10px 10px; }
+  .fl { display:block; font-weight:600; margin:0 0 4px; }
+  .row { display:flex; gap:8px; }
+  .row input { flex:1; }
+  .hint { color:var(--muted); margin:0 0 8px; }
+
+  /* flat underline tabs: 2px blue underline + semibold blue when selected, grey otherwise, 16px apart */
+  .tabs { display:flex; flex:none; overflow-x:auto; padding:0 10px; }
+  .tab { padding:6px 2px 8px; margin-right:16px; cursor:pointer; color:var(--tab); border-bottom:2px solid transparent; white-space:nowrap; user-select:none; }
+  .tab.active { color:var(--accent); font-weight:600; border-bottom-color:var(--accent); }
+  .tab.hidden { display:none; }
+  .card > .body > .tabs, #infraBody > .tabs { padding:0; }
+  .pane { display:none; padding-top:8px; } .pane.active { display:block; }
+
+  /* discovered infrastructure: bold header, columns that hug their content, flat hover/selected rows */
+  .tablewrap { max-height:230px; overflow:auto; }
+  table { border-collapse:separate; border-spacing:0; font-size:13px; }
+  th { text-align:left; font-weight:700; padding:0 10px 4px 3px; white-space:nowrap; }
+  td { padding:2px 10px 2px 3px; white-space:nowrap; }
+  tbody tr { cursor:pointer; }
+  tbody tr:hover td, tbody tr.sel td { background:var(--hover); }
+  tbody tr td:first-child { border-radius:3px 0 0 3px; } tbody tr td:last-child { border-radius:0 3px 3px 0; }
+  .locked { pointer-events:none; opacity:.6; }
+  #clustersTable td:last-child { white-space:normal; min-width:110px; }
+
+  /* sliding switches (ToggleSwitchStyle): 30x16 pill, 12px knob, green when on */
+  .toggle { display:flex; align-items:center; margin-bottom:6px; cursor:pointer; }
+  .toggle span { margin-left:8px; }
+  input.switch { appearance:none; -webkit-appearance:none; width:30px; height:16px; border-radius:8px; background:var(--toggle-off); position:relative; margin:0; cursor:pointer; flex:none; }
+  input.switch::after { content:''; position:absolute; top:2px; left:2px; width:12px; height:12px; border-radius:50%; background:#fff; }
+  input.switch:checked { background:var(--toggle-on); }
+  input.switch:checked::after { left:auto; right:2px; }
+
+  /* task rows: ONE grid shared by every row -- name | thread circle (30) | Requires Input pill (100) | button (86) --
+     so each column lines up down the whole list like a table. Flat hover, no separators, description is a tooltip. */
+  .listhead { display:flex; align-items:center; margin:8px 0 8px; }
+  .listhead b { flex:1; font-size:14px; }
+  .listhead button { width:80px; margin-right:6px; }
+  .step { display:grid; grid-template-columns:1fr 30px 100px 86px; align-items:center; margin:0 2px; padding:1px 3px; border-radius:3px; min-height:34px; }
+  .step:hover { background:var(--hover); }
+  .step .sn { overflow-wrap:anywhere; }
+  .step .sc { display:flex; justify-content:center; }
+  .thread { display:inline-flex; width:22px; height:22px; border-radius:11px; align-items:center; justify-content:center; color:#fff; font-size:10px; font-weight:700; }
+  .step .sp { display:flex; }
+  .pill { background:#708090; color:#fff; font-size:10.5px; font-weight:600; border-radius:8px; padding:1px 6px; margin:0 6px 0 8px; white-space:nowrap; }
+  .runbtn { width:80px; margin-left:6px; padding:2px 6px; justify-self:end; }
+  .runbtn.Pending { background:#D3D3D3; color:#000; }
+  /* Orange / Green / Firebrick / Gray are real status indicators, so they stay full colour even while disabled */
+  .runbtn.Running { background:#FFA500; } .runbtn.Done { background:#008000; } .runbtn.Failed { background:#B22222; } .runbtn.Skipped, .runbtn.Stopped { background:#808080; }
+  .runbtn.Running:disabled, .runbtn.Done:disabled, .runbtn.Failed:disabled, .runbtn.Skipped:disabled, .runbtn.Stopped:disabled { opacity:1; }
+  .warn { background:#FFF3CD; border:1px solid #E0A800; border-radius:3px; padding:7px 10px; margin-bottom:8px; font-weight:600; color:#664D03; }
+  .var { display:flex; align-items:center; margin-bottom:3px; }
+  .var label { font:12px Consolas, Menlo, ui-monospace, monospace; width:170px; flex:none; margin-right:6px; overflow-wrap:anywhere; }   /* wraps instead of truncating */
+  .var input { flex:1; padding:2px 4px; }
+  .note { color:var(--muted); margin:0 0 8px; word-break:break-all; }
+  .empty { color:var(--muted); padding:8px 0; }
+
+  /* console card */
+  .console { position:relative; }
+  .console .tabs { padding-right:260px; }
+  #timer { position:absolute; top:8px; right:12px; display:none; align-items:center; font-weight:700; }
+  #timer label { margin-right:6px; color:#000; }
+  #timer span { background:#008000; color:#fff; border-radius:3px; padding:3px 8px; font:700 13px Consolas, ui-monospace, monospace; }
+  #terms { position:relative; flex:1; min-height:0; background:#0C0C0C; margin:0 10px 10px; }
+  .term { position:absolute; inset:0; padding:6px 0 0 8px; display:none; }
+  .term.active { display:block; }
+  /* advisories: ~60px tall, bold, newest on top, "[MM-dd-yyyy HH:mm:ss] message", failures bold red */
+  #advisories { height:60px; overflow-y:auto; font-weight:700; margin:0 10px 10px; border:1px solid var(--line); padding:2px 4px; }
+  #advisories div.fail { color:#FF0000; }
+
+  /* file browser */
+  #fsModal { position:fixed; inset:0; background:rgba(0,0,0,.35); display:none; align-items:center; justify-content:center; z-index:55; }
+  #fsModal .fsbox { background:#fff; border-radius:4px; width:min(820px,94vw); height:min(600px,86vh); display:flex; flex-direction:column; }
+  #fsModal h3 { margin:0; padding:12px 16px; font-size:15px; }
+  .fsnav { display:flex; gap:8px; padding:0 16px 6px; }
+  .fsnav input { flex:1; font-family:Consolas, Menlo, ui-monospace, monospace; font-size:12px; }
+  .fsquick { display:flex; flex-wrap:wrap; gap:6px; padding:0 16px 8px; }
+  .fsquick a { color:var(--accent); cursor:pointer; padding:2px 8px; border:1px solid var(--line); border-radius:10px; }
+  .fsquick a:hover { background:var(--hover); }
+  #fsList { flex:1; overflow:auto; border-top:1px solid var(--line); border-bottom:1px solid var(--line); scrollbar-width:thin; }
+  #fsList::-webkit-scrollbar { width:11px; } #fsList::-webkit-scrollbar-thumb { background:#B6BDC4; border-radius:6px; border:2px solid #fff; }
+  .fsrow { display:grid; grid-template-columns:1fr 150px 80px; gap:8px; padding:5px 16px; cursor:pointer; align-items:center; }
+  .fsrow:hover, .fsrow.sel { background:var(--hover); }
+  .fsrow .n { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .fsrow .d { font-weight:600; }
+  .fsrow .m, .fsrow .z { color:var(--muted); font-size:12px; }
+  .fsopts { display:flex; gap:16px; align-items:center; padding:8px 16px; }
+  .fsopts .toggle { margin:0; }
+  #fsMsg { color:#C00; padding:0 16px 4px; min-height:16px; }
+  #fsModal .foot { padding:10px 16px; text-align:right; } #fsModal .foot button + button { margin-left:8px; }
+
+  /* modal (Resume) */
+  #modal { position:fixed; inset:0; background:rgba(0,0,0,.35); display:none; align-items:center; justify-content:center; z-index:50; }
+  #modal .box { background:#fff; border-radius:4px; min-width:420px; max-width:640px; max-height:70vh; display:flex; flex-direction:column; }
+  #modal h3 { margin:0; padding:12px 16px; font-size:15px; }
+  #modal .list { overflow:auto; }
+  #modal .item { padding:9px 16px; cursor:pointer; }
+  #modal .item:hover { background:var(--hover); }
+  #modal .item small { color:var(--muted); display:block; }
+  #modal .foot { padding:10px 16px; text-align:right; }
 </style>
 </head>
 <body>
 <header>
-  <h1>VCF Recovery Coordinator <small style="opacity:.6">web spike</small></h1>
-  <label>Recovery type <select id="typeSel"></select></label>
-  <label>Plan <select id="planSel"></select></label>
-  <span style="flex:1"></span>
-  <button id="runAll">Run All</button>
-  <button id="stopAll" class="secondary" disabled>Stop All</button>
-  <button id="quit" class="secondary" title="Shut down the local server">Quit</button>
+  <svg viewBox="0 0 1024 1024" aria-hidden="true">
+    <defs><linearGradient id="g" x1="0.0244" y1="0.9756" x2="0.9756" y2="0.0244"><stop offset="0" stop-color="#005c8a"/><stop offset="1" stop-color="#0098c7"/></linearGradient></defs>
+    <path fill="url(#g)" d="M938.667 1024H85.333C38.116 1024 0 985.884 0 938.667V85.333C0 38.116 38.116 0 85.333 0h853.334C985.884 0 1024 38.116 1024 85.333v853.334c0 47.217-38.116 85.333-85.333 85.333z"/>
+    <path fill="#fff" d="m697.173 613.831-54.329-157.013c-1.137-3.698-2.844-9.956-2.844-15.36 0-14.507 11.662-28.73 30.435-28.73 15.645 0 26.17 9.957 30.72 24.463l34.134 112.925 34.987-112.64c4.55-15.076 16.213-25.316 32.426-25.316h3.698c16.213 0 27.875 10.524 32.427 25.315l35.27 112.925 34.987-113.778c4.267-13.369 13.654-24.178 30.436-24.178 17.351 0 29.582 13.37 29.582 29.014 0 4.266-1.138 9.955-1.991 12.8L910.222 613.83c-6.542 19.627-19.627 28.16-34.987 28.16h-1.99c-15.36 0-28.16-8.818-34.134-27.022L803.84 502.898 768 614.968c-5.69 18.205-18.773 27.023-34.134 27.023h-1.99c-15.076 0-28.16-8.818-34.703-28.16zM112.924 422.969c-7.11-15.929-25.03-23.04-41.813-15.644-16.782 7.395-22.755 25.884-15.36 41.813l69.973 152.178c11.094 23.893 22.756 36.408 44.374 36.408 23.324 0 33.564-13.653 44.373-36.408 0 0 61.156-133.12 61.724-134.543.57-1.422 2.56-5.689 8.818-5.689 5.405 0 9.671 4.267 9.671 9.956v130.276c0 19.91 11.094 36.409 32.427 36.409s32.996-16.498 32.996-36.41V494.934c0-20.48 14.79-33.848 34.702-33.848s33.28 13.653 33.28 33.848v106.383c0 19.91 11.093 36.409 32.426 36.409s32.996-16.498 32.996-36.41V494.934c0-20.48 14.791-33.848 34.702-33.848s33.28 13.653 33.28 33.848v106.383c0 19.91 11.093 36.409 32.427 36.409s32.995-16.498 32.995-36.41V480.143c0-44.657-35.84-75.662-78.79-75.662s-69.974 29.867-69.974 29.867c-14.222-18.489-34.133-29.867-67.413-29.867-35.272 0-66.276 29.867-66.276 29.867-14.507-18.489-38.684-29.867-58.88-29.867-31.289 0-56.036 13.653-71.111 48.356l-44.658 105.529-56.889-135.396"/>
+  </svg>
+  <div><div class="t1">VMware Cloud Foundation</div><div class="t2">Recovery Coordinator</div></div>
+  <div class="spacer"></div>
+  <div class="mode"><a id="modeUser" class="on">User</a> | <a id="modeEng">Engineering</a></div>
+  <button id="resume" title="Restore a state saved by Save &amp; Exit">Resume</button>
+  <button id="exit" title="Saves your progress, then stops the local server and every console it started">Save &amp; Exit</button>
 </header>
 
 <main>
-  <section>
-    <h2>Plan steps <span class="spacer"></span><label><input type="checkbox" id="showSkipped"> show steps not applicable</label></h2>
-    <div class="scroll" id="steps"><div class="empty">Loading…</div></div>
-  </section>
-  <section>
-    <h2>Variables</h2>
-    <div class="tools"><input type="text" id="varFile" placeholder="Path to a variables JSON file (on the machine running the server)"><button id="loadVars" class="secondary">Load</button></div>
-    <div class="scroll" id="vars"></div>
-  </section>
+  <!-- left rail -->
+  <div class="rail">
+    <section class="card">
+      <h2>Recovery Parameters</h2>
+      <div class="body">
+        <label class="fl">Recovery Type</label><select id="typeSel" class="full" style="margin-bottom:10px"></select>
+        <label class="fl">Recovery Plan</label><select id="planSel" class="full" style="margin-bottom:10px"></select>
+        <div id="dsRow">
+          <label class="fl">Data Source</label><select id="dsSel" class="full" style="margin-bottom:6px"></select>
+          <div class="row" style="margin-top:4px"><input type="text" id="dsPath" readonly><button id="dsBrowse" style="width:80px">Browse...</button></div>
+        </div>
+        <div id="dsNote" hidden></div>
+      </div>
+    </section>
+
+    <section class="card hidden" id="infraCard">
+      <h2>Discovered Infrastructure</h2>
+      <div class="body" id="infraBody">
+        <div class="hint">Click on the element you wish to recover</div>
+        <div class="tabs" id="infraTabs">
+          <div class="tab active" id="tabDomains" data-pane="paneDomains">Workload Domains</div>
+          <div class="tab" id="tabClusters" data-pane="paneClusters">Additional Clusters</div>
+        </div>
+        <div>
+          <div class="pane active" id="paneDomains"><div class="tablewrap"><table id="domainsTable"><thead><tr><th>Domain Name</th><th>Domain Type</th></tr></thead><tbody></tbody></table></div></div>
+          <div class="pane" id="paneClusters"><div class="tablewrap"><table id="clustersTable"><thead><tr><th>Cluster Name</th><th>Domain</th><th>Storage</th><th>Stretched</th><th>Dependent On</th></tr></thead><tbody></tbody></table></div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card hidden" id="tasksCard">
+      <h2>Recovery Tasks</h2>
+      <div class="tabs" id="taskTabs">
+        <div class="tab active" data-pane="paneVars">Variables</div>
+        <div class="tab" data-pane="panePlan">Recovery Plan</div>
+        <div class="tab hidden" id="tabAdvanced" data-pane="paneAdv">Advanced</div>
+      </div>
+      <div class="body">
+        <div class="pane active" id="paneVars">
+          <div class="row" style="margin-bottom:8px"><button id="loadVars">Load Variables File</button><button id="newVars">New Variables File</button><span style="flex:1"></span></div>
+          <div class="note" id="varsNote">No variables loaded yet.</div>
+          <div id="vars"></div>
+        </div>
+        <div class="pane" id="panePlan">
+          <label class="toggle"><input type="checkbox" class="switch" id="useThreads" checked><span>Run parallel tasks using multiple threads (numbered circles)</span></label>
+          <div id="toggles"></div>
+          <div class="listhead"><b>Task List</b><button id="stopPlan" style="display:none;width:60px;margin-right:8px">Stop</button><button id="runAll">Run Plan</button></div>
+          <div id="steps"><div class="empty">Load or create a variables file (Variables tab) to see the task list.</div></div>
+        </div>
+        <div class="pane" id="paneAdv">
+          <div class="warn">FOR ADVANCED USE ONLY: Use only on advice from Broadcom Support. Running a step out of sequence may leave the environment in an inconsistent state.</div>
+          <div id="manual"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- right column: Console + Advisories -->
+  <div class="right">
+    <section class="card console">
+      <h2>Console</h2>
+      <div id="timer"><label>Overall Recovery Time</label><span id="timerText">00:00:00</span></div>
+      <div class="tabs" id="consoleTabs"></div>
+      <div id="terms"></div>
+    </section>
+    <section class="card">
+      <h2>Advisories</h2>
+      <div id="advisories"></div>
+    </section>
+  </div>
 </main>
 
-<section id="bottom" style="display:flex">
-  <div class="tabs" id="tabs"></div>
-  <pre class="term" id="term"></pre>
-  <div class="inputrow">
-    <input type="text" id="stdin" placeholder="Type a response to a prompt in the selected run, then Enter" disabled>
-    <button id="send" disabled>Send</button>
-    <button id="stop" class="secondary" disabled>Stop run</button>
+<div id="fsModal"><div class="fsbox">
+  <h3 id="fsTitle"></h3>
+  <div class="fsnav"><button class="ghost" id="fsUp" title="Up one folder">&#8593; Up</button><input type="text" id="fsPath" placeholder="Type or paste a path and press Enter" autocomplete="off"></div>
+  <div class="fsquick" id="fsQuick"></div>
+  <div id="fsMsg"></div>
+  <div id="fsList"></div>
+  <div class="fsopts"><label class="check" id="fsAllWrap"><input type="checkbox" id="fsAll"> Show all files (not just .json)</label><label class="check"><input type="checkbox" id="fsHidden"> Show hidden files</label></div>
+  <div class="foot"><button class="ghost" id="fsCancel">Cancel</button> <button id="fsOpen" disabled>Open</button></div>
+</div></div>
+<div id="pwModal" style="position:fixed;inset:0;background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;z-index:60">
+  <div style="background:#fff;border-radius:4px;min-width:380px;padding:16px">
+    <div id="pwMsg" style="margin-bottom:8px;font-weight:600"></div>
+    <input type="password" id="pwInput" autocomplete="off" style="width:100%">
+    <div style="text-align:right;margin-top:12px"><button class="ghost" id="pwCancel">Cancel</button> <button id="pwOk">OK</button></div>
   </div>
-</section>
+</div>
+<div id="modal"><div class="box"><h3 id="modalTitle"></h3><div class="list" id="modalList"></div><div class="foot"><button class="ghost" id="modalCancel">Cancel</button></div></div></div>
 
+<script src="vendor/xterm.js"></script>
+<script src="vendor/addon-fit.js"></script>
 <script>
 'use strict';
 const token = new URLSearchParams(location.search).get('t') || '';
 const $ = id => document.getElementById(id);
+const TerminalCtor = (window.Terminal && window.Terminal.Terminal) || window.Terminal;
+const FitCtor = (window.FitAddon && window.FitAddon.FitAddon) || window.FitAddon;
 
 async function api(path, body) {
   const res = await fetch(path, {
@@ -95,96 +272,374 @@ async function api(path, body) {
   if (!res.ok) throw new Error(data.error || res.statusText);
   return data;
 }
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids); return e; };
 
-// ------------------------------------------------------------ ANSI -> DOM (SGR colours/bold only)
-const ANSI = { 30:'#586069',31:'#ff7b72',32:'#7ee787',33:'#e3b341',34:'#79c0ff',35:'#d2a8ff',36:'#56d4dd',37:'#d6dde4',
-               90:'#8b949e',91:'#ff9492',92:'#56d364',93:'#f0c75e',94:'#a5d6ff',95:'#e2c5ff',96:'#76e3ea',97:'#ffffff' };
-function ansiAppend(view, text) {
-  // view.style persists across chunks, since an escape sequence's effect outlives the chunk it arrived in.
-  const re = /\x1b\[([0-9;]*)m/g;
-  let last = 0, m;
-  const emit = s => {
-    if (!s) return;
-    s = s.replace(/\r\n/g, '\n');                       // bare \r (progress overwrite) is left as-is
-    const span = document.createElement('span');
-    span.textContent = s;
-    if (view.style.color) span.style.color = view.style.color;
-    if (view.style.bold) span.style.fontWeight = '700';
-    view.nodes.push(span);
+// ------------------------------------------------------------ advisories (newest on top, like New-Advisory)
+function advisory(text, failure) {
+  const d = new Date(), p = n => String(n).padStart(2, '0');
+  const stamp = `[${p(d.getMonth() + 1)}-${p(d.getDate())}-${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}]`;
+  $('advisories').prepend(el('div', failure ? { className: 'fail' } : {}, `${stamp} ${text}`));
+}
+
+// ------------------------------------------------------------ tabs
+function wireTabs(tabsEl, scope) {
+  tabsEl.addEventListener('click', e => {
+    const tab = e.target.closest('.tab'); if (!tab || !tab.dataset.pane) return;
+    showTab(tabsEl, scope, tab.dataset.pane);
+  });
+}
+function showTab(tabsEl, scope, paneId) {
+  for (const t of tabsEl.children) t.classList.toggle('active', t.dataset.pane === paneId);
+  for (const p of scope.querySelectorAll('.pane')) { if (p.closest('.tabs') === null && scope.contains(p)) p.classList.toggle('active', p.id === paneId); }
+}
+wireTabs($('taskTabs'), $('tasksCard'));
+wireTabs($('infraTabs'), $('infraBody'));
+
+// ------------------------------------------------------------ consoles (xterm.js <-> server pty over WebSocket)
+const consoles = new Map();   // id -> { id, label, exited, term, fit, ws, el, tabEl, inputEnabled, replayLeft }
+const restartCount = new Map();
+let selectedConsole = null;
+
+function openConsole(info) {
+  if (consoles.has(info.id)) return consoles.get(info.id);
+  const host = el('div', { className: 'term' }); $('terms').append(host);
+  const term = new TerminalCtor({ fontFamily: 'Menlo, Consolas, "DejaVu Sans Mono", monospace', fontSize: 13, cursorBlink: true,
+                                  scrollback: 10000, theme: { background: '#0C0C0C' }, allowProposedApi: true });
+  const fit = new FitCtor(); term.loadAddon(fit); term.open(host);
+  const c = { id: info.id, label: info.label, exited: false, term, fit, ws: null, el: host, inputEnabled: false, replayLeft: 0 };
+  consoles.set(info.id, c);
+  const tabEl = el('div', { className: 'tab', textContent: info.label, onclick: () => selectConsole(info.id) }); c.tabEl = tabEl; $('consoleTabs').append(tabEl);
+
+  term.onData(d => {
+    if (!c.inputEnabled || !c.ws || c.ws.readyState !== 1) return;
+    if (d === '\x03') api('/api/console/interrupt', { id: c.id, notifyOnly: true }).catch(() => {});   // a step waiting on this console is no longer running
+    c.ws.send('i' + d);
+  });
+  term.onResize(({ cols, rows }) => { if (c.ws && c.ws.readyState === 1) c.ws.send('r' + cols + ',' + rows); });
+
+  const ws = new WebSocket(`ws://${location.host}/ws?console=${encodeURIComponent(info.id)}&t=${encodeURIComponent(token)}`);
+  ws.binaryType = 'arraybuffer'; c.ws = ws;
+  ws.onopen = () => { if (selectedConsole === c.id) c.fit.fit(); ws.send('r' + term.cols + ',' + term.rows); };
+  ws.onmessage = ev => {
+    if (typeof ev.data === 'string') {
+      // {"replay":N}: the next N bytes are scrollback. Ignore what the terminal answers to queries inside it
+      // (cursor position reports etc.), or those replies would be typed into the prompt.
+      c.replayLeft = JSON.parse(ev.data).replay || 0; c.inputEnabled = c.replayLeft === 0; return;
+    }
+    const bytes = new Uint8Array(ev.data);
+    if (c.replayLeft > 0) { c.replayLeft -= bytes.length; term.write(bytes, () => { if (c.replayLeft <= 0) c.inputEnabled = true; }); }
+    else term.write(bytes);
   };
-  while ((m = re.exec(text))) {
-    emit(text.slice(last, m.index));
-    last = re.lastIndex;
-    for (const code of (m[1] || '0').split(';').map(Number)) {
-      if (code === 0) { view.style = {}; }
-      else if (code === 1) view.style.bold = true;
-      else if (ANSI[code]) view.style.color = ANSI[code];
-      else if (code === 39) delete view.style.color;
+  ws.onclose = () => { c.inputEnabled = false; };
+  new ResizeObserver(() => { if (selectedConsole === c.id) c.fit.fit(); }).observe(host);
+  if (!selectedConsole) selectConsole(info.id);
+  return c;
+}
+function closeConsole(id) {
+  const c = consoles.get(id); if (!c) return;
+  try { c.ws.close(); } catch {}
+  c.term.dispose(); c.el.remove(); c.tabEl.remove(); consoles.delete(id);
+  if (selectedConsole === id) selectedConsole = null;
+}
+function selectConsole(id, focus) {
+  selectedConsole = id;
+  for (const c of consoles.values()) {
+    const on = c.id === id;
+    c.el.classList.toggle('active', on); c.tabEl.classList.toggle('active', on);
+    if (on) requestAnimationFrame(() => { c.fit.fit(); if (focus !== false) c.term.focus(); });
+  }
+}
+async function refreshConsoles() {
+  const { consoles: list } = await api('/api/consoles');
+  for (const info of list) {
+    const c = openConsole(info);
+    if (info.exited && !c.exited) {
+      // Ctrl+C (or a crash) ended this console. Restart it -- the session variables are re-sent on the next step --
+      // but give up after a few quick restarts rather than looping.
+      c.exited = true;
+      const n = (restartCount.get(info.id) || 0) + 1; restartCount.set(info.id, n);
+      if (n > 3) { c.term.write('\r\n\x1b[31m[console ended and was restarted too many times; not restarting]\x1b[0m\r\n'); c.tabEl.textContent = info.label + ' (ended)'; continue; }
+      advisory(`${info.label} console ended; restarting it.`);
+      await api('/api/console/restart', { id: info.id });
+      const wasSelected = selectedConsole === info.id;
+      closeConsole(info.id);
+      openConsole(info); if (wasSelected) selectConsole(info.id, false);
     }
   }
-  emit(text.slice(last));
 }
+setInterval(() => refreshConsoles().catch(() => {}), 1000);
 
-// ------------------------------------------------------------ state
-let catalog, current = null;          // current = { plan, steps, variables }
-const rows = new Map();               // step index -> { badge, button, row, status }
-const views = new Map();              // runId -> { name, nodes, style, status, from, rendered }
-let selectedRun = null;
-const threadColours = ['#0a5ea8', '#7b3fb5', '#c2570c', '#1b7f6b', '#a3365a', '#5b6b00'];
+// ------------------------------------------------------------ plan / infrastructure state
+let catalog, current = null;
+let variablesReady = false;
+let toggleState = {};
+const rows = new Map();     // step index -> { step, buttons[] }  (rebuilt on every render)
+const statuses = new Map(); // step index -> Running/Done/Failed/Skipped/Stopped (survives re-renders; cleared when the plan/selection changes)
 
-// ------------------------------------------------------------ plan picking
 async function init() {
   catalog = await api('/api/catalog');
-  const typeSel = $('typeSel');
-  for (const t of catalog.recoveryTypes) typeSel.add(new Option(t.label, t.id));
-  typeSel.onchange = fillPlans; fillPlans();
-  $('planSel').onchange = loadPlan;
+  for (const t of catalog.recoveryTypes) $('typeSel').add(new Option(t.label, t.id));
+  $('typeSel').onchange = () => { fillPlans(); onPlanChosen(); };
+  $('planSel').onchange = onPlanChosen;
+  await refreshConsoles();
+  fillPlans(); await loadPlan();
 }
-function fillPlans() {
+function fillPlans(selectId) {
   const planSel = $('planSel'); planSel.length = 0;
   const plans = catalog.recoveryPlans.filter(p => p.recoveryType === $('typeSel').value);
   for (const p of plans) planSel.add(new Option(p.label, p.id));
   const def = plans.find(p => p.default); if (def) planSel.value = def.id;
-  loadPlan();
+  if (selectId) planSel.value = selectId;
+}
+async function onPlanChosen() {
+  // A different plan: clear the selection (the extracted data stays loaded), like Sync-RecoveryPlanSelection.
+  await api('/api/select', { kind: 'none' }).catch(() => {});
+  variablesReady = false; statuses.clear();
+  await loadPlan();
 }
 async function loadPlan() {
   current = await api('/api/plan?id=' + encodeURIComponent($('planSel').value));
-  renderSteps(); renderVars();
+  const plan = current.plan;
+  // Data Source row
+  const allowed = plan.dataSources || [];
+  const dsSel = $('dsSel'); const prevDs = dsSel.value; dsSel.length = 0;
+  for (const d of catalog.dataSources.filter(d => allowed.includes(d.id))) dsSel.add(new Option(d.label, d.id));
+  // keep whatever was already picked if this plan still permits it (like the WPF UI), else the plan's default
+  dsSel.value = allowed.includes(prevDs) ? prevDs : (plan.defaultDataSource || dsSel.value);
+  $('dsRow').style.display = allowed.length ? '' : 'none';
+  // extra toggles default
+  toggleState = {};
+  for (const t of (plan.extraToggles || [])) toggleState[t.id] = !!t.defaultChecked;
+  await pushToggles();
+  applyMode(current.mode);
+  renderInfrastructure(); updateVisibility(); renderToggles(); renderSteps(); renderVars();
+  if (current.varsFile) $('varsNote').textContent = 'Loaded ' + current.varsFile;
+}
+// In-page file browser (the folder listing comes from GET /api/fs on the machine running the server). Resolves to the
+// chosen file's full path, or null if cancelled. Folder single-click navigates; a file single-click selects it and
+// double-click (or Open) picks it. Typing a path into the box and pressing Enter works too -- a file path picks it.
+function browseForFile(title, filter) {
+  return new Promise(resolve => {
+    const modal = $('fsModal'); let current = null, selected = null, quickDone = false;
+    $('fsTitle').textContent = title;
+    $('fsAllWrap').style.display = filter === 'json' ? '' : 'none';
+    $('fsAll').checked = false;
+    const effectiveFilter = () => (filter === 'json' && !$('fsAll').checked) ? 'json' : 'any';
+    const finish = v => {
+      modal.style.display = 'none';
+      $('fsCancel').onclick = $('fsOpen').onclick = $('fsUp').onclick = $('fsAll').onchange = $('fsHidden').onchange = $('fsPath').onkeydown = modal.onkeydown = null;
+      resolve(v);
+    };
+    const setSelected = path => { selected = path; $('fsOpen').disabled = !path; };
+    async function go(path) {
+      $('fsMsg').textContent = '';
+      let r;
+      try { r = await api('/api/fs?' + new URLSearchParams({ path: path || '', filter: effectiveFilter(), hidden: $('fsHidden').checked ? '1' : '0' })); }
+      catch (e) { $('fsMsg').textContent = e.message; return; }
+      if (r.selected && path) { finish(r.selected); return; }                // typed a file path
+      current = r; $('fsPath').value = r.path; setSelected(null);
+      if (r.error) $('fsMsg').textContent = r.error;
+      if (r.truncated) $('fsMsg').textContent = 'Only the first 2000 entries are shown.';
+      $('fsUp').disabled = !r.parent;
+      if (!quickDone) {
+        quickDone = true; const q = $('fsQuick'); q.textContent = '';
+        for (const root of r.roots) q.append(el('a', { textContent: root.name, title: root.path, onclick: () => go(root.path) }));
+      }
+      const list = $('fsList'); list.textContent = '';
+      if (!r.entries.length) list.append(el('div', { className: 'empty', style: 'padding:14px 16px', textContent: filter === 'json' && !$('fsAll').checked ? 'No folders or .json files here.' : 'Empty folder.' }));
+      for (const e of r.entries) {
+        const row = el('div', { className: 'fsrow' },
+          el('div', { className: 'n' + (e.dir ? ' d' : ''), textContent: (e.dir ? '▸ ' : '    ') + e.name, title: e.name }),
+          el('div', { className: 'm', textContent: e.modified.replace('T', ' ') }),
+          el('div', { className: 'z', textContent: e.dir ? '' : (e.size < 1024 ? e.size + ' B' : e.size < 1048576 ? (e.size / 1024).toFixed(1) + ' KB' : (e.size / 1048576).toFixed(1) + ' MB') }));
+        row.onclick = () => {
+          if (e.dir) { go(e.path); return; }
+          for (const x of list.children) x.classList.remove('sel'); row.classList.add('sel'); setSelected(e.path);
+        };
+        row.ondblclick = () => { if (!e.dir) finish(e.path); };
+        list.append(row);
+      }
+    }
+    $('fsCancel').onclick = () => finish(null);
+    $('fsOpen').onclick = () => { if (selected) finish(selected); };
+    $('fsUp').onclick = () => { if (current && current.parent) go(current.parent); };
+    $('fsAll').onchange = $('fsHidden').onchange = () => go(current ? current.path : '');
+    $('fsPath').onkeydown = e => { if (e.key === 'Enter') go($('fsPath').value.trim()); };
+    modal.onkeydown = e => { if (e.key === 'Escape') finish(null); };
+    modal.style.display = 'flex'; modal.tabIndex = -1; modal.focus();
+    go('');
+  });
+}
+async function loadDataSource(path) {
+  try {
+    const r = await api('/api/datasource', { kind: $('dsSel').value, path });
+    $('dsPath').value = r.file; $('dsNote').textContent = ''; variablesReady = false; statuses.clear();
+    advisory(`Loaded ${r.file}`); await loadPlan();
+    if (current.infrastructure && current.infrastructure.loaded) advisory(`VCF Instance runs Fleet Components : ${current.infrastructure.runsFleetComponents}`);
+  } catch (e) { advisory('Could not use that file: ' + e.message, true); }
+}
+function askPassword(message) {
+  return new Promise(resolve => {
+    $('pwMsg').textContent = message; $('pwInput').value = ''; $('pwModal').style.display = 'flex'; $('pwInput').focus();
+    const done = v => { $('pwModal').style.display = 'none'; $('pwOk').onclick = $('pwCancel').onclick = $('pwInput').onkeydown = null; resolve(v); };
+    $('pwOk').onclick = () => done($('pwInput').value);
+    $('pwCancel').onclick = () => done(null);
+    $('pwInput').onkeydown = e => { if (e.key === 'Enter') done($('pwInput').value); else if (e.key === 'Escape') done(null); };
+  });
+}
+// "Extract SDDC Manager Backup": ask for the encryption password, run New-ExtractDataFromSDDCBackup in the Main
+// console (watch it there), then load the extracted-sddc-data.json it writes next to the backup.
+async function extractBackup(path) {
+  const password = await askPassword('Enter the backup encryption password:');
+  if (password === null) return;
+  let r;
+  try { r = await api('/api/extract', { path, password }); } catch (e) { advisory('Could not start extraction: ' + e.message, true); return; }
+  advisory(`Extracting ${path} -- watch the Main console.`);
+  await refreshConsoles(); selectConsole(r.consoleId);
+  setBusy(true);
+  try {
+    for (;;) {
+      await sleep(500);
+      const w = await api('/api/step?id=' + r.watchId);
+      if (w.status === 'Running') continue;
+      if (w.status !== 'Done') { advisory('Extracting the backup did not finish cleanly -- see the console.', true); return; }
+      break;
+    }
+  } finally { setBusy(false); }
+  $('dsSel').value = 'LoadExtractedData';
+  await loadDataSource(r.extractedFile);
+}
+$('dsBrowse').onclick = async () => {
+  const extracting = $('dsSel').value === 'ExtractBackup';
+  const path = await browseForFile(extracting ? 'Select backup file' : 'Select extracted-sddc-data.json', extracting ? 'any' : 'json');
+  if (!path) return;
+  if (extracting && /\.json$/i.test(path)) {
+    // A .json is extracted data, not a backup: load it as such instead of silently treating it as a backup path.
+    $('dsSel').value = 'LoadExtractedData'; advisory('That is a .json file, so it was loaded as extracted SDDC data.');
+    await loadDataSource(path);
+  } else if (extracting) await extractBackup(path);
+  else await loadDataSource(path);
+};
+
+// ------------------------------------------------------------ Discovered Infrastructure
+function renderInfrastructure() {
+  const infra = current.infrastructure || { loaded: false }, plan = current.plan;
+  const wantsList = (plan.dataSources || []).length > 0 && plan.selectionList !== 'none';
+  $('infraCard').classList.toggle('hidden', !(wantsList && infra.loaded));
+  if (!(wantsList && infra.loaded)) return;
+  const clustersMode = plan.selectionList === 'clusters';
+  $('tabDomains').classList.toggle('hidden', clustersMode); $('tabClusters').classList.toggle('hidden', !clustersMode);
+  $('tabDomains').textContent = plan.tabHeaderLabel || 'Workload Domains';
+  showTab($('infraTabs'), $('infraBody'), clustersMode ? 'paneClusters' : 'paneDomains');
+  const sel = infra.selection;
+
+  const dBody = $('domainsTable').tBodies[0]; dBody.textContent = '';
+  for (const d of infra.domains) {
+    const tr = el('tr', { className: sel && sel.kind === 'domain' && sel.domain === d.name ? 'sel' : '' }, el('td', { textContent: d.name }), el('td', { textContent: d.type }));
+    tr.onclick = () => choose({ kind: 'domain', domain: d.name }); dBody.append(tr);
+  }
+  const cBody = $('clustersTable').tBodies[0]; cBody.textContent = '';
+  if (!infra.clusters.length) cBody.append(el('tr', {}, el('td', { colSpan: 5, textContent: 'No additional clusters detected.', style: 'cursor:default' })));
+  for (const c of infra.clusters) {
+    const tr = el('tr', { className: sel && sel.kind === 'cluster' && sel.domain === c.domain && sel.cluster === c.name ? 'sel' : '' },
+      ...[c.name, c.domain, c.storage, c.stretched, c.dependentOn].map(t => el('td', { textContent: t })));
+    tr.onclick = () => choose({ kind: 'cluster', domain: c.domain, cluster: c.name }); cBody.append(tr);
+  }
+  // A sole match is selected for you (same as the WPF UI) rather than making you click the only row.
+  if (!sel) {
+    const only = clustersMode ? (infra.clusters.length === 1 ? { kind: 'cluster', domain: infra.clusters[0].domain, cluster: infra.clusters[0].name } : null)
+                              : (infra.domains.length === 1 ? { kind: 'domain', domain: infra.domains[0].name } : null);
+    if (only) setTimeout(() => choose(only), 0);
+  }
+}
+async function choose(sel) {
+  if (busy) return;
+  await api('/api/select', sel);
+  variablesReady = false; statuses.clear();
+  advisory(`Selected ${sel.kind === 'cluster' ? 'cluster ' + sel.cluster + ' (' + sel.domain + ')' : 'domain ' + sel.domain}.`);
+  await loadPlan();
+  showTab($('taskTabs'), $('tasksCard'), 'paneVars');
+}
+// Recovery Tasks only appears once there is something to run against (Update-ExecutionVisibility in the WPF UI).
+function updateVisibility() {
+  const plan = current.plan, infra = current.infrastructure || {};
+  const standalone = plan.selectionList === 'none' && ((plan.dataSources || []).length === 0 || infra.loaded);
+  const noDataSource = (plan.dataSources || []).length === 0;
+  if (noDataSource && plan.selectionList === 'none') variablesReady = true;     // Recover Fleet: steps show straight away
+  $('tasksCard').classList.toggle('hidden', !(infra.selection || standalone));
+}
+
+// ------------------------------------------------------------ Mode (User / Engineering)
+function applyMode(mode) {
+  const eng = mode === 'Engineering';
+  $('modeUser').classList.toggle('on', !eng); $('modeEng').classList.toggle('on', eng);
+  $('tabAdvanced').classList.toggle('hidden', !eng);
+  if (!eng && $('tabAdvanced').classList.contains('active')) showTab($('taskTabs'), $('tasksCard'), 'paneVars');
+}
+$('modeUser').onclick = async () => { const r = await api('/api/mode', { mode: 'User' }); applyMode(r.mode); };
+$('modeEng').onclick = async () => {
+  try {
+    let r;
+    try { r = await api('/api/mode', { mode: 'Engineering' }); }
+    catch { const pw = prompt('Enter the engineering mode password to access the Advanced tab.'); if (!pw) return; r = await api('/api/mode', { mode: 'Engineering', password: pw }); }
+    applyMode(r.mode);
+  } catch (e) { advisory(e.message, true); }
+};
+
+// ------------------------------------------------------------ extra toggles (plan-specific optional checkboxes)
+async function pushToggles() {
+  const values = Object.fromEntries(Object.entries(toggleState).map(([k, v]) => [k, v ? 'true' : 'false']));
+  if (Object.keys(values).length) await api('/api/variables', { values });
+}
+function renderToggles() {
+  const host = $('toggles'); host.textContent = '';
+  for (const t of (current.plan.extraToggles || [])) {
+    const def = (catalog.extraToggleDefinitions || []).find(d => d.id === t.id);
+    const cb = el('input', { type: 'checkbox', className: 'switch', checked: toggleState[t.id] });
+    cb.onchange = async () => { toggleState[t.id] = cb.checked; await pushToggles(); await refreshApplicability(); };
+    host.append(el('label', { className: 'toggle' }, cb, el('span', { textContent: def ? def.label : t.id })));
+  }
 }
 
 // ------------------------------------------------------------ steps
-function renderSteps() {
-  const host = $('steps'); host.textContent = ''; rows.clear();
-  current.steps.forEach((s, i) => {
-    const row = document.createElement('div'); row.className = 'step';
-    const n = document.createElement('div'); n.className = 'n'; n.textContent = i + 1;
-    const mid = document.createElement('div');
-    const name = document.createElement('div'); name.className = 'name';
-    if (s.threadId) {
-      const t = document.createElement('span'); t.className = 'thread'; t.textContent = s.threadId;
-      t.style.background = threadColours[(parseInt(s.threadId, 10) || 0) % threadColours.length]; t.title = 'Parallel thread ' + s.threadId;
-      name.append(t);
-    }
-    name.append(s.name);
-    const sub = document.createElement('div'); sub.className = 'sub'; sub.textContent = s.description || s.commandLine.split(/\s+/)[0];
-    mid.append(name, sub);
-    const badge = document.createElement('span'); badge.className = 'badge'; badge.textContent = s.interactive ? 'Requires input' : 'Ready';
-    const button = document.createElement('button'); button.textContent = 'Run';
-    button.onclick = () => runStep(s);
-    row.append(n, mid, badge, button); host.append(row);
-    rows.set(s.index, { row, badge, button, step: s, status: null });
-  });
-  applyVisibility();
-}
-function applyVisibility() {
-  const showAll = $('showSkipped').checked;
-  for (const r of rows.values()) r.row.classList.toggle('hidden', !r.step.applicable && !showAll);
-}
-$('showSkipped').onchange = applyVisibility;
+// Same fixed palette as Get-ThreadCircleColor: thread number N uses entry (N-2) mod 4; anything non-numeric is slate.
+const threadPalette = ['#2F9E8C', '#3E6BB8', '#7E5BB5', '#B0689A'];
+const threadColour = id => { const n = parseInt(id, 10); return Number.isNaN(n) ? '#6B7A8F' : threadPalette[(((n - 2) % 4) + 4) % 4]; };
 
-function setRowStatus(index, status) {
+// One logical step is built twice, like New-StepRow does: a READ-ONLY row for the Recovery Plan tab (button is a
+// disabled, grey "Pending" until Run Plan drives it) and a CLICKABLE row for Advanced. Both buttons always show the
+// same status. Every row has all four cells (empty or not) so the columns line up down the list.
+function buildStepRow(s, host, readOnly) {
+  const circle = el('div', { className: 'sc' });
+  if (s.threadId) circle.append(el('span', { className: 'thread', textContent: s.threadId, style: 'background:' + threadColour(s.threadId) }));
+  const pill = el('div', { className: 'sp' });
+  if (s.interactive) pill.append(el('span', { className: 'pill', textContent: 'Requires Input' }));
+  const btn = el('button', { className: 'runbtn' + (readOnly ? ' plan' : ''), disabled: readOnly, textContent: readOnly ? 'Pending' : 'Run' });
+  if (readOnly) btn.classList.add('Pending'); else btn.onclick = () => runSingle(s);
+  host.append(el('div', { className: 'step', title: s.description || '' }, el('div', { className: 'sn', textContent: s.name }), circle, pill, btn));
+  const entry = rows.get(s.index) || { step: s, buttons: [] };
+  entry.step = s; entry.buttons.push(btn); rows.set(s.index, entry);
+  if (statuses.has(s.index)) paintButton(btn, statuses.get(s.index));
+}
+function renderSteps() {
+  const host = $('steps'), manual = $('manual'); host.textContent = ''; manual.textContent = ''; rows.clear();
+  if (!variablesReady) host.append(el('div', { className: 'empty', textContent: 'Load or create a variables file (Variables tab) to see the task list.' }));
+  else if (!current.steps.some(s => s.applicable)) host.append(el('div', { className: 'empty', textContent: 'No applicable tasks.' }));
+  // Both tabs show the same applicable steps (Advanced is the interactive twin of Recovery Plan).
+  if (variablesReady) for (const s of current.steps) if (s.applicable) { buildStepRow(s, host, true); buildStepRow(s, manual, false); }
+}
+function paintButton(btn, status) { btn.textContent = status; btn.className = 'runbtn ' + status + (btn.classList.contains('plan') ? ' plan' : ''); }
+function setStatus(index, status) {
+  statuses.set(index, status);
   const r = rows.get(index); if (!r) return;
-  r.status = status; r.badge.textContent = status; r.badge.className = 'badge ' + status;
+  for (const b of r.buttons) paintButton(b, status);
+}
+let busy = false;
+function setBusy(on) {
+  busy = on;
+  document.querySelectorAll('.runbtn:not(.plan), #runAll').forEach(b => { b.disabled = on; });
+  $('infraBody').classList.toggle('locked', on);       // no switching target mid-run (Lock-ElementSelection)
 }
 
 // ------------------------------------------------------------ variables
@@ -192,110 +647,155 @@ let pushTimer = null;
 function renderVars() {
   const host = $('vars'); host.textContent = '';
   for (const v of current.variables) {
-    const wrap = document.createElement('div'); wrap.className = 'var';
-    const label = document.createElement('label'); label.textContent = '$' + v.name; label.title = v.name;
-    const input = document.createElement('input'); input.type = v.secret ? 'password' : 'text'; input.value = v.value; input.autocomplete = 'off';
+    const input = el('input', { type: v.secret ? 'password' : 'text', value: v.value, autocomplete: 'off', disabled: !!v.readonly,
+                                title: v.readonly ? 'Set from the Data Source / the infrastructure you selected' : '' });
     input.oninput = () => { v.value = input.value; clearTimeout(pushTimer); pushTimer = setTimeout(pushVars, 400); };
-    wrap.append(label, input); host.append(wrap);
+    host.append(el('div', { className: 'var' }, el('label', { textContent: v.name, title: v.name }), input));
   }
 }
-async function pushVars() {
-  await api('/api/variables', { values: Object.fromEntries(current.variables.map(v => [v.name, v.value])) });
-  // Conditions depend on variables: refresh applicability only (keep inputs and statuses as they are).
+async function refreshApplicability() {
   const fresh = await api('/api/plan?id=' + encodeURIComponent(current.plan.id));
-  for (const s of fresh.steps) { const r = rows.get(s.index); if (r) r.step.applicable = s.applicable; }
-  applyVisibility();
+  const before = current.steps.map(s => s.applicable).join();
+  current.steps = fresh.steps;
+  if (fresh.steps.map(s => s.applicable).join() !== before && !busy) renderSteps();
+}
+async function pushVars() {
+  await api('/api/variables', { values: Object.fromEntries(current.variables.filter(v => !v.readonly).map(v => [v.name, v.value])) });
+  await refreshApplicability();
 }
 $('loadVars').onclick = async () => {
-  try { await api('/api/variables/load', { path: $('varFile').value.trim() }); await loadPlan(); }
-  catch (e) { alert('Could not load variables: ' + e.message); }
+  const path = await browseForFile('Select variables file', 'json');
+  if (!path) return;
+  try {
+    const r = await api('/api/variables/load', { path });
+    $('varsNote').textContent = `Loaded ${r.file}`; variablesReady = true; await loadPlan();
+    showTab($('taskTabs'), $('tasksCard'), 'panePlan');
+  } catch (e) { advisory('Could not load variables: ' + e.message, true); }
+};
+$('newVars').onclick = async () => {
+  $('varsNote').textContent = 'New variables file: fill in the values below.'; variablesReady = true; renderSteps();
+  showTab($('taskTabs'), $('tasksCard'), 'paneVars');
 };
 
-// ------------------------------------------------------------ running
-const live = new Set();   // runIds currently polled
-async function runStep(step) {
-  await pushVars();         // make sure the server has the latest typed values before the step starts
-  setRowStatus(step.index, 'Running');
-  const { runId } = await api('/api/run', { planId: current.plan.id, index: step.index });
-  const view = { name: step.name, nodes: [], style: {}, status: 'Running', from: 0, rendered: 0, runId };
-  views.set(runId, view); selectRun(runId); renderTabs();
-  live.add(runId); updateButtons();
-  return new Promise(resolve => {
-    const tick = async () => {
-      try {
-        const r = await api(`/api/run?id=${runId}&from=${view.from}`);
-        if (r.text) { ansiAppend(view, r.text); view.from = r.length; if (selectedRun === runId) paint(view); }
-        if (r.status !== 'Running') {
-          view.status = r.status; live.delete(runId); setRowStatus(step.index, r.status);
-          renderTabs(); updateButtons(); resolve(r.status); return;
-        }
-      } catch (e) { view.status = 'Failed'; live.delete(runId); setRowStatus(step.index, 'Failed'); resolve('Failed'); return; }
-      setTimeout(tick, 400);
-    };
-    tick();
-  });
+// ------------------------------------------------------------ running steps
+// Mirrors Invoke-Step: the step's command is queued to a console and its completion is read from that console's
+// transcript on the server.
+async function runStep(step, consoleId) {
+  await pushVars();
+  setStatus(step.index, 'Running');
+  let r;
+  try { r = await api('/api/step/run', { planId: current.plan.id, index: step.index, consoleId }); }
+  catch (e) { setStatus(step.index, 'Failed'); advisory(`${step.name} was not run: ${e.message}`, true); return false; }
+  if (r.skipped) { setStatus(step.index, 'Skipped'); return true; }
+  if (r.advisory) { advisory(r.advisory); setStatus(step.index, 'Done'); return true; }
+  await refreshConsoles();
+  if (step.interactive) selectConsole(r.consoleId);       // bring the prompt in front of the user, like the WPF UI
+  for (;;) {
+    await sleep(500);
+    const w = await api('/api/step?id=' + r.watchId);
+    if (w.status === 'Running') continue;
+    setStatus(step.index, w.status);
+    if (w.status === 'Failed') advisory(`${step.name} did not finish cleanly -- see the console.`, true);
+    return w.status === 'Done';
+  }
 }
-
-// Mirrors Invoke-StepChain / Invoke-StepThread: consecutive rows with a threadId form a block; the
-// threads in a block run concurrently, each thread's own rows in order, and the main sequence only
-// continues once every thread in the block finished cleanly. Any non-Done result stops the chain.
-function buildBlocks(steps) {
+async function runSingle(step) {
+  if (busy) return;
+  setBusy(true);
+  try { await runStep(step, 'main'); } finally { setBusy(false); }
+}
+// Mirrors Invoke-StepChain / Invoke-StepThread: consecutive rows carrying a threadId form a block; the threads in a
+// block run concurrently (one console each, reused for the same id), each thread's own rows in order; the main
+// sequence continues only once every thread in the block finished cleanly.
+function buildBlocks(steps, useThreads) {
   const blocks = [];
   for (const s of steps) {
-    if (!s.threadId) { blocks.push({ threads: new Map([['', [s]]]) }); continue; }
+    if (!useThreads || !s.threadId) { blocks.push({ threads: new Map([['', [s]]]) }); continue; }
     const last = blocks[blocks.length - 1];
     if (last && last.threaded) { if (!last.threads.has(s.threadId)) last.threads.set(s.threadId, []); last.threads.get(s.threadId).push(s); }
     else blocks.push({ threaded: true, threads: new Map([[s.threadId, [s]]]) });
   }
   return blocks;
 }
-async function runThread(list) {
-  for (const s of list) { if ((await runStep(s)) !== 'Done') return false; }
+async function runThread(list, threadId) {
+  const consoleId = threadId ? 'thread-' + threadId : 'main';
+  for (const s of list) { if (abortPlan || !(await runStep(s, consoleId))) return false; }
   return true;
 }
-let abortAll = false;
+let abortPlan = false, timerHandle = null;
+function startTimer() {
+  const t0 = Date.now(); $('timer').style.display = 'flex'; $('timerText').textContent = '00:00:00';
+  clearInterval(timerHandle);
+  timerHandle = setInterval(() => {
+    const s = Math.floor((Date.now() - t0) / 1000), p = n => String(n).padStart(2, '0');
+    $('timerText').textContent = `${p(Math.floor(s / 3600))}:${p(Math.floor(s / 60) % 60)}:${p(s % 60)}`;
+  }, 1000);
+}
 $('runAll').onclick = async () => {
-  abortAll = false; $('runAll').disabled = true; $('stopAll').disabled = false;
-  const todo = current.steps.filter(s => s.applicable);
-  for (const block of buildBlocks(todo)) {
-    if (abortAll) break;
-    const results = await Promise.all([...block.threads.values()].map(runThread));
-    if (results.some(ok => !ok)) break;
+  if (busy || !variablesReady) return;
+  abortPlan = false; setBusy(true); $('stopPlan').style.display = ''; startTimer();
+  advisory('Run Started. Navigation to other domains/clusters disabled.');
+  let ok = true;
+  try {
+    // Like the WPF chain: rows already Done are skipped, so Run Plan resumes where a previous run stopped.
+    const todo = current.steps.filter(s => s.applicable && statuses.get(s.index) !== 'Done');
+    for (const block of buildBlocks(todo, $('useThreads').checked)) {
+      if (abortPlan) { ok = false; break; }
+      const results = await Promise.all([...block.threads].map(([tid, list]) => runThread(list, tid)));
+      if (results.some(r => !r)) { ok = false; break; }
+    }
+  } finally {
+    clearInterval(timerHandle); $('stopPlan').style.display = 'none'; setBusy(false);
+    advisory(ok ? 'Run Finished. Navigation to other domains/clusters re-enabled.' : 'Run stopped before completing.', !ok);
   }
-  $('runAll').disabled = false; $('stopAll').disabled = true;
 };
-$('stopAll').onclick = async () => {
-  abortAll = true;
-  for (const id of [...live]) await api('/api/stop', { runId: id });
+$('stopPlan').onclick = async () => {
+  abortPlan = true;
+  for (const c of consoles.values()) await api('/api/console/interrupt', { id: c.id }).catch(() => {});
 };
 
-// ------------------------------------------------------------ output pane
-function paint(view) { const t = $('term'); t.textContent = ''; t.append(...view.nodes); t.scrollTop = t.scrollHeight; }
-function selectRun(id) { selectedRun = id; paint(views.get(id)); renderTabs(); updateButtons(); }
-function renderTabs() {
-  const host = $('tabs'); host.textContent = '';
-  for (const [id, v] of views) {
-    const t = document.createElement('div'); t.className = 'tab' + (id === selectedRun ? ' active' : '');
-    t.textContent = `#${id} ${v.name} · ${v.status}`; t.onclick = () => selectRun(id); host.append(t);
-  }
+// ------------------------------------------------------------ Save & Exit / Resume
+function openModal(title, items, onPick) {
+  $('modalTitle').textContent = title;
+  const list = $('modalList'); list.textContent = '';
+  if (!items.length) list.append(el('div', { className: 'item', textContent: 'Nothing to show.' }));
+  for (const it of items) list.append(el('div', { className: 'item', onclick: () => { $('modal').style.display = 'none'; onPick(it); } },
+                                         it.name, el('small', { textContent: it.sub || '' })));
+  $('modal').style.display = 'flex';
 }
-function updateButtons() {
-  const running = selectedRun && live.has(selectedRun);
-  for (const id of ['stdin', 'send', 'stop']) $(id).disabled = !running;
-}
-async function sendInput() {
-  const box = $('stdin'); if (!selectedRun) return;
-  const text = box.value; box.value = '';
-  // Echo locally: the child's stdin is a pipe, so nothing echoes it back.
-  const v = views.get(selectedRun); ansiAppend(v, text + '\n'); paint(v);
-  await api('/api/input', { runId: selectedRun, text });
-}
-$('send').onclick = sendInput;
-$('stdin').onkeydown = e => { if (e.key === 'Enter') sendInput(); };
-$('stop').onclick = () => selectedRun && api('/api/stop', { runId: selectedRun });
-$('quit').onclick = async () => { if (confirm('Shut down the local server? Any running steps will be stopped.')) { try { await api('/api/shutdown', {}); } catch {} document.body.textContent = 'Server stopped. You can close this tab.'; } };
+$('modalCancel').onclick = () => { $('modal').style.display = 'none'; };
 
-init().catch(e => { $('steps').textContent = 'Failed to load: ' + e.message; });
+$('exit').onclick = async () => {
+  if (!confirm('Save your progress and exit? This stops the local server and every console it started.')) return;
+  try {
+    const completed = [];
+    for (const [index, st] of statuses) if (st === 'Done') { const r = rows.get(index); if (r) completed.push({ index, commandLine: r.step.commandLine }); }
+    const saved = await api('/api/state/save', { planId: current.plan.id, completed });
+    try { await api('/api/shutdown', {}); } catch {}
+    document.body.textContent = 'Saved state to ' + saved.file + '. Recovery Coordinator stopped; you can close this tab.';
+  } catch (e) { advisory('Exit failed: ' + e.message, true); }
+};
+$('resume').onclick = async () => {
+  try {
+    const { states } = await api('/api/states');
+    if (!states.length) { advisory('No saved state files (vcfibr-state-*.json) found in the launch directory.', true); return; }
+    openModal('Select saved orchestrator state', states.map(s => ({ name: s.name, sub: s.modified.replace('T', ' '), path: s.path })), async pick => {
+      try {
+        const r = await api('/api/state/resume', { path: pick.path });
+        const plan = catalog.recoveryPlans.find(p => p.id === r.planId);
+        if (plan) { $('typeSel').value = plan.recoveryType; fillPlans(r.planId); }
+        statuses.clear(); await loadPlan();
+        variablesReady = true;
+        for (const i of r.completed) statuses.set(i, 'Done');
+        renderSteps(); renderInfrastructure(); updateVisibility();
+        showTab($('taskTabs'), $('tasksCard'), 'panePlan');
+        advisory(`Resumed state from '${r.file}'.`);
+      } catch (e) { advisory('Resume failed: ' + e.message, true); }
+    });
+  } catch (e) { advisory('Resume failed: ' + e.message, true); }
+};
+
+init().catch(e => { document.body.textContent = 'Failed to start: ' + e.message; });
 </script>
 </body>
 </html>

@@ -35,18 +35,39 @@ printed/opened by the cmdlet) is required on every request; `Host` and `Origin` 
 (DNS-rebinding / cross-site); `/api/run` accepts only a plan id + step index, never a command line.
 Variable values live in server memory only.
 
-## Not done yet (known gaps vs the WPF UI)
+## What matches the WPF UI now
 
-- **No persistent console.** A fresh `pwsh` per step: anything a step leaves in session state
-  (e.g. `$credentialsFilePath` via `Set-VCFCredentialsFilePath`, PowerCLI connections) is not carried to
-  the next step. Needs either a long-lived child per thread or explicit state hand-off.
-- No real terminal (no PTY / xterm.js): programs that need a TTY, or raw key handling, won't work.
-- Not ported: recovery-target selection (workload domain / cluster from the extracted data),
-  `dataPath` conditions (fail open, so those steps always show), data-source panel (extract backup /
-  load extracted data), breakpoints / pause-after-step, auto-answer badges, engineering mode,
-  module update banner, credentials-file discovery.
-- Passwords entered in the page are held in server memory and written into the child's startup
-  script; a per-session-key scheme is needed to replace the Windows DPAPI use before this is a real
-  replacement (see `ConvertFrom-VCFIRProtectedString`).
+Layout (header, Recovery Parameters / Discovered Infrastructure / Recovery Tasks on the left, Console and
+Advisories on the right), Discovered Infrastructure from an extracted-sddc-data.json (domain list filtered per
+plan, additional clusters with Storage / Stretched / Dependent On), selection driving `$workloadDomain` and
+`$clusterName` and `dataPath` step conditions, Recovery Tasks hidden until something is selected, Variables vs.
+Recovery Plan vs. Advanced tabs, the User | Engineering switch (same password gate; Advanced is Engineering only),
+plan-specific extra toggles, Save & Exit / Resume, Run Plan with thread blocks and the overall timer.
+
+The console is a persistent `pwsh` on a real pseudo-terminal (xterm.js in the page). Steps reach it through a
+private queue directory read by `console-repl.ps1`, not by typing into its stdin: terminal cursor-position replies
+and injected text interleave on stdin and corrupted long commands. The consequence: the console answers prompts
+(`Read-Host`) but is not a free-typing shell between steps. Ctrl+C ends that console; the page restarts it.
+
+**Browse** is an in-page file browser (`GET /api/fs`), not a native OS dialog: a browser can't hand a page a file's
+full path, and driving the native dialogs from the server proved unreliable (focus, screen grabbing, macOS Automation
+permission prompts). It lists folders with plain .NET calls, so it behaves the same on Windows (drives, UNC paths),
+macOS and Linux. It returns names, sizes and dates only -- never file contents -- for folders the server's account can
+already read, behind the same per-launch token as the rest of the API. The `.json` filter is by extension, with a
+"Show all files" escape hatch; typing a path into its box also works.
+
+## Not done yet
+
+- **Data Source "Extract SDDC Manager Backup"** only remembers the backup path; the extraction flow (and its
+  password prompt) is not ported. Use "Load Extracted SDDC Data".
+- Pause points / breakpoints, the "use answer file for interactive tasks" toggle and its auto-answered badges,
+  and `Update-SelectedClusterNameFromDisk` (re-resolving the cluster name after `Update-ExtractedSDDCData`).
+- The module update banner and credentials-file auto-discovery beyond the Retrieve step hand-off.
+- Save & Exit writes `vcfibr-state-<timestamp>.json` to the launch directory (a browser has no native save
+  dialog); Resume lists those files.
+- **Windows ConPTY (`ConPty.cs`) compiles but has never been run on Windows.** macOS is the only platform this has
+  been exercised on. Linux uses the same `script(1)` path as macOS but is untested.
+- Passwords entered in the page are held in server memory and handed to a console through a private 0600 file
+  that the console deletes immediately; a per-session-key scheme is still needed to replace the Windows DPAPI use.
 - The IR module itself still has Windows-only code paths (OVF Tool path, `tar.exe`/registry checks,
   `Resolve-DnsName`, backslash paths); steps that hit them will fail on macOS/Linux until fixed.

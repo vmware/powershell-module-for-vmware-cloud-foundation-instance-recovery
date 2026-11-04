@@ -1,24 +1,27 @@
 # Cross-platform (Windows / macOS / Linux) front end for the VCF Recovery Coordinator -- SPIKE.
 #
 # A single-threaded localhost web server (System.Net.HttpListener) that serves webui\index.html and a
-# small JSON API over the SAME plan catalog / plan files the WPF UI (xaml\VCFRecoveryCoordinatorUI.ps1)
-# uses. Nothing here touches WPF or Win32, so it runs anywhere PowerShell 7 does.
+# small JSON + WebSocket API over the SAME plan catalog / plan files the WPF UI
+# (xaml\VCFRecoveryCoordinatorUI.ps1) uses. Nothing here touches WPF or Win32 UI APIs.
 #
-# Differences from the WPF UI that matter (see webui\README.md for the full list):
-#   * Each step runs in its OWN fresh pwsh child process (redirected stdin/stdout/stderr), not in a
-#     long-lived embedded console. Variables are re-injected as assignments at the top of every step.
-#   * Output is a plain text stream (ANSI colours rendered by the page), not a terminal emulator.
-#   * Read-Host style prompts are answered through an input box that writes to the child's stdin.
+# Same model as the WPF UI, minus the Win32 window reparenting:
+#   * A "console" is a long-lived, ordinary interactive pwsh running on a real pseudo-terminal
+#     (ConPTY on Windows, script(1) on macOS/Linux), shown in the page with xterm.js. You type into it
+#     directly; Run buttons type a step's command line into it for you.
+#   * Step completion is detected by watching the console's transcript for "Completed Task <cmdlet>"
+#     and applying the same cleanliness gate (Test-StepTranscriptClean), exactly like the WPF UI.
+#   * Run All uses one console per threadId, like the WPF UI.
 #
-# Security model: the server executes commands taken from plan files, so it is locked down --
-# loopback only, a random per-launch token on every request, Host/Origin checks (DNS-rebinding and
-# cross-site protection), and /api/run only accepts a plan id + step index (never a command line).
+# Security model: the server types commands taken from plan files into a shell, so it is locked down --
+# loopback only, a random per-launch token on every API/WebSocket request, Host/Origin checks
+# (DNS-rebinding and cross-site protection), and /api/step/run only accepts a plan id + step index
+# (never a command line). Only the browser tab holding the token can type into a console.
 param(
     [Parameter(Mandatory)][string]$PlansPath,
     [Parameter(Mandatory)][string]$Token,
     [int]$Port = 0,
     [string]$WorkingDirectory = (Get-Location).Path,
-    # Module files the child consoles import (the dev repo is usually not on PSModulePath).
+    # Module files the consoles import (the dev repo is usually not on PSModulePath).
     [string]$CoordinatorModulePath,
     [string]$InstanceRecoveryModulePath
 )
@@ -27,18 +30,43 @@ $ErrorActionPreference = 'Stop'
 
 # ---------------------------------------------------------------- state
 $script:htmlPath = Join-Path $PSScriptRoot 'index.html'
+$script:vendorPath = Join-Path $PSScriptRoot 'vendor'
+$script:vendorFiles = @{ 'xterm.js' = 'text/javascript; charset=utf-8'; 'xterm.css' = 'text/css; charset=utf-8'; 'addon-fit.js' = 'text/javascript; charset=utf-8' }
 $script:catalog = Get-Content -LiteralPath (Join-Path $PlansPath 'recovery-plan-catalog.json') -Raw | ConvertFrom-Json
-$script:vars = [ordered]@{}            # name -> string value, shared by every step (like a console's session variables)
-$script:runs = @{}                     # runId -> run record
-$script:runSequence = 0
+$script:vars = [ordered]@{}            # name -> string value, shared by every console
+$script:consoles = [ordered]@{}        # id -> console session
+$script:consoleSeq = 0
+$script:watches = @{}                  # watchId -> step watch
+$script:watchSeq = 0
+$script:stepLedger = @{}               # step id -> Success | Failed | Skipped (feeds "stepStatus" conditions)
+$script:wsClients = [System.Collections.Generic.List[object]]::new()
+$script:pendingAccepts = [System.Collections.Generic.List[object]]::new()
 $script:shutdown = $false
+$script:lastBrowseDir = ''
+$script:extracted = $null              # parsed extracted-sddc-data.json
+$script:extractedPath = ''
+$script:allDomains = @()
+$script:selection = $null              # @{ kind = 'domain'|'cluster'; domain; cluster }
+$script:conditionContext = @{}         # what "dataPath" step conditions resolve against (selectedDomain / selectedCluster)
+$script:varsFilePath = ''
+$script:uiMode = 'User'
+$script:engineeringUnlocked = $false
+# Variables the operator never types: they come from the Data Source / the infrastructure selection (as in the
+# WPF UI, where an answers file's values for them are ignored so a stale file can't retarget a run).
+$script:readonlyVariables = @('extractedSDDCDataFile', 'workloadDomain', 'clusterName')
 $script:pwshPath = (Get-Process -Id $PID).Path
 $script:ignoredVariableNames = @('true', 'false', 'null', '_', 'env', 'PSScriptRoot', 'PSItem', 'args', 'input')
+$script:defaultCols = 120
+$script:defaultRows = 30
+
+if ($IsWindows -or $PSVersionTable.PSEdition -eq 'Desktop') {
+    Add-Type -Path (Join-Path $PSScriptRoot 'ConPty.cs')
+}
 
 # ---------------------------------------------------------------- plan / condition logic
-# (Ported from the WPF script: Get-RecoveryPlanSteps, Test-ConditionOperator, Test-StepCondition.
-#  dataPath conditions need the extracted-data context the WPF UI builds; not ported yet, so they
-#  fail open exactly like the WPF code does for anything it can't evaluate.)
+# (Ported from the WPF script: Get-RecoveryPlanSteps, Test-ConditionOperator, Test-StepCondition,
+#  Test-StepStatusGate. dataPath conditions need the extracted-data context the WPF UI builds; not
+#  ported yet, so they fail open exactly like the WPF code does for anything it can't evaluate.)
 function Get-CatalogEntry([string]$PlanId) {
     return $script:catalog.recoveryPlans | Where-Object { $_.id -eq $PlanId } | Select-Object -First 1
 }
@@ -77,6 +105,15 @@ function Test-ConditionOperator([string]$Operator, $Actual, $Expected) {
     }
 }
 
+function Resolve-ConditionDataPath([string]$Path, $Root) {
+    $current = $Root
+    foreach ($segment in ($Path -split '\.')) {
+        if ($null -eq $current) { return $null }
+        $current = if ($current -is [System.Collections.IDictionary]) { $current[$segment] } else { $current.$segment }
+    }
+    return $current
+}
+
 function Test-StepApplicable($Step) {
     foreach ($c in $Step.Condition) {
         if ($null -eq $c -or $c -is [string]) { continue }
@@ -84,8 +121,25 @@ function Test-StepApplicable($Step) {
             if ($c.type -eq 'variable') {
                 $actual = if ($script:vars.Contains($c.name)) { $script:vars[$c.name] } else { $null }
                 if (-not (Test-ConditionOperator $c.operator $actual $c.value)) { return $false }
+            } elseif ($c.type -eq 'dataPath') {
+                # An explicit value typed into a variable named like the path's last segment wins over the data.
+                $leaf = ($c.path -split '\.')[-1]
+                $override = if ($script:vars.Contains($leaf)) { $script:vars[$leaf] } else { $null }
+                $actual = if (-not [string]::IsNullOrEmpty($override)) { $override } else { Resolve-ConditionDataPath $c.path $script:conditionContext }
+                if (-not (Test-ConditionOperator $c.operator $actual $c.value)) { return $false }
             }
         } catch { }   # fail open, as the WPF UI does
+    }
+    return $true
+}
+
+# Execution-time gate only (never used for display filtering) -- see Test-StepStatusGate in the WPF UI.
+function Test-StepStatusGate($Step) {
+    foreach ($c in $Step.Condition) {
+        if ($null -ne $c -and $c -isnot [string] -and $c.type -eq 'stepStatus') {
+            $actual = if ($script:stepLedger.ContainsKey($c.stepId)) { $script:stepLedger[$c.stepId] } else { 'NotRun' }
+            if (-not (Test-ConditionOperator $c.operator $actual $c.value)) { return $false }
+        }
     }
     return $true
 }
@@ -125,93 +179,516 @@ function Get-PlanPayload([string]$PlanId) {
                     threadId = $_.ThreadId; interactive = $_.Interactive; applicable = (Test-StepApplicable $_) }
             })
         variables = @($names | ForEach-Object {
-                @{ name = $_; value = $(if ($script:vars.Contains($_)) { $script:vars[$_] } else { '' }); secret = ($_ -match 'password|passphrase') }
+                @{ name = $_; value = $(if ($script:vars.Contains($_)) { $script:vars[$_] } else { '' }); secret = ($_ -match 'password|passphrase'); readonly = ($_ -in $script:readonlyVariables) }
             })
+        mode      = $script:uiMode
+        infrastructure = (Get-InfrastructurePayload $entry)
+        varsFile  = $script:varsFilePath
     }
 }
 
-# ---------------------------------------------------------------- runs (one pwsh child per step)
-function Protect-SingleQuotes([string]$Value) { return $Value.Replace("'", "''") }
+# ---------------------------------------------------------------- extracted data / infrastructure / selection
+# (Ported from the WPF UI: Import-ExtractedSddcDataFile, Get-ClusterDependencies, Get-DisplayDatastoreType,
+#  Sync-DomainSteps, Sync-AdditionalClusterSteps.)
+function Get-DisplayDatastoreType([string]$RawType) {
+    switch ($RawType) {
+        'VSAN' { 'HCI (OSA)' }
+        'VSAN_ESA' { 'HCI (ESA)' }
+        'VSAN_MAX' { 'Storage Cluster' }
+        'VSAN_Remote' { 'Compute Cluster' }
+        default { $RawType }
+    }
+}
 
-function New-StepScript($Step) {
-    $lines = [System.Collections.Generic.List[string]]::new()
-    [void]$lines.Add('$ErrorView = ''NormalView''')   # keeps "+ CategoryInfo" in uncaught errors (completion gate relies on it)
-    [void]$lines.Add("Set-Location -LiteralPath '$(Protect-SingleQuotes $WorkingDirectory)'")
-    if ($InstanceRecoveryModulePath) { [void]$lines.Add("Import-Module -Force '$(Protect-SingleQuotes $InstanceRecoveryModulePath)'") }
-    if ($CoordinatorModulePath) { [void]$lines.Add("Import-Module -Force '$(Protect-SingleQuotes $CoordinatorModulePath)'") }
-    foreach ($name in (Get-ReferencedVariableNames @($Step.CommandLine))) {
-        if (-not $script:vars.Contains($name) -or [string]::IsNullOrEmpty($script:vars[$name])) { continue }
-        $value = Protect-SingleQuotes $script:vars[$name]
-        if ($name -eq 'secureEncryptionPassword') {
-            [void]$lines.Add("`$$name = ConvertTo-SecureString '$value' -AsPlainText -Force")
-        } else {
-            [void]$lines.Add("`$$name = '$value'")
+# What has to be recovered before this additional cluster, in recovery order (informational).
+function Get-ClusterDependencies($Domain, $Cluster, [object[]]$AllDomains) {
+    $dependencies = [System.Collections.Generic.List[string]]::new()
+    $managementDomain = $AllDomains | Where-Object { $_.domainType -eq 'MANAGEMENT' } | Select-Object -First 1
+    if ($Domain.domainType -eq 'MANAGEMENT') {
+        if ($Domain.domainName) { $dependencies.Add($Domain.domainName) }
+    } else {
+        if ($managementDomain.domainName) { $dependencies.Add($managementDomain.domainName) }
+        if ($Domain.domainName) { $dependencies.Add($Domain.domainName) }
+    }
+    if ($Cluster.primaryDatastoreType -eq 'VSAN_Remote' -and $Cluster.primaryDatastoreMoRef) {
+        # A compute cluster (HCI Mesh consumer) depends on whichever non-remote cluster provides the same datastore.
+        $storageCluster = @(
+            foreach ($otherDomain in $AllDomains) {
+                foreach ($otherCluster in $otherDomain.vsphereClusterDetails) {
+                    if ($otherCluster.primaryDatastoreMoRef -eq $Cluster.primaryDatastoreMoRef -and $otherCluster.primaryDatastoreType -ne 'VSAN_Remote') { $otherCluster }
+                }
+            }
+        ) | Select-Object -First 1
+        if ($storageCluster.name) { $dependencies.Add($storageCluster.name) }
+    }
+    return ($dependencies -join ', ')
+}
+
+function Import-ExtractedData([string]$Path) {
+    if ([string]::IsNullOrWhiteSpace($Path)) { throw 'No file path was entered.' }
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "File not found on the machine running this server: $Path" }
+    $data = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+    if (-not $data.workloadDomains) { throw "No 'workloadDomains' property found in the selected file." }
+    $script:extracted = $data
+    $script:extractedPath = $Path
+    $script:allDomains = @($data.workloadDomains)
+    $script:selection = $null
+    $script:conditionContext = @{}
+    $script:stepLedger = @{}
+    $script:vars['extractedSDDCDataFile'] = $Path
+    $script:vars['workloadDomain'] = ''
+    $script:vars['clusterName'] = ''
+}
+
+function Get-InfrastructurePayload($Entry) {
+    if (-not $script:extracted) { return @{ loaded = $false } }
+    $filter = if ($Entry) { [string]$Entry.domainFilter } else { '' }
+    $domains = @($script:allDomains | Where-Object {
+            if ($filter -eq 'MANAGEMENT') { $_.domainType -eq 'MANAGEMENT' }
+            elseif ($filter -eq 'NOT_MANAGEMENT') { $_.domainType -ne 'MANAGEMENT' }
+            else { $true }
+        } | ForEach-Object { @{ name = $_.domainName; type = $_.domainType } })
+    $clusters = @(
+        foreach ($domain in $script:allDomains) {
+            foreach ($cluster in $domain.vsphereClusterDetails) {
+                if ($cluster.isDefault -eq 'f') {
+                    @{
+                        name        = $(if ($cluster.name) { $cluster.name } else { '(unknown)' })
+                        domain      = $domain.domainName
+                        storage     = (Get-DisplayDatastoreType $cluster.primaryDatastoreType)
+                        stretched   = $(if ($cluster.isStretched -eq 't') { 'Y' } else { 'N' })
+                        dependentOn = (Get-ClusterDependencies $domain $cluster $script:allDomains)
+                    }
+                }
+            }
+        }
+    )
+    return @{
+        loaded              = $true
+        file                = $script:extractedPath
+        runsFleetComponents = (@($script:extracted.vcfManagementComponents.ComponentType) -contains 'FLEET_LCM')
+        domains             = $domains
+        clusters            = $clusters
+        selection           = $script:selection
+    }
+}
+
+# Selecting a domain targets its default cluster; selecting an additional cluster targets that cluster in its own
+# domain. Either way $workloadDomain/$clusterName are set from the selection (never typed), step status resets,
+# and "dataPath" conditions resolve against the normalized shape below.
+function Set-InfrastructureSelection([string]$Kind, [string]$DomainName, [string]$ClusterName) {
+    $script:stepLedger = @{}
+    $script:selection = $null
+    $script:conditionContext = @{}
+    $script:vars['workloadDomain'] = ''
+    $script:vars['clusterName'] = ''
+    $domain = $script:allDomains | Where-Object { $_.domainName -eq $DomainName } | Select-Object -First 1
+    if (-not $domain -or $Kind -notin 'domain', 'cluster') { return }
+    if ($Kind -eq 'domain') {
+        $cluster = $domain.vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' } | Select-Object -First 1
+        $script:conditionContext = @{
+            selectedDomain  = $domain
+            selectedCluster = [PSCustomObject]@{ name = $cluster.name; isDefault = $cluster.isDefault; isStretched = $cluster.isStretched; primaryDatastoreType = $cluster.primaryDatastoreType; domainName = $domain.domainName }
+        }
+        $script:selection = @{ kind = 'domain'; domain = $domain.domainName }
+    } else {
+        $cluster = $domain.vsphereClusterDetails | Where-Object { $_.name -eq $ClusterName } | Select-Object -First 1
+        if (-not $cluster) { return }
+        $script:conditionContext = @{
+            selectedDomain  = $null
+            selectedCluster = [PSCustomObject]@{ name = $cluster.name; isDefault = 'f'; isStretched = $cluster.isStretched; primaryDatastoreType = $cluster.primaryDatastoreType; domainName = $domain.domainName }
+        }
+        $script:selection = @{ kind = 'cluster'; domain = $domain.domainName; cluster = $cluster.name }
+    }
+    $script:vars['workloadDomain'] = [string]$domain.domainName
+    $script:vars['clusterName'] = [string]$cluster.name
+}
+
+function Import-VariablesFile([string]$Path) {
+    if ([string]::IsNullOrWhiteSpace($Path)) { throw 'No file path was entered.' }
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "File not found on the machine running this server: $Path" }
+    $file = (Resolve-Path -LiteralPath $Path).Path
+    $loaded = Get-Content -LiteralPath $file -Raw | ConvertFrom-Json -AsHashtable
+    foreach ($k in $loaded.Keys) {
+        $v = $loaded[$k]
+        # Scalars only (string/number/bool/null); nested objects aren't variables. Selection/Data-Source-driven names are ignored.
+        if ($k -match '^[A-Za-z_][A-Za-z0-9_]*$' -and $k -notin $script:readonlyVariables -and ($null -eq $v -or $v -is [string] -or $v -is [ValueType])) {
+            $script:vars[$k] = if ($null -eq $v) { '' } else { [string]$v }
         }
     }
-    [void]$lines.Add($Step.CommandLine)
-    return ($lines -join "`n")
+    $script:varsFilePath = $file
+    return @{ file = $file; count = $loaded.Count }
 }
 
-function Start-StepRun([string]$PlanId, [int]$StepIndex) {
+# Same obfuscated check as the WPF UI (Test-EngineeringModePassword) -- a speed bump against accidents, not security.
+function Test-EngineeringModePassword([string]$Candidate) {
+    $expected = -join ((116, 104, 105, 115, 105, 115, 117, 110, 115, 97, 102, 101) | ForEach-Object { [char]$_ })
+    return $Candidate -ceq $expected
+}
+
+# ---------------------------------------------------------------- folder listing (the in-page Browse dialog)
+# A browser can't give a web page a file's full path, and the native OS dialogs proved unreliable to drive from here
+# (focus, screen grabbing, permission prompts). So the page has its own file browser, backed by this listing. Plain .NET
+# calls only, so it behaves the same on Windows, macOS and Linux. It returns names, sizes and dates -- never file
+# contents -- for folders the server's own account can already read, behind the same token as everything else.
+function Get-BrowseRoots {
+    $home_ = [Environment]::GetFolderPath('UserProfile')
+    $roots = [System.Collections.Generic.List[object]]::new()
+    if ($home_) { $roots.Add(@{ name = 'Home'; path = $home_ }) }
+    foreach ($n in 'Desktop', 'Documents', 'Downloads') {
+        $p = if ($home_) { Join-Path $home_ $n }
+        if ($p -and (Test-Path -LiteralPath $p -PathType Container)) { $roots.Add(@{ name = $n; path = $p }) }
+    }
+    if ($IsWindows -or $PSVersionTable.PSEdition -eq 'Desktop') {
+        foreach ($d in [IO.DriveInfo]::GetDrives()) { if ($d.IsReady) { $roots.Add(@{ name = $d.Name; path = $d.Name }) } }
+    } else {
+        $roots.Add(@{ name = '/'; path = '/' })
+        foreach ($m in '/Volumes', '/mnt', '/media') { if (Test-Path -LiteralPath $m -PathType Container) { $roots.Add(@{ name = $m; path = $m }) } }
+    }
+    return , $roots.ToArray()
+}
+
+function Get-DirectoryListing([string]$Path, [string]$Filter, [bool]$ShowHidden) {
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        $Path = if ($script:lastBrowseDir -and (Test-Path -LiteralPath $script:lastBrowseDir -PathType Container)) { $script:lastBrowseDir } else { [Environment]::GetFolderPath('UserProfile') }
+    }
+    $full = [IO.Path]::GetFullPath($Path)
+    $selected = $null
+    if (Test-Path -LiteralPath $full -PathType Leaf) {        # a file path was typed: list its folder and report the file
+        $selected = $full
+        $full = [IO.Path]::GetDirectoryName($full)
+    }
+    if (-not (Test-Path -LiteralPath $full -PathType Container)) { throw "Folder not found: $full" }
+    $parentInfo = [IO.Directory]::GetParent($full)
+    $result = @{ path = $full; parent = $(if ($parentInfo) { $parentInfo.FullName } else { $null }); roots = (Get-BrowseRoots); selected = $selected }
+    try { $items = @(Get-ChildItem -LiteralPath $full -Force -ErrorAction Stop) }
+    catch { $result.entries = @(); $result.error = "Cannot read this folder: $($_.Exception.Message)"; return $result }
+    $script:lastBrowseDir = $full
+    $onWindows = $IsWindows -or $PSVersionTable.PSEdition -eq 'Desktop'
+    $entries = foreach ($item in $items) {
+        $hidden = if ($onWindows) { [bool]($item.Attributes -band [IO.FileAttributes]::Hidden) } else { $item.Name.StartsWith('.') }
+        if ($hidden -and -not $ShowHidden) { continue }
+        $isDir = [bool]$item.PSIsContainer
+        if (-not $isDir -and $Filter -eq 'json' -and $item.Extension -ne '.json') { continue }
+        @{ name = $item.Name; path = $item.FullName; dir = $isDir; size = $(if ($isDir) { $null } else { $item.Length }); modified = $item.LastWriteTime.ToString('s') }
+    }
+    $sorted = @($entries | Sort-Object -Property @{ Expression = { -not $_.dir } }, @{ Expression = { $_.name.ToLowerInvariant() } })
+    $result.truncated = $sorted.Count -gt 2000
+    $result.entries = @($sorted | Select-Object -First 2000)
+    return $result
+}
+
+# ---------------------------------------------------------------- PTY
+function Protect-SingleQuotes([string]$Value) { return $Value.Replace("'", "''") }
+
+# Returns @{ Input; Output; IsExited; Kill; Resize } for one interactive pwsh on a real pseudo-terminal.
+function New-PtyProcess([string]$StartupScript, [int]$Cols, [int]$Rows) {
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($StartupScript))
+
+    if ($IsWindows -or $PSVersionTable.PSEdition -eq 'Desktop') {
+        $pty = [VCFIR.ConPty]::new("`"$script:pwshPath`" -NoLogo -NoProfile -EncodedCommand $encoded", $WorkingDirectory, $Cols, $Rows)
+        return @{
+            Input    = $pty.Input
+            Output   = $pty.Output
+            IsExited = { $pty.HasExited }.GetNewClosure()
+            Kill     = { $pty.Dispose() }.GetNewClosure()
+            Resize   = { param($c, $r) $pty.Resize($c, $r) }.GetNewClosure()
+        }
+    }
+
+    # macOS / Linux: script(1) allocates the pty and runs a tiny sh wrapper that records the tty's
+    # device name (so we can resize it later with stty) and sets the initial size before exec'ing pwsh.
+    $scriptExe = (Get-Command script -ErrorAction Stop).Source
+    $ttyFile = Join-Path ([IO.Path]::GetTempPath()) ("vcfir-tty-{0}-{1}" -f $PID, [guid]::NewGuid().ToString('N'))
+    $pwshQuoted = "'" + $script:pwshPath.Replace("'", "'\''") + "'"
+    $inner = "tty > '$ttyFile'; stty rows $Rows cols $Cols; exec $pwshQuoted -NoLogo -NoProfile -EncodedCommand $encoded"
+    $psi = [System.Diagnostics.ProcessStartInfo]::new()
+    $psi.FileName = $scriptExe
+    $argList = if ($IsMacOS) { @('-q', '/dev/null', '/bin/sh', '-c', $inner) } else { @('-qfec', $inner, '/dev/null') }
+    foreach ($a in $argList) { $psi.ArgumentList.Add($a) }
+    $psi.WorkingDirectory = $WorkingDirectory
+    $psi.Environment['TERM'] = 'xterm-256color'
+    $psi.Environment['COLORTERM'] = 'truecolor'
+    $psi.UseShellExecute = $false
+    $psi.RedirectStandardInput = $true
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $process = [System.Diagnostics.Process]::Start($psi)
+    $sttyFlag = if ($IsMacOS) { '-f' } else { '-F' }
+    return @{
+        Input    = $process.StandardInput.BaseStream
+        Output   = $process.StandardOutput.BaseStream
+        IsExited = { $process.HasExited }.GetNewClosure()
+        Kill     = { try { $process.Kill($true) } catch { }; Remove-Item -LiteralPath $ttyFile -Force -ErrorAction SilentlyContinue }.GetNewClosure()
+        Resize   = {
+            param($c, $r)
+            $tty = if (Test-Path -LiteralPath $ttyFile) { (Get-Content -LiteralPath $ttyFile -TotalCount 1) } else { $null }
+            if ($tty) { & stty $sttyFlag $tty rows $r cols $c 2>$null }
+        }.GetNewClosure()
+    }
+}
+
+# ---------------------------------------------------------------- consoles
+function New-ConsoleSession([string]$Id, [string]$Label) {
+    $script:consoleSeq++
+    $transcript = Join-Path $WorkingDirectory ("vcfir-web-transcript-{0}-{1}-{2}.log" -f (Get-Date -Format 'yyyyMMdd-HHmmss'), $PID, $script:consoleSeq)
+    # Step commands (and the variables they need, which may be secrets) reach the console through this private
+    # directory, never through its stdin -- see console-repl.ps1 for why.
+    $queueDir = Join-Path ([IO.Path]::GetTempPath()) ("vcfir-q-{0}" -f [guid]::NewGuid().ToString('N'))
+    if ($IsWindows -or $PSVersionTable.PSEdition -eq 'Desktop') { [void][IO.Directory]::CreateDirectory($queueDir) }
+    else { [void][IO.Directory]::CreateDirectory($queueDir, [IO.UnixFileMode]'UserRead,UserWrite,UserExecute') }
+    $startup = @(
+        "Set-Location -LiteralPath '$(Protect-SingleQuotes $WorkingDirectory)'"
+        $(if ($InstanceRecoveryModulePath) { "Import-Module -Force '$(Protect-SingleQuotes $InstanceRecoveryModulePath)'" })
+        $(if ($CoordinatorModulePath) { "Import-Module -Force '$(Protect-SingleQuotes $CoordinatorModulePath)'" })
+        "Start-Transcript -Path '$(Protect-SingleQuotes $transcript)' | Out-Null"
+        ". '$(Protect-SingleQuotes (Join-Path $PSScriptRoot 'console-repl.ps1'))' -QueueDir '$(Protect-SingleQuotes $queueDir)'"
+    ) -join '; '
+    $pty = New-PtyProcess $startup $script:defaultCols $script:defaultRows
+    $c = @{
+        Id = $Id; Label = $Label; Pty = $pty; Transcript = $transcript; QueueDir = $queueDir
+        Out = [System.Collections.Generic.List[byte]]::new(); Base = [long]0
+        Buf = [byte[]]::new(8192); ReadTask = $null; Exited = $false; SentVars = @{}
+        InBuf = [System.Collections.Generic.List[byte]]::new(); EverAttached = $false
+    }
+    $c.ReadTask = $pty.Output.ReadAsync($c.Buf, 0, $c.Buf.Length)
+    $script:consoles[$Id] = $c
+    return $c
+}
+
+function Get-ConsoleLabel([string]$Id) { if ($Id -eq 'main') { 'Main' } else { 'Thread ' + $Id.Substring('thread-'.Length) } }
+
+function Get-OrNewConsole([string]$Id) {
+    if ($Id -notmatch '^(main|thread-[A-Za-z0-9_-]+)$') { throw "Invalid console id '$Id'" }
+    if ($script:consoles.Contains($Id)) { return $script:consoles[$Id] }
+    return New-ConsoleSession $Id (Get-ConsoleLabel $Id)
+}
+
+# Input is queued and fed to the pty in small chunks by Update-Consoles, never as one big write: pwsh's own
+# terminal-input reader (it also reads the terminal's cursor-position replies from the same stdin) corrupts
+# the tail of a long burst -- observed with a 233-byte line arriving as "...-Force<garbage>". A browser paste
+# is one big burst too, so everything typed goes through this queue.
+function Send-ConsoleBytes($Console, [byte[]]$Bytes) {
+    if ($Console.Exited) { return }
+    $Console.InBuf.AddRange($Bytes)
+}
+function Write-ConsoleInputChunk($Console) {
+    if ($Console.Exited -or $Console.InBuf.Count -eq 0) { return }
+    $n = [Math]::Min(48, $Console.InBuf.Count)
+    # don't split a multi-byte UTF-8 character across two writes
+    while ($n -lt $Console.InBuf.Count -and $n -gt 1 -and ($Console.InBuf[$n] -band 0xC0) -eq 0x80) { $n-- }
+    $chunk = $Console.InBuf.GetRange(0, $n).ToArray()
+    $Console.InBuf.RemoveRange(0, $n)
+    try { $Console.Pty.Input.Write($chunk, 0, $n); $Console.Pty.Input.Flush() } catch { }
+}
+function Send-ConsoleLine($Console, [string]$Text) { Send-ConsoleBytes $Console ([Text.Encoding]::UTF8.GetBytes($Text + "`r")) }
+
+function Submit-ConsoleCommand($Console, [string]$Init, [string]$Command) {
+    $seq = '{0:D10}' -f ([DateTime]::UtcNow.Ticks)
+    $tmp = Join-Path $Console.QueueDir "$seq.tmp"
+    [IO.File]::Create($tmp).Dispose()
+    if (-not ($IsWindows -or $PSVersionTable.PSEdition -eq 'Desktop')) { [IO.File]::SetUnixFileMode($tmp, [IO.UnixFileMode]'UserRead,UserWrite') }
+    [IO.File]::WriteAllText($tmp, (@{ init = $Init; command = $Command } | ConvertTo-Json -Compress), [System.Text.UTF8Encoding]::new($false))
+    Move-Item -LiteralPath $tmp -Destination (Join-Path $Console.QueueDir "$seq.json")
+}
+
+function Update-Consoles {
+    foreach ($c in $script:consoles.Values) {
+        Write-ConsoleInputChunk $c
+        while ($c.ReadTask -and $c.ReadTask.IsCompleted) {
+            $n = if ($c.ReadTask.IsFaulted) { 0 } else { $c.ReadTask.Result }
+            if ($n -le 0) { $c.ReadTask = $null; break }
+            $chunk = [byte[]]::new($n)
+            [Array]::Copy($c.Buf, $chunk, $n)
+            $c.Out.AddRange($chunk)
+            if ($c.Out.Count -gt 8MB) { $c.Out.RemoveRange(0, 4MB); $c.Base += 4MB }   # scrollback cap
+            $c.ReadTask = $c.Pty.Output.ReadAsync($c.Buf, 0, $c.Buf.Length)
+        }
+        if (-not $c.Exited -and -not $c.ReadTask -and (& $c.Pty.IsExited)) { $c.Exited = $true }
+    }
+}
+
+# ---------------------------------------------------------------- variable injection
+# Returns the assignments this step needs that the console doesn't already hold, as script text for the queue's
+# silent "init" slot (so values, including secrets, never appear on screen or in the transcript).
+function Get-VariableInit($Console, $Step) {
+    $lines = [System.Collections.Generic.List[string]]::new()
+    $pending = @{}
+    foreach ($name in (Get-ReferencedVariableNames @($Step.CommandLine))) {
+        if (-not $script:vars.Contains($name) -or [string]::IsNullOrEmpty($script:vars[$name])) { continue }
+        $value = $script:vars[$name]
+        if ($Console.SentVars.ContainsKey($name) -and $Console.SentVars[$name] -ceq $value) { continue }
+        $q = Protect-SingleQuotes $value
+        if ($name -eq 'secureEncryptionPassword') { [void]$lines.Add("`$global:$name = ConvertTo-SecureString '$q' -AsPlainText -Force") }
+        else { [void]$lines.Add("`$global:$name = '$q'") }
+        $pending[$name] = $value
+    }
+    return @{ Script = ($lines -join "`n"); Pending = $pending }
+}
+
+# ---------------------------------------------------------------- step watches (transcript based)
+function Test-StepTranscriptClean([string]$Slice) {
+    foreach ($marker in '[WARNING]', '[ERROR]', '[EXCEPTION]', '+ CategoryInfo') { if ($Slice.Contains($marker)) { return $false } }
+    return $true
+}
+
+function Get-TranscriptLength([string]$Path) {
+    if (Test-Path -LiteralPath $Path) { return (Get-Item -LiteralPath $Path).Length }
+    return 0
+}
+
+function Read-TranscriptFrom([string]$Path, [long]$Offset) {
+    if (-not (Test-Path -LiteralPath $Path)) { return '' }
+    $fs = [IO.File]::Open($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+    try {
+        if ($fs.Length -le $Offset) { return '' }
+        [void]$fs.Seek($Offset, [IO.SeekOrigin]::Begin)
+        $bytes = [byte[]]::new($fs.Length - $Offset)
+        $read = 0
+        while ($read -lt $bytes.Length) { $got = $fs.Read($bytes, $read, $bytes.Length - $read); if ($got -le 0) { break }; $read += $got }
+        return [Text.Encoding]::UTF8.GetString($bytes, 0, $read)
+    } finally { $fs.Dispose() }
+}
+
+function Complete-Watch($Watch, [string]$Status, $Clean, [string]$Slice) {
+    $Watch.Status = $Status
+    $Watch.Clean = $Clean
+    if ($Watch.StepId) { $script:stepLedger[$Watch.StepId] = if ($Status -eq 'Done') { 'Success' } else { 'Failed' } }
+    if ($Status -eq 'Done' -and $Watch.Cmdlet -eq 'New-RetrieveVCFCredentials') {
+        # Same hand-off the WPF UI does (Get-CredentialsFilePathFromTranscript): remember the file the step wrote.
+        $m = [regex]::Matches($Slice, 'Credentials file written to: (?<path>[^\r\n\x1b]+)')
+        if ($m.Count -gt 0) { $script:vars['credentialsFilePath'] = $m[$m.Count - 1].Groups['path'].Value.Trim() }
+    }
+}
+
+function Update-Watches {
+    foreach ($w in @($script:watches.Values | Where-Object { $_.Status -eq 'Running' })) {
+        $c = $script:consoles[$w.ConsoleId]
+        $text = Read-TranscriptFrom $c.Transcript $w.Offset
+        $i = $text.IndexOf($w.Target)
+        if ($i -ge 0) {
+            $eol = $text.IndexOf("`n", $i)
+            $slice = if ($eol -ge 0) { $text.Substring(0, $eol) } else { $text }
+            $clean = Test-StepTranscriptClean $slice
+            Complete-Watch $w $(if ($clean) { 'Done' } else { 'Failed' }) $clean $slice
+        } elseif ($c.Exited) {
+            Complete-Watch $w 'Failed' $false $text
+        }
+    }
+}
+
+function Start-Step([string]$PlanId, [int]$StepIndex, [string]$ConsoleId) {
     $entry = Get-CatalogEntry $PlanId
     if (-not $entry) { throw "Unknown plan '$PlanId'" }
     $step = Get-PlanSteps $entry | Where-Object { $_.Index -eq $StepIndex } | Select-Object -First 1
     if (-not $step) { throw "Unknown step $StepIndex in plan '$PlanId'" }
 
-    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes((New-StepScript $step)))
-    $psi = [System.Diagnostics.ProcessStartInfo]::new()
-    $psi.FileName = $script:pwshPath
-    # -OutputFormat/-InputFormat Text: with -EncodedCommand and redirected streams pwsh otherwise serializes
-    # errors/output as CLIXML ("#< CLIXML ...") instead of plain text.
-    foreach ($a in '-NoLogo', '-NoProfile', '-OutputFormat', 'Text', '-InputFormat', 'Text', '-EncodedCommand', $encoded) { $psi.ArgumentList.Add($a) }
-    $psi.WorkingDirectory = $WorkingDirectory
-    $psi.UseShellExecute = $false
-    $psi.CreateNoWindow = $true
-    $psi.RedirectStandardInput = $true
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError = $true
-    $psi.StandardOutputEncoding = [Text.Encoding]::UTF8
-    $psi.StandardErrorEncoding = [Text.Encoding]::UTF8
-    $process = [System.Diagnostics.Process]::Start($psi)
+    if (-not (Test-StepStatusGate $step)) {
+        if ($step.Id) { $script:stepLedger[$step.Id] = 'Skipped' }
+        return @{ skipped = $true }
+    }
+    # "New-Advisory '...'" is a UI-only pseudo-command (it only exists in the WPF window); resolve it here.
+    $adv = [regex]::Match($step.CommandLine, "^New-Advisory\s+'(.*)'\s*$", [System.Text.RegularExpressions.RegexOptions]::Singleline)
+    if ($adv.Success) {
+        if ($step.Id) { $script:stepLedger[$step.Id] = 'Success' }
+        return @{ advisory = ($adv.Groups[1].Value -replace "''", "'") }
+    }
 
-    $script:runSequence++
-    $id = [string]$script:runSequence
-    $logPath = Join-Path $WorkingDirectory ("vcfir-web-{0}-{1}-{2}.log" -f (Get-Date -Format 'yyyyMMdd-HHmmss'), $PID, $id)
-    $newStream = { param($reader) @{ Reader = $reader; Buf = [char[]]::new(4096); Task = $null } }
-    $run = @{
-        Id = $id; Name = $step.DisplayName; Process = $process; Output = [System.Text.StringBuilder]::new()
-        Status = 'Running'; Clean = $null; ExitCode = $null; LogPath = $logPath; Streams = @()
+    # Same fallback as the WPF UI: with no credentials path remembered, use the newest one the Retrieve step left behind.
+    if ($step.CommandLine -match '\$credentialsFilePath\b' -and [string]::IsNullOrEmpty($script:vars['credentialsFilePath'])) {
+        $latest = Get-ChildItem -LiteralPath $WorkingDirectory -Filter 'vcf-credentials-*.json' -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+        if ($latest) { $script:vars['credentialsFilePath'] = $latest.FullName }
     }
-    foreach ($reader in $process.StandardOutput, $process.StandardError) {
-        $s = & $newStream $reader
-        $s.Task = $s.Reader.ReadAsync($s.Buf, 0, $s.Buf.Length)
-        $run.Streams += , $s
+
+    $console = Get-OrNewConsole $ConsoleId
+    if ($console.Exited) { throw "Console '$ConsoleId' has exited; restart it first." }
+    $init = Get-VariableInit $console $step
+    $cmdlet = ($step.CommandLine -split '\s+', 2)[0]
+    $script:watchSeq++
+    $id = [string]$script:watchSeq
+    $script:watches[$id] = @{
+        Id = $id; ConsoleId = $ConsoleId; StepId = $step.Id; Cmdlet = $cmdlet; Target = "Completed Task $cmdlet"
+        Offset = (Get-TranscriptLength $console.Transcript); Status = 'Running'; Clean = $null
     }
-    $script:runs[$id] = $run
-    return $id
+    Submit-ConsoleCommand $console $init.Script $step.CommandLine
+    foreach ($k in $init.Pending.Keys) { $console.SentVars[$k] = $init.Pending[$k] }
+    return @{ watchId = $id; consoleId = $ConsoleId }
 }
 
-# Called from the main loop every ~100ms. Everything is polled on the one server thread, so no
-# event handlers / runspaces / locks are needed.
-function Update-Runs {
-    foreach ($run in @($script:runs.Values | Where-Object { $_.Status -eq 'Running' })) {
-        foreach ($s in $run.Streams) {
-            while ($s.Task -and $s.Task.IsCompleted) {
-                $n = if ($s.Task.IsFaulted) { 0 } else { $s.Task.Result }
-                if ($n -le 0) { $s.Task = $null; break }
-                $chunk = [string]::new($s.Buf, 0, $n)
-                [void]$run.Output.Append($chunk)
-                [System.IO.File]::AppendAllText($run.LogPath, $chunk)
-                $s.Task = $s.Reader.ReadAsync($s.Buf, 0, $s.Buf.Length)
-            }
+# ---------------------------------------------------------------- WebSocket clients (one per open console tab)
+function Add-WsAccept($Context, [string]$ConsoleId) {
+    # [NullString]::Value, not $null: PowerShell converts a $null argument to "" for a [string] parameter, and
+    # AcceptWebSocketAsync rejects an empty subprotocol (ArgumentException) -- the upgrade then never completes.
+    [void]$script:pendingAccepts.Add(@{ Task = $Context.AcceptWebSocketAsync([NullString]::Value); ConsoleId = $ConsoleId })
+}
+
+function Invoke-ClientMessage($Client, [string]$Text) {
+    if ([string]::IsNullOrEmpty($Text)) { return }
+    $console = $script:consoles[$Client.ConsoleId]
+    switch ($Text[0]) {
+        'i' { Send-ConsoleBytes $console ([Text.Encoding]::UTF8.GetBytes($Text.Substring(1))) }
+        'r' {
+            $p = $Text.Substring(1).Split(',')
+            $cols = [int]$p[0]; $rows = [int]$p[1]
+            if ($cols -ge 20 -and $cols -le 500 -and $rows -ge 5 -and $rows -le 200 -and -not $console.Exited) { & $console.Pty.Resize $cols $rows }
         }
-        $streamsDone = -not ($run.Streams | Where-Object { $_.Task })
-        if ($streamsDone -and $run.Process.HasExited) {
-            $run.ExitCode = $run.Process.ExitCode
-            $text = $run.Output.ToString()
-            # Same gate as Test-StepTranscriptClean in the WPF UI.
-            $run.Clean = -not ($text.Contains('[WARNING]') -or $text.Contains('[ERROR]') -or $text.Contains('[EXCEPTION]') -or $text.Contains('+ CategoryInfo'))
-            $run.Status = if ($run.ExitCode -ne 0) { 'Failed' } elseif ($run.Clean) { 'Done' } else { 'Attention' }
+    }
+}
+
+function Update-Clients {
+    foreach ($a in @($script:pendingAccepts | Where-Object { $_.Task.IsCompleted })) {
+        [void]$script:pendingAccepts.Remove($a)
+        if ($a.Task.IsFaulted) { continue }
+        $ws = $a.Task.Result.WebSocket
+        $c = $script:consoles[$a.ConsoleId]
+        $client = @{
+            Ws = $ws; ConsoleId = $a.ConsoleId; RecvBuf = [byte[]]::new(8192); Msg = [System.IO.MemoryStream]::new()
+            Sent = $c.Base; SendTask = $null; RecvTask = $null
+        }
+        $client.RecvSeg = [ArraySegment[byte]]::new($client.RecvBuf)
+        $client.RecvTask = $ws.ReceiveAsync($client.RecvSeg, [Threading.CancellationToken]::None)
+        # Tell the page how much scrollback is a REPLAY, so it can ignore the terminal's own replies (cursor-
+        # position reports etc.) to old queries inside it instead of typing them into the prompt.
+        # The FIRST attach to a console is not a replay: pwsh asks the terminal for the cursor position at
+        # startup and stalls until something answers, and nothing could answer before a browser attached.
+        # That backlog must be answered, so it is presented as live output (replay = 0).
+        $replayBytes = if ($c.EverAttached) { [long]$c.Out.Count } else { [long]0 }
+        $c.EverAttached = $true
+        $hello = [Text.Encoding]::UTF8.GetBytes((@{ replay = $replayBytes } | ConvertTo-Json -Compress))
+        $client.SendTask = $ws.SendAsync([ArraySegment[byte]]::new($hello), [System.Net.WebSockets.WebSocketMessageType]::Text, $true, [Threading.CancellationToken]::None)
+        [void]$script:wsClients.Add($client)
+    }
+    foreach ($client in @($script:wsClients)) {
+        try {
+            $ws = $client.Ws
+            if ($ws.State -ne [System.Net.WebSockets.WebSocketState]::Open) { [void]$script:wsClients.Remove($client); continue }
+            if ($client.RecvTask.IsCompleted) {
+                $r = $client.RecvTask.Result      # throws if faulted -> client dropped below
+                if ($r.MessageType -eq [System.Net.WebSockets.WebSocketMessageType]::Close) {
+                    try { [void]$ws.CloseOutputAsync([System.Net.WebSockets.WebSocketCloseStatus]::NormalClosure, '', [Threading.CancellationToken]::None).Wait(500) } catch { }
+                    [void]$script:wsClients.Remove($client); continue
+                }
+                $client.Msg.Write($client.RecvBuf, 0, $r.Count)
+                if ($r.EndOfMessage) {
+                    $text = [Text.Encoding]::UTF8.GetString($client.Msg.ToArray())
+                    $client.Msg.SetLength(0)
+                    Invoke-ClientMessage $client $text
+                }
+                $client.RecvTask = $ws.ReceiveAsync($client.RecvSeg, [Threading.CancellationToken]::None)
+            }
+            if ($client.SendTask -and -not $client.SendTask.IsCompleted) { continue }
+            if ($client.SendTask -and $client.SendTask.IsFaulted) { [void]$script:wsClients.Remove($client); continue }
+            $c = $script:consoles[$client.ConsoleId]
+            $end = $c.Base + $c.Out.Count
+            if ($client.Sent -lt $c.Base) { $client.Sent = $c.Base }
+            if ($client.Sent -lt $end) {
+                $n = [int][Math]::Min(32768, $end - $client.Sent)
+                $chunk = $c.Out.GetRange([int]($client.Sent - $c.Base), $n).ToArray()
+                $client.SendTask = $ws.SendAsync([ArraySegment[byte]]::new($chunk), [System.Net.WebSockets.WebSocketMessageType]::Binary, $true, [Threading.CancellationToken]::None)
+                $client.Sent += $n
+            }
+        } catch {
+            [void]$script:wsClients.Remove($client)
         }
     }
 }
@@ -223,7 +700,8 @@ function Send-Response($Context, [byte[]]$Bytes, [string]$ContentType, [int]$Cod
     $r.ContentType = $ContentType
     $r.Headers['Cache-Control'] = 'no-store'
     $r.Headers['X-Content-Type-Options'] = 'nosniff'
-    $r.Headers['Content-Security-Policy'] = "default-src 'self' 'unsafe-inline'"
+    # 'unsafe-inline' only because the page keeps its script/style inline (no build step); everything is same-origin.
+    $r.Headers['Content-Security-Policy'] = "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src 'self' ws://127.0.0.1:$script:listenPort ws://localhost:$script:listenPort; img-src 'self' data:"
     $r.ContentLength64 = $Bytes.Length
     $r.OutputStream.Write($Bytes, 0, $Bytes.Length)
     $r.Close()
@@ -243,11 +721,14 @@ function Read-JsonBody($Context) {
 
 function Test-RequestAllowed($Context) {
     $req = $Context.Request
+    $path = $req.Url.AbsolutePath
     $allowedHosts = @("127.0.0.1:$script:listenPort", "localhost:$script:listenPort")
     if ($req.Headers['Host'] -notin $allowedHosts) { return $false }                       # DNS rebinding
     $origin = $req.Headers['Origin']
-    if ($origin -and ($origin -notin @("http://127.0.0.1:$script:listenPort", "http://localhost:$script:listenPort"))) { return $false }   # cross-site
-    $supplied = if ($req.Url.AbsolutePath -eq '/') { $req.QueryString['t'] } else { $req.Headers['X-VCFIR-Token'] }
+    if ($origin -and ($origin -notin @("http://127.0.0.1:$script:listenPort", "http://localhost:$script:listenPort"))) { return $false }   # cross-site (incl. cross-site WebSocket)
+    if ($req.HttpMethod -eq 'GET' -and $path.StartsWith('/vendor/')) { return $true }       # public static libraries only (allow-listed in Invoke-Route)
+    # The page itself and the WebSocket carry the token in the query string (neither can set headers); the JSON API uses a header.
+    $supplied = if ($path -eq '/' -or $path -eq '/ws') { $req.QueryString['t'] } else { $req.Headers['X-VCFIR-Token'] }
     return ($supplied -and $supplied -ceq $Token)
 }
 
@@ -255,12 +736,50 @@ function Invoke-Route($Context) {
     $req = $Context.Request
     $path = $req.Url.AbsolutePath
     $method = $req.HttpMethod
+
+    if ($path -eq '/ws' -and $req.IsWebSocketRequest) {
+        $id = [string]$req.QueryString['console']
+        if (-not $script:consoles.Contains($id)) { Send-Json $Context @{ error = 'unknown console' } 404; return }
+        Add-WsAccept $Context $id
+        return
+    }
+    if ($method -eq 'GET' -and $path.StartsWith('/vendor/')) {
+        $name = $path.Substring('/vendor/'.Length)
+        if (-not $script:vendorFiles.ContainsKey($name)) { Send-Json $Context @{ error = 'not found' } 404; return }
+        Send-Response $Context ([IO.File]::ReadAllBytes((Join-Path $script:vendorPath $name))) $script:vendorFiles[$name]
+        return
+    }
+
     switch ("$method $path") {
-        'GET /' {
-            Send-Response $Context ([System.IO.File]::ReadAllBytes($script:htmlPath)) 'text/html; charset=utf-8'
-        }
+        'GET /' { Send-Response $Context ([IO.File]::ReadAllBytes($script:htmlPath)) 'text/html; charset=utf-8' }
         'GET /api/catalog' { Send-Json $Context $script:catalog }
         'GET /api/plan' { Send-Json $Context (Get-PlanPayload $req.QueryString['id']) }
+        'GET /api/consoles' {
+            Send-Json $Context @{ consoles = @($script:consoles.Values | ForEach-Object { @{ id = $_.Id; label = $_.Label; exited = $_.Exited } }) }
+        }
+        'POST /api/console/restart' {
+            $id = [string](Read-JsonBody $Context).id
+            if ($script:consoles.Contains($id)) {
+                $old = $script:consoles[$id]
+                & $old.Pty.Kill
+                Remove-Item -LiteralPath $old.QueueDir -Recurse -Force -ErrorAction SilentlyContinue
+                foreach ($cl in @($script:wsClients | Where-Object { $_.ConsoleId -eq $id })) { try { $cl.Ws.Abort() } catch { }; [void]$script:wsClients.Remove($cl) }
+                $script:consoles.Remove($id)
+                [void](New-ConsoleSession $id (Get-ConsoleLabel $id))
+            }
+            Send-Json $Context @{ ok = $true }
+        }
+        'POST /api/console/interrupt' {
+            # Ctrl+C into the console, and stop waiting on whatever step was running there.
+            $body = Read-JsonBody $Context
+            $id = [string]$body.id
+            if ($script:consoles.Contains($id)) {
+                # notifyOnly: the user already pressed Ctrl+C in the terminal itself -- don't send a second one.
+                if (-not $body.notifyOnly) { $script:consoles[$id].InBuf.Clear(); Send-ConsoleBytes $script:consoles[$id] ([byte[]](3)) }
+                foreach ($w in @($script:watches.Values | Where-Object { $_.ConsoleId -eq $id -and $_.Status -eq 'Running' })) { Complete-Watch $w 'Stopped' $false '' }
+            }
+            Send-Json $Context @{ ok = $true }
+        }
         'POST /api/variables' {
             $body = Read-JsonBody $Context
             foreach ($k in $body.values.Keys) {
@@ -271,40 +790,95 @@ function Invoke-Route($Context) {
         }
         'POST /api/variables/load' {
             $body = Read-JsonBody $Context
+            $r = Import-VariablesFile ([string]$body.path)
+            Send-Json $Context @{ ok = $true; count = $r.count; file = $r.file }
+        }
+        'POST /api/datasource' {
+            # Stand-in for the WPF Data Source panel. "Load Extracted SDDC Data" parses the file (domains, clusters,
+            # selection context); "Extract SDDC Manager Backup" just remembers the backup path for the plan's variables.
+            $body = Read-JsonBody $Context
+            if ([string]::IsNullOrWhiteSpace([string]$body.path)) { throw 'No file path was entered.' }
+            if (-not (Test-Path -LiteralPath ([string]$body.path) -PathType Leaf)) { throw "File not found on the machine running this server: $($body.path)" }
             $file = (Resolve-Path -LiteralPath ([string]$body.path)).Path
-            $loaded = Get-Content -LiteralPath $file -Raw | ConvertFrom-Json -AsHashtable
-            foreach ($k in $loaded.Keys) {
-                $v = $loaded[$k]
-                # Scalars only (string/number/bool/null); nested objects aren't variables.
-                if ($k -match '^[A-Za-z_][A-Za-z0-9_]*$' -and ($null -eq $v -or $v -is [string] -or $v -is [ValueType])) {
-                    $script:vars[$k] = if ($null -eq $v) { '' } else { [string]$v }
+            switch ([string]$body.kind) {
+                'LoadExtractedData' { Import-ExtractedData $file; Send-Json $Context @{ ok = $true; variable = 'extractedSDDCDataFile'; file = $file } }
+                'ExtractBackup' { $script:vars['vcfbackupFilePath'] = $file; Send-Json $Context @{ ok = $true; variable = 'vcfbackupFilePath'; file = $file } }
+                default { throw "Unknown data source '$($body.kind)'" }
+            }
+        }
+        'GET /api/fs' {
+            Send-Json $Context (Get-DirectoryListing $req.QueryString['path'] $req.QueryString['filter'] ($req.QueryString['hidden'] -eq '1'))
+        }
+        'POST /api/select' {
+            $body = Read-JsonBody $Context
+            Set-InfrastructureSelection ([string]$body.kind) ([string]$body.domain) ([string]$body.cluster)
+            Send-Json $Context @{ ok = $true; selection = $script:selection }
+        }
+        'POST /api/mode' {
+            $body = Read-JsonBody $Context
+            $mode = [string]$body.mode
+            if ($mode -eq 'Engineering' -and -not $script:engineeringUnlocked) {
+                if (-not (Test-EngineeringModePassword ([string]$body.password))) { Send-Json $Context @{ error = 'Incorrect engineering mode password.' } 403; return }
+                $script:engineeringUnlocked = $true
+            }
+            if ($mode -in 'User', 'Engineering') { $script:uiMode = $mode }
+            Send-Json $Context @{ mode = $script:uiMode }
+        }
+        'POST /api/state/save' {
+            # Same content as the WPF Save & Exit state: file paths, the selection, and which steps were Done -- never
+            # variable values. Written to the launch directory (a browser can't show a native save dialog).
+            $body = Read-JsonBody $Context
+            $state = [ordered]@{
+                ExtractedDataFilePath    = $script:extractedPath
+                RecoveryPlanId           = [string]$body.planId
+                VariablesAnswersFilePath = $script:varsFilePath
+                CredentialsFilePath      = $(if ($script:vars.Contains('credentialsFilePath')) { $script:vars['credentialsFilePath'] } else { '' })
+                Selection                = $script:selection
+                CompletedSteps           = @($body.completed)
+            }
+            $file = Join-Path $WorkingDirectory ("vcfibr-state-{0}.json" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
+            $state | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $file -Encoding utf8
+            Send-Json $Context @{ ok = $true; file = $file }
+        }
+        'GET /api/states' {
+            $files = @(Get-ChildItem -LiteralPath $WorkingDirectory -Filter 'vcfibr-state-*.json' -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending |
+                    ForEach-Object { @{ name = $_.Name; path = $_.FullName; modified = $_.LastWriteTime.ToString('s') } })
+            Send-Json $Context @{ states = $files }
+        }
+        'POST /api/state/resume' {
+            # Replays the loaders a manual session would use (data file, variables file, selection), then reports which
+            # saved-Done steps still line up with the plan file (position AND command line, so an edited plan can't
+            # mark the wrong row Done).
+            $body = Read-JsonBody $Context
+            $path = (Resolve-Path -LiteralPath ([string]$body.path)).Path
+            if ((Split-Path $path -Parent) -ne (Resolve-Path -LiteralPath $WorkingDirectory).Path -or (Split-Path $path -Leaf) -notlike 'vcfibr-state-*.json') { throw 'Only vcfibr-state-*.json files in the launch directory can be resumed.' }
+            $state = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+            if ($state.ExtractedDataFilePath) { Import-ExtractedData ([string]$state.ExtractedDataFilePath) }
+            if ($state.VariablesAnswersFilePath) { [void](Import-VariablesFile ([string]$state.VariablesAnswersFilePath)) }
+            if ($state.CredentialsFilePath) { $script:vars['credentialsFilePath'] = [string]$state.CredentialsFilePath }
+            if ($state.Selection) { Set-InfrastructureSelection ([string]$state.Selection.kind) ([string]$state.Selection.domain) ([string]$state.Selection.cluster) }
+            $entry = Get-CatalogEntry ([string]$state.RecoveryPlanId)
+            $completed = @()
+            if ($entry) {
+                $steps = Get-PlanSteps $entry
+                foreach ($c in @($state.CompletedSteps)) {
+                    $step = $steps | Where-Object { $_.Index -eq [int]$c.Index } | Select-Object -First 1
+                    if ($step -and $step.CommandLine -eq [string]$c.CommandLine) {
+                        $completed += [int]$c.Index
+                        if ($step.Id) { $script:stepLedger[$step.Id] = 'Success' }
+                    }
                 }
             }
-            Send-Json $Context @{ ok = $true; count = $loaded.Count }
+            Send-Json $Context @{ ok = $true; planId = [string]$state.RecoveryPlanId; completed = $completed; file = $path }
         }
-        'POST /api/run' {
+        'POST /api/step/run' {
             $body = Read-JsonBody $Context
-            Send-Json $Context @{ runId = (Start-StepRun ([string]$body.planId) ([int]$body.index)) }
+            Send-Json $Context (Start-Step ([string]$body.planId) ([int]$body.index) ([string]$body.consoleId))
         }
-        'GET /api/run' {
-            $run = $script:runs[$req.QueryString['id']]
-            if (-not $run) { Send-Json $Context @{ error = 'unknown run' } 404; return }
-            $from = [int]$req.QueryString['from']
-            $len = $run.Output.Length
-            if ($from -gt $len) { $from = $len }
-            Send-Json $Context @{ status = $run.Status; clean = $run.Clean; exitCode = $run.ExitCode; length = $len; text = $run.Output.ToString($from, $len - $from); name = $run.Name; logPath = $run.LogPath }
-        }
-        'POST /api/input' {
-            $body = Read-JsonBody $Context
-            $run = $script:runs[[string]$body.runId]
-            if ($run -and $run.Status -eq 'Running') { $run.Process.StandardInput.WriteLine([string]$body.text); $run.Process.StandardInput.Flush() }
-            Send-Json $Context @{ ok = [bool]$run }
-        }
-        'POST /api/stop' {
-            $body = Read-JsonBody $Context
-            $run = $script:runs[[string]$body.runId]
-            if ($run -and $run.Status -eq 'Running') { $run.Status = 'Stopped'; try { $run.Process.Kill($true) } catch { } }
-            Send-Json $Context @{ ok = [bool]$run }
+        'GET /api/step' {
+            $w = $script:watches[$req.QueryString['id']]
+            if (-not $w) { Send-Json $Context @{ error = 'unknown step run' } 404; return }
+            Send-Json $Context @{ status = $w.Status; clean = $w.Clean; consoleId = $w.ConsoleId }
         }
         'POST /api/shutdown' {
             Send-Json $Context @{ ok = $true }
@@ -325,9 +899,10 @@ $listener.Prefixes.Add("http://127.0.0.1:$Port/")
 $listener.Start()
 
 try {
+    [void](New-ConsoleSession 'main' 'Main')
     $pending = $listener.GetContextAsync()
     while (-not $script:shutdown) {
-        $got = try { $pending.Wait(100) } catch { break }
+        $got = try { $pending.Wait(25) } catch { break }
         if ($got) {
             $context = $pending.Result
             $pending = $listener.GetContextAsync()
@@ -341,12 +916,12 @@ try {
                 try { Send-Json $context @{ error = $_.Exception.Message } 500 } catch { }
             }
         }
-        Update-Runs
+        Update-Consoles
+        Update-Watches
+        Update-Clients
     }
 } finally {
-    foreach ($run in $script:runs.Values) {
-        if ($run.Status -eq 'Running') { try { $run.Process.Kill($true) } catch { } }
-    }
+    foreach ($c in $script:consoles.Values) { try { & $c.Pty.Kill } catch { }; Remove-Item -LiteralPath $c.QueueDir -Recurse -Force -ErrorAction SilentlyContinue }
     $listener.Stop()
     $listener.Close()
 }
