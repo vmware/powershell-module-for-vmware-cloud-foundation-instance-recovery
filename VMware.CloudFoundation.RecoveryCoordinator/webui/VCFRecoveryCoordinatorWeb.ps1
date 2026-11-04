@@ -436,10 +436,14 @@ function New-ConsoleSession([string]$Id, [string]$Label) {
     $queueDir = Join-Path ([IO.Path]::GetTempPath()) ("vcfir-q-{0}" -f [guid]::NewGuid().ToString('N'))
     if ($IsWindows -or $PSVersionTable.PSEdition -eq 'Desktop') { [void][IO.Directory]::CreateDirectory($queueDir) }
     else { [void][IO.Directory]::CreateDirectory($queueDir, [IO.UnixFileMode]'UserRead,UserWrite,UserExecute') }
+    # Each step announces itself BEFORE it starts, so a blank console is never ambiguous: no text at all means the
+    # pseudo-terminal output isn't reaching the page; "Loading ..." with nothing after it means a module import is slow
+    # (importing InstanceRecovery pulls in PowerCLI and others, which can take a long time on a cold start).
     $startup = @(
+        "[Console]::WriteLine('Starting console...')"
         "Set-Location -LiteralPath '$(Protect-SingleQuotes $WorkingDirectory)'"
-        $(if ($InstanceRecoveryModulePath) { "Import-Module -Force '$(Protect-SingleQuotes $InstanceRecoveryModulePath)'" })
-        $(if ($CoordinatorModulePath) { "Import-Module -Force '$(Protect-SingleQuotes $CoordinatorModulePath)'" })
+        $(if ($InstanceRecoveryModulePath) { "[Console]::WriteLine('Loading VMware.CloudFoundation.InstanceRecovery (this can take a minute)...'); Import-Module -Force '$(Protect-SingleQuotes $InstanceRecoveryModulePath)'" })
+        $(if ($CoordinatorModulePath) { "[Console]::WriteLine('Loading VMware.CloudFoundation.RecoveryCoordinator...'); Import-Module -Force '$(Protect-SingleQuotes $CoordinatorModulePath)'" })
         "Start-Transcript -Path '$(Protect-SingleQuotes $transcript)' | Out-Null"
         ". '$(Protect-SingleQuotes (Join-Path $PSScriptRoot 'console-repl.ps1'))' -QueueDir '$(Protect-SingleQuotes $queueDir)'"
     ) -join '; '
