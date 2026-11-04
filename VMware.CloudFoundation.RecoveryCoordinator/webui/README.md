@@ -50,7 +50,7 @@ The window opens in its own window of the default browser: an app-style window (
 Chromium-based browsers (Chrome, Edge, Brave, Vivaldi, Opera, Chromium), a new window for Firefox, and the ordinary open-URL
 behaviour for anything else (Safari, unknown). Chromium browsers are started with a small profile of their own
 (`~/.vcfir-webui/browser-profile`, no sign-in, no extensions), which keeps the window free of the signed-in profile's badge and
-separate from the person's other browser windows. The page icon is the official mark as 32/64/256 px PNGs. On macOS the Dock still
+separate from the person's other browser windows. The page icon is the official mark as 16/24/32/48/64/128/256 px PNGs. On macOS the Dock still
 shows the browser's icon for an app-style window; a custom Dock icon would need a real .app wrapper, which this does not build.
 
 ## Security
