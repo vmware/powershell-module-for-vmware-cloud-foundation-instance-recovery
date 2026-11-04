@@ -23,7 +23,12 @@ param(
     [string]$WorkingDirectory = (Get-Location).Path,
     # Module files the consoles import (the dev repo is usually not on PSModulePath).
     [string]$CoordinatorModulePath,
-    [string]$InstanceRecoveryModulePath
+    [string]$InstanceRecoveryModulePath,
+    # How each console's pwsh is hosted. Pty = a real pseudo-terminal (script(1) on macOS/Linux, ConPTY on Windows);
+    # Pipe = a plain pwsh with redirected stdin/stdout/stderr, which is all the queue-driven console needs (steps arrive
+    # through a file queue and the only input is answers to prompts) and has no native dependencies. Auto picks Pipe on
+    # Windows (the ConPTY code has never been run there) and Pty elsewhere.
+    [ValidateSet('Auto', 'Pty', 'Pipe')][string]$ConsoleBackend = 'Auto'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -58,7 +63,9 @@ $script:ignoredVariableNames = @('true', 'false', 'null', '_', 'env', 'PSScriptR
 $script:defaultCols = 120
 $script:defaultRows = 30
 
-if ($IsWindows -or $PSVersionTable.PSEdition -eq 'Desktop') {
+$script:onWindows = [bool]($IsWindows -or $PSVersionTable.PSEdition -eq 'Desktop')
+$script:consoleBackend = switch ($ConsoleBackend) { 'Auto' { if ($script:onWindows) { 'Pipe' } else { 'Pty' } } default { $ConsoleBackend } }
+if ($script:onWindows -and $script:consoleBackend -eq 'Pty') {
     Add-Type -Path (Join-Path $PSScriptRoot 'ConPty.cs')
 }
 
@@ -381,10 +388,36 @@ function Get-DirectoryListing([string]$Path, [string]$Filter, [bool]$ShowHidden)
 function Protect-SingleQuotes([string]$Value) { return $Value.Replace("'", "''") }
 
 # Returns @{ Input; Output; IsExited; Kill; Resize } for one interactive pwsh on a real pseudo-terminal.
+# A plain pwsh with redirected stdin/stdout/stderr (no terminal). Output is forwarded as raw bytes; stderr is returned as a
+# second stream because there is no terminal to merge it into.
+function New-PipeProcess([string]$Encoded) {
+    $psi = [System.Diagnostics.ProcessStartInfo]::new()
+    $psi.FileName = $script:pwshPath
+    # -OutputFormat/-InputFormat Text: with redirected streams and -EncodedCommand, pwsh otherwise serialises its streams as
+    # CLIXML ("<Objs ...>") instead of plain text, and would read stdin as CLIXML too.
+    foreach ($a in '-NoLogo', '-NoProfile', '-OutputFormat', 'Text', '-InputFormat', 'Text', '-EncodedCommand', $Encoded) { $psi.ArgumentList.Add($a) }
+    $psi.WorkingDirectory = $WorkingDirectory
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+    $psi.RedirectStandardInput = $true
+    $psi.RedirectStandardOutput = $true
+    $psi.RedirectStandardError = $true
+    $process = [System.Diagnostics.Process]::Start($psi)
+    return @{
+        Input    = $process.StandardInput.BaseStream
+        Output   = $process.StandardOutput.BaseStream
+        Error    = $process.StandardError.BaseStream
+        IsExited = { $process.HasExited }.GetNewClosure()
+        Kill     = { try { $process.Kill($true) } catch { } }.GetNewClosure()
+        Resize   = { param($c, $r) }.GetNewClosure()
+    }
+}
+
 function New-PtyProcess([string]$StartupScript, [int]$Cols, [int]$Rows) {
     $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($StartupScript))
+    if ($script:consoleBackend -eq 'Pipe') { return New-PipeProcess $encoded }
 
-    if ($IsWindows -or $PSVersionTable.PSEdition -eq 'Desktop') {
+    if ($script:onWindows) {
         $pty = [VCFIR.ConPty]::new("`"$script:pwshPath`" -NoLogo -NoProfile -EncodedCommand $encoded", $WorkingDirectory, $Cols, $Rows)
         return @{
             Input    = $pty.Input
@@ -440,6 +473,7 @@ function New-ConsoleSession([string]$Id, [string]$Label) {
     # pseudo-terminal output isn't reaching the page; "Loading ..." with nothing after it means a module import is slow
     # (importing InstanceRecovery pulls in PowerCLI and others, which can take a long time on a cold start).
     $startup = @(
+        $(if ($script:consoleBackend -eq 'Pipe') { '[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); [Console]::InputEncoding = [Text.UTF8Encoding]::new($false); $OutputEncoding = [Console]::OutputEncoding' })
         "[Console]::WriteLine('Starting console...')"
         "Set-Location -LiteralPath '$(Protect-SingleQuotes $WorkingDirectory)'"
         $(if ($InstanceRecoveryModulePath) { "[Console]::WriteLine('Loading VMware.CloudFoundation.InstanceRecovery (this can take a minute)...'); Import-Module -Force '$(Protect-SingleQuotes $InstanceRecoveryModulePath)'" })
@@ -453,8 +487,10 @@ function New-ConsoleSession([string]$Id, [string]$Label) {
         Out = [System.Collections.Generic.List[byte]]::new(); Base = [long]0
         Buf = [byte[]]::new(8192); ReadTask = $null; Exited = $false; SentVars = @{}
         InBuf = [System.Collections.Generic.List[byte]]::new(); EverAttached = $false
+        ErrBuf = [byte[]]::new(8192); ErrTask = $null
     }
     $c.ReadTask = $pty.Output.ReadAsync($c.Buf, 0, $c.Buf.Length)
+    if ($pty.Error) { $c.ErrTask = $pty.Error.ReadAsync($c.ErrBuf, 0, $c.ErrBuf.Length) }
     $script:consoles[$Id] = $c
     return $c
 }
@@ -507,7 +543,15 @@ function Update-Consoles {
             if ($c.Out.Count -gt 8MB) { $c.Out.RemoveRange(0, 4MB); $c.Base += 4MB }   # scrollback cap
             $c.ReadTask = $c.Pty.Output.ReadAsync($c.Buf, 0, $c.Buf.Length)
         }
-        if (-not $c.Exited -and -not $c.ReadTask -and (& $c.Pty.IsExited)) { $c.Exited = $true }
+        while ($c.ErrTask -and $c.ErrTask.IsCompleted) {      # stderr (pipe backend only)
+            $n = if ($c.ErrTask.IsFaulted) { 0 } else { $c.ErrTask.Result }
+            if ($n -le 0) { $c.ErrTask = $null; break }
+            $chunk = [byte[]]::new($n)
+            [Array]::Copy($c.ErrBuf, $chunk, $n)
+            $c.Out.AddRange($chunk)
+            $c.ErrTask = $c.Pty.Error.ReadAsync($c.ErrBuf, 0, $c.ErrBuf.Length)
+        }
+        if (-not $c.Exited -and -not $c.ReadTask -and -not $c.ErrTask -and (& $c.Pty.IsExited)) { $c.Exited = $true }
     }
 }
 
@@ -662,7 +706,7 @@ function Update-Clients {
         # That backlog must be answered, so it is presented as live output (replay = 0).
         $replayBytes = if ($c.EverAttached) { [long]$c.Out.Count } else { [long]0 }
         $c.EverAttached = $true
-        $hello = [Text.Encoding]::UTF8.GetBytes((@{ replay = $replayBytes } | ConvertTo-Json -Compress))
+        $hello = [Text.Encoding]::UTF8.GetBytes((@{ replay = $replayBytes; backend = $script:consoleBackend.ToLowerInvariant() } | ConvertTo-Json -Compress))
         $client.SendTask = $ws.SendAsync([ArraySegment[byte]]::new($hello), [System.Net.WebSockets.WebSocketMessageType]::Text, $true, [Threading.CancellationToken]::None)
         [void]$script:wsClients.Add($client)
     }
@@ -762,8 +806,18 @@ function Invoke-Route($Context) {
         'GET /' { Send-Response $Context ([IO.File]::ReadAllBytes($script:htmlPath)) 'text/html; charset=utf-8' }
         'GET /api/catalog' { Send-Json $Context $script:catalog }
         'GET /api/plan' { Send-Json $Context (Get-PlanPayload $req.QueryString['id']) }
+        'GET /api/info' {
+            # Lets the page (and a screenshot of it) say exactly which build, OS and console backend is running.
+            Send-Json $Context @{
+                build   = ((Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash.Substring(0, 8))
+                os      = [Runtime.InteropServices.RuntimeInformation]::OSDescription
+                pwsh    = $PSVersionTable.PSVersion.ToString()
+                backend = $script:consoleBackend
+                workingDirectory = $WorkingDirectory
+            }
+        }
         'GET /api/consoles' {
-            Send-Json $Context @{ consoles = @($script:consoles.Values | ForEach-Object { @{ id = $_.Id; label = $_.Label; exited = $_.Exited } }) }
+            Send-Json $Context @{ consoles = @($script:consoles.Values | ForEach-Object { @{ id = $_.Id; label = $_.Label; exited = $_.Exited; bytes = ($_.Base + $_.Out.Count) } }) }
         }
         'POST /api/console/restart' {
             $id = [string](Read-JsonBody $Context).id
@@ -783,7 +837,10 @@ function Invoke-Route($Context) {
             $id = [string]$body.id
             if ($script:consoles.Contains($id)) {
                 # notifyOnly: the user already pressed Ctrl+C in the terminal itself -- don't send a second one.
-                if (-not $body.notifyOnly) { $script:consoles[$id].InBuf.Clear(); Send-ConsoleBytes $script:consoles[$id] ([byte[]](3)) }
+                if ($script:consoleBackend -eq 'Pipe') {
+                    # No terminal, so Ctrl+C can't be delivered as a signal: end the console; the page restarts it.
+                    & $script:consoles[$id].Pty.Kill
+                } elseif (-not $body.notifyOnly) { $script:consoles[$id].InBuf.Clear(); Send-ConsoleBytes $script:consoles[$id] ([byte[]](3)) }
                 foreach ($w in @($script:watches.Values | Where-Object { $_.ConsoleId -eq $id -and $_.Status -eq 'Running' })) { Complete-Watch $w 'Stopped' $false '' }
             }
             Send-Json $Context @{ ok = $true }

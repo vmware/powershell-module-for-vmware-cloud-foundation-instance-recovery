@@ -496,6 +496,11 @@ Function Start-VCFRecoveryCoordinatorWeb {
     .PARAMETER NoBrowser
     Do not open the default browser; just print the URL.
 
+    .PARAMETER ConsoleBackend
+    How each console's PowerShell is hosted. Auto (default) uses a plain redirected-I/O pwsh on Windows and a real
+    pseudo-terminal on macOS/Linux. Pipe forces the plain pwsh everywhere; Pty forces a pseudo-terminal (ConPTY on
+    Windows, which has not been run on Windows yet).
+
     .EXAMPLE
     Start-VCFRecoveryCoordinatorWeb
 
@@ -505,7 +510,8 @@ Function Start-VCFRecoveryCoordinatorWeb {
 
     Param(
         [Parameter (Mandatory = $false)][ValidateRange(0, 65535)][Int] $Port = 0,
-        [Parameter (Mandatory = $false)][Switch] $NoBrowser
+        [Parameter (Mandatory = $false)][Switch] $NoBrowser,
+        [Parameter (Mandatory = $false)][ValidateSet('Auto', 'Pty', 'Pipe')][String] $ConsoleBackend = 'Auto'
     )
 
     $serverScript = Join-Path (Join-Path $PSScriptRoot 'webui') 'VCFRecoveryCoordinatorWeb.ps1'
@@ -536,7 +542,7 @@ Function Start-VCFRecoveryCoordinatorWeb {
     $arguments = @(
         '-NoProfile', '-File', $serverScript,
         '-PlansPath', $plansPath, '-Token', $token, '-Port', $Port,
-        '-WorkingDirectory', (Get-Location).Path,
+        '-WorkingDirectory', (Get-Location).Path, '-ConsoleBackend', $ConsoleBackend,
         '-CoordinatorModulePath', (Join-Path $PSScriptRoot 'VMware.CloudFoundation.RecoveryCoordinator.psd1')
     )
     $instanceRecoveryModule = Get-Module -Name 'VMware.CloudFoundation.InstanceRecovery' | Select-Object -First 1

@@ -307,12 +307,14 @@ function openConsole(info) {
   const term = new TerminalCtor({ fontFamily: 'Menlo, Consolas, "DejaVu Sans Mono", monospace', fontSize: 13, cursorBlink: true,
                                   scrollback: 10000, theme: { background: '#0C0C0C' }, allowProposedApi: true });
   const fit = new FitCtor(); term.loadAddon(fit); term.open(host);
-  const c = { id: info.id, label: info.label, exited: false, term, fit, ws: null, el: host, inputEnabled: false, replayLeft: 0 };
+  const c = { id: info.id, label: info.label, exited: false, term, fit, ws: null, el: host, inputEnabled: false, replayLeft: 0,
+              backend: 'pty', line: '', tail: '', dec: new TextDecoder(), openedAt: Date.now() };
   consoles.set(info.id, c);
   const tabEl = el('div', { className: 'tab', textContent: info.label, onclick: () => selectConsole(info.id) }); c.tabEl = tabEl; $('consoleTabs').append(tabEl);
 
   term.onData(d => {
     if (!c.inputEnabled || !c.ws || c.ws.readyState !== 1) return;
+    if (c.backend === 'pipe') { pipeInput(c, d); return; }
     if (d === '\x03') api('/api/console/interrupt', { id: c.id, notifyOnly: true }).catch(() => {});   // a step waiting on this console is no longer running
     c.ws.send('i' + d);
   });
@@ -325,9 +327,12 @@ function openConsole(info) {
     if (typeof ev.data === 'string') {
       // {"replay":N}: the next N bytes are scrollback. Ignore what the terminal answers to queries inside it
       // (cursor position reports etc.), or those replies would be typed into the prompt.
-      c.replayLeft = JSON.parse(ev.data).replay || 0; c.inputEnabled = c.replayLeft === 0; return;
+      const m = JSON.parse(ev.data); c.replayLeft = m.replay || 0; c.inputEnabled = c.replayLeft === 0;
+      c.backend = m.backend || 'pty'; if (c.backend === 'pipe') term.options.convertEol = true;   // a pipe-hosted pwsh emits bare \n
+      return;
     }
     const bytes = new Uint8Array(ev.data);
+    if (c.backend === 'pipe') c.tail = (c.tail + c.dec.decode(bytes, { stream: true })).slice(-300);   // to recognise a password prompt
     if (c.replayLeft > 0) { c.replayLeft -= bytes.length; term.write(bytes, () => { if (c.replayLeft <= 0) c.inputEnabled = true; }); }
     else term.write(bytes);
   };
@@ -335,6 +340,19 @@ function openConsole(info) {
   new ResizeObserver(() => { if (selectedConsole === c.id) c.fit.fit(); }).observe(host);
   if (!selectedConsole) selectConsole(info.id);
   return c;
+}
+// A pipe-hosted console has no terminal, so nothing echoes what you type: the page does, and sends a whole line on Enter.
+// Only plain single-line answers are supported (that is all a prompt needs); cursor keys are ignored. Characters typed at
+// something that looks like a password prompt are echoed as '*' (a heuristic on the prompt text, not a guarantee).
+const secretPrompt = c => /(password|passphrase|secret|token)[^\n]*[:?]\s*$/i.test(c.tail);
+function pipeInput(c, d) {
+  if (d.charCodeAt(0) === 27) return;
+  for (const ch of d) {
+    if (ch === '\r' || ch === '\n') { c.term.write('\r\n'); c.ws.send('i' + c.line + '\n'); c.line = ''; c.tail = ''; }
+    else if (ch === '\x7f' || ch === '\b') { if (c.line) { c.line = c.line.slice(0, -1); c.term.write('\b \b'); } }
+    else if (ch === '\x03') { c.line = ''; c.term.write('^C\r\n'); api('/api/console/interrupt', { id: c.id }).catch(() => {}); }   // ends the console; it is restarted
+    else if (ch >= ' ') { c.line += ch; c.term.write(secretPrompt(c) ? '*' : ch); }
+  }
 }
 function closeConsole(id) {
   const c = consoles.get(id); if (!c) return;
@@ -354,6 +372,7 @@ async function refreshConsoles() {
   const { consoles: list } = await api('/api/consoles');
   for (const info of list) {
     const c = openConsole(info);
+    if (!c.exited) c.tabEl.textContent = info.label + ((info.bytes === 0 && Date.now() - c.openedAt > 8000) ? ' (no output yet...)' : '');
     if (info.exited && !c.exited) {
       // Ctrl+C (or a crash) ended this console. Restart it -- the session variables are re-sent on the next step --
       // but give up after a few quick restarts rather than looping.
@@ -382,6 +401,7 @@ async function init() {
   for (const t of catalog.recoveryTypes) $('typeSel').add(new Option(t.label, t.id));
   $('typeSel').onchange = () => { fillPlans(); onPlanChosen(); };
   $('planSel').onchange = onPlanChosen;
+  try { const i = await api('/api/info'); advisory(`Web UI build ${i.build} \u00B7 ${i.os} \u00B7 PowerShell ${i.pwsh} \u00B7 console backend: ${i.backend}`); } catch { }
   await refreshConsoles();
   fillPlans(); await loadPlan();
 }
