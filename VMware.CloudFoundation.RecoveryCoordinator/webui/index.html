@@ -230,7 +230,7 @@
           <label class="toggle"><input type="checkbox" class="switch" id="useThreads" checked><span>Run parallel tasks using multiple threads (numbered circles)</span></label>
           <div id="toggles"></div>
           <label class="toggle"><input type="checkbox" class="switch" id="useAnswers"><span>Use answer file for interactive tasks</span></label>
-          <div class="listhead"><b id="taskListHead">Task List</b><button id="stopPlan" style="display:none;width:60px;margin-right:8px">Stop</button><button id="runAll">Run Plan</button></div>
+          <div class="listhead"><b id="taskListHead">Task List</b><button id="runAll">Run Plan</button></div>
           <div id="steps"><div class="empty">Load or create a variables file (Variables tab) to see the task list.</div></div>
         </div>
         <div class="pane" id="paneAdv">
@@ -906,10 +906,10 @@ function buildBlocks(steps, useThreads) {
 // Runs one thread's rows in order; resolves to null when all went cleanly, or to the step that stopped it.
 async function runThread(list, threadId) {
   const consoleId = threadId ? 'thread-' + threadId : 'main';
-  for (const s of list) { if (abortPlan) return s; if (!(await runStep(s, consoleId))) return s; }
+  for (const s of list) { if (!(await runStep(s, consoleId))) return s; }
   return null;
 }
-let abortPlan = false, timerHandle = null;
+let timerHandle = null;
 function startTimer() {
   const t0 = Date.now(); $('timer').style.display = 'flex'; $('timerText').textContent = '00:00:00';
   clearInterval(timerHandle);
@@ -920,14 +920,13 @@ function startTimer() {
 }
 $('runAll').onclick = async () => {
   if (busy || !variablesReady) return;
-  abortPlan = false; setBusy(true); $('stopPlan').style.display = ''; startTimer();
+  setBusy(true); startTimer();
   advisory('Run Started. Navigation to other domains/clusters disabled.');
   try {
     // Like the WPF chain: leading rows already Done are skipped, so Run Plan continues from the next pending step.
     const todo = displaySteps().filter(s => s.applicable);
     while (todo.length && statuses.get(todo[0].index) === 'Done') todo.shift();
     for (const block of buildBlocks(todo, $('useThreads').checked)) {
-      if (abortPlan) { advisory('Run stopped.', true); break; }
       const failed = (await Promise.all([...block.threads].map(([tid, list]) => runThread(list, tid)))).filter(Boolean);
       if (failed.length) {
         advisory(block.threaded ? 'Run All stopped: one or more threads did not complete cleanly -- check each console/transcript before retrying.'
@@ -937,13 +936,9 @@ $('runAll').onclick = async () => {
       if (block.threaded) selectConsole('main');        // a thread step may have left its own tab in front
     }
   } finally {
-    clearInterval(timerHandle); $('stopPlan').style.display = 'none'; setBusy(false);
+    clearInterval(timerHandle); setBusy(false);
     advisory('Run Finished. Navigation to other domains/clusters re-enabled.');
   }
-};
-$('stopPlan').onclick = async () => {
-  abortPlan = true;
-  for (const c of consoles.values()) await api('/api/console/interrupt', { id: c.id }).catch(() => {});
 };
 
 // ------------------------------------------------------------ Save & Exit / Resume
