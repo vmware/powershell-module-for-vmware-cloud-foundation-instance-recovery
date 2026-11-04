@@ -57,6 +57,7 @@ else { Write-Host 'Recovery Coordinator console ready. Steps you Run appear here
 
 # Tells the server when this console is idle and where it is, so the page can offer a command line between steps: `cwd`
 # is rewritten after every command (a typed `Set-Location` changes it), and `ready` appears once, just before the loop.
+$__vcfirSent = $false                  # has this console run a step yet (the first one gets no leading blank prompt line)
 $__vcfirPublish = { [IO.File]::WriteAllText((Join-Path $QueueDir 'cwd'), (Get-Location).Path) }
 & $__vcfirPublish
 [IO.File]::WriteAllText((Join-Path $QueueDir 'ready'), '')
@@ -71,6 +72,11 @@ while ($true) {
     if ($__vcfirJob.init) {
         try { . ([scriptblock]::Create($__vcfirJob.init)) } catch { Write-Error -ErrorRecord $_ }
     }
+    # Like the WPF console, which types a blank Enter ahead of every command but a console's first: an empty prompt line is the
+    # visual delimiter between one task's output and the next. Steps only -- a command typed at the idle prompt (id "t<n>") is
+    # not preceded by one, just as typing there in the WPF console isn't.
+    if ($__vcfirSent -and $__vcfirJob.id -match '^\d+$') { Write-Host ("PS {0}> " -f (Get-Location).Path) }
+    if ($__vcfirJob.id -match '^\d+$') { $__vcfirSent = $true }
     Write-Host ("PS {0}> {1}" -f (Get-Location).Path, $__vcfirJob.command)
     try { . ([scriptblock]::Create($__vcfirJob.command)) } catch { Write-Error -ErrorRecord $_ }
     # Tell the server this command has RETURNED (however it ended). A step normally signals success by logging its own
