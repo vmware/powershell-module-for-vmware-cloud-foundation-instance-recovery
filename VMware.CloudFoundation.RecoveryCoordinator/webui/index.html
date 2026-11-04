@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>VCF Recovery Coordinator (web spike)</title>
+<style>
+  :root { --bg:#f4f6f8; --panel:#fff; --line:#d5dbe1; --ink:#1d2730; --muted:#6b7886; --accent:#0a5ea8;
+          --ok:#2e7d32; --warn:#e68a00; --bad:#b3261e; --run:#e68a00; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px system-ui,-apple-system,Segoe UI,sans-serif; color:var(--ink); background:var(--bg);
+         height:100vh; display:grid; grid-template-rows:auto 1fr 38vh; }
+  header { background:#0b2540; color:#fff; padding:8px 14px; display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
+  header h1 { font-size:15px; margin:0 12px 0 0; font-weight:600; }
+  header label { font-size:12px; opacity:.8; }
+  select, input, button { font:inherit; }
+  select, input[type=text], input[type=password] { padding:4px 6px; border:1px solid var(--line); border-radius:4px; }
+  button { padding:4px 12px; border:1px solid var(--accent); background:var(--accent); color:#fff; border-radius:4px; cursor:pointer; }
+  button.secondary { background:#fff; color:var(--accent); }
+  button:disabled { opacity:.45; cursor:default; }
+  main { display:grid; grid-template-columns:minmax(380px,1fr) minmax(320px,1fr); gap:10px; padding:10px; min-height:0; }
+  section { background:var(--panel); border:1px solid var(--line); border-radius:6px; display:flex; flex-direction:column; min-height:0; }
+  section > h2 { font-size:13px; margin:0; padding:8px 12px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:8px; }
+  section > h2 .spacer { flex:1; }
+  .scroll { overflow:auto; flex:1; }
+  .step { display:grid; grid-template-columns:28px 1fr auto auto; gap:8px; align-items:center; padding:7px 12px; border-bottom:1px solid #eef1f4; }
+  .step.hidden { display:none; }
+  .step .n { color:var(--muted); font-size:12px; text-align:right; }
+  .step .name { font-weight:500; }
+  .step .sub { color:var(--muted); font-size:12px; }
+  .badge { font-size:11px; padding:1px 7px; border-radius:10px; background:#e3e8ed; color:#33414f; }
+  .badge.Running { background:var(--run); color:#fff; } .badge.Done { background:var(--ok); color:#fff; }
+  .badge.Failed { background:var(--bad); color:#fff; } .badge.Attention { background:var(--warn); color:#fff; }
+  .badge.Stopped, .badge.Skipped { background:#888; color:#fff; }
+  .thread { display:inline-block; width:16px; height:16px; line-height:16px; border-radius:50%; text-align:center; font-size:10px; color:#fff; margin-right:4px; }
+  .var { display:grid; grid-template-columns:minmax(120px,38%) 1fr; gap:8px; align-items:center; padding:4px 12px; }
+  .var label { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12px; overflow:hidden; text-overflow:ellipsis; }
+  .var input { width:100%; }
+  .tools { padding:8px 12px; display:flex; gap:6px; border-bottom:1px solid var(--line); }
+  .tools input { flex:1; }
+  #bottom { margin:0 10px 10px; }
+  .tabs { display:flex; gap:2px; padding:6px 8px 0; border-bottom:1px solid var(--line); overflow-x:auto; }
+  .tab { padding:4px 10px; border:1px solid var(--line); border-bottom:none; border-radius:4px 4px 0 0; background:#eef1f4; cursor:pointer; white-space:nowrap; font-size:12px; }
+  .tab.active { background:#0d1117; color:#fff; border-color:#0d1117; }
+  pre.term { margin:0; flex:1; overflow:auto; background:#0d1117; color:#d6dde4; padding:8px 12px; font:12.5px/1.35 ui-monospace,Menlo,Consolas,monospace; white-space:pre-wrap; word-break:break-word; }
+  .inputrow { display:flex; gap:6px; padding:6px 8px; border-top:1px solid var(--line); }
+  .inputrow input { flex:1; }
+  .empty { color:var(--muted); padding:14px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>VCF Recovery Coordinator <small style="opacity:.6">web spike</small></h1>
+  <label>Recovery type <select id="typeSel"></select></label>
+  <label>Plan <select id="planSel"></select></label>
+  <span style="flex:1"></span>
+  <button id="runAll">Run All</button>
+  <button id="stopAll" class="secondary" disabled>Stop All</button>
+  <button id="quit" class="secondary" title="Shut down the local server">Quit</button>
+</header>
+
+<main>
+  <section>
+    <h2>Plan steps <span class="spacer"></span><label><input type="checkbox" id="showSkipped"> show steps not applicable</label></h2>
+    <div class="scroll" id="steps"><div class="empty">Loading…</div></div>
+  </section>
+  <section>
+    <h2>Variables</h2>
+    <div class="tools"><input type="text" id="varFile" placeholder="Path to a variables JSON file (on the machine running the server)"><button id="loadVars" class="secondary">Load</button></div>
+    <div class="scroll" id="vars"></div>
+  </section>
+</main>
+
+<section id="bottom" style="display:flex">
+  <div class="tabs" id="tabs"></div>
+  <pre class="term" id="term"></pre>
+  <div class="inputrow">
+    <input type="text" id="stdin" placeholder="Type a response to a prompt in the selected run, then Enter" disabled>
+    <button id="send" disabled>Send</button>
+    <button id="stop" class="secondary" disabled>Stop run</button>
+  </div>
+</section>
+
+<script>
+'use strict';
+const token = new URLSearchParams(location.search).get('t') || '';
+const $ = id => document.getElementById(id);
+
+async function api(path, body) {
+  const res = await fetch(path, {
+    method: body === undefined ? 'GET' : 'POST',
+    headers: { 'X-VCFIR-Token': token, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+
+// ------------------------------------------------------------ ANSI -> DOM (SGR colours/bold only)
+const ANSI = { 30:'#586069',31:'#ff7b72',32:'#7ee787',33:'#e3b341',34:'#79c0ff',35:'#d2a8ff',36:'#56d4dd',37:'#d6dde4',
+               90:'#8b949e',91:'#ff9492',92:'#56d364',93:'#f0c75e',94:'#a5d6ff',95:'#e2c5ff',96:'#76e3ea',97:'#ffffff' };
+function ansiAppend(view, text) {
+  // view.style persists across chunks, since an escape sequence's effect outlives the chunk it arrived in.
+  const re = /\x1b\[([0-9;]*)m/g;
+  let last = 0, m;
+  const emit = s => {
+    if (!s) return;
+    s = s.replace(/\r\n/g, '\n');                       // bare \r (progress overwrite) is left as-is
+    const span = document.createElement('span');
+    span.textContent = s;
+    if (view.style.color) span.style.color = view.style.color;
+    if (view.style.bold) span.style.fontWeight = '700';
+    view.nodes.push(span);
+  };
+  while ((m = re.exec(text))) {
+    emit(text.slice(last, m.index));
+    last = re.lastIndex;
+    for (const code of (m[1] || '0').split(';').map(Number)) {
+      if (code === 0) { view.style = {}; }
+      else if (code === 1) view.style.bold = true;
+      else if (ANSI[code]) view.style.color = ANSI[code];
+      else if (code === 39) delete view.style.color;
+    }
+  }
+  emit(text.slice(last));
+}
+
+// ------------------------------------------------------------ state
+let catalog, current = null;          // current = { plan, steps, variables }
+const rows = new Map();               // step index -> { badge, button, row, status }
+const views = new Map();              // runId -> { name, nodes, style, status, from, rendered }
+let selectedRun = null;
+const threadColours = ['#0a5ea8', '#7b3fb5', '#c2570c', '#1b7f6b', '#a3365a', '#5b6b00'];
+
+// ------------------------------------------------------------ plan picking
+async function init() {
+  catalog = await api('/api/catalog');
+  const typeSel = $('typeSel');
+  for (const t of catalog.recoveryTypes) typeSel.add(new Option(t.label, t.id));
+  typeSel.onchange = fillPlans; fillPlans();
+  $('planSel').onchange = loadPlan;
+}
+function fillPlans() {
+  const planSel = $('planSel'); planSel.length = 0;
+  const plans = catalog.recoveryPlans.filter(p => p.recoveryType === $('typeSel').value);
+  for (const p of plans) planSel.add(new Option(p.label, p.id));
+  const def = plans.find(p => p.default); if (def) planSel.value = def.id;
+  loadPlan();
+}
+async function loadPlan() {
+  current = await api('/api/plan?id=' + encodeURIComponent($('planSel').value));
+  renderSteps(); renderVars();
+}
+
+// ------------------------------------------------------------ steps
+function renderSteps() {
+  const host = $('steps'); host.textContent = ''; rows.clear();
+  current.steps.forEach((s, i) => {
+    const row = document.createElement('div'); row.className = 'step';
+    const n = document.createElement('div'); n.className = 'n'; n.textContent = i + 1;
+    const mid = document.createElement('div');
+    const name = document.createElement('div'); name.className = 'name';
+    if (s.threadId) {
+      const t = document.createElement('span'); t.className = 'thread'; t.textContent = s.threadId;
+      t.style.background = threadColours[(parseInt(s.threadId, 10) || 0) % threadColours.length]; t.title = 'Parallel thread ' + s.threadId;
+      name.append(t);
+    }
+    name.append(s.name);
+    const sub = document.createElement('div'); sub.className = 'sub'; sub.textContent = s.description || s.commandLine.split(/\s+/)[0];
+    mid.append(name, sub);
+    const badge = document.createElement('span'); badge.className = 'badge'; badge.textContent = s.interactive ? 'Requires input' : 'Ready';
+    const button = document.createElement('button'); button.textContent = 'Run';
+    button.onclick = () => runStep(s);
+    row.append(n, mid, badge, button); host.append(row);
+    rows.set(s.index, { row, badge, button, step: s, status: null });
+  });
+  applyVisibility();
+}
+function applyVisibility() {
+  const showAll = $('showSkipped').checked;
+  for (const r of rows.values()) r.row.classList.toggle('hidden', !r.step.applicable && !showAll);
+}
+$('showSkipped').onchange = applyVisibility;
+
+function setRowStatus(index, status) {
+  const r = rows.get(index); if (!r) return;
+  r.status = status; r.badge.textContent = status; r.badge.className = 'badge ' + status;
+}
+
+// ------------------------------------------------------------ variables
+let pushTimer = null;
+function renderVars() {
+  const host = $('vars'); host.textContent = '';
+  for (const v of current.variables) {
+    const wrap = document.createElement('div'); wrap.className = 'var';
+    const label = document.createElement('label'); label.textContent = '$' + v.name; label.title = v.name;
+    const input = document.createElement('input'); input.type = v.secret ? 'password' : 'text'; input.value = v.value; input.autocomplete = 'off';
+    input.oninput = () => { v.value = input.value; clearTimeout(pushTimer); pushTimer = setTimeout(pushVars, 400); };
+    wrap.append(label, input); host.append(wrap);
+  }
+}
+async function pushVars() {
+  await api('/api/variables', { values: Object.fromEntries(current.variables.map(v => [v.name, v.value])) });
+  // Conditions depend on variables: refresh applicability only (keep inputs and statuses as they are).
+  const fresh = await api('/api/plan?id=' + encodeURIComponent(current.plan.id));
+  for (const s of fresh.steps) { const r = rows.get(s.index); if (r) r.step.applicable = s.applicable; }
+  applyVisibility();
+}
+$('loadVars').onclick = async () => {
+  try { await api('/api/variables/load', { path: $('varFile').value.trim() }); await loadPlan(); }
+  catch (e) { alert('Could not load variables: ' + e.message); }
+};
+
+// ------------------------------------------------------------ running
+const live = new Set();   // runIds currently polled
+async function runStep(step) {
+  await pushVars();         // make sure the server has the latest typed values before the step starts
+  setRowStatus(step.index, 'Running');
+  const { runId } = await api('/api/run', { planId: current.plan.id, index: step.index });
+  const view = { name: step.name, nodes: [], style: {}, status: 'Running', from: 0, rendered: 0, runId };
+  views.set(runId, view); selectRun(runId); renderTabs();
+  live.add(runId); updateButtons();
+  return new Promise(resolve => {
+    const tick = async () => {
+      try {
+        const r = await api(`/api/run?id=${runId}&from=${view.from}`);
+        if (r.text) { ansiAppend(view, r.text); view.from = r.length; if (selectedRun === runId) paint(view); }
+        if (r.status !== 'Running') {
+          view.status = r.status; live.delete(runId); setRowStatus(step.index, r.status);
+          renderTabs(); updateButtons(); resolve(r.status); return;
+        }
+      } catch (e) { view.status = 'Failed'; live.delete(runId); setRowStatus(step.index, 'Failed'); resolve('Failed'); return; }
+      setTimeout(tick, 400);
+    };
+    tick();
+  });
+}
+
+// Mirrors Invoke-StepChain / Invoke-StepThread: consecutive rows with a threadId form a block; the
+// threads in a block run concurrently, each thread's own rows in order, and the main sequence only
+// continues once every thread in the block finished cleanly. Any non-Done result stops the chain.
+function buildBlocks(steps) {
+  const blocks = [];
+  for (const s of steps) {
+    if (!s.threadId) { blocks.push({ threads: new Map([['', [s]]]) }); continue; }
+    const last = blocks[blocks.length - 1];
+    if (last && last.threaded) { if (!last.threads.has(s.threadId)) last.threads.set(s.threadId, []); last.threads.get(s.threadId).push(s); }
+    else blocks.push({ threaded: true, threads: new Map([[s.threadId, [s]]]) });
+  }
+  return blocks;
+}
+async function runThread(list) {
+  for (const s of list) { if ((await runStep(s)) !== 'Done') return false; }
+  return true;
+}
+let abortAll = false;
+$('runAll').onclick = async () => {
+  abortAll = false; $('runAll').disabled = true; $('stopAll').disabled = false;
+  const todo = current.steps.filter(s => s.applicable);
+  for (const block of buildBlocks(todo)) {
+    if (abortAll) break;
+    const results = await Promise.all([...block.threads.values()].map(runThread));
+    if (results.some(ok => !ok)) break;
+  }
+  $('runAll').disabled = false; $('stopAll').disabled = true;
+};
+$('stopAll').onclick = async () => {
+  abortAll = true;
+  for (const id of [...live]) await api('/api/stop', { runId: id });
+};
+
+// ------------------------------------------------------------ output pane
+function paint(view) { const t = $('term'); t.textContent = ''; t.append(...view.nodes); t.scrollTop = t.scrollHeight; }
+function selectRun(id) { selectedRun = id; paint(views.get(id)); renderTabs(); updateButtons(); }
+function renderTabs() {
+  const host = $('tabs'); host.textContent = '';
+  for (const [id, v] of views) {
+    const t = document.createElement('div'); t.className = 'tab' + (id === selectedRun ? ' active' : '');
+    t.textContent = `#${id} ${v.name} · ${v.status}`; t.onclick = () => selectRun(id); host.append(t);
+  }
+}
+function updateButtons() {
+  const running = selectedRun && live.has(selectedRun);
+  for (const id of ['stdin', 'send', 'stop']) $(id).disabled = !running;
+}
+async function sendInput() {
+  const box = $('stdin'); if (!selectedRun) return;
+  const text = box.value; box.value = '';
+  // Echo locally: the child's stdin is a pipe, so nothing echoes it back.
+  const v = views.get(selectedRun); ansiAppend(v, text + '\n'); paint(v);
+  await api('/api/input', { runId: selectedRun, text });
+}
+$('send').onclick = sendInput;
+$('stdin').onkeydown = e => { if (e.key === 'Enter') sendInput(); };
+$('stop').onclick = () => selectedRun && api('/api/stop', { runId: selectedRun });
+$('quit').onclick = async () => { if (confirm('Shut down the local server? Any running steps will be stopped.')) { try { await api('/api/shutdown', {}); } catch {} document.body.textContent = 'Server stopped. You can close this tab.'; } };
+
+init().catch(e => { $('steps').textContent = 'Failed to load: ' + e.message; });
+</script>
+</body>
+</html>

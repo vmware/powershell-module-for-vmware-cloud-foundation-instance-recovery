@@ -476,4 +476,105 @@ Function Start-VCFRecoveryCoordinator {
 }
 Export-ModuleMember -Function Start-VCFRecoveryCoordinator
 
+Function Start-VCFRecoveryCoordinatorWeb {
+    <#
+    .SYNOPSIS
+    Launches the cross-platform (browser based) VCF Recovery Coordinator -- EXPERIMENTAL SPIKE
+
+    .DESCRIPTION
+    The Start-VCFRecoveryCoordinatorWeb cmdlet starts a small web server bound to 127.0.0.1 only
+    (webui\VCFRecoveryCoordinatorWeb.ps1, as its own detached pwsh process) and opens the page in
+    the default browser. Unlike Start-VCFRecoveryCoordinator (WPF, Windows only) it works on Windows,
+    macOS and Linux. It reads the same recovery-plan-catalog.json and plan files, and runs each step
+    in its own pwsh process. See webui\README.md for what differs from the WPF UI.
+
+    Every request needs a random per-launch token, which is part of the URL this cmdlet opens/prints.
+
+    .PARAMETER Port
+    TCP port to listen on (loopback only). Defaults to a free port chosen automatically.
+
+    .PARAMETER NoBrowser
+    Do not open the default browser; just print the URL.
+
+    .EXAMPLE
+    Start-VCFRecoveryCoordinatorWeb
+
+    .EXAMPLE
+    Start-VCFRecoveryCoordinatorWeb -NoBrowser -Port 8765
+    #>
+
+    Param(
+        [Parameter (Mandatory = $false)][ValidateRange(0, 65535)][Int] $Port = 0,
+        [Parameter (Mandatory = $false)][Switch] $NoBrowser
+    )
+
+    $serverScript = Join-Path (Join-Path $PSScriptRoot 'webui') 'VCFRecoveryCoordinatorWeb.ps1'
+    $plansPath = Join-Path $PSScriptRoot 'plans'
+    foreach ($required in $serverScript, $plansPath) {
+        if (-not (Test-Path -LiteralPath $required)) {
+            LogMessage -type ERROR -message "Cannot find '$required'."
+            return
+        }
+    }
+
+    if ($Port -eq 0) {
+        $probe = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+        $probe.Start(); $Port = $probe.LocalEndpoint.Port; $probe.Stop()
+    }
+    # 32 random bytes, URL-safe -- the server rejects any request that doesn't carry it.
+    $tokenBytes = [byte[]]::new(32)
+    [System.Security.Cryptography.RandomNumberGenerator]::Fill($tokenBytes)
+    $token = [Convert]::ToBase64String($tokenBytes).TrimEnd('=').Replace('+', '-').Replace('/', '_')
+
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = (Get-Process -Id $PID).Path
+    $startInfo.UseShellExecute = $false
+    $startInfo.CreateNoWindow = $true
+    $startInfo.RedirectStandardInput = $true     # detach from this terminal's stdin
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $arguments = @(
+        '-NoProfile', '-File', $serverScript,
+        '-PlansPath', $plansPath, '-Token', $token, '-Port', $Port,
+        '-WorkingDirectory', (Get-Location).Path,
+        '-CoordinatorModulePath', (Join-Path $PSScriptRoot 'VMware.CloudFoundation.RecoveryCoordinator.psd1')
+    )
+    $instanceRecoveryModule = Get-Module -Name 'VMware.CloudFoundation.InstanceRecovery' | Select-Object -First 1
+    if ($instanceRecoveryModule) {
+        $arguments += '-InstanceRecoveryModulePath', (Join-Path $instanceRecoveryModule.ModuleBase 'VMware.CloudFoundation.InstanceRecovery.psd1')
+    }
+    foreach ($argument in $arguments) { $startInfo.ArgumentList.Add([string]$argument) }
+
+    $process = [System.Diagnostics.Process]::Start($startInfo)
+
+    # Wait (bounded) until the server is accepting connections, so the browser doesn't open too early.
+    $ready = $false
+    $deadline = (Get-Date).AddSeconds(15)
+    while ((Get-Date) -lt $deadline -and -not $process.HasExited) {
+        $client = [System.Net.Sockets.TcpClient]::new()
+        try { $client.Connect([System.Net.IPAddress]::Loopback, $Port); $ready = $true } catch { Start-Sleep -Milliseconds 200 } finally { $client.Dispose() }
+        if ($ready) { break }
+    }
+    if (-not $ready) {
+        $errorOutput = if ($process.HasExited) { $process.StandardError.ReadToEnd() } else { 'timed out waiting for the server to start' }
+        if (-not $process.HasExited) { $process.Kill($true) }
+        LogMessage -type ERROR -message "VCF Recovery Coordinator web UI failed to start: $errorOutput"
+        return
+    }
+
+    $url = "http://127.0.0.1:$Port/?t=$token"
+    LogMessage -type NOTE -message "VCF Recovery Coordinator web UI listening on 127.0.0.1:$Port (PID $($process.Id)). Use the Quit button in the page to stop it."
+    LogMessage -type NOTE -message "URL: $url"
+    if (-not $NoBrowser) {
+        try {
+            if ($IsWindows -or $PSVersionTable.PSEdition -eq 'Desktop') { Start-Process $url }
+            elseif ($IsMacOS) { & open $url }
+            else { & xdg-open $url 2>$null }
+        } catch {
+            LogMessage -type WARNING -message "Could not open a browser automatically; open the URL above manually."
+        }
+    }
+}
+Export-ModuleMember -Function Start-VCFRecoveryCoordinatorWeb
+
 #EndRegion UI Orchestrator

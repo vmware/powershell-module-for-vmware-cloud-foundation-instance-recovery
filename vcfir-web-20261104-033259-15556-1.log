@@ -1,0 +1,6 @@
+[31;1mNew-PrepareManagementHostNetworking : [31;1mCannot bind argument to parameter 'extractedSDDCDataFile' because it is an empty string.[0m
+[31;1m[31;1mAt line:5 char:60[0m
+[31;1m[31;1m+ … tHostNetworking -extractedSDDCDataFile $extractedSDDCDataFile -mtu 89 …[0m
+[31;1m[31;1m+                                          ~~~~~~~~~~~~~~~~~~~~~~[0m
+[31;1m[31;1m+ CategoryInfo          : InvalidData: (:) [New-PrepareManagementHostNetworking], ParameterBindingValidationException[0m
+[31;1m[31;1m+ FullyQualifiedErrorId : ParameterArgumentValidationErrorEmptyStringNotAllowed,New-PrepareManagementHostNetworking[0m
