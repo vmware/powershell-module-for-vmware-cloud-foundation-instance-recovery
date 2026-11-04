@@ -11,7 +11,7 @@
 #
 # Trade-off, deliberately accepted: at the idle moment between steps nothing reads stdin, so this console
 # answers prompts but is not a free-typing shell. Ctrl+C ends this process; the page restarts the console.
-param([Parameter(Mandatory)][string]$QueueDir, [switch]$HostShims)
+param([Parameter(Mandatory)][string]$QueueDir, [switch]$HostShims, [switch]$NoCommandLine)
 
 # Pipe backend only (stdin/stdout are redirected, there is no terminal). Two things a real console host does that a redirected
 # pwsh does not, both needed to look and behave like the WPF console:
@@ -52,7 +52,14 @@ if ($HostShims) {
 $ErrorView = 'NormalView'          # keeps "+ CategoryInfo" in error output (the step cleanliness gate looks for it)
 $ErrorActionPreference = 'Continue'
 
-Write-Host 'Recovery Coordinator console ready. Steps you Run appear here; type here only to answer a prompt.'
+if ($NoCommandLine) { Write-Host 'Recovery Coordinator console ready. Steps you Run appear here; type here only to answer a prompt.' }
+else { Write-Host 'Recovery Coordinator console ready. Steps you Run appear here; between steps you can type commands at the prompt.' }
+
+# Tells the server when this console is idle and where it is, so the page can offer a command line between steps: `cwd`
+# is rewritten after every command (a typed `Set-Location` changes it), and `ready` appears once, just before the loop.
+$__vcfirPublish = { [IO.File]::WriteAllText((Join-Path $QueueDir 'cwd'), (Get-Location).Path) }
+& $__vcfirPublish
+[IO.File]::WriteAllText((Join-Path $QueueDir 'ready'), '')
 
 while ($true) {
     $__vcfirItem = Get-ChildItem -LiteralPath $QueueDir -Filter '*.json' -File -ErrorAction SilentlyContinue | Sort-Object Name | Select-Object -First 1
@@ -69,5 +76,6 @@ while ($true) {
     # Tell the server this command has RETURNED (however it ended). A step normally signals success by logging its own
     # "Completed Task <cmdlet>" line; if the command ends without having logged one (it crashed, say), the server sees
     # this marker and reports the step as failed instead of waiting for a line that will never come.
-    if ($__vcfirJob.id) { [IO.File]::WriteAllText((Join-Path $QueueDir "$($__vcfirJob.id).done"), '') }
+    & $__vcfirPublish                                  # the (possibly changed) folder first ...
+    if ($__vcfirJob.id) { [IO.File]::WriteAllText((Join-Path $QueueDir "$($__vcfirJob.id).done"), '') }   # ... then "finished"
 }

@@ -9,7 +9,8 @@ Start-VCFRecoveryCoordinatorWeb            # starts 127.0.0.1:<free port>, opens
 Start-VCFRecoveryCoordinatorWeb -NoBrowser -Port 8765
 ```
 
-Use **Quit** in the page to stop the server (or kill the `pwsh` process it started).
+Use **Quit** in the page to stop the server (or kill the `pwsh` process it started). `Start-VCFRecoveryCoordinatorWeb -New`
+always starts a new instance; several can run at once, each with its own launch folder.
 
 ## How it works
 
@@ -18,15 +19,37 @@ Use **Quit** in the page to stop the server (or kill the `pwsh` process it start
   process output) is polled on one thread, so there are no runspaces, events or locks.
 - `index.html` – one static page, no dependencies/build step. Output is inserted with `textContent`
   only (ANSI colours converted to spans), never as HTML.
-- Each step runs in its own `pwsh -EncodedCommand` child with redirected stdin/stdout/stderr. Shared
-  variables are injected as assignments at the top of every step; `secureEncryptionPassword` is wrapped
-  in `ConvertTo-SecureString`. `Read-Host` prompts are answered through the input box (stdin).
-- Completion uses the process exit code plus the same marker gate as `Test-StepTranscriptClean`
-  (`[WARNING]`, `[ERROR]`, `[EXCEPTION]`, `+ CategoryInfo`): `Done`, `Attention` (finished but not
-  clean – stops Run All), `Failed`, `Stopped`. Each run is also logged to
-  `vcfir-web-<timestamp>-<pid>-<n>.log` in the launch directory.
+- Steps run in persistent consoles (Main Thread, Thread 2, ...), each a `pwsh` the server keeps for the whole session, so
+  variables, loaded modules and connections carry from step to step (see Console backends). Shared variables are injected as
+  assignments before each step; `secureEncryptionPassword` is wrapped in `ConvertTo-SecureString`.
+- A step is finished when its console transcript shows `Completed Task <cmdlet>` and the same marker gate as
+  `Test-StepTranscriptClean` passes (no `[WARNING]`, `[ERROR]`, `[EXCEPTION]`, `+ CategoryInfo`): `Done`, otherwise `Failed`
+  (which stops Run Plan). Each console's transcript is logged to `vcfir-web-transcript-<timestamp>-<pid>-<n>.log` in the
+  launch directory.
 - Run All honours `threadId` blocks like the WPF UI: consecutive rows with a threadId form a block,
-  threads in a block run concurrently, the main sequence continues when all finish cleanly.
+  threads in a block run concurrently, the main sequence continues when all finish cleanly. The server drives it (see below).
+
+## Closing the window
+
+The window is only a view. The server owns the state, so closing or reloading the window loses nothing:
+
+- step statuses, the pause point, the Advisories log, the Overall Recovery Time, the selected plan and data source, and the
+  extra toggles are held by the server and redrawn when a window connects;
+- **Run Plan runs on the server** (it starts each step, watches the console for completion, walks the thread blocks), so a plan
+  keeps going with no window open. A step that needs the backup password waits until a window is there to ask for it;
+- the consoles keep running and replay their scrollback.
+
+An instance writes a small private record (port, token, process id; mode 0600 under `~/.vcfir-webui/instances`) and removes it
+on exit. When you run `Start-VCFRecoveryCoordinatorWeb`, instances that are running **with no window open** are listed and you
+can reconnect to one by number, or press Enter to start a new one. An instance that has a window open is never offered, and it
+refuses a second window ("Already open in another window"; that page connects by itself within about 3 seconds of the first
+closing). Page loads and WebSockets carry a per-window id for this; a script holding the token without an id is not blocked.
+
+The window opens in its own window of the default browser: an app-style window (no tabs or address bar, the page's own icon) for
+Chromium-based browsers (Chrome, Edge, Brave, Vivaldi, Opera, Chromium), a new window for Firefox, and the ordinary open-URL
+behaviour for anything else (Safari, unknown). On macOS the Dock still shows the browser's icon for an app-style window; a
+custom Dock icon would need a real .app wrapper, which this does not build. Closing a tab or window while a step is running asks
+for confirmation (the browser's own prompt).
 
 ## Security
 
@@ -63,16 +86,28 @@ steps arrive through a file queue (`console-repl.ps1`), so nothing is typed into
 prompts, which the page echoes itself. **Pty** (the default on macOS/Linux) puts that same queue-driven `pwsh` on a real
 pseudo-terminal (`script(1)`; ConPTY on Windows, which has never been run). A plain *interactive* `pwsh` under xterm.js was
 tried and rejected: its cursor-position round trips interleave with injected text and corrupt it, and bracketed paste is
-not honoured. Consequence either way: the console answers prompts but is not a free-typing shell between steps, and
-Ctrl+C ends the console (the page restarts it).
+not honoured. Consequence either way: while a step runs the console only answers prompts, and Ctrl+C ends the console
+(the page restarts it).
+
+## Command line between steps (troubleshooting)
+
+When a console is idle (nothing running or queued) the page draws a `PS <folder>>` prompt and acts as the command line.
+Each line you press Enter on is sent through the same queue as a step, so it runs in the console's own session: the same
+variables (`$workloadDomain`, `$clusterName`, anything the steps set), loaded modules and connections. `Set-Location`
+carries over to the prompt. Up/Down recall history, Left/Right/Home/End/Delete edit the line, Ctrl+C abandons it.
+
+Limits: no Tab completion or syntax colouring (the line editor is in the page, not PSReadLine); a line typed in the instant a
+step starts is discarded; Ctrl+C while a step is running still ends the console. This widens what the API will execute
+(`POST /api/console/exec` takes arbitrary text, still behind the per-launch token and Host/Origin checks), so
+`Start-VCFRecoveryCoordinatorWeb -DisableCommandLine` turns it off (the endpoint then returns 403 and the page shows no prompt).
 
 ## Not done yet
 
-- **Free typing between steps.** Proposed: the page acts as the command line while a console is idle and sends the line
-  through the same queue (same session, no input race). Not built.
-- **"Extract SDDC Manager Backup"** runs `New-ExtractDataFromSDDCBackup` in the Main console, but that cmdlet still calls
-  `Resolve-DnsName` (10 times), which does not exist on macOS/Linux, so extraction is expected to fail there. It has
-  never run against a real backup. Use "Load Extracted SDDC Data" for now.
+- **"Extract SDDC Manager Backup"** now avoids the Windows-only parts: `Resolve-DnsName` is wrapped by
+  `Resolve-VCFIRHostAddress` (uses it where it exists, the .NET resolver elsewhere -- which also honours the hosts file),
+  and the file paths in `New-ExtractDataFromSDDCBackup` use `/` instead of `\`. Verified on macOS only as far as
+  decrypt + extract of a synthetic backup (OpenSSL 3 and LibreSSL, folder with a space); it has never run against a real
+  backup, and needs `openssl` and `tar` on the PATH.
 - **Windows and Linux are untested** (macOS is the only platform exercised): the Pipe backend on Windows, the ConPTY
   code, `script(1)` on Linux, the Windows drive/UNC handling in the file browser.
 - The InstanceRecovery module itself still has Windows-only code (OVF Tool path, `tar.exe`/registry checks,

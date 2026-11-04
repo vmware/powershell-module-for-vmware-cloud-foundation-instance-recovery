@@ -152,6 +152,40 @@ Function LogMessage {
 }
 
 
+Function Resolve-VCFIRHostAddress {
+    <#
+        .SYNOPSIS
+        Resolves a host name to its IP address(es), or $null if it does not resolve.
+
+        .DESCRIPTION
+        Where Resolve-DnsName exists (Windows) it is used exactly as before. Elsewhere (macOS, Linux) the .NET resolver is
+        used, IPv4 first, because Resolve-DnsName is a Windows-only cmdlet.
+    #>
+    Param(
+        [Parameter(Mandatory = $false)][AllowNull()][AllowEmptyString()][String]$Name
+    )
+    If ([string]::IsNullOrWhiteSpace($Name)) { return $null }
+    If (Get-Command Resolve-DnsName -ErrorAction SilentlyContinue) {
+        If (Resolve-DnsName $Name -ErrorAction SilentlyContinue) {
+            return (Resolve-DnsName $Name | Where-Object { $_.section -eq "Answer" }).IPAddress
+        }
+        return $null
+    }
+    Try {
+        # Bounded: the OS resolver can take 30 seconds to give up on a name it cannot resolve.
+        $lookup = [System.Net.Dns]::GetHostAddressesAsync($Name.Trim())
+        If (-not $lookup.Wait(10000)) { return $null }
+        $addresses = @($lookup.Result)
+    } Catch {
+        return $null
+    }
+    $ipv4 = @($addresses | Where-Object { $_.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork } | ForEach-Object { $_.IPAddressToString })
+    If ($ipv4.Count -gt 0) { return $(If ($ipv4.Count -eq 1) { $ipv4[0] } Else { $ipv4 }) }
+    $other = @($addresses | ForEach-Object { $_.IPAddressToString })
+    If ($other.Count -gt 0) { return $(If ($other.Count -eq 1) { $other[0] } Else { $other }) }
+    return $null
+}
+
 Function Test-MemberOfSubnet {
     [cmdletbinding()]
     [outputtype([System.Boolean])]
@@ -612,7 +646,7 @@ Function New-ExtractDataFromSDDCBackup {
 
     #Decrypt Backup (VCF prepends a 4-byte header before the openssl ciphertext; strip it before decrypting)
     LogMessage -type INFO -message "[$jumpboxName] Decrypting Backup"
-    $strippedHeaderFile = "$parentFolder\$backupFileName.noheader"
+    $strippedHeaderFile = "$parentFolder/$backupFileName.noheader"
     $inStream = [System.IO.File]::OpenRead($backupFileFullPath)
     try {
         $inStream.Seek(4, [System.IO.SeekOrigin]::Begin) | Out-Null
@@ -635,11 +669,11 @@ Function New-ExtractDataFromSDDCBackup {
 
     $env:OPENSSL_FIPS = "1"
     try {
-        $command = "openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -md sha256 -in `"$strippedHeaderFile`" -pass pass:`"$encryptionPassword`" -out `"$parentFolder\decrypted-sddc-manager-backup.tar.gz`" 2>&1"
+        $command = "openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -md sha256 -in `"$strippedHeaderFile`" -pass pass:`"$encryptionPassword`" -out `"$parentFolder/decrypted-sddc-manager-backup.tar.gz`" 2>&1"
         $decryptionAttemptResponse = Invoke-Expression $command
         If ([string]$decryptionAttemptResponse -eq "bad magic number") {
             $model = "legacy"
-            $command = "openssl enc -d -aes-256-cbc -md sha256 -in $backupFileFullPath -pass pass:`"$encryptionPassword`" -out `"$parentFolder\decrypted-sddc-manager-backup.tar.gz`""
+            $command = "openssl enc -d -aes-256-cbc -md sha256 -in `"$backupFileFullPath`" -pass pass:`"$encryptionPassword`" -out `"$parentFolder/decrypted-sddc-manager-backup.tar.gz`""
             Invoke-Expression "& $command" *>$null
             $filesToExtract += "$extractedBackupFolder/security_password_vault.json"
         } else {
@@ -651,9 +685,9 @@ Function New-ExtractDataFromSDDCBackup {
     }
 
     If ($model -in "current", "legacy") {
-        #Extract Required Files From Backup Leveraging Windows tar.exe
+        #Extract Required Files From Backup Leveraging tar (tar.exe on Windows, bsdtar/GNU tar elsewhere)
         LogMessage -type INFO -message "[$jumpboxName] Extracting Backup"
-        tar -xzf "$parentFolder\decrypted-sddc-manager-backup.tar.gz" $filesToExtract
+        tar -xzf "$parentFolder/decrypted-sddc-manager-backup.tar.gz" $filesToExtract
     }
 
     If (($model -eq "current") -and ($credentialsFilePath)) {
@@ -676,7 +710,7 @@ Function New-ExtractDataFromSDDCBackup {
     } elseif ($model -eq "legacy") {
         #Get Content of Password Vault
         LogMessage -type INFO -message "[$jumpboxName] Reading Password Vault"
-        $passwordVaultJson = Get-Content "$parentFolder\$extractedBackupFolder\security_password_vault.json" | ConvertFrom-JSON
+        $passwordVaultJson = Get-Content "$parentFolder/$extractedBackupFolder/security_password_vault.json" | ConvertFrom-JSON
         $passwordVaultObject = @()
         Foreach ($object in $passwordVaultJson) {
             $passwordVaultObject += [pscustomobject]@{
@@ -698,9 +732,9 @@ Function New-ExtractDataFromSDDCBackup {
     }
 
     #Get Management Domain Deployment Objects
-    $metadataJSON = Get-Content "$parentFolder\$extractedBackupFolder\metadata.json" | ConvertFrom-JSON
-    $dnsJSON = Get-Content "$parentFolder\$extractedBackupFolder\appliancemanager_dns_configuration.json" | ConvertFrom-JSON
-    $ntpJSON = Get-Content "$parentFolder\$extractedBackupFolder\appliancemanager_ntp_configuration.json" | ConvertFrom-JSON
+    $metadataJSON = Get-Content "$parentFolder/$extractedBackupFolder/metadata.json" | ConvertFrom-JSON
+    $dnsJSON = Get-Content "$parentFolder/$extractedBackupFolder/appliancemanager_dns_configuration.json" | ConvertFrom-JSON
+    $ntpJSON = Get-Content "$parentFolder/$extractedBackupFolder/appliancemanager_ntp_configuration.json" | ConvertFrom-JSON
     #$mgmtVcenterMetadata = Get-Content -Path ($vCenterbackupFolderFullPath + "/backup-metadata.json") | ConvertFrom-JSON
     #$managementSubnetMask = cidrToMask $mgmtVcenterMetadata.PrimaryNetworkInfo.ipv4.prefix
 
@@ -726,7 +760,7 @@ Function New-ExtractDataFromSDDCBackup {
         'ntpServers'         = @($ntpJSON.ntpServers)
     }
 
-    $psqlContent = Get-Content "$parentFolder\$extractedBackupFolder\database\sddc-postgres.bkp"
+    $psqlContent = Get-Content "$parentFolder/$extractedBackupFolder/database/sddc-postgres.bkp"
 
     LogMessage -type INFO -message "[$jumpboxName] Retrieving SDDC Manager Detail"
     #Find the column number for each required element. Future proofed if column number changes
@@ -756,11 +790,7 @@ Function New-ExtractDataFromSDDCBackup {
     $sddcManagerObject += [pscustomobject]@{
         'fqdn'         = $sddcManagerFqdn
         'vmname'       = $sddcManagerVmName
-        'ip'           = If (Resolve-DnsName $sddcManagerFqdn -errorAction SilentlyContinue) {
-            (Resolve-DnsName $sddcManagerFqdn | Where-Object { $_.section -eq "Answer" }).IPAddress
-        } else {
-            $null
-        }
+        'ip'           = Resolve-VCFIRHostAddress -Name $sddcManagerFqdn
         'fips_enabled' = $metadataJSON.fips_enabled
         'ceip_enabled' = $ceipStatus
         'version'      = $sddcManagerVersion
@@ -795,11 +825,7 @@ Function New-ExtractDataFromSDDCBackup {
                 }
             }
             $nsxtManagerCluster = [pscustomobject]@{
-                'clusterVip'  = If (Resolve-DnsName $lineContent.split("`t")[5] -erroraction SilentlyContinue) {
-                    (Resolve-DnsName $lineContent.split("`t")[5] | Where-Object { $_.section -eq "Answer" }).IPAddress
-                } else {
-                    $null
-                }
+                'clusterVip'  = Resolve-VCFIRHostAddress -Name $lineContent.split("`t")[5]
                 'clusterFqdn' = $lineContent.split("`t")[5]
                 'domainIDs'   = $nodeContent.domainIds
                 'nsxNodes'    = $nsxNodes
@@ -834,11 +860,7 @@ Function New-ExtractDataFromSDDCBackup {
         If ($lineContent -ne '\.') {
             $hostId = $lineContent.split("`t")[$hostIdColumn]
             $hostName = $lineContent.split("`t")[$hostNameColumn]
-            $hostMgmtIp = If (Resolve-DnsName $lineContent.split("`t")[$hostnameColumn] -errorAction SilentlyContinue) {
-                (Resolve-DnsName $lineContent.split("`t")[$hostnameColumn] | Where-Object { $_.section -eq "Answer" }).IPAddress
-            } else {
-                $null
-            }
+            $hostMgmtIp = Resolve-VCFIRHostAddress -Name $lineContent.split("`t")[$hostnameColumn]
             $hostVersion = $lineContent.split("`t")[$hostVersionColumn]
             $hostVmotionIp = $lineContent.split("`t")[$hostVmotionIpColumn]
             $hostVsanIP = $lineContent.split("`t")[$hostVsanIpColumn]
@@ -946,11 +968,7 @@ Function New-ExtractDataFromSDDCBackup {
             $vCenterID = $lineContent.split("`t")[$vCenterIDColumn]
             $vCenterVersion = $lineContent.split("`t")[$vCenterVersionColumn]
             $vCenterFqdn = $lineContent.split("`t")[$vCenterFqdnColumn]
-            $vCenterIp = If (Resolve-DnsName $vCenterFqdn -errorAction silentlyContinue) {
-                (Resolve-DnsName $vCenterFqdn | Where-Object { $_.section -eq "Answer" }).IPAddress
-            } else {
-                $null
-            }
+            $vCenterIp = Resolve-VCFIRHostAddress -Name $vCenterFqdn
             $vCenterVMname = $lineContent.split("`t")[$vCenterVMnameColumn]
             $vCenterDomainID = ($hostsAndDomains | Where-Object { $_.hostId -eq (($hostsandVcenters | Where-Object { $_.vCenterID -eq $vCenterID })[0].hostID) }).domainID
             $vCenter = [pscustomobject]@{
@@ -1437,11 +1455,7 @@ Function New-ExtractDataFromSDDCBackup {
                 $vspDomainId = $lineContent.split("`t")[$vspDomainIdColumn]
                 $vspPrimaryFqdn = $lineContent.split("`t")[$vspPrimaryFqdnColumn]
                 $vspType = $lineContent.split("`t")[$vspTypeColumn]
-                $vspPrimaryIp = If (Resolve-DnsName $vspPrimaryFqdn -errorAction SilentlyContinue) {
-                    (Resolve-DnsName $vspPrimaryFqdn | Where-Object { $_.section -eq "Answer" }).IPAddress
-                } else {
-                    $null
-                }
+                $vspPrimaryIp = Resolve-VCFIRHostAddress -Name $vspPrimaryFqdn
                 $vspClusters += [pscustomobject]@{
                     'type'         = $vspType
                     'vspClusterID' = $vspClusterId
@@ -1694,13 +1708,13 @@ Function New-ExtractDataFromSDDCBackup {
     {
         $sddcDataObject | Add-Member -notepropertyname 'passwords' -notepropertyvalue $passwordVaultObject
     }
-    $sddcDataObject | ConvertTo-Json -Depth 10 | Out-File "$parentFolder\extracted-sddc-data.json"
+    $sddcDataObject | ConvertTo-Json -Depth 10 | Out-File "$parentFolder/extracted-sddc-data.json"
 
     #Cleanup
     <# LogMessage -type INFO -message "[$jumpboxName] Cleaning up extracted files"
-    Remove-Item -Path "$parentFolder\decrypted-sddc-manager-backup.tar.gz" -force -confirm:$false
-    Remove-Item -Path "$parentFolder\decrypted-sddc-manager-backup.tar" -force -confirm:$false
-    Remove-Item -path "$parentFolder\$extractedBackupFolder" -Recurse #>
+    Remove-Item -Path "$parentFolder/decrypted-sddc-manager-backup.tar.gz" -force -confirm:$false
+    Remove-Item -Path "$parentFolder/decrypted-sddc-manager-backup.tar" -force -confirm:$false
+    Remove-Item -path "$parentFolder/$extractedBackupFolder" -Recurse #>
     Pop-Location
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"

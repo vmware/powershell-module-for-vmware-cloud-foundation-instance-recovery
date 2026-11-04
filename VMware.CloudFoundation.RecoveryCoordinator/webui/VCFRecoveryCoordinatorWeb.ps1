@@ -35,7 +35,10 @@ param(
     [string]$InstanceRecoveryUpdateStatus,
     # Exit by itself after this many minutes with no browser connected and nothing running (the WPF window ends its
     # consoles when closed; a closed browser tab can't tell us, so this is the equivalent). 0 disables it.
-    [double]$IdleTimeoutMinutes = 10
+    [double]$IdleTimeoutMinutes = 10,
+    # Refuse commands typed into the console between steps (the page then shows no command line). The token and
+    # loopback-only limits apply either way; this switch is for sites that want the server to accept only plan steps.
+    [switch]$DisableCommandLine
 )
 
 $ErrorActionPreference = 'Stop'
@@ -50,6 +53,7 @@ $script:consoles = [ordered]@{}        # id -> console session
 $script:consoleSeq = 0
 $script:watches = @{}                  # watchId -> step watch
 $script:watchSeq = 0
+$script:typedSeq = 0
 $script:stepLedger = @{}               # step id -> Success | Failed | Skipped (feeds "stepStatus" conditions)
 $script:wsClients = [System.Collections.Generic.List[object]]::new()
 $script:pendingAccepts = [System.Collections.Generic.List[object]]::new()
@@ -63,6 +67,20 @@ $script:varsFilePath = ''
 $script:answerMap = $null                # ordered name -> value of the ACTIVE variables file ($null until one is loaded/created)
 $script:interactiveAnswerFile = $null    # the "use answer file for interactive tasks" file, per Import-VCFIRAnswerFile
 $script:lastClientSeen = [DateTime]::UtcNow
+# What the PAGE used to hold and now lives here, so a closed or reloaded window loses nothing: step statuses, the pause point,
+# the Advisories log, the Run Plan timer and the Run Plan itself (which the server drives, so it survives the window).
+$script:ui = @{
+    planId = ''; recoveryType = ''; dataSource = ''; useThreads = $true; pausePointAfter = $null; toggles = @{}
+    statuses = @{}                                                   # step key ("0", "1", ... or "bp") -> Running/Done/Failed/Skipped/Stopped
+    advisories = [System.Collections.Generic.List[object]]::new()
+    run = $null; runStartedAt = $null; runFinishedAt = $null
+    needPassword = $false; pw = $null
+    focusSeq = 0; focusConsole = ''
+}
+# One window at a time: the first page to talk to the server owns it (its random client id). Another page is refused while the
+# owner is alive -- it has a console WebSocket open, or it made a request within the last few seconds.
+$script:activeClient = @{ Id = ''; LastSeen = [DateTime]::MinValue }
+$script:instanceRecord = ''
 # Names the operator never types (they come from the Data Source / the selection / a password prompt): the WPF UI drops
 # them from answers files and never lists them on the Variables tab.
 $script:selectionDriven = @('extractedSDDCDataFile', 'workloadDomain', 'clusterName', 'secureEncryptionPassword')
@@ -521,6 +539,7 @@ function Get-DirectoryListing([string]$Path, [string]$Filter, [bool]$ShowHidden)
         if ($hidden -and -not $ShowHidden) { continue }
         $isDir = [bool]$item.PSIsContainer
         if (-not $isDir -and $Filter -eq 'json' -and $item.Extension -ne '.json') { continue }
+        if (-not $isDir -and $Filter -eq 'backup' -and -not $item.Name.EndsWith('.tar.gz', [StringComparison]::OrdinalIgnoreCase)) { continue }
         @{ name = $item.Name; path = $item.FullName; dir = $isDir; size = $(if ($isDir) { $null } else { $item.Length }); modified = $item.LastWriteTime.ToString('s') }
     }
     $sorted = @($entries | Sort-Object -Property @{ Expression = { -not $_.dir } }, @{ Expression = { $_.name.ToLowerInvariant() } })
@@ -624,7 +643,7 @@ function New-ConsoleSession([string]$Id, [string]$Label) {
         $(if ($InstanceRecoveryModulePath) { "[Console]::WriteLine('Loading VMware.CloudFoundation.InstanceRecovery (this can take a minute)...'); Import-Module -Force '$(Protect-SingleQuotes $InstanceRecoveryModulePath)'" })
         $(if ($CoordinatorModulePath) { "[Console]::WriteLine('Loading VMware.CloudFoundation.RecoveryCoordinator...'); Import-Module -Force '$(Protect-SingleQuotes $CoordinatorModulePath)'" })
         "Start-Transcript -Path '$(Protect-SingleQuotes $transcript)' | Out-Null"
-        ". '$(Protect-SingleQuotes (Join-Path $PSScriptRoot 'console-repl.ps1'))' -QueueDir '$(Protect-SingleQuotes $queueDir)'$(if ($script:consoleBackend -eq 'Pipe') { ' -HostShims' })"
+        ". '$(Protect-SingleQuotes (Join-Path $PSScriptRoot 'console-repl.ps1'))' -QueueDir '$(Protect-SingleQuotes $queueDir)'$(if ($script:consoleBackend -eq 'Pipe') { ' -HostShims' })$(if ($DisableCommandLine) { ' -NoCommandLine' })"
     ) -join '; '
     $pty = New-PtyProcess $startup $script:defaultCols $script:defaultRows
     $c = @{
@@ -633,6 +652,7 @@ function New-ConsoleSession([string]$Id, [string]$Label) {
         Buf = [byte[]]::new(8192); ReadTask = $null; Exited = $false; SentVars = @{}
         InBuf = [System.Collections.Generic.List[byte]]::new(); EverAttached = $false
         ErrBuf = [byte[]]::new(8192); ErrTask = $null; AnswerFileSent = $null
+        Pending = [System.Collections.Generic.HashSet[string]]::new(); Ready = $false; LastOutputAt = [DateTime]::UtcNow
     }
     $c.ReadTask = $pty.Output.ReadAsync($c.Buf, 0, $c.Buf.Length)
     if ($pty.Error) { $c.ErrTask = $pty.Error.ReadAsync($c.ErrBuf, 0, $c.ErrBuf.Length) }
@@ -674,6 +694,7 @@ function Submit-ConsoleCommand($Console, [string]$Init, [string]$Command, [strin
     if (-not ($IsWindows -or $PSVersionTable.PSEdition -eq 'Desktop')) { [IO.File]::SetUnixFileMode($tmp, [IO.UnixFileMode]'UserRead,UserWrite') }
     [IO.File]::WriteAllText($tmp, (@{ init = $Init; command = $Command; id = $Id } | ConvertTo-Json -Compress), [System.Text.UTF8Encoding]::new($false))
     Move-Item -LiteralPath $tmp -Destination (Join-Path $Console.QueueDir "$seq.json")
+    if ($Id) { [void]$Console.Pending.Add($Id) }                  # the console is busy until its "<id>.done" marker appears
 }
 
 function Update-Consoles {
@@ -684,7 +705,7 @@ function Update-Consoles {
             if ($n -le 0) { $c.ReadTask = $null; break }
             $chunk = [byte[]]::new($n)
             [Array]::Copy($c.Buf, $chunk, $n)
-            $c.Out.AddRange($chunk)
+            $c.Out.AddRange($chunk); $c.LastOutputAt = [DateTime]::UtcNow
             if ($c.Out.Count -gt 8MB) { $c.Out.RemoveRange(0, 4MB); $c.Base += 4MB }   # scrollback cap
             $c.ReadTask = $c.Pty.Output.ReadAsync($c.Buf, 0, $c.Buf.Length)
         }
@@ -693,11 +714,40 @@ function Update-Consoles {
             if ($n -le 0) { $c.ErrTask = $null; break }
             $chunk = [byte[]]::new($n)
             [Array]::Copy($c.ErrBuf, $chunk, $n)
-            $c.Out.AddRange($chunk)
+            $c.Out.AddRange($chunk); $c.LastOutputAt = [DateTime]::UtcNow
             $c.ErrTask = $c.Pty.Error.ReadAsync($c.ErrBuf, 0, $c.ErrBuf.Length)
         }
+        if (-not $c.Ready -and (Test-Path -LiteralPath (Join-Path $c.QueueDir 'ready'))) { $c.Ready = $true }
+        foreach ($pendingId in @($c.Pending)) { if (Test-Path -LiteralPath (Join-Path $c.QueueDir "$pendingId.done")) { [void]$c.Pending.Remove($pendingId) } }
         if (-not $c.Exited -and -not $c.ReadTask -and -not $c.ErrTask -and (& $c.Pty.IsExited)) { $c.Exited = $true }
     }
+}
+
+# Idle = the console has finished starting, has no queued or running command, and has been quiet for a moment (so the prompt
+# the page draws can never land in the middle of a command's own output). cwd comes from the console loop itself.
+function Get-ConsoleState($Console) {
+    $quiet = ([DateTime]::UtcNow - $Console.LastOutputAt).TotalMilliseconds -gt 150
+    if ($Console.Exited -or -not $Console.Ready -or $Console.Pending.Count -gt 0 -or -not $quiet) { return @{ idle = $false; cwd = '' } }
+    $cwd = try { (Get-Content -LiteralPath (Join-Path $Console.QueueDir 'cwd') -Raw -ErrorAction Stop).Trim() } catch { '' }
+    return @{ idle = $true; cwd = $cwd }
+}
+
+# Everything the loaded variables file and the selection define, for a command typed between steps: the WPF UI sends all of
+# these to the console as soon as they are loaded, so `$workloadDomain` or `$targetFqdn` are there to inspect. (Steps only
+# inject the names they reference.) Only values the console does not already hold are sent.
+function Get-VariableInitAll($Console) {
+    $names = @(if ($script:answerMap) { $script:answerMap.Keys }) + @($script:selectionDriven) + @('credentialsFilePath')
+    $lines = [System.Collections.Generic.List[string]]::new(); $pending = @{}
+    foreach ($name in ($names | Select-Object -Unique)) {
+        if (-not $script:vars.Contains($name) -or [string]::IsNullOrEmpty($script:vars[$name])) { continue }
+        $value = $script:vars[$name]
+        if ($Console.SentVars.ContainsKey($name) -and $Console.SentVars[$name] -ceq $value) { continue }
+        $q = Protect-SingleQuotes $value
+        if ($name -eq 'secureEncryptionPassword') { [void]$lines.Add("`$global:$name = ConvertTo-SecureString '$q' -AsPlainText -Force") }
+        else { [void]$lines.Add("`$global:$name = '$q'") }
+        $pending[$name] = $value
+    }
+    return @{ Script = ($lines -join "`n"); Pending = $pending }
 }
 
 # ---------------------------------------------------------------- variable injection
@@ -745,6 +795,7 @@ function Read-TranscriptFrom([string]$Path, [long]$Offset) {
 function Complete-Watch($Watch, [string]$Status, $Clean, [string]$Slice) {
     $Watch.Status = $Status
     $Watch.Clean = $Clean
+    if ($Watch.UiKey) { Set-UiStatus $Watch.UiKey $Status }
     if ($Watch.StepId) { $script:stepLedger[$Watch.StepId] = if ($Status -eq 'Done') { 'Success' } else { 'Failed' } }
     if ($Status -eq 'Done' -and $Watch.Cmdlet -eq 'Update-ExtractedSDDCData') { Update-SelectedClusterNameFromDisk }
     if ($Status -eq 'Done' -and $Watch.Cmdlet -eq 'New-RetrieveVCFCredentials') {
@@ -798,12 +849,15 @@ function Start-Step([string]$PlanId, [int]$StepIndex, [string]$ConsoleId, [bool]
 
     if (-not (Test-StepStatusGate $step)) {
         if ($step.Id) { $script:stepLedger[$step.Id] = 'Skipped' }
+        Set-UiStatus $(if ($Breakpoint) { 'bp' } else { $StepIndex }) 'Skipped'
         return @{ skipped = $true }
     }
     # "New-Advisory '...'" is a UI-only pseudo-command (it only exists in the WPF window); resolve it here.
     $adv = [regex]::Match($step.CommandLine, "^New-Advisory\s+'(.*)'\s*$", [System.Text.RegularExpressions.RegexOptions]::Singleline)
     if ($adv.Success) {
         if ($step.Id) { $script:stepLedger[$step.Id] = 'Success' }
+        Add-UiAdvisory ($adv.Groups[1].Value -replace "''", "'")
+        Set-UiStatus $StepIndex 'Done'
         return @{ advisory = ($adv.Groups[1].Value -replace "''", "'") }
     }
 
@@ -829,18 +883,152 @@ function Start-Step([string]$PlanId, [int]$StepIndex, [string]$ConsoleId, [bool]
     $script:watches[$id] = @{
         Id = $id; ConsoleId = $ConsoleId; StepId = $step.Id; Cmdlet = $cmdlet; Target = "Completed Task $cmdlet"
         Offset = (Get-TranscriptLength $console.Transcript); Status = 'Running'; Clean = $null
+        UiKey = $(if ($Breakpoint) { 'bp' } else { [string]$StepIndex })
     }
+    Set-UiStatus $script:watches[$id].UiKey 'Running'
     Submit-ConsoleCommand $console $initScript $step.CommandLine $id
     foreach ($k in $init.Pending.Keys) { $console.SentVars[$k] = $init.Pending[$k] }
     $console.AnswerFileSent = $script:interactiveAnswerFile
     return @{ watchId = $id; consoleId = $ConsoleId }
 }
 
+# ---------------------------------------------------------------- UI session state + Run Plan (server-driven)
+function Add-UiAdvisory([string]$Text, [bool]$Failure = $false) {
+    [void]$script:ui.advisories.Add(@{ ms = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds(); text = $Text; failure = $Failure })
+}
+function Set-UiStatus($Key, [string]$Status) { $script:ui.statuses[[string]$Key] = $Status }
+function Reset-UiRun { $script:ui.statuses = @{}; $script:ui.pausePointAfter = $null }
+function Test-UiBusy {
+    if ($script:ui.run -and $script:ui.run.Active) { return $true }
+    return (@($script:watches.Values | Where-Object { $_.Status -eq 'Running' -and $_.UiKey }).Count -gt 0)
+}
+function Set-UiFocus([string]$ConsoleId) { $script:ui.focusSeq++; $script:ui.focusConsole = $ConsoleId }
+function New-RunThread([string]$Id) {
+    return @{ Id = $Id; ConsoleId = $(if ($Id) { "thread-$Id" } else { 'main' }); List = [System.Collections.Generic.List[object]]::new(); Pos = 0; WatchId = ''; Failed = $null; Done = $false }
+}
+
+# Mirrors the page's old runAll: the visible, applicable steps (plus the pause point), consecutive rows that carry a threadId
+# form a block whose threads run concurrently, leading steps that are already Done are skipped.
+function Start-UiRun([string]$PlanId, [bool]$UseThreads) {
+    if (Test-UiBusy) { throw 'A run is already in progress.' }
+    $entry = Get-CatalogEntry $PlanId
+    if (-not $entry) { throw "Unknown plan '$PlanId'" }
+    Test-PlanAllowed $entry
+    $items = [System.Collections.Generic.List[object]]::new()
+    foreach ($s in @(Get-PlanSteps $entry | Where-Object { $_.Visible -and (Test-StepApplicable $_) })) {
+        $items.Add(@{ Index = [int]$s.Index; Key = [string]$s.Index; Name = $s.DisplayName; CommandLine = $s.CommandLine; ThreadId = $s.ThreadId; Interactive = $s.Interactive; Breakpoint = $false })
+        if ($null -ne $script:ui.pausePointAfter -and [int]$s.Index -eq [int]$script:ui.pausePointAfter) {
+            $items.Add(@{ Index = -1; Key = 'bp'; Name = 'Engineering Break Point'; CommandLine = "Confirm-ManualStep -Message 'Press Enter to Continue'"; ThreadId = ''; Interactive = $true; Breakpoint = $true })
+        }
+    }
+    while ($items.Count -gt 0 -and $script:ui.statuses[$items[0].Key] -eq 'Done') { $items.RemoveAt(0) }
+    $blocks = [System.Collections.Generic.List[object]]::new()
+    foreach ($item in $items) {
+        if (-not $UseThreads -or -not $item.ThreadId) {
+            $t = New-RunThread ''; $t.List.Add($item)
+            $blocks.Add(@{ Threaded = $false; Threads = @($t) }); continue
+        }
+        $last = if ($blocks.Count -gt 0) { $blocks[$blocks.Count - 1] } else { $null }
+        if (-not ($last -and $last.Threaded)) { $last = @{ Threaded = $true; Threads = [System.Collections.Generic.List[object]]::new() }; $blocks.Add($last) }
+        $t = $last.Threads | Where-Object { $_.Id -eq $item.ThreadId } | Select-Object -First 1
+        if (-not $t) { $t = New-RunThread $item.ThreadId; $last.Threads.Add($t) }
+        $t.List.Add($item)
+    }
+    $script:ui.run = @{ Active = $true; PlanId = $PlanId; Blocks = $blocks; BlockPos = 0 }
+    $script:ui.runStartedAt = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds(); $script:ui.runFinishedAt = $null
+    Add-UiAdvisory 'Run Started. Navigation to other domains/clusters disabled.'
+}
+function Stop-UiRun {
+    $script:ui.run.Active = $false
+    $script:ui.runFinishedAt = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    Add-UiAdvisory 'Run Finished. Navigation to other domains/clusters re-enabled.'
+}
+# Advances one thread as far as it can without waiting: finished step -> next step; a step that returns at once (skipped,
+# advisory) -> the one after it. Mirrors runThread/runStep.
+function Step-RunThread($Run, $Thread) {
+    while ($true) {
+        if ($Thread.WatchId) {
+            $w = $script:watches[$Thread.WatchId]
+            if ($w.Status -eq 'Running') { return }
+            $Thread.WatchId = ''
+            if ($w.Status -ne 'Done') { $Thread.Failed = $Thread.List[$Thread.Pos]; $Thread.Done = $true; return }
+            $Thread.Pos++
+        }
+        if ($Thread.Pos -ge $Thread.List.Count) { $Thread.Done = $true; return }
+        $item = $Thread.List[$Thread.Pos]
+        try { $r = Start-Step $Run.PlanId $item.Index $Thread.ConsoleId $item.Breakpoint }
+        catch {
+            Set-UiStatus $item.Key 'Failed'
+            Add-UiAdvisory "$($item.Name) was not run: $($_.Exception.Message)" $true
+            $Thread.Failed = $item; $Thread.Done = $true; return
+        }
+        if ($r.needPassword) {                      # the page asks the person; /api/secret clears the flag and this retries
+            Set-UiStatus $item.Key 'Running'
+            $script:ui.needPassword = $true; $script:ui.pw = @{ Thread = $Thread; Item = $item }
+            return
+        }
+        if ($r.skipped -or $r.advisory) { $Thread.Pos++; continue }
+        $Thread.WatchId = $r.watchId
+        if ($item.Interactive) { Set-UiFocus $r.consoleId }        # bring the prompt in front, like the WPF UI
+        return
+    }
+}
+function Update-Run {
+    $run = $script:ui.run
+    if (-not $run -or -not $run.Active -or $script:ui.needPassword) { return }
+    if ($run.BlockPos -ge $run.Blocks.Count) { Stop-UiRun; return }          # nothing (left) to run, e.g. every step is already Done
+    $block = $run.Blocks[$run.BlockPos]
+    foreach ($t in @($block.Threads)) {
+        if (-not $t.Done) { Step-RunThread $run $t }
+        if ($script:ui.needPassword) { return }
+    }
+    if (@($block.Threads | Where-Object { -not $_.Done }).Count -gt 0) { return }
+    $failed = @($block.Threads | Where-Object { $_.Failed })
+    if ($failed.Count -gt 0) {
+        $cmdlet = ($failed[0].Failed.CommandLine -split '\s+', 2)[0]
+        Add-UiAdvisory $(if ($block.Threaded) { 'Run All stopped: one or more threads did not complete cleanly -- check each console/transcript before retrying.' }
+                         else { "Run All stopped: $cmdlet did not complete cleanly -- check the console/transcript for warnings, errors, or a PowerShell error record before retrying." }) $true
+        Stop-UiRun; return
+    }
+    if ($block.Threaded) { Set-UiFocus 'main' }
+    $run.BlockPos++
+    if ($run.BlockPos -ge $run.Blocks.Count) { Stop-UiRun }
+}
+function Get-UiPayload([int]$Since) {
+    $adv = @($script:ui.advisories | Select-Object -Skip $Since)
+    return @{
+        planId = $script:ui.planId; recoveryType = $script:ui.recoveryType; dataSource = $script:ui.dataSource
+        useThreads = $script:ui.useThreads; pausePointAfter = $script:ui.pausePointAfter; toggles = $script:ui.toggles
+        extractedPath = $script:extractedPath
+        statuses = $script:ui.statuses
+        advisories = $adv; advisoryCount = $script:ui.advisories.Count
+        busy = (Test-UiBusy)
+        runActive = [bool]($script:ui.run -and $script:ui.run.Active)
+        runStartedAt = $script:ui.runStartedAt; runFinishedAt = $script:ui.runFinishedAt
+        now = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+        needPassword = $script:ui.needPassword
+        focusSeq = $script:ui.focusSeq; focusConsole = $script:ui.focusConsole
+    }
+}
+
 # ---------------------------------------------------------------- WebSocket clients (one per open console tab)
+function Test-ActiveClientLive {
+    if (-not $script:activeClient.Id) { return $false }
+    if (@($script:wsClients | Where-Object { $_.ClientId -eq $script:activeClient.Id }).Count -gt 0) { return $true }
+    return (([DateTime]::UtcNow - $script:activeClient.LastSeen).TotalSeconds -lt 3)
+}
+function Test-ClientAllowed([string]$ClientId) {
+    if (-not $ClientId) { return $true }            # not a page (a script holding the token): never claims or blocks the window
+    if ($script:activeClient.Id -eq $ClientId -or -not (Test-ActiveClientLive)) {
+        $script:activeClient.Id = $ClientId; $script:activeClient.LastSeen = [DateTime]::UtcNow
+        return $true
+    }
+    return $false
+}
 function Add-WsAccept($Context, [string]$ConsoleId) {
     # [NullString]::Value, not $null: PowerShell converts a $null argument to "" for a [string] parameter, and
     # AcceptWebSocketAsync rejects an empty subprotocol (ArgumentException) -- the upgrade then never completes.
-    [void]$script:pendingAccepts.Add(@{ Task = $Context.AcceptWebSocketAsync([NullString]::Value); ConsoleId = $ConsoleId })
+    [void]$script:pendingAccepts.Add(@{ Task = $Context.AcceptWebSocketAsync([NullString]::Value); ConsoleId = $ConsoleId; ClientId = [string]$Context.Request.QueryString['client'] })
 }
 
 function Invoke-ClientMessage($Client, [string]$Text) {
@@ -863,8 +1051,8 @@ function Update-Clients {
         $ws = $a.Task.Result.WebSocket
         $c = $script:consoles[$a.ConsoleId]
         $client = @{
-            Ws = $ws; ConsoleId = $a.ConsoleId; RecvBuf = [byte[]]::new(8192); Msg = [System.IO.MemoryStream]::new()
-            Sent = $c.Base; SendTask = $null; RecvTask = $null
+            Ws = $ws; ConsoleId = $a.ConsoleId; ClientId = $a.ClientId; RecvBuf = [byte[]]::new(8192); Msg = [System.IO.MemoryStream]::new()
+            Sent = $c.Base; SendTask = $null; RecvTask = $null; StateSent = $null
         }
         $client.RecvSeg = [ArraySegment[byte]]::new($client.RecvBuf)
         $client.RecvTask = $ws.ReceiveAsync($client.RecvSeg, [Threading.CancellationToken]::None)
@@ -875,7 +1063,7 @@ function Update-Clients {
         # That backlog must be answered, so it is presented as live output (replay = 0).
         $replayBytes = if ($c.EverAttached) { [long]$c.Out.Count } else { [long]0 }
         $c.EverAttached = $true
-        $hello = [Text.Encoding]::UTF8.GetBytes((@{ replay = $replayBytes; backend = $script:consoleBackend.ToLowerInvariant() } | ConvertTo-Json -Compress))
+        $hello = [Text.Encoding]::UTF8.GetBytes((@{ replay = $replayBytes; backend = $script:consoleBackend.ToLowerInvariant(); commandLine = (-not $DisableCommandLine) } | ConvertTo-Json -Compress))
         $client.SendTask = $ws.SendAsync([ArraySegment[byte]]::new($hello), [System.Net.WebSockets.WebSocketMessageType]::Text, $true, [Threading.CancellationToken]::None)
         [void]$script:wsClients.Add($client)
     }
@@ -907,6 +1095,16 @@ function Update-Clients {
                 $chunk = $c.Out.GetRange([int]($client.Sent - $c.Base), $n).ToArray()
                 $client.SendTask = $ws.SendAsync([ArraySegment[byte]]::new($chunk), [System.Net.WebSockets.WebSocketMessageType]::Binary, $true, [Threading.CancellationToken]::None)
                 $client.Sent += $n
+            } else {
+                # Caught up with the console's output: tell the page whether the console is idle (and where) or busy. Sent only
+                # now so the page draws its prompt after everything the previous command printed.
+                $state = Get-ConsoleState $c
+                $sig = if ($state.idle) { 'idle|' + $state.cwd } else { 'busy' }
+                if ($client.StateSent -cne $sig) {
+                    $msg = [Text.Encoding]::UTF8.GetBytes((@{ state = $(if ($state.idle) { 'idle' } else { 'busy' }); cwd = $state.cwd } | ConvertTo-Json -Compress))
+                    $client.SendTask = $ws.SendAsync([ArraySegment[byte]]::new($msg), [System.Net.WebSockets.WebSocketMessageType]::Text, $true, [Threading.CancellationToken]::None)
+                    $client.StateSent = $sig
+                }
             }
         } catch {
             [void]$script:wsClients.Remove($client)
@@ -953,6 +1151,15 @@ function Test-RequestAllowed($Context) {
     return ($supplied -and $supplied -ceq $Token)
 }
 
+# The page and its WebSockets identify themselves (X-VCFIR-Client header / client= query). The page itself, the public vendor files
+# and the presence probe are exempt, so a second window can load far enough to say why it is refused.
+function Test-PageOwner($Context) {
+    $req = $Context.Request; $path = $req.Url.AbsolutePath
+    if ($path -eq '/' -or $path.StartsWith('/vendor/') -or $path -eq '/api/presence') { return $true }
+    $id = if ($path -eq '/ws') { [string]$req.QueryString['client'] } else { [string]$req.Headers['X-VCFIR-Client'] }
+    return (Test-ClientAllowed $id)
+}
+
 function Invoke-Route($Context) {
     $req = $Context.Request
     $path = $req.Url.AbsolutePath
@@ -974,6 +1181,7 @@ function Invoke-Route($Context) {
     switch ("$method $path") {
         'GET /' { Send-Response $Context ([IO.File]::ReadAllBytes($script:htmlPath)) 'text/html; charset=utf-8' }
         'GET /api/catalog' { Send-Json $Context $script:catalog }
+        'GET /api/presence' { Send-Json $Context @{ connected = (Test-ActiveClientLive); workingDirectory = $WorkingDirectory } }
         'GET /api/plan' { Send-Json $Context (Get-PlanPayload $req.QueryString['id']) }
         'GET /api/info' {
             # Lets the page (and a screenshot of it) say exactly which build, OS and console backend is running.
@@ -984,11 +1192,30 @@ function Invoke-Route($Context) {
                 backend = $script:consoleBackend
                 workingDirectory = $WorkingDirectory
                 unlocked = $script:engineeringUnlocked
+                commandLine = (-not $DisableCommandLine)
                 updates  = @(@($CoordinatorUpdateStatus, $InstanceRecoveryUpdateStatus) | Where-Object { $_ })
             }
         }
         'GET /api/consoles' {
             Send-Json $Context @{ consoles = @($script:consoles.Values | ForEach-Object { @{ id = $_.Id; label = $_.Label; exited = $_.Exited; bytes = ($_.Base + $_.Out.Count) } }) }
+        }
+        'POST /api/console/exec' {
+            # A command typed in the page's command line while the console is idle. It runs in the console's own session (so
+            # variables, modules and connections are all there) and is echoed like a step. Refused while the console is busy.
+            if ($DisableCommandLine) { Send-Json $Context @{ error = 'The command line is disabled (-DisableCommandLine).' } 403; return }
+            $body = Read-JsonBody $Context
+            $id = [string]$body.id
+            if (-not $script:consoles.Contains($id)) { Send-Json $Context @{ error = 'unknown console' } 404; return }
+            $console = $script:consoles[$id]
+            $command = [string]$body.command
+            if ([string]::IsNullOrWhiteSpace($command)) { Send-Json $Context @{ ok = $true }; return }
+            if ($command.Length -gt 20000) { throw 'That command is too long.' }
+            if (-not (Get-ConsoleState $console).idle) { Send-Json $Context @{ error = 'The console is busy.' } 409; return }
+            $init = Get-VariableInitAll $console
+            $script:typedSeq++
+            Submit-ConsoleCommand $console $init.Script $command ('t' + $script:typedSeq)
+            foreach ($k in $init.Pending.Keys) { $console.SentVars[$k] = $init.Pending[$k] }
+            Send-Json $Context @{ ok = $true }
         }
         'POST /api/console/restart' {
             $id = [string](Read-JsonBody $Context).id
@@ -1040,6 +1267,7 @@ function Invoke-Route($Context) {
             $value = [string](Read-JsonBody $Context).value
             if ([string]::IsNullOrEmpty($value)) { throw 'No encryption password was entered.' }
             $script:vars['secureEncryptionPassword'] = $value
+            $script:ui.needPassword = $false; $script:ui.pw = $null          # a Run Plan waiting for it retries on its next tick
             Send-Json $Context @{ ok = $true }
         }
         'POST /api/unlock' {
@@ -1162,6 +1390,44 @@ function Invoke-Route($Context) {
             $body = Read-JsonBody $Context
             Send-Json $Context (Start-Step ([string]$body.planId) ([int]$body.index) ([string]$body.consoleId) ([bool]$body.breakpoint))
         }
+        'GET /api/ui' {
+            $since = 0; [void][int]::TryParse([string]$req.QueryString['since'], [ref]$since)
+            Send-Json $Context (Get-UiPayload $since)
+        }
+        'POST /api/ui' {
+            $body = Read-JsonBody $Context                                  # a hashtable (ConvertFrom-Json -AsHashtable)
+            if ($body.ContainsKey('reset') -and $body['reset']) { Reset-UiRun }
+            if ($body.ContainsKey('planId')) { $script:ui.planId = [string]$body['planId'] }
+            if ($body.ContainsKey('recoveryType')) { $script:ui.recoveryType = [string]$body['recoveryType'] }
+            if ($body.ContainsKey('dataSource')) { $script:ui.dataSource = [string]$body['dataSource'] }
+            if ($body.ContainsKey('useThreads')) { $script:ui.useThreads = [bool]$body['useThreads'] }
+            if ($body.ContainsKey('pausePointAfter')) { $script:ui.pausePointAfter = $(if ($null -eq $body['pausePointAfter']) { $null } else { [int]$body['pausePointAfter'] }) }
+            if ($body.ContainsKey('toggles')) { $t = @{}; foreach ($k in $body['toggles'].Keys) { $t[[string]$k] = [bool]$body['toggles'][$k] }; $script:ui.toggles = $t }
+            if ($body.ContainsKey('status')) { foreach ($k in $body['status'].Keys) { Set-UiStatus $k ([string]$body['status'][$k]) } }
+            if ($body.ContainsKey('statuses')) { $st = @{}; foreach ($k in $body['statuses'].Keys) { $st[[string]$k] = [string]$body['statuses'][$k] }; $script:ui.statuses = $st }
+            Send-Json $Context @{ ok = $true }
+        }
+        'POST /api/ui/advisory' {
+            $body = Read-JsonBody $Context
+            Add-UiAdvisory ([string]$body.text) ([bool]$body.failure)
+            Send-Json $Context @{ ok = $true }
+        }
+        'POST /api/run/start' {
+            $body = Read-JsonBody $Context
+            $script:ui.useThreads = [bool]$body.useThreads
+            Start-UiRun ([string]$body.planId) ([bool]$body.useThreads)
+            Send-Json $Context @{ ok = $true }
+        }
+        'POST /api/run/passwordcancel' {
+            $pw = $script:ui.pw
+            if ($script:ui.needPassword -and $pw) {
+                $script:ui.needPassword = $false; $script:ui.pw = $null
+                Set-UiStatus $pw.Item.Key 'Failed'
+                Add-UiAdvisory "$(($pw.Item.CommandLine -split '\s+', 2)[0]) was not run: no encryption password was entered." $true
+                $pw.Thread.Failed = $pw.Item; $pw.Thread.Done = $true
+            }
+            Send-Json $Context @{ ok = $true }
+        }
         'GET /api/step' {
             $w = $script:watches[$req.QueryString['id']]
             if (-not $w) { Send-Json $Context @{ error = 'unknown step run' } 404; return }
@@ -1185,6 +1451,17 @@ $listener = [System.Net.HttpListener]::new()
 $listener.Prefixes.Add("http://127.0.0.1:$Port/")
 $listener.Start()
 
+# Lets Start-VCFRecoveryCoordinatorWeb (in another session) find this instance again after its window was closed. Holds the token,
+# so it is private to the user; removed on exit.
+try {
+    $registry = Join-Path (Join-Path ([Environment]::GetFolderPath('UserProfile')) '.vcfir-webui') 'instances'
+    [void](New-Item -ItemType Directory -Path $registry -Force)
+    if (-not $script:onWindows) { [IO.File]::SetUnixFileMode((Split-Path $registry -Parent), [IO.UnixFileMode]'UserRead,UserWrite,UserExecute'); [IO.File]::SetUnixFileMode($registry, [IO.UnixFileMode]'UserRead,UserWrite,UserExecute') }
+    $script:instanceRecord = Join-Path $registry "$PID.json"
+    [IO.File]::WriteAllText($script:instanceRecord, (@{ pid = $PID; port = $Port; token = $Token; workingDirectory = $WorkingDirectory; started = [DateTimeOffset]::UtcNow.ToString('o') } | ConvertTo-Json -Compress))
+    if (-not $script:onWindows) { [IO.File]::SetUnixFileMode($script:instanceRecord, [IO.UnixFileMode]'UserRead,UserWrite') }
+} catch { $script:instanceRecord = '' }
+
 try {
     [void](New-ConsoleSession 'main' 'Main Thread')
     $pending = $listener.GetContextAsync()
@@ -1197,6 +1474,8 @@ try {
             try {
                 if (-not (Test-RequestAllowed $context)) {
                     Send-Json $context @{ error = 'forbidden' } 403
+                } elseif (-not (Test-PageOwner $context)) {
+                    Send-Json $context @{ error = 'This Recovery Coordinator is already open in another window.'; busyElsewhere = $true } 409
                 } else {
                     Invoke-Route $context
                 }
@@ -1206,6 +1485,12 @@ try {
         }
         Update-Consoles
         Update-Watches
+        try { Update-Run }
+        catch {                                    # a fault in the engine must end the run, not the server
+            Add-UiAdvisory "Run stopped on an internal error: $($_.Exception.Message) [$($_.ScriptStackTrace -replace '\r?\n', ' | ')]" $true
+            if ($script:ui.run) { Stop-UiRun }
+            $script:ui.needPassword = $false
+        }
         Update-Clients
         if ($script:wsClients.Count -gt 0) { $script:lastClientSeen = [DateTime]::UtcNow }       # a connected tab counts as "seen"
         if ($IdleTimeoutMinutes -gt 0 -and ([DateTime]::UtcNow - $script:lastClientSeen).TotalMinutes -ge $IdleTimeoutMinutes -and -not ($script:watches.Values | Where-Object { $_.Status -eq 'Running' })) {
@@ -1213,6 +1498,7 @@ try {
         }
     }
 } finally {
+    if ($script:instanceRecord) { Remove-Item -LiteralPath $script:instanceRecord -Force -ErrorAction SilentlyContinue }
     foreach ($c in $script:consoles.Values) { try { & $c.Pty.Kill } catch { }; Remove-Item -LiteralPath $c.QueueDir -Recurse -Force -ErrorAction SilentlyContinue }
     $listener.Stop()
     $listener.Close()

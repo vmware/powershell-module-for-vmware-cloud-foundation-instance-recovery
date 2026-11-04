@@ -476,6 +476,66 @@ Function Start-VCFRecoveryCoordinator {
 }
 Export-ModuleMember -Function Start-VCFRecoveryCoordinator
 
+# Running web UI instances that nobody is looking at: the server writes a private record (port, token, pid) when it starts and
+# removes it when it exits. A record is "free" when its process is alive and it reports that no window is connected.
+Function Get-VCFIRFreeWebInstance {
+    $dir = Join-Path (Join-Path ([Environment]::GetFolderPath('UserProfile')) '.vcfir-webui') 'instances'
+    if (-not (Test-Path -LiteralPath $dir)) { return }
+    foreach ($file in Get-ChildItem -LiteralPath $dir -Filter '*.json' -File -ErrorAction SilentlyContinue) {
+        try { $record = Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json } catch { continue }
+        if (-not (Get-Process -Id $record.pid -ErrorAction SilentlyContinue)) { Remove-Item -LiteralPath $file.FullName -Force -ErrorAction SilentlyContinue; continue }
+        $http = [System.Net.Http.HttpClient]::new()
+        try {
+            $http.Timeout = [TimeSpan]::FromSeconds(2)
+            $request = [System.Net.Http.HttpRequestMessage]::new([System.Net.Http.HttpMethod]::Get, "http://127.0.0.1:$($record.port)/api/presence")
+            $request.Headers.Add('X-VCFIR-Token', [string]$record.token)
+            $presence = $http.Send($request).Content.ReadAsStringAsync().Result | ConvertFrom-Json
+        } catch { continue } finally { $http.Dispose() }
+        if (-not $presence.connected) { $record }
+    }
+}
+
+# Opens the page in its own window of the user's default browser. Chromium-based browsers (Chrome, Edge, Brave, Vivaldi, Opera,
+# Chromium) get an app-style window (--app: no tabs or address bar, its own taskbar/Dock entry, the page's own icon); Firefox
+# gets a new window. Anything else, or any failure to work out the default browser, opens the URL the ordinary way.
+Function Open-VCFIRWebWindow {
+    Param([Parameter(Mandatory = $true)][String] $Url)
+    $onWindows = $IsWindows -or $PSVersionTable.PSEdition -eq 'Desktop'
+    try {
+        if ($onWindows) {
+            $progId = [string](Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\Shell\Associations\UrlAssociations\https\UserChoice' -ErrorAction SilentlyContinue).ProgId
+            $exe = switch -Regex ($progId) { '^ChromeHTML' { 'chrome.exe' } '^MSEdgeHTM' { 'msedge.exe' } '^BraveHTML' { 'brave.exe' } '^VivaldiHTM' { 'vivaldi.exe' } '^Opera' { 'opera.exe' } '^FirefoxURL' { 'firefox.exe' } default { $null } }
+            if ($exe) {
+                $path = foreach ($hive in 'HKCU', 'HKLM') { (Get-ItemProperty "${hive}:\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\$exe" -ErrorAction SilentlyContinue).'(default)' }
+                $path = @($path | Where-Object { $_ -and (Test-Path -LiteralPath $_) })[0]
+                if ($path) {
+                    Start-Process -FilePath $path -ArgumentList $(if ($exe -eq 'firefox.exe') { @('-new-window', $Url) } else { @("--app=$Url") })
+                    return
+                }
+            }
+            Start-Process $Url
+        } elseif ($IsMacOS) {
+            $bundle = 'com.apple.safari'
+            $json = (& defaults export com.apple.LaunchServices/com.apple.launchservices.secure - 2>$null | & plutil -convert json -o - - 2>$null) -join ''
+            if ($json) {
+                $handler = @((ConvertFrom-Json $json).LSHandlers | Where-Object { $_.LSHandlerURLScheme -in 'https', 'http' -and $_.LSHandlerRoleAll })[0]
+                if ($handler) { $bundle = [string]$handler.LSHandlerRoleAll }
+            }
+            if ($bundle -match '^(com\.google\.chrome|com\.microsoft\.edgemac|com\.brave\.browser|org\.chromium\.chromium|com\.vivaldi\.vivaldi|com\.operasoftware\.opera)') {
+                & open -n -b $bundle --args "--app=$Url"
+            } else { & open $Url }
+        } else {
+            $desktopFile = [string](& xdg-settings get default-web-browser 2>$null)
+            $binary = switch -Regex ($desktopFile) { 'chrom|brave|edge|vivaldi|opera' { ($desktopFile -replace '\.desktop$', '') } 'firefox' { 'firefox' } default { $null } }
+            if ($binary -and (Get-Command $binary -ErrorAction SilentlyContinue)) {
+                if ($binary -eq 'firefox') { & $binary --new-window $Url 2>$null & } else { & $binary "--app=$Url" 2>$null & }
+            } else { & xdg-open $Url 2>$null }
+        }
+    } catch {
+        LogMessage -type WARNING -message "Could not open a browser automatically; open the URL above manually."
+    }
+}
+
 Function Start-VCFRecoveryCoordinatorWeb {
     <#
     .SYNOPSIS
@@ -496,6 +556,15 @@ Function Start-VCFRecoveryCoordinatorWeb {
     .PARAMETER NoBrowser
     Do not open the default browser; just print the URL.
 
+    .PARAMETER DisableCommandLine
+    By default, between steps the console accepts commands typed in the page (to inspect variables, check connections, and so
+    on), run in the console's own session. Pass this switch to refuse them: the server then accepts only plan steps.
+
+    .PARAMETER New
+    Always start a new instance. Without it, if another instance is already running and no window is open on it (for example
+    its browser window was closed by accident), you are offered the choice of reconnecting to it. An instance that has a window
+    open is never offered, and refuses a second window.
+
     .PARAMETER ConsoleBackend
     How each console's PowerShell is hosted. Auto (default) uses a plain redirected-I/O pwsh on Windows and a real
     pseudo-terminal on macOS/Linux. Pipe forces the plain pwsh everywhere; Pty forces a pseudo-terminal (ConPTY on
@@ -511,7 +580,9 @@ Function Start-VCFRecoveryCoordinatorWeb {
     Param(
         [Parameter (Mandatory = $false)][ValidateRange(0, 65535)][Int] $Port = 0,
         [Parameter (Mandatory = $false)][Switch] $NoBrowser,
-        [Parameter (Mandatory = $false)][ValidateSet('Auto', 'Pty', 'Pipe')][String] $ConsoleBackend = 'Auto'
+        [Parameter (Mandatory = $false)][Switch] $New,
+        [Parameter (Mandatory = $false)][ValidateSet('Auto', 'Pty', 'Pipe')][String] $ConsoleBackend = 'Auto',
+        [Parameter (Mandatory = $false)][Switch] $DisableCommandLine
     )
 
     $serverScript = Join-Path (Join-Path $PSScriptRoot 'webui') 'VCFRecoveryCoordinatorWeb.ps1'
@@ -520,6 +591,26 @@ Function Start-VCFRecoveryCoordinatorWeb {
         if (-not (Test-Path -LiteralPath $required)) {
             LogMessage -type ERROR -message "Cannot find '$required'."
             return
+        }
+    }
+
+    # An instance whose window was closed is still running (its steps and consoles too): offer to pick it up again.
+    if (-not $New -and -not $NoBrowser) {
+        $free = @(Get-VCFIRFreeWebInstance)
+        if ($free.Count -gt 0) {
+            LogMessage -type NOTE -message "Recovery Coordinator web UI instance(s) already running with no window open:"
+            for ($i = 0; $i -lt $free.Count; $i++) {
+                $started = try { ([DateTimeOffset]::Parse($free[$i].started)).LocalDateTime.ToString('yyyy-MM-dd HH:mm') } catch { $free[$i].started }
+                LogMessage -type NOTE -message "  [$($i + 1)] started $started, launched from $($free[$i].workingDirectory) (port $($free[$i].port))"
+            }
+            $answer = try { Read-Host "Enter a number to reconnect to that instance, or press Enter to start a new one" } catch { '' }
+            if ($answer -match '^\d+$' -and [int]$answer -ge 1 -and [int]$answer -le $free.Count) {
+                $chosen = $free[[int]$answer - 1]
+                $reuseUrl = "http://127.0.0.1:$($chosen.port)/?t=$($chosen.token)"
+                LogMessage -type NOTE -message "Reconnecting to the instance on port $($chosen.port)."
+                Open-VCFIRWebWindow -Url $reuseUrl
+                return
+            }
         }
     }
 
@@ -558,6 +649,7 @@ Function Start-VCFRecoveryCoordinatorWeb {
     $instanceRecoveryVersion = "$($instanceRecoveryModule.Version)"
     $arguments += '-CoordinatorUpdateStatus', (Get-VCFIRModuleUpdateStatus -Module "VMware.CloudFoundation.RecoveryCoordinator|$coordinatorVersion")
     $arguments += '-InstanceRecoveryUpdateStatus', (Get-VCFIRModuleUpdateStatus -Module "VMware.CloudFoundation.InstanceRecovery|$instanceRecoveryVersion")
+    if ($DisableCommandLine) { $arguments += '-DisableCommandLine' }
     foreach ($argument in $arguments) { $startInfo.ArgumentList.Add([string]$argument) }
 
     $process = [System.Diagnostics.Process]::Start($startInfo)
@@ -580,15 +672,7 @@ Function Start-VCFRecoveryCoordinatorWeb {
     $url = "http://127.0.0.1:$Port/?t=$token"
     LogMessage -type NOTE -message "VCF Recovery Coordinator web UI listening on 127.0.0.1:$Port (PID $($process.Id)). Use the Quit button in the page to stop it."
     LogMessage -type NOTE -message "URL: $url"
-    if (-not $NoBrowser) {
-        try {
-            if ($IsWindows -or $PSVersionTable.PSEdition -eq 'Desktop') { Start-Process $url }
-            elseif ($IsMacOS) { & open $url }
-            else { & xdg-open $url 2>$null }
-        } catch {
-            LogMessage -type WARNING -message "Could not open a browser automatically; open the URL above manually."
-        }
-    }
+    if (-not $NoBrowser) { Open-VCFIRWebWindow -Url $url }
 }
 Export-ModuleMember -Function Start-VCFRecoveryCoordinatorWeb
 

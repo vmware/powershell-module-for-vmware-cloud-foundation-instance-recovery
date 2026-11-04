@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>VMware Cloud Foundation Recovery Coordinator</title>
+<title>VCF Recovery Coordinator</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%230095D3'/%3E%3Ctext x='32' y='41' font-family='Arial,Helvetica,sans-serif' font-size='26' font-weight='700' fill='white' text-anchor='middle'%3Evmw%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="vendor/xterm.css">
 <style>
   /* Matches xaml\VCFRecoveryCoordinatorUI.xaml: brushes, Segoe UI 13, flat white cards with a bold title on the card
@@ -262,7 +263,7 @@
   <div class="fsquick" id="fsQuick"></div>
   <div id="fsMsg"></div>
   <div id="fsList"></div>
-  <div class="fsopts"><label class="check" id="fsAllWrap"><input type="checkbox" id="fsAll"> Show all files (not just .json)</label><label class="check"><input type="checkbox" id="fsHidden"> Show hidden files</label></div>
+  <div class="fsopts"><label class="check" id="fsAllWrap"><input type="checkbox" id="fsAll"><span id="fsAllText"> Show all files (not just .json)</span></label><label class="check"><input type="checkbox" id="fsHidden"> Show hidden files</label></div>
   <div class="fsnav" id="fsSaveRow"><input type="text" id="fsName" placeholder="File name" autocomplete="off"></div>
   <div class="foot"><button class="ghost" id="fsCancel">Cancel</button> <button id="fsOpen" disabled>Open</button></div>
 </div></div>
@@ -280,6 +281,17 @@
 <script>
 'use strict';
 const token = new URLSearchParams(location.search).get('t') || '';
+// Identifies THIS window to the server, which lets only one window at a time drive an instance.
+const clientId = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Math.random()).slice(2) + Date.now();
+let busyElsewhere = false;
+function showBusyElsewhere() {
+  if (busyElsewhere) return; busyElsewhere = true;
+  document.body.textContent = '';
+  document.body.append(el('div', { style: 'font:15px/1.5 -apple-system,Segoe UI,sans-serif;max-width:520px;margin:18vh auto;padding:0 20px;color:#22313F' },
+    el('h2', { textContent: 'Already open in another window', style: 'margin:0 0 10px' }),
+    el('p', { textContent: 'This Recovery Coordinator is being used from another window. Close that window and this page will connect by itself.' })));
+  setTimeout(() => location.reload(), 3000);
+}
 const $ = id => document.getElementById(id);
 const TerminalCtor = (window.Terminal && window.Terminal.Terminal) || window.Terminal;
 const FitCtor = (window.FitAddon && window.FitAddon.FitAddon) || window.FitAddon;
@@ -287,10 +299,11 @@ const FitCtor = (window.FitAddon && window.FitAddon.FitAddon) || window.FitAddon
 async function api(path, body) {
   const res = await fetch(path, {
     method: body === undefined ? 'GET' : 'POST',
-    headers: { 'X-VCFIR-Token': token, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
+    headers: { 'X-VCFIR-Token': token, 'X-VCFIR-Client': clientId, ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const data = await res.json();
+  if (res.status === 409 && data.busyElsewhere) { showBusyElsewhere(); throw new Error(data.error); }
   if (!res.ok) throw new Error(data.error || res.statusText);
   return data;
 }
@@ -298,11 +311,17 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const el = (tag, props = {}, ...kids) => { const e = Object.assign(document.createElement(tag), props); e.append(...kids); return e; };
 
 // ------------------------------------------------------------ advisories (appended, scrolled to the end -- New-Advisory)
+// The log lives on the server (so a reloaded or reopened window shows the same history). advisory() sends the line there,
+// in order, then pulls it back with the next poll; renderAdvisory() is the only thing that draws a line.
+let advChain = Promise.resolve();
 function advisory(text, failure) {
-  const d = new Date(), p = n => String(n).padStart(2, '0');
+  advChain = advChain.then(() => api('/api/ui/advisory', { text, failure: !!failure })).then(() => pollUi()).catch(() => {});
+}
+function renderAdvisory(a) {
+  const d = new Date(a.ms), p = n => String(n).padStart(2, '0');
   const stamp = `[${p(d.getMonth() + 1)}-${p(d.getDate())}-${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}]`;
   const box = $('advisories');
-  box.append(el('div', failure ? { className: 'fail' } : {}, `${stamp} ${text}`));
+  box.append(el('div', a.failure ? { className: 'fail' } : {}, `${stamp} ${a.text}`));
   box.scrollTop = box.scrollHeight;                      // ScrollToEnd: the newest line is the one in view
 }
 
@@ -319,18 +338,19 @@ function showUpdateBanner() {
   $('ubCounter').textContent = `${updateIndex + 1} of ${updateItems.length}`;
   banner.classList.add('show');
 }
-function showModuleUpdateStatus(lines) {
-  if (!lines.length) { advisory('Update check skipped: no installed module versions were passed to the UI.'); return; }
+function showModuleUpdateStatus(lines, quiet) {
+  const say = quiet ? () => {} : advisory;
+  if (!lines.length) { say('Update check skipped: no installed module versions were passed to the UI.'); return; }
   const parts = v => String(v).replace(/[-+].*$/, '').split('.').map(n => parseInt(n, 10) || 0);
   const newer = (a, b) => { const x = parts(a), y = parts(b); for (let i = 0; i < Math.max(x.length, y.length); i++) { const d = (x[i] || 0) - (y[i] || 0); if (d) return d > 0; } return false; };
   let failures = 0; updateItems = [];
   for (const line of lines) {
     const [name, installed, latest, ...rest] = line.split('|'); const detail = rest.join('|');
-    if (latest === 'ERROR') { failures++; advisory(`Update check for ${name} failed: ${detail}`); continue; }
-    if (newer(latest, installed)) { advisory(`${name} ${installed} can be updated to ${latest} (repository '${detail}').`); updateItems.push({ name, installed, latest, repository: detail }); }
-    else advisory(`${name} ${installed} is up to date.`);
+    if (latest === 'ERROR') { failures++; say(`Update check for ${name} failed: ${detail}`); continue; }
+    if (newer(latest, installed)) { say(`${name} ${installed} can be updated to ${latest} (repository '${detail}').`); updateItems.push({ name, installed, latest, repository: detail }); }
+    else say(`${name} ${installed} is up to date.`);
   }
-  if (!updateItems.length && !failures) advisory('All modules are up to date.');
+  if (!updateItems.length && !failures) say('All modules are up to date.');
   showUpdateBanner();
 }
 $('ubPrev').onclick = () => { updateIndex--; showUpdateBanner(); };
@@ -363,26 +383,30 @@ function openConsole(info) {
                                   scrollback: 10000, theme: { background: '#0C0C0C' }, allowProposedApi: true });
   const fit = new FitCtor(); term.loadAddon(fit); term.open(host);
   const c = { id: info.id, label: info.label, exited: false, term, fit, ws: null, el: host, inputEnabled: false, replayLeft: 0,
-              backend: 'pty', line: '', tail: '', dec: new TextDecoder(), openedAt: Date.now() };
+              backend: 'pty', line: '', tail: '', dec: new TextDecoder(), openedAt: Date.now(),
+              idle: false, cmdline: true, cwd: '', ed: { line: '', cur: 0, at: 0 }, hist: [], hpos: 0 };
   consoles.set(info.id, c);
   const tabEl = el('div', { className: 'tab', textContent: info.label, onclick: () => selectConsole(info.id) }); c.tabEl = tabEl; $('consoleTabs').append(tabEl);
 
   term.onData(d => {
     if (!c.inputEnabled || !c.ws || c.ws.readyState !== 1) return;
+    if (c.idle && c.cmdline) { idleInput(c, d); return; }             // between steps: the page is the command line
     if (c.backend === 'pipe') { pipeInput(c, d); return; }
     if (d === '\x03') api('/api/console/interrupt', { id: c.id, notifyOnly: true }).catch(() => {});   // a step waiting on this console is no longer running
     c.ws.send('i' + d);
   });
   term.onResize(({ cols, rows }) => { if (c.ws && c.ws.readyState === 1) c.ws.send('r' + cols + ',' + rows); });
 
-  const ws = new WebSocket(`ws://${location.host}/ws?console=${encodeURIComponent(info.id)}&t=${encodeURIComponent(token)}`);
+  const ws = new WebSocket(`ws://${location.host}/ws?console=${encodeURIComponent(info.id)}&t=${encodeURIComponent(token)}&client=${encodeURIComponent(clientId)}`);
   ws.binaryType = 'arraybuffer'; c.ws = ws;
   ws.onopen = () => { if (selectedConsole === c.id) c.fit.fit(); ws.send('r' + term.cols + ',' + term.rows); };
   ws.onmessage = ev => {
     if (typeof ev.data === 'string') {
       // {"replay":N}: the next N bytes are scrollback. Ignore what the terminal answers to queries inside it
       // (cursor position reports etc.), or those replies would be typed into the prompt.
-      const m = JSON.parse(ev.data); c.replayLeft = m.replay || 0; c.inputEnabled = c.replayLeft === 0;
+      const m = JSON.parse(ev.data);
+      if (m.state) { onConsoleState(c, m); return; }           // {"state":"idle"|"busy","cwd":...} from the server
+      c.replayLeft = m.replay || 0; c.inputEnabled = c.replayLeft === 0; c.cmdline = m.commandLine !== false;
       c.backend = m.backend || 'pty'; if (c.backend === 'pipe') term.options.convertEol = true;   // a pipe-hosted pwsh emits bare \n
       return;
     }
@@ -396,6 +420,68 @@ function openConsole(info) {
   if (!selectedConsole) selectConsole(info.id);
   return c;
 }
+// ---- command line between steps -------------------------------------------------------------------------------------------
+// While a console is idle (no step running or waiting on an answer) the page itself is the command line: it draws a `PS <folder>>`
+// prompt and a small line editor. Enter sends the line through the same queue steps use, so it runs in the console's own session
+// (variables, modules, connections) and is echoed like a step. Nothing is typed into the console's input while idle, which is
+// what avoids the input corruption an interactive prompt suffered. While a step runs or asks something, keys go straight to the
+// console as before. The server tells us when the console is idle.
+const promptOf = c => `PS ${c.cwd}> `;
+function showPrompt(c) {
+  if (c.term.buffer.active.cursorX !== 0) c.term.write('\r\n');
+  c.ed.line = ''; c.ed.cur = 0; c.hpos = c.hist.length; c.ed.at = promptOf(c).length;
+  c.term.write(promptOf(c));
+}
+function eraseInput(c) {                                   // remove the prompt and what was typed, including wrapped rows
+  const up = Math.floor(c.ed.at / c.term.cols);
+  c.term.write((up ? `\x1b[${up}A` : '') + '\r\x1b[J');
+}
+function redrawInput(c) {                                  // repaint prompt + line and put the cursor where the editor says
+  const cols = c.term.cols, w = promptOf(c).length, e = c.ed;
+  const up = Math.floor(e.at / cols), endRow = Math.floor((w + e.line.length) / cols);
+  const target = w + e.cur, back = endRow - Math.floor(target / cols), col = target % cols;
+  c.term.write((up ? `\x1b[${up}A` : '') + '\r\x1b[J' + promptOf(c) + e.line + (back > 0 ? `\x1b[${back}A` : '') + '\r' + (col ? `\x1b[${col}C` : ''));
+  e.at = target;
+}
+function onConsoleState(c, m) {
+  if (m.state === 'idle' && c.cmdline) { c.cwd = m.cwd || c.cwd; c.idle = true; showPrompt(c); }
+  else { if (c.idle) eraseInput(c); c.idle = false; }       // a step (or typed command) started: its echo prints the prompt itself
+}
+async function submitCommand(c, text) {
+  if (!text.trim()) { c.term.write('\r\n'); showPrompt(c); return; }
+  eraseInput(c); c.idle = false;
+  if (c.hist[c.hist.length - 1] !== text) c.hist.push(text);
+  try { await api('/api/console/exec', { id: c.id, command: text }); }
+  catch (e) { c.term.write('\x1b[31m' + e.message + '\x1b[0m\r\n'); c.idle = true; showPrompt(c); }
+}
+function idleInput(c, d) {
+  const e = c.ed;
+  if (d.length > 1 && d[0] !== '\x1b' && /[\r\n]/.test(d)) {            // pasted text with a newline: run it all as one block
+    submitCommand(c, (e.line.slice(0, e.cur) + d.replace(/\r\n?/g, '\n') + e.line.slice(e.cur)).replace(/\n+$/, ''));
+    return;
+  }
+  for (const k of (d[0] === '\x1b' ? [d] : [...d])) {
+    if (k === '\r' || k === '\n') { submitCommand(c, e.line); return; }
+    else if (k === '\x03') { c.term.write('^C'); showPrompt(c); }       // cancel the line (it never reaches the console)
+    else if (k === '\x7f' || k === '\b') {
+      if (e.cur > 0) { const atEnd = e.cur === e.line.length; e.line = e.line.slice(0, e.cur - 1) + e.line.slice(e.cur); e.cur--; if (atEnd) { c.term.write('\b \b'); e.at--; } else redrawInput(c); }
+    }
+    else if (k === '\x1b[3~') { if (e.cur < e.line.length) { e.line = e.line.slice(0, e.cur) + e.line.slice(e.cur + 1); redrawInput(c); } }
+    else if (k === '\x1b[D') { if (e.cur > 0) { e.cur--; redrawInput(c); } }
+    else if (k === '\x1b[C') { if (e.cur < e.line.length) { e.cur++; redrawInput(c); } }
+    else if (k === '\x1b[H' || k === '\x1bOH' || k === '\x1b[1~' || k === '\x01') { e.cur = 0; redrawInput(c); }
+    else if (k === '\x1b[F' || k === '\x1bOF' || k === '\x1b[4~' || k === '\x05') { e.cur = e.line.length; redrawInput(c); }
+    else if (k === '\x15') { e.line = e.line.slice(e.cur); e.cur = 0; redrawInput(c); }                 // Ctrl+U
+    else if (k === '\x0b') { e.line = e.line.slice(0, e.cur); redrawInput(c); }                          // Ctrl+K
+    else if (k === '\x1b[A') { if (c.hpos > 0) { c.hpos--; e.line = c.hist[c.hpos]; e.cur = e.line.length; redrawInput(c); } }
+    else if (k === '\x1b[B') { if (c.hpos < c.hist.length) { c.hpos++; e.line = c.hpos === c.hist.length ? '' : c.hist[c.hpos]; e.cur = e.line.length; redrawInput(c); } }
+    else if (k[0] !== '\x1b' && k >= ' ') {
+      const atEnd = e.cur === e.line.length; e.line = e.line.slice(0, e.cur) + k + e.line.slice(e.cur); e.cur++;
+      if (atEnd) { c.term.write(k); e.at++; } else redrawInput(c);
+    }
+  }
+}
+
 // A pipe-hosted console has no terminal, so nothing echoes what you type: the page does, and sends a whole line on Enter.
 // Only plain single-line answers are supported (that is all a prompt needs); cursor keys are ignored. Characters typed at
 // something that looks like a password prompt are echoed as '*' (a heuristic on the prompt text, not a guarantee).
@@ -462,14 +548,23 @@ async function init() {
   for (const t of catalog.recoveryTypes) $('typeSel').add(new Option(t.label + eoTag(t), t.id));
   $('typeSel').onchange = () => { fillPlans(); onPlanChosen(); };
   $('planSel').onchange = onPlanChosen;
-  try {
-    const i = await api('/api/info'); unlocked = !!i.unlocked;
-    advisory(`Web UI build ${i.build} · ${i.os} · PowerShell ${i.pwsh} · console backend: ${i.backend}`);
-    showModuleUpdateStatus(i.updates || []);
-  } catch { }
+  let info = null;
+  try { info = await api('/api/info'); unlocked = !!info.unlocked; } catch { }
+  const u = (await pollUi()) || {};                  // statuses, advisories, timer and pause point survive a closed/reloaded window
+  const firstLoad = advSeen === 0;                   // an empty log means nobody has opened this server before
+  if (info) {
+    if (firstLoad) advisory(`Web UI build ${info.build} · ${info.os} · PowerShell ${info.pwsh} · console backend: ${info.backend}`);
+    showModuleUpdateStatus(info.updates || [], !firstLoad);
+  }
   await refreshConsoles();
-  fillPlans(); await loadPlan();
+  fillPlans();
+  const saved = catalog.recoveryPlans.find(p => p.id === u.planId && (!p.engineeringOnly || unlocked));
+  if (saved) { $('typeSel').value = saved.recoveryType; fillPlans(saved.id); }
+  if (u.useThreads === false) $('useThreads').checked = false;
+  if (u.extractedPath) $('dsPath').value = u.extractedPath;
+  await loadPlan({ dataSource: u.dataSource, toggles: u.toggles });
   lastSafe = { type: current.plan.recoveryType, plan: current.plan.id };
+  await api('/api/ui', { planId: current.plan.id, recoveryType: current.plan.recoveryType }).catch(() => {});
 }
 function fillPlans(selectId) {
   const planSel = $('planSel'); planSel.length = 0;
@@ -494,10 +589,10 @@ async function onPlanChosen() {
   lastSafe = { type: plan.recoveryType, plan: plan.id };
   // A different plan: clear the selection (the extracted data stays loaded), like Sync-RecoveryPlanSelection.
   await api('/api/select', { kind: 'none' }).catch(() => {});
-  statuses.clear(); pausePointAfter = null;
+  await resetRun({ planId: plan.id, recoveryType: plan.recoveryType });
   await loadPlan();
 }
-async function loadPlan() {
+async function loadPlan(restore) {
   current = await api('/api/plan?id=' + encodeURIComponent($('planSel').value));
   unlocked = !!current.unlocked;
   const plan = current.plan;
@@ -506,16 +601,17 @@ async function loadPlan() {
   const dsSel = $('dsSel'); const prevDs = dsSel.value; dsSel.length = 0;
   for (const d of catalog.dataSources.filter(d => allowed.includes(d.id))) dsSel.add(new Option(d.label, d.id));
   // keep whatever was already picked if this plan still permits it (like the WPF UI), else the plan's default
-  dsSel.value = allowed.includes(prevDs) ? prevDs : (plan.defaultDataSource || dsSel.value);
+  dsSel.value = (restore && allowed.includes(restore.dataSource)) ? restore.dataSource : allowed.includes(prevDs) ? prevDs : (plan.defaultDataSource || dsSel.value);
   $('dsRow').style.display = allowed.length ? '' : 'none';
   // extra toggles default
   toggleState = {};
-  for (const t of (plan.extraToggles || [])) toggleState[t.id] = !!t.defaultChecked;
+  for (const t of (plan.extraToggles || [])) toggleState[t.id] = (restore && restore.toggles && t.id in restore.toggles) ? !!restore.toggles[t.id] : !!t.defaultChecked;
   await pushToggles();
   // The task list shows once a variables file has been loaded or created -- except a plan with no data source at all
   // (Recover Fleet), whose steps show straight away.
   variablesReady = current.variablesLoaded || (plan.selectionList === 'none' && !allowed.length);
   if (!current.variablesLoaded) varsNote = 'No variables loaded yet.';
+  else if (restore) varsNote = `Loaded ${current.variables.length} variable(s) from ${current.varsFile}.`;
   $('varsNote').textContent = varsNote;
   $('useAnswers').checked = !!current.answerFile; $('useAnswers').title = current.answerFile || '';
   applyMode(current.mode);
@@ -529,12 +625,13 @@ function browseForFile(title, filter, opts = {}) {
   return new Promise(resolve => {
     const modal = $('fsModal'); let current = null, selected = null, quickDone = false;
     $('fsTitle').textContent = title;
-    $('fsAllWrap').style.display = filter === 'json' ? '' : 'none';
+    $('fsAllWrap').style.display = filter === 'any' ? 'none' : '';
+    $('fsAllText').textContent = filter === 'backup' ? ' Show all files (not just .tar.gz)' : ' Show all files (not just .json)';
     $('fsAll').checked = false;
     $('fsSaveRow').style.display = opts.save ? 'flex' : 'none';
     $('fsOpen').textContent = opts.save ? 'Save' : 'Open';
     $('fsName').value = opts.defaultName || '';
-    const effectiveFilter = () => (filter === 'json' && !$('fsAll').checked) ? 'json' : 'any';
+    const effectiveFilter = () => (filter !== 'any' && !$('fsAll').checked) ? filter : 'any';
     const finish = v => {
       modal.style.display = 'none';
       $('fsCancel').onclick = $('fsOpen').onclick = $('fsUp').onclick = $('fsAll').onchange = $('fsHidden').onchange = $('fsPath').onkeydown = $('fsName').oninput = $('fsName').onkeydown = modal.onkeydown = null;
@@ -557,7 +654,7 @@ function browseForFile(title, filter, opts = {}) {
         for (const root of r.roots) q.append(el('a', { textContent: root.name, title: root.path, onclick: () => go(root.path) }));
       }
       const list = $('fsList'); list.textContent = '';
-      if (!r.entries.length) list.append(el('div', { className: 'empty', style: 'padding:14px 16px', textContent: filter === 'json' && !$('fsAll').checked ? 'No folders or .json files here.' : 'Empty folder.' }));
+      if (!r.entries.length) list.append(el('div', { className: 'empty', style: 'padding:14px 16px', textContent: filter !== 'any' && !$('fsAll').checked ? (filter === 'backup' ? 'No folders or .tar.gz backups here.' : 'No folders or .json files here.') : 'Empty folder.' }));
       for (const e of r.entries) {
         const row = el('div', { className: 'fsrow' },
           el('div', { className: 'n' + (e.dir ? ' d' : ''), textContent: (e.dir ? '▸ ' : '    ') + e.name, title: e.name }),
@@ -593,7 +690,7 @@ function browseForFile(title, filter, opts = {}) {
 async function loadDataSource(path) {
   try {
     const r = await api('/api/datasource', { kind: $('dsSel').value, path });
-    $('dsPath').value = r.file; $('dsNote').textContent = ''; statuses.clear(); pausePointAfter = null;
+    $('dsPath').value = r.file; $('dsNote').textContent = ''; await resetRun({ dataSource: $('dsSel').value });
     advisory(`Loaded ${r.file}`); await loadPlan();
     if (current.infrastructure && current.infrastructure.loaded) advisory(`VCF Instance runs Fleet Components : ${current.infrastructure.runsFleetComponents}`);
   } catch (e) { advisory('Could not use that file: ' + e.message, true); }
@@ -629,9 +726,10 @@ async function extractBackup(path) {
   $('dsSel').value = 'LoadExtractedData';
   await loadDataSource(r.extractedFile);
 }
+$('dsSel').onchange = () => api('/api/ui', { dataSource: $('dsSel').value }).catch(() => {});
 $('dsBrowse').onclick = async () => {
   const extracting = $('dsSel').value === 'ExtractBackup';
-  const path = await browseForFile(extracting ? 'Select backup file' : 'Select extracted-sddc-data.json', extracting ? 'any' : 'json');
+  const path = await browseForFile(extracting ? 'Select backup file' : 'Select extracted-sddc-data.json', extracting ? 'backup' : 'json');
   if (!path) return;
   if (extracting && /\.json$/i.test(path)) {
     // A .json is extracted data, not a backup: load it as such instead of silently treating it as a backup path.
@@ -675,7 +773,7 @@ function renderInfrastructure() {
 async function choose(sel) {
   if (busy) return;
   await api('/api/select', sel);
-  statuses.clear(); pausePointAfter = null;
+  await resetRun();
   advisory(`Selected ${sel.kind === 'cluster' ? 'cluster ' + sel.cluster + ' (' + sel.domain + ')' : 'domain ' + sel.domain}.`);
   await loadPlan();
   showTab($('taskTabs'), $('tasksCard'), 'paneVars');
@@ -716,6 +814,7 @@ $('modeEng').onclick = async () => {
 async function pushToggles() {
   const values = Object.fromEntries(Object.entries(toggleState).map(([k, v]) => [k, v ? 'true' : 'false']));
   if (Object.keys(values).length) await api('/api/variables', { values });
+  await api('/api/ui', { toggles: toggleState }).catch(() => {});
 }
 function renderToggles() {
   const host = $('toggles'); host.textContent = '';
@@ -756,7 +855,7 @@ function buildStepRow(s, host, readOnly) {
   if (s.threadId) circle.append(el('span', { className: 'thread', textContent: s.threadId, style: 'background:' + threadColour(s.threadId) }));
   const pill = el('div', { className: 'sp' });
   if (s.interactive) pill.append(el('span', { className: 'pill', textContent: s.autoAnswered ? 'Auto Answered' : 'Requires Input' }));
-  const btn = el('button', { className: 'runbtn' + (readOnly ? ' plan' : ''), disabled: readOnly, textContent: readOnly ? 'Pending' : 'Run' });
+  const btn = el('button', { className: 'runbtn' + (readOnly ? ' plan' : ''), disabled: readOnly || busy, textContent: readOnly ? 'Pending' : 'Run' });
   if (readOnly) btn.classList.add('Pending'); else btn.onclick = () => runSingle(s);
   const isBp = readOnly && s.breakpoint;
   const row = el('div', { className: 'step' + (isBp ? ' bprow' : ''), title: s.description || '' },
@@ -767,8 +866,9 @@ function buildStepRow(s, host, readOnly) {
     row.classList.add('clickable');
     row.onclick = () => {
       if (busy || current.mode !== 'Engineering') return;
-      if (s.breakpoint) pausePointAfter = null; else if (!statuses.has(s.index)) pausePointAfter = s.index; else return;
-      renderSteps();
+      let target;
+      if (s.breakpoint) target = null; else if (!statuses.has(s.index)) target = s.index; else return;
+      api('/api/ui', { pausePointAfter: target }).then(() => { pausePointAfter = target; renderSteps(); }).catch(() => {});
     };
   }
   host.append(row);
@@ -824,7 +924,7 @@ $('loadVars').onclick = async () => {
   if (!path) return;
   try {
     const r = await api('/api/variables/load', { path, planId: current.plan.id });
-    statuses.clear(); pausePointAfter = null;
+    await resetRun();
     varsNote = r.count === 0 ? `No variables found in '${r.file}'.` : `Loaded ${r.count} variable(s) from ${r.file}.`;
     await loadPlan();
     if (r.count > 0) showTab($('taskTabs'), $('tasksCard'), 'panePlan');
@@ -835,7 +935,7 @@ $('newVars').onclick = async () => {
   if (!path) return;          // the dialog already asked before replacing an existing file
   try {
     const r = await api('/api/variables/new', { path, planId: current.plan.id, overwrite: true });
-    statuses.clear(); pausePointAfter = null;
+    await resetRun();
     varsNote = `Creating '${r.file}' -- values save automatically as you fill them in.`;
     await loadPlan();
     showTab($('taskTabs'), $('tasksCard'), 'paneVars');
@@ -857,89 +957,82 @@ $('useAnswers').onchange = async () => {
 };
 
 // ------------------------------------------------------------ running steps
-// Mirrors Invoke-Step: the step's command is queued to a console and its completion is read from that console's
-// transcript on the server.
-async function runStep(step, consoleId) {
-  await pushVars();
-  setStatus(step.index, 'Running');
-  const payload = { planId: current.plan.id, index: step.breakpoint ? -1 : step.index, consoleId, breakpoint: !!step.breakpoint };
-  let r;
-  try {
-    r = await api('/api/step/run', payload);
-    if (r.needPassword) {            // a step that uses $secureEncryptionPassword: ask for it once, keep it in memory
-      const pw = await askPassword('Enter the backup encryption password:');
-      if (!pw) { setStatus(step.index, 'Failed'); advisory(`${cmdletOf(step)} was not run: no encryption password was entered.`, true); return false; }
-      await api('/api/secret', { value: pw });
-      r = await api('/api/step/run', payload);
-    }
-  } catch (e) { setStatus(step.index, 'Failed'); advisory(`${step.name} was not run: ${e.message}`, true); return false; }
-  if (r.skipped) { setStatus(step.index, 'Skipped'); return true; }
-  if (r.advisory) { advisory(r.advisory); setStatus(step.index, 'Done'); return true; }
-  await refreshConsoles();
-  if (step.interactive) selectConsole(r.consoleId);       // bring the prompt in front of the user, like the WPF UI
-  for (;;) {
-    await sleep(500);
-    const w = await api('/api/step?id=' + r.watchId);
-    if (w.status === 'Running') continue;
-    setStatus(step.index, w.status);
-    return w.status === 'Done';
-  }
+// Everything about a run lives on the server: it starts the step, watches the console transcript for completion, records the
+// status, and (for Run Plan) walks the whole list -- so closing or reloading this window loses nothing. The page only asks
+// for things to start and draws the state it polls (pollUi).
+let serverBusy = false, localPending = 0, uiFocusSeq = null, askingPw = false, runInfo = null;
+async function resetRun(extra) {                    // a different plan / data / selection: forget statuses and the pause point
+  statuses.clear(); pausePointAfter = null;
+  await api('/api/ui', { reset: true, ...(extra || {}) }).catch(() => {});
 }
+async function pollUi() {
+  let u; try { u = await api('/api/ui?since=' + advSeen); } catch { return null; }
+  for (const a of u.advisories) renderAdvisory(a);
+  advSeen = u.advisoryCount;
+  let rerender = false;
+  const next = new Map(Object.entries(u.statuses).map(([k, v]) => [k === 'bp' ? 'bp' : Number(k), v]));
+  for (const k of [...statuses.keys()]) if (!next.has(k)) { statuses.delete(k); rerender = true; }
+  for (const [k, v] of next) if (statuses.get(k) !== v) setStatus(k, v);
+  const pp = u.pausePointAfter === undefined ? null : u.pausePointAfter;
+  if (pp !== pausePointAfter) { pausePointAfter = pp; rerender = true; }
+  if (rerender && current && current.steps) renderSteps();
+  serverBusy = !!u.busy;
+  if ((serverBusy || localPending > 0) !== busy) setBusy(serverBusy || localPending > 0);
+  runInfo = u.runStartedAt ? { start: u.runStartedAt, end: u.runFinishedAt, skew: u.now - Date.now() } : null;
+  paintTimer();
+  if (uiFocusSeq === null) uiFocusSeq = u.focusSeq;                               // not on first load: don't yank the tab
+  else if (u.focusSeq !== uiFocusSeq) { uiFocusSeq = u.focusSeq; refreshConsoles().then(() => selectConsole(u.focusConsole)).catch(() => {}); }
+  if (u.needPassword && !askingPw) {                                              // a Run Plan step needs the backup password
+    askingPw = true;
+    try {
+      const pw = await askPassword('Enter the backup encryption password:');
+      if (pw) await api('/api/secret', { value: pw }); else await api('/api/run/passwordcancel', {});
+    } finally { askingPw = false; }
+  }
+  return u;
+}
+let advSeen = 0, pollBusy = false;
+setInterval(() => { if (pollBusy) return; pollBusy = true; pollUi().finally(() => { pollBusy = false; }); }, 700);
+function paintTimer() {
+  if (!runInfo) return;
+  $('timer').style.display = 'flex';
+  const s = Math.max(0, Math.floor(((runInfo.end || (Date.now() + runInfo.skew)) - runInfo.start) / 1000)), p = n => String(n).padStart(2, '0');
+  $('timerText').textContent = `${p(Math.floor(s / 3600))}:${p(Math.floor(s / 60) % 60)}:${p(s % 60)}`;
+}
+setInterval(paintTimer, 1000);
+window.addEventListener('beforeunload', e => { if (busy) { e.preventDefault(); e.returnValue = ''; } });   // a step is running: ask before leaving
+
+// One step from the Advanced tab.
 async function runSingle(step) {
   if (busy) return;
-  setBusy(true);
-  try { await runStep(step, 'main'); } finally { setBusy(false); }
-}
-// Mirrors Invoke-StepChain / Invoke-StepThread: consecutive rows carrying a threadId form a block; the threads in a
-// block run concurrently (one console each, reused for the same id), each thread's own rows in order; the main
-// sequence continues only once every thread in the block finished cleanly.
-function buildBlocks(steps, useThreads) {
-  const blocks = [];
-  for (const s of steps) {
-    if (!useThreads || !s.threadId) { blocks.push({ threads: new Map([['', [s]]]) }); continue; }
-    const last = blocks[blocks.length - 1];
-    if (last && last.threaded) { if (!last.threads.has(s.threadId)) last.threads.set(s.threadId, []); last.threads.get(s.threadId).push(s); }
-    else blocks.push({ threaded: true, threads: new Map([[s.threadId, [s]]]) });
-  }
-  return blocks;
-}
-// Runs one thread's rows in order; resolves to null when all went cleanly, or to the step that stopped it.
-async function runThread(list, threadId) {
-  const consoleId = threadId ? 'thread-' + threadId : 'main';
-  for (const s of list) { if (!(await runStep(s, consoleId))) return s; }
-  return null;
-}
-let timerHandle = null;
-function startTimer() {
-  const t0 = Date.now(); $('timer').style.display = 'flex'; $('timerText').textContent = '00:00:00';
-  clearInterval(timerHandle);
-  timerHandle = setInterval(() => {
-    const s = Math.floor((Date.now() - t0) / 1000), p = n => String(n).padStart(2, '0');
-    $('timerText').textContent = `${p(Math.floor(s / 3600))}:${p(Math.floor(s / 60) % 60)}:${p(s % 60)}`;
-  }, 1000);
+  localPending++; setBusy(true);
+  try {
+    await pushVars();
+    const payload = { planId: current.plan.id, index: step.breakpoint ? -1 : step.index, consoleId: 'main', breakpoint: !!step.breakpoint };
+    const failStep = async msg => { await api('/api/ui', { status: { [step.index]: 'Failed' } }).catch(() => {}); advisory(msg, true); };
+    let r;
+    try {
+      r = await api('/api/step/run', payload);
+      if (r.needPassword) {            // a step that uses $secureEncryptionPassword: ask for it once, keep it in memory
+        const pw = await askPassword('Enter the backup encryption password:');
+        if (!pw) { await failStep(`${cmdletOf(step)} was not run: no encryption password was entered.`); return; }
+        await api('/api/secret', { value: pw });
+        r = await api('/api/step/run', payload);
+      }
+    } catch (e) { await failStep(`${step.name} was not run: ${e.message}`); return; }
+    if (r.watchId) { await refreshConsoles(); if (step.interactive) selectConsole(r.consoleId); }   // bring the prompt in front
+  } finally { localPending--; await pollUi(); }
 }
 $('runAll').onclick = async () => {
   if (busy || !variablesReady) return;
-  setBusy(true); startTimer();
-  advisory('Run Started. Navigation to other domains/clusters disabled.');
+  localPending++; setBusy(true);
   try {
-    // Like the WPF chain: leading rows already Done are skipped, so Run Plan continues from the next pending step.
-    const todo = displaySteps().filter(s => s.applicable);
-    while (todo.length && statuses.get(todo[0].index) === 'Done') todo.shift();
-    for (const block of buildBlocks(todo, $('useThreads').checked)) {
-      const failed = (await Promise.all([...block.threads].map(([tid, list]) => runThread(list, tid)))).filter(Boolean);
-      if (failed.length) {
-        advisory(block.threaded ? 'Run All stopped: one or more threads did not complete cleanly -- check each console/transcript before retrying.'
-                                : `Run All stopped: ${cmdletOf(failed[0])} did not complete cleanly -- check the console/transcript for warnings, errors, or a PowerShell error record before retrying.`, true);
-        break;
-      }
-      if (block.threaded) selectConsole('main');        // a thread step may have left its own tab in front
-    }
-  } finally {
-    clearInterval(timerHandle); setBusy(false);
-    advisory('Run Finished. Navigation to other domains/clusters re-enabled.');
-  }
+    await pushVars();
+    await api('/api/run/start', { planId: current.plan.id, useThreads: $('useThreads').checked });
+  } catch (e) { advisory('Run could not start: ' + e.message, true); }
+  finally { localPending--; await pollUi(); }
 };
+$('useThreads').onchange = () => api('/api/ui', { useThreads: $('useThreads').checked }).catch(() => {});
 
 // ------------------------------------------------------------ Save & Exit / Resume
 function openModal(title, items, onPick) {
@@ -979,9 +1072,9 @@ $('resume').onclick = async () => {
           }
           if (allowed) { $('typeSel').value = plan.recoveryType; fillPlans(r.planId); lastSafe = { type: plan.recoveryType, plan: plan.id }; }
         }
-        statuses.clear(); pausePointAfter = null;
+        await resetRun();
         await loadPlan();
-        for (const i of r.completed) statuses.set(i, 'Done');
+        await api('/api/ui', { status: Object.fromEntries(r.completed.map(i => [i, 'Done'])) }); await pollUi();
         for (const w of (r.warnings || [])) advisory(w, true);
         if (current.variablesLoaded) { varsNote = `Loaded ${current.variables.length} variable(s) from ${current.varsFile}.`; $('varsNote').textContent = varsNote; }
         renderSteps(); renderInfrastructure(); updateVisibility();
@@ -992,7 +1085,7 @@ $('resume').onclick = async () => {
   } catch (e) { advisory('Resume failed: ' + e.message, true); }
 };
 
-init().catch(e => { document.body.textContent = 'Failed to start: ' + e.message; });
+init().catch(e => { if (!busyElsewhere) document.body.textContent = 'Failed to start: ' + e.message; });
 </script>
 </body>
 </html>
