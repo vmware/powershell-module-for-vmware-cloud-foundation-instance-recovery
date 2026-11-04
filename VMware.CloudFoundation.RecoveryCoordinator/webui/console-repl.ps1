@@ -30,4 +30,8 @@ while ($true) {
     }
     Write-Host ("PS {0}> {1}" -f (Get-Location).Path, $__vcfirJob.command)
     try { . ([scriptblock]::Create($__vcfirJob.command)) } catch { Write-Error -ErrorRecord $_ }
+    # Tell the server this command has RETURNED (however it ended). A step normally signals success by logging its own
+    # "Completed Task <cmdlet>" line; if the command ends without having logged one (it crashed, say), the server sees
+    # this marker and reports the step as failed instead of waiting for a line that will never come.
+    if ($__vcfirJob.id) { [IO.File]::WriteAllText((Join-Path $QueueDir "$($__vcfirJob.id).done"), '') }
 }

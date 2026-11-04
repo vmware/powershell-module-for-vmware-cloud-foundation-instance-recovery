@@ -42,7 +42,6 @@ $script:stepLedger = @{}               # step id -> Success | Failed | Skipped (
 $script:wsClients = [System.Collections.Generic.List[object]]::new()
 $script:pendingAccepts = [System.Collections.Generic.List[object]]::new()
 $script:shutdown = $false
-$script:lastBrowseDir = ''
 $script:extracted = $null              # parsed extracted-sddc-data.json
 $script:extractedPath = ''
 $script:allDomains = @()
@@ -334,6 +333,7 @@ function Test-EngineeringModePassword([string]$Candidate) {
 function Get-BrowseRoots {
     $home_ = [Environment]::GetFolderPath('UserProfile')
     $roots = [System.Collections.Generic.List[object]]::new()
+    $roots.Add(@{ name = 'Launch folder'; path = $WorkingDirectory })
     if ($home_) { $roots.Add(@{ name = 'Home'; path = $home_ }) }
     foreach ($n in 'Desktop', 'Documents', 'Downloads') {
         $p = if ($home_) { Join-Path $home_ $n }
@@ -349,9 +349,9 @@ function Get-BrowseRoots {
 }
 
 function Get-DirectoryListing([string]$Path, [string]$Filter, [bool]$ShowHidden) {
-    if ([string]::IsNullOrWhiteSpace($Path)) {
-        $Path = if ($script:lastBrowseDir -and (Test-Path -LiteralPath $script:lastBrowseDir -PathType Container)) { $script:lastBrowseDir } else { [Environment]::GetFolderPath('UserProfile') }
-    }
+    # The browser always opens in the launch (working) directory -- where the transcripts, state files and the files
+    # a recovery produces live -- rather than remembering wherever it was last left or defaulting to the home folder.
+    if ([string]::IsNullOrWhiteSpace($Path)) { $Path = $WorkingDirectory }
     $full = [IO.Path]::GetFullPath($Path)
     $selected = $null
     if (Test-Path -LiteralPath $full -PathType Leaf) {        # a file path was typed: list its folder and report the file
@@ -363,7 +363,6 @@ function Get-DirectoryListing([string]$Path, [string]$Filter, [bool]$ShowHidden)
     $result = @{ path = $full; parent = $(if ($parentInfo) { $parentInfo.FullName } else { $null }); roots = (Get-BrowseRoots); selected = $selected }
     try { $items = @(Get-ChildItem -LiteralPath $full -Force -ErrorAction Stop) }
     catch { $result.entries = @(); $result.error = "Cannot read this folder: $($_.Exception.Message)"; return $result }
-    $script:lastBrowseDir = $full
     $onWindows = $IsWindows -or $PSVersionTable.PSEdition -eq 'Desktop'
     $entries = foreach ($item in $items) {
         $hidden = if ($onWindows) { [bool]($item.Attributes -band [IO.FileAttributes]::Hidden) } else { $item.Name.StartsWith('.') }
@@ -483,12 +482,12 @@ function Write-ConsoleInputChunk($Console) {
 }
 function Send-ConsoleLine($Console, [string]$Text) { Send-ConsoleBytes $Console ([Text.Encoding]::UTF8.GetBytes($Text + "`r")) }
 
-function Submit-ConsoleCommand($Console, [string]$Init, [string]$Command) {
+function Submit-ConsoleCommand($Console, [string]$Init, [string]$Command, [string]$Id = '') {
     $seq = '{0:D10}' -f ([DateTime]::UtcNow.Ticks)
     $tmp = Join-Path $Console.QueueDir "$seq.tmp"
     [IO.File]::Create($tmp).Dispose()
     if (-not ($IsWindows -or $PSVersionTable.PSEdition -eq 'Desktop')) { [IO.File]::SetUnixFileMode($tmp, [IO.UnixFileMode]'UserRead,UserWrite') }
-    [IO.File]::WriteAllText($tmp, (@{ init = $Init; command = $Command } | ConvertTo-Json -Compress), [System.Text.UTF8Encoding]::new($false))
+    [IO.File]::WriteAllText($tmp, (@{ init = $Init; command = $Command; id = $Id } | ConvertTo-Json -Compress), [System.Text.UTF8Encoding]::new($false))
     Move-Item -LiteralPath $tmp -Destination (Join-Path $Console.QueueDir "$seq.json")
 }
 
@@ -573,6 +572,11 @@ function Update-Watches {
             Complete-Watch $w $(if ($clean) { 'Done' } else { 'Failed' }) $clean $slice
         } elseif ($c.Exited) {
             Complete-Watch $w 'Failed' $false $text
+        } elseif (Test-Path -LiteralPath (Join-Path $c.QueueDir "$($w.Id).done")) {
+            # The command returned but its "Completed Task" line is not in the transcript. Give the transcript a moment
+            # to flush before concluding it never will be written.
+            if (-not $w.ReturnedAt) { $w.ReturnedAt = [DateTime]::UtcNow }
+            elseif (([DateTime]::UtcNow - $w.ReturnedAt).TotalSeconds -ge 2) { Complete-Watch $w 'Failed' $false $text }
         }
     }
 }
@@ -610,7 +614,7 @@ function Start-Step([string]$PlanId, [int]$StepIndex, [string]$ConsoleId) {
         Id = $id; ConsoleId = $ConsoleId; StepId = $step.Id; Cmdlet = $cmdlet; Target = "Completed Task $cmdlet"
         Offset = (Get-TranscriptLength $console.Transcript); Status = 'Running'; Clean = $null
     }
-    Submit-ConsoleCommand $console $init.Script $step.CommandLine
+    Submit-ConsoleCommand $console $init.Script $step.CommandLine $id
     foreach ($k in $init.Pending.Keys) { $console.SentVars[$k] = $init.Pending[$k] }
     return @{ watchId = $id; consoleId = $ConsoleId }
 }
@@ -808,6 +812,28 @@ function Invoke-Route($Context) {
         }
         'GET /api/fs' {
             Send-Json $Context (Get-DirectoryListing $req.QueryString['path'] $req.QueryString['filter'] ($req.QueryString['hidden'] -eq '1'))
+        }
+        'POST /api/extract' {
+            # Same as the WPF "Extract SDDC Manager Backup" data source: the encryption password goes to the Main console
+            # (silently, via the private queue -- never echoed or logged) and New-ExtractDataFromSDDCBackup runs there. It
+            # always writes extracted-sddc-data.json next to the backup, so the page loads that once the step completes.
+            $body = Read-JsonBody $Context
+            $backup = [string]$body.path
+            if (-not (Test-Path -LiteralPath $backup -PathType Leaf)) { throw "File not found on the machine running this server: $backup" }
+            if ([string]::IsNullOrEmpty([string]$body.password)) { throw 'No encryption password was entered.' }
+            $backup = (Resolve-Path -LiteralPath $backup).Path
+            $console = Get-OrNewConsole 'main'
+            if ($console.Exited) { throw "Console 'main' has exited; restart it first." }
+            $script:vars['secureEncryptionPassword'] = [string]$body.password
+            $script:vars['vcfbackupFilePath'] = $backup
+            $init = "`$global:secureEncryptionPassword = ConvertTo-SecureString '$(Protect-SingleQuotes ([string]$body.password))' -AsPlainText -Force"
+            $console.SentVars['secureEncryptionPassword'] = [string]$body.password
+            $script:watchSeq++
+            $id = [string]$script:watchSeq
+            $script:watches[$id] = @{ Id = $id; ConsoleId = 'main'; StepId = ''; Cmdlet = 'New-ExtractDataFromSDDCBackup'; Target = 'Completed Task New-ExtractDataFromSDDCBackup'
+                Offset = (Get-TranscriptLength $console.Transcript); Status = 'Running'; Clean = $null }
+            Submit-ConsoleCommand $console $init -Id $id -Command ("New-ExtractDataFromSDDCBackup -vcfBackupFilePath '$(Protect-SingleQuotes $backup)' -secureEncryptionPassword `$secureEncryptionPassword")
+            Send-Json $Context @{ watchId = $id; consoleId = 'main'; extractedFile = (Join-Path (Split-Path $backup -Parent) 'extracted-sddc-data.json') }
         }
         'POST /api/select' {
             $body = Read-JsonBody $Context
