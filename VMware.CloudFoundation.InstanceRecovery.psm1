@@ -3488,9 +3488,9 @@ Function Set-SDDCManagerOfflineDepot {
     $currentDepotServicesConfig | ConvertTo-Json -depth 10 > originalDepotServicesconfig.json
 
     #Delete Services Configuration
-    #LogMessage -type INFO -message "[$sddcManagerFqdn] Removing Original Depot Fleet Depot Configuration"
-    #$deleteServicesConfigURI = "https://$sddcManagerFqdn/v1/services-config/$($currentDepotServicesConfig.services.key)"
-    #Invoke-RestMethod -Uri $deleteServicesConfigURI -Method DELETE -Headers $headers -SkipCertificateCheck *>$null
+    LogMessage -type INFO -message "[$sddcManagerFqdn] Removing Original Depot Fleet Depot Configuration"
+    $deleteServicesConfigURI = "https://$sddcManagerFqdn/v1/services-config/$($currentDepotServicesConfig.services.key)"
+    Invoke-RestMethod -Uri $deleteServicesConfigURI -Method DELETE -Headers $headers -SkipCertificateCheck *>$null
 
     #Trust Depot Cert on SDDC Manager
     LogMessage -type INFO -message "[$sddcManagerFqdn] Trusting Offline Depot Certificate"
