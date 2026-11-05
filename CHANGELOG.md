@@ -1,6 +1,8 @@
 # Release History
 
 ## v9.1.1.1003
+- Merged `VMware.CloudFoundation.InstanceRecovery` and the Recovery Coordinator into a single module, `VMware.CloudFoundation.RecoveryCoordinator`
+- Reorganised plans into `ibr` and `fdr` folders (`plans`, `variable-templates`, `answer-templates`); `recovery-plan-catalog.json` and `xaml` now live at the module root
 - Updated `Invoke-NSXEdgeClusterRecovery`
 - Updated `Invoke-NSXEdgeClusterRecoverySelective`
 

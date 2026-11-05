@@ -26,18 +26,15 @@
 param(
     [string]$XamlPath,
     [string]$WorkingDirectory,
-    [string]$PlansPath,
-    [string]$CoordinatorVersion,
-    [string]$InstanceRecoveryVersion,
+    [string]$ModuleRoot,
+    [string]$ModuleVersion,
     # Already-computed "Name|Installed|Latest|Repository" (or "...|ERROR|message") results from
     # Get-VCFIRModuleUpdateStatus, run by Start-VCFRecoveryCoordinator in its own console BEFORE this
-    # process was even started -- see Show-ModuleUpdateStatus below. Two separate scalar parameters,
-    # not one array parameter, because a pwsh.exe -File launch does not bind multiple ArgumentList
-    # entries under one parameter name into an array the way an ordinary in-process call would
-    # (confirmed directly: only the first value ever arrived; repeating the parameter name instead
-    # throws "specified more than once").
-    [string]$CoordinatorUpdateStatus,
-    [string]$InstanceRecoveryUpdateStatus
+    # process was even started -- see Show-ModuleUpdateStatus below. A single scalar string,
+    # since a pwsh.exe -File launch does not bind multiple ArgumentList entries under one parameter
+    # name into an array the way an ordinary in-process call would (confirmed directly: only the
+    # first value ever arrived; repeating the parameter name instead throws "specified more than once").
+    [string]$ModuleUpdateStatus
 )
 
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Xaml
@@ -55,7 +52,7 @@ public static class VCFIRTaskbar {
     public static extern int SetCurrentProcessExplicitAppUserModelID([MarshalAs(UnmanagedType.LPWStr)] string AppID);
 }
 '@
-[void][VCFIRTaskbar]::SetCurrentProcessExplicitAppUserModelID('VMware.CloudFoundation.InstanceRecovery.RecoveryCoordinator')
+[void][VCFIRTaskbar]::SetCurrentProcessExplicitAppUserModelID('VMware.CloudFoundation.RecoveryCoordinator')
 
 $app = New-Object System.Windows.Application
 
@@ -87,7 +84,7 @@ $resumeButton = $window.FindName('ResumeButton')
 $exitButton = $window.FindName('ExitButton')
 $userModeLink = $window.FindName('UserModeLink')
 $engineeringModeLink = $window.FindName('EngineeringModeLink')
-# Recovery Type/Recovery Plan/Data Source (see plans/recovery-plan-catalog.json and
+# Recovery Type/Recovery Plan/Data Source (see recovery-plan-catalog.json and
 # Sync-RecoveryPlanSelection) -- replaced the old fixed set of RadioButtons/GroupBoxes below with
 # three catalog-driven ComboBoxes, so there's no longer one FindName per plan/scope.
 $recoveryTypeComboBox = $window.FindName('RecoveryTypeComboBox')
@@ -458,7 +455,7 @@ $engineeringModeLink.Add_MouseLeftButtonUp({
 # would leave Advanced reachable on first launch despite $global:uiMode already reading 'User'.
 Set-UIMode 'User'
 
-# --- Recovery Parameters catalog (plans/recovery-plan-catalog.json) ------------------------------
+# --- Recovery Parameters catalog (recovery-plan-catalog.json) ------------------------------
 # Drives the Recovery Type/Recovery Plan/Data Source combo boxes (see the XAML's "Recovery
 # Parameters" card) so a new recovery plan -- or relabeling/repointing an existing one -- is a JSON
 # edit, not a code change. Loaded once, not re-read on every use like Get-RecoveryPlanSteps: unlike
@@ -468,7 +465,7 @@ Set-UIMode 'User'
 $script:recoveryPlanCatalog = $null
 function Get-RecoveryPlanCatalog {
     if ($null -eq $script:recoveryPlanCatalog) {
-        $catalogPath = Join-Path $PlansPath 'recovery-plan-catalog.json'
+        $catalogPath = Join-Path $ModuleRoot 'recovery-plan-catalog.json'
         if (-not (Test-Path -LiteralPath $catalogPath)) {
             throw "Cannot find recovery plan catalog '$catalogPath'."
         }
@@ -610,9 +607,9 @@ function Select-RecoveryTypeAndPlan([string]$RecoveryTypeId, [string]$PlanId) {
 # for real keyboard input (a Read-Host confirmation, a menu choice, ...) rather than running
 # unattended end to end -- New-StepRow shows this as a "Requires Input" badge on the row so Run All
 # doesn't look stalled on something that's actually just waiting on the user. $RecoveryType selects
-# the plans\ibr or plans\fdr subfolder.
+# the ibr\plans or fdr\plans subfolder.
 function Get-RecoveryPlanSteps([string]$RecoveryType, [string]$PlanFileName) {
-    $planFilePath = Join-Path (Join-Path $PlansPath $RecoveryType) $PlanFileName
+    $planFilePath = Join-Path (Join-Path (Join-Path $ModuleRoot $RecoveryType) 'plans') $PlanFileName
     if (-not (Test-Path -LiteralPath $planFilePath)) {
         return @()
     }
@@ -818,7 +815,7 @@ function Set-PlanStepsListBox([System.Windows.Controls.ListBox]$PlanListBox, [Sy
 # again, self-healing with no separate reset needed. The synthetic step's shape exactly matches
 # Get-RecoveryPlanSteps's own output (plus IsBreakPoint), so it flows through New-StepRow/
 # Invoke-StepChain/Invoke-Step/Run All completely unmodified -- Confirm-ManualStep is already a real
-# cmdlet used this way by hand-authored plans (see e.g. plans/ibr/fleet-component-recovery-plan.json).
+# cmdlet used this way by hand-authored plans (see e.g. ibr/plans/fleet-component-recovery-plan.json).
 function Add-EngineeringBreakPointStep([object[]]$Steps, $AfterStep) {
     if (-not $AfterStep) { return $Steps }
     $index = [array]::IndexOf($Steps, $AfterStep)
@@ -1674,14 +1671,14 @@ $updateBannerCloseButton.Add_Click({
     })
 
 # The lookup itself already ran, in Start-VCFRecoveryCoordinator's own console, BEFORE this process
-# was even started -- -CoordinatorUpdateStatus/-InstanceRecoveryUpdateStatus already hold its results
+# was even started -- -ModuleUpdateStatus already holds its result
 # ("Name|Installed|Latest|Repository", or "Name|Installed|ERROR|message" if that module's own lookup
 # failed). This used to be the other way around -- the UI typed a lookup command into its own embedded
 # console after launch and polled a temp file for an answer -- which meant a real wait on every launch
 # with nothing on screen to show for it. Nothing here does any actual lookup work; it only parses
 # already-known answers and posts the resulting advisories/banner, which is instant.
 function Show-ModuleUpdateStatus {
-    $lines = @($CoordinatorUpdateStatus, $InstanceRecoveryUpdateStatus) | Where-Object { $_ }
+    $lines = @($ModuleUpdateStatus) | Where-Object { $_ }
     if ($lines.Count -eq 0) {
         New-Advisory 'Update check skipped: no installed module versions were passed to the UI.'
         return
@@ -3031,7 +3028,7 @@ function Import-ExtractedSddcDataFile([string]$Path) {
 }
 
 # Recovery Type -> Recovery Plan -> Data Source, entirely catalog-driven (see
-# plans/recovery-plan-catalog.json and the helpers above) -- replaces the old fixed
+# recovery-plan-catalog.json and the helpers above) -- replaces the old fixed
 # IbrRecoveryTypeRadio/FdrRecoveryTypeRadio/4-scope-RadioButtons/ExtractBackupRadio wiring, all of
 # it now folded into Sync-RecoveryPlanSelection (defined further down, alongside the old
 # Sync-IbrRecoveryScopeSelection/Sync-DomainSteps/Sync-AdditionalClusterSteps it replaces/reuses)
@@ -3192,7 +3189,7 @@ $browseButton.Add_Click({
 # callers treat that the same as any other not-yet-ready state: skip validation rather than block.
 function Get-VariablesTemplateKeys($CatalogEntry) {
     if ($null -eq $CatalogEntry) { return $null }
-    $templatePath = Join-Path (Join-Path $PlansPath $CatalogEntry.planFolder) $CatalogEntry.variablesFile
+    $templatePath = Join-Path (Join-Path (Join-Path $ModuleRoot $CatalogEntry.planFolder) 'variable-templates') $CatalogEntry.variablesFile
     if (-not (Test-Path -LiteralPath $templatePath)) { return $null }
     $template = Get-Content -LiteralPath $templatePath -Raw | ConvertFrom-Json
     return @($template.PSObject.Properties.Name)
@@ -3393,7 +3390,7 @@ $newVariablesFileButton.Add_Click({
         $dialog.Filter = 'JSON files (*.json)|*.json|All files (*.*)|*.*'
         $dialog.Title = 'Save new variables file'
         # Defaults to the currently selected plan's own catalog-listed variables file name (see
-        # plans/recovery-plan-catalog.json), rather than one generic name regardless of plan. Falls
+        # recovery-plan-catalog.json), rather than one generic name regardless of plan. Falls
         # back to a generic name if no plan is selected yet (shouldn't normally happen -- this
         # button is only reachable once Recovery Tasks itself is visible, which requires a plan).
         $currentEntryForFileName = Get-CurrentRecoveryPlanEntry
@@ -3405,7 +3402,7 @@ $newVariablesFileButton.Add_Click({
     }.GetNewClosure())
 
 # Lets the current plan's interactive (Read-Host-driven) tasks run unattended: checking this box
-# picks a JSON answer file (see e.g. management-domain-recovery-answers.json under plans\ibr for the
+# picks a JSON answer file (see e.g. management-domain-recovery-answers.json under ibr\answer-templates for the
 # expected shape) and primes it into the console via Import-VCFIRAnswerFile. Unchecking clears it via
 # Clear-VCFIRAnswerFile, restoring normal interactive prompting. See Initialize-ConsoleVariables for
 # how a later thread console (spawned only once Run Plan reaches an OVA/restore step) gets the same
@@ -3767,7 +3764,7 @@ function Sync-RecoveryPlanSelection {
     # plan -- "FDR should not require a data source") rather than shown with nothing selectable.
     # Repopulated fresh on every plan change, not just once, since a different plan can permit a
     # different subset -- only Management Domain Recovery permits Extract SDDC Manager Backup; see
-    # plans/recovery-plan-catalog.json.
+    # recovery-plan-catalog.json.
     $permittedDataSourceIds = @($entry.dataSources)
     $requiresDataSource = $permittedDataSourceIds.Count -gt 0
     $dataSourceRowPanel.Visibility = if ($requiresDataSource) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }

@@ -9,16 +9,16 @@
 @{
 
     # Script module or binary module file associated with this manifest.
-    RootModule        = '.\VMware.CloudFoundation.InstanceRecovery.psm1'
+    RootModule        = '.\VMware.CloudFoundation.RecoveryCoordinator.psm1'
 
     # Version number of this module.
-    ModuleVersion     = '9.1.1.1003'
+    ModuleVersion     = '9.1.2.1000'
 
     # Supported PSEditions
     # CompatiblePSEditions = @()
 
     # ID used to uniquely identify this module
-    GUID              = '2b786688-6d4b-4bb7-9558-d61035d8c091'
+    GUID              = '3a6199a0-13fc-42a2-802d-f85ff53424bf'
 
     # Author of this module
     Author            = 'Broadcom'
@@ -27,10 +27,10 @@
     CompanyName       = 'Broadcom'
 
     # Copyright statement for this module
-    Copyright         = 'Copyright 2024-2025 Broadcom. All Rights Reserved.'
+    Copyright         = 'Copyright 2024-2026 Broadcom. All Rights Reserved.'
 
     # Description of the functionality provided by this module
-    Description       = 'PowerShell Module for VMware Cloud Foundation Instance Recovery'
+    Description       = 'PowerShell Module for VMware Cloud Foundation Recovery Coordinator (Instance Backup & Restore and Fleet Disaster Recovery)'
 
     # Minimum version of the PowerShell engine required by this module
     PowerShellVersion = '7.5.3'

@@ -7,12 +7,12 @@
 [<img src="https://img.shields.io/badge/Documentation-Read-blue?style=for-the-badge&logo=readthedocs&logoColor=white" alt="Documentation">][docs-module]&nbsp;&nbsp;
 [<img src="https://img.shields.io/badge/Changelog-Read-blue?style=for-the-badge&logo=github&logoColor=white" alt="CHANGELOG" >][changelog]
 
-[<img src="https://img.shields.io/powershellgallery/v/VMware.CloudFoundation.InstanceRecovery?style=for-the-badge&logo=powershell&logoColor=white" alt="PowerShell Gallery">][psgallery-module]&nbsp;&nbsp;
-<img src="https://img.shields.io/powershellgallery/dt/VMware.CloudFoundation.InstanceRecovery?style=for-the-badge&logo=powershell&logoColor=white" alt="PowerShell Gallery Downloads">
+[<img src="https://img.shields.io/powershellgallery/v/VMware.CloudFoundation.RecoveryCoordinator?style=for-the-badge&logo=powershell&logoColor=white" alt="PowerShell Gallery">][psgallery-module]&nbsp;&nbsp;
+<img src="https://img.shields.io/powershellgallery/dt/VMware.CloudFoundation.RecoveryCoordinator?style=for-the-badge&logo=powershell&logoColor=white" alt="PowerShell Gallery Downloads">
 
 ## Overview
 
-`VMware.CloudFoundation.InstanceRecovery` is a PowerShell module that has been written to support
+`VMware.CloudFoundation.RecoveryCoordinator` is a PowerShell module that has been written to support
 the ability to automate and accelerate the recovery of a VMware Cloud Foundation instance through
 the use of PowerShell cmdlets.
 
@@ -61,4 +61,4 @@ This project is licensed under the [BSD 2-Clause License](LICENSE).
 [gh-discussions]: https://github.com/vmware/powershell-module-for-vmware-cloud-foundation-instance-recovery/discussions
 [gh-issues]: https://github.com/vmware/powershell-module-for-vmware-cloud-foundation-instance-recovery/issues
 [gh-reactions]: https://blog.github.com/2016-03-10-add-reactions-to-pull-requests-issues-and-comments/
-[psgallery-module]: https://www.powershellgallery.com/packages/VMware.CloudFoundation.InstanceRecovery
+[psgallery-module]: https://www.powershellgallery.com/packages/VMware.CloudFoundation.RecoveryCoordinator
