@@ -465,7 +465,7 @@ Set-UIMode 'User'
 $script:recoveryPlanCatalog = $null
 function Get-RecoveryPlanCatalog {
     if ($null -eq $script:recoveryPlanCatalog) {
-        $catalogPath = Join-Path $ModuleRoot 'recovery-plan-catalog.json'
+        $catalogPath = Join-Path (Join-Path $ModuleRoot 'plans') 'recovery-plan-catalog.json'
         if (-not (Test-Path -LiteralPath $catalogPath)) {
             throw "Cannot find recovery plan catalog '$catalogPath'."
         }
@@ -607,9 +607,9 @@ function Select-RecoveryTypeAndPlan([string]$RecoveryTypeId, [string]$PlanId) {
 # for real keyboard input (a Read-Host confirmation, a menu choice, ...) rather than running
 # unattended end to end -- New-StepRow shows this as a "Requires Input" badge on the row so Run All
 # doesn't look stalled on something that's actually just waiting on the user. $RecoveryType selects
-# the ibr\plans or fdr\plans subfolder.
+# the plans\ibr or plans\fdr subfolder.
 function Get-RecoveryPlanSteps([string]$RecoveryType, [string]$PlanFileName) {
-    $planFilePath = Join-Path (Join-Path (Join-Path $ModuleRoot $RecoveryType) 'plans') $PlanFileName
+    $planFilePath = Join-Path (Join-Path (Join-Path $ModuleRoot 'plans') $RecoveryType) $PlanFileName
     if (-not (Test-Path -LiteralPath $planFilePath)) {
         return @()
     }
@@ -815,7 +815,7 @@ function Set-PlanStepsListBox([System.Windows.Controls.ListBox]$PlanListBox, [Sy
 # again, self-healing with no separate reset needed. The synthetic step's shape exactly matches
 # Get-RecoveryPlanSteps's own output (plus IsBreakPoint), so it flows through New-StepRow/
 # Invoke-StepChain/Invoke-Step/Run All completely unmodified -- Confirm-ManualStep is already a real
-# cmdlet used this way by hand-authored plans (see e.g. ibr/plans/fleet-component-recovery-plan.json).
+# cmdlet used this way by hand-authored plans (see e.g. plans/ibr/fleet-component-recovery-plan.json).
 function Add-EngineeringBreakPointStep([object[]]$Steps, $AfterStep) {
     if (-not $AfterStep) { return $Steps }
     $index = [array]::IndexOf($Steps, $AfterStep)
@@ -3189,7 +3189,7 @@ $browseButton.Add_Click({
 # callers treat that the same as any other not-yet-ready state: skip validation rather than block.
 function Get-VariablesTemplateKeys($CatalogEntry) {
     if ($null -eq $CatalogEntry) { return $null }
-    $templatePath = Join-Path (Join-Path (Join-Path $ModuleRoot $CatalogEntry.planFolder) 'variable-templates') $CatalogEntry.variablesFile
+    $templatePath = Join-Path (Join-Path (Join-Path (Join-Path $ModuleRoot 'templates') 'variable-files') $CatalogEntry.planFolder) $CatalogEntry.variablesFile
     if (-not (Test-Path -LiteralPath $templatePath)) { return $null }
     $template = Get-Content -LiteralPath $templatePath -Raw | ConvertFrom-Json
     return @($template.PSObject.Properties.Name)
@@ -3402,7 +3402,7 @@ $newVariablesFileButton.Add_Click({
     }.GetNewClosure())
 
 # Lets the current plan's interactive (Read-Host-driven) tasks run unattended: checking this box
-# picks a JSON answer file (see e.g. management-domain-recovery-answers.json under ibr\answer-templates for the
+# picks a JSON answer file (see e.g. management-domain-recovery-answers.json under templates\answer-files\ibr for the
 # expected shape) and primes it into the console via Import-VCFIRAnswerFile. Unchecking clears it via
 # Clear-VCFIRAnswerFile, restoring normal interactive prompting. See Initialize-ConsoleVariables for
 # how a later thread console (spawned only once Run Plan reaches an OVA/restore step) gets the same

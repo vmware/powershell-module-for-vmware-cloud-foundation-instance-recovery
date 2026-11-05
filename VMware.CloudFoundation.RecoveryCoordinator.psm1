@@ -19404,13 +19404,13 @@ Function Start-VCFRecoveryCoordinator {
     $xamlPath = Join-Path $moduleRoot 'xaml\VCFRecoveryCoordinatorUI.xaml'
     $uiScriptPath = Join-Path $moduleRoot 'xaml\VCFRecoveryCoordinatorUI.ps1'
     # Recovery plans (Management Domain Restores, Recover Default Cluster, etc) live under the module
-    # root as <ibr|fdr>\plans\*.json -- a JSON array of step objects (commandLine/condition/threadId)
-    # per plan file -- alongside <ibr|fdr>\variable-templates and <ibr|fdr>\answer-templates, with
-    # recovery-plan-catalog.json at the module root tying them together -- see Get-RecoveryPlanSteps
+    # root as plans\<ibr|fdr>\*.json -- a JSON array of step objects (commandLine/condition/threadId)
+    # per plan file -- alongside templates\variable-files\<ibr|fdr> and templates\answer-files\<ibr|fdr>, with
+    # plans\recovery-plan-catalog.json tying them together -- see Get-RecoveryPlanSteps
     # in the UI script. Kept outside both the .psm1 and the UI script so editing a plan never
     # requires recompiling the module or restarting anything: the UI script re-reads these files
     # every time a domain is (re)selected.
-    $catalogPath = Join-Path $moduleRoot 'recovery-plan-catalog.json'
+    $catalogPath = Join-Path (Join-Path $moduleRoot 'plans') 'recovery-plan-catalog.json'
     # Captured here, not inside the UI script: that runs in a separate process which has no notion
     # of "the caller's current directory" of its own. The console process is started with this as
     # its own working directory (see Set-Location in the UI script), and transcripts are written

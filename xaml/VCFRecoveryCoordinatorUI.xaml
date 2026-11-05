@@ -319,7 +319,7 @@
                 Data Source / Discovered Infrastructure / Recovery Tasks (Steps, Variables), stacked
                 top to bottom. Recovery Tasks stays collapsed until a domain is picked (see the
                 .ps1's domain SelectionChanged handler). Steps show only the cmdlet name; the full
-                command line with its parameters lives in the plan file (see {ibr,fdr}/plans/*.json) and is
+                command line with its parameters lives in the plan file (see plans/{ibr,fdr}/*.json) and is
                 never rendered here. Variable values come from a JSON answer file (flat
                 {"variableName": "value", ...}) loaded via the button below; each entry is sent to
                 the console as "$variableName = 'value'" immediately on load, so every step's Run
@@ -342,7 +342,7 @@
 
                 <!-- Recovery Type/Recovery Plan/Data Source used to be three separate cards, each
                      with its own stack of RadioButtons; collapsed into one card with three combo
-                     boxes so a new plan can be added by editing recovery-plan-catalog.json
+                     boxes so a new plan can be added by editing plans/recovery-plan-catalog.json
                      alone, without touching this markup. Every item in all three combos (including
                      their ENGINEERING-ONLY badges) is built in the .ps1 from that catalog file - see
                      New-RecoveryOptionComboBoxItem/Sync-RecoveryPlanSelection - so none of the
@@ -474,7 +474,7 @@
                      pane's height instead of splitting it permanently, since you're typically
                      working in one or the other, not both at once. -->
                 <!-- One single Steps/Variables pane for whichever plan is currently selected (see
-                     recovery-plan-catalog.json and the .ps1's Sync-RecoveryPlanSelection) -
+                     plans/recovery-plan-catalog.json and the .ps1's Sync-RecoveryPlanSelection) -
                      every plan, regardless of id, is rendered through this exact same set of
                      controls. A plan that needs an extra plan-specific toggle (e.g. Fleet Component
                      Recovery's "Original VCF Installer Available") declares it in the catalog's
