@@ -1,7 +1,7 @@
 # Release History
 
 ## v9.1.2.1000
-- Merged `VMware.CloudFoundation.InstanceRecovery` and the Recovery Coordinator into a single module, `VMware.CloudFoundation.RecoveryCoordinator`
+- Merged `VMware.CloudFoundation.InstanceRecovery` and `VMware.CloudFoundation.RecoveryCoordinator` into a single module, `VCF.RecoveryCoordinator`
 - Reorganised plans into `plans/<ibr|fdr>` and `templates/<variable-files|answer-files>/<ibr|fdr>`; `recovery-plan-catalog.json` now lives in `plans`, and `xaml` at the module root
 - Engineering mode now also accepts a signed 12-hour one-time code (`helper/New-EngineeringOtp.ps1`) alongside the password
 - Updated `Invoke-NSXEdgeClusterRecovery`

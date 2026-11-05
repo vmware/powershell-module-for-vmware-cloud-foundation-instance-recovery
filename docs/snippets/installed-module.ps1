@@ -1,1 +1,1 @@
-Get-InstalledModule -Name VMware.CloudFoundation.InstanceRecovery
+Get-InstalledModule -Name VCF.RecoveryCoordinator

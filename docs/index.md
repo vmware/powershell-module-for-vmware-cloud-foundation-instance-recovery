@@ -4,7 +4,7 @@
 
 # PowerShell Module for VMware Cloud Foundation Instance Recovery
 
-`VMware.CloudFoundation.InstanceRecovery` is a PowerShell module that has been written to support
+`VCF.RecoveryCoordinator` is a PowerShell module that has been written to support
 the ability to automate and accelerate the recovery of a VMware Cloud Foundation instance through
 the use of PowerShell cmdlets.
 
@@ -41,7 +41,7 @@ Dependency                                           | Version   | Publisher    
 [microsoft-powershell]: https://docs.microsoft.com/en-us/powershell
 [psgallery-module-poshssh]: https://www.powershellgallery.com/packages/Posh-SSH
 [psgallery-module-powercli]: https://www.powershellgallery.com/packages/VCF.PowerCLI
-[psgallery-module-recovery]: https://www.powershellgallery.com/packages/VMware.CloudFoundation.InstanceRecovery
+[psgallery-module-recovery]: https://www.powershellgallery.com/packages/VCF.RecoveryCoordinator
 [developer-module-powercli]: https://developer.broadcom.com/powercli
 [docs-module-powervcf]: https://vmware.github.io/powershell-module-for-vmware-cloud-foundation
 [github-module-poshssh]: https://github.com/darkoperator/Posh-SSH

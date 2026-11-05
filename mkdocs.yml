@@ -1,5 +1,5 @@
 # Project Information
-site_name: VMware.CloudFoundation.RecoveryCoordinator
+site_name: VCF.RecoveryCoordinator
 site_description: PowerShell Module for VMware Cloud Foundation Instance Recovery
 site_url: https://vmware.github.io/powershell-module-for-vmware-cloud-foundation-instance-recovery
 site_author: Broadcom

@@ -52,7 +52,7 @@ public static class VCFIRTaskbar {
     public static extern int SetCurrentProcessExplicitAppUserModelID([MarshalAs(UnmanagedType.LPWStr)] string AppID);
 }
 '@
-[void][VCFIRTaskbar]::SetCurrentProcessExplicitAppUserModelID('VMware.CloudFoundation.RecoveryCoordinator')
+[void][VCFIRTaskbar]::SetCurrentProcessExplicitAppUserModelID('VCF.RecoveryCoordinator')
 
 $app = New-Object System.Windows.Application
 

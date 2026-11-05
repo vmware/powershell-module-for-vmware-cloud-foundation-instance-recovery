@@ -28,12 +28,12 @@ Verify that your system has a [supported edition and version](index.md#powershel
         --8<-- "./docs/snippets/copy-module-local-windows.ps1"
         ```
 
-Once installed, any cmdlets associated with `VMware.CloudFoundation.InstanceRecovery` and the its dependencies will be available for use.
+Once installed, any cmdlets associated with `VCF.RecoveryCoordinator` and the its dependencies will be available for use.
 
 To view the cmdlets for available in the module, run the following command in the PowerShell console.
 
 ```powershell
-Get-Command -Module VMware.CloudFoundation.InstanceRecovery
+Get-Command -Module VCF.RecoveryCoordinator
 ```
 
 To view the help for any cmdlet, run the `Get-Help` command in the PowerShell console.

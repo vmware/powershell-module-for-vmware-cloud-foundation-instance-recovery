@@ -1,1 +1,1 @@
-Update-Module -Name VMware.CloudFoundation.InstanceRecovery -Scope AllUsers
+Update-Module -Name VCF.RecoveryCoordinator -Scope AllUsers

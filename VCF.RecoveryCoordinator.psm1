@@ -473,10 +473,10 @@ Function cidrToMask {
 Function Confirm-VCFInstanceRecoveryPreReqs {
     <#
     .SYNOPSIS
-    Checks for the presence of supporting software and modules leveraged by VMware.CloudFoundation.RecoveryCoordinator
+    Checks for the presence of supporting software and modules leveraged by VCF.RecoveryCoordinator
 
     .DESCRIPTION
-    The Confirm-VCFInstanceRecoveryPreReqs cmdlet checks for the presence of supporting software and modules leveraged by VMware.CloudFoundation.RecoveryCoordinator
+    The Confirm-VCFInstanceRecoveryPreReqs cmdlet checks for the presence of supporting software and modules leveraged by VCF.RecoveryCoordinator
 
     .EXAMPLE
     Confirm-VCFInstanceRecoveryPreReqs
@@ -3273,7 +3273,7 @@ Function Invoke-SDDCManagerRestore {
 
     <# #Upload Modified Restore Status Json
     LogMessage -type INFO -message "[$extractedSddcManagerFqdn] Configuring Restore Process"
-    $modulePath = (Get-InstalledModule -Name VMware.CloudFoundation.RecoveryCoordinator).InstalledLocation
+    $modulePath = (Get-InstalledModule -Name VCF.RecoveryCoordinator).InstalledLocation
     If ($extractedSddcData.sddcManager.version.replace(".", "").substring(0, 3) -gt "451") {
         $sourceFile = "$modulePath\reference-files\new_restore_status.json"
     } else {
@@ -5115,7 +5115,7 @@ Function New-RebuiltVsanDatastore {
                 }
                 Foreach ($vmHost in $azVmHosts) {
                     $scriptBlock = {
-                        $moduleFunctions = Import-Module VMware.CloudFoundation.RecoveryCoordinator -passthru
+                        $moduleFunctions = Import-Module VCF.RecoveryCoordinator -passthru
                         $restoredvCenterConnection = Connect-ViServer $using:targetFQDN -user $using:targetAdmin -password $using:targetAdminPassword
                         $vmhost = Get-VMHost -name $using:vmhost.name
                         $disks = Get-VMHost -name $using:vmhost.name | Get-VMHostDisk | Where-Object { $_.ScsiLun.VsanStatus -eq 'Eligible' } | Sort-Object -Property @{e = { $_.scsilun.runtimename } }
@@ -5472,7 +5472,7 @@ Function Add-DiskgroupsToManagementHosts {
             LogMessage -type INFO -message "[$clusterName] Starting parallel disk group creation across hosts requiring configuration"
             Foreach ($vmHost in $hostsNeedingDiskGroups) {
                 $scriptBlock = {
-                    $moduleFunctions = Import-Module VMware.CloudFoundation.RecoveryCoordinator -PassThru
+                    $moduleFunctions = Import-Module VCF.RecoveryCoordinator -PassThru
                     $restoredvCenterConnection = Connect-ViServer $using:targetFQDN -user $using:targetAdmin -password $using:targetAdminPassword
                     $vmhost = Get-VMHost -Name $using:vmHost.Name
 
@@ -19330,10 +19330,10 @@ Function Get-VCFIRModuleUpdateStatus {
     Install-Module itself already writes there) rather than via Get-InstalledModule's full scan.
 
     .PARAMETER Module
-    One or more "Name|InstalledVersion" strings, e.g. 'VMware.CloudFoundation.RecoveryCoordinator|1.0.3'.
+    One or more "Name|InstalledVersion" strings, e.g. 'VCF.RecoveryCoordinator|1.0.3'.
 
     .EXAMPLE
-    Get-VCFIRModuleUpdateStatus -Module 'VMware.CloudFoundation.RecoveryCoordinator|1.0.3'
+    Get-VCFIRModuleUpdateStatus -Module 'VCF.RecoveryCoordinator|1.0.3'
     #>
     Param(
         [Parameter (Mandatory = $true)][String[]] $Module
@@ -19470,7 +19470,7 @@ Function Start-VCFRecoveryCoordinator {
     # never throws for a single module's own failed lookup -- it reports an "ERROR" entry instead -- so
     # a lookup problem here can't prevent the UI from launching.
     LogMessage -type NOTE -message "Checking installed module versions..."
-    $moduleUpdateStatus = Get-VCFIRModuleUpdateStatus -Module "VMware.CloudFoundation.RecoveryCoordinator|$moduleVersion"
+    $moduleUpdateStatus = Get-VCFIRModuleUpdateStatus -Module "VCF.RecoveryCoordinator|$moduleVersion"
     $startInfo.ArgumentList.Add('-ModuleUpdateStatus')
     $startInfo.ArgumentList.Add($moduleUpdateStatus)
 
