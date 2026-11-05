@@ -14,11 +14,11 @@
   "dataSources": [
     {
       "id": "ExtractBackup",
-      "label": "Extract SDDC Manager Backup"
+      "label": "SDDC Manager Backup File"
     },
     {
       "id": "LoadExtractedData",
-      "label": "Load Extracted SDDC Data"
+      "label": "Existing Extracted SDDC Data File"
     }
   ],
   "_targetComment": "target is one of: managementDomain | workloadDomain | additionalCluster | fleetComponent | recoverFleet -- see Sync-RecoveryPlanSelection in the .ps1 for what each one does. Exactly one plan should claim a given target; two plans claiming the same one will fight over the same panel.",
