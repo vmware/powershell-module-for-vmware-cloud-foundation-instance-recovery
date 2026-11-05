@@ -372,7 +372,57 @@ function Show-PasswordPromptDialog([string]$Title, [string]$Message) {
 # the moment of comparison.
 function Test-EngineeringModePassword([string]$Candidate) {
     $expected = -join ((116, 104, 105, 115, 105, 115, 117, 110, 115, 97, 102, 101) | ForEach-Object { [char]$_ })
-    return $Candidate -ceq $expected
+    return ($Candidate -ceq $expected) -or (Test-EngineeringModeOtp $Candidate)
+}
+
+# Public half of the engineer's ECDSA P-256 keypair (base64 SubjectPublicKeyInfo), printed by
+# helper\New-EngineeringOtpKeyPair.ps1. Safe to ship: it can only verify one-time codes, never create
+# them. While empty, one-time codes are simply rejected and only the password above works.
+$script:EngineeringOtpPublicKey = 'MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEvI2FFlc8iZHmH8yNFzMq4v0By1/b6kKBold6wgRxtvFMp6Pebf4WExm4hzAkNACjyeeWirh3K0xFm/uee9EV+w=='
+$script:EngineeringOtpValidMinutes = 720
+$script:EngineeringOtpClockSkewMinutes = 2
+
+# An engineering one-time code is base64url(4-byte big-endian issue time in whole UTC minutes since the
+# Unix epoch + 64-byte ECDSA P-256/SHA-256 signature over "VCFRC-ENG-OTP" + those 4 bytes), produced by
+# helper\New-EngineeringOtp.ps1. Valid from its issue time (minus a little clock skew) until
+# $script:EngineeringOtpValidMinutes later. Stateless, so a code can be reused until it expires.
+function Test-EngineeringModeOtp([string]$Candidate) {
+    if ([string]::IsNullOrWhiteSpace($script:EngineeringOtpPublicKey) -or [string]::IsNullOrWhiteSpace($Candidate)) {
+        return $false 
+    }
+    $ecdsa = $null
+    try {
+        $b64 = $Candidate.Trim().Replace('-', '+').Replace('_', '/')
+        $b64 = $b64.PadRight($b64.Length + ((4 - $b64.Length % 4) % 4), '=')
+        $bytes = [Convert]::FromBase64String($b64)
+        if ($bytes.Length -ne 68) {
+            return $false 
+        }
+
+        $issuedBytes = [byte[]]$bytes[0..3]
+        $signature = [byte[]]$bytes[4..67]
+        $data = [System.Text.Encoding]::UTF8.GetBytes('VCFRC-ENG-OTP') + $issuedBytes
+        $ecdsa = [System.Security.Cryptography.ECDsa]::Create()
+        $bytesRead = 0
+        $ecdsa.ImportSubjectPublicKeyInfo([Convert]::FromBase64String($script:EngineeringOtpPublicKey), [ref]$bytesRead)
+        if (-not $ecdsa.VerifyData($data, $signature, [System.Security.Cryptography.HashAlgorithmName]::SHA256, [System.Security.Cryptography.DSASignatureFormat]::IeeeP1363FixedFieldConcatenation)) {
+            return $false 
+        }
+
+        $reversed = [byte[]]$issuedBytes.Clone()
+        if ([BitConverter]::IsLittleEndian) {
+            [Array]::Reverse($reversed) 
+        }
+        $issuedMinutes = [BitConverter]::ToUInt32($reversed, 0)
+        $nowMinutes = [Math]::Floor([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() / 60)
+        return ($nowMinutes -ge ($issuedMinutes - $script:EngineeringOtpClockSkewMinutes)) -and ($nowMinutes -le ($issuedMinutes + $script:EngineeringOtpValidMinutes))
+    } catch {
+        return $false
+    } finally {
+        if ($ecdsa) {
+            $ecdsa.Dispose() 
+        }
+    }
 }
 
 # Advanced (see its warning banner in the XAML) lets an operator run any individual step out of
@@ -415,7 +465,11 @@ function Update-TaskListHeaderText([System.Windows.Controls.TextBlock]$HeaderTex
 function Set-UIMode([string]$Mode) {
     $global:uiMode = $Mode
     $isEngineering = $Mode -eq 'Engineering'
-    $advancedVisibility = if ($isEngineering) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
+    $advancedVisibility = if ($isEngineering) {
+        [System.Windows.Visibility]::Visible 
+    } else {
+        [System.Windows.Visibility]::Collapsed 
+    }
     $advancedTab = $stepsVariablesTabControl.Items | Where-Object { $_.Header -eq 'Advanced' } | Select-Object -First 1
     if ($advancedTab) {
         if (-not $isEngineering -and $stepsVariablesTabControl.SelectedItem -eq $advancedTab) {
@@ -425,8 +479,16 @@ function Set-UIMode([string]$Mode) {
     }
     $accentBrush = $window.TryFindResource('AccentBrush')
     $inactiveBrush = [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.Color]::FromRgb(0xB9, 0xC2, 0xCC))
-    $userModeLink.Foreground = if ($isEngineering) { $inactiveBrush } else { $accentBrush }
-    $engineeringModeLink.Foreground = if ($isEngineering) { $accentBrush } else { $inactiveBrush }
+    $userModeLink.Foreground = if ($isEngineering) {
+        $inactiveBrush 
+    } else {
+        $accentBrush 
+    }
+    $engineeringModeLink.Foreground = if ($isEngineering) {
+        $accentBrush 
+    } else {
+        $inactiveBrush 
+    }
 
     # The "Task List" heading reflects the NEW mode immediately, not just on the next click/render --
     # switching to User mode must revert it back to plain "Task List" right away, and switching to
@@ -440,17 +502,19 @@ $userModeLink.Add_MouseLeftButtonUp({
     }.GetNewClosure())
 
 $engineeringModeLink.Add_MouseLeftButtonUp({
-        if ($global:uiMode -eq 'Engineering') { return }
+        if ($global:uiMode -eq 'Engineering') {
+            return 
+        }
         if ($global:engineeringModeUnlocked) {
             Set-UIMode 'Engineering'
             return
         }
-        $entered = Show-PasswordPromptDialog -Title 'Unlock Engineering Mode' -Message 'Enter the engineering mode password to access the Advanced tab.'
+        $entered = Show-PasswordPromptDialog -Title 'Unlock Engineering Mode' -Message 'Enter the engineering mode password or one-time code to access the Advanced tab.'
         if ($entered -and (Test-EngineeringModePassword $entered)) {
             $global:engineeringModeUnlocked = $true
             Set-UIMode 'Engineering'
         } elseif ($entered) {
-            New-Advisory 'Incorrect engineering mode password.' -Failure
+            New-Advisory 'Incorrect or expired engineering mode password/one-time code.' -Failure
         }
     }.GetNewClosure())
 
@@ -488,7 +552,9 @@ function Get-RecoveryPlanCatalogEntry([string]$PlanId) {
 # of the 4 (now 5, RecoverFleet included) fixed RadioButtons was checked reads this instead.
 function Get-CurrentRecoveryPlanEntry {
     $selected = $recoveryPlanComboBox.SelectedItem
-    if ($null -eq $selected) { return $null }
+    if ($null -eq $selected) {
+        return $null 
+    }
     return Get-RecoveryPlanCatalogEntry ([string]$selected.Tag)
 }
 
@@ -499,7 +565,9 @@ function Get-CurrentRecoveryPlanEntry {
 # refactor folds into the same one Sync-RecoveryPlanSelection dispatcher every other plan uses.
 function Get-CurrentRecoveryPlanTarget {
     $entry = Get-CurrentRecoveryPlanEntry
-    if ($null -eq $entry) { return $null }
+    if ($null -eq $entry) {
+        return $null 
+    }
     return [string]$entry.target
 }
 
@@ -544,8 +612,12 @@ function New-RecoveryOptionComboBoxItem([string]$Label, [bool]$EngineeringOnly, 
 function Get-DefaultRecoveryPlanId([string]$RecoveryTypeId) {
     $plans = @((Get-RecoveryPlanCatalog).recoveryPlans | Where-Object { $_.recoveryType -eq $RecoveryTypeId })
     $defaultPlan = $plans | Where-Object { $_.default } | Select-Object -First 1
-    if (-not $defaultPlan) { $defaultPlan = $plans | Select-Object -First 1 }
-    if (-not $defaultPlan) { return $null }
+    if (-not $defaultPlan) {
+        $defaultPlan = $plans | Select-Object -First 1 
+    }
+    if (-not $defaultPlan) {
+        return $null 
+    }
     return [string]$defaultPlan.id
 }
 
@@ -561,11 +633,15 @@ function Get-DefaultRecoveryPlanId([string]$RecoveryTypeId) {
 function Select-RecoveryTypeAndPlan([string]$RecoveryTypeId, [string]$PlanId) {
     if ($RecoveryTypeId) {
         $typeItem = $recoveryTypeComboBox.Items | Where-Object { $_.Tag -eq $RecoveryTypeId } | Select-Object -First 1
-        if ($typeItem) { $recoveryTypeComboBox.SelectedItem = $typeItem }
+        if ($typeItem) {
+            $recoveryTypeComboBox.SelectedItem = $typeItem 
+        }
     }
     if ($PlanId) {
         $planItem = $recoveryPlanComboBox.Items | Where-Object { $_.Tag -eq $PlanId } | Select-Object -First 1
-        if ($planItem) { $recoveryPlanComboBox.SelectedItem = $planItem }
+        if ($planItem) {
+            $recoveryPlanComboBox.SelectedItem = $planItem 
+        }
     }
 }
 
@@ -635,17 +711,37 @@ function Get-RecoveryPlanSteps([string]$RecoveryType, [string]$PlanFileName) {
                 $condition = @($rawStep.condition)
             }
             [PSCustomObject]@{
-                Id          = if ($rawStep.id) { [string]$rawStep.id } else { '' }
-                Description = if ($rawStep.description) { [string]$rawStep.description } else { '' }
+                Id          = if ($rawStep.id) {
+                    [string]$rawStep.id 
+                } else {
+                    '' 
+                }
+                Description = if ($rawStep.description) {
+                    [string]$rawStep.description 
+                } else {
+                    '' 
+                }
                 CommandLine = [string]$rawStep.commandLine
-                DisplayName = if ($rawStep.displayName) { [string]$rawStep.displayName } else { ([string]$rawStep.commandLine -split '\s+', 2)[0] }
+                DisplayName = if ($rawStep.displayName) {
+                    [string]$rawStep.displayName 
+                } else {
+                    ([string]$rawStep.commandLine -split '\s+', 2)[0] 
+                }
                 Condition   = $condition
-                ThreadId    = if ($rawStep.threadId) { [string]$rawStep.threadId } else { '' }
+                ThreadId    = if ($rawStep.threadId) {
+                    [string]$rawStep.threadId 
+                } else {
+                    '' 
+                }
                 Interactive = [bool]$rawStep.interactive
                 # Explicit property-existence check, not "if ($rawStep.visible)" -- that would treat
                 # an explicit "visible": false exactly the same as the property being absent, and the
                 # whole point here is that absent must default to $true while explicit false must not.
-                Visible     = if ($rawStep.PSObject.Properties.Name -contains 'visible') { [bool]$rawStep.visible } else { $true }
+                Visible     = if ($rawStep.PSObject.Properties.Name -contains 'visible') {
+                    [bool]$rawStep.visible 
+                } else {
+                    $true 
+                }
             }
         }
     )
@@ -655,14 +751,30 @@ function Get-RecoveryPlanSteps([string]$RecoveryType, [string]$PlanFileName) {
 # operators fail open (return true) -- see Test-StepCondition's own comment on why.
 function Test-ConditionOperator([string]$Operator, $Actual, $Expected) {
     switch ($Operator) {
-        'eq' { return [string]$Actual -eq [string]$Expected }
-        'ne' { return [string]$Actual -ne [string]$Expected }
-        'in' { return @($Expected) -contains $Actual }
-        'notIn' { return -not (@($Expected) -contains $Actual) }
-        'exists' { return -not [string]::IsNullOrEmpty($Actual) }
-        'notExists' { return [string]::IsNullOrEmpty($Actual) }
-        'match' { return $Actual -match $Expected }
-        default { return $true }
+        'eq' {
+            return [string]$Actual -eq [string]$Expected 
+        }
+        'ne' {
+            return [string]$Actual -ne [string]$Expected 
+        }
+        'in' {
+            return @($Expected) -contains $Actual 
+        }
+        'notIn' {
+            return -not (@($Expected) -contains $Actual) 
+        }
+        'exists' {
+            return -not [string]::IsNullOrEmpty($Actual) 
+        }
+        'notExists' {
+            return [string]::IsNullOrEmpty($Actual) 
+        }
+        'match' {
+            return $Actual -match $Expected 
+        }
+        default {
+            return $true 
+        }
     }
 }
 
@@ -673,8 +785,14 @@ function Test-ConditionOperator([string]$Operator, $Actual, $Expected) {
 function Resolve-ConditionDataPath([string]$Path, $Root) {
     $current = $Root
     foreach ($segment in ($Path -split '\.')) {
-        if ($null -eq $current) { return $null }
-        $current = if ($current -is [System.Collections.IDictionary]) { $current[$segment] } else { $current.$segment }
+        if ($null -eq $current) {
+            return $null 
+        }
+        $current = if ($current -is [System.Collections.IDictionary]) {
+            $current[$segment] 
+        } else {
+            $current.$segment 
+        }
     }
     return $current
 }
@@ -690,8 +808,16 @@ function Resolve-ConditionDataPath([string]$Path, $Root) {
 # state, not an error.
 function Test-DataPathCondition($Condition, [System.Collections.IDictionary]$Variables) {
     $leafName = ($Condition.path -split '\.')[-1]
-    $override = if ($Variables.Contains($leafName)) { $Variables[$leafName] } else { $null }
-    $actual = if (-not [string]::IsNullOrEmpty($override)) { $override } else { Resolve-ConditionDataPath $Condition.path $global:conditionDataContext }
+    $override = if ($Variables.Contains($leafName)) {
+        $Variables[$leafName] 
+    } else {
+        $null 
+    }
+    $actual = if (-not [string]::IsNullOrEmpty($override)) {
+        $override 
+    } else {
+        Resolve-ConditionDataPath $Condition.path $global:conditionDataContext 
+    }
     return Test-ConditionOperator $Condition.operator $actual $Condition.value
 }
 
@@ -707,10 +833,18 @@ function Test-DataPathCondition($Condition, [System.Collections.IDictionary]$Var
 function Test-StepCondition($Condition, [System.Collections.IDictionary]$Variables) {
     try {
         switch ($Condition.type) {
-            'variable' { return Test-ConditionOperator $Condition.operator $Variables[$Condition.name] $Condition.value }
-            'dataPath' { return Test-DataPathCondition $Condition $Variables }
-            'stepStatus' { return $true }
-            default { return $true }
+            'variable' {
+                return Test-ConditionOperator $Condition.operator $Variables[$Condition.name] $Condition.value 
+            }
+            'dataPath' {
+                return Test-DataPathCondition $Condition $Variables 
+            }
+            'stepStatus' {
+                return $true 
+            }
+            default {
+                return $true 
+            }
         }
     } catch {
         return $true
@@ -740,7 +874,11 @@ function Get-ApplicableSteps([object[]]$Steps, [System.Collections.IDictionary]$
 function Test-StepStatusGate([object[]]$Condition) {
     foreach ($c in $Condition) {
         if ($c -isnot [string] -and $c.type -eq 'stepStatus') {
-            $actualStatus = if ($global:stepRunStatus.ContainsKey($c.stepId)) { $global:stepRunStatus[$c.stepId] } else { 'NotRun' }
+            $actualStatus = if ($global:stepRunStatus.ContainsKey($c.stepId)) {
+                $global:stepRunStatus[$c.stepId] 
+            } else {
+                'NotRun' 
+            }
             if (-not (Test-ConditionOperator $c.operator $actualStatus $c.value)) {
                 return $false
             }
@@ -821,9 +959,13 @@ function Set-PlanStepsListBox([System.Windows.Controls.ListBox]$PlanListBox, [Sy
 # Invoke-StepChain/Invoke-Step/Run All completely unmodified -- Confirm-ManualStep is already a real
 # cmdlet used this way by hand-authored plans (see e.g. plans/ibr/fleet-component-recovery-plan.json).
 function Add-EngineeringBreakPointStep([object[]]$Steps, $AfterStep) {
-    if (-not $AfterStep) { return $Steps }
+    if (-not $AfterStep) {
+        return $Steps 
+    }
     $index = [array]::IndexOf($Steps, $AfterStep)
-    if ($index -lt 0) { return $Steps }
+    if ($index -lt 0) {
+        return $Steps 
+    }
     $breakPointStep = [PSCustomObject]@{
         Id          = ''
         Description = 'Engineering Break Point'
@@ -835,8 +977,16 @@ function Add-EngineeringBreakPointStep([object[]]$Steps, $AfterStep) {
         Visible     = $true
         IsBreakPoint = $true
     }
-    $before = if ($index -eq 0) { @() } else { @($Steps[0..($index - 1)]) }
-    $after = if ($index -eq $Steps.Count - 1) { @() } else { @($Steps[($index + 1)..($Steps.Count - 1)]) }
+    $before = if ($index -eq 0) {
+        @() 
+    } else {
+        @($Steps[0..($index - 1)]) 
+    }
+    $after = if ($index -eq $Steps.Count - 1) {
+        @() 
+    } else {
+        @($Steps[($index + 1)..($Steps.Count - 1)]) 
+    }
     return @($before) + @($Steps[$index]) + @($breakPointStep) + @($after)
 }
 
@@ -849,7 +999,9 @@ function Add-EngineeringBreakPointStep([object[]]$Steps, $AfterStep) {
 # Resume's own CompletedCommandLines restore (see the Resume handler) -- same accepted limitation
 # noted there: two steps sharing an identical CommandLine are indistinguishable by this matching alone.
 function Copy-StepRowCompletionState([object[]]$PreviousRows, [object[]]$NewRows) {
-    if (-not $PreviousRows) { return }
+    if (-not $PreviousRows) {
+        return 
+    }
     # Keyed on CommandLine PLUS which occurrence of that CommandLine the row is (1st, 2nd, ...), so a
     # command that appears several times in a plan (e.g. Get VCF Operations Registered Components)
     # carries over each instance's own state instead of every copy inheriting whichever one was
@@ -863,7 +1015,9 @@ function Copy-StepRowCompletionState([object[]]$PreviousRows, [object[]]$NewRows
             $completedStates["$($row.CommandLine)`0$occurrence"] = @{ Content = $row.PlanButton.Content; Background = $row.PlanButton.Background }
         }
     }
-    if ($completedStates.Count -eq 0) { return }
+    if ($completedStates.Count -eq 0) {
+        return 
+    }
     $occurrences = @{}
     foreach ($row in $NewRows) {
         $occurrence = [int]$occurrences[$row.CommandLine] + 1
@@ -897,11 +1051,21 @@ function Update-BucketStepsListBox([System.Windows.Controls.ListBox]$PlanListBox
 # unrecognized type passes through unchanged rather than disappearing.
 function Get-DisplayDatastoreType([string]$RawType) {
     switch ($RawType) {
-        'VSAN' { 'HCI (OSA)' }
-        'VSAN_ESA' { 'HCI (ESA)' }
-        'VSAN_MAX' { 'Storage Cluster' }
-        'VSAN_Remote' { 'Compute Cluster' }
-        default { $RawType }
+        'VSAN' {
+            'HCI (OSA)' 
+        }
+        'VSAN_ESA' {
+            'HCI (ESA)' 
+        }
+        'VSAN_MAX' {
+            'Storage Cluster' 
+        }
+        'VSAN_Remote' {
+            'Compute Cluster' 
+        }
+        default {
+            $RawType 
+        }
     }
 }
 
@@ -1330,7 +1494,9 @@ function New-EmbeddedConsole([string]$TabHeader, [switch]$Bootstrap) {
             break
         }
         $hwnd = Find-ConsoleWindowHandle $process.Id
-        if ($hwnd -ne [IntPtr]::Zero) { break }
+        if ($hwnd -ne [IntPtr]::Zero) {
+            break 
+        }
         Start-Sleep -Milliseconds 20
     }
 
@@ -1464,8 +1630,12 @@ function Initialize-ConsoleVariables($Console) {
     # needs this call of its own or steps referencing either variable fail with it unset.
     if ($global:selectedWorkloadDomain -or $global:selectedClusterName) {
         $cmdArgs = @()
-        if ($global:selectedWorkloadDomain) { $cmdArgs += "-WorkloadDomain '$(Protect-SingleQuotes $global:selectedWorkloadDomain)'" }
-        if ($global:selectedClusterName) { $cmdArgs += "-ClusterName '$(Protect-SingleQuotes $global:selectedClusterName)'" }
+        if ($global:selectedWorkloadDomain) {
+            $cmdArgs += "-WorkloadDomain '$(Protect-SingleQuotes $global:selectedWorkloadDomain)'" 
+        }
+        if ($global:selectedClusterName) {
+            $cmdArgs += "-ClusterName '$(Protect-SingleQuotes $global:selectedClusterName)'" 
+        }
         Send-ToConsole "Set-SelectedRecoveryTarget $($cmdArgs -join ' ')" $Console
         $lastCmdletSent = 'Set-SelectedRecoveryTarget'
     }
@@ -1552,7 +1722,8 @@ $global:mouseHookProc = [VCFIRConsole.LowLevelMouseProc] {
                 $window.Dispatcher.BeginInvoke([System.Windows.Threading.DispatcherPriority]::Background, [System.Action] { Set-ConsoleFocus }) | Out-Null
             }
         }
-    } catch {}
+    } catch {
+    }
     return [VCFIRConsole.NativeMethods]::CallNextHookEx([IntPtr]::Zero, $nCode, $wParam, $lParam)
 }
 $global:mouseHookHandle = [VCFIRConsole.NativeMethods]::SetWindowsHookEx([VCFIRConsole.NativeMethods]::WH_MOUSE_LL, $global:mouseHookProc, [VCFIRConsole.NativeMethods]::GetModuleHandle($null), 0)
@@ -1573,7 +1744,10 @@ $window.Add_Closed({
         }
         foreach ($console in (@($global:mainConsole) + @($global:parallelConsoles))) {
             if ($console -and $console.Process -and -not $console.Process.HasExited) {
-                try { $console.Process.Kill($true) } catch {}
+                try {
+                    $console.Process.Kill($true) 
+                } catch {
+                }
             }
         }
     })
@@ -1655,11 +1829,19 @@ function Show-UpdateBanner {
         $updateBanner.Visibility = 'Collapsed'
         return
     }
-    if ($global:updateBannerIndex -ge $items.Count) { $global:updateBannerIndex = 0 }
-    if ($global:updateBannerIndex -lt 0) { $global:updateBannerIndex = $items.Count - 1 }
+    if ($global:updateBannerIndex -ge $items.Count) {
+        $global:updateBannerIndex = 0 
+    }
+    if ($global:updateBannerIndex -lt 0) {
+        $global:updateBannerIndex = $items.Count - 1 
+    }
     $item = $items[$global:updateBannerIndex]
     $updateBannerText.Text = "A newer version of $($item.Name) is available in the $($item.Repository) repository: $($item.Installed) -> $($item.Latest). Before upgrading, refer to help files to ensure the newer release supports the VCF version you are recovering."
-    $updateBannerPager.Visibility = if ($items.Count -gt 1) { 'Visible' } else { 'Collapsed' }
+    $updateBannerPager.Visibility = if ($items.Count -gt 1) {
+        'Visible' 
+    } else {
+        'Collapsed' 
+    }
     $updateBannerCounter.Text = "$($global:updateBannerIndex + 1) of $($items.Count)"
     $updateBanner.Visibility = 'Visible'
 }
@@ -1800,7 +1982,11 @@ function Send-ToConsole([string]$CommandLine, $Console) {
             # entirely, not to be revisited. $Console.HasSentCommand (set on the console object itself in
             # New-EmbeddedConsole) is what distinguishes "first command this console has ever run" from
             # every one after it.
-            $typedText = if ($Console.HasSentCommand) { "`r$CommandLine`r" } else { "$CommandLine`r" }
+            $typedText = if ($Console.HasSentCommand) {
+                "`r$CommandLine`r" 
+            } else {
+                "$CommandLine`r" 
+            }
             $Console.HasSentCommand = $true
             $records = [System.Collections.Generic.List[VCFIRConsole.INPUT_RECORD]]::new()
             foreach ($character in $typedText.ToCharArray()) {
@@ -1867,7 +2053,9 @@ function Add-StepWatch($Buttons, [string]$CmdletName, [scriptblock]$OnComplete, 
     $currentText = ''
     if (Test-Path $Console.TranscriptPath) {
         $currentText = Get-Content -Path $Console.TranscriptPath -Raw -ErrorAction SilentlyContinue
-        if ($null -eq $currentText) { $currentText = '' }
+        if ($null -eq $currentText) {
+            $currentText = '' 
+        }
     }
     # Drop any earlier watch for this same row first, rather than stacking duplicates on a re-run.
     # $Buttons is the same @($row.PlanButton, $row.ManualButton) array reference every caller for
@@ -1901,7 +2089,9 @@ function Add-CompletionWatch([string]$CmdletName, [scriptblock]$OnComplete, $Con
     $currentText = ''
     if (Test-Path $Console.TranscriptPath) {
         $currentText = Get-Content -Path $Console.TranscriptPath -Raw -ErrorAction SilentlyContinue
-        if ($null -eq $currentText) { $currentText = '' }
+        if ($null -eq $currentText) {
+            $currentText = '' 
+        }
     }
     $global:activeStepWatches.Add([PSCustomObject]@{
             Buttons        = $null
@@ -2089,7 +2279,9 @@ $script:credentialsFilePath = $null
 function Find-LatestCredentialsFile {
     $latest = Get-ChildItem -LiteralPath $WorkingDirectory -Filter 'vcf-credentials-*.json' -File -ErrorAction SilentlyContinue |
         Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    if ($latest) { return $latest.FullName }
+    if ($latest) {
+        return $latest.FullName 
+    }
     return $null
 }
 
@@ -2098,11 +2290,17 @@ function Find-LatestCredentialsFile {
 # LogMessage ends every line with an ANSI reset (ESC[0m), which the transcript records verbatim, so the
 # capture stops at the first ESC character as well as at end of line.
 function Get-CredentialsFilePathFromTranscript($Console) {
-    if (-not $Console -or -not (Test-Path -LiteralPath $Console.TranscriptPath)) { return $null }
+    if (-not $Console -or -not (Test-Path -LiteralPath $Console.TranscriptPath)) {
+        return $null 
+    }
     $text = Get-Content -LiteralPath $Console.TranscriptPath -Raw -ErrorAction SilentlyContinue
-    if (-not $text) { return $null }
+    if (-not $text) {
+        return $null 
+    }
     $pathMatches = [regex]::Matches($text, 'Credentials file written to: (?<path>[^\r\n\x1b]+)')
-    if ($pathMatches.Count -eq 0) { return $null }
+    if ($pathMatches.Count -eq 0) {
+        return $null 
+    }
     return $pathMatches[$pathMatches.Count - 1].Groups['path'].Value.Trim()
 }
 
@@ -2729,7 +2927,11 @@ function Update-StepRowAutoAnsweredBadges($StepRows, [string]$AnswerFilePath) {
             $seenCounts[$row.CmdletName] = 1 + [int]$seenCounts[$row.CmdletName]
             $isAutoAnswered = $answerCounts -and $answerCounts.ContainsKey($row.CmdletName) -and ($seenCounts[$row.CmdletName] -le $answerCounts[$row.CmdletName])
         }
-        $badgeText = if ($isAutoAnswered) { 'Auto Answered' } else { 'Requires Input' }
+        $badgeText = if ($isAutoAnswered) {
+            'Auto Answered' 
+        } else {
+            'Requires Input' 
+        }
         foreach ($textBlock in @($row.PlanInteractiveBadgeText, $row.ManualInteractiveBadgeText)) {
             if ($textBlock) {
                 $textBlock.Text = $badgeText
@@ -2757,7 +2959,9 @@ function Register-AnswerFileToggleHandlers($CheckBox, [scriptblock]$GetStepRows,
 
     $CheckBox.Add_Checked({
             # Resume re-checks the box itself with the saved path already set -- see the Resume handler.
-            if ($script:restoringInteractiveAnswerFile) { return }
+            if ($script:restoringInteractiveAnswerFile) {
+                return 
+            }
             $dialog = New-Object Microsoft.Win32.OpenFileDialog
             $dialog.Filter = 'JSON files (*.json)|*.json|All files (*.*)|*.*'
             $dialog.Title = 'Select interactive answer file'
@@ -2857,11 +3061,17 @@ function New-VariableRow([string]$Name, [string]$Value, [scriptblock]$OnValueCha
     # that doesn't need file persistence.
     $lastApplied = @{ Value = $Value }
     $applyEdit = {
-        $currentValue = if ($isPassword) { $valueBox.Password } else { $valueBox.Text }
+        $currentValue = if ($isPassword) {
+            $valueBox.Password 
+        } else {
+            $valueBox.Text 
+        }
         # LostFocus fires on every focus pass through the box, edited or not -- without this, merely
         # clicking into Variables and back out re-sent Import-RecoveryVariables to the console and
         # rebuilt the whole Recovery Plan list (see Update-RevealedSteps), even mid-run.
-        if ($currentValue -ceq $lastApplied.Value) { return }
+        if ($currentValue -ceq $lastApplied.Value) {
+            return 
+        }
         $lastApplied.Value = $currentValue
         if ($OnValueChanged) {
             & $OnValueChanged $Name $currentValue
@@ -2894,10 +3104,14 @@ function Start-StepCompletionWatcher {
     $checkTimer = New-Object System.Windows.Threading.DispatcherTimer
     $checkTimer.Interval = [TimeSpan]::FromMilliseconds(500)
     $checkTimer.Add_Tick({
-            if ($global:activeStepWatches.Count -eq 0) { return }
+            if ($global:activeStepWatches.Count -eq 0) {
+                return 
+            }
             $transcriptCache = @{}
             foreach ($path in ($global:activeStepWatches | Select-Object -ExpandProperty TranscriptPath -Unique)) {
-                if (-not (Test-Path $path)) { continue }
+                if (-not (Test-Path $path)) {
+                    continue 
+                }
                 try {
                     $text = Get-Content -Path $path -Raw -ErrorAction Stop
                 } catch {
@@ -2907,7 +3121,9 @@ function Start-StepCompletionWatcher {
                     $transcriptCache[$path] = $text
                 }
             }
-            if ($transcriptCache.Count -eq 0) { return }
+            if ($transcriptCache.Count -eq 0) {
+                return 
+            }
             # Snapshotting which watches are due BEFORE any of them run, then removing each one from
             # whatever $global:activeStepWatches -is- right before invoking its own OnComplete --
             # rather than replacing the whole list wholesale once at the end -- matters because
@@ -2917,13 +3133,23 @@ function Start-StepCompletionWatcher {
             # since it was never part of the snapshot this tick started with.
             $dueWatches = @($global:activeStepWatches | Where-Object {
                     $transcriptText = $transcriptCache[$_.TranscriptPath]
-                    if ($null -eq $transcriptText) { return $false }
-                    $newText = if ($transcriptText.Length -gt $_.StartOffset) { $transcriptText.Substring($_.StartOffset) } else { '' }
+                    if ($null -eq $transcriptText) {
+                        return $false 
+                    }
+                    $newText = if ($transcriptText.Length -gt $_.StartOffset) {
+                        $transcriptText.Substring($_.StartOffset) 
+                    } else {
+                        '' 
+                    }
                     $newText.Contains($_.TargetText)
                 })
             foreach ($watch in $dueWatches) {
                 $transcriptText = $transcriptCache[$watch.TranscriptPath]
-                $newText = if ($transcriptText.Length -gt $watch.StartOffset) { $transcriptText.Substring($watch.StartOffset) } else { '' }
+                $newText = if ($transcriptText.Length -gt $watch.StartOffset) {
+                    $transcriptText.Substring($watch.StartOffset) 
+                } else {
+                    '' 
+                }
                 $isClean = Test-StepTranscriptClean $newText
                 if ($watch.Buttons) {
                     if ($isClean) {
@@ -2933,7 +3159,11 @@ function Start-StepCompletionWatcher {
                     }
                 }
                 if ($watch.Id) {
-                    $global:stepRunStatus[$watch.Id] = if ($isClean) { 'Success' } else { 'Failed' }
+                    $global:stepRunStatus[$watch.Id] = if ($isClean) {
+                        'Success' 
+                    } else {
+                        'Failed' 
+                    }
                 }
                 $global:activeStepWatches = [System.Collections.Generic.List[object]]@($global:activeStepWatches | Where-Object { $_ -ne $watch })
                 if ($watch.OnComplete) {
@@ -3005,8 +3235,16 @@ function Import-ExtractedSddcDataFile([string]$Path) {
         [void]$additionalClustersListBox.Items.Add('No additional clusters detected.')
     } else {
         foreach ($cluster in $additionalClusters) {
-            $stretchedText = if ($cluster.IsStretched -eq 't') { 'Y' } else { 'N' }
-            $clusterNameText = if ($cluster.ClusterName) { $cluster.ClusterName } else { '(unknown)' }
+            $stretchedText = if ($cluster.IsStretched -eq 't') {
+                'Y' 
+            } else {
+                'N' 
+            }
+            $clusterNameText = if ($cluster.ClusterName) {
+                $cluster.ClusterName 
+            } else {
+                '(unknown)' 
+            }
             $columnGroups = @('AdditionalClustersCol0', 'AdditionalClustersCol1', 'AdditionalClustersCol2', 'AdditionalClustersCol3', 'AdditionalClustersCol4')
             $row = New-TableRow -Values @($clusterNameText, $cluster.DomainName, (Get-DisplayDatastoreType $cluster.PrimaryDatastoreType), $stretchedText, $cluster.DependentOn) -ColumnGroups $columnGroups
             # Wrapped in an explicit ListBoxItem (rather than adding $row directly) so selecting a
@@ -3053,7 +3291,9 @@ $script:lastSafeRecoveryPlanId = $null
 # exactly like checking the old FdrRecoveryTypeRadio directly used to.
 $recoveryTypeComboBox.Add_SelectionChanged({
         $selectedType = $recoveryTypeComboBox.SelectedItem
-        if ($null -eq $selectedType) { return }
+        if ($null -eq $selectedType) {
+            return 
+        }
         $typeId = [string]$selectedType.Tag
         $recoveryPlanComboBox.Items.Clear()
         foreach ($plan in @((Get-RecoveryPlanCatalog).recoveryPlans | Where-Object { $_.recoveryType -eq $typeId })) {
@@ -3077,9 +3317,13 @@ $recoveryTypeComboBox.Add_SelectionChanged({
 # plan that was never actually allowed through.
 $recoveryPlanComboBox.Add_SelectionChanged({
         $selectedPlan = $recoveryPlanComboBox.SelectedItem
-        if ($null -eq $selectedPlan) { return }
+        if ($null -eq $selectedPlan) {
+            return 
+        }
         $entry = Get-RecoveryPlanCatalogEntry ([string]$selectedPlan.Tag)
-        if (-not $entry) { return }
+        if (-not $entry) {
+            return 
+        }
 
         if ($entry.engineeringOnly -and -not $global:engineeringModeUnlocked) {
             # Revert first (mirrors Register-EngineeringModeGate's own TabControl revert): puts the
@@ -3091,14 +3335,14 @@ $recoveryPlanComboBox.Add_SelectionChanged({
             if ($script:lastSafeRecoveryPlanId) {
                 Select-RecoveryTypeAndPlan $script:lastSafeRecoveryTypeId $script:lastSafeRecoveryPlanId
             }
-            $entered = Show-PasswordPromptDialog -Title 'Unlock Engineering Mode' -Message "Enter the engineering mode password to select $($entry.label)."
+            $entered = Show-PasswordPromptDialog -Title 'Unlock Engineering Mode' -Message "Enter the engineering mode password or one-time code to select $($entry.label)."
             if ($entered -and (Test-EngineeringModePassword $entered)) {
                 $global:engineeringModeUnlocked = $true
                 # Re-selecting now that the flag is set re-fires this same SelectionChanged; the
                 # guard above is skipped that time and falls through to Sync-RecoveryPlanSelection.
                 Select-RecoveryTypeAndPlan $entry.recoveryType $entry.id
             } elseif ($entered) {
-                New-Advisory 'Incorrect engineering mode password.' -Failure
+                New-Advisory 'Incorrect or expired engineering mode password/one-time code.' -Failure
             }
             return
         }
