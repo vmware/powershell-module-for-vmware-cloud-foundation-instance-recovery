@@ -1276,7 +1276,7 @@ function Find-ConsoleWindowHandle([int]$ProcessId) {
 
 function New-EmbeddedConsole([string]$TabHeader, [switch]$Bootstrap) {
     $global:consoleSequence++
-    $transcriptPath = Join-Path $WorkingDirectory "vcfir-transcript-$(Get-Date -Format 'yyyyMMdd-HHmmss')-$PID-$($global:consoleSequence).log"
+    $transcriptPath = Join-Path $WorkingDirectory "vcf-recoverycoordinator-transcript-$(Get-Date -Format 'yyyyMMdd-HHmmss')-$PID-$($global:consoleSequence).log"
     $escapedWorkingDirectory = Protect-SingleQuotes $WorkingDirectory
     $escapedTranscriptPath = Protect-SingleQuotes $transcriptPath
     # $ErrorView = 'NormalView' matters, not just cosmetics: PowerShell 7's default, ConciseView,
@@ -3967,7 +3967,7 @@ $exitButton.Add_Click({
             $dialog.Filter = 'JSON files (*.json)|*.json|All files (*.*)|*.*'
             $dialog.Title = 'Save orchestrator state'
             $dialog.InitialDirectory = $WorkingDirectory
-            $dialog.FileName = "vcfibr-state-$(Get-Date -Format 'yyyyMMdd-HHmmss').json"
+            $dialog.FileName = "vcf-recoverycoordinator-state-$(Get-Date -Format 'yyyyMMdd-HHmmss').json"
             if ($dialog.ShowDialog() -ne $true) {
                 return
             }
