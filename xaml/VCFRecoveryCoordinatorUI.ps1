@@ -1685,11 +1685,9 @@ function Show-ModuleUpdateStatus {
     }
 
     $updates = @()
-    $failures = 0
     foreach ($line in $lines) {
         $name, $installed, $latest, $detail = $line -split '\|', 4
         if ($latest -eq 'ERROR') {
-            $failures++
             New-Advisory "Update check for $name failed: $detail"
             continue
         }
@@ -1702,9 +1700,6 @@ function Show-ModuleUpdateStatus {
         } else {
             New-Advisory "$name $installed is up to date."
         }
-    }
-    if ($updates.Count -eq 0 -and $failures -eq 0) {
-        New-Advisory 'All modules are up to date.'
     }
     $global:updateBannerItems = $updates
     Show-UpdateBanner
