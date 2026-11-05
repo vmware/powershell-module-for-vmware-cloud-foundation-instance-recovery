@@ -151,6 +151,10 @@ function New-Advisory([string]$Message, [switch]$Failure) {
 
     $paragraph = New-Object System.Windows.Documents.Paragraph($run)
     $paragraph.Margin = New-Object System.Windows.Thickness(0)
+    # Fixed line height (matches the Paragraph style in the XAML) so the 10-line viewport always
+    # ends exactly on a line boundary instead of cutting the top line off partway.
+    $paragraph.LineStackingStrategy = [System.Windows.LineStackingStrategy]::BlockLineHeight
+    $paragraph.LineHeight = 18
 
     $blocks = $advisoriesRichTextBox.Document.Blocks
     # A RichTextBox's document starts life with one empty Paragraph already in it; reusing that for
