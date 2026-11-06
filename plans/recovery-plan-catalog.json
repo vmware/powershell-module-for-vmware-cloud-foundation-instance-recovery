@@ -32,14 +32,14 @@
       "tooltip": "Where recovery binaries come from: the authorized offline depot plus the original VCF Installer, or an unauthorized offline depot with manual binary staging.",
       "options": [
         {
-          "id": "authorized",
-          "label": "Use Authorized Offline Depot & Original VCF Installer",
-          "variables": { "originalVcfInstallerAvailable": "true", "unauthorizedDepot": "false" }
-        },
-        {
           "id": "unauthorized",
           "label": "Use Unauthorized Offline Depot",
           "variables": { "originalVcfInstallerAvailable": "false", "unauthorizedDepot": "true" }
+        },
+        {
+          "id": "authorized",
+          "label": "Use Authorized Offline Depot & Original VCF Installer",
+          "variables": { "originalVcfInstallerAvailable": "true", "unauthorizedDepot": "false" }
         }
       ]
     }
@@ -80,7 +80,7 @@
       "extraRadioGroups": [
         {
           "id": "offlineDepotMode",
-          "defaultOption": "authorized"
+          "defaultOption": "unauthorized"
         }
       ]
     },
