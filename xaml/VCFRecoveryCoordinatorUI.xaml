@@ -215,7 +215,7 @@
                     <ControlTemplate TargetType="RadioButton">
                         <StackPanel Orientation="Horizontal" Background="Transparent">
                             <Grid Width="16" Height="16" VerticalAlignment="Center">
-                                <Ellipse x:Name="Ring" Stroke="{StaticResource InactiveTabTextBrush}" StrokeThickness="1.5" Fill="White" />
+                                <Ellipse x:Name="Ring" Stroke="{StaticResource ToggleOffBrush}" StrokeThickness="1.5" Fill="White" />
                                 <Ellipse x:Name="Dot" Width="8" Height="8" Fill="{StaticResource ToggleOnBrush}" Visibility="Collapsed" />
                             </Grid>
                             <ContentPresenter Margin="8,0,0,0" VerticalAlignment="Center" RecognizesAccessKey="True" />
