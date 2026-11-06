@@ -33,12 +33,12 @@
       "options": [
         {
           "id": "unauthorized",
-          "label": "Use Unauthorized Offline Depot",
+          "label": "Unauthorized offline depot",
           "variables": { "originalVcfInstallerAvailable": "false", "unauthorizedDepot": "true" }
         },
         {
           "id": "authorized",
-          "label": "Use Authorized Offline Depot & Original VCF Installer",
+          "label": "Authorized depot + original VCF Installer",
           "variables": { "originalVcfInstallerAvailable": "true", "unauthorizedDepot": "false" }
         }
       ]

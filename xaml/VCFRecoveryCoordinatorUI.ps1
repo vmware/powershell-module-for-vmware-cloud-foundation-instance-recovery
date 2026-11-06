@@ -119,6 +119,8 @@ $runAllAnswerFileCheckBox = $window.FindName('RunAllAnswerFileCheckBox')
 # Populated dynamically from the current plan's catalog "extraToggles" -- see
 # Update-ExtraTogglesPanel below. Empty for a plan that declares none.
 $extraTogglesPanel = $window.FindName('ExtraTogglesPanel')
+$extraTogglesHeader = $window.FindName('ExtraTogglesHeader')
+$extraTogglesDivider = $window.FindName('ExtraTogglesDivider')
 $overallRecoveryTimePanel = $window.FindName('OverallRecoveryTimePanel')
 $overallRecoveryTimeTextBlock = $window.FindName('OverallRecoveryTimeTextBlock')
 $loadVariablesButton = $window.FindName('LoadVariablesButton')
@@ -3689,6 +3691,8 @@ function Update-ExtraTogglesPanel($Entry) {
     $extraTogglesPanel.Children.Clear()
     $global:extraToggleCheckBoxes = @{}
     $global:extraRadioGroups = @{}
+    $extraTogglesHeader.Visibility = 'Collapsed'
+    $extraTogglesDivider.Visibility = 'Collapsed'
     if ($Entry -and $Entry.extraRadioGroups) {
         $groupDefinitions = (Get-RecoveryPlanCatalog).extraRadioGroupDefinitions
         foreach ($groupRef in @($Entry.extraRadioGroups)) {
@@ -3696,16 +3700,13 @@ function Update-ExtraTogglesPanel($Entry) {
             $groupDefinition = $groupDefinitions | Where-Object { $_.id -eq $groupId } | Select-Object -First 1
             if (-not $groupDefinition) { continue }
             $buttons = @{}
-            # Framed under the group's catalog label so it reads as one related set of options
-            # (e.g. "Binary Sourcing"), distinct from the toggle switches beside it.
-            $groupBox = New-Object System.Windows.Controls.GroupBox
-            $groupBox.Header = [string]$groupDefinition.label
-            $groupBox.Padding = '6,4,6,0'
-            $groupBox.Margin = '0,0,0,6'
-            if ($groupDefinition.tooltip) { $groupBox.ToolTip = [string]$groupDefinition.tooltip }
-            $groupStack = New-Object System.Windows.Controls.StackPanel
-            $groupBox.Content = $groupStack
-            [void]$extraTogglesPanel.Children.Add($groupBox)
+            # The group's catalog label becomes the muted caption above the right-hand column (see
+            # ExtraTogglesHeader in the XAML); its tooltip goes on that caption.
+            $extraTogglesHeader.Text = ([string]$groupDefinition.label).ToUpper()
+            $extraTogglesHeader.ToolTip = if ($groupDefinition.tooltip) { [string]$groupDefinition.tooltip } else { $null }
+            $extraTogglesHeader.Visibility = 'Visible'
+            $extraTogglesDivider.Visibility = 'Visible'
+            $groupStack = $extraTogglesPanel
             $applyRadio = {
                 if ($global:currentPlanContext.AnswerMap) {
                     Update-RevealedSteps $global:currentPlanContext.AnswerMap

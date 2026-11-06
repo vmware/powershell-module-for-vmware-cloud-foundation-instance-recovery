@@ -516,9 +516,21 @@
                                     <Grid DockPanel.Dock="Top">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="*" />
                                         </Grid.ColumnDefinitions>
-                                        <StackPanel Grid.Column="0">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <!-- Two matched, unframed column groups under small muted captions
+                                             (same grey as an inactive tab). The left column is the same for
+                                             every plan, so its caption is static; the right column and the
+                                             divider are populated/shown by Update-ExtraTogglesPanel in the
+                                             .ps1 from the plan's catalog "extraToggles"/"extraRadioGroups"
+                                             and stay collapsed for a plan that declares none. -->
+                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="RUN OPTIONS" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource InactiveTabTextBrush}" Margin="0,0,0,6" />
+                                        <StackPanel Grid.Row="1" Grid.Column="0">
                                             <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
                                                 <ToggleButton x:Name="RunAllParallelCheckBox" IsChecked="True" Style="{StaticResource ToggleSwitchStyle}" VerticalAlignment="Center" />
                                                 <TextBlock Text="Run parallel tasks using multiple threads (numbered circles)" VerticalAlignment="Center" Margin="8,0,0,0" />
@@ -528,13 +540,9 @@
                                                 <TextBlock Text="Use answer file for interactive tasks" VerticalAlignment="Center" Margin="8,0,0,0" />
                                             </StackPanel>
                                         </StackPanel>
-                                        <!-- Populated dynamically from the current plan's catalog
-                                             "extraToggles"/"extraRadioGroups" (resolved against the
-                                             catalog's "extraToggleDefinitions"/"extraRadioGroupDefinitions")
-                                             by Update-ExtraTogglesPanel in the .ps1 - sits to the right of
-                                             the two fixed toggles; empty and takes no space for a plan that
-                                             declares none. -->
-                                        <StackPanel x:Name="ExtraTogglesPanel" Grid.Column="1" Margin="24,0,0,0" VerticalAlignment="Top" />
+                                        <Border x:Name="ExtraTogglesDivider" Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" Width="1" Background="{StaticResource PanelBorderBrush}" Margin="16,0,16,0" Visibility="Collapsed" />
+                                        <TextBlock x:Name="ExtraTogglesHeader" Grid.Row="0" Grid.Column="2" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource InactiveTabTextBrush}" Margin="0,0,0,6" Visibility="Collapsed" />
+                                        <StackPanel x:Name="ExtraTogglesPanel" Grid.Row="1" Grid.Column="2" VerticalAlignment="Top" />
                                     </Grid>
                                     <!-- "Task List" heading + Run Plan share one row, below the toggle
                                          stack and above the ListBox: heading docked Left, Button docked
