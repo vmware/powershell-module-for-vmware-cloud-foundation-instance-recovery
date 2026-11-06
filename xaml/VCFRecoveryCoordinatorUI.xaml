@@ -207,6 +207,30 @@
             </Setter>
         </Style>
 
+        <!-- Radio buttons use the same green as an "on" toggle switch for the selected dot/ring
+             (the stock template's dot is black). -->
+        <Style TargetType="RadioButton">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <StackPanel Orientation="Horizontal" Background="Transparent">
+                            <Grid Width="16" Height="16" VerticalAlignment="Center">
+                                <Ellipse x:Name="Ring" Stroke="{StaticResource InactiveTabTextBrush}" StrokeThickness="1.5" Fill="White" />
+                                <Ellipse x:Name="Dot" Width="8" Height="8" Fill="{StaticResource ToggleOnBrush}" Visibility="Collapsed" />
+                            </Grid>
+                            <ContentPresenter Margin="8,0,0,0" VerticalAlignment="Center" RecognizesAccessKey="True" />
+                        </StackPanel>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Dot" Property="Visibility" Value="Visible" />
+                                <Setter TargetName="Ring" Property="Stroke" Value="{StaticResource ToggleOnBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- Flat underline tabs, blue-when-active/gray-when-inactive text, matching the
              Summary/Monitor/Configure... tab strip style. -->
         <Style TargetType="TabItem">
