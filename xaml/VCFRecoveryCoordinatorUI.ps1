@@ -217,6 +217,9 @@ $global:allDiscoveredDomains = @()
 # into condition evaluation (see the matching comment there) without needing to know in advance
 # which, if any, extra toggles a given plan declares.
 $global:extraToggleCheckBoxes = @{}
+# Live radio groups currently shown in $extraTogglesPanel, keyed by catalog "extraRadioGroupDefinitions"
+# id: @{ Definition = <catalog definition>; Buttons = @{ optionId = RadioButton } }. Rebuilt with the panel.
+$global:extraRadioGroups = @{}
 # Variables the UI owns outright, so the operator never types them and they are never rendered as
 # editable rows: $extractedSDDCDataFile comes from the Data Source selection (pushed by
 # Set-ExportedSDDCDataFilePath), and $workloadDomain/$clusterName from the domain/additional-cluster
@@ -3571,7 +3574,7 @@ function New-VariablesFile([string]$Path) {
     # console would ignore, or a UI-toggle-driven pseudo-variable that isn't meant to be operator-typed
     # -- see $script:selectionDrivenVariables and the catalog's extraToggleDefinitions/extraToggles.
     $entry = Get-CurrentRecoveryPlanEntry
-    $excludedNames = @($script:selectionDrivenVariables) + @(if ($entry -and $entry.extraToggles) { @($entry.extraToggles.id) } else { @() })
+    $excludedNames = @($script:selectionDrivenVariables) + @(Get-ExtraPseudoVariableNames $entry)
     $variableNames = @(Get-ReferencedVariableNames (Get-StepReferenceText $global:currentPlanContext.Steps) | Where-Object { $_ -notin $excludedNames })
     if ($variableNames.Count -eq 0) {
         New-Advisory 'No steps are currently loaded, so there are no variables to create a file for.'
@@ -3658,6 +3661,25 @@ Register-AnswerFileToggleHandlers $runAllAnswerFileCheckBox `
     { $global:currentPlanContext.InteractiveAnswerFilePath } `
     { param($Path) $global:currentPlanContext.InteractiveAnswerFilePath = $Path }
 
+# Every UI-owned pseudo-variable name the given plan entry injects into condition evaluation: its
+# extra toggle ids plus every variable named by any option of its extra radio groups. Never operator
+# input, so excluded from the answers file / Variables tab.
+function Get-ExtraPseudoVariableNames($Entry) {
+    $names = [System.Collections.Generic.List[string]]::new()
+    if ($Entry -and $Entry.extraToggles) { foreach ($t in @($Entry.extraToggles)) { [void]$names.Add([string]$t.id) } }
+    if ($Entry -and $Entry.extraRadioGroups) {
+        $groupDefinitions = (Get-RecoveryPlanCatalog).extraRadioGroupDefinitions
+        foreach ($groupRef in @($Entry.extraRadioGroups)) {
+            $groupDefinition = $groupDefinitions | Where-Object { $_.id -eq $groupRef.id } | Select-Object -First 1
+            if (-not $groupDefinition) { continue }
+            foreach ($option in @($groupDefinition.options)) {
+                foreach ($property in $option.variables.PSObject.Properties) { [void]$names.Add($property.Name) }
+            }
+        }
+    }
+    return @($names | Select-Object -Unique)
+}
+
 # Rebuilds $extraTogglesPanel (the generic slot for a plan-specific toggle like Fleet Component
 # Recovery's "Original VCF Installer Available") from $Entry's own catalog "extraToggles" -- resolved
 # against the catalog's top-level "extraToggleDefinitions" for the label -- so a plan declares this
@@ -3666,6 +3688,42 @@ Register-AnswerFileToggleHandlers $runAllAnswerFileCheckBox `
 function Update-ExtraTogglesPanel($Entry) {
     $extraTogglesPanel.Children.Clear()
     $global:extraToggleCheckBoxes = @{}
+    $global:extraRadioGroups = @{}
+    if ($Entry -and $Entry.extraRadioGroups) {
+        $groupDefinitions = (Get-RecoveryPlanCatalog).extraRadioGroupDefinitions
+        foreach ($groupRef in @($Entry.extraRadioGroups)) {
+            $groupId = [string]$groupRef.id
+            $groupDefinition = $groupDefinitions | Where-Object { $_.id -eq $groupId } | Select-Object -First 1
+            if (-not $groupDefinition) { continue }
+            $buttons = @{}
+            # Framed under the group's catalog label so it reads as one related set of options
+            # (e.g. "Binary Sourcing"), distinct from the toggle switches beside it.
+            $groupBox = New-Object System.Windows.Controls.GroupBox
+            $groupBox.Header = [string]$groupDefinition.label
+            $groupBox.Padding = '6,4,6,0'
+            $groupBox.Margin = '0,0,0,6'
+            if ($groupDefinition.tooltip) { $groupBox.ToolTip = [string]$groupDefinition.tooltip }
+            $groupStack = New-Object System.Windows.Controls.StackPanel
+            $groupBox.Content = $groupStack
+            [void]$extraTogglesPanel.Children.Add($groupBox)
+            $applyRadio = {
+                if ($global:currentPlanContext.AnswerMap) {
+                    Update-RevealedSteps $global:currentPlanContext.AnswerMap
+                }
+            }.GetNewClosure()
+            foreach ($option in @($groupDefinition.options)) {
+                $radio = New-Object System.Windows.Controls.RadioButton
+                $radio.GroupName = $groupId
+                $radio.Content = [string]$option.label
+                $radio.Margin = '0,0,0,6'
+                $radio.IsChecked = ([string]$option.id -eq [string]$groupRef.defaultOption)
+                $radio.Add_Checked($applyRadio)
+                [void]$groupStack.Children.Add($radio)
+                $buttons[[string]$option.id] = $radio
+            }
+            $global:extraRadioGroups[$groupId] = @{ Definition = $groupDefinition; Buttons = $buttons }
+        }
+    }
     if (-not $Entry -or -not $Entry.extraToggles) { return }
     $definitions = (Get-RecoveryPlanCatalog).extraToggleDefinitions
     foreach ($toggleRef in @($Entry.extraToggles)) {
@@ -3815,7 +3873,7 @@ function Set-BreakPointAfter($StepOrNull) {
 function Update-RevealedSteps([System.Collections.IDictionary]$Variables) {
     $entry = Get-CurrentRecoveryPlanEntry
     $extraToggleIds = @(if ($entry -and $entry.extraToggles) { @($entry.extraToggles.id) } else { @() })
-    if ($extraToggleIds.Count -gt 0) {
+    if ((Get-ExtraPseudoVariableNames $entry).Count -gt 0) {
         # A plan's own extra toggles (e.g. Fleet Component Recovery's "Original VCF Installer
         # Available") gate steps via an ordinary "variable"-typed condition (see Test-StepCondition),
         # but are deliberately never written into the answers file/Variables tab -- they're UI
@@ -3834,6 +3892,14 @@ function Update-RevealedSteps([System.Collections.IDictionary]$Variables) {
         foreach ($toggleId in $extraToggleIds) {
             if ($global:extraToggleCheckBoxes.ContainsKey($toggleId)) {
                 $Variables[$toggleId] = if ($global:extraToggleCheckBoxes[$toggleId].IsChecked) { 'true' } else { 'false' }
+            }
+        }
+        # Each radio group injects the variables of whichever option is currently selected.
+        foreach ($group in $global:extraRadioGroups.Values) {
+            foreach ($option in @($group.Definition.options)) {
+                if ($group.Buttons[[string]$option.id].IsChecked) {
+                    foreach ($property in $option.variables.PSObject.Properties) { $Variables[$property.Name] = [string]$property.Value }
+                }
             }
         }
     }

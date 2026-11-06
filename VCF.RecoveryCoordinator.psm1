@@ -3447,6 +3447,7 @@ Function Resolve-PhysicalHostServiceAccounts {
 Export-ModuleMember -Function Resolve-PhysicalHostServiceAccounts
 
 Function Set-SDDCManagerOfflineDepot {
+    [CmdletBinding(DefaultParameterSetName = 'Authorized')]
     Param (
         [Parameter(Mandatory = $true)] [String] $sddcManagerFqdn,
         [Parameter(Mandatory = $true)] [String] $sddcManagerUser,
@@ -3456,8 +3457,9 @@ Function Set-SDDCManagerOfflineDepot {
         [Parameter(Mandatory = $true)] [String] $rootPassword,
         [Parameter(Mandatory = $true)] [String] $offlineDepotFqdn,
         [Parameter(Mandatory = $true)] [INT] $offlineDepotPort,
-        [Parameter(Mandatory = $true)] [String] $offlineDepotUsername,
-        [Parameter(Mandatory = $true)] [String] $offlineDepotPassword
+        [Parameter(Mandatory = $true, ParameterSetName = 'Authorized')] [String] $offlineDepotUsername,
+        [Parameter(Mandatory = $true, ParameterSetName = 'Authorized')] [String] $offlineDepotPassword,
+        [Parameter(Mandatory = $true, ParameterSetName = 'Unauthorized')] [Switch] $unauthorizedDepot
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
@@ -3534,16 +3536,19 @@ Function Set-SDDCManagerOfflineDepot {
     LogMessage -type INFO -message "[$sddcManagerFqdn] Configuring Offline Depot"
     #Configure Offline Depot
     $depotBody = @{
-        offlineAccount     = @{
-            username = $offlineDepotUsername
-            password = $offlineDepotPassword
-        }
         depotConfiguration = @{
             isOfflineDepot = $true
             hostname       = $offlineDepotFqdn
             port           = $offlineDepotPort
         }
-    } | ConvertTo-Json -Depth 3
+    }
+    If (-not $unauthorizedDepot) {
+        $depotBody.offlineAccount = @{
+            username = $offlineDepotUsername
+            password = $offlineDepotPassword
+        }
+    }
+    $depotBody = $depotBody | ConvertTo-Json -Depth 3
     $result = Invoke-RestMethod -Uri $depotUri -Method PUT -Headers $headers -Body $depotBody -SkipCertificateCheck
 
     $StopWatch.Stop()

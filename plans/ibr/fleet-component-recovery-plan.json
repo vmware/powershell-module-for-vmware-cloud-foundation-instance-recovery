@@ -66,7 +66,30 @@
     "description": "Repoint SDDC Manager to the Offline Depot",
     "commandLine": "Set-SDDCManagerOfflineDepot -sddcManagerFqdn $sddcManagerFqdn -sddcManagerUser $sddcManagerAdmin -sddcManagerPassword $sddcManagerAdminPassword -vcfUserPassword $vcfUserPassword -localUserPassword $localUserPassword -rootPassword $rootPassword -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort -offlineDepotUsername $offlineDepotUsername -offlineDepotPassword $offlineDepotPassword",
     "displayName": "Set SDDC Manager Offline Depot",
-    "condition": [],
+    "condition": [
+      {
+        "type": "variable",
+        "name": "unauthorizedDepot",
+        "operator": "eq",
+        "value": "false"
+      }
+    ],
+    "threadId": "",
+    "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "Repoint SDDC Manager to the Unauthorized Offline Depot",
+    "commandLine": "Set-SDDCManagerOfflineDepot -sddcManagerFqdn $sddcManagerFqdn -sddcManagerUser $sddcManagerAdmin -sddcManagerPassword $sddcManagerAdminPassword -vcfUserPassword $vcfUserPassword -localUserPassword $localUserPassword -rootPassword $rootPassword -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort -unauthorizedDepot",
+    "displayName": "Set SDDC Manager Unauthorized Offline Depot",
+    "condition": [
+      {
+        "type": "variable",
+        "name": "unauthorizedDepot",
+        "operator": "eq",
+        "value": "true"
+      }
+    ],
     "threadId": "",
     "interactive": false,
     "visible": true

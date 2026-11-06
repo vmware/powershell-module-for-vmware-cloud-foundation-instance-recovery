@@ -8,6 +8,8 @@ Configures SDDC Manager to use an offline depot for VCF bundle downloads.
 
 ```powershell
 Set-SDDCManagerOfflineDepot [-sddcManagerFqdn] <String> [-sddcManagerUser] <String> [-sddcManagerPassword] <String> [-vcfUserPassword] <String> [-localUserPassword] <String> [-rootPassword] <String> [-offlineDepotFqdn] <String> [-offlineDepotPort] <Int32> [-offlineDepotUsername] <String> [-offlineDepotPassword] <String> [<CommonParameters>]
+
+Set-SDDCManagerOfflineDepot [-sddcManagerFqdn] <String> [-sddcManagerUser] <String> [-sddcManagerPassword] <String> [-vcfUserPassword] <String> [-localUserPassword] <String> [-rootPassword] <String> [-offlineDepotFqdn] <String> [-offlineDepotPort] <Int32> -unauthorizedDepot [<CommonParameters>]
 ```
 
 ## Description
@@ -32,6 +34,23 @@ Set-SDDCManagerOfflineDepot `
     -offlineDepotPort    443 `
     -offlineDepotUsername "svc-depot" `
     -offlineDepotPassword "VMw@re1!"
+```
+
+### Example 2
+
+Configure an offline depot that does not require authentication:
+
+```powershell
+Set-SDDCManagerOfflineDepot `
+    -sddcManagerFqdn     "sfo-vcf01.sfo.rainpole.io" `
+    -sddcManagerUser     "administrator@vsphere.local" `
+    -sddcManagerPassword "VMw@re1!VMw@re1!" `
+    -vcfUserPassword     "VMw@re1!" `
+    -localUserPassword   "VMw@re1!VMw@re1!" `
+    -rootPassword        "VMw@re1!" `
+    -offlineDepotFqdn    "depot.rainpole.io" `
+    -offlineDepotPort    443 `
+    -unauthorizedDepot
 ```
 
 ## Parameters
@@ -166,7 +185,7 @@ Accept wildcard characters: False
 
 ### -offlineDepotUsername
 
-Username for authenticating to the offline depot.
+Username for authenticating to the offline depot. Required unless `-unauthorizedDepot` is used.
 
 ```yaml
 Type: String
@@ -182,7 +201,7 @@ Accept wildcard characters: False
 
 ### -offlineDepotPassword
 
-Password for authenticating to the offline depot.
+Password for authenticating to the offline depot. Required unless `-unauthorizedDepot` is used.
 
 ```yaml
 Type: String
@@ -192,6 +211,22 @@ Aliases:
 Required: True
 Position: 7
 Default value: None
+Accept pipeline input: False
+Accept wildcard characters: False
+```
+
+### -unauthorizedDepot
+
+Configures SDDC Manager to connect to the offline depot without credentials. When specified, the `offlineAccount` section is omitted from the depot configuration, and `-offlineDepotUsername` and `-offlineDepotPassword` must not be supplied.
+
+```yaml
+Type: SwitchParameter
+Parameter Sets: Unauthorized
+Aliases:
+
+Required: True
+Position: Named
+Default value: False
 Accept pipeline input: False
 Accept wildcard characters: False
 ```

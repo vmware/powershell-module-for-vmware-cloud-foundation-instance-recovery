@@ -513,21 +513,29 @@
                                  (or Run All) actually triggered the change. -->
                             <DockPanel Margin="0,8,0,0">
                                 <DockPanel DockPanel.Dock="Top" Margin="0,0,0,8">
-                                    <StackPanel DockPanel.Dock="Top">
-                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                                            <ToggleButton x:Name="RunAllParallelCheckBox" IsChecked="True" Style="{StaticResource ToggleSwitchStyle}" VerticalAlignment="Center" />
-                                            <TextBlock Text="Run parallel tasks using multiple threads (numbered circles)" VerticalAlignment="Center" Margin="8,0,0,0" />
+                                    <Grid DockPanel.Dock="Top">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                                <ToggleButton x:Name="RunAllParallelCheckBox" IsChecked="True" Style="{StaticResource ToggleSwitchStyle}" VerticalAlignment="Center" />
+                                                <TextBlock Text="Run parallel tasks using multiple threads (numbered circles)" VerticalAlignment="Center" Margin="8,0,0,0" />
+                                            </StackPanel>
+                                            <StackPanel Orientation="Horizontal">
+                                                <ToggleButton x:Name="RunAllAnswerFileCheckBox" Style="{StaticResource ToggleSwitchStyle}" VerticalAlignment="Center" />
+                                                <TextBlock Text="Use answer file for interactive tasks" VerticalAlignment="Center" Margin="8,0,0,0" />
+                                            </StackPanel>
                                         </StackPanel>
                                         <!-- Populated dynamically from the current plan's catalog
-                                             "extraToggles" (resolved against the catalog's top-level
-                                             "extraToggleDefinitions") by Update-ExtraTogglesPanel in the
-                                             .ps1 - empty and takes no space for a plan that declares none. -->
-                                        <StackPanel x:Name="ExtraTogglesPanel" />
-                                        <StackPanel Orientation="Horizontal">
-                                            <ToggleButton x:Name="RunAllAnswerFileCheckBox" Style="{StaticResource ToggleSwitchStyle}" VerticalAlignment="Center" />
-                                            <TextBlock Text="Use answer file for interactive tasks" VerticalAlignment="Center" Margin="8,0,0,0" />
-                                        </StackPanel>
-                                    </StackPanel>
+                                             "extraToggles"/"extraRadioGroups" (resolved against the
+                                             catalog's "extraToggleDefinitions"/"extraRadioGroupDefinitions")
+                                             by Update-ExtraTogglesPanel in the .ps1 - sits to the right of
+                                             the two fixed toggles; empty and takes no space for a plan that
+                                             declares none. -->
+                                        <StackPanel x:Name="ExtraTogglesPanel" Grid.Column="1" Margin="24,0,0,0" VerticalAlignment="Top" />
+                                    </Grid>
                                     <!-- "Task List" heading + Run Plan share one row, below the toggle
                                          stack and above the ListBox: heading docked Left, Button docked
                                          Right, both VerticalAlignment="Center" so they line up with each

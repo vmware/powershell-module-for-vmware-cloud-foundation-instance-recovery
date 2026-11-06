@@ -23,10 +23,25 @@
   ],
   "_targetComment": "target is one of: managementDomain | workloadDomain | additionalCluster | fleetComponent | recoverFleet -- see Sync-RecoveryPlanSelection in the .ps1 for what each one does. Exactly one plan should claim a given target; two plans claiming the same one will fight over the same panel.",
   "_extraToggleComment": "extraToggleDefinitions defines every optional plan-specific toggle once (id + label), the same way recoveryTypes/dataSources are defined once above. A plan opts in to a toggle by listing its id + defaultChecked under its own extraToggles array; the toggle's id doubles as the variable name injected into step-condition evaluation and is excluded from that plan's persisted answers file.",
-  "extraToggleDefinitions": [
+  "extraToggleDefinitions": [],
+  "_extraRadioGroupComment": "extraRadioGroupDefinitions defines every optional plan-specific group of mutually exclusive radio buttons once. Each option has an id, a label and a 'variables' map of pseudo-variable name -> 'true'/'false' string that is injected into step-condition evaluation while that option is selected (never written to the answers file). Each group also has a 'label' (frame header) and optional 'tooltip'. A plan opts in by listing the group id + defaultOption under its own extraRadioGroups array.",
+  "extraRadioGroupDefinitions": [
     {
-      "id": "originalVcfInstallerAvailable",
-      "label": "Original VCF Installer Available"
+      "id": "offlineDepotMode",
+      "label": "Binary Sourcing",
+      "tooltip": "Where recovery binaries come from: the authorized offline depot plus the original VCF Installer, or an unauthorized offline depot with manual binary staging.",
+      "options": [
+        {
+          "id": "authorized",
+          "label": "Use Authorized Offline Depot & Original VCF Installer",
+          "variables": { "originalVcfInstallerAvailable": "true", "unauthorizedDepot": "false" }
+        },
+        {
+          "id": "unauthorized",
+          "label": "Use Unauthorized Offline Depot",
+          "variables": { "originalVcfInstallerAvailable": "false", "unauthorizedDepot": "true" }
+        }
+      ]
     }
   ],
   "recoveryPlans": [
@@ -62,10 +77,10 @@
       ],
       "defaultDataSource": "LoadExtractedData",
       "selectionList": "none",
-      "extraToggles": [
+      "extraRadioGroups": [
         {
-          "id": "originalVcfInstallerAvailable",
-          "defaultChecked": true
+          "id": "offlineDepotMode",
+          "defaultOption": "authorized"
         }
       ]
     },
