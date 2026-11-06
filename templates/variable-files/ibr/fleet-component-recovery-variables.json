@@ -36,7 +36,7 @@
   "sftpUsername": "",
   "sftpPassword": "",
   "sftpDirectory": "",
-  "remoteHostFqdn": "",
+  "vcfInstallerFqdn": "",
   "originalConfigurationFile": "",
   "vcfaServicesRuntimeFqdn": "",
   "vcfaServicesRuntimePassword": "",

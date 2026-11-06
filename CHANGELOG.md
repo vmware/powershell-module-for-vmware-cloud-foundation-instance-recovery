@@ -1,6 +1,11 @@
 # Release History
 
 ## v9.1.2.1000
+- Fleet Component Recovery: replaced the "Original VCF Installer Available" toggle with a "Binary Sourcing" choice between an unauthorized offline depot (default) and an authorized offline depot with the original VCF Installer
+- Added `-unauthorizedDepot` to `Set-SDDCManagerOfflineDepot` (no depot credentials)
+- Added `-unauthorizedDepot`, `-offlineDepotFqdn` and `-offlineDepotPort` to `Get-BackupsFromSFTPServer` to add a `packageUrl` for each depot-hosted component to the restore JSON
+- Added `Add-OfflineDepotTrustedCertificate`
+- Renamed the `remoteHostFqdn` variable to `vcfInstallerFqdn` in the Fleet Component Recovery variables file
 - Merged `VMware.CloudFoundation.InstanceRecovery` and `VMware.CloudFoundation.RecoveryCoordinator` into a single module, `VCF.RecoveryCoordinator`
 - Reorganised plans into `plans/<ibr|fdr>` and `templates/<variable-files|answer-files>/<ibr|fdr>`; `recovery-plan-catalog.json` now lives in `plans`, and `xaml` at the module root
 - Engineering mode now also accepts a signed 12-hour one-time code (`helper/New-EngineeringOtp.ps1`) alongside the password

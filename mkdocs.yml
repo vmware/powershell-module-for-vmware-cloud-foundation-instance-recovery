@@ -131,6 +131,7 @@ nav:
     - documentation/functions/Add-AdditionalNSXManagers.md
     - documentation/functions/Add-DiskgroupsToManagementHosts.md
     - documentation/functions/Add-HostsToCluster.md
+    - documentation/functions/Add-OfflineDepotTrustedCertificate.md
     - documentation/functions/Add-VMKernelsToHost.md
     - documentation/functions/Add-VMKernelsToManagementHosts.md
     - documentation/functions/Add-VcfmsTrustedCertificate.md

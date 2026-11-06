@@ -2794,6 +2794,18 @@ Function Get-BackupsFromSFTPServer {
     Takes precedence over -Type for the component list itself (though -Type still drives -vspId resolution) if both are
     supplied. Defaults to vcf-fleet-lcm, vcf-fleet-depot, salt-raas, and vidb when neither -componentNames nor -Type is
     supplied.
+
+    .PARAMETER unauthorizedDepot
+    When specified, every component in the generated restore JSON other than vsp gets a "packageUrl" pointing at its
+    depot-manifest-*.yaml on the offline depot (https://<offlineDepotFqdn>:<offlineDepotPort>/PROD/COMP/<component folder>/).
+    The depot's directory index is read to find the manifest, so the depot must allow directory listing and must not require
+    authentication. Requires -offlineDepotFqdn.
+
+    .PARAMETER offlineDepotFqdn
+    FQDN of the offline depot. Required with -unauthorizedDepot.
+
+    .PARAMETER offlineDepotPort
+    HTTPS port of the offline depot. Defaults to 443. Only used with -unauthorizedDepot.
     #>
     Param(
         [Parameter (Mandatory = $true)][String] $sftpServer,
@@ -2803,7 +2815,10 @@ Function Get-BackupsFromSFTPServer {
         [Parameter (Mandatory = $false)][String] $vspId,
         [Parameter (Mandatory = $false)][ValidateSet("vcfa", "vcfms", "opsLogs")][String] $Type,
         [Parameter (Mandatory = $false)][String] $extractedSDDCDataFile,
-        [Parameter (Mandatory = $false)][ValidateSet("vsp", "vcf-fleet-lcm", "vcf-fleet-depot", "vcf-sddc-lcm", "salt", "salt-raas", "vidb", "ops-logs", "vcfms-metrics-store", "vcf-obs-data-platform", "telemetry-acceptor", "vcfa", "vcd-migrator")][String[]] $componentNames = @("vcf-fleet-lcm", "vcf-fleet-depot", "salt-raas", "vidb")
+        [Parameter (Mandatory = $false)][ValidateSet("vsp", "vcf-fleet-lcm", "vcf-fleet-depot", "vcf-sddc-lcm", "salt", "salt-raas", "vidb", "ops-logs", "vcfms-metrics-store", "vcf-obs-data-platform", "telemetry-acceptor", "vcfa", "vcd-migrator")][String[]] $componentNames = @("vcf-fleet-lcm", "vcf-fleet-depot", "salt-raas", "vidb"),
+        [Parameter (Mandatory = $false)][Switch] $unauthorizedDepot,
+        [Parameter (Mandatory = $false)][String] $offlineDepotFqdn,
+        [Parameter (Mandatory = $false)][Int] $offlineDepotPort = 443
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
@@ -2856,6 +2871,11 @@ Function Get-BackupsFromSFTPServer {
         LogMessage -type INFO -message "[$jumpboxName] Resolved vspId '$vspId' ($vspClusterType) via '$extractedSDDCDataFile'"
     } else {
         LogMessage -type ERROR -message "[$jumpboxName] Either -vspId or -extractedSDDCDataFile must be specified."
+        return
+    }
+
+    if ($unauthorizedDepot -and -not $offlineDepotFqdn) {
+        LogMessage -type ERROR -message "[$jumpboxName] -offlineDepotFqdn must be specified with -unauthorizedDepot."
         return
     }
 
@@ -3169,14 +3189,70 @@ Function Get-BackupsFromSFTPServer {
 
     if ($buildJson -in @("Y", "y")) {
         $sftpUriPrefix = "sftp://$sftpUser@${sftpServer}:22"
+
+        # Backup component name -> its folder under <depot>/PROD/COMP/. vsp is mapped for completeness but never
+        # gets a packageUrl.
+        $depotFolderMap = @{
+            'vsp'                   = 'VSP'
+            'vcf-fleet-lcm'         = 'VCF_FLEET_LCM'
+            'vcf-fleet-depot'       = 'DEPOT_SERVICE'
+            'vcf-sddc-lcm'          = 'VCF_SDDC_LCM'
+            'salt'                  = 'VCF_SALT'
+            'salt-raas'             = 'VCF_SALT_RAAS'
+            'vidb'                  = 'VIDB'
+            'ops-logs'              = 'VRLI'
+            'vcfms-metrics-store'   = 'VCFMS_METRICS_STORE'
+            'vcf-obs-data-platform' = 'VCF_OBSERVABILITY_DATA_PLATFORM'
+            'telemetry-acceptor'    = 'TELEMETRY_ACCEPTOR'
+            'vcfa'                  = 'VRA'
+            'vcd-migrator'          = 'VCF_SERVICE_VCD_MIGRATION_BACKEND'
+        }
+        $depotComponentRoot = "https://${offlineDepotFqdn}:${offlineDepotPort}/PROD/COMP"
+        $packageUrlFailed = $false
+
         $restoreComponents = @(
             foreach ($componentType in $resolvedComponentNames) {
                 $entry = $finalEntries | Where-Object { $_.ComponentType -eq $componentType } | Select-Object -First 1
                 if ($entry) {
-                    @{ path = "$sftpUriPrefix$($entry.Path)"; point = $entry.Name }
+                    $restoreComponent = [ordered]@{ point = $entry.Name; path = "$sftpUriPrefix$($entry.Path)" }
+
+                    if ($unauthorizedDepot -and $componentType -ne 'vsp') {
+                        $depotFolder = $depotFolderMap[$componentType]
+                        $folderUrl = "$depotComponentRoot/$depotFolder/"
+                        Try {
+                            # The unauthorized depot is read over its Apache directory index; find this component's
+                            # depot-manifest-*.yaml. Prefer the manifest whose version equals the backup's own
+                            # version, otherwise the highest version present.
+                            $listing = Invoke-WebRequest -Uri $folderUrl -SkipCertificateCheck -ErrorAction Stop
+                            $manifests = @($listing.Links.href | Where-Object { $_ -match '^depot-manifest-.+\.yaml$' } | Sort-Object -Unique)
+                        } Catch {
+                            LogMessage -type ERROR -message "[$offlineDepotFqdn] Unable to read $folderUrl for component '$componentType': $($_.Exception.Message)"
+                            $packageUrlFailed = $true
+                            Continue
+                        }
+                        if ($manifests.Count -eq 0) {
+                            LogMessage -type ERROR -message "[$offlineDepotFqdn] No depot-manifest-*.yaml found in $folderUrl for component '$componentType'."
+                            $packageUrlFailed = $true
+                            Continue
+                        }
+                        $manifest = $manifests | Where-Object { $_ -like "*-$($entry.Version).yaml" } | Select-Object -First 1
+                        if (-not $manifest) {
+                            # Zero-pad each dotted segment so a plain string sort orders versions numerically
+                            # ([version] only supports 4 segments; these have 5).
+                            $manifest = $manifests | Sort-Object { ([regex]::Match($_, '(\d+(?:\.\d+)+)\.yaml$').Groups[1].Value -split '\.' | ForEach-Object { $_.PadLeft(12, '0') }) -join '.' } | Select-Object -Last 1
+                        }
+                        LogMessage -type INFO -message "[$offlineDepotFqdn] $componentType -> $folderUrl$manifest"
+                        $restoreComponent['packageUrl'] = "$folderUrl$manifest"
+                    }
+                    $restoreComponent
                 }
             }
         )
+
+        if ($packageUrlFailed) {
+            LogMessage -type ERROR -message "[$jumpboxName] Restore JSON not written: packageUrl could not be resolved for every component."
+            return
+        }
 
         $restorePayload = @{ components = $restoreComponents } | ConvertTo-Json -Depth 5
         $outputFile = if ($PSBoundParameters.ContainsKey('Type')) {
@@ -3445,6 +3521,94 @@ Function Resolve-PhysicalHostServiceAccounts {
 
 }
 Export-ModuleMember -Function Resolve-PhysicalHostServiceAccounts
+
+Function Add-OfflineDepotTrustedCertificate {
+    <#
+    .SYNOPSIS
+    Trusts the TLS certificate presented by an offline depot on the Windows machine running the Recovery Coordinator.
+
+    .DESCRIPTION
+    The Add-OfflineDepotTrustedCertificate cmdlet connects to the offline depot, captures the certificate chain it presents, and
+    imports each certificate into the local machine's Trusted Root Certification Authorities store (Cert:\LocalMachine\Root),
+    so that subsequent HTTPS requests from this machine to the depot validate without certificate errors. Certificates already
+    present in the store (matched by thumbprint) are skipped. Must be run from an elevated session on Windows.
+
+    .EXAMPLE
+    Add-OfflineDepotTrustedCertificate -offlineDepotFqdn "depot.rainpole.io" -offlineDepotPort 443
+
+    .PARAMETER offlineDepotFqdn
+    FQDN of the offline depot whose certificate should be trusted.
+
+    .PARAMETER offlineDepotPort
+    HTTPS port of the offline depot. Default is 443.
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][String] $offlineDepotFqdn,
+        [Parameter(Mandatory = $false)][Int] $offlineDepotPort = 443
+    )
+
+    $jumpboxName = hostname
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    if (-not $IsWindows -and $PSVersionTable.PSVersion.Major -ge 6) {
+        LogMessage -type ERROR -message "[$jumpboxName] $($MyInvocation.MyCommand) only supports Windows."
+        return
+    }
+    $principal = New-Object System.Security.Principal.WindowsPrincipal([System.Security.Principal.WindowsIdentity]::GetCurrent())
+    if (-not $principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        LogMessage -type ERROR -message "[$jumpboxName] $($MyInvocation.MyCommand) must be run from an elevated (Administrator) session."
+        return
+    }
+
+    # Capture every certificate in the chain the depot presents (the validation callback sees the full chain)
+    LogMessage -type INFO -message "[$jumpboxName] Retrieving TLS certificate chain from ${offlineDepotFqdn}:${offlineDepotPort}"
+    $script:depotChainCerts = @()
+    try {
+        $tcpClient = New-Object System.Net.Sockets.TcpClient($offlineDepotFqdn, $offlineDepotPort)
+        $sslStream = New-Object System.Net.Security.SslStream($tcpClient.GetStream(), $false, {
+                param($sender, $certificate, $chain, $sslPolicyErrors)
+                $script:depotChainCerts = @($chain.ChainElements | ForEach-Object { New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($_.Certificate) })
+                if ($script:depotChainCerts.Count -eq 0 -and $certificate) {
+                    $script:depotChainCerts = @(New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($certificate))
+                }
+                $true
+            })
+        $sslStream.AuthenticateAsClient($offlineDepotFqdn)
+        $sslStream.Close()
+        $tcpClient.Close()
+    } catch {
+        LogMessage -type ERROR -message "[$jumpboxName] Failed to retrieve certificate from ${offlineDepotFqdn}:${offlineDepotPort}: $($_.Exception.Message)"
+        return
+    }
+
+    if ($script:depotChainCerts.Count -eq 0) {
+        LogMessage -type ERROR -message "[$jumpboxName] No certificate returned from ${offlineDepotFqdn}:${offlineDepotPort}"
+        return
+    }
+
+    $store = New-Object System.Security.Cryptography.X509Certificates.X509Store([System.Security.Cryptography.X509Certificates.StoreName]::Root, [System.Security.Cryptography.X509Certificates.StoreLocation]::LocalMachine)
+    $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+    try {
+        foreach ($cert in $script:depotChainCerts) {
+            if ($store.Certificates | Where-Object { $_.Thumbprint -eq $cert.Thumbprint }) {
+                LogMessage -type INFO -message "[$jumpboxName] Already trusted: $($cert.Subject) ($($cert.Thumbprint))"
+            } else {
+                $store.Add($cert)
+                LogMessage -type INFO -message "[$jumpboxName] Trusted: $($cert.Subject) ($($cert.Thumbprint))"
+            }
+        }
+    } finally {
+        $store.Close()
+    }
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+Export-ModuleMember -Function Add-OfflineDepotTrustedCertificate
 
 Function Set-SDDCManagerOfflineDepot {
     [CmdletBinding(DefaultParameterSetName = 'Authorized')]

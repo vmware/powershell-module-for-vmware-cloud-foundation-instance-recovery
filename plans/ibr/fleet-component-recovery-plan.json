@@ -18,10 +18,49 @@
     "visible": true
   },
   {
+    "description": "Trust the Offline Depot Certificate on this machine (needed to read the unauthorized offline depot's directory index)",
+    "commandLine": "Add-OfflineDepotTrustedCertificate -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
+    "displayName": "Trust Offline Depot Certificate on Jumpbox",
+    "condition": [
+      {
+        "type": "variable",
+        "name": "unauthorizedDepot",
+        "operator": "eq",
+        "value": "true"
+      }
+    ],
+    "threadId": "",
+    "interactive": false,
+    "visible": true
+  },
+  {
     "description": "Retrieve a List of Backups for the VCF Management Services (VCFMS)",
     "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -Type vcfms -extractedSDDCDataFile $extractedSDDCDataFile",
     "displayName": "Retrieve VCFMS Backups",
-    "condition": [],
+    "condition": [
+      {
+        "type": "variable",
+        "name": "unauthorizedDepot",
+        "operator": "eq",
+        "value": "false"
+      }
+    ],
+    "threadId": "",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Retrieve a List of Backups for the VCF Management Services (VCFMS)",
+    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -Type vcfms -extractedSDDCDataFile $extractedSDDCDataFile -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
+    "displayName": "Retrieve VCFMS Backups",
+    "condition": [
+      {
+        "type": "variable",
+        "name": "unauthorizedDepot",
+        "operator": "eq",
+        "value": "true"
+      }
+    ],
     "threadId": "",
     "interactive": true,
     "visible": true
@@ -30,7 +69,30 @@
     "description": "Retrieve Backups for Log Management (ops-logs)",
     "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -Type opsLogs -extractedSDDCDataFile $extractedSDDCDataFile",
     "displayName": "Retrieve Log Management Backups",
-    "condition": [],
+    "condition": [
+      {
+        "type": "variable",
+        "name": "unauthorizedDepot",
+        "operator": "eq",
+        "value": "false"
+      }
+    ],
+    "threadId": "",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Retrieve Backups for Log Management (ops-logs)",
+    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -Type opsLogs -extractedSDDCDataFile $extractedSDDCDataFile -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
+    "displayName": "Retrieve Log Management Backups",
+    "condition": [
+      {
+        "type": "variable",
+        "name": "unauthorizedDepot",
+        "operator": "eq",
+        "value": "true"
+      }
+    ],
     "threadId": "",
     "interactive": true,
     "visible": true
@@ -39,7 +101,30 @@
     "description": "Retrieve a List of Backups for the VCF Automation Component",
     "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -Type vcfa -extractedSDDCDataFile $extractedSDDCDataFile",
     "displayName": "Retrieve VCF Automation Backups",
-    "condition": [],
+    "condition": [
+      {
+        "type": "variable",
+        "name": "unauthorizedDepot",
+        "operator": "eq",
+        "value": "false"
+      }
+    ],
+    "threadId": "",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Retrieve a List of Backups for the VCF Automation Component",
+    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -Type vcfa -extractedSDDCDataFile $extractedSDDCDataFile -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
+    "displayName": "Retrieve VCF Automation Backups",
+    "condition": [
+      {
+        "type": "variable",
+        "name": "unauthorizedDepot",
+        "operator": "eq",
+        "value": "true"
+      }
+    ],
     "threadId": "",
     "interactive": true,
     "visible": true
@@ -48,7 +133,30 @@
     "description": "Retrieve Telemetry Component Backup",
     "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -componentNames telemetry-acceptor -extractedSDDCDataFile $extractedSDDCDataFile",
     "displayName": "Retrieve Telemetry Backups",
-    "condition": [],
+    "condition": [
+      {
+        "type": "variable",
+        "name": "unauthorizedDepot",
+        "operator": "eq",
+        "value": "false"
+      }
+    ],
+    "threadId": "",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Retrieve Telemetry Component Backup",
+    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -componentNames telemetry-acceptor -extractedSDDCDataFile $extractedSDDCDataFile -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
+    "displayName": "Retrieve Telemetry Backups",
+    "condition": [
+      {
+        "type": "variable",
+        "name": "unauthorizedDepot",
+        "operator": "eq",
+        "value": "true"
+      }
+    ],
     "threadId": "",
     "interactive": true,
     "visible": true
@@ -140,15 +248,15 @@
     "visible": true
   },
   {
-    "description": "Trust the Installer Host Certificate (only needed when binaries are hosted on the original VCF Installer)",
-    "commandLine": "Add-VcfmsTrustedCertificate -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -RemoteHostFqdn $remoteHostFqdn",
+    "description": "Trust the Installer Host Certificate (only needed when using an authorized offline depot with the original VCF Installer)",
+    "commandLine": "Add-VcfmsTrustedCertificate -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -RemoteHostFqdn $vcfInstallerFqdn",
     "displayName": "Trust Installer Certificate on VCFMS Services Runtime",
     "condition": [
       {
         "type": "variable",
-        "name": "originalVcfInstallerAvailable",
+        "name": "unauthorizedDepot",
         "operator": "eq",
-        "value": "true"
+        "value": "false"
       }
     ],
     "threadId": "",
@@ -156,19 +264,19 @@
     "visible": true
   },
   {
-    "description": "Stage Binaries (manual step)",
-    "commandLine": "Confirm-ManualStep -Message 'Press Enter to confirm Binary Staging to VCFMS Services Runtime is complete' -AnswerKey 'vcfms-binary-staging-complete'",
-    "displayName": "Confirm Manual Step: Binary Staging to VCFMS Services Runtime is complete",
+    "description": "Trust the Offline Depot Certificate (only needed when using an unauthorized offline depot instead of the original VCF Installer)",
+    "commandLine": "Add-VcfmsTrustedCertificate -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -RemoteHostFqdn $offlineDepotFqdn -RemoteHostPort $offlineDepotPort",
+    "displayName": "Trust Offline Depot Certificate on VCFMS Services Runtime",
     "condition": [
       {
         "type": "variable",
-        "name": "originalVcfInstallerAvailable",
+        "name": "unauthorizedDepot",
         "operator": "eq",
-        "value": "false"
+        "value": "true"
       }
     ],
     "threadId": "",
-    "interactive": true,
+    "interactive": false,
     "visible": true
   },
   {
@@ -263,14 +371,14 @@
   },
   {
     "description": "Trust the Installer Host Certificate on VCF Automation",
-    "commandLine": "Add-VcfmsTrustedCertificate -ServicesRuntimeFqdn $vcfaServicesRuntimeFqdn -ServicesRuntimePassword $vcfaServicesRuntimePassword -RemoteHostFqdn $remoteHostFqdn",
+    "commandLine": "Add-VcfmsTrustedCertificate -ServicesRuntimeFqdn $vcfaServicesRuntimeFqdn -ServicesRuntimePassword $vcfaServicesRuntimePassword -RemoteHostFqdn $vcfInstallerFqdn",
     "displayName": "Trust Installer Certificate on VCFA Services Runtime",
     "condition": [
       {
         "type": "variable",
-        "name": "originalVcfInstallerAvailable",
+        "name": "unauthorizedDepot",
         "operator": "eq",
-        "value": "true"
+        "value": "false"
       }
     ],
     "threadId": "",
@@ -278,19 +386,19 @@
     "visible": true
   },
   {
-    "description": "Stage Binaries (manual step)",
-    "commandLine": "Confirm-ManualStep -Message 'Press Enter to confirm Binary Staging to VCFA Services Runtime is complete' -AnswerKey 'vcfa-binary-staging-complete'",
-    "displayName": "Confirm Manual Step: Binary Staging to VCFA Services Runtime is complete",
+    "description": "Trust the Offline Depot Certificate (only needed when using an unauthorized offline depot instead of the original VCF Installer)",
+    "commandLine": "Add-VcfmsTrustedCertificate -ServicesRuntimeFqdn $vcfaServicesRuntimeFqdn -ServicesRuntimePassword $vcfaServicesRuntimePassword -RemoteHostFqdn $offlineDepotFqdn -RemoteHostPort $offlineDepotPort",
+    "displayName": "Trust Offline Depot Certificate on VCFA Services Runtime",
     "condition": [
       {
         "type": "variable",
-        "name": "originalVcfInstallerAvailable",
+        "name": "unauthorizedDepot",
         "operator": "eq",
-        "value": "false"
+        "value": "true"
       }
     ],
     "threadId": "",
-    "interactive": true,
+    "interactive": false,
     "visible": true
   },
   {
