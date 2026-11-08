@@ -1,9 +1,32 @@
 [
   {
+    "description": "Restore VCF Operations using the user-provided restore script (must exit 0 on success and non-zero on failure)",
+    "commandLine": "Invoke-UserOpsRestoreScript -ScriptPath $opsRestoreScriptPath",
+    "displayName": "Run User-Provided VCF Operations Restore Script",
+    "condition": [
+      {
+        "type": "variable",
+        "name": "userProvidedOpsRestoreScript",
+        "operator": "eq",
+        "value": "true"
+      }
+    ],
+    "threadId": "",
+    "interactive": false,
+    "visible": true
+  },
+  {
     "description": "Restore VCF Operations from an Image-Based Backup (manual step)",
     "commandLine": "Confirm-ManualStep -Message 'Press Enter once VCF Operations has been restored from an image-based backup' -AnswerKey 'vcf-operations-restored'",
     "displayName": "Confirm Manual Step: VCF Operations has been restored",
-    "condition": [],
+    "condition": [
+      {
+        "type": "variable",
+        "name": "userProvidedOpsRestoreScript",
+        "operator": "eq",
+        "value": "false"
+      }
+    ],
     "threadId": "",
     "interactive": true,
     "visible": true
@@ -12,7 +35,14 @@
     "description": "Verify VCF Operations State (manual step)",
     "commandLine": "Confirm-ManualStep -Message 'Press Enter once VCF Operations state has been verified' -AnswerKey 'vcf-operations-state-verified'",
     "displayName": "Confirm Manual Step: VCF Operations state has been verified",
-    "condition": [],
+    "condition": [
+      {
+        "type": "variable",
+        "name": "userProvidedOpsRestoreScript",
+        "operator": "eq",
+        "value": "false"
+      }
+    ],
     "threadId": "",
     "interactive": true,
     "visible": true

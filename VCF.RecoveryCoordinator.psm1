@@ -406,6 +406,61 @@ Function Confirm-ManualStep {
 }
 Export-ModuleMember -Function Confirm-ManualStep
 
+Function Invoke-UserOpsRestoreScript {
+    <#
+    .SYNOPSIS
+    Runs a user-provided script that restores VCF Operations, and reports success or failure the way every other task in this module does
+
+    .DESCRIPTION
+    The Invoke-UserOpsRestoreScript cmdlet is used by the Fleet Component Recovery plan when the operator has ticked "User Provided VCF Operations Restore Script"
+    (instead of the two Confirm-ManualStep gates). It runs the script in a child PowerShell process (same PowerShell executable as the current session),
+    streams the script's output to the screen, and judges success purely by the child's exit code:
+      - exit code 0       -> success: logs "Completed Task" with no [ERROR] tag, so the step is shown as passed
+      - any other code    -> failure: logs an [ERROR] line before "Completed Task", so the step is shown as failed
+    The user script is therefore responsible for deciding whether the restore truly succeeded (including waiting for VCF Operations to be available,
+    if that is what "restored" means for them) and for exiting 0 only in that case. An uncaught terminating error in the script also yields a non-zero exit code.
+    The script must run unattended, and is not passed any parameters.
+
+    .EXAMPLE
+    Invoke-UserOpsRestoreScript -ScriptPath 'F:\VCFIR\Restore-OpsAppliances.ps1'
+
+    .PARAMETER ScriptPath
+    Path to the PowerShell script to run
+    #>
+    Param(
+        [Parameter (Mandatory = $false)][String] $ScriptPath
+    )
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+
+    If ([string]::IsNullOrWhiteSpace($ScriptPath)) {
+        LogMessage -type ERROR -message "[$jumpboxName] No restore script path was supplied (is `$opsRestoreScriptPath set in the Variables tab?)"
+    } ElseIf (-not (Test-Path -LiteralPath $ScriptPath -PathType Leaf)) {
+        LogMessage -type ERROR -message "[$jumpboxName] Restore script '$ScriptPath' was not found"
+    } Else {
+        LogMessage -type INFO -message "[$jumpboxName] Running user-provided restore script '$ScriptPath'"
+        Try {
+            $pwshPath = (Get-Process -Id $PID).Path
+            & $pwshPath -NoProfile -File $ScriptPath 2>&1 | ForEach-Object { Write-Host $_ }
+            $exitCode = $LASTEXITCODE
+            If ($exitCode -eq 0) {
+                LogMessage -type INFO -message "[$jumpboxName] Restore script completed successfully (exit code 0)"
+            } Else {
+                LogMessage -type ERROR -message "[$jumpboxName] Restore script failed (exit code $exitCode)"
+            }
+        } Catch {
+            LogMessage -type ERROR -message "[$jumpboxName] Restore script could not be run: $($_.Exception.Message)"
+        }
+    }
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+Export-ModuleMember -Function Invoke-UserOpsRestoreScript
+
 Function Move-VMKernel {
     Param (
         [object]$VMHost,
