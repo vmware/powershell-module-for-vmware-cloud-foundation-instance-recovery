@@ -213,13 +213,15 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="RadioButton">
-                        <StackPanel Orientation="Horizontal" Background="Transparent">
-                            <Grid Width="16" Height="16" VerticalAlignment="Center">
+                        <!-- DockPanel, not a horizontal StackPanel: a horizontal stack measures its content
+                             with unlimited width, so a long label never wraps and gets clipped instead. -->
+                        <DockPanel Background="Transparent">
+                            <Grid DockPanel.Dock="Left" Width="16" Height="16" VerticalAlignment="Center">
                                 <Ellipse x:Name="Ring" Stroke="{StaticResource ToggleOffBrush}" StrokeThickness="1.5" Fill="White" />
                                 <Ellipse x:Name="Dot" Width="8" Height="8" Fill="{StaticResource ToggleOnBrush}" Visibility="Collapsed" />
                             </Grid>
                             <ContentPresenter Margin="8,0,0,0" VerticalAlignment="Center" RecognizesAccessKey="True" />
-                        </StackPanel>
+                        </DockPanel>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsChecked" Value="True">
                                 <Setter TargetName="Dot" Property="Visibility" Value="Visible" />
