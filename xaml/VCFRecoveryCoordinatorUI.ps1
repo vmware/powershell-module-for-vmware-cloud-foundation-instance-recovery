@@ -119,6 +119,8 @@ $runAllAnswerFileCheckBox = $window.FindName('RunAllAnswerFileCheckBox')
 # Populated dynamically from the current plan's catalog "extraToggles" -- see
 # Update-ExtraTogglesPanel below. Empty for a plan that declares none.
 $extraTogglesPanel = $window.FindName('ExtraTogglesPanel')
+$extraRunOptionsPanel = $window.FindName('ExtraRunOptionsPanel')
+$extraColumnDefinition = $window.FindName('ExtraColumnDefinition')
 $extraTogglesHeader = $window.FindName('ExtraTogglesHeader')
 $extraTogglesDivider = $window.FindName('ExtraTogglesDivider')
 $overallRecoveryTimePanel = $window.FindName('OverallRecoveryTimePanel')
@@ -213,7 +215,7 @@ function Reset-CurrentRecoveryPlanContext([string]$PlanId) {
 # $domainsListBox every time the selected Recovery Plan changes, per that plan's own catalog
 # "domainFilter" (MANAGEMENT/NOT_MANAGEMENT/none), without needing to re-read the file.
 $global:allDiscoveredDomains = @()
-# Live ToggleButton controls currently shown in $extraTogglesPanel, keyed by their catalog
+# Live ToggleButton controls currently shown in $extraRunOptionsPanel, keyed by their catalog
 # "extraToggleDefinitions" id -- rebuilt by Update-ExtraTogglesPanel every time the selected plan
 # changes. Update-RevealedSteps reads each one's IsChecked to inject that id as a pseudo-variable
 # into condition evaluation (see the matching comment there) without needing to know in advance
@@ -3689,6 +3691,8 @@ function Get-ExtraPseudoVariableNames($Entry) {
 # (nothing selected/no steps loaded yet), which just empties the panel.
 function Update-ExtraTogglesPanel($Entry) {
     $extraTogglesPanel.Children.Clear()
+    $extraRunOptionsPanel.Children.Clear()
+    $extraColumnDefinition.Width = [System.Windows.GridLength]::Auto
     $global:extraToggleCheckBoxes = @{}
     $global:extraRadioGroups = @{}
     $extraTogglesHeader.Visibility = 'Collapsed'
@@ -3706,6 +3710,8 @@ function Update-ExtraTogglesPanel($Entry) {
             $extraTogglesHeader.ToolTip = if ($groupDefinition.tooltip) { [string]$groupDefinition.tooltip } else { $null }
             $extraTogglesHeader.Visibility = 'Visible'
             $extraTogglesDivider.Visibility = 'Visible'
+            # A radio group is present: split the width evenly with Run Options; labels wrap, so nothing clips.
+            $extraColumnDefinition.Width = [System.Windows.GridLength]::new(1, [System.Windows.GridUnitType]::Star)
             $groupStack = $extraTogglesPanel
             $applyRadio = {
                 if ($global:currentPlanContext.AnswerMap) {
@@ -3715,7 +3721,10 @@ function Update-ExtraTogglesPanel($Entry) {
             foreach ($option in @($groupDefinition.options)) {
                 $radio = New-Object System.Windows.Controls.RadioButton
                 $radio.GroupName = $groupId
-                $radio.Content = [string]$option.label
+                $radioLabel = New-Object System.Windows.Controls.TextBlock
+                $radioLabel.Text = [string]$option.label
+                $radioLabel.TextWrapping = 'Wrap'
+                $radio.Content = $radioLabel
                 $radio.Margin = '0,0,0,6'
                 $radio.IsChecked = ([string]$option.id -eq [string]$groupRef.defaultOption)
                 $radio.Add_Checked($applyRadio)
@@ -3732,20 +3741,22 @@ function Update-ExtraTogglesPanel($Entry) {
         $definition = $definitions | Where-Object { $_.id -eq $toggleId } | Select-Object -First 1
         if (-not $definition) { continue }
 
-        $stack = New-Object System.Windows.Controls.StackPanel
-        $stack.Orientation = 'Horizontal'
-        $stack.Margin = '0,0,0,6'
+        $stack = New-Object System.Windows.Controls.DockPanel
+        $stack.Margin = '0,6,0,0'
         $toggle = New-Object System.Windows.Controls.Primitives.ToggleButton
         $toggle.Style = $window.TryFindResource('ToggleSwitchStyle')
         $toggle.VerticalAlignment = 'Center'
+        [System.Windows.Controls.DockPanel]::SetDock($toggle, 'Left')
         $toggle.IsChecked = [bool]$toggleRef.defaultChecked
         [void]$stack.Children.Add($toggle)
         $label = New-Object System.Windows.Controls.TextBlock
         $label.Text = [string]$definition.label
+        $label.TextWrapping = 'Wrap'
         $label.VerticalAlignment = 'Center'
         $label.Margin = '8,0,0,0'
         [void]$stack.Children.Add($label)
-        [void]$extraTogglesPanel.Children.Add($stack)
+        # Toggles join the Run Options column (under the built-in toggles); only radio groups use the right-hand column.
+        [void]$extraRunOptionsPanel.Children.Add($stack)
 
         $global:extraToggleCheckBoxes[$toggleId] = $toggle
         # Re-filters the current plan's Steps list immediately on toggle (see Update-RevealedSteps's
