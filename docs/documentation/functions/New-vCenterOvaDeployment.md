@@ -7,42 +7,56 @@ Deploys a vCenter Server appliance from OVA using data previously extracted from
 ## Syntax
 
 ```powershell
-New-vCenterOvaDeployment [-tempvCenterFqdn] <String> [-tempvCenterAdmin] <String> [-tempvCenterAdminPassword] <String> [-extractedSDDCDataFile] <String> [-workloadDomain] <String> [-restoredvCenterDeploymentSize] <String> [-vCenterOvaFile] <String> [-ProgressAction <ActionPreference>] [<CommonParameters>]
+New-vCenterOvaDeployment [[-targetFqdn] <String>] [-targetAdmin] <String> [-targetAdminPassword] <String> [-extractedSDDCDataFile] <String> [-workloadDomain] <String> [-restoredvCenterDeploymentSize] <String> [-vCenterOvaFile] <String> [[-targetType] <String>] [<CommonParameters>]
 ```
 
 ## Description
 
-The `New-vCenterOvaDeployment` deploys a vCenter Server appliance from OVA using data previously extracted from the SDDC Manager backup.
+The `New-vCenterOvaDeployment` cmdlet deploys a vCenter Server appliance from OVA using data previously extracted from the SDDC Manager backup. The target can be a vCenter Server instance or, with `-targetType esx`, a single ESX host.
 
 ## Examples
 
 ### Example 1
 
 ```powershell
-New-vCenterOvaDeployment -tempvCenterFqdn "sfo-m01-vc02.sfo.rainpole.io" -tempvCenterAdmin "administrator@vsphere.local" -tempvCenterAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -workloadDomain "sfo-m01" -restoredvCenterDeploymentSize "small" -vCenterOvaFile "F:\OVA\VMware-vCenter-Server-Appliance-7.0.3.01400-21477706_OVF10.ova"
+New-vCenterOvaDeployment -targetFqdn "sfo-m01-vc02.sfo.rainpole.io" -targetAdmin "administrator@vsphere.local" -targetAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -workloadDomain "sfo-m01" -restoredvCenterDeploymentSize "small" -vCenterOvaFile "F:\OVA\VMware-vCenter-Server-Appliance-7.0.3.01400-21477706_OVF10.ova" -targetType "vcenter"
+```
+
+### Example 2
+
+```powershell
+New-vCenterOvaDeployment -targetFqdn "sfo01-m01-esx01.sfo.rainpole.io" -targetAdmin "root" -targetAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -workloadDomain "sfo-m01" -restoredvCenterDeploymentSize "small" -vCenterOvaFile "F:\OVA\VMware-vCenter-Server-Appliance-7.0.3.01400-21477706_OVF10.ova" -targetType "esx"
+```
+
+### Example 3
+
+Deploys to the first ESX host of the management domain; `-targetFqdn` is omitted.
+
+```powershell
+New-vCenterOvaDeployment -targetAdmin "root" -targetAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -workloadDomain "sfo-m01" -restoredvCenterDeploymentSize "small" -vCenterOvaFile "F:\OVA\VMware-vCenter-Server-Appliance-7.0.3.01400-21477706_OVF10.ova" -targetType "esx"
 ```
 
 ## Parameters
 
-### -tempvCenterFqdn
+### -targetFqdn
 
-Fully qualified domain name of the target vCenter Server instance to deploy the vCenter Server OVA to.
+FQDN of the target vCenter Server instance or ESX host to deploy the vCenter Server OVA to. Optional: when omitted and `-targetType` is `esx`, it defaults to the first ESX host of the management domain in the extracted SDDC data. If it is omitted and no host can be determined, the task stops with an error.
 
 ```yaml
 Type: String
 Parameter Sets: (All)
 Aliases:
 
-Required: True
+Required: False
 Position: 1
 Default value: None
 Accept pipeline input: False
 Accept wildcard characters: False
 ```
 
-### -tempvCenterAdmin
+### -targetAdmin
 
-Admin user for the target vCenter Server instance to deploy the vCenter Server OVA to.
+Admin user for the target vCenter Server instance or ESX host to deploy the vCenter Server OVA to.
 
 ```yaml
 Type: String
@@ -56,9 +70,9 @@ Accept pipeline input: False
 Accept wildcard characters: False
 ```
 
-### -tempvCenterAdminPassword
+### -targetAdminPassword
 
-Admin password for the target vCenter Server instance to deploy the vCenter Server OVA to.
+Admin password for the target vCenter Server instance or ESX host to deploy the vCenter Server OVA to.
 
 ```yaml
 Type: String
@@ -74,7 +88,7 @@ Accept wildcard characters: False
 
 ### -extractedSDDCDataFile
 
-Relative or absolute to the `extracted-sddc-data.json` file (previously created by `New-ExtractDataFromSDDCBackup`) on the local filesystem.
+Relative or absolute path to the `extracted-sddc-data.json` file (previously created by `New-ExtractDataFromSDDCBackup`) on the local filesystem.
 
 ```yaml
 Type: String
@@ -90,7 +104,7 @@ Accept wildcard characters: False
 
 ### -workloadDomain
 
-Name of the workload domain that the vCenter Server instance to deployed to is associated with.
+Name of the workload domain that the vCenter Server to be deployed is associated with.
 
 ```yaml
 Type: String
@@ -122,7 +136,7 @@ Accept wildcard characters: False
 
 ### -vCenterOvaFile
 
-Relative or absolute to the vCenter Server OVA on the local filesystem.
+Relative or absolute path to the vCenter Server OVA on the local filesystem.
 
 ```yaml
 Type: String
@@ -132,6 +146,23 @@ Aliases:
 Required: True
 Position: 7
 Default value: None
+Accept pipeline input: False
+Accept wildcard characters: False
+```
+
+### -targetType
+
+Type of the deployment target. Valid values are `vcenter` and `esx`. When `esx`, the appliance is deployed directly to the ESX host and connected to the `vm_mgmt` network.
+
+```yaml
+Type: String
+Parameter Sets: (All)
+Aliases:
+Accepted values: vcenter, esx
+
+Required: False
+Position: 8
+Default value: vcenter
 Accept pipeline input: False
 Accept wildcard characters: False
 ```

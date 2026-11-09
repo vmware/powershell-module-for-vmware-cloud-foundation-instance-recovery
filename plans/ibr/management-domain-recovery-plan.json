@@ -28,7 +28,7 @@
   },
   {
     "description": "",
-    "commandLine": "New-SDDCManagerOvaDeployment -targetType $targetType -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -sddcManagerOvaFile $sddcManagerOvaFile -rootUserPassword $newSddcManagerPassword -vcfUserPassword $newSddcManagerPassword -localUserPassword $newSddcManagerPassword -basicAuthUserPassword $newSddcManagerPassword",
+    "commandLine": "New-SDDCManagerOvaDeployment -targetType esx -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -sddcManagerOvaFile $sddcManagerOvaFile -rootUserPassword $newSddcManagerPassword -vcfUserPassword $newSddcManagerPassword -localUserPassword $newSddcManagerPassword -basicAuthUserPassword $newSddcManagerPassword",
     "displayName": "SDDC Manager OVA Deployment",
     "condition": [],
     "threadId": "2",
@@ -37,7 +37,7 @@
   },
   {
     "description": "",
-    "commandLine": "New-UploadAndModifySDDCManagerBackup -targetType $targetType -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -rootUserPassword $newSddcManagerPassword -vcfUserPassword $newSddcManagerPassword -backupFilePath $vcfbackupFilePath -secureEncryptionPassword $secureEncryptionPassword -extractedSDDCDataFile $extractedSDDCDataFile",
+    "commandLine": "New-UploadAndModifySDDCManagerBackup -targetType esx -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -rootUserPassword $newSddcManagerPassword -vcfUserPassword $newSddcManagerPassword -backupFilePath $vcfbackupFilePath -secureEncryptionPassword $secureEncryptionPassword -extractedSDDCDataFile $extractedSDDCDataFile",
     "displayName": "Upload and Modify SDDC Manager Backup",
     "condition": [],
     "threadId": "2",
@@ -73,7 +73,7 @@
   },
   {
     "description": "",
-    "commandLine": "New-vCenterOvaDeployment -targetType $targetType -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -restoredvCenterDeploymentSize $restoredvCenterDeploymentSize -vCenterOvaFile $vCenterOvaFile",
+    "commandLine": "New-vCenterOvaDeployment -targetType esx -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -restoredvCenterDeploymentSize $restoredvCenterDeploymentSize -vCenterOvaFile $vCenterOvaFile",
     "displayName": "vCenter OVA Deployment",
     "condition": [],
     "threadId": "3",
@@ -82,7 +82,7 @@
   },
   {
     "description": "",
-    "commandLine": "New-NSXManagerOvaDeployment -targetType $targetType -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -restoredNsxManagerDeploymentSize $restoredNsxManagerDeploymentSize -nsxManagerOvaFile $nsxManagerOvaFile",
+    "commandLine": "New-NSXManagerOvaDeployment -targetType esx -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -restoredNsxManagerDeploymentSize $restoredNsxManagerDeploymentSize -nsxManagerOvaFile $nsxManagerOvaFile",
     "displayName": "First NSX Manager OVA Deployment",
     "condition": [],
     "threadId": "4",
@@ -274,7 +274,7 @@
   },
   {
     "description": "",
-    "commandLine": "New-NSXManagerOvaDeployment -targetType $targetType -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -restoredNsxManagerDeploymentSize $restoredNsxManagerDeploymentSize -nsxManagerOvaFile $nsxManagerOvaFile",
+    "commandLine": "New-NSXManagerOvaDeployment -targetType esx -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -restoredNsxManagerDeploymentSize $restoredNsxManagerDeploymentSize -nsxManagerOvaFile $nsxManagerOvaFile",
     "displayName": "Second NSX Manager OVA Deployment",
     "condition": [
       {
@@ -290,7 +290,7 @@
   },
   {
     "description": "",
-    "commandLine": "New-NSXManagerOvaDeployment -targetType $targetType -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -restoredNsxManagerDeploymentSize $restoredNsxManagerDeploymentSize -nsxManagerOvaFile $nsxManagerOvaFile",
+    "commandLine": "New-NSXManagerOvaDeployment -targetType esx -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -restoredNsxManagerDeploymentSize $restoredNsxManagerDeploymentSize -nsxManagerOvaFile $nsxManagerOvaFile",
     "displayName": "Third NSX Manager OVA Deployment",
     "condition": [
       {

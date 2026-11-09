@@ -2202,6 +2202,18 @@ Function Update-ExtractedSDDCDataWithSupervisorDetails {
 }
 Export-ModuleMember -Function Update-ExtractedSDDCDataWithSupervisorDetails
 
+# First ESX host of the management domain in the extracted SDDC data (domainType MANAGEMENT, first
+# cluster, first host) -- the default deployment target for the OVA deployments when -targetFqdn isn't
+# given. Returns $null if the extracted data doesn't list one.
+Function Get-ManagementDomainFirstEsxFqdn {
+    Param(
+        [Parameter (Mandatory = $true)] $ExtractedSddcData
+    )
+    $mgmtDomain = @($ExtractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }) | Select-Object -First 1
+    $firstHost = @($mgmtDomain.vsphereClusterDetails.hosts) | Where-Object { $_.hostname } | Select-Object -First 1
+    return $firstHost.hostname
+}
+
 Function New-NSXManagerOvaDeployment {
     <#
     .SYNOPSIS
@@ -2218,6 +2230,7 @@ Function New-NSXManagerOvaDeployment {
 
     .PARAMETER targetFqdn
     FQDN of the target vCenter or ESXi host to deploy the NSX Manager OVA to
+    Optional. When omitted (with -targetType esx), defaults to the first ESX host of the management domain in the extracted SDDC data.
 
     .PARAMETER targetAdmin
     Admin user of the target vCenter or ESXi host to deploy the NSX Manager OVA to
@@ -2242,7 +2255,7 @@ Function New-NSXManagerOvaDeployment {
     #>
 
     Param(
-        [Parameter (Mandatory = $true)][String] $targetFqdn,
+        [Parameter (Mandatory = $false)][String] $targetFqdn,
         [Parameter (Mandatory = $true)][String] $targetAdmin,
         [Parameter (Mandatory = $true)][String] $targetAdminPassword,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
@@ -2260,6 +2273,16 @@ Function New-NSXManagerOvaDeployment {
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
+    If ([string]::IsNullOrWhiteSpace($targetFqdn) -and $targetType -eq 'esx') {
+        $targetFqdn = Get-ManagementDomainFirstEsxFqdn -ExtractedSddcData $extractedSddcData
+        If ($targetFqdn) {
+            LogMessage -type INFO -message "[$jumpboxName] -targetFqdn not supplied; using the first ESX host of the management domain: $targetFqdn"
+        }
+    }
+    If ([string]::IsNullOrWhiteSpace($targetFqdn)) {
+        LogMessage -type ERROR -message "[$jumpboxName] -targetFqdn was not supplied and no ESX host could be determined from '$extractedSDDCDataFile'. Aborting."
+        Return
+    }
 
     $workloadDomainDetails = ($extractedSDDCData.workloadDomains | Where-Object { $_.domainName -eq $workloadDomain })
     $nsxNodes = $workloadDomainDetails.nsxNodeDetails
@@ -2385,6 +2408,7 @@ Function New-vCenterOvaDeployment {
 
     .PARAMETER targetFqdn
     FQDN of the target vCenter or ESXi host to deploy the vCenter OVA to
+    Optional. When omitted (with -targetType esx), defaults to the first ESX host of the management domain in the extracted SDDC data.
 
     .PARAMETER targetAdmin
     Admin user of the target vCenter or ESXi host to deploy the vCenter OVA to
@@ -2409,7 +2433,7 @@ Function New-vCenterOvaDeployment {
     #>
 
     Param(
-        [Parameter (Mandatory = $true)][String] $targetFqdn,
+        [Parameter (Mandatory = $false)][String] $targetFqdn,
         [Parameter (Mandatory = $true)][String] $targetAdmin,
         [Parameter (Mandatory = $true)][String] $targetAdminPassword,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
@@ -2425,6 +2449,16 @@ Function New-vCenterOvaDeployment {
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
+    If ([string]::IsNullOrWhiteSpace($targetFqdn) -and $targetType -eq 'esx') {
+        $targetFqdn = Get-ManagementDomainFirstEsxFqdn -ExtractedSddcData $extractedSddcData
+        If ($targetFqdn) {
+            LogMessage -type INFO -message "[$jumpboxName] -targetFqdn not supplied; using the first ESX host of the management domain: $targetFqdn"
+        }
+    }
+    If ([string]::IsNullOrWhiteSpace($targetFqdn)) {
+        LogMessage -type ERROR -message "[$jumpboxName] -targetFqdn was not supplied and no ESX host could be determined from '$extractedSDDCDataFile'. Aborting."
+        Return
+    }
 
     $workloadDomainDetails = ($extractedSDDCData.workloadDomains | Where-Object { $_.domainName -eq $workloadDomain })
     $vmDatastore = $extractedSDDCData.mgmtDomainInfrastructure.vsan_datastore
@@ -2514,6 +2548,7 @@ Function New-SDDCManagerOvaDeployment {
 
     .PARAMETER targetFqdn
     FQDN of the target vCenter or ESXi host to deploy the SDDC Manager OVA to
+    Optional. When omitted (with -targetType esx), defaults to the first ESX host of the management domain in the extracted SDDC data.
 
     .PARAMETER targetAdmin
     Admin user of the target vCenter or ESXi host to deploy the SDDC Manager OVA to
@@ -2544,7 +2579,7 @@ Function New-SDDCManagerOvaDeployment {
     #>
 
     Param(
-        [Parameter (Mandatory = $true)][String] $targetFqdn,
+        [Parameter (Mandatory = $false)][String] $targetFqdn,
         [Parameter (Mandatory = $true)][String] $targetAdmin,
         [Parameter (Mandatory = $true)][String] $targetAdminPassword,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
@@ -2562,6 +2597,16 @@ Function New-SDDCManagerOvaDeployment {
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
+    If ([string]::IsNullOrWhiteSpace($targetFqdn) -and $targetType -eq 'esx') {
+        $targetFqdn = Get-ManagementDomainFirstEsxFqdn -ExtractedSddcData $extractedSddcData
+        If ($targetFqdn) {
+            LogMessage -type INFO -message "[$jumpboxName] -targetFqdn not supplied; using the first ESX host of the management domain: $targetFqdn"
+        }
+    }
+    If ([string]::IsNullOrWhiteSpace($targetFqdn)) {
+        LogMessage -type ERROR -message "[$jumpboxName] -targetFqdn was not supplied and no ESX host could be determined from '$extractedSDDCDataFile'. Aborting."
+        Return
+    }
 
     # SDDC Manager Configuration
     $vmDatastore = $extractedSDDCData.mgmtDomainInfrastructure.vsan_datastore
@@ -2661,6 +2706,7 @@ Function New-UploadAndModifySDDCManagerBackup {
 
     .PARAMETER targetFqdn
     FQDN of the target vCenter or ESXi host that hosts the SDDC Manager VM
+    Optional. When omitted (with -targetType esx), defaults to the first ESX host of the management domain in the extracted SDDC data.
 
     .PARAMETER targetAdmin
     Admin user of the target vCenter or ESXi host that hosts the SDDC Manager VM
@@ -2681,7 +2727,7 @@ Function New-UploadAndModifySDDCManagerBackup {
         [Parameter (Mandatory = $true, ParameterSetName = 'PlainPassword')][String] $encryptionPassword,
         [Parameter (Mandatory = $false, ParameterSetName = 'SecurePassword')][SecureString] $secureEncryptionPassword,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
-        [Parameter (Mandatory = $true)][String] $targetFqdn,
+        [Parameter (Mandatory = $false)][String] $targetFqdn,
         [Parameter (Mandatory = $true)][String] $targetAdmin,
         [Parameter (Mandatory = $true)][String] $targetAdminPassword,
         [Parameter (Mandatory = $false)][ValidateSet("vcenter", "esx")][String] $targetType = "vcenter"
@@ -2696,6 +2742,16 @@ Function New-UploadAndModifySDDCManagerBackup {
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
+    If ([string]::IsNullOrWhiteSpace($targetFqdn) -and $targetType -eq 'esx') {
+        $targetFqdn = Get-ManagementDomainFirstEsxFqdn -ExtractedSddcData $extractedSddcData
+        If ($targetFqdn) {
+            LogMessage -type INFO -message "[$jumpboxName] -targetFqdn not supplied; using the first ESX host of the management domain: $targetFqdn"
+        }
+    }
+    If ([string]::IsNullOrWhiteSpace($targetFqdn)) {
+        LogMessage -type ERROR -message "[$jumpboxName] -targetFqdn was not supplied and no ESX host could be determined from '$extractedSDDCDataFile'. Aborting."
+        Return
+    }
 
     $mgmtWorkloadDomain = $extractedSddcData.workloadDomains | Where-Object { $_.domainType -eq "MANAGEMENT" }
     $mgmtVcenterFqdn = $mgmtWorkloadDomain.vCenterDetails.fqdn

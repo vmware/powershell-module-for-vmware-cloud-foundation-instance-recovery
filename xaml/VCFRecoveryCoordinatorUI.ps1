@@ -3025,6 +3025,29 @@ function Get-ReferencedVariableNames([string[]]$CommandLines) {
     return $names
 }
 
+# One-line description of a variable, for its Variables-panel tooltip, from the shared
+# templates\variable-files\variable-descriptions.json (name -> text; every plan's variables file draws
+# from the same vocabulary, so one file serves all). Looked up case-insensitively because plans spell
+# some names differently (sddcManagerFQDN/sddcManagerFqdn). Loaded once; returns $null for a name with
+# no entry, or when the file is missing/unreadable -- the tooltip then just shows the name.
+function Get-VariableDescription([string]$Name) {
+    if ($null -eq $script:variableDescriptions) {
+        $script:variableDescriptions = @{}
+        $descriptionsPath = Join-Path (Join-Path (Join-Path $ModuleRoot 'templates') 'variable-files') 'variable-descriptions.json'
+        if (Test-Path -LiteralPath $descriptionsPath) {
+            try {
+                $parsed = Get-Content -LiteralPath $descriptionsPath -Raw | ConvertFrom-Json
+                foreach ($property in $parsed.PSObject.Properties) {
+                    $script:variableDescriptions[$property.Name] = [string]$property.Value
+                }
+            } catch {
+                # Descriptions are cosmetic -- never let a bad file break the Variables panel.
+            }
+        }
+    }
+    return $script:variableDescriptions[$Name]
+}
+
 # $OnValueChanged (optional, but every real call site supplies one) is given the edited name/value
 # and is responsible for persisting it to that row's own answers file and re-applying it to the
 # console -- see this function's own comment on $applyEdit for why that's now the ONLY way an edit
@@ -3035,6 +3058,9 @@ function New-VariableRow([string]$Name, [string]$Value, [scriptblock]$OnValueCha
 
     $label = New-Object System.Windows.Controls.TextBlock
     $label.Text = $Name
+    # Full name first (the label above is truncated at 150px), then the description if one is known.
+    $description = Get-VariableDescription $Name
+    $label.ToolTip = if ($description) { "$Name`n$description" } else { $Name }
     $label.FontFamily = New-Object System.Windows.Media.FontFamily('Consolas')
     $label.VerticalAlignment = 'Center'
     $label.Width = 150

@@ -7,42 +7,56 @@ Deploys an SDDC Manager appliance from OVA using data previously extracted from 
 ## Syntax
 
 ```powershell
-New-SDDCManagerOvaDeployment [-tempvCenterFqdn] <String> [-tempvCenterAdmin] <String> [-tempvCenterAdminPassword] <String> [-extractedSDDCDataFile] <String> [-sddcManagerOvaFile] <String> [-rootUserPassword] <String> [-vcfUserPassword] <String> [-localUserPassword] <String> [-basicAuthUserPassword] <String> [-ProgressAction <ActionPreference>] [<CommonParameters>]
+New-SDDCManagerOvaDeployment [[-targetFqdn] <String>] [-targetAdmin] <String> [-targetAdminPassword] <String> [-extractedSDDCDataFile] <String> [-sddcManagerOvaFile] <String> [-rootUserPassword] <String> [-vcfUserPassword] <String> [-localUserPassword] <String> [-basicAuthUserPassword] <String> [[-targetType] <String>] [<CommonParameters>]
 ```
 
 ## Description
 
-The `New-SDDCManagerOvaDeployment` deploys an SDDC Manager appliance from OVA using data previously extracted from the SDDC Manager backup.
+The `New-SDDCManagerOvaDeployment` cmdlet deploys an SDDC Manager appliance from OVA using data previously extracted from the SDDC Manager backup. The target can be a vCenter Server instance or, with `-targetType esx`, a single ESX host.
 
 ## Examples
 
 ### Example 1
 
 ```powershell
-New-SDDCManagerOvaDeployment -tempvCenterFqdn "sfo-m01-vc02.sfo.rainpole.io" -tempvCenterAdmin "administrator@vsphere.local" -tempvCenterAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -sddcManagerOvaFile "F:\OVA\VCF-SDDC-Manager-Appliance-4.5.1.0-21682411.ova" -rootUserPassword "VMw@re1!" -vcfUserPassword "VMw@re1!" -localUserPassword "VMw@re1!" -basicAuthUserPassword "VMw@re1!"
+New-SDDCManagerOvaDeployment -targetFqdn "sfo-m01-vc02.sfo.rainpole.io" -targetAdmin "administrator@vsphere.local" -targetAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -sddcManagerOvaFile "F:\OVA\VCF-SDDC-Manager-Appliance-4.5.1.0-21682411.ova" -rootUserPassword "VMw@re1!" -vcfUserPassword "VMw@re1!" -localUserPassword "VMw@re1!VMw@re1!" -basicAuthUserPassword "VMw@re1!" -targetType "vcenter"
+```
+
+### Example 2
+
+```powershell
+New-SDDCManagerOvaDeployment -targetFqdn "sfo01-m01-esx01.sfo.rainpole.io" -targetAdmin "root" -targetAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -sddcManagerOvaFile "F:\OVA\VCF-SDDC-Manager-Appliance-4.5.1.0-21682411.ova" -rootUserPassword "VMw@re1!" -vcfUserPassword "VMw@re1!" -localUserPassword "VMw@re1!VMw@re1!" -basicAuthUserPassword "VMw@re1!" -targetType "esx"
+```
+
+### Example 3
+
+Deploys to the first ESX host of the management domain; `-targetFqdn` is omitted.
+
+```powershell
+New-SDDCManagerOvaDeployment -targetAdmin "root" -targetAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -sddcManagerOvaFile "F:\OVA\VCF-SDDC-Manager-Appliance-4.5.1.0-21682411.ova" -rootUserPassword "VMw@re1!" -vcfUserPassword "VMw@re1!" -localUserPassword "VMw@re1!VMw@re1!" -basicAuthUserPassword "VMw@re1!" -targetType "esx"
 ```
 
 ## Parameters
 
-### -tempvCenterFqdn
+### -targetFqdn
 
-Fully qualified domain name of the target vCenter Server instance to deploy the SDDC Manager OVA to.
+FQDN of the target vCenter Server instance or ESX host to deploy the SDDC Manager OVA to. Optional: when omitted and `-targetType` is `esx`, it defaults to the first ESX host of the management domain in the extracted SDDC data. If it is omitted and no host can be determined, the task stops with an error.
 
 ```yaml
 Type: String
 Parameter Sets: (All)
 Aliases:
 
-Required: True
+Required: False
 Position: 1
 Default value: None
 Accept pipeline input: False
 Accept wildcard characters: False
 ```
 
-### -tempvCenterAdmin
+### -targetAdmin
 
-Admin user for the target vCenter Server instance to deploy the SDDC Manager OVA to.
+Admin user for the target vCenter Server instance or ESX host to deploy the SDDC Manager OVA to.
 
 ```yaml
 Type: String
@@ -56,9 +70,9 @@ Accept pipeline input: False
 Accept wildcard characters: False
 ```
 
-### -tempvCenterAdminPassword
+### -targetAdminPassword
 
-Admin password for the target vCenter Server instance to deploy the SDDC Manager OVA to.
+Admin password for the target vCenter Server instance or ESX host to deploy the SDDC Manager OVA to.
 
 ```yaml
 Type: String
@@ -74,7 +88,7 @@ Accept wildcard characters: False
 
 ### -extractedSDDCDataFile
 
-Relative or absolute to the `extracted-sddc-data.json` file (previously created by `New-ExtractDataFromSDDCBackup`) on the local filesystem.
+Relative or absolute path to the `extracted-sddc-data.json` file (previously created by `New-ExtractDataFromSDDCBackup`) on the local filesystem.
 
 ```yaml
 Type: String
@@ -90,7 +104,7 @@ Accept wildcard characters: False
 
 ### -sddcManagerOvaFile
 
-Relative or absolute to the SDDC Manager OVA on the local filesystem.
+Relative or absolute path to the SDDC Manager OVA on the local filesystem.
 
 ```yaml
 Type: String
@@ -164,6 +178,23 @@ Aliases:
 Required: True
 Position: 9
 Default value: None
+Accept pipeline input: False
+Accept wildcard characters: False
+```
+
+### -targetType
+
+Type of the deployment target. Valid values are `vcenter` and `esx`. When `esx`, the appliance is deployed directly to the ESX host and connected to the `vm_mgmt` network.
+
+```yaml
+Type: String
+Parameter Sets: (All)
+Aliases:
+Accepted values: vcenter, esx
+
+Required: False
+Position: 10
+Default value: vcenter
 Accept pipeline input: False
 Accept wildcard characters: False
 ```

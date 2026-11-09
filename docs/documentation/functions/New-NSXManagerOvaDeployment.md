@@ -2,47 +2,61 @@
 
 ## Synopsis
 
-Presents a list of NSX ManAgers associated with the provided VCF Workload Domain, and deploys an NSX Manager from OVA using data previously extracted from the SDDC Manager backup.
+Presents a list of NSX Managers associated with the provided VCF workload domain, and deploys an NSX Manager from OVA using data previously extracted from the SDDC Manager backup.
 
 ## Syntax
 
 ```powershell
-New-NSXManagerOvaDeployment [-tempvCenterFqdn] <String> [-tempvCenterAdmin] <String> [-tempvCenterAdminPassword] <String> [-extractedSDDCDataFile] <String> [-workloadDomain] <String> [-restoredNsxManagerDeploymentSize] <String> [-nsxManagerOvaFile] <String> [-ProgressAction <ActionPreference>] [<CommonParameters>]
+New-NSXManagerOvaDeployment [[-targetFqdn] <String>] [-targetAdmin] <String> [-targetAdminPassword] <String> [-extractedSDDCDataFile] <String> [-workloadDomain] <String> [-restoredNsxManagerDeploymentSize] <String> [-nsxManagerOvaFile] <String> [[-targetType] <String>] [<CommonParameters>]
 ```
 
 ## Description
 
-The `New-NSXManagerOvaDeployment` resents a list of NSX ManAgers associated with the provided VCF Workload Domain, and deploys an NSX Manager from OVA using data previously extracted from the SDDC Manager backup.
+The `New-NSXManagerOvaDeployment` cmdlet presents a list of NSX Managers associated with the provided VCF workload domain, and deploys the selected NSX Manager from OVA using data previously extracted from the SDDC Manager backup. The target can be a vCenter Server instance or, with `-targetType esx`, a single ESX host.
 
 ## Examples
 
 ### Example 1
 
 ```powershell
-New-NSXManagerOvaDeployment -tempvCenterFqdn "sfo-m01-vc02.sfo.rainpole.io" -tempvCenterAdmin "administrator@vsphere.local" -tempvCenterAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -workloadDomain "sfo-m01" -restoredNsxManagerDeploymentSize medium -nsxManagerOvaFile "F:\OVA\nsx-unified-appliance-3.2.2.1.0.21487565.ova"
+New-NSXManagerOvaDeployment -targetFqdn "sfo-m01-vc02.sfo.rainpole.io" -targetAdmin "administrator@vsphere.local" -targetAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -workloadDomain "sfo-m01" -restoredNsxManagerDeploymentSize medium -nsxManagerOvaFile "F:\OVA\nsx-unified-appliance-3.2.2.1.0.21487565.ova" -targetType "vcenter"
+```
+
+### Example 2
+
+```powershell
+New-NSXManagerOvaDeployment -targetFqdn "sfo01-m01-esx01.sfo.rainpole.io" -targetAdmin "root" -targetAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -workloadDomain "sfo-m01" -restoredNsxManagerDeploymentSize medium -nsxManagerOvaFile "F:\OVA\nsx-unified-appliance-3.2.2.1.0.21487565.ova" -targetType "esx"
+```
+
+### Example 3
+
+Deploys to the first ESX host of the management domain; `-targetFqdn` is omitted.
+
+```powershell
+New-NSXManagerOvaDeployment -targetAdmin "root" -targetAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -workloadDomain "sfo-m01" -restoredNsxManagerDeploymentSize medium -nsxManagerOvaFile "F:\OVA\nsx-unified-appliance-3.2.2.1.0.21487565.ova" -targetType "esx"
 ```
 
 ## Parameters
 
-### -tempvCenterFqdn
+### -targetFqdn
 
-Fully qualified domain name of the target vCenter Server instance to deploy the NSX Manager OVA to.
+FQDN of the target vCenter Server instance or ESX host to deploy the NSX Manager OVA to. Optional: when omitted and `-targetType` is `esx`, it defaults to the first ESX host of the management domain in the extracted SDDC data. If it is omitted and no host can be determined, the task stops with an error.
 
 ```yaml
 Type: String
 Parameter Sets: (All)
 Aliases:
 
-Required: True
+Required: False
 Position: 1
 Default value: None
 Accept pipeline input: False
 Accept wildcard characters: False
 ```
 
-### -tempvCenterAdmin
+### -targetAdmin
 
-Admin user for the target vCenter Server instance to deploy the NSX Manager OVA to.
+Admin user for the target vCenter Server instance or ESX host to deploy the NSX Manager OVA to.
 
 ```yaml
 Type: String
@@ -56,9 +70,9 @@ Accept pipeline input: False
 Accept wildcard characters: False
 ```
 
-### -tempvCenterAdminPassword
+### -targetAdminPassword
 
-Admin password for the target vCenter Server instance to deploy the NSX Manager OVA to.
+Admin password for the target vCenter Server instance or ESX host to deploy the NSX Manager OVA to.
 
 ```yaml
 Type: String
@@ -74,7 +88,7 @@ Accept wildcard characters: False
 
 ### -extractedSDDCDataFile
 
-Relative or absolute to the `extracted-sddc-data.json` file (previously created by `New-ExtractDataFromSDDCBackup`) on the local filesystem.
+Relative or absolute path to the `extracted-sddc-data.json` file (previously created by `New-ExtractDataFromSDDCBackup`) on the local filesystem.
 
 ```yaml
 Type: String
@@ -90,7 +104,7 @@ Accept wildcard characters: False
 
 ### -workloadDomain
 
-Name of the workload domain that the NSX Manager to deployed to is associated with.
+Name of the workload domain that the NSX Manager to be deployed is associated with.
 
 ```yaml
 Type: String
@@ -122,7 +136,7 @@ Accept wildcard characters: False
 
 ### -nsxManagerOvaFile
 
-Relative or absolute to the NSX Manager OVA on the local filesystem.
+Relative or absolute path to the NSX Manager OVA on the local filesystem.
 
 ```yaml
 Type: String
@@ -132,6 +146,23 @@ Aliases:
 Required: True
 Position: 7
 Default value: None
+Accept pipeline input: False
+Accept wildcard characters: False
+```
+
+### -targetType
+
+Type of the deployment target. Valid values are `vcenter` and `esx`. When `esx`, the appliance is deployed directly to the ESX host and connected to the `vm_mgmt` network.
+
+```yaml
+Type: String
+Parameter Sets: (All)
+Aliases:
+Accepted values: vcenter, esx
+
+Required: False
+Position: 8
+Default value: vcenter
 Accept pipeline input: False
 Accept wildcard characters: False
 ```
