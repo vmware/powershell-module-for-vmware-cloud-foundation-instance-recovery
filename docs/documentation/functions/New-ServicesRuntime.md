@@ -11,7 +11,7 @@ Deploys a new VCF Management Services (VCFMS) runtime instance via the SDDC Mana
 New-ServicesRuntime [-SddcManagerFqdn] <String> [-SddcManagerUser] <String> [-SddcManagerPassword] <String> [-Type] <String> [-JsonFile] <String> [[-PollIntervalSeconds] <Int32>] [<CommonParameters>]
 
 # By individual parameters
-New-ServicesRuntime [-SddcManagerFqdn] <String> [-SddcManagerUser] <String> [-SddcManagerPassword] <String> [-Type] <String> [-PlatformFqdn] <String> [-SystemUserPassword] <String> [-Ipv4Addresses] <String[]> [-Size] <String> [-NetworkMoId] <String> [-GatewayCidrIpv4] <String> [-extractedSDDCDataFile] <String> [-InternalClusterCidrIpv4] <String> [[-InstanceFqdn] <String>] [[-FleetFqdn] <String>] [[-PollIntervalSeconds] <Int32>] [<CommonParameters>]
+New-ServicesRuntime [-SddcManagerFqdn] <String> [-SddcManagerUser] <String> [-SddcManagerPassword] <String> [-Type] <String> [-PlatformFqdn] <String> [-SystemUserPassword] <String> [-Ipv4Addresses] <String[]> [-Size] <String> [[-NetworkMoId] <String>] [-GatewayCidrIpv4] <String> [-extractedSDDCDataFile] <String> [-InternalClusterCidrIpv4] <String> [[-InstanceFqdn] <String>] [[-FleetFqdn] <String>] [[-PollIntervalSeconds] <Int32>] [<CommonParameters>]
 ```
 
 ## Description
@@ -232,14 +232,14 @@ Accept wildcard characters: False
 
 ### -NetworkMoId
 
-Managed Object ID of the dvportgroup (e.g. `dvportgroup-28`). Used with the `ByParameter` parameter set.
+Managed Object ID of the dvportgroup (e.g. `dvportgroup-28`). Used with the `ByParameter` parameter set. When omitted, it is taken from the `portGroupMoId` recorded by `Update-ExtractedSDDCData` for the VMs of the Services Runtime whose FQDN matches `-PlatformFqdn`, in `-extractedSDDCDataFile`.
 
 ```yaml
 Type: String
 Parameter Sets: ByParameter
 Aliases:
 
-Required: True
+Required: False
 Position: Named
 Default value: None
 Accept pipeline input: False

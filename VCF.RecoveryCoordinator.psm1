@@ -1850,7 +1850,7 @@ Function Update-ExtractedSDDCData {
     .DESCRIPTION
     The Update-ExtractedSDDCData cmdlet Updates extracted SDDC Data JSON file with detail not caprured in the SDDC manager backup VCF Instance Recovery.
 
-    When -vCenterFQDN resolves to the MANAGEMENT domain, this also records a 'managementComponentVMs' section: for the MANAGEMENT vsp cluster, and (only when 'FLEET_LCM' is present in vcfManagementComponents) the VCF_OPERATIONS:MASTER and VCF_OPERATIONS_CLOUD_PROXY components plus the CONSUMPTION vsp cluster if one exists, it finds every VM whose name starts with that component's FQDN hostname and records each VM's name, connected portgroup, vCPU count, and memory (GB).
+    When -vCenterFQDN resolves to the MANAGEMENT domain, this also records a 'managementComponentVMs' section: for the MANAGEMENT vsp cluster, and (only when 'FLEET_LCM' is present in vcfManagementComponents) the VCF_OPERATIONS:MASTER and VCF_OPERATIONS_CLOUD_PROXY components plus the CONSUMPTION vsp cluster if one exists, it finds every VM whose name starts with that component's FQDN hostname and records each VM's name, connected portgroup (name and vCenter ID), vCPU count, and memory (GB).
 
     .EXAMPLE
     Update-ExtractedSDDCData -extractedSDDCDataFile "".\extracted-sddc-data.json" -sddcManagerFQDN "sfo-vcf01.sfo.rainpole.io" -sddcManagerAdmin "administrator@vsphere.local" -sddcManagerAdminPassword "VMw@re1!VMw@re1!"
@@ -2025,12 +2025,16 @@ Function Update-ExtractedSDDCData {
                 $matchingVMs = @(Get-VM -Name "$hostnamePrefix*" -ErrorAction SilentlyContinue)
                 $vmDetails = @()
                 Foreach ($vm in $matchingVMs) {
-                    $portGroup = (Get-NetworkAdapter -VM $vm | Select-Object -First 1).NetworkName
+                    $networkAdapter = Get-NetworkAdapter -VM $vm | Select-Object -First 1
+                    $portGroup = $networkAdapter.NetworkName
+                    # vCenter's own ID for the port group (e.g. dvportgroup-28), as New-ServicesRuntime's -NetworkMoId needs it
+                    $portGroupMoId = $networkAdapter.ExtensionData.Backing.Port.PortgroupKey
                     $vmDetails += [pscustomobject]@{
-                        'name'      = $vm.Name
-                        'portGroup' = $portGroup
-                        'numCpu'    = $vm.NumCpu
-                        'memoryGB'  = $vm.MemoryGB
+                        'name'          = $vm.Name
+                        'portGroup'     = $portGroup
+                        'portGroupMoId' = $portGroupMoId
+                        'numCpu'        = $vm.NumCpu
+                        'memoryGB'      = $vm.MemoryGB
                     }
                 }
                 $managementComponentVMs += [pscustomobject]@{
@@ -10737,7 +10741,7 @@ Function New-ServicesRuntime {
     (ByParameter) Deployment size (e.g. small, medium, large).
 
     .PARAMETER NetworkMoId
-    (ByParameter) Managed Object ID of the dvportgroup (e.g. dvportgroup-28).
+    (ByParameter) Managed Object ID of the dvportgroup (e.g. dvportgroup-28). When omitted, it is taken from the portGroupMoId recorded by Update-ExtractedSDDCData for the VMs of the Services Runtime whose FQDN matches -PlatformFqdn, in -extractedSDDCDataFile.
 
     .PARAMETER GatewayCidrIpv4
     (ByParameter) Gateway CIDR in IPv4 format (e.g. 10.11.99.1/24).
@@ -10800,7 +10804,7 @@ Function New-ServicesRuntime {
         [Parameter(Mandatory = $true, ParameterSetName = "ByParameter")]
         [String] $Size,
 
-        [Parameter(Mandatory = $true, ParameterSetName = "ByParameter")]
+        [Parameter(Mandatory = $false, ParameterSetName = "ByParameter")]
         [String] $NetworkMoId,
 
         [Parameter(Mandatory = $true, ParameterSetName = "ByParameter")]
@@ -10901,6 +10905,19 @@ Function New-ServicesRuntime {
             return
         }
         LogMessage -type INFO -message "[$jumpboxName] Resolved cluster ID '$ClusterId' for '$PlatformFqdn'"
+
+        # Resolve the network from the port group Update-ExtractedSDDCData recorded for this Services Runtime's VMs
+        If (!$NetworkMoId -and $extractedSDDCDataFile) {
+            If (!$extractedSddcData) {
+                $extractedSddcData = Get-Content (Resolve-Path -Path $extractedSDDCDataFile).path | ConvertFrom-Json
+            }
+            $NetworkMoId = (@($extractedSddcData.managementComponentVMs | Where-Object { $_.fqdn -eq $PlatformFqdn }).vms | Where-Object { $_.portGroupMoId } | Select-Object -First 1).portGroupMoId
+        }
+        if (-not $NetworkMoId) {
+            LogMessage -type ERROR -message "[$jumpboxName] -NetworkMoId was not supplied and no portGroupMoId is recorded for '$PlatformFqdn' in '$extractedSDDCDataFile'. Aborting."
+            return
+        }
+        LogMessage -type INFO -message "[$jumpboxName] Using network '$NetworkMoId' for '$PlatformFqdn'"
 
         LogMessage -type INFO -message "[$SddcManagerFqdn] Retrieving management domain ID from /v1/domains"
         try {

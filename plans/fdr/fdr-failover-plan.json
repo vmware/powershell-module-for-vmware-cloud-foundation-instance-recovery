@@ -136,7 +136,7 @@
   },
   {
     "description": "Deploy a VCF Automation Services Runtime Cluster",
-    "commandLine": "New-ServicesRuntime -SddcManagerFqdn $SddcManagerFqdn -SddcManagerUser $SddcManagerUser -SddcManagerPassword $SddcManagerPassword -PlatformFqdn $PlatformFqdn -SystemUserPassword $SystemUserPassword -Ipv4Addresses ($Ipv4Addresses.Split(',').Trim()) -Size $Size -NetworkMoId $NetworkMoId -GatewayCidrIpv4 $GatewayCidrIpv4 -extractedSDDCDataFile $extractedSDDCDataFile -InternalClusterCidrIpv4 $InternalClusterCidrIpv4 -Type $Type",
+    "commandLine": "New-ServicesRuntime -SddcManagerFqdn $SddcManagerFqdn -SddcManagerUser $SddcManagerUser -SddcManagerPassword $SddcManagerPassword -PlatformFqdn $PlatformFqdn -SystemUserPassword $SystemUserPassword -Ipv4Addresses ($Ipv4Addresses.Split(',').Trim()) -Size $Size -NetworkMoId $NetworkMoId -GatewayCidrIpv4 $GatewayCidrIpv4 -extractedSDDCDataFile $extractedSDDCDataFile -InternalClusterCidrIpv4 $InternalClusterCidrIpv4 -Type CONSUMPTION",
     "displayName": "Create New Services Runtime for VCF Automation",
     "condition": [],
     "threadId": "",

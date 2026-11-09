@@ -265,7 +265,7 @@
   },
   {
     "description": "",
-    "commandLine": "Invoke-NSXEdgeClusterRecoverySelective -nsxManagerFqdn $restoredNsxManagerFqdn -nsxManagerAdmin $restoredNsxManagerAdmin -nsxManagerAdminPassword $restoredNsxManagerAdminPassword -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredvCenterAdmin -vCenterAdminPassword $restoredvCenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile -monitor",
+    "commandLine": "Invoke-NSXEdgeClusterRecoverySelective -nsxManagerFqdn $restoredNsxManagerFqdn -nsxManagerAdmin $restoredNsxManagerAdmin -nsxManagerAdminPassword $restoredNsxManagerAdminPassword -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile -monitor",
     "displayName": "Invoke NSX Edge Cluster Recovery Selective",
     "condition": [],
     "threadId": "",
@@ -331,7 +331,7 @@
   },
   {
     "description": "",
-    "commandLine": "Update-DomainDatastoreID -extractedSDDCDataFile $extractedSDDCDataFile -vCenterFqdn $vCenterFqdn -clusterName $clusterName -VcfUserPassword $newSddcManagerPassword -RootPassword $newSddcManagerPassword -autoConfirm",
+    "commandLine": "Update-DomainDatastoreID -extractedSDDCDataFile $extractedSDDCDataFile -vCenterFqdn $restoredVcenterFqdn -clusterName $clusterName -VcfUserPassword $newSddcManagerPassword -RootPassword $newSddcManagerPassword -autoConfirm",
     "displayName": "Update Domain Datastore ID",
     "condition": [],
     "threadId": "",
@@ -340,7 +340,7 @@
   },
   {
     "description": "",
-    "commandLine": "Update-ClusterHostSourceIDs -extractedSDDCDataFile $extractedSDDCDataFile -vCenterFqdn $vCenterFqdn -clusterName $clusterName -VcfUserPassword $newSddcManagerPassword -RootPassword $newSddcManagerPassword -autoConfirm",
+    "commandLine": "Update-ClusterHostSourceIDs -extractedSDDCDataFile $extractedSDDCDataFile -vCenterFqdn $restoredVcenterFqdn -clusterName $clusterName -VcfUserPassword $newSddcManagerPassword -RootPassword $newSddcManagerPassword -autoConfirm",
     "displayName": "Update Cluster Host Source IDs",
     "condition": [],
     "threadId": "",

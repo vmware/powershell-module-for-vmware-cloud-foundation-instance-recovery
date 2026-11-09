@@ -73,7 +73,7 @@
   },
   {
     "description": "Add VMkernel Adapters to the ESX Hosts",
-    "commandLine": "Add-VMKernelsToHost -targetFqdn $restoredvCenterFQDN -targetAdmin $restoredvCenterAdmin -targetAdminPassword $restoredvCenterAdminPassword -clusterName $clusterName -sddcManagerFqdn $sddcManagerFqdn -sddcManagerAdmin $sddcManagerAdmin -sddcManagerAdminPassword $sddcManagerAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile",
+    "commandLine": "Add-VMKernelsToHost -targetFqdn $restoredVcenterFqdn -targetAdmin $restoredVcenterAdmin -targetAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -sddcManagerFqdn $sddcManagerFqdn -sddcManagerAdmin $sddcManagerAdmin -sddcManagerAdminPassword $sddcManagerAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile",
     "displayName": "Add VMKernels to Hosts",
     "condition": [],
     "threadId": "",
@@ -107,7 +107,7 @@
   },
   {
     "description": "Redeploy NSX Edge Cluster (selective recovery)",
-    "commandLine": "Invoke-NSXEdgeClusterRecoverySelective -nsxManagerFqdn $restoredNsxManagerFqdn -nsxManagerAdmin $restoredNsxManagerAdmin -nsxManagerAdminPassword $restoredNsxManagerAdminPassword -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredvCenterAdmin -vCenterAdminPassword $restoredvCenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile -monitor",
+    "commandLine": "Invoke-NSXEdgeClusterRecoverySelective -nsxManagerFqdn $restoredNsxManagerFqdn -nsxManagerAdmin $restoredNsxManagerAdmin -nsxManagerAdminPassword $restoredNsxManagerAdminPassword -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile -monitor",
     "displayName": "Invoke NSX Edge Cluster Recovery Selective",
     "condition": [],
     "threadId": "",
@@ -125,7 +125,7 @@
   },
   {
     "description": "Update Datastore ID",
-    "commandLine": "Update-DomainDatastoreID -extractedSDDCDataFile $extractedSDDCDataFile -vCenterFqdn $vCenterFqdn -clusterName $clusterName -VcfUserPassword $VcfUserPassword -RootPassword $RootPassword -autoConfirm",
+    "commandLine": "Update-DomainDatastoreID -extractedSDDCDataFile $extractedSDDCDataFile -vCenterFqdn $restoredVcenterFqdn -clusterName $clusterName -VcfUserPassword $VcfUserPassword -RootPassword $RootPassword -autoConfirm",
     "displayName": "Update Domain Datastore ID",
     "condition": [],
     "threadId": "",
@@ -134,7 +134,7 @@
   },
   {
     "description": "Update Host IDs",
-    "commandLine": "Update-ClusterHostSourceIDs -extractedSDDCDataFile $extractedSDDCDataFile -vCenterFqdn $vCenterFqdn -clusterName $clusterName -VcfUserPassword $VcfUserPassword -RootPassword $RootPassword -autoConfirm",
+    "commandLine": "Update-ClusterHostSourceIDs -extractedSDDCDataFile $extractedSDDCDataFile -vCenterFqdn $restoredVcenterFqdn -clusterName $clusterName -VcfUserPassword $VcfUserPassword -RootPassword $RootPassword -autoConfirm",
     "displayName": "Update Cluster Host Source IDs",
     "condition": [],
     "threadId": "",

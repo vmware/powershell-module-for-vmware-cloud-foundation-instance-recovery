@@ -261,7 +261,7 @@
   },
   {
     "description": "Redeploy VCF Management Services (VCFMS)",
-    "commandLine": "New-ServicesRuntime -SddcManagerFqdn $sddcManagerFqdn -SddcManagerUser $sddcManagerUser -SddcManagerPassword $sddcManagerPassword -PlatformFqdn $platformFqdn -InstanceFqdn $instanceFqdn -FleetFqdn $fleetFqdn -SystemUserPassword $systemUserPassword -Ipv4Addresses ($ipv4Addresses.Split(',').Trim()) -Size $size -NetworkMoId $networkMoId -GatewayCidrIpv4 $gatewayCidrIpv4 -extractedSDDCDataFile $extractedSDDCDataFile -InternalClusterCidrIpv4 $internalClusterCidrIpv4 -type MANAGEMENT -autoConfirm",
+    "commandLine": "New-ServicesRuntime -SddcManagerFqdn $sddcManagerFqdn -SddcManagerUser $sddcManagerAdmin -SddcManagerPassword $sddcManagerAdminPassword -PlatformFqdn $vcfmsServicesRuntimeFqdn -InstanceFqdn $instanceFqdn -FleetFqdn $fleetFqdn -SystemUserPassword $vcfmsServicesRuntimePassword -Ipv4Addresses ($ipv4Addresses.Split(',').Trim()) -Size $size -GatewayCidrIpv4 $gatewayCidrIpv4 -extractedSDDCDataFile $extractedSDDCDataFile -InternalClusterCidrIpv4 $internalClusterCidrIpv4 -type MANAGEMENT -autoConfirm",
     "displayName": "Create New Services Runtime for VCFMS",
     "condition": [],
     "threadId": "",
@@ -319,17 +319,8 @@
     "visible": true
   },
   {
-    "description": "Re-extract Runtime Configuration from the Services Runtime Backup and gather kubeconfig",
-    "commandLine": "New-ExtractVcfmsBackup -LocalArchivePath $LocalArchivePath -EncryptionPassphrase $encryptionPassphrase -OutputDir \".\\backup-yaml\" -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword",
-    "displayName": "Gather kubeconfig for VCFMS Services Runtime",
-    "condition": [],
-    "threadId": "",
-    "interactive": false,
-    "visible": true
-  },
-  {
     "description": "Apply Services Runtime Configuration",
-    "commandLine": "Set-ServicesRuntimeScale -KubeconfigPath $KubeconfigPath -BackupYamlDir $BackupYamlDir",
+    "commandLine": "Set-ServicesRuntimeScale -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -KubeconfigOutputDir \".\\backup-yaml\" -BackupYamlDir \".\\backup-yaml\"",
     "displayName": "Apply Services Runtime Configuration",
     "condition": [],
     "threadId": "",
@@ -383,7 +374,7 @@
   },
   {
     "description": "Redeploy VCF Automation Services Runtime Cluster",
-    "commandLine": "New-ServicesRuntime -SddcManagerFqdn $sddcManagerFqdn -SddcManagerUser $sddcManagerUser -SddcManagerPassword $sddcManagerPassword -PlatformFqdn $vcfaServicesRuntimeFqdn -SystemUserPassword $vcfaServicesRuntimePassword -Ipv4Addresses ($vcfaIpv4Addresses.Split(',').Trim()) -Size $vcfaSize -NetworkMoId $vcfaNetworkMoId -GatewayCidrIpv4 $vcfaGatewayCidrIpv4 -extractedSDDCDataFile $extractedSDDCDataFile -InternalClusterCidrIpv4 $vcfaInternalClusterCidrIpv4 -type CONSUMPTION -autoConfirm",
+    "commandLine": "New-ServicesRuntime -SddcManagerFqdn $sddcManagerFqdn -SddcManagerUser $sddcManagerAdmin -SddcManagerPassword $sddcManagerAdminPassword -PlatformFqdn $vcfaServicesRuntimeFqdn -SystemUserPassword $vcfaServicesRuntimePassword -Ipv4Addresses ($vcfaIpv4Addresses.Split(',').Trim()) -Size $vcfaSize -GatewayCidrIpv4 $vcfaGatewayCidrIpv4 -extractedSDDCDataFile $extractedSDDCDataFile -InternalClusterCidrIpv4 $vcfaInternalClusterCidrIpv4 -type CONSUMPTION -autoConfirm",
     "displayName": "Create New VCFA Services Runtime",
     "condition": [],
     "threadId": "",

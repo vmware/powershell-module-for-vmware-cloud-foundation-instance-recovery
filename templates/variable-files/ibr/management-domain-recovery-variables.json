@@ -8,10 +8,6 @@
   "restoredNsxManagerDeploymentSize": "",
   "nsxManagerOvaFile": "",
   "sddcManagerOvaFile": "",
-  "rootUserPassword": "",
-  "vcfUserPassword": "",
-  "localUserPassword": "",
-  "basicAuthUserPassword": "",
   "newSddcManagerPassword": "",
   "vCenterBackupPath": "",
   "locationtype": "",
@@ -33,7 +29,5 @@
   "restoredNsxManagerAdmin": "",
   "restoredNsxManagerAdminPassword": "",
   "restoredNsxManagerRootPassword": "",
-  "vCenterFqdn": "",
-  "RootPassword": "",
   "svcAccountPassword": ""
 }
