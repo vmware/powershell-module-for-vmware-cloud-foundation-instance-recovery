@@ -101,26 +101,6 @@ The window has a title bar and two columns.
 
 ![The Recovery Coordinator window, with a plan loaded and running](assets/images/user-guide/main-window.png)
 
-```text
-+----------------------------------------------------------------------------------+
-| VMware Cloud Foundation                      User | Engineering   [Resume][Save & Exit] |
-| Recovery Coordinator                                                             |
-+----------------------------------------------------------------------------------+
-| (orange update banner - only shown when an update is available)                  |
-+---------------------------------+------------------------------------------------+
-| Recovery Parameters             | Console                                        |
-|   Recovery Type                 |   [Main] [Thread 2] [Thread 3] ...             |
-|   Recovery Plan                 |                                                |
-|   Data Source  [Browse...]      |   (embedded PowerShell consoles)               |
-|                                 |                                                |
-| Discovered Infrastructure       |                                                |
-|   [Workload Domains / Clusters] |                                                |
-|                                 +------------------------------------------------+
-| Recovery Tasks                  | Advisories                                     |
-|   [Variables][Recovery Plan]    |   (timestamped status and error messages)      |
-+---------------------------------+------------------------------------------------+
-```
-
 **Left column**, top to bottom:
 
 | Panel | What it is for |
@@ -167,8 +147,6 @@ The sections below cover each step.
 ---
 
 ## Step 1: Choose what to recover
-
-![The Recovery Parameters panel, with Recovery Type, Recovery Plan and Data Source](assets/images/user-guide/recovery-parameters.png)
 
 The **Recovery Parameters** panel has three drop-down lists, completed from top to bottom.
 
@@ -285,8 +263,6 @@ The **Recovery Tasks** panel appears as soon as you have made a selection.
 Before the tasks are shown, the Recovery Coordinator needs the values the tasks use: host names, accounts,
 passwords, file paths, appliance sizes and so on. Open the **Variables** tab of the **Recovery Tasks** panel.
 
-![The Variables tab, with a tooltip describing a variable](assets/images/user-guide/variables-tab.png)
-
 ### What variables are
 
 A variable is a named value, such as `targetFqdn` or `sddcManagerAdminPassword`. The plan's tasks refer to
@@ -377,8 +353,6 @@ plan's template, and load it again. Order and values do not matter, only the set
 When variables are in place, open the **Recovery Plan** tab. It has two parts: **Run Options** at the top, and
 the **Task List** beneath them.
 
-![The Recovery Plan tab, showing run options and the task list part-way through a run](assets/images/user-guide/recovery-plan-tab.png)
-
 ### Run Options
 
 | Option | Default | What it does |
@@ -468,8 +442,6 @@ The same behaviour is what lets you continue after [resuming a saved session](#s
 ### Watching the console
 
 The **Console** panel on the right shows what is happening.
-
-![The Console panel with a Main tab and parallel Thread tabs](assets/images/user-guide/console-threads.png)
 
 - The **Main** tab always exists. Most tasks run there.
 - A **Thread N** tab appears for each parallel thread the first time the run needs it.

@@ -243,24 +243,6 @@ recovering. <strong>Do not upgrade in the middle of a recovery.</strong></p>
 <h2 id="a-tour-of-the-window">A tour of the window</h2>
 <p>The window has a title bar and two columns.</p>
 
-<pre data-lang="text"><code>+----------------------------------------------------------------------------------+
-| VMware Cloud Foundation                      User | Engineering   [Resume][Save &amp; Exit] |
-| Recovery Coordinator                                                             |
-+----------------------------------------------------------------------------------+
-| (orange update banner - only shown when an update is available)                  |
-+---------------------------------+------------------------------------------------+
-| Recovery Parameters             | Console                                        |
-|   Recovery Type                 |   [Main] [Thread 2] [Thread 3] ...             |
-|   Recovery Plan                 |                                                |
-|   Data Source  [Browse...]      |   (embedded PowerShell consoles)               |
-|                                 |                                                |
-| Discovered Infrastructure       |                                                |
-|   [Workload Domains / Clusters] |                                                |
-|                                 +------------------------------------------------+
-| Recovery Tasks                  | Advisories                                     |
-|   [Variables][Recovery Plan]    |   (timestamped status and error messages)      |
-+---------------------------------+------------------------------------------------+
-</code></pre>
 <p><strong>Left column</strong>, top to bottom:</p>
 <div class="table-wrap"><table class="table">
 <thead>
@@ -347,7 +329,6 @@ problem.</li>
 <p>The sections below cover each step.</p>
 
 <h2 id="step-1-choose-what-to-recover">Step 1: Choose what to recover</h2>
-
 <p>The <strong>Recovery Parameters</strong> panel has three drop-down lists, completed from top to bottom.</p>
 <h3 id="recovery-type">Recovery Type</h3>
 <div class="table-wrap"><table class="table">
@@ -526,7 +507,6 @@ be selected at the same time.</p>
 <h2 id="step-4-provide-the-variables">Step 4: Provide the variables</h2>
 <p>Before the tasks are shown, the Recovery Coordinator needs the values the tasks use: host names, accounts,
 passwords, file paths, appliance sizes and so on. Open the <strong>Variables</strong> tab of the <strong>Recovery Tasks</strong> panel.</p>
-
 <h3 id="what-variables-are">What variables are</h3>
 <p>A variable is a named value, such as <code>targetFqdn</code> or <code>sddcManagerAdminPassword</code>. The plan's tasks refer to
 variables by name, and the Recovery Coordinator supplies their values to the console session. You see only the
@@ -615,7 +595,6 @@ elsewhere, and delete it once the recovery is complete.</p>
 <h2 id="step-5-review-the-recovery-plan-and-run-options">Step 5: Review the recovery plan and run options</h2>
 <p>When variables are in place, open the <strong>Recovery Plan</strong> tab. It has two parts: <strong>Run Options</strong> at the top, and
 the <strong>Task List</strong> beneath them.</p>
-
 <h3 id="run-options">Run Options</h3>
 <div class="table-wrap"><table class="table">
 <thead>
@@ -767,7 +746,6 @@ failed task is run again from the beginning, so check that the failed task is sa
 <p>The same behaviour is what lets you continue after <a href="#saving-your-progress-and-resuming">resuming a saved session</a>.</p>
 <h3 id="watching-the-console">Watching the console</h3>
 <p>The <strong>Console</strong> panel on the right shows what is happening.</p>
-
 <ul>
 <li>The <strong>Main</strong> tab always exists. Most tasks run there.</li>
 <li>A <strong>Thread N</strong> tab appears for each parallel thread the first time the run needs it.</li>
