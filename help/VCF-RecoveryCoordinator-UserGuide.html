@@ -131,6 +131,15 @@ figcaption { margin-top: 8px; font-size: 13px; color: var(--subtle); text-align:
 <a class="nav-link nav-l3" href="#additional-cluster-recovery">Additional Cluster Recovery</a>
 <a class="nav-link nav-l3" href="#fleet-component-recovery">Fleet Component Recovery</a>
 <a class="nav-link nav-l3" href="#recover-fleet-fdr">Recover Fleet (FDR)</a>
+<a class="nav-link nav-l2" href="#authoring-a-vcf-operations-restore-script">Authoring a VCF Operations restore script</a>
+<a class="nav-link nav-l3" href="#how-your-script-is-run">How your script is run</a>
+<a class="nav-link nav-l3" href="#the-success-contract">The success contract</a>
+<a class="nav-link nav-l3" href="#what-success-has-to-mean">What &quot;success&quot; has to mean</a>
+<a class="nav-link nav-l3" href="#rules-for-a-script-that-works">Rules for a script that works</a>
+<a class="nav-link nav-l3" href="#a-template-to-start-from">A template to start from</a>
+<a class="nav-link nav-l3" href="#test-it-before-the-recovery">Test it before the recovery</a>
+<a class="nav-link nav-l3" href="#using-the-script">Using the script</a>
+<a class="nav-link nav-l3" href="#if-the-task-fails">If the task fails</a>
 <a class="nav-link nav-l2" href="#engineering-mode-and-the-advanced-tab">Engineering mode and the Advanced tab</a>
 <a class="nav-link nav-l3" href="#the-advanced-tab">The Advanced tab</a>
 <a class="nav-link nav-l3" href="#breakpoints">Breakpoints</a>
@@ -633,7 +642,7 @@ the <strong>Task List</strong> beneath them.</p>
 <tbody>
 <tr>
 <td><strong>User Provided VCF Operations Restore Script</strong> (toggle)</td>
-<td>Includes the tasks that run your own script to restore VCF Operations, and confirm it. Off by default.</td>
+<td>Runs your own script to restore VCF Operations, <em>instead of</em> the two manual confirmation tasks. Off by default. See <a href="#authoring-a-vcf-operations-restore-script">Authoring a VCF Operations restore script</a>.</td>
 </tr>
 <tr>
 <td><strong>Binary Sourcing</strong> (choose one)</td>
@@ -989,7 +998,7 @@ and Telemetry. Run it after the management domain has been recovered.</p>
 <tbody>
 <tr>
 <td>VCF Operations</td>
-<td>Optionally run your own restore script and confirm it (see the run option)</td>
+<td>Either two manual confirmations (VCF Operations restored, state verified), or, with the run option on, your own <a href="#authoring-a-vcf-operations-restore-script">restore script</a> in their place</td>
 </tr>
 <tr>
 <td>Gather</td>
@@ -1015,12 +1024,265 @@ and Telemetry. Run it after the management domain has been recovered.</p>
 </table></div>
 <p><strong>Data source:</strong> an existing extracted data file. The management domain recovery must have been run so that the
 file contains the discovered details the fleet tasks use.
-<strong>Several steps are manual confirmations</strong> (VCF Operations restored, state verified, Log Management updated,
+<strong>Several steps are manual confirmations</strong> (VCF Operations restored and state verified, unless you use a restore script; Log Management updated,
 VCF Automation connections updated, licence server redeployed). Pre-approve them in an answer file only if you
 are certain the underlying action is complete.</p>
 <h3 id="recover-fleet-fdr">Recover Fleet (FDR)</h3>
 <p>Fleet disaster recovery. It is restricted to <a href="#engineering-mode-and-the-advanced-tab">Engineering mode</a> and is
 not covered by this guide.</p>
+
+<h2 id="authoring-a-vcf-operations-restore-script">Authoring a VCF Operations restore script</h2>
+<p>VCF Operations is restored outside this tool, with whatever process your organisation uses. By default, the
+Fleet Component Recovery plan simply pauses twice and asks you to confirm that VCF Operations has been restored
+and that its state has been verified. If you would rather automate that, you can supply <strong>your own PowerShell
+script</strong>. The Recovery Coordinator runs it, shows its output in the console, and decides from the outcome
+whether the task succeeded, exactly as it does for its own tasks.</p>
+<p>This section describes what your script must do for that to work.</p>
+<h3 id="how-your-script-is-run">How your script is run</h3>
+<p>When the <strong>User Provided VCF Operations Restore Script</strong> run option is on, the plan runs a task called
+<em>Run User-Provided VCF Operations Restore Script</em>. It starts your script like this:</p>
+<pre data-lang="powershell"><code>pwsh -NoProfile -File &lt;opsRestoreScriptPath&gt;
+</code></pre>
+<p>What that means for you:</p>
+<div class="table-wrap"><table class="table">
+<thead>
+<tr>
+<th>Behaviour</th>
+<th>Detail</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Separate process</strong></td>
+<td>Your script runs in a new PowerShell process of the same edition as the console. It does not share the console's session, so the <strong>variables from the Variables tab are not visible to it</strong>.</td>
+</tr>
+<tr>
+<td><strong>No parameters</strong></td>
+<td>Nothing is passed to the script. Anything it needs (host names, credentials, file locations) it must find for itself.</td>
+</tr>
+<tr>
+<td><strong>No profile</strong></td>
+<td><code>-NoProfile</code> means your PowerShell profile does not load. Import any modules your script needs inside the script.</td>
+</tr>
+<tr>
+<td><strong>Working directory</strong></td>
+<td>It starts in the same folder as the console, which is the folder you launched the Recovery Coordinator from. Use absolute paths.</td>
+</tr>
+<tr>
+<td><strong>Output</strong></td>
+<td>Everything the script writes, including its error stream, is shown live in the <strong>Main</strong> console and recorded in that console's transcript.</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="the-success-contract">The success contract</h3>
+<p>The task's result is decided by two things.</p>
+<p><strong>1. The exit code.</strong></p>
+<div class="table-wrap"><table class="table">
+<thead>
+<tr>
+<th>Exit code</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>0</code></td>
+<td>The task is <strong>Done</strong> (green).</td>
+</tr>
+<tr>
+<td>Anything else</td>
+<td>The task <strong>Failed</strong> (red), the run stops, and the console shows <code>Restore script failed (exit code N)</code>.</td>
+</tr>
+</tbody>
+</table></div>
+<p>A script that ends with an uncaught <strong>terminating</strong> error exits with a non-zero code, so that counts as a
+failure. A <strong>non-terminating</strong> error does not change the exit code, so a script that hits one and carries on
+will still exit <code>0</code>. See <a href="#a-template-to-start-from">the template below</a> for how to avoid that.</p>
+<p><strong>2. The text the script prints.</strong></p>
+<p>Like every other task, the output is also scanned for failure markers. If any of these literal strings appears
+anywhere in the output, the task is marked <strong>Failed even if the exit code is 0</strong>:</p>
+<ul>
+<li><code>[WARNING]</code></li>
+<li><code>[ERROR]</code></li>
+<li><code>[EXCEPTION]</code></li>
+<li><code>+ CategoryInfo</code></li>
+</ul>
+<div class="alert alert-warning" role="note"><div class="alert-icon" aria-hidden="true"></div><div class="alert-content"><div class="alert-title">Watch your own log lines</div><p>These markers are matched as plain text. If your script writes log lines with its own <code>[ERROR]</code> or
+<code>[WARNING]</code> prefix, or runs a tool that prints one, a perfectly good restore will be reported as failed.
+Use different wording, such as <code>Error:</code> or <code>Problem:</code>, or no brackets. PowerShell's own <code>Write-Warning</code>
+prints <code>WARNING:</code> without brackets and does not trip the check.</p>
+</div></div>
+<p>If your script <em>does</em> hit a real problem, do not just print it: exit non-zero.</p>
+<h3 id="what-success-has-to-mean">What &quot;success&quot; has to mean</h3>
+<p>The two manual confirmations your script replaces are <em>VCF Operations has been restored</em> and <em>VCF Operations
+state has been verified</em>. When your script exits <code>0</code> the Recovery Coordinator takes both as true and moves
+on. The very next tasks read from VCF Operations using the connection details on the Variables tab
+(<code>vcfOperationsFqdn</code>, <code>username</code>, <code>password</code> and <code>authSource</code>). So your script should only exit <code>0</code> once:</p>
+<ul>
+<li>VCF Operations has been restored and is <strong>up and reachable</strong>;</li>
+<li>those variables' credentials <strong>log in successfully</strong>; and</li>
+<li>whatever you would check by hand to say the state is correct has been checked.</li>
+</ul>
+<p>If your script returns while VCF Operations is still starting up, the next task fails instead.</p>
+<h3 id="rules-for-a-script-that-works">Rules for a script that works</h3>
+<div class="table-wrap"><table class="table">
+<thead>
+<tr>
+<th>Do</th>
+<th>Don't</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Exit <code>0</code> only on genuine success, and exit non-zero on anything else.</td>
+<td>Let the script fall off the end after an error you caught and ignored.</td>
+</tr>
+<tr>
+<td>Set <code>$ErrorActionPreference = 'Stop'</code> so errors become terminating errors.</td>
+<td>Rely on non-terminating errors to fail the script.</td>
+</tr>
+<tr>
+<td>Check <code>$LASTEXITCODE</code> after calling any external program.</td>
+<td>Assume a native command that failed will stop the script.</td>
+</tr>
+<tr>
+<td>Wait inside the script until VCF Operations is ready, with <strong>your own timeout</strong>, then exit non-zero if it never is.</td>
+<td>Return immediately after starting a restore, or wait forever. The Recovery Coordinator imposes no time limit of its own.</td>
+</tr>
+<tr>
+<td>Run unattended. Take all input from files, environment variables or a secure store.</td>
+<td>Use <code>Read-Host</code>, <code>Pause</code>, or anything that prompts. The script will hang.</td>
+</tr>
+<tr>
+<td>Print progress regularly so you can see it is alive.</td>
+<td>Stay silent for a long time.</td>
+</tr>
+<tr>
+<td>Make the script <strong>safe to run again</strong>. After a failure, <strong>Run Plan</strong> runs the whole script again from the top.</td>
+<td>Assume it will only ever run once.</td>
+</tr>
+<tr>
+<td>Use absolute paths, and <code>Import-Module</code> what you need.</td>
+<td>Rely on the current directory, your profile, or modules the console happened to load.</td>
+</tr>
+<tr>
+<td>Keep credentials in a secure store, or protect the script file.</td>
+<td>Leave passwords in a script that other people can read.</td>
+</tr>
+</tbody>
+</table></div>
+<div class="alert alert-info" role="note"><div class="alert-icon" aria-hidden="true"></div><div class="alert-content"><div class="alert-title">Execution policy</div><p>The script is run as a file, so the machine's PowerShell execution policy applies. If the policy blocks
+your script, the task will fail. Make sure it is permitted to run, for example by signing it or unblocking
+the file, and test it as described below on the same machine.</p>
+</div></div>
+<h3 id="a-template-to-start-from">A template to start from</h3>
+<pre data-lang="powershell"><code>#Requires -Version 7.0
+$ErrorActionPreference = 'Stop'          # turn every error into a terminating one
+
+function Write-Log {
+    param([string]$Message)
+    # Plain text. Do not use [ERROR], [WARNING] or [EXCEPTION] in log lines.
+    Write-Host (&quot;{0}  {1}&quot; -f (Get-Date -Format 'HH:mm:ss'), $Message)
+}
+
+function Test-OpsReady {
+    # Replace with your own check. Return $true only when VCF Operations is up AND
+    # a login with the credentials used by the plan works.
+    return $false
+}
+
+try {
+    Write-Log 'Starting VCF Operations restore.'
+
+    # 1. Restore VCF Operations here, using your own process.
+    #    After any external program: if ($LASTEXITCODE -ne 0) { throw &quot;Tool failed: $LASTEXITCODE&quot; }
+
+    # 2. Wait until it is ready, with your own time limit.
+    $deadline = (Get-Date).AddMinutes(60)
+    do {
+        $ready = Test-OpsReady
+        if (-not $ready) {
+            Write-Log 'Waiting for VCF Operations to become ready...'
+            Start-Sleep -Seconds 30
+        }
+    } until ($ready -or (Get-Date) -gt $deadline)
+
+    if (-not $ready) {
+        throw 'VCF Operations did not become ready within 60 minutes.'
+    }
+
+    # 3. Verify whatever &quot;state is correct&quot; means for you, throwing if it is not.
+
+    Write-Log 'VCF Operations restored and verified.'
+    exit 0                               # the ONLY success path
+}
+catch {
+    Write-Log &quot;Restore failed: $($_.Exception.Message)&quot;
+    exit 1                               # any non-zero code means failure
+}
+</code></pre>
+<h3 id="test-it-before-the-recovery">Test it before the recovery</h3>
+<p>Run the script on its own, exactly as the Recovery Coordinator will, and check both halves of the contract:</p>
+<pre data-lang="powershell"><code># 1. Run it as the framework does, and keep a copy of the output.
+pwsh -NoProfile -File F:\VCFIR\Restore-OpsAppliances.ps1 *&gt;&amp;1 | Tee-Object -FilePath .\ops-restore-test.txt
+&quot;Exit code: $LASTEXITCODE&quot;
+
+# 2. Make sure none of the failure markers appear in the output.
+Select-String -Path .\ops-restore-test.txt -SimpleMatch '[WARNING]', '[ERROR]', '[EXCEPTION]', '+ CategoryInfo'
+</code></pre>
+<p>A good script shows <code>Exit code: 0</code> and no matches from <code>Select-String</code>. Also test the failure path: force a
+failure (for example, point it at a host that does not exist) and confirm the exit code is non-zero, and that it
+does not hang.</p>
+<h3 id="using-the-script">Using the script</h3>
+<ol>
+<li>Select <strong>Fleet Component Recovery</strong> and load or create its variables.</li>
+<li>On the <strong>Variables</strong> tab, set <code>opsRestoreScriptPath</code> to the full path of your script.</li>
+<li>On the <strong>Recovery Plan</strong> tab, turn on <strong>User Provided VCF Operations Restore Script</strong>. The two manual
+confirmation tasks disappear and <em>Run User-Provided VCF Operations Restore Script</em> takes their place.</li>
+<li>Run the plan as usual. The task shows <strong>Done</strong> or <strong>Failed</strong> like any other, and the console and transcript
+hold your script's full output.</li>
+</ol>
+<p>If the toggle is on but <code>opsRestoreScriptPath</code> is empty, or the file is not found, the task fails straight away
+with a message saying so.</p>
+<h3 id="if-the-task-fails">If the task fails</h3>
+<div class="table-wrap"><table class="table">
+<thead>
+<tr>
+<th>What you see</th>
+<th>Likely cause</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>No restore script path was supplied</code></td>
+<td><code>opsRestoreScriptPath</code> is blank on the Variables tab.</td>
+</tr>
+<tr>
+<td><code>Restore script '...' was not found</code></td>
+<td>The path is wrong, or the file is not reachable from this machine.</td>
+</tr>
+<tr>
+<td><code>Restore script failed (exit code N)</code></td>
+<td>Your script exited non-zero. Read its output just above the message. A script blocked by the execution policy also ends up here.</td>
+</tr>
+<tr>
+<td><code>Restore script could not be run</code></td>
+<td>The PowerShell process itself could not be started.</td>
+</tr>
+<tr>
+<td>Failed, but the script says it succeeded and exited <code>0</code></td>
+<td>The output contains one of the <a href="#the-success-contract">failure markers</a>. Search the transcript for them.</td>
+</tr>
+<tr>
+<td>Stuck on <em>Running</em>, no new output</td>
+<td>The script is waiting for input, or waiting forever. Add a timeout, and remove anything that prompts.</td>
+</tr>
+<tr>
+<td>The next task fails after the script reports success</td>
+<td>The script returned before VCF Operations was fully ready, or the credentials on the Variables tab do not log in.</td>
+</tr>
+</tbody>
+</table></div>
 
 <h2 id="engineering-mode-and-the-advanced-tab">Engineering mode and the Advanced tab</h2>
 <p>By default the application is in <strong>User</strong> mode. <strong>Engineering</strong> mode adds capabilities meant for engineers
