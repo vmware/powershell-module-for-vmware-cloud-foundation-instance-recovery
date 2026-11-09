@@ -125,7 +125,7 @@ $html = [regex]::Replace($html, '<p><img src="([^"]+)" alt="([^"]*)" /></p>', {
         $extension = [System.IO.Path]::GetExtension($imagePath).TrimStart('.').ToLower()
         $mime = if ($mimeTypes.ContainsKey($extension)) { $mimeTypes[$extension] } else { 'application/octet-stream' }
         $data = [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($imagePath))
-        "<figure><img src=`"data:$mime;base64,$data`" alt=`"$altText`" loading=`"lazy`"><figcaption>$altText</figcaption></figure>"
+        "<figure><img src=`"data:$mime;base64,$data`" alt=`"$altText`" loading=`"lazy`" tabindex=`"0`" role=`"button`" title=`"Click to enlarge`"><figcaption>$altText <span class=`"zoom-hint`">(click to enlarge)</span></figcaption></figure>"
     })
 $html = $html.Replace('<table>', '<div class="table-wrap"><table class="table">').Replace('</table>', '</table></div>')
 
@@ -196,11 +196,16 @@ table.table td:first-child { white-space: nowrap; }
 .alert-danger { border-color: var(--danger); background: var(--danger-bg); } .alert-danger .alert-icon { background: var(--danger); } .alert-danger .alert-icon::before { content: "!"; }
 blockquote { margin: 1rem 0; padding: .5rem 1rem; border-left: 4px solid var(--accent); background: var(--hover-bg); color: var(--text); }
 blockquote p { margin: .3rem 0; }
-figure { margin: 1.4rem 0; } figure img { display: block; max-width: 100%; height: auto; border: 1px solid var(--border); border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,.12); background: var(--panel); }
+figure { margin: 1.4rem 0; } figure img { cursor: zoom-in; display: block; max-width: 100%; height: auto; border: 1px solid var(--border); border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,.12); background: var(--panel); }
+.lightbox { position: fixed; inset: 0; z-index: 100; background: rgba(15, 22, 29, .88); display: flex; align-items: center; justify-content: center; padding: 24px; cursor: zoom-out; }
+.lightbox img { max-width: 100%; max-height: 100%; border-radius: 4px; box-shadow: 0 8px 40px rgba(0,0,0,.5); background: #fff; }
+.lightbox-close { position: absolute; top: 14px; right: 22px; color: #fff; font-size: 34px; line-height: 1; opacity: .85; }
+.zoom-hint { opacity: .8; }
 figcaption { margin-top: 8px; font-size: 13px; color: var(--subtle); text-align: center; }
 .footer { margin-top: 4rem; padding-top: 1rem; border-top: 1px solid var(--border); color: var(--subtle); font-size: 13px; }
 @media (max-width: 900px) { .sidenav { display: none; } .content { margin-left: 0; width: 100%; padding: 24px 20px 60px; } }
 @media print {
+  .lightbox, .zoom-hint { display: none; }
   .header, .sidenav { display: none; } .layout { padding-top: 0; } .content { margin: 0; width: 100%; padding: 0; }
   body { background: #fff; font-size: 11pt; } pre { background: #F1F3F5; color: #000; border: 1px solid #ccc; white-space: pre-wrap; }
   .alert, table.table tr { page-break-inside: avoid; } h2, h3 { page-break-after: avoid; }
@@ -219,6 +224,23 @@ $js = @'
       if (n.offsetTop < s.scrollTop || n.offsetTop > s.scrollTop + s.clientHeight - 60) { s.scrollTop = n.offsetTop - 80; } }
   }
   window.addEventListener('scroll', spy, { passive: true }); spy();
+
+  // Click (or Enter/Space on) a screenshot to see it large; click anywhere, the X, or Esc to close.
+  var box = null;
+  function closeBox() { if (box) { document.body.removeChild(box); box = null; document.removeEventListener('keydown', onKey); } }
+  function onKey(e) { if (e.key === 'Escape') { closeBox(); } }
+  function openBox(img) {
+    closeBox();
+    box = document.createElement('div'); box.className = 'lightbox'; box.setAttribute('role', 'dialog'); box.setAttribute('aria-label', img.alt || 'Enlarged screenshot');
+    var big = document.createElement('img'); big.src = img.src; big.alt = img.alt;
+    var x = document.createElement('div'); x.className = 'lightbox-close'; x.textContent = '\u00D7'; x.setAttribute('aria-hidden', 'true');
+    box.appendChild(big); box.appendChild(x); box.addEventListener('click', closeBox);
+    document.body.appendChild(box); document.addEventListener('keydown', onKey);
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('figure img'), function (img) {
+    img.addEventListener('click', function () { openBox(img); });
+    img.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openBox(img); } });
+  });
 })();
 '@
 
