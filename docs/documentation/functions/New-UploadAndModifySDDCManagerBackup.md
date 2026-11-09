@@ -8,10 +8,10 @@ Uploads the provided SDDC Manager backup file to SDDC Manager, decrypts and extr
 
 ```powershell
 # Plain text encryption password
-New-UploadAndModifySDDCManagerBackup [-rootUserPassword] <String> [-vcfUserPassword] <String> [-backupFilePath] <String> [-encryptionPassword] <String> [-extractedSDDCDataFile] <String> [[-targetFqdn] <String>] [-targetAdmin] <String> [-targetAdminPassword] <String> [[-targetType] <String>] [<CommonParameters>]
+New-UploadAndModifySDDCManagerBackup [-rootUserPassword] <String> [-vcfUserPassword] <String> [-backupFilePath] <String> [-encryptionPassword] <String> [-extractedSDDCDataFile] <String> [[-targetFqdn] <String>] [[-targetAdmin] <String>] [-targetAdminPassword] <String> [[-targetType] <String>] [<CommonParameters>]
 
 # Secure string encryption password
-New-UploadAndModifySDDCManagerBackup [-rootUserPassword] <String> [-vcfUserPassword] <String> [-backupFilePath] <String> [[-secureEncryptionPassword] <SecureString>] [-extractedSDDCDataFile] <String> [[-targetFqdn] <String>] [-targetAdmin] <String> [-targetAdminPassword] <String> [[-targetType] <String>] [<CommonParameters>]
+New-UploadAndModifySDDCManagerBackup [-rootUserPassword] <String> [-vcfUserPassword] <String> [-backupFilePath] <String> [[-secureEncryptionPassword] <SecureString>] [-extractedSDDCDataFile] <String> [[-targetFqdn] <String>] [[-targetAdmin] <String>] [-targetAdminPassword] <String> [[-targetType] <String>] [<CommonParameters>]
 ```
 
 ## Description
@@ -156,16 +156,16 @@ Accept wildcard characters: False
 
 ### -targetAdmin
 
-Admin user for the target vCenter Server instance or ESX host that hosts the SDDC Manager VM.
+Admin user for the target vCenter Server instance or ESX host that hosts the SDDC Manager VM. Optional: when omitted and `-targetType` is `esx`, it defaults to `root`. If it is omitted for a `vcenter` target, the task stops with an error.
 
 ```yaml
 Type: String
 Parameter Sets: (All)
 Aliases:
 
-Required: True
+Required: False
 Position: 8
-Default value: None
+Default value: None (`root` when `-targetType` is `esx`)
 Accept pipeline input: False
 Accept wildcard characters: False
 ```

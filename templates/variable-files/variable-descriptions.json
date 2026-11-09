@@ -1,7 +1,7 @@
 {
   "targetType": "What the appliances are deployed onto: 'esx' (a standalone ESX host) or 'vcenter' (an existing vCenter).",
   "targetFqdn": "FQDN of the ESX host or vCenter the restored appliances are deployed to. For the management domain, leave blank to use the first ESX host in the extracted SDDC data.",
-  "targetAdmin": "Administrator account used to log in to the deployment target (e.g. root for an ESX host, administrator@vsphere.local for a vCenter).",
+  "targetAdmin": "Administrator account used to log in to the deployment target (e.g. root for an ESX host, administrator@vsphere.local for a vCenter). For the management domain, leave blank to use root.",
   "targetAdminPassword": "Password for the deployment target administrator account.",
   "restoredvCenterDeploymentSize": "Size of the vCenter appliance to deploy (e.g. small, medium, large, optionally with a storage suffix such as small-lstorage).",
   "vCenterOvaFile": "Path on this machine to the vCenter Server Appliance OVA used to deploy the restored vCenter.",

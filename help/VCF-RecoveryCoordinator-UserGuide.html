@@ -1,0 +1,1247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VMware Cloud Foundation Recovery Coordinator - Recovery Coordinator User Guide</title>
+<style>
+:root {
+  --header: #1D2731; --accent: #0095D3; --accent-hover: #0077AA; --text: #22313F; --subtle: #6B7280;
+  --bg: #F5F5F5; --panel: #FFFFFF; --border: #E0E0E0; --hover-bg: #EAF6FC; --code-bg: #F1F3F5;
+  --info: #0072A3; --info-bg: #E1F1F6; --success: #2E7D32; --success-bg: #E7F4E8;
+  --warning: #B26A00; --warning-bg: #FFF4DB; --danger: #C21D00; --danger-bg: #FBE9E7;
+  --font: "Clarity City", "Metropolis", "Avenir Next", Avenir, "Segoe UI", -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --mono: "Consolas", "SFMono-Regular", Menlo, "Liberation Mono", monospace;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 76px; }
+body { margin: 0; font-family: var(--font); font-size: 16px; line-height: 1.6; color: var(--text); background: var(--bg); }
+.header { position: fixed; top: 0; left: 0; right: 0; height: 60px; background: var(--header); color: #fff; display: flex; align-items: center; padding: 0 24px; z-index: 10; }
+.header .brand { display: flex; flex-direction: column; line-height: 1.2; }
+.header .brand .l1 { font-size: 15px; font-weight: 600; }
+.header .brand .l2 { font-size: 14px; color: #B9C2CC; }
+.header .spacer { flex: 1; }
+.header .version { color: #B9C2CC; font-size: 13px; }
+.layout { display: flex; padding-top: 60px; min-height: 100vh; }
+.sidenav { position: fixed; top: 60px; bottom: 0; width: 290px; overflow-y: auto; background: var(--panel); border-right: 1px solid var(--border); padding: 16px 0 32px; }
+.sidenav .nav-title { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--subtle); font-weight: 600; padding: 4px 24px 8px; }
+.nav-link { display: block; color: var(--text); text-decoration: none; font-size: 14px; line-height: 1.35; padding: 6px 24px; border-left: 3px solid transparent; }
+.nav-link.nav-l3 { padding-left: 40px; font-size: 13px; color: var(--subtle); }
+.nav-link:hover { background: var(--hover-bg); color: var(--accent-hover); }
+.nav-link.active { border-left-color: var(--accent); background: var(--hover-bg); color: var(--accent-hover); font-weight: 600; }
+.content { margin-left: 290px; width: calc(100% - 290px); padding: 32px 48px 80px; }
+.content-inner { max-width: 900px; }
+.doc-title { font-size: 2.2rem; font-weight: 200; margin: 0 0 4px; letter-spacing: -.01em; }
+.doc-sub { color: var(--subtle); margin: 0 0 28px; }
+h2 { font-size: 1.65rem; font-weight: 300; margin: 2.6rem 0 .8rem; padding-bottom: .35rem; border-bottom: 1px solid var(--border); }
+h3 { font-size: 1.2rem; font-weight: 600; margin: 2rem 0 .5rem; }
+h4 { font-size: 1rem; font-weight: 600; margin: 1.5rem 0 .4rem; }
+p { margin: .7rem 0; }
+a { color: var(--accent-hover); }
+ul, ol { padding-left: 1.6rem; }
+li { margin: .25rem 0; }
+li > p { margin: .35rem 0; }
+code { font-family: var(--mono); font-size: .88em; background: var(--code-bg); border: 1px solid #E3E6EA; border-radius: 3px; padding: 1px 5px; }
+pre { position: relative; background: var(--header); color: #E6EDF3; border-radius: 4px; padding: 16px 18px; overflow-x: auto; font-size: 13.5px; line-height: 1.5; margin: 1rem 0; }
+pre code { background: none; border: 0; padding: 0; color: inherit; font-size: inherit; }
+pre[data-lang]::before { content: attr(data-lang); position: absolute; top: 6px; right: 12px; font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: #8DA2B5; }
+.table-wrap { overflow-x: auto; margin: 1rem 0; }
+table.table { border-collapse: collapse; width: 100%; background: var(--panel); font-size: 14.5px; }
+table.table th { text-align: left; font-weight: 600; font-size: 13px; color: var(--text); background: #FAFAFA; border-top: 1px solid var(--border); border-bottom: 2px solid #C1CDD4; padding: 10px 14px; white-space: nowrap; }
+table.table td { padding: 10px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+table.table tr:hover td { background: var(--hover-bg); }
+table.table td:first-child { white-space: nowrap; }
+.alert { display: flex; border: 1px solid; border-radius: 3px; margin: 1.2rem 0; overflow: hidden; background: var(--panel); }
+.alert-icon { flex: 0 0 38px; display: flex; align-items: flex-start; justify-content: center; padding-top: 12px; color: #fff; font-weight: 700; font-size: 15px; }
+.alert-content { padding: 10px 16px 12px; }
+.alert-title { font-weight: 700; margin-bottom: 2px; }
+.alert-content p:first-of-type { margin-top: 0; }
+.alert-content p:last-child, .alert-content ul:last-child { margin-bottom: 0; }
+.alert-info { border-color: var(--info); background: var(--info-bg); } .alert-info .alert-icon { background: var(--info); } .alert-info .alert-icon::before { content: "i"; font-style: italic; font-family: Georgia, serif; }
+.alert-success { border-color: var(--success); background: var(--success-bg); } .alert-success .alert-icon { background: var(--success); } .alert-success .alert-icon::before { content: "\2713"; }
+.alert-warning { border-color: var(--warning); background: var(--warning-bg); } .alert-warning .alert-icon { background: var(--warning); } .alert-warning .alert-icon::before { content: "!"; }
+.alert-danger { border-color: var(--danger); background: var(--danger-bg); } .alert-danger .alert-icon { background: var(--danger); } .alert-danger .alert-icon::before { content: "!"; }
+blockquote { margin: 1rem 0; padding: .5rem 1rem; border-left: 4px solid var(--accent); background: var(--hover-bg); color: var(--text); }
+blockquote p { margin: .3rem 0; }
+figure { margin: 1.4rem 0; } figure img { display: block; max-width: 100%; height: auto; border: 1px solid var(--border); border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,.12); background: var(--panel); }
+figcaption { margin-top: 8px; font-size: 13px; color: var(--subtle); text-align: center; }
+.footer { margin-top: 4rem; padding-top: 1rem; border-top: 1px solid var(--border); color: var(--subtle); font-size: 13px; }
+@media (max-width: 900px) { .sidenav { display: none; } .content { margin-left: 0; width: 100%; padding: 24px 20px 60px; } }
+@media print {
+  .header, .sidenav { display: none; } .layout { padding-top: 0; } .content { margin: 0; width: 100%; padding: 0; }
+  body { background: #fff; font-size: 11pt; } pre { background: #F1F3F5; color: #000; border: 1px solid #ccc; white-space: pre-wrap; }
+  .alert, table.table tr { page-break-inside: avoid; } h2, h3 { page-break-after: avoid; }
+}
+</style>
+</head>
+<body>
+<header class="header">
+  <div class="brand"><span class="l1">VMware Cloud Foundation</span><span class="l2">Recovery Coordinator</span></div>
+  <div class="spacer"></div>
+  <span class="version">v9.1.2.1000</span>
+</header>
+<div class="layout">
+  <nav class="sidenav" aria-label="Contents">
+    <div class="nav-title">Contents</div>
+<a class="nav-link nav-l2" href="#before-you-begin">Before you begin</a>
+<a class="nav-link nav-l3" href="#what-you-need">What you need</a>
+<a class="nav-link nav-l3" href="#choose-your-working-directory-first">Choose your working directory first</a>
+<a class="nav-link nav-l2" href="#starting-the-recovery-coordinator">Starting the Recovery Coordinator</a>
+<a class="nav-link nav-l3" href="#update-banner">Update banner</a>
+<a class="nav-link nav-l2" href="#a-tour-of-the-window">A tour of the window</a>
+<a class="nav-link nav-l2" href="#the-recovery-workflow-at-a-glance">The recovery workflow at a glance</a>
+<a class="nav-link nav-l2" href="#step-1-choose-what-to-recover">Step 1: Choose what to recover</a>
+<a class="nav-link nav-l3" href="#recovery-type">Recovery Type</a>
+<a class="nav-link nav-l3" href="#recovery-plan">Recovery Plan</a>
+<a class="nav-link nav-l2" href="#step-2-provide-the-data-source">Step 2: Provide the data source</a>
+<a class="nav-link nav-l3" href="#what-is-in-the-extracted-data-file">What is in the extracted data file</a>
+<a class="nav-link nav-l3" href="#which-plans-need-a-data-source">Which plans need a data source</a>
+<a class="nav-link nav-l3" href="#the-encryption-password">The encryption password</a>
+<a class="nav-link nav-l2" href="#step-3-select-the-domain-or-cluster">Step 3: Select the domain or cluster</a>
+<a class="nav-link nav-l2" href="#step-4-provide-the-variables">Step 4: Provide the variables</a>
+<a class="nav-link nav-l3" href="#what-variables-are">What variables are</a>
+<a class="nav-link nav-l3" href="#two-ways-to-provide-variables">Two ways to provide variables</a>
+<a class="nav-link nav-l3" href="#the-variables-file-format">The variables file format</a>
+<a class="nav-link nav-l3" href="#the-file-must-match-the-plan">The file must match the plan</a>
+<a class="nav-link nav-l3" href="#working-with-the-variables-tab">Working with the Variables tab</a>
+<a class="nav-link nav-l2" href="#step-5-review-the-recovery-plan-and-run-options">Step 5: Review the recovery plan and run options</a>
+<a class="nav-link nav-l3" href="#run-options">Run Options</a>
+<a class="nav-link nav-l3" href="#the-task-list">The Task List</a>
+<a class="nav-link nav-l2" href="#step-6-run-the-plan">Step 6: Run the plan</a>
+<a class="nav-link nav-l3" href="#what-happens">What happens</a>
+<a class="nav-link nav-l3" href="#when-a-task-stops-the-run">When a task stops the run</a>
+<a class="nav-link nav-l3" href="#retrying-and-continuing">Retrying and continuing</a>
+<a class="nav-link nav-l3" href="#watching-the-console">Watching the console</a>
+<a class="nav-link nav-l3" href="#advisories">Advisories</a>
+<a class="nav-link nav-l2" href="#interactive-tasks-and-answer-files">Interactive tasks and answer files</a>
+<a class="nav-link nav-l3" href="#running-unattended-with-an-answer-file">Running unattended with an answer file</a>
+<a class="nav-link nav-l3" href="#answer-files-and-variables-files-are-different-things">Answer files and variables files are different things</a>
+<a class="nav-link nav-l2" href="#parallel-threads">Parallel threads</a>
+<a class="nav-link nav-l2" href="#saving-your-progress-and-resuming">Saving your progress and resuming</a>
+<a class="nav-link nav-l3" href="#save-exit">Save &amp; Exit</a>
+<a class="nav-link nav-l3" href="#resume">Resume</a>
+<a class="nav-link nav-l2" href="#recovery-plans-in-detail">Recovery plans in detail</a>
+<a class="nav-link nav-l3" href="#management-domain-recovery">Management Domain Recovery</a>
+<a class="nav-link nav-l3" href="#workload-domain-recovery">Workload Domain Recovery</a>
+<a class="nav-link nav-l3" href="#additional-cluster-recovery">Additional Cluster Recovery</a>
+<a class="nav-link nav-l3" href="#fleet-component-recovery">Fleet Component Recovery</a>
+<a class="nav-link nav-l3" href="#recover-fleet-fdr">Recover Fleet (FDR)</a>
+<a class="nav-link nav-l2" href="#engineering-mode-and-the-advanced-tab">Engineering mode and the Advanced tab</a>
+<a class="nav-link nav-l3" href="#the-advanced-tab">The Advanced tab</a>
+<a class="nav-link nav-l3" href="#breakpoints">Breakpoints</a>
+<a class="nav-link nav-l2" href="#files-the-recovery-coordinator-creates">Files the Recovery Coordinator creates</a>
+<a class="nav-link nav-l2" href="#troubleshooting">Troubleshooting</a>
+<a class="nav-link nav-l3" href="#i-cant-load-my-variables-file">I can't load my variables file</a>
+<a class="nav-link nav-l3" href="#the-recovery-tasks-panel-is-not-showing">The Recovery Tasks panel is not showing</a>
+<a class="nav-link nav-l3" href="#the-task-list-is-empty-after-loading-variables">The task list is empty after loading variables</a>
+<a class="nav-link nav-l3" href="#run-plan-stopped">Run Plan stopped</a>
+<a class="nav-link nav-l3" href="#a-task-is-waiting-and-nothing-is-happening">A task is waiting and nothing is happening</a>
+<a class="nav-link nav-l3" href="#an-answer-file-task-fails-immediately">An answer file task fails immediately</a>
+<a class="nav-link nav-l3" href="#the-application-says-my-saved-files-no-longer-exist">The application says my saved files no longer exist</a>
+<a class="nav-link nav-l3" href="#i-closed-the-window-by-mistake">I closed the window by mistake</a>
+<a class="nav-link nav-l3" href="#where-do-i-find-out-what-happened">Where do I find out what happened?</a>
+<a class="nav-link nav-l2" href="#quick-reference">Quick reference</a>
+<a class="nav-link nav-l3" href="#the-recovery-in-seven-clicks">The recovery in seven clicks</a>
+<a class="nav-link nav-l3" href="#buttons">Buttons</a>
+<a class="nav-link nav-l3" href="#task-states">Task states</a>
+<a class="nav-link nav-l3" href="#good-habits">Good habits</a>
+
+  </nav>
+  <main class="content">
+    <div class="content-inner">
+      <h1 class="doc-title">Recovery Coordinator User Guide</h1>
+      <p class="doc-sub">Generated from the module documentation on 2026-11-09.</p>
+
+<p>The <strong>VMware Cloud Foundation Recovery Coordinator</strong> is a Windows desktop application, shipped with the
+<code>VCF.RecoveryCoordinator</code> module, that walks you through recovering a VMware Cloud Foundation instance
+from backups. It does not replace the module's PowerShell cmdlets; it runs them for you, in the right
+order, in embedded PowerShell consoles, and keeps track of what has finished.</p>
+<p>This guide explains every part of the window and takes you through a recovery from start to finish.</p>
+
+<h2 id="before-you-begin">Before you begin</h2>
+<h3 id="what-you-need">What you need</h3>
+<div class="table-wrap"><table class="table">
+<thead>
+<tr>
+<th>Requirement</th>
+<th>Detail</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Operating system</td>
+<td>Windows. The application is a WPF desktop application.</td>
+</tr>
+<tr>
+<td>PowerShell</td>
+<td>PowerShell 7.5.3 or later (PowerShell Core).</td>
+</tr>
+<tr>
+<td>Modules</td>
+<td><code>VCF.RecoveryCoordinator</code> and its dependencies (<code>VCF.PowerCLI</code>, <code>Posh-SSH</code>). See <a href="https://vmware.github.io/powershell-module-for-vmware-cloud-foundation-instance-recovery/install/" target="_blank" rel="noopener">Installation</a>.</td>
+</tr>
+<tr>
+<td>OpenSSL</td>
+<td>OpenSSL for Windows, as listed on the home page.</td>
+</tr>
+<tr>
+<td>VMware OVF Tool</td>
+<td>Installed at <code>C:\Program Files\VMware\VMware OVF Tool\ovftool.exe</code>. The plans use it to deploy vCenter, NSX Manager and SDDC Manager appliances.</td>
+</tr>
+<tr>
+<td>Appliance binaries</td>
+<td>The OVA files for the vCenter, NSX Manager and SDDC Manager versions you are restoring, available on the machine running the application.</td>
+</tr>
+<tr>
+<td>Backups</td>
+<td>The SDDC Manager backup file (<code>*.tar.gz</code>) and its encryption password, plus access to the vCenter backup location and the NSX/VCF SFTP backup server.</td>
+</tr>
+<tr>
+<td>Network access</td>
+<td>The machine must be able to reach the ESX hosts, vCenter, NSX Manager, SDDC Manager and backup servers it will talk to.</td>
+</tr>
+</tbody>
+</table></div>
+<div class="alert alert-success" role="note"><div class="alert-icon" aria-hidden="true"></div><div class="alert-content"><div class="alert-title">Tip</div><p>Do a read-through of the <a href="#recovery-plans-in-detail">recovery plans</a> for the type of recovery you are
+about to perform, and gather every value you will need, <em>before</em> you start. Most of the work in a
+recovery is the Recovery Coordinator running unattended; the work you do up front is collecting the
+inputs.</p>
+</div></div>
+<h3 id="choose-your-working-directory-first">Choose your working directory first</h3>
+<p>The Recovery Coordinator writes its working files (console transcripts, the credentials payload, saved
+state) to the directory you were in when you started it. Choose a folder that has enough free space and that
+you will keep secure, and <code>cd</code> into it before launching. See
+<a href="#files-the-recovery-coordinator-creates">Files the Recovery Coordinator creates</a>.</p>
+
+<h2 id="starting-the-recovery-coordinator">Starting the Recovery Coordinator</h2>
+<ol>
+<li><p>Open a PowerShell 7 console.</p>
+</li>
+<li><p>Change to the folder you want to use as your working directory:</p>
+<pre data-lang="powershell"><code>Set-Location F:\VCFIR\Work
+</code></pre>
+</li>
+<li><p>Launch the application:</p>
+<pre data-lang="powershell"><code>Start-VCFRecoveryCoordinator
+</code></pre>
+</li>
+</ol>
+<p>The cmdlet checks whether a newer version of the module is available, opens the window, and returns control
+to your console straight away. The window runs as its own process. Calling <code>Start-VCFRecoveryCoordinator</code>
+again opens a second, independent window; it does not reuse the first.</p>
+<div class="alert alert-info" role="note"><div class="alert-icon" aria-hidden="true"></div><div class="alert-content"><div class="alert-title">Note</div><p>If the window closes immediately, the cmdlet prints the reason in your console (for example a missing
+UI file).</p>
+</div></div>
+<h3 id="update-banner">Update banner</h3>
+<p>If a newer version of <code>VCF.RecoveryCoordinator</code> is available in the repository the module was installed
+from, an orange banner appears under the title bar. If more than one update is available, use the <strong>‹</strong> and
+<strong>›</strong> arrows to page between them. Select <strong>✕</strong> to dismiss the banner for this session; it will return the
+next time you start the application while the update is still pending.</p>
+<p>Read the release notes before upgrading, and make sure the newer release supports the VCF version you are
+recovering. <strong>Do not upgrade in the middle of a recovery.</strong></p>
+
+<h2 id="a-tour-of-the-window">A tour of the window</h2>
+<p>The window has a title bar and two columns.</p>
+
+<pre data-lang="text"><code>+----------------------------------------------------------------------------------+
+| VMware Cloud Foundation                      User | Engineering   [Resume][Save &amp; Exit] |
+| Recovery Coordinator                                                             |
++----------------------------------------------------------------------------------+
+| (orange update banner - only shown when an update is available)                  |
++---------------------------------+------------------------------------------------+
+| Recovery Parameters             | Console                                        |
+|   Recovery Type                 |   [Main] [Thread 2] [Thread 3] ...             |
+|   Recovery Plan                 |                                                |
+|   Data Source  [Browse...]      |   (embedded PowerShell consoles)               |
+|                                 |                                                |
+| Discovered Infrastructure       |                                                |
+|   [Workload Domains / Clusters] |                                                |
+|                                 +------------------------------------------------+
+| Recovery Tasks                  | Advisories                                     |
+|   [Variables][Recovery Plan]    |   (timestamped status and error messages)      |
++---------------------------------+------------------------------------------------+
+</code></pre>
+<p><strong>Left column</strong>, top to bottom:</p>
+<div class="table-wrap"><table class="table">
+<thead>
+<tr>
+<th>Panel</th>
+<th>What it is for</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Recovery Parameters</strong></td>
+<td>Choose the type of recovery, the specific plan, and where the backup data comes from.</td>
+</tr>
+<tr>
+<td><strong>Discovered Infrastructure</strong></td>
+<td>Appears once the Recovery Coordinator has read your SDDC Manager data. Lists the domains or clusters you can recover.</td>
+</tr>
+<tr>
+<td><strong>Recovery Tasks</strong></td>
+<td>Appears once you have chosen something to recover. Has a <strong>Variables</strong> tab (your inputs) and a <strong>Recovery Plan</strong> tab (the ordered list of tasks and the <strong>Run Plan</strong> button). An <strong>Advanced</strong> tab appears in <a href="#engineering-mode-and-the-advanced-tab">Engineering mode</a>.</td>
+</tr>
+</tbody>
+</table></div>
+<p>The left column scrolls if your window is short.</p>
+<p><strong>Right column:</strong></p>
+<div class="table-wrap"><table class="table">
+<thead>
+<tr>
+<th>Panel</th>
+<th>What it is for</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Console</strong></td>
+<td>Real PowerShell console windows, one per tab, embedded in the application. You watch tasks run here, and answer prompts here.</td>
+</tr>
+<tr>
+<td><strong>Advisories</strong></td>
+<td>A running, timestamped log of status messages from the application itself. Failures are shown in bold red.</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Title bar controls:</strong></p>
+<div class="table-wrap"><table class="table">
+<thead>
+<tr>
+<th>Control</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Help</strong></td>
+<td>Opens this guide, as a standalone HTML page, in your default web browser. It works offline.</td>
+</tr>
+<tr>
+<td><strong>User | Engineering</strong></td>
+<td>Switches between the normal view and <a href="#engineering-mode-and-the-advanced-tab">Engineering mode</a>.</td>
+</tr>
+<tr>
+<td><strong>Resume</strong></td>
+<td>Restores a previously saved session. See <a href="#saving-your-progress-and-resuming">Saving your progress and resuming</a>.</td>
+</tr>
+<tr>
+<td><strong>Save &amp; Exit</strong></td>
+<td>Saves your session to a file and closes the application.</td>
+</tr>
+</tbody>
+</table></div>
+
+<h2 id="the-recovery-workflow-at-a-glance">The recovery workflow at a glance</h2>
+<p>Every recovery follows the same pattern:</p>
+<ol>
+<li><strong>Choose</strong> the recovery type and plan.</li>
+<li><strong>Provide the data source</strong>: the SDDC Manager backup, or an extracted-data file from an earlier run.</li>
+<li><strong>Select</strong> the domain or cluster to recover (where the plan needs one).</li>
+<li><strong>Provide the variables</strong>: load a variables file, or create one and fill it in.</li>
+<li><strong>Review</strong> the task list and run options.</li>
+<li><strong>Run the plan.</strong> The Recovery Coordinator works through the tasks in order, stopping if one reports a
+problem.</li>
+<li><strong>Answer any prompts</strong> that appear in the console, or pre-supply the answers in an answer file.</li>
+</ol>
+<p>The sections below cover each step.</p>
+
+<h2 id="step-1-choose-what-to-recover">Step 1: Choose what to recover</h2>
+
+<p>The <strong>Recovery Parameters</strong> panel has three drop-down lists, completed from top to bottom.</p>
+<h3 id="recovery-type">Recovery Type</h3>
+<div class="table-wrap"><table class="table">
+<thead>
+<tr>
+<th>Recovery Type</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Instance Backup &amp; Restore (IBR)</strong></td>
+<td>Recover a VCF instance from backups. This is the normal choice.</td>
+</tr>
+<tr>
+<td><strong>Fleet Disaster Recovery (FDR)</strong></td>
+<td>Fleet-level failover. Marked <em>Engineering only</em>; see <a href="#engineering-mode-and-the-advanced-tab">Engineering mode</a>.</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="recovery-plan">Recovery Plan</h3>
+<p>The plans listed depend on the Recovery Type.</p>
+<div class="table-wrap"><table class="table">
+<thead>
+<tr>
+<th>Recovery Plan</th>
+<th>Use it to recover</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Management Domain Recovery</strong></td>
+<td>The VCF management domain: ESX host networking, SDDC Manager, vCenter and NSX Manager, then the management cluster. This is the default, and is where a full recovery starts.</td>
+</tr>
+<tr>
+<td><strong>Workload Domain Recovery</strong></td>
+<td>A workload domain's vCenter and NSX Manager, then its default cluster.</td>
+</tr>
+<tr>
+<td><strong>Additional Cluster Recovery</strong></td>
+<td>A cluster in a domain that is <em>not</em> that domain's default cluster.</td>
+</tr>
+<tr>
+<td><strong>Fleet Component Recovery</strong></td>
+<td>The VCF fleet components: VCF Operations, the VCFMS and VCF Automation services runtimes, log management and telemetry.</td>
+</tr>
+<tr>
+<td><strong>Recover Fleet</strong> (FDR)</td>
+<td>Fleet disaster recovery. Engineering only.</td>
+</tr>
+</tbody>
+</table></div>
+<p>Recovery plans are sequenced. A full recovery normally runs <strong>Management Domain Recovery</strong> first, then
+<strong>Workload Domain Recovery</strong> for each workload domain, then <strong>Additional Cluster Recovery</strong> for any
+additional clusters, then <strong>Fleet Component Recovery</strong>. See <a href="#recovery-plans-in-detail">Recovery plans in detail</a>.</p>
+<div class="alert alert-info" role="note"><div class="alert-icon" aria-hidden="true"></div><div class="alert-content"><div class="alert-title">Note</div><p>A plan or type marked <em>Engineering only</em> asks for the engineering password or one-time code when you
+select it. If you cancel, or the code is wrong, the previous selection is restored.</p>
+</div></div>
+
+<h2 id="step-2-provide-the-data-source">Step 2: Provide the data source</h2>
+<p>The <strong>Data Source</strong> drop-down and <strong>Browse...</strong> button tell the Recovery Coordinator where to learn about your
+VCF instance. Which sources are offered depends on the plan.</p>
+<div class="table-wrap"><table class="table">
+<thead>
+<tr>
+<th>Data Source</th>
+<th>Offered for</th>
+<th>What happens</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>SDDC Manager Backup File</strong></td>
+<td>Management Domain Recovery (default)</td>
+<td>You select the SDDC Manager backup (<code>*.tar.gz</code>). The application asks for the backup's encryption password, then runs <code>New-ExtractDataFromSDDCBackup</code> in the <strong>Main</strong> console to produce <code>extracted-sddc-data.json</code> in the <strong>same folder as the backup file</strong>. When extraction finishes, that file is loaded automatically.</td>
+</tr>
+<tr>
+<td><strong>Existing Extracted SDDC Data File</strong></td>
+<td>Every plan except FDR</td>
+<td>You select an <code>extracted-sddc-data.json</code> that already exists, for example from the Management Domain Recovery run.</td>
+</tr>
+</tbody>
+</table></div>
+<p>The file path you chose is shown in the box next to <strong>Browse...</strong>.</p>
+<h3 id="what-is-in-the-extracted-data-file">What is in the extracted data file</h3>
+<p><code>extracted-sddc-data.json</code> is the single source of truth about your environment: domains, clusters, hosts,
+vCenter and NSX Manager details, and so on. Every plan reads from it, which is why most plans only need you to
+point at it rather than re-enter details.</p>
+<p>As the Management Domain plan runs, it adds information to this file: the credentials retrieved from SDDC
+Manager, and details discovered from the restored vCenter. Plans that run later use those additions.</p>
+<div class="alert alert-warning" role="note"><div class="alert-icon" aria-hidden="true"></div><div class="alert-content"><div class="alert-title">Protect this file</div><p>Once the management domain plan has retrieved and merged the credentials, <code>extracted-sddc-data.json</code>
+contains the passwords for your environment. Store it somewhere secure and delete it when the recovery is
+finished.</p>
+</div></div>
+<h3 id="which-plans-need-a-data-source">Which plans need a data source</h3>
+<ul>
+<li><strong>Fleet Component Recovery</strong> uses an existing extracted data file only, and has no domain list to choose from.</li>
+<li><strong>Recover Fleet (FDR)</strong> needs no data source. The <strong>Data Source</strong> row is hidden and the task list appears
+immediately.</li>
+</ul>
+<h3 id="the-encryption-password">The encryption password</h3>
+<p>When you choose <strong>SDDC Manager Backup File</strong>, a password dialog asks for the backup encryption password. The
+application keeps it protected for the session so the later tasks that need it (such as
+<em>Upload and Modify SDDC Manager Backup</em>) do not ask again. If a task needs the password and the application does
+not hold one, it asks at that moment. If you cancel, that task fails and the run stops.</p>
+<p>The encryption password is never written to the console or to the saved session file.</p>
+
+<h2 id="step-3-select-the-domain-or-cluster">Step 3: Select the domain or cluster</h2>
+<p>When the data has loaded, the <strong>Discovered Infrastructure</strong> panel appears.</p>
+<div class="alert alert-info" role="note"><div class="alert-icon" aria-hidden="true"></div><div class="alert-content"><div class="alert-title">Info</div><p>The instruction at the top of the panel reads <em>Click on the element you wish to recover</em>.</p>
+</div></div>
+<p>What the panel shows depends on the plan:</p>
+<div class="table-wrap"><table class="table">
+<thead>
+<tr>
+<th>Plan</th>
+<th>Panel contents</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Management Domain Recovery</td>
+<td>A <strong>Management Domain</strong> tab listing the management domain only.</td>
+</tr>
+<tr>
+<td>Workload Domain Recovery</td>
+<td>A <strong>Workload Domains</strong> tab listing every domain that is not the management domain.</td>
+</tr>
+<tr>
+<td>Additional Cluster Recovery</td>
+<td>An <strong>Additional Clusters</strong> tab (see below).</td>
+</tr>
+<tr>
+<td>Fleet Component Recovery, Recover Fleet</td>
+<td>The panel is hidden; there is nothing to select.</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Workload domain tabs</strong> show the <strong>Domain Name</strong> and <strong>Domain Type</strong>.</p>
+<p><strong>The Additional Clusters tab</strong> shows one row per non-default cluster in any domain:</p>
+<div class="table-wrap"><table class="table">
+<thead>
+<tr>
+<th>Column</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Cluster Name</strong></td>
+<td>The cluster's name. It shows <em>(unknown)</em> until the plan has resolved it against the live vCenter.</td>
+</tr>
+<tr>
+<td><strong>Domain</strong></td>
+<td>The workload domain the cluster belongs to.</td>
+</tr>
+<tr>
+<td><strong>Storage</strong></td>
+<td>The cluster's primary datastore type.</td>
+</tr>
+<tr>
+<td><strong>Stretched</strong></td>
+<td><strong>Y</strong> if the cluster is a stretched cluster, otherwise <strong>N</strong>.</td>
+</tr>
+<tr>
+<td><strong>Dependent On</strong></td>
+<td>Other clusters that depend on this one, in recovery order. This is a hint for deciding the order to recover multiple additional clusters. It is informational only and does not change how plans run.</td>
+</tr>
+</tbody>
+</table></div>
+<p>If there is only one candidate, it is selected for you. Otherwise click the row you want. The selected item
+determines which domain and cluster the plan's tasks operate on. A domain and an additional cluster cannot both
+be selected at the same time.</p>
+<p>The <strong>Recovery Tasks</strong> panel appears as soon as you have made a selection.</p>
+
+<h2 id="step-4-provide-the-variables">Step 4: Provide the variables</h2>
+<p>Before the tasks are shown, the Recovery Coordinator needs the values the tasks use: host names, accounts,
+passwords, file paths, appliance sizes and so on. Open the <strong>Variables</strong> tab of the <strong>Recovery Tasks</strong> panel.</p>
+
+<h3 id="what-variables-are">What variables are</h3>
+<p>A variable is a named value, such as <code>targetFqdn</code> or <code>sddcManagerAdminPassword</code>. The plan's tasks refer to
+variables by name, and the Recovery Coordinator supplies their values to the console session. You see only the
+variables the selected plan actually uses.</p>
+<p>The domain, cluster and extracted-data file you chose in the earlier steps are filled in for you from your
+selections. You never type those, and they do not appear in the variables list.</p>
+<h3 id="two-ways-to-provide-variables">Two ways to provide variables</h3>
+<div class="table-wrap"><table class="table">
+<thead>
+<tr>
+<th>Button</th>
+<th>Use it to</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Load Variables File</strong></td>
+<td>Open a variables file (<code>.json</code>) you have already prepared.</td>
+</tr>
+<tr>
+<td><strong>New Variables File</strong></td>
+<td>Create a new variables file. You choose where to save it, and the Variables tab shows a blank row for every value the plan needs.</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>To load a variables file:</strong></p>
+<ol>
+<li>Select <strong>Load Variables File</strong>.</li>
+<li>Choose your <code>.json</code> file.</li>
+<li>The values appear as rows, and the application switches to the <strong>Recovery Plan</strong> tab.</li>
+</ol>
+<p><strong>To create a new variables file:</strong></p>
+<ol>
+<li>Select <strong>New Variables File</strong>.</li>
+<li>Choose where to save it. The name defaults to the plan's standard variables file name.</li>
+<li>Fill in each row. Each value is <strong>saved to the file automatically</strong> when you press <strong>Enter</strong> or move out of
+the field, so there is no Save button.</li>
+</ol>
+<div class="alert alert-success" role="note"><div class="alert-icon" aria-hidden="true"></div><div class="alert-content"><div class="alert-title">Tip</div><p>The module ships a template variables file for each plan in <code>templates\variable-files\ibr</code>. Copy one,
+fill it in, and load it. This is the easiest way to prepare values in advance, and to reuse them for a
+repeat run.</p>
+</div></div>
+<h3 id="the-variables-file-format">The variables file format</h3>
+<p>A variables file is a flat JSON object of <code>&quot;name&quot;: &quot;value&quot;</code> pairs. For example, an excerpt from the
+Management Domain template:</p>
+<pre data-lang="json"><code>{
+  &quot;targetFqdn&quot;: &quot;&quot;,
+  &quot;targetAdmin&quot;: &quot;&quot;,
+  &quot;targetAdminPassword&quot;: &quot;&quot;,
+  &quot;restoredvCenterDeploymentSize&quot;: &quot;&quot;,
+  &quot;vCenterOvaFile&quot;: &quot;&quot;,
+  &quot;sddcManagerFQDN&quot;: &quot;&quot;,
+  &quot;sddcManagerAdmin&quot;: &quot;&quot;,
+  &quot;sddcManagerAdminPassword&quot;: &quot;&quot;
+}
+</code></pre>
+<h3 id="the-file-must-match-the-plan">The file must match the plan</h3>
+<p>When you load a file, the Recovery Coordinator checks that its variable names match the selected plan's
+template exactly. If the file has names the plan does not use, or is missing names it needs, the load is
+rejected, nothing on screen changes, and the <strong>Advisories</strong> panel lists what is missing or unexpected, for
+example:</p>
+<blockquote>
+<p>Load Variables failed: '...' does not match the selected plan's variables structure (missing X; unexpected Y).</p>
+</blockquote>
+<p>This stops you accidentally loading the variables for a different plan. Edit the file, or start from the
+plan's template, and load it again. Order and values do not matter, only the set of names.</p>
+<h3 id="working-with-the-variables-tab">Working with the Variables tab</h3>
+<ul>
+<li><strong>Order.</strong> Rows are listed in the order the plan first needs them.</li>
+<li><strong>Tooltips.</strong> Hover over a variable name to see its full name and a one-line description of what it is.
+This is useful because long names are shortened in the list.</li>
+<li><strong>Passwords are masked.</strong> Any variable with <em>password</em> or <em>passphrase</em> in its name is shown as a masked
+field.</li>
+<li><strong>Editing.</strong> You can change a value at any time. The change is written back to the file you loaded or
+created and applied to the running session. Press <strong>Enter</strong> or click out of the field to apply it.</li>
+<li><strong>Optional values.</strong> A few values are optional and can be left blank. For example, in the Management Domain
+plan, leave <code>targetFqdn</code> blank to deploy to the first ESX host of the management domain found in the
+extracted data, and leave <code>targetAdmin</code> blank to log in as <code>root</code>.</li>
+<li><strong>Edits during a run.</strong> You can still edit a value while a plan is running. The change is saved, but the
+task list is not rebuilt until the run finishes.</li>
+</ul>
+<div class="alert alert-warning" role="note"><div class="alert-icon" aria-hidden="true"></div><div class="alert-content"><div class="alert-title">Keep variables files secure</div><p>A variables file holds passwords in plain text. Store it in a protected location, do not copy it
+elsewhere, and delete it once the recovery is complete.</p>
+</div></div>
+
+<h2 id="step-5-review-the-recovery-plan-and-run-options">Step 5: Review the recovery plan and run options</h2>
+<p>When variables are in place, open the <strong>Recovery Plan</strong> tab. It has two parts: <strong>Run Options</strong> at the top, and
+the <strong>Task List</strong> beneath them.</p>
+
+<h3 id="run-options">Run Options</h3>
+<div class="table-wrap"><table class="table">
+<thead>
+<tr>
+<th>Option</th>
+<th>Default</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Run parallel tasks using multiple threads (numbered circles)</strong></td>
+<td>On</td>
+<td>Lets the plan run independent groups of tasks at the same time, each in its own console tab. See <a href="#parallel-threads">Parallel threads</a>. Turn it off to run every task one at a time.</td>
+</tr>
+<tr>
+<td><strong>Use answer file for interactive tasks</strong></td>
+<td>Off</td>
+<td>Pre-supplies the answers to tasks that would otherwise stop and ask you a question. See <a href="#interactive-tasks-and-answer-files">Interactive tasks and answer files</a>.</td>
+</tr>
+</tbody>
+</table></div>
+<p>Some plans add their own options to the right of these. <strong>Fleet Component Recovery</strong> adds:</p>
+<div class="table-wrap"><table class="table">
+<thead>
+<tr>
+<th>Option</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>User Provided VCF Operations Restore Script</strong> (toggle)</td>
+<td>Includes the tasks that run your own script to restore VCF Operations, and confirm it. Off by default.</td>
+</tr>
+<tr>
+<td><strong>Binary Sourcing</strong> (choose one)</td>
+<td><strong>Unauthorized Offline Depot</strong> (default) or <strong>Authorized Offline Depot &amp; Original VCF Installer</strong>. Chooses where the recovery binaries come from. Hover over the heading for a description.</td>
+</tr>
+</tbody>
+</table></div>
+<p>Changing an option changes which tasks appear in the list straight away.</p>
+<h3 id="the-task-list">The Task List</h3>
+<p>The <strong>Task List</strong> is the plan, in the order it will run. Each row shows:</p>
+<div class="table-wrap"><table class="table">
+<thead>
+<tr>
+<th>Element</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Task name</strong></td>
+<td>A readable name for the task. Hover over a row to see a longer description where one exists.</td>
+</tr>
+<tr>
+<td><strong>Numbered circle</strong></td>
+<td>The task belongs to a parallel thread. Tasks with the same number and colour run in the same thread console. See <a href="#parallel-threads">Parallel threads</a>.</td>
+</tr>
+<tr>
+<td><strong>Requires Input</strong></td>
+<td>The task will stop and ask you a question in the console. If you have supplied an answer file that covers it, the badge reads <strong>Auto Answered</strong> instead.</td>
+</tr>
+<tr>
+<td><strong>Status button</strong> (right-hand side)</td>
+<td>The task's current state: see below.</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Task states:</strong></p>
+<div class="table-wrap"><table class="table">
+<thead>
+<tr>
+<th>State</th>
+<th>Colour</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Pending</strong></td>
+<td>Grey</td>
+<td>Not started yet.</td>
+</tr>
+<tr>
+<td><strong>Running</strong></td>
+<td>Orange</td>
+<td>In progress.</td>
+</tr>
+<tr>
+<td><strong>Done</strong></td>
+<td>Green</td>
+<td>Finished cleanly.</td>
+</tr>
+<tr>
+<td><strong>Failed</strong></td>
+<td>Red</td>
+<td>Finished with an error or warning, or could not start.</td>
+</tr>
+<tr>
+<td><strong>Skipped</strong></td>
+<td>Grey</td>
+<td>The task was passed over because it depends on the outcome of an earlier task and that outcome did not call for it.</td>
+</tr>
+</tbody>
+</table></div>
+<p>Some tasks are shown only when they apply to your environment: for example <em>Reconfigure vSAN Stretched
+Cluster</em> only appears for a stretched cluster, and the second and third NSX Manager deployments only appear if
+your NSX Manager cluster has them. Tasks that do not apply are left out of the list. You do not need to do
+anything; the list already reflects your data, your variables and your run options.</p>
+<p>The heading above the list reads <strong>Task List</strong> and, in Engineering mode, changes to explain how to set a
+breakpoint.</p>
+
+<h2 id="step-6-run-the-plan">Step 6: Run the plan</h2>
+<p>Select <strong>Run Plan</strong> (above the task list, at the right).</p>
+<h3 id="what-happens">What happens</h3>
+<ul>
+<li>The Recovery Coordinator sends each task to a console and watches the console for it to finish.</li>
+<li>A task is <strong>Done</strong> only if it finishes <strong>and</strong> its output contains no warnings or errors.</li>
+<li>The next task starts only when the previous one is Done.</li>
+<li>A <strong>timer</strong> called <strong>Overall Recovery Time</strong> appears above the console and counts up for the length of the
+run. It stays visible, frozen at its last value, between runs.</li>
+<li>While the run is in progress:
+<ul>
+<li>Navigation to other domains and clusters is disabled, and the Advisories panel says
+<em>Run Started. Navigation to other domains/clusters disabled.</em></li>
+<li><strong>Run Plan</strong> is disabled, so you cannot start a second overlapping run.</li>
+</ul>
+</li>
+<li>When the run ends, successfully or not, navigation is re-enabled and the Advisories panel says
+<em>Run Finished. Navigation to other domains/clusters re-enabled.</em></li>
+</ul>
+<h3 id="when-a-task-stops-the-run">When a task stops the run</h3>
+<p>If a task reports a warning, an error, or an exception, the run stops straight away, so later tasks never run
+against an environment the earlier task failed to set up. The task shows <strong>Failed</strong>, and the Advisories panel
+shows a red message such as:</p>
+<blockquote>
+<p>Run All stopped: Invoke-vCenterRestore did not complete cleanly -- check the console/transcript for
+warnings, errors, or a PowerShell error record before retrying.</p>
+</blockquote>
+<div class="alert alert-warning" role="note"><div class="alert-icon" aria-hidden="true"></div><div class="alert-content"><div class="alert-title">Warning</div><p>Even a <em>warning</em> stops the run. This is deliberate. Always read the console output for the failed
+task before deciding what to do.</p>
+</div></div>
+<h3 id="retrying-and-continuing">Retrying and continuing</h3>
+<p>After you have investigated and fixed the cause, select <strong>Run Plan</strong> again. The Recovery Coordinator skips
+tasks at the top of the list that are already <strong>Done</strong> and carries on from the first task that is not. The
+failed task is run again from the beginning, so check that the failed task is safe to repeat before you do.</p>
+<p>The same behaviour is what lets you continue after <a href="#saving-your-progress-and-resuming">resuming a saved session</a>.</p>
+<h3 id="watching-the-console">Watching the console</h3>
+<p>The <strong>Console</strong> panel on the right shows what is happening.</p>
+
+<ul>
+<li>The <strong>Main</strong> tab always exists. Most tasks run there.</li>
+<li>A <strong>Thread N</strong> tab appears for each parallel thread the first time the run needs it.</li>
+<li>The consoles are real PowerShell windows embedded in the application. You can click into one and type, which
+you need to do to answer prompts.</li>
+<li>For tasks marked <strong>Requires Input</strong>, the application switches to the right console tab and gives it the
+keyboard focus so you can answer straight away.</li>
+<li>After a group of parallel tasks finishes, the view returns to the <strong>Main</strong> tab.</li>
+</ul>
+<p>Console transcripts are written to your working directory so you have a record of every run.</p>
+<h3 id="advisories">Advisories</h3>
+<p>The <strong>Advisories</strong> panel is the application's own log. Each message is stamped with the date and time, in the
+same format as the console log lines, so you can match an advisory to the console output around the same
+moment. Normal messages are black; failures are bold red. Newest messages are added at the bottom, and the panel
+scrolls to show the latest. Scroll up to read earlier ones; nothing is cleared while the application is open.</p>
+
+<h2 id="interactive-tasks-and-answer-files">Interactive tasks and answer files</h2>
+<p>Some tasks need a decision from you: choose a backup from a list, pick which NSX Manager to redeploy, or confirm
+a manual action. These are marked <strong>Requires Input</strong> in the task list. When one runs, the console shows the
+prompt. Click into the console, type your answer and press <strong>Enter</strong>.</p>
+<p><strong>Manual confirmation gates</strong> are a common kind of interactive task, with names such as <em>Confirm Manual Step:
+VCF Operations has been restored</em>. They pause the run until you have performed an action outside the tool and
+press <strong>Enter</strong> to say it is done.</p>
+<h3 id="running-unattended-with-an-answer-file">Running unattended with an answer file</h3>
+<p>If you want to run a plan with no one at the keyboard, or to repeat a run with the same answers, supply an
+<strong>answer file</strong>.</p>
+<ol>
+<li>Turn on <strong>Use answer file for interactive tasks</strong>.</li>
+<li>Choose your answer file (<code>.json</code>).</li>
+<li>The task list updates: tasks the file covers show <strong>Auto Answered</strong>; the rest still show <strong>Requires Input</strong>.</li>
+</ol>
+<p>Turning the toggle off again clears the answer file and goes back to normal prompting.</p>
+<p>The module ships a sample answer file for each plan in <code>templates\answer-files\ibr</code> to use as a starting point.</p>
+<div class="alert alert-warning" role="note"><div class="alert-icon" aria-hidden="true"></div><div class="alert-content"><div class="alert-title">Check an answer file against your environment</div><p>The answers are applied <strong>in order</strong>, as each task asks. A sample file assumes a typical case (for
+example, exactly one matching backup on the SFTP server). Run each interactive task by hand once first so
+you know what the real prompts and options are, then record the answers. If an answer is wrong or missing,
+the task fails rather than waiting.</p>
+</div></div>
+<p><strong>Manual confirmation gates</strong> are different. For these, the answer file holds a flat list of gate keys you are
+<strong>pre-approving</strong>. A gate whose key is not in the list always stops and waits for you to press <strong>Enter</strong>, even
+when everything else runs unattended. This lets you automate most of a run while still insisting on a human
+confirmation at the points that matter.</p>
+<h3 id="answer-files-and-variables-files-are-different-things">Answer files and variables files are different things</h3>
+<div class="table-wrap"><table class="table">
+<thead>
+<tr>
+<th></th>
+<th>Variables file</th>
+<th>Answer file</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Holds</td>
+<td>Values the tasks use (host names, passwords, paths).</td>
+<td>Replies to questions a task asks while it runs.</td>
+</tr>
+<tr>
+<td>Loaded from</td>
+<td>The <strong>Variables</strong> tab.</td>
+<td>The <strong>Use answer file</strong> toggle.</td>
+</tr>
+</tbody>
+</table></div>
+<p>Loading a new variables file turns the answer-file toggle off. A new variables file normally means a different
+target, and answers meant for the previous one must not carry over. Turn the toggle back on and choose the right
+answer file.</p>
+
+<h2 id="parallel-threads">Parallel threads</h2>
+<p>Some tasks do not depend on each other and can run at the same time. The management domain plan, for example,
+restores the SDDC Manager, vCenter and NSX Manager side by side.</p>
+<ul>
+<li>A <strong>numbered coloured circle</strong> on a task marks it as part of a thread. Tasks with the same number run one
+after another in the same thread; different numbers run at the same time.</li>
+<li>Each thread has its own tab in the console, called <strong>Thread 2</strong>, <strong>Thread 3</strong>, and so on. A thread's tab stays
+open for the rest of the session so later tasks on the same thread can reuse its state.</li>
+<li>The run waits for <strong>every</strong> thread in a group to finish before the next task starts. If one thread fails, the
+others keep running to completion, then the run stops with a message in Advisories.</li>
+<li>Turn off <strong>Run parallel tasks using multiple threads</strong> to run everything one task at a time, in the Main
+console. This is slower but simpler to follow, which can be useful when diagnosing a problem.</li>
+</ul>
+
+<h2 id="saving-your-progress-and-resuming">Saving your progress and resuming</h2>
+<p>A recovery can take many hours. You can stop and carry on later, even after restarting the machine.</p>
+<h3 id="save-exit">Save &amp; Exit</h3>
+<p>Select <strong>Save &amp; Exit</strong> (top right).</p>
+<ol>
+<li>Choose where to save the state file. The default name is
+<code>vcf-recoverycoordinator-state-&lt;date&gt;-&lt;time&gt;.json</code>, in your working directory.</li>
+<li>The application stops the console transcripts and closes.</li>
+</ol>
+<p>The state file records:</p>
+<ul>
+<li>The recovery plan you were on and the data source file</li>
+<li>Your selected domain</li>
+<li>The variables file and answer file you were using</li>
+<li>The path of the credentials file</li>
+<li>Which tasks were <strong>Done</strong></li>
+</ul>
+<p>It does <strong>not</strong> record passwords or other variable values. Those stay in your variables file.</p>
+<div class="alert alert-warning" role="note"><div class="alert-icon" aria-hidden="true"></div><div class="alert-content"><div class="alert-title">Warning</div><p>Closing the window with the <strong>✕</strong> instead of <strong>Save &amp; Exit</strong> ends the console sessions and does <strong>not</strong>
+save your progress. Use <strong>Save &amp; Exit</strong>.</p>
+</div></div>
+<h3 id="resume">Resume</h3>
+<ol>
+<li>Start the application again, from the same working directory.</li>
+<li>Select <strong>Resume</strong> (top right).</li>
+<li>Choose the state file you saved.</li>
+</ol>
+<p>The Recovery Coordinator reloads your plan, data, domain selection, variables and answer file, then marks
+the previously completed tasks <strong>Done</strong> again. Select <strong>Run Plan</strong> to continue from the first task that is not
+done.</p>
+<p>Things to know when resuming:</p>
+<ul>
+<li>The files the state refers to (extracted data, variables, answer file, credentials file) <strong>must still exist
+at the same paths</strong>. If one is missing, an advisory tells you which.</li>
+<li>The backup encryption password is not saved, so you will be asked for it again when a task needs it.</li>
+<li>A task is only restored to <strong>Done</strong> if it is still the same task in the plan. If the plan changed since you
+saved (for example after a module update), those tasks simply show as not done, and will be run again.
+Nothing is skipped by mistake.</li>
+</ul>
+
+<h2 id="recovery-plans-in-detail">Recovery plans in detail</h2>
+<p>The plans, their usual order, and what each one does at a high level.</p>
+<h3 id="management-domain-recovery">Management Domain Recovery</h3>
+<p>Rebuilds the foundation of the instance. It is run once.</p>
+<div class="table-wrap"><table class="table">
+<thead>
+<tr>
+<th>Phase</th>
+<th>Tasks</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Prepare the hosts</td>
+<td>Prepare management host networking; add VMkernel adapters; create a single-host vSAN datastore</td>
+</tr>
+<tr>
+<td>Restore SDDC Manager</td>
+<td>Deploy the appliance from OVA; upload and modify the backup; partial restore; retrieve credentials; merge them into the extracted data</td>
+</tr>
+<tr>
+<td>Restore vCenter and NSX Manager</td>
+<td>Deploy vCenter and the first NSX Manager from OVA; restore each from backup; full SDDC Manager restore</td>
+</tr>
+<tr>
+<td>Refresh and rebuild the cluster</td>
+<td>Update the extracted data from the restored vCenter; back up cluster VM settings; remove non-responsive hosts; add hosts; rebuild the distributed switch; monitor NSX host installation</td>
+</tr>
+<tr>
+<td>Storage and NSX</td>
+<td>Add disk groups; reconfigure a stretched cluster if present; set the datastore policy; recover the NSX edge cluster; deploy and join the second and third NSX Managers if present</td>
+</tr>
+<tr>
+<td>Finish</td>
+<td>Refresh SDDC Manager SSH keys; update datastore and host source IDs; resolve host service accounts; clear vCenter alarms</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Data source:</strong> SDDC Manager Backup File (normal) or an existing extracted data file.
+<strong>Parallel threads:</strong> yes. SDDC Manager, vCenter and NSX Manager are restored in separate threads.
+<strong>Interactive tasks:</strong> several, including host networking, the single-host vSAN datastore and NSX Manager
+restores.</p>
+<div class="alert alert-info" role="note"><div class="alert-icon" aria-hidden="true"></div><div class="alert-content"><div class="alert-title">Deployment target</div><p>This plan deploys the appliances directly to an ESX host. The variables file asks for the target host's
+account (<code>targetAdmin</code>, <code>targetAdminPassword</code>). Leave <code>targetFqdn</code> blank to use the first ESX host of the
+management domain from the extracted data, or enter a specific host. Leave <code>targetAdmin</code> blank to log in
+as <code>root</code>.</p>
+</div></div>
+<h3 id="workload-domain-recovery">Workload Domain Recovery</h3>
+<p>Recovers one workload domain. Run it once for each domain.</p>
+<div class="table-wrap"><table class="table">
+<thead>
+<tr>
+<th>Phase</th>
+<th>Tasks</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Restore vCenter and NSX Manager</td>
+<td>Deploy and restore each from backup (in parallel threads)</td>
+</tr>
+<tr>
+<td>Rebuild the default cluster</td>
+<td>Refresh extracted data; back up cluster VM settings; remove non-responsive hosts; add hosts; rebuild the distributed switch; monitor NSX host installation; add VMkernel adapters; reconfigure a stretched cluster if present; rebuild the vSAN datastore</td>
+</tr>
+<tr>
+<td>NSX</td>
+<td>Recover the edge cluster; deploy and join further NSX Managers if present</td>
+</tr>
+<tr>
+<td>Finish</td>
+<td>Refresh SSH keys; update datastore and host source IDs; resolve service accounts; clear vCenter alarms</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Data source:</strong> an existing extracted data file.</p>
+<h3 id="additional-cluster-recovery">Additional Cluster Recovery</h3>
+<p>Recovers a cluster that is not a domain's default cluster. Run it once per additional cluster, using the
+<strong>Dependent On</strong> column as a guide to order.</p>
+<div class="table-wrap"><table class="table">
+<thead>
+<tr>
+<th>Phase</th>
+<th>Tasks</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Record settings</td>
+<td>Back up VM overrides, VM locations, DRS groups and rules, and VM tags</td>
+</tr>
+<tr>
+<td>Rebuild</td>
+<td>Remove non-responsive hosts; add hosts; rebuild the distributed switch; monitor NSX host installation; add VMkernel adapters; reconfigure a stretched cluster if present; rebuild the vSAN datastore</td>
+</tr>
+<tr>
+<td>Finish</td>
+<td>Recover the NSX edge cluster; refresh SSH keys; update datastore and host source IDs; resolve service accounts</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Data source:</strong> an existing extracted data file. If there is only one additional cluster, it is selected for
+you.</p>
+<h3 id="fleet-component-recovery">Fleet Component Recovery</h3>
+<p>Recovers the fleet-level components: VCF Operations, the VCFMS Services Runtime, Log Management, VCF Automation
+and Telemetry. Run it after the management domain has been recovered.</p>
+<div class="table-wrap"><table class="table">
+<thead>
+<tr>
+<th>Phase</th>
+<th>Tasks</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>VCF Operations</td>
+<td>Optionally run your own restore script and confirm it (see the run option)</td>
+</tr>
+<tr>
+<td>Gather</td>
+<td>Trust the offline depot certificate; retrieve backups from the SFTP server for each component (these are interactive); read the registered components from VCF Operations</td>
+</tr>
+<tr>
+<td>Prepare the depot and binaries</td>
+<td>Set the SDDC Manager offline depot; download the bundles</td>
+</tr>
+<tr>
+<td>VCFMS Services Runtime</td>
+<td>Extract the runtime configuration from the backup; remove the old runtime entry; create a new Services Runtime; set its SFTP backup settings; trust certificates; restore the backups; apply the configuration</td>
+</tr>
+<tr>
+<td>Log Management</td>
+<td>Restore the backup; confirm its state has been updated</td>
+</tr>
+<tr>
+<td>VCF Automation and Telemetry</td>
+<td>Create a new VCFA Services Runtime; set backup settings; trust certificates; restore VCF Automation and Telemetry; confirm connections have been updated; confirm the licence server has been redeployed</td>
+</tr>
+</tbody>
+</table></div>
+<p><strong>Data source:</strong> an existing extracted data file. The management domain recovery must have been run so that the
+file contains the discovered details the fleet tasks use.
+<strong>Several steps are manual confirmations</strong> (VCF Operations restored, state verified, Log Management updated,
+VCF Automation connections updated, licence server redeployed). Pre-approve them in an answer file only if you
+are certain the underlying action is complete.</p>
+<h3 id="recover-fleet-fdr">Recover Fleet (FDR)</h3>
+<p>Fleet disaster recovery. It is restricted to <a href="#engineering-mode-and-the-advanced-tab">Engineering mode</a> and is
+not covered by this guide.</p>
+
+<h2 id="engineering-mode-and-the-advanced-tab">Engineering mode and the Advanced tab</h2>
+<p>By default the application is in <strong>User</strong> mode. <strong>Engineering</strong> mode adds capabilities meant for engineers
+working with Broadcom Support.</p>
+<p>Switch between the two with <strong>User | Engineering</strong> at the top right. The active mode is shown in blue.</p>
+<p>The first time you select <strong>Engineering</strong> in a session, a dialog asks for the <strong>engineering password or a
+one-time code</strong>. These are provided by Broadcom Support or the engineering team. Once unlocked, you can switch
+back and forth freely for the rest of the session without being asked again.</p>
+<p>Engineering mode:</p>
+<ul>
+<li>Unlocks <strong>engineering-only recovery types and plans</strong>, such as Fleet Disaster Recovery.</li>
+<li>Shows the <strong>Advanced</strong> tab.</li>
+<li>Lets you set a <strong>breakpoint</strong> in the task list.</li>
+</ul>
+<h3 id="the-advanced-tab">The Advanced tab</h3>
+<p>The Advanced tab lists the same tasks as the Recovery Plan tab, but each has its own <strong>Run</strong> button, so you can
+run a single task out of sequence.</p>
+<div class="alert alert-danger" role="note"><div class="alert-icon" aria-hidden="true"></div><div class="alert-content"><div class="alert-title">For advanced use only</div><p>Use the Advanced tab <strong>only on the advice of Broadcom Support</strong>. Running a task out of sequence can leave
+the environment in an inconsistent state. Individual <strong>Run</strong> buttons are disabled while <strong>Run Plan</strong> is
+in progress.</p>
+</div></div>
+<h3 id="breakpoints">Breakpoints</h3>
+<p>In Engineering mode, the <strong>Task List</strong> heading reads <em>Task List (Click on Step to Insert Breakpoint)</em>. Click a
+task that has not yet run, and an orange <strong>Engineering Break Point</strong> row is inserted after it. When <strong>Run
+Plan</strong> reaches it, the run pauses with <em>Press Enter to Continue</em> in the console, so you can inspect the
+environment before carrying on. To remove it, click the orange row (the heading changes to <em>Click on Breakpoint
+to remove it</em>). Only one breakpoint can be set at a time, and you cannot set one after a task that has already
+run, or while a run is in progress.</p>
+<p>Switching back to <strong>User</strong> mode hides the controls, but does not remove a breakpoint you have set.</p>
+
+<h2 id="files-the-recovery-coordinator-creates">Files the Recovery Coordinator creates</h2>
+<p>Everything below is created in your <strong>working directory</strong>, the folder you launched from, unless noted.</p>
+<div class="table-wrap"><table class="table">
+<thead>
+<tr>
+<th>File</th>
+<th>Created by</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>extracted-sddc-data.json</code></td>
+<td>Extracting the SDDC Manager backup</td>
+<td>Created in the <strong>same folder as the backup file</strong>. Updated by later tasks. Contains passwords once credentials are merged.</td>
+</tr>
+<tr>
+<td><code>vcf-credentials-*.json</code></td>
+<td><em>Retrieve SDDC Credentials Payload</em></td>
+<td>Credentials retrieved from SDDC Manager. Sensitive.</td>
+</tr>
+<tr>
+<td><code>vcf-recoverycoordinator-transcript-&lt;date&gt;-&lt;time&gt;-&lt;id&gt;-&lt;n&gt;.log</code></td>
+<td>Each console</td>
+<td>One transcript per console (Main and each thread). Your record of what ran.</td>
+</tr>
+<tr>
+<td><code>vcf-recoverycoordinator-state-&lt;date&gt;-&lt;time&gt;.json</code></td>
+<td><strong>Save &amp; Exit</strong></td>
+<td>Session state for <strong>Resume</strong>. Holds no passwords.</td>
+</tr>
+<tr>
+<td>Your variables file</td>
+<td><strong>New Variables File</strong> or edits</td>
+<td>Holds passwords in plain text.</td>
+</tr>
+<tr>
+<td><code>backup-yaml\</code> and similar</td>
+<td>Fleet Component Recovery tasks</td>
+<td>Working files used while recovering fleet components.</td>
+</tr>
+</tbody>
+</table></div>
+<div class="alert alert-warning" role="note"><div class="alert-icon" aria-hidden="true"></div><div class="alert-content"><div class="alert-title">Secure and clean up</div><p>Several of these files contain credentials or other sensitive information. Restrict access to the working
+directory, and once recovery is complete, delete the variables, credentials and extracted data files and
+handle the transcripts according to your organisation's policy.</p>
+</div></div>
+
+<h2 id="troubleshooting">Troubleshooting</h2>
+<h3 id="i-cant-load-my-variables-file">I can't load my variables file</h3>
+<p>The Advisories panel names the problem. The usual cause is a variables file that was made for a different plan
+or for an earlier release of the module, so names are missing or unexpected. Compare it to the plan's template
+in <code>templates\variable-files\ibr</code> and add or remove names to match.</p>
+<h3 id="the-recovery-tasks-panel-is-not-showing">The Recovery Tasks panel is not showing</h3>
+<p>It appears only once you have made a selection. Check that you have provided a data source (if the plan needs
+one), that the <strong>Discovered Infrastructure</strong> panel shows your domain or cluster, and that you have clicked it.</p>
+<h3 id="the-task-list-is-empty-after-loading-variables">The task list is empty after loading variables</h3>
+<p>The list is filled only after variables have been loaded or created. Check the <strong>Recovery Plan</strong> tab, not
+Variables. If your plan has run options (such as Fleet Component Recovery's), the list also changes with them.</p>
+<h3 id="run-plan-stopped">Run Plan stopped</h3>
+<p>Look at the red message in Advisories to see which task stopped it, then read that task's output in the
+console, and the transcript if you need more. Fix the cause, then select <strong>Run Plan</strong> again. A task counts as
+failed if it produced <strong>any</strong> warning or error, not only if it crashed.</p>
+<h3 id="a-task-is-waiting-and-nothing-is-happening">A task is waiting and nothing is happening</h3>
+<p>Look for a <strong>Requires Input</strong> badge on the running task, then click into the console tab it is running in and
+check for a prompt. If you are using parallel threads, check each <strong>Thread N</strong> tab.</p>
+<h3 id="an-answer-file-task-fails-immediately">An answer file task fails immediately</h3>
+<p>The answer file does not have enough, or the right, answers for what the task asked. Turn the toggle off and
+answer by hand, then correct the answer file.</p>
+<h3 id="the-application-says-my-saved-files-no-longer-exist">The application says my saved files no longer exist</h3>
+<p><strong>Resume</strong> needs the extracted data, variables, answer and credentials files at their original paths. Restore
+or recreate them and resume again. For a missing credentials file, run <strong>Retrieve SDDC Credentials Payload</strong>
+again.</p>
+<h3 id="i-closed-the-window-by-mistake">I closed the window by mistake</h3>
+<p>The console sessions ended, but the transcripts, the files created and your variables file are still in the
+working directory. Start the application again and rebuild your selection by hand, loading the same data and
+variables files. Tasks you had completed will show as not done. Before running them again, read the transcript
+to see what they did and check each is safe to repeat. Use <strong>Save &amp; Exit</strong> in future.</p>
+<h3 id="where-do-i-find-out-what-happened">Where do I find out what happened?</h3>
+<p>Three places, from broadest to most detailed: the <strong>Advisories</strong> panel (application messages), the <strong>Console</strong>
+tabs (live output), and the transcript files in your working directory.</p>
+
+<h2 id="quick-reference">Quick reference</h2>
+<h3 id="the-recovery-in-seven-clicks">The recovery in seven clicks</h3>
+<ol>
+<li>Choose <strong>Recovery Type</strong> and <strong>Recovery Plan</strong>.</li>
+<li>Choose <strong>Data Source</strong> and select <strong>Browse...</strong>.</li>
+<li>Click the domain or cluster under <strong>Discovered Infrastructure</strong>.</li>
+<li><strong>Variables</strong> tab: <strong>Load Variables File</strong> or <strong>New Variables File</strong>.</li>
+<li><strong>Recovery Plan</strong> tab: check <strong>Run Options</strong>.</li>
+<li>Select <strong>Run Plan</strong>.</li>
+<li>Answer any console prompts. <strong>Save &amp; Exit</strong> if you need to stop.</li>
+</ol>
+<h3 id="buttons">Buttons</h3>
+<div class="table-wrap"><table class="table">
+<thead>
+<tr>
+<th>Button</th>
+<th>Where</th>
+<th>Effect</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Browse...</strong></td>
+<td>Recovery Parameters</td>
+<td>Pick the backup or extracted data file</td>
+</tr>
+<tr>
+<td><strong>Load Variables File</strong></td>
+<td>Variables tab</td>
+<td>Load a prepared variables file</td>
+</tr>
+<tr>
+<td><strong>New Variables File</strong></td>
+<td>Variables tab</td>
+<td>Create a variables file and fill it in</td>
+</tr>
+<tr>
+<td><strong>Run Plan</strong></td>
+<td>Recovery Plan tab</td>
+<td>Run all tasks in order</td>
+</tr>
+<tr>
+<td><strong>Resume</strong></td>
+<td>Title bar</td>
+<td>Restore a saved session</td>
+</tr>
+<tr>
+<td><strong>Save &amp; Exit</strong></td>
+<td>Title bar</td>
+<td>Save the session and close</td>
+</tr>
+<tr>
+<td><strong>Help</strong></td>
+<td>Title bar</td>
+<td>Open this guide in your web browser</td>
+</tr>
+<tr>
+<td><strong>User | Engineering</strong></td>
+<td>Title bar</td>
+<td>Switch mode (password required for Engineering)</td>
+</tr>
+</tbody>
+</table></div>
+<h3 id="task-states">Task states</h3>
+<p><strong>Pending</strong> (grey) → <strong>Running</strong> (orange) → <strong>Done</strong> (green), <strong>Failed</strong> (red) or <strong>Skipped</strong> (grey).</p>
+<h3 id="good-habits">Good habits</h3>
+<ul>
+<li>Start from the right working directory.</li>
+<li>Gather every input before you begin.</li>
+<li>Run the plans in order: management domain, workload domains, additional clusters, fleet components.</li>
+<li>Read the console output whenever a task stops the run.</li>
+<li>Use <strong>Save &amp; Exit</strong>, never the window's close button, when you pause.</li>
+<li>Keep variables, credentials and extracted data files secure, and delete them afterwards.</li>
+</ul>
+
+      <div class="footer">&copy; Broadcom. All Rights Reserved. The term &ldquo;Broadcom&rdquo; refers to Broadcom Inc. and/or its subsidiaries.</div>
+    </div>
+  </main>
+</div>
+<script>
+(function () {
+  var links = Array.prototype.slice.call(document.querySelectorAll('.nav-link'));
+  var targets = links.map(function (a) { return document.getElementById(a.getAttribute('href').slice(1)); });
+  function spy() {
+    var current = 0, y = window.scrollY + 90;
+    for (var i = 0; i < targets.length; i++) { if (targets[i] && targets[i].offsetTop <= y) current = i; }
+    links.forEach(function (a, i) { a.classList.toggle('active', i === current); });
+    if (links[current]) { var n = links[current], s = document.querySelector('.sidenav');
+      if (n.offsetTop < s.scrollTop || n.offsetTop > s.scrollTop + s.clientHeight - 60) { s.scrollTop = n.offsetTop - 80; } }
+  }
+  window.addEventListener('scroll', spy, { passive: true }); spy();
+})();
+</script>
+</body>
+</html>

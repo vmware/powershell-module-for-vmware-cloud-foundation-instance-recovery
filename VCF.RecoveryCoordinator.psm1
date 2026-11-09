@@ -2234,6 +2234,7 @@ Function New-NSXManagerOvaDeployment {
 
     .PARAMETER targetAdmin
     Admin user of the target vCenter or ESXi host to deploy the NSX Manager OVA to
+    Optional. When omitted (with -targetType esx), defaults to root.
 
     .PARAMETER targetAdminPassword
     Admin password for the target vCenter or ESXi host to deploy the NSX Manager OVA to
@@ -2256,7 +2257,7 @@ Function New-NSXManagerOvaDeployment {
 
     Param(
         [Parameter (Mandatory = $false)][String] $targetFqdn,
-        [Parameter (Mandatory = $true)][String] $targetAdmin,
+        [Parameter (Mandatory = $false)][String] $targetAdmin,
         [Parameter (Mandatory = $true)][String] $targetAdminPassword,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
         [Parameter (Mandatory = $true)][String] $workloadDomain,
@@ -2281,6 +2282,14 @@ Function New-NSXManagerOvaDeployment {
     }
     If ([string]::IsNullOrWhiteSpace($targetFqdn)) {
         LogMessage -type ERROR -message "[$jumpboxName] -targetFqdn was not supplied and no ESX host could be determined from '$extractedSDDCDataFile'. Aborting."
+        Return
+    }
+    If ([string]::IsNullOrWhiteSpace($targetAdmin) -and $targetType -eq 'esx') {
+        $targetAdmin = 'root'
+        LogMessage -type INFO -message "[$jumpboxName] -targetAdmin not supplied; using 'root'"
+    }
+    If ([string]::IsNullOrWhiteSpace($targetAdmin)) {
+        LogMessage -type ERROR -message "[$jumpboxName] -targetAdmin was not supplied and is required when -targetType is '$targetType'. Aborting."
         Return
     }
 
@@ -2412,6 +2421,7 @@ Function New-vCenterOvaDeployment {
 
     .PARAMETER targetAdmin
     Admin user of the target vCenter or ESXi host to deploy the vCenter OVA to
+    Optional. When omitted (with -targetType esx), defaults to root.
 
     .PARAMETER targetAdminPassword
     Admin password for the target vCenter or ESXi host to deploy the vCenter OVA to
@@ -2434,7 +2444,7 @@ Function New-vCenterOvaDeployment {
 
     Param(
         [Parameter (Mandatory = $false)][String] $targetFqdn,
-        [Parameter (Mandatory = $true)][String] $targetAdmin,
+        [Parameter (Mandatory = $false)][String] $targetAdmin,
         [Parameter (Mandatory = $true)][String] $targetAdminPassword,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
         [Parameter (Mandatory = $true)][String] $workloadDomain,
@@ -2457,6 +2467,14 @@ Function New-vCenterOvaDeployment {
     }
     If ([string]::IsNullOrWhiteSpace($targetFqdn)) {
         LogMessage -type ERROR -message "[$jumpboxName] -targetFqdn was not supplied and no ESX host could be determined from '$extractedSDDCDataFile'. Aborting."
+        Return
+    }
+    If ([string]::IsNullOrWhiteSpace($targetAdmin) -and $targetType -eq 'esx') {
+        $targetAdmin = 'root'
+        LogMessage -type INFO -message "[$jumpboxName] -targetAdmin not supplied; using 'root'"
+    }
+    If ([string]::IsNullOrWhiteSpace($targetAdmin)) {
+        LogMessage -type ERROR -message "[$jumpboxName] -targetAdmin was not supplied and is required when -targetType is '$targetType'. Aborting."
         Return
     }
 
@@ -2552,6 +2570,7 @@ Function New-SDDCManagerOvaDeployment {
 
     .PARAMETER targetAdmin
     Admin user of the target vCenter or ESXi host to deploy the SDDC Manager OVA to
+    Optional. When omitted (with -targetType esx), defaults to root.
 
     .PARAMETER targetAdminPassword
     Admin password for the target vCenter or ESXi host to deploy the SDDC Manager OVA to
@@ -2580,7 +2599,7 @@ Function New-SDDCManagerOvaDeployment {
 
     Param(
         [Parameter (Mandatory = $false)][String] $targetFqdn,
-        [Parameter (Mandatory = $true)][String] $targetAdmin,
+        [Parameter (Mandatory = $false)][String] $targetAdmin,
         [Parameter (Mandatory = $true)][String] $targetAdminPassword,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
         [Parameter (Mandatory = $true)][String] $sddcManagerOvaFile,
@@ -2605,6 +2624,14 @@ Function New-SDDCManagerOvaDeployment {
     }
     If ([string]::IsNullOrWhiteSpace($targetFqdn)) {
         LogMessage -type ERROR -message "[$jumpboxName] -targetFqdn was not supplied and no ESX host could be determined from '$extractedSDDCDataFile'. Aborting."
+        Return
+    }
+    If ([string]::IsNullOrWhiteSpace($targetAdmin) -and $targetType -eq 'esx') {
+        $targetAdmin = 'root'
+        LogMessage -type INFO -message "[$jumpboxName] -targetAdmin not supplied; using 'root'"
+    }
+    If ([string]::IsNullOrWhiteSpace($targetAdmin)) {
+        LogMessage -type ERROR -message "[$jumpboxName] -targetAdmin was not supplied and is required when -targetType is '$targetType'. Aborting."
         Return
     }
 
@@ -2710,6 +2737,7 @@ Function New-UploadAndModifySDDCManagerBackup {
 
     .PARAMETER targetAdmin
     Admin user of the target vCenter or ESXi host that hosts the SDDC Manager VM
+    Optional. When omitted (with -targetType esx), defaults to root.
 
     .PARAMETER targetAdminPassword
     Admin password for the target vCenter or ESXi host that hosts the SDDC Manager VM
@@ -2728,7 +2756,7 @@ Function New-UploadAndModifySDDCManagerBackup {
         [Parameter (Mandatory = $false, ParameterSetName = 'SecurePassword')][SecureString] $secureEncryptionPassword,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
         [Parameter (Mandatory = $false)][String] $targetFqdn,
-        [Parameter (Mandatory = $true)][String] $targetAdmin,
+        [Parameter (Mandatory = $false)][String] $targetAdmin,
         [Parameter (Mandatory = $true)][String] $targetAdminPassword,
         [Parameter (Mandatory = $false)][ValidateSet("vcenter", "esx")][String] $targetType = "vcenter"
     )
@@ -2750,6 +2778,14 @@ Function New-UploadAndModifySDDCManagerBackup {
     }
     If ([string]::IsNullOrWhiteSpace($targetFqdn)) {
         LogMessage -type ERROR -message "[$jumpboxName] -targetFqdn was not supplied and no ESX host could be determined from '$extractedSDDCDataFile'. Aborting."
+        Return
+    }
+    If ([string]::IsNullOrWhiteSpace($targetAdmin) -and $targetType -eq 'esx') {
+        $targetAdmin = 'root'
+        LogMessage -type INFO -message "[$jumpboxName] -targetAdmin not supplied; using 'root'"
+    }
+    If ([string]::IsNullOrWhiteSpace($targetAdmin)) {
+        LogMessage -type ERROR -message "[$jumpboxName] -targetAdmin was not supplied and is required when -targetType is '$targetType'. Aborting."
         Return
     }
 

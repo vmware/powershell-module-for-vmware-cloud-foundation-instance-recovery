@@ -82,6 +82,7 @@ if ($vmwLogoImage) {
 
 $resumeButton = $window.FindName('ResumeButton')
 $exitButton = $window.FindName('ExitButton')
+$helpLink = $window.FindName('HelpLink')
 $userModeLink = $window.FindName('UserModeLink')
 $engineeringModeLink = $window.FindName('EngineeringModeLink')
 # Recovery Type/Recovery Plan/Data Source (see recovery-plan-catalog.json and
@@ -503,6 +504,30 @@ function Set-UIMode([string]$Mode) {
     # plan's own already-set pause point, if any.
     Update-TaskListHeaderText $recoveryTaskListHeader $global:currentPlanContext.PausePointAfterStep
 }
+
+# Help: opens the shipped HTML user guide in the default browser. Start-Process on the .html path hands it
+# to whatever the OS has registered for HTML files. The guide is self-contained (no network needed) and is
+# built from docs\user-guide.md by helper\Build-UserGuideHtml.ps1.
+$helpLink.Add_MouseEnter({
+        $helpLink.Foreground = [System.Windows.Media.Brushes]::White
+        $helpLink.TextDecorations = [System.Windows.TextDecorations]::Underline
+    }.GetNewClosure())
+$helpLink.Add_MouseLeave({
+        $helpLink.Foreground = [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.Color]::FromRgb(0xB9, 0xC2, 0xCC))
+        $helpLink.TextDecorations = $null
+    }.GetNewClosure())
+$helpLink.Add_MouseLeftButtonUp({
+        $userGuidePath = Join-Path (Join-Path $ModuleRoot 'help') 'VCF-RecoveryCoordinator-UserGuide.html'
+        if (-not (Test-Path -LiteralPath $userGuidePath)) {
+            New-Advisory "The user guide was not found at '$userGuidePath'." -Failure
+            return
+        }
+        try {
+            Start-Process -FilePath $userGuidePath
+        } catch {
+            New-Advisory "Could not open the user guide: $($_.Exception.Message)" -Failure
+        }
+    }.GetNewClosure())
 
 $userModeLink.Add_MouseLeftButtonUp({
         Set-UIMode 'User'

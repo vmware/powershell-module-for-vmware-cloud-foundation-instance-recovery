@@ -7,7 +7,7 @@ Deploys a vCenter Server appliance from OVA using data previously extracted from
 ## Syntax
 
 ```powershell
-New-vCenterOvaDeployment [[-targetFqdn] <String>] [-targetAdmin] <String> [-targetAdminPassword] <String> [-extractedSDDCDataFile] <String> [-workloadDomain] <String> [-restoredvCenterDeploymentSize] <String> [-vCenterOvaFile] <String> [[-targetType] <String>] [<CommonParameters>]
+New-vCenterOvaDeployment [[-targetFqdn] <String>] [[-targetAdmin] <String>] [-targetAdminPassword] <String> [-extractedSDDCDataFile] <String> [-workloadDomain] <String> [-restoredvCenterDeploymentSize] <String> [-vCenterOvaFile] <String> [[-targetType] <String>] [<CommonParameters>]
 ```
 
 ## Description
@@ -56,16 +56,16 @@ Accept wildcard characters: False
 
 ### -targetAdmin
 
-Admin user for the target vCenter Server instance or ESX host to deploy the vCenter Server OVA to.
+Admin user for the target vCenter Server instance or ESX host to deploy the vCenter Server OVA to. Optional: when omitted and `-targetType` is `esx`, it defaults to `root`. If it is omitted for a `vcenter` target, the task stops with an error.
 
 ```yaml
 Type: String
 Parameter Sets: (All)
 Aliases:
 
-Required: True
+Required: False
 Position: 2
-Default value: None
+Default value: None (`root` when `-targetType` is `esx`)
 Accept pipeline input: False
 Accept wildcard characters: False
 ```

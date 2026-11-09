@@ -291,6 +291,11 @@
         <Border Grid.Row="0" Background="{StaticResource HeaderBarBrush}" Padding="18,12">
             <DockPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <!-- Help: opens the shipped HTML user guide (help\VCF-RecoveryCoordinator-UserGuide.html) in
+                         the default browser. Same size/grey as the User | Engineering links beside it, turning
+                         white on hover (see the .ps1), so it reads as part of the same row of header links
+                         rather than as another button. -->
+                    <TextBlock x:Name="HelpLink" Text="Help" Foreground="#B9C2CC" FontSize="14" Cursor="Hand" VerticalAlignment="Center" Margin="0,0,20,0" ToolTip="Open the user guide in your web browser" />
                     <!-- User/Engineering mode switch: governs Advanced-tab visibility on every plan
                          and, only in Engineering mode, the Recovery Plan tab's pause-point drop-zone
                          (see Set-UIMode in the .ps1). Styled to match the header's own "Recovery
@@ -657,9 +662,9 @@
                      cannot do since Foreground/FontWeight there apply to the whole control. It
                      still gets a working, independently-scrollable vertical scrollbar for free,
                      entirely separate from the Console pane's own native console window/scrolling
-                     above - the two never interact. Height is sized for exactly 10 lines: every line is
+                     above - the two never interact. Height is sized for exactly 6 lines: every line is
                      pinned to a fixed 18px height (FontSize 12, BlockLineHeight; see the Paragraph
-                     style below and New-Advisory) and Padding/PagePadding are zero, so Height = 10 x 18
+                     style below and New-Advisory) and Padding/PagePadding are zero, so Height = 6 x 18
                      + 2px border and the viewport always ends on a line boundary, never showing a
                      sliver of the line above. VerticalScrollBarVisibility="Auto" only shows the bar
                      once there's actually more history than that to scroll through. Newest advisory is inserted at the
@@ -667,7 +672,7 @@
                      The Paragraph style zeroes the default paragraph margin, which would otherwise
                      put a blank line's worth of space between every advisory. -->
                 <GroupBox Grid.Row="1" Header="Advisories" Margin="0,12,0,0" Padding="10,10,10,10">
-                    <RichTextBox x:Name="AdvisoriesRichTextBox" IsReadOnly="True" IsReadOnlyCaretVisible="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" FontSize="12" Padding="0" BorderThickness="1" Height="182">
+                    <RichTextBox x:Name="AdvisoriesRichTextBox" IsReadOnly="True" IsReadOnlyCaretVisible="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" FontSize="12" Padding="0" BorderThickness="1" Height="110">
                         <RichTextBox.Resources>
                             <Style TargetType="Paragraph">
                                 <Setter Property="Margin" Value="0" />

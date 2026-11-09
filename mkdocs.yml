@@ -123,6 +123,7 @@ nav:
   - index.md
   - Installation: install.md
   - Updating: update.md
+  - User Guide: user-guide.md
   - Release Notes: release-notes.md
   - Release Milestones: https://github.com/vmware/powershell-module-for-vmware-cloud-foundation-instance-recovery/milestones
   - License: license.md
