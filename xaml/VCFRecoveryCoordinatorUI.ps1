@@ -280,6 +280,11 @@ $global:recoveryRunStarted = $false
 # parallel threads (the clock itself is a single wall-clock diff from one $startTime, recomputed
 # fresh on every tick, so it can't compound like that on its own).
 $global:activeRunTimer = $null
+# Whole seconds currently shown on the Overall Recovery Time badge (kept current by Start-RunTimer's
+# tick), saved by Save and Exit. $global:resumedElapsedSeconds is the amount a Resume loaded from a
+# saved state; the NEXT Start-RunTimer starts counting from it (once) instead of from zero.
+$global:currentElapsedSeconds = 0
+$global:resumedElapsedSeconds = 0
 
 # Completion tracking, attempt 5: a PowerShell transcript of the console, read from disk. Unaffected
 # by the move away from the terminal control -- it never depended on that control's own rendering
@@ -2227,12 +2232,17 @@ function Start-RunTimer {
         $global:activeRunTimer.Stop()
     }
     $startTime = Get-Date
-    $overallRecoveryTimeTextBlock.Text = '00:00:00'
+    # Consumed once: a Resume's saved elapsed time carries into the first run after it only.
+    $offset = [TimeSpan]::FromSeconds([double]$global:resumedElapsedSeconds)
+    $global:resumedElapsedSeconds = 0
+    $global:currentElapsedSeconds = [int][Math]::Floor($offset.TotalSeconds)
+    $overallRecoveryTimeTextBlock.Text = '{0:00}:{1:00}:{2:00}' -f [Math]::Floor($offset.TotalHours), $offset.Minutes, $offset.Seconds
     $overallRecoveryTimePanel.Visibility = 'Visible'
     $timer = New-Object System.Windows.Threading.DispatcherTimer
     $timer.Interval = [TimeSpan]::FromSeconds(1)
     $timer.Add_Tick({
-            $elapsed = (Get-Date) - $startTime
+            $elapsed = ((Get-Date) - $startTime) + $offset
+            $global:currentElapsedSeconds = [int][Math]::Floor($elapsed.TotalSeconds)
             # [Math]::Floor, not a plain [int] cast -- [int] ROUNDS, so 47 minutes in ([int]0.79)
             # rendered as "01:47:xx", a full hour ahead of reality while the minutes and seconds
             # beside it stayed correct, and the badge appeared to jump BACK an hour every time the
@@ -2991,7 +3001,7 @@ function Register-AnswerFileToggleHandlers($CheckBox, [scriptblock]$GetStepRows,
 
     $CheckBox.Add_Checked({
             # Resume re-checks the box itself with the saved path already set -- see the Resume handler.
-            if ($script:restoringInteractiveAnswerFile) {
+            if ($global:restoringInteractiveAnswerFile) {
                 return 
             }
             $dialog = New-Object Microsoft.Win32.OpenFileDialog
@@ -4336,6 +4346,7 @@ $exitButton.Add_Click({
 
             $currentPlanEntry = Get-CurrentRecoveryPlanEntry
             $state = [PSCustomObject]@{
+                ElapsedSeconds           = $global:currentElapsedSeconds
                 ExtraToggles             = $extraToggleStates
                 ExtraRadioSelections     = $extraRadioSelections
                 ExtractedDataFilePath    = $filePathTextBox.Text
@@ -4460,11 +4471,11 @@ $resumeButton.Add_Click({
                 $savedInteractivePath = [string]$state.InteractiveAnswerFilePath
                 if (Test-Path -LiteralPath $savedInteractivePath) {
                     $global:currentPlanContext.InteractiveAnswerFilePath = $savedInteractivePath
-                    $script:restoringInteractiveAnswerFile = $true
+                    $global:restoringInteractiveAnswerFile = $true
                     try {
                         $runAllAnswerFileCheckBox.IsChecked = $true
                     } finally {
-                        $script:restoringInteractiveAnswerFile = $false
+                        $global:restoringInteractiveAnswerFile = $false
                     }
                     Sync-InteractiveAnswerFiles
                     Update-StepRowAutoAnsweredBadges $global:currentPlanContext.StepRows $savedInteractivePath
@@ -4536,6 +4547,15 @@ $resumeButton.Add_Click({
                         }
                     }
                 }
+            }
+
+            # The next Run Plan continues the Overall Recovery Time from where the save left off.
+            if ($state.ElapsedSeconds -and [double]$state.ElapsedSeconds -gt 0) {
+                $global:resumedElapsedSeconds = [double]$state.ElapsedSeconds
+                $global:currentElapsedSeconds = [int]$state.ElapsedSeconds
+                $resumedTime = [TimeSpan]::FromSeconds([double]$state.ElapsedSeconds)
+                $overallRecoveryTimeTextBlock.Text = '{0:00}:{1:00}:{2:00}' -f [Math]::Floor($resumedTime.TotalHours), $resumedTime.Minutes, $resumedTime.Seconds
+                $overallRecoveryTimePanel.Visibility = 'Visible'
             }
 
             New-Advisory "Resumed state from '$($dialog.FileName)'."

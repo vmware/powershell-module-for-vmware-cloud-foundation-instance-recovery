@@ -3764,7 +3764,8 @@ Export-ModuleMember -Function Add-OfflineDepotTrustedCertificate
 Function Set-SDDCManagerOfflineDepot {
     [CmdletBinding(DefaultParameterSetName = 'Authorized')]
     Param (
-        [Parameter(Mandatory = $true)] [String] $sddcManagerFqdn,
+        [Parameter(Mandatory = $false)] [String] $sddcManagerFqdn,
+        [Parameter(Mandatory = $false)] [String] $extractedSDDCDataFile,
         [Parameter(Mandatory = $true)] [String] $sddcManagerUser,
         [Parameter(Mandatory = $true)] [String] $sddcManagerPassword,
         [Parameter(Mandatory = $true)] [String] $vcfUserPassword,
@@ -3778,6 +3779,13 @@ Function Set-SDDCManagerOfflineDepot {
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    if (-not $sddcManagerFqdn) {
+        $sddcManagerFqdn = Get-ExtractedSddcDataValue -Name SddcManagerFqdn -extractedSDDCDataFile $extractedSDDCDataFile
+        if (-not $sddcManagerFqdn) {
+            return
+        }
+    }
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
 
@@ -3873,13 +3881,21 @@ Export-ModuleMember -Function Set-SDDCManagerOfflineDepot
 
 Function Set-SDDCManagerFDSDepot {
     Param (
-        [Parameter(Mandatory = $true)] [String] $sddcManagerFqdn,
+        [Parameter(Mandatory = $false)] [String] $sddcManagerFqdn,
+        [Parameter(Mandatory = $false)] [String] $extractedSDDCDataFile,
         [Parameter(Mandatory = $true)] [String] $sddcManagerUser,
         [Parameter(Mandatory = $true)] [String] $sddcManagerPassword,
         [Parameter(Mandatory = $true)] [String] $originalConfigurationFile
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    if (-not $sddcManagerFqdn) {
+        $sddcManagerFqdn = Get-ExtractedSddcDataValue -Name SddcManagerFqdn -extractedSDDCDataFile $extractedSDDCDataFile
+        if (-not $sddcManagerFqdn) {
+            return
+        }
+    }
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
 
@@ -3927,6 +3943,7 @@ Function Invoke-SddcManagerBundleDownload {
 
     .PARAMETER sddcManagerFqdn
         FQDN of the SDDC manager appliance
+    Optional when -extractedSDDCDataFile is supplied: it is then taken from the extracted SDDC data.
 
     .PARAMETER vcfUserPassword
         SSH password for the vcf user
@@ -3939,24 +3956,44 @@ Function Invoke-SddcManagerBundleDownload {
 
     .PARAMETER VcfVersion
         VCF version to download bundles for (e.g., "9.0.0.0", "9.1.0.0")
+    Optional when -extractedSDDCDataFile is supplied: it is then taken from the SDDC Manager version in the extracted SDDC data (first four parts, e.g. 9.1.2.0).
 
     .PARAMETER SkipMode
         Optional: 'skipFleetManagement' or 'skipAutomationOnly' to skip certain bundles
 
     .PARAMETER WaitForCompletion
         If specified, waits for all bundle downloads to complete
+
+    .PARAMETER extractedSDDCDataFile
+    Path to the extracted-sddc-data.json file. Used to resolve values that are not supplied explicitly.
+
     #>
 
     Param (
-        [Parameter(Mandatory = $true)] [String] $sddcManagerFqdn,
+        [Parameter(Mandatory = $false)] [String] $sddcManagerFqdn,
+        [Parameter(Mandatory = $false)] [String] $extractedSDDCDataFile,
         [Parameter(Mandatory = $true)] [String] $vcfUserPassword,
         [Parameter(Mandatory = $true)] [String] $rootPassword,
         [Parameter(Mandatory = $true)] [String] $adminPassword,
-        [Parameter(Mandatory = $true)] [String] $VcfVersion,
+        [Parameter(Mandatory = $false)] [String] $VcfVersion,
         [Parameter(Mandatory = $false)] [Switch] $WaitForCompletion
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    if (-not $sddcManagerFqdn) {
+        $sddcManagerFqdn = Get-ExtractedSddcDataValue -Name SddcManagerFqdn -extractedSDDCDataFile $extractedSDDCDataFile
+        if (-not $sddcManagerFqdn) {
+            return
+        }
+    }
+
+    if (-not $VcfVersion) {
+        $VcfVersion = Get-ExtractedSddcDataValue -Name VcfVersion -extractedSDDCDataFile $extractedSDDCDataFile
+        if (-not $VcfVersion) {
+            return
+        }
+    }
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
 
@@ -9809,6 +9846,7 @@ Function Remove-SddcManagerVspClusterEntry {
 
     .PARAMETER SddcManagerFqdn
     FQDN of the SDDC Manager appliance to connect to.
+    Optional when -extractedSDDCDataFile is supplied: it is then taken from the extracted SDDC data.
 
     .PARAMETER VcfUserPassword
     Password for the vcf SSH user on the SDDC Manager appliance.
@@ -9821,10 +9859,15 @@ Function Remove-SddcManagerVspClusterEntry {
 
     .PARAMETER autoConfirm
     If specified, deletes the proposed vsp_cluster entry without prompting for confirmation.
+
+    .PARAMETER extractedSDDCDataFile
+    Path to the extracted-sddc-data.json file. Used to resolve values that are not supplied explicitly.
+
     #>
 
     Param(
-        [Parameter(Mandatory = $true)][String] $SddcManagerFqdn,
+        [Parameter(Mandatory = $false)][String] $SddcManagerFqdn,
+        [Parameter(Mandatory = $false)][String] $extractedSDDCDataFile,
         [Parameter(Mandatory = $true)][String] $VcfUserPassword,
         [Parameter(Mandatory = $true)][String] $RootPassword,
         [Parameter(Mandatory = $true)][ValidateSet("MANAGEMENT", "CONSUMPTION")][String] $ClusterType,
@@ -9835,6 +9878,13 @@ Function Remove-SddcManagerVspClusterEntry {
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    if (-not $sddcManagerFqdn) {
+        $sddcManagerFqdn = Get-ExtractedSddcDataValue -Name SddcManagerFqdn -extractedSDDCDataFile $extractedSDDCDataFile
+        if (-not $sddcManagerFqdn) {
+            return
+        }
+    }
 
     # Establish SSH connection as vcf user
     LogMessage -type INFO -message "[$jumpboxName] Establishing SSH connection to $SddcManagerFqdn"
@@ -10780,6 +10830,112 @@ Function Get-SddcManagerToken {
     }
 }
 
+Function Get-ExtractedSddcDataValue {
+    <#
+    .SYNOPSIS
+    Returns a single well-known value from the extracted SDDC data, so a plan step doesn't need the operator to supply it.
+
+    .DESCRIPTION
+    The Get-ExtractedSddcDataValue cmdlet reads the extracted SDDC data file (created by New-ExtractDataFromSDDCBackup) and returns one of:
+    - SddcManagerFqdn: the FQDN of the SDDC Manager (sddcManager[0].fqdn).
+    - InstanceFqdn: the FQDN of the VCF instance component (the SDDC_LCM entry of vcfManagementComponents).
+    - FleetFqdn: the FQDN of the VCF fleet component (the FLEET_LCM entry of vcfManagementComponents).
+    - VcfVersion: the VCF version of the SDDC Manager trimmed to its first four parts (e.g. 9.1.2.0 from 9.1.2.0.25818410).
+
+    Writes the value to the pipeline and nothing else on success. Logs an error and returns $null if the file, section or entry is missing.
+
+    .EXAMPLE
+    Get-ExtractedSddcDataValue -Name SddcManagerFqdn -extractedSDDCDataFile ".\extracted-sddc-data.json"
+
+    .PARAMETER Name
+    The value to return: SddcManagerFqdn, InstanceFqdn, FleetFqdn or VcfVersion.
+
+    .PARAMETER extractedSDDCDataFile
+    Path to the extracted-sddc-data.json file.
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][ValidateSet("SddcManagerFqdn", "InstanceFqdn", "FleetFqdn", "VcfVersion")][String] $Name,
+        [Parameter(Mandatory = $false)][String] $extractedSDDCDataFile
+    )
+
+    $jumpboxName = hostname
+    if (-not $extractedSDDCDataFile) {
+        LogMessage -type ERROR -message "[$jumpboxName] Supply either -$Name, or -extractedSDDCDataFile so it can be resolved from the extracted SDDC data. Aborting."
+        return $null
+    }
+    if (-not (Test-Path -LiteralPath $extractedSDDCDataFile)) {
+        LogMessage -type ERROR -message "[$jumpboxName] Extracted SDDC data file '$extractedSDDCDataFile' not found. Aborting."
+        return $null
+    }
+    $extractedSddcData = Get-Content (Resolve-Path -Path $extractedSDDCDataFile).path | ConvertFrom-Json
+
+    $value = switch ($Name) {
+        "SddcManagerFqdn" {
+            @($extractedSddcData.sddcManager)[0].fqdn
+        }
+        "InstanceFqdn" {
+            @($extractedSddcData.vcfManagementComponents | Where-Object { $_.componentType -eq "SDDC_LCM" })[0].fqdn
+        }
+        "FleetFqdn" {
+            @($extractedSddcData.vcfManagementComponents | Where-Object { $_.componentType -eq "FLEET_LCM" })[0].fqdn
+        }
+        "VcfVersion" {
+            $version = @($extractedSddcData.sddcManager)[0].version
+            if ($version) {
+                (([string]$version).Split(".") | Select-Object -First 4) -join "."
+            }
+        }
+    }
+    if (-not $value) {
+        LogMessage -type ERROR -message "[$jumpboxName] Unable to resolve $Name from '$extractedSDDCDataFile'. Aborting."
+        return $null
+    }
+    return $value
+}
+
+Function Resolve-ServicesRuntimeFqdn {
+    <#
+    .SYNOPSIS
+    Resolves a Services Runtime FQDN from the vspClusters section of the extracted SDDC data.
+
+    .DESCRIPTION
+    The Resolve-ServicesRuntimeFqdn function returns the primaryFqdn of the vspClusters entry of the given type
+    (MANAGEMENT for the VCFMS Services Runtime, CONSUMPTION for the VCF Automation Services Runtime) from the extracted SDDC data file, so
+    callers don't need the operator to type an FQDN that the backup already recorded. Returns $null (after logging an error) if the file or type
+    is missing, or if there is not exactly one entry of that type.
+
+    .PARAMETER extractedSDDCDataFile
+    Path to the extracted-sddc-data.json file (created by New-ExtractDataFromSDDCBackup).
+
+    .PARAMETER Type
+    The Services Runtime type to look up: MANAGEMENT or CONSUMPTION.
+    #>
+
+    Param(
+        [Parameter(Mandatory = $false)][String] $extractedSDDCDataFile,
+        [Parameter(Mandatory = $false)][ValidateSet("MANAGEMENT", "CONSUMPTION")][String] $Type
+    )
+
+    $jumpboxName = hostname
+    if (-not $extractedSDDCDataFile -or -not $Type) {
+        LogMessage -type ERROR -message "[$jumpboxName] Supply either the Services Runtime FQDN, or both -extractedSDDCDataFile and -Type so it can be resolved from the extracted SDDC data. Aborting."
+        return $null
+    }
+    if (-not (Test-Path -LiteralPath $extractedSDDCDataFile)) {
+        LogMessage -type ERROR -message "[$jumpboxName] Extracted SDDC data file '$extractedSDDCDataFile' not found. Aborting."
+        return $null
+    }
+    $extractedSddcData = Get-Content (Resolve-Path -Path $extractedSDDCDataFile).path | ConvertFrom-Json
+    $matches = @($extractedSddcData.vspClusters | Where-Object { $_.type -eq $Type })
+    if ($matches.Count -ne 1) {
+        LogMessage -type ERROR -message "[$jumpboxName] Expected exactly one vspClusters entry of type '$Type' in '$extractedSDDCDataFile' but found $($matches.Count). Supply the FQDN explicitly. Aborting."
+        return $null
+    }
+    LogMessage -type INFO -message "[$jumpboxName] Resolved $Type Services Runtime FQDN '$($matches[0].primaryFqdn)' from '$extractedSDDCDataFile'"
+    return $matches[0].primaryFqdn
+}
+
 Function New-ServicesRuntime {
     <#
     .SYNOPSIS
@@ -10815,13 +10971,13 @@ Function New-ServicesRuntime {
     (ByFile) Path to a JSON file containing the full VCFMS runtime deployment payload.
 
     .PARAMETER PlatformFqdn
-    (ByParameter) Platform FQDN for the VCFMS runtime. Must match the original.
+    (ByParameter) Platform FQDN for the VCFMS runtime. Must match the original. Optional when -extractedSDDCDataFile is supplied: it is then resolved from the vspClusters entry matching -Type.
 
     .PARAMETER InstanceFqdn
-    (ByParameter) Instance FQDN for the VCFMS runtime. Required when -Type is MANAGEMENT.
+    (ByParameter) Instance FQDN for the VCFMS runtime. Required when -Type is MANAGEMENT; taken from the extracted SDDC data when -extractedSDDCDataFile is supplied and this is omitted.
 
     .PARAMETER FleetFqdn
-    (ByParameter) Fleet FQDN for the VCFMS runtime. Required when -Type is MANAGEMENT.
+    (ByParameter) Fleet FQDN for the VCFMS runtime. Required when -Type is MANAGEMENT; taken from the extracted SDDC data when -extractedSDDCDataFile is supplied and this is omitted.
 
     .PARAMETER SystemUserPassword
     (ByParameter) System user password for the VCFMS runtime.
@@ -10858,8 +11014,8 @@ Function New-ServicesRuntime {
     #>
 
     Param(
-        [Parameter(Mandatory = $true, ParameterSetName = "ByFile")]
-        [Parameter(Mandatory = $true, ParameterSetName = "ByParameter")]
+        [Parameter(Mandatory = $false, ParameterSetName = "ByFile")]
+        [Parameter(Mandatory = $false, ParameterSetName = "ByParameter")]
         [String] $SddcManagerFqdn,
 
         [Parameter(Mandatory = $true, ParameterSetName = "ByFile")]
@@ -10878,7 +11034,7 @@ Function New-ServicesRuntime {
         [Parameter(Mandatory = $true, ParameterSetName = "ByFile")]
         [String] $JsonFile,
 
-        [Parameter(Mandatory = $true, ParameterSetName = "ByParameter")]
+        [Parameter(Mandatory = $false, ParameterSetName = "ByParameter")]
         [String] $PlatformFqdn,
 
         [Parameter(Mandatory = $false, ParameterSetName = "ByParameter")]
@@ -10929,6 +11085,33 @@ Function New-ServicesRuntime {
     $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
     [int]$__ansIdx = 0
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    if (-not $SddcManagerFqdn) {
+        $SddcManagerFqdn = Get-ExtractedSddcDataValue -Name SddcManagerFqdn -extractedSDDCDataFile $extractedSDDCDataFile
+        if (-not $SddcManagerFqdn) {
+            return
+        }
+    }
+    if ($PSCmdlet.ParameterSetName -eq "ByParameter" -and $Type -eq "MANAGEMENT") {
+        if (-not $InstanceFqdn) {
+            $InstanceFqdn = Get-ExtractedSddcDataValue -Name InstanceFqdn -extractedSDDCDataFile $extractedSDDCDataFile
+            if (-not $InstanceFqdn) {
+                return
+            }
+        }
+        if (-not $FleetFqdn) {
+            $FleetFqdn = Get-ExtractedSddcDataValue -Name FleetFqdn -extractedSDDCDataFile $extractedSDDCDataFile
+            if (-not $FleetFqdn) {
+                return
+            }
+        }
+    }
+    if ($PSCmdlet.ParameterSetName -eq "ByParameter" -and -not $PlatformFqdn) {
+        $PlatformFqdn = Resolve-ServicesRuntimeFqdn -extractedSDDCDataFile $extractedSDDCDataFile -Type $Type
+        if (-not $PlatformFqdn) {
+            return
+        }
+    }
 
     # Get authentication token
     $accessToken = Get-SddcManagerToken -SddcManagerFqdn $SddcManagerFqdn -Username $SddcManagerUser -Password $SddcManagerPassword
@@ -11740,6 +11923,7 @@ Function Add-VcfmsTrustedCertificate {
 
     .PARAMETER ServicesRuntimeFqdn
     FQDN of the VCFMS Services Runtime instance to add the trusted certificate to.
+    Optional when -extractedSDDCDataFile and -Type are supplied: it is then resolved from the matching vspClusters entry of the extracted SDDC data.
 
     .PARAMETER ServicesRuntimePassword
     Password for the Services Runtime admin user (used to obtain a token).
@@ -11755,10 +11939,19 @@ Function Add-VcfmsTrustedCertificate {
 
     .PARAMETER PollIntervalSeconds
     Interval in seconds to poll the task status. Default is 10.
+
+    .PARAMETER Type
+    MANAGEMENT (VCFMS Services Runtime) or CONSUMPTION (VCF Automation Services Runtime). Used with -extractedSDDCDataFile to resolve -ServicesRuntimeFqdn when it is not supplied.
+
+    .PARAMETER extractedSDDCDataFile
+    Path to the extracted-sddc-data.json file. Used with -Type to resolve -ServicesRuntimeFqdn when it is not supplied.
+
     #>
 
     Param(
-        [Parameter(Mandatory = $true)][String] $ServicesRuntimeFqdn,
+        [Parameter(Mandatory = $false)][String] $ServicesRuntimeFqdn,
+        [Parameter(Mandatory = $false)][ValidateSet("MANAGEMENT", "CONSUMPTION")][String] $Type,
+        [Parameter(Mandatory = $false)][String] $extractedSDDCDataFile,
         [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
         [Parameter(Mandatory = $false)][String] $ServicesRuntimeUsername = "admin@vsp.local",
         [Parameter(Mandatory = $true)][String] $RemoteHostFqdn,
@@ -11770,6 +11963,13 @@ Function Add-VcfmsTrustedCertificate {
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    if (-not $ServicesRuntimeFqdn) {
+        $ServicesRuntimeFqdn = Resolve-ServicesRuntimeFqdn -extractedSDDCDataFile $extractedSDDCDataFile -Type $Type
+        if (-not $ServicesRuntimeFqdn) {
+            return
+        }
+    }
 
     # Retrieve the remote host's TLS certificate
     LogMessage -type INFO -message "[$jumpboxName] Retrieving TLS certificate from ${RemoteHostFqdn}:${RemoteHostPort}"
@@ -11900,6 +12100,7 @@ Function Set-ServicesRuntimeSftpBackupSettings {
 
     .PARAMETER ServicesRuntimeFqdn
     FQDN of the VCFMS Services Runtime instance.
+    Optional when -extractedSDDCDataFile and -Type are supplied: it is then resolved from the matching vspClusters entry of the extracted SDDC data.
 
     .PARAMETER ServicesRuntimePassword
     Password for the Services Runtime admin user (used to obtain a token).
@@ -11933,10 +12134,15 @@ Function Set-ServicesRuntimeSftpBackupSettings {
 
     .PARAMETER PollIntervalSeconds
     Interval in seconds to poll the task status. Default is 60 (one minute).
+
+    .PARAMETER Type
+    MANAGEMENT (VCFMS Services Runtime) or CONSUMPTION (VCF Automation Services Runtime). Used with -extractedSDDCDataFile to resolve -ServicesRuntimeFqdn when it is not supplied.
+
     #>
 
     Param(
-        [Parameter(Mandatory = $true)][String] $ServicesRuntimeFqdn,
+        [Parameter(Mandatory = $false)][String] $ServicesRuntimeFqdn,
+        [Parameter(Mandatory = $false)][ValidateSet("MANAGEMENT", "CONSUMPTION")][String] $Type,
         [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
         [Parameter(Mandatory = $false)][String] $ServicesRuntimeUsername = "admin@vsp.local",
         [Parameter(Mandatory = $true)][String] $extractedSDDCDataFile,
@@ -11954,6 +12160,13 @@ Function Set-ServicesRuntimeSftpBackupSettings {
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    if (-not $ServicesRuntimeFqdn) {
+        $ServicesRuntimeFqdn = Resolve-ServicesRuntimeFqdn -extractedSDDCDataFile $extractedSDDCDataFile -Type $Type
+        if (-not $ServicesRuntimeFqdn) {
+            return
+        }
+    }
 
     # Look up the component ID (vsp cluster ID) by matching the Services Runtime FQDN against the
     # vspClusters section of the extracted SDDC data, rather than requiring it to be passed directly.
@@ -12958,6 +13171,7 @@ Function Restore-ServicesRuntimeComponentBackup {
 
     .PARAMETER ServicesRuntimeFqdn
     FQDN of the Services Runtime instance.
+    Optional when -extractedSDDCDataFile and -Type are supplied: it is then resolved from the matching vspClusters entry of the extracted SDDC data.
 
     .PARAMETER ServicesRuntimePassword
     Password for the Services Runtime admin user (used to obtain a token).
@@ -12977,10 +13191,18 @@ Function Restore-ServicesRuntimeComponentBackup {
     .PARAMETER ReadyTimeoutMinutes
     Maximum total time in minutes to keep retrying before giving up and reporting the failure. Default is 30.
 
+    .PARAMETER Type
+    MANAGEMENT (VCFMS Services Runtime) or CONSUMPTION (VCF Automation Services Runtime). Used with -extractedSDDCDataFile to resolve -ServicesRuntimeFqdn when it is not supplied.
+
+    .PARAMETER extractedSDDCDataFile
+    Path to the extracted-sddc-data.json file. Used with -Type to resolve -ServicesRuntimeFqdn when it is not supplied.
+
     #>
 
     Param(
-        [Parameter(Mandatory = $true)][String] $ServicesRuntimeFqdn,
+        [Parameter(Mandatory = $false)][String] $ServicesRuntimeFqdn,
+        [Parameter(Mandatory = $false)][ValidateSet("MANAGEMENT", "CONSUMPTION")][String] $Type,
+        [Parameter(Mandatory = $false)][String] $extractedSDDCDataFile,
         [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
         [Parameter(Mandatory = $false)][String] $ServicesRuntimeUsername = "admin@vsp.local",
         [Parameter(Mandatory = $true)][String] $RestoreJsonFile,
@@ -12995,6 +13217,13 @@ Function Restore-ServicesRuntimeComponentBackup {
     $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
     [int]$__ansIdx = 0
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    if (-not $ServicesRuntimeFqdn) {
+        $ServicesRuntimeFqdn = Resolve-ServicesRuntimeFqdn -extractedSDDCDataFile $extractedSDDCDataFile -Type $Type
+        if (-not $ServicesRuntimeFqdn) {
+            return
+        }
+    }
 
     # Read and validate the payload file
     $payloadPath = (Resolve-Path -Path $RestoreJsonFile -ErrorAction SilentlyContinue).Path
@@ -17712,6 +17941,7 @@ Function Set-ServicesRuntimeScale {
     .PARAMETER ServicesRuntimeFqdn
     FQDN or IP of any Services Runtime cluster node on the recovery site. Required for
     automatic kubeconfig retrieval when -KubeconfigPath is not supplied.
+    Optional when -extractedSDDCDataFile and -Type are supplied: it is then resolved from the matching vspClusters entry of the extracted SDDC data.
 
     .PARAMETER ServicesRuntimePassword
     Password for vmware-system-user on the recovery Services Runtime node. Required for
@@ -17759,10 +17989,19 @@ Function Set-ServicesRuntimeScale {
     .PARAMETER OverallTimeoutMinutes
     Maximum total time in minutes, across all monitoring passes, before giving up and
     returning control to the caller. Default is 120.
+
+    .PARAMETER Type
+    MANAGEMENT (VCFMS Services Runtime) or CONSUMPTION (VCF Automation Services Runtime). Used with -extractedSDDCDataFile to resolve -ServicesRuntimeFqdn when it is not supplied.
+
+    .PARAMETER extractedSDDCDataFile
+    Path to the extracted-sddc-data.json file. Used with -Type to resolve -ServicesRuntimeFqdn when it is not supplied.
+
     #>
 
     Param(
         [Parameter(Mandatory = $false)][String] $ServicesRuntimeFqdn,
+        [Parameter(Mandatory = $false)][ValidateSet("MANAGEMENT", "CONSUMPTION")][String] $Type,
+        [Parameter(Mandatory = $false)][String] $extractedSDDCDataFile,
         [Parameter(Mandatory = $false)][String] $ServicesRuntimePassword,
         [Parameter(Mandatory = $false)][String] $KubeconfigPath,
         [Parameter(Mandatory = $false)][String] $KubeconfigOutputDir = ".",
@@ -17782,6 +18021,13 @@ Function Set-ServicesRuntimeScale {
     $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
     [int]$__ansIdx = 0
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    if (-not $ServicesRuntimeFqdn -and -not $KubeconfigPath -and $Type) {
+        $ServicesRuntimeFqdn = Resolve-ServicesRuntimeFqdn -extractedSDDCDataFile $extractedSDDCDataFile -Type $Type
+        if (-not $ServicesRuntimeFqdn) {
+            $StopWatch.Stop(); return
+        }
+    }
 
     # -------------------------------------------------------------------------
     # Pre-requisite: kubectl must be on PATH
