@@ -192,15 +192,6 @@
     "visible": true
   },
   {
-    "description": "Retrieve Registered Operations Components",
-    "commandLine": "Get-VcfOperationsRegisteredComponents -VcfOperationsFqdn $vcfOperationsFqdn -Username $username -Password $password -AuthSource $authSource",
-    "displayName": "Get VCF Operations Registered Components",
-    "condition": [],
-    "threadId": "",
-    "interactive": false,
-    "visible": true
-  },
-  {
     "description": "Repoint SDDC Manager to the Offline Depot",
     "commandLine": "Set-SDDCManagerOfflineDepot -sddcManagerFqdn $sddcManagerFqdn -sddcManagerUser $sddcManagerAdmin -sddcManagerPassword $sddcManagerAdminPassword -vcfUserPassword $vcfUserPassword -localUserPassword $localUserPassword -rootPassword $rootPassword -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort -offlineDepotUsername $offlineDepotUsername -offlineDepotPassword $offlineDepotPassword",
     "displayName": "Set SDDC Manager Offline Depot",
@@ -273,7 +264,7 @@
     "commandLine": "Set-ServicesRuntimeSftpBackupSettings -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -extractedSDDCDataFile $extractedSDDCDataFile -SftpHost $sftpHost -SftpUsername $sftpUsername -SftpPassword $sftpPassword -SftpDirectory $sftpDirectory -EncryptionPassphrase $encryptionPassphrase",
     "displayName": "Set VCFMS Services Runtime SFTP Backup Settings",
     "condition": [],
-    "threadId": "",
+    "threadId": "2",
     "interactive": false,
     "visible": true
   },
@@ -289,7 +280,7 @@
         "value": "false"
       }
     ],
-    "threadId": "",
+    "threadId": "2",
     "interactive": false,
     "visible": true
   },
@@ -305,7 +296,7 @@
         "value": "true"
       }
     ],
-    "threadId": "",
+    "threadId": "2",
     "interactive": false,
     "visible": true
   },
@@ -314,7 +305,7 @@
     "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -RestoreJsonFile \".\\vcfms-restore-payload.json\" -autoConfirm",
     "displayName": "Restore VCFMS Backups",
     "condition": [],
-    "threadId": "",
+    "threadId": "2",
     "interactive": false,
     "visible": true
   },
@@ -323,7 +314,7 @@
     "commandLine": "Set-ServicesRuntimeScale -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -KubeconfigOutputDir \".\\backup-yaml\" -BackupYamlDir \".\\backup-yaml\"",
     "displayName": "Apply Services Runtime Configuration",
     "condition": [],
-    "threadId": "",
+    "threadId": "2",
     "interactive": false,
     "visible": true
   },
@@ -332,7 +323,7 @@
     "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -RestoreJsonFile \".\\opsLogs-restore-payload.json\" -autoConfirm",
     "displayName": "Restore Log Management Backup",
     "condition": [],
-    "threadId": "",
+    "threadId": "2",
     "interactive": false,
     "visible": true
   },
@@ -341,7 +332,7 @@
     "commandLine": "Confirm-ManualStep -Message 'Press Enter once Log Management state is updated' -AnswerKey 'log-management-state-updated'",
     "displayName": "Confirm Manual Step: Log Management state is updated",
     "condition": [],
-    "threadId": "",
+    "threadId": "2",
     "interactive": true,
     "visible": true
   },
@@ -350,16 +341,7 @@
     "commandLine": "Set-SDDCManagerFDSDepot -sddcManagerFqdn $sddcManagerFqdn -sddcManagerUser $sddcManagerAdmin -sddcManagerPassword $sddcManagerAdminPassword -originalConfigurationFile $originalConfigurationFile",
     "displayName": "Set SDDC Manager FDS Depot",
     "condition": [],
-    "threadId": "",
-    "interactive": false,
-    "visible": true
-  },
-  {
-    "description": "Retrieve Registered Operations Components (for VCF Automation)",
-    "commandLine": "Get-VcfOperationsRegisteredComponents -VcfOperationsFqdn $vcfOperationsFqdn -Username $username -Password $password -AuthSource $authSource",
-    "displayName": "Get VCF Operations Registered Components",
-    "condition": [],
-    "threadId": "",
+    "threadId": "2",
     "interactive": false,
     "visible": true
   },
@@ -368,7 +350,7 @@
     "commandLine": "Remove-SddcManagerVspClusterEntry -SddcManagerFqdn $sddcManagerFqdn -VcfUserPassword $vcfUserPassword -RootPassword $rootPassword -ClusterType CONSUMPTION -autoConfirm",
     "displayName": "Remove VCFA Services Runtime Cluster Entry",
     "condition": [],
-    "threadId": "",
+    "threadId": "3",
     "interactive": false,
     "visible": true
   },
@@ -377,7 +359,7 @@
     "commandLine": "New-ServicesRuntime -SddcManagerFqdn $sddcManagerFqdn -SddcManagerUser $sddcManagerAdmin -SddcManagerPassword $sddcManagerAdminPassword -PlatformFqdn $vcfaServicesRuntimeFqdn -SystemUserPassword $vcfaServicesRuntimePassword -Ipv4Addresses ($vcfaIpv4Addresses.Split(',').Trim()) -Size $vcfaSize -GatewayCidrIpv4 $vcfaGatewayCidrIpv4 -extractedSDDCDataFile $extractedSDDCDataFile -InternalClusterCidrIpv4 $vcfaInternalClusterCidrIpv4 -type CONSUMPTION -autoConfirm",
     "displayName": "Create New VCFA Services Runtime",
     "condition": [],
-    "threadId": "",
+    "threadId": "3",
     "interactive": false,
     "visible": true
   },
@@ -386,7 +368,7 @@
     "commandLine": "Set-ServicesRuntimeSftpBackupSettings -ServicesRuntimeFqdn $vcfaServicesRuntimeFqdn -ServicesRuntimePassword $vcfaServicesRuntimePassword -extractedSDDCDataFile $extractedSDDCDataFile -SftpHost $sftpHost -SftpUsername $sftpUsername -SftpPassword $sftpPassword -SftpDirectory $sftpDirectory -EncryptionPassphrase $encryptionPassphrase",
     "displayName": "Set VCFA Services Runtime SFTP Backup Settings",
     "condition": [],
-    "threadId": "",
+    "threadId": "3",
     "interactive": false,
     "visible": true
   },
@@ -402,7 +384,7 @@
         "value": "false"
       }
     ],
-    "threadId": "",
+    "threadId": "3",
     "interactive": false,
     "visible": true
   },
@@ -418,7 +400,7 @@
         "value": "true"
       }
     ],
-    "threadId": "",
+    "threadId": "3",
     "interactive": false,
     "visible": true
   },
@@ -427,7 +409,7 @@
     "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $vcfaServicesRuntimeFqdn -ServicesRuntimePassword $vcfaServicesRuntimePassword -RestoreJsonFile \".\\vcfa-restore-payload.json\" -autoConfirm",
     "displayName": "Restore VCF Automation Backup",
     "condition": [],
-    "threadId": "",
+    "threadId": "3",
     "interactive": false,
     "visible": true
   },

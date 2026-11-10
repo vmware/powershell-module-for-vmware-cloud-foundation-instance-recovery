@@ -1,5 +1,17 @@
 $Global:utilityName= "IBR Test Helper"
 
+# This script is run standalone, so provide the globals that Write-LogMessage and the menu breadcrumb expect
+# if the host session has not already defined them.
+If (!$utilityBuild) {
+    $Global:utilityBuild = "1.0"
+}
+If (!$logMutexName) {
+    $Global:logMutexName = "Global\IBRTestingHelperLog"
+}
+If (!$logFile) {
+    $Global:logFile = Join-Path -Path $(If ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }) -ChildPath "ibr-testing-helper.log"
+}
+
 Function Write-MenuBreadcrumb {
     Param (
         [Parameter(Mandatory=$true)][String]$Version,
@@ -126,9 +138,10 @@ Function New-TestingMenu {
     $menuItem03 = "Update Variable JSON files"
 
     $headingItem02 = "IBR Repeat Testing Tasks"
-    $menuItem04 = "Reset sfo-m01-cl01 Nested Hosts"
-    $menuItem05 = "Reset sfo-w01-cl01 Nested Hosts and relevant management VMs"
-    $menuItem06 = "Reset sfo-w02-cl01 Nested Hosts and relevant management VMs"
+    $menuItem04 = "Snapshot domain hosts"
+    $menuItem07 = "Restore sfo-m01-cl01 Nested Hosts from snapshot"
+    $menuItem08 = "Reset sfo-w01-cl01 Nested Hosts and relevant management VMs"
+    $menuItem09 = "Reset sfo-w02-cl01 Nested Hosts and relevant management VMs"
 
     Do {
         Clear-Host
@@ -152,8 +165,9 @@ Function New-TestingMenu {
 
         Write-Host ""; Write-Host -Object " $headingItem02" -ForegroundColor Yellow
         Write-Host -Object " 04. $menuItem04" -ForegroundColor White; $validMenuOptions += "04"
-        Write-Host -Object " 05. $menuItem05" -ForegroundColor White; $validMenuOptions += "05"
-        Write-Host -Object " 06. $menuItem06" -ForegroundColor White; $validMenuOptions += "06"
+        Write-Host -Object " 07. $menuItem07" -ForegroundColor White; $validMenuOptions += "07"
+        Write-Host -Object " 08. $menuItem08" -ForegroundColor White; $validMenuOptions += "08"
+        Write-Host -Object " 09. $menuItem09" -ForegroundColor White; $validMenuOptions += "09"
 
         Write-Host -Object ''
         $MenuInput = if ($clioptions) {
@@ -193,18 +207,22 @@ Function New-TestingMenu {
             }
             04 {
                 Clear-Host; Write-MenuBreadcrumb -Version $utilityBuild -Submenu $submenuTitle -MenuItem $menuItem04; Write-Host -Object ''
-                $nestedHosts = @("ken-911c5-ibr-osa-sfo01-m01-r01-esx01", "ken-911c5-ibr-osa-sfo01-m01-r01-esx02", "ken-911c5-ibr-osa-sfo01-m01-r01-esx03", "ken-911c5-ibr-osa-sfo01-m01-r01-esx04", "ken-911c5-ibr-osa-sfo02-m01-r01-esx01", "ken-911c5-ibr-osa-sfo02-m01-r01-esx02", "ken-911c5-ibr-osa-sfo02-m01-r01-esx03", "ken-911c5-ibr-osa-sfo02-m01-r01-esx04")
-                Reset-NestedHosts -hostArray $nestedHosts
+                New-DomainHostSnapshots
                 Wait-AnyKey
             }
-            05 {
-                Clear-Host; Write-MenuBreadcrumb -Version $utilityBuild -Submenu $submenuTitle -MenuItem $menuItem05; Write-Host -Object ''
+            07 {
+                Clear-Host; Write-MenuBreadcrumb -Version $utilityBuild -Submenu $submenuTitle -MenuItem $menuItem07; Write-Host -Object ''
+                Restore-DomainHostSnapshots -domainCode m01
+                Wait-AnyKey
+            }
+            08 {
+                Clear-Host; Write-MenuBreadcrumb -Version $utilityBuild -Submenu $submenuTitle -MenuItem $menuItem08; Write-Host -Object ''
                 $nestedHosts = @("ken-911c5-ibr-osa-sfo01-w01-r01-esx01", "ken-911c5-ibr-osa-sfo01-w01-r01-esx02", "ken-911c5-ibr-osa-sfo01-w01-r01-esx03", "ken-911c5-ibr-osa-sfo02-w01-r01-esx01", "ken-911c5-ibr-osa-sfo02-w01-r01-esx02", "ken-911c5-ibr-osa-sfo02-w01-r01-esx03")
                 Reset-NestedHosts -hostArray $nestedHosts
                 Wait-AnyKey
             }
-            06 {
-                Clear-Host; Write-MenuBreadcrumb -Version $utilityBuild -Submenu $submenuTitle -MenuItem $menuItem06; Write-Host -Object ''
+            09 {
+                Clear-Host; Write-MenuBreadcrumb -Version $utilityBuild -Submenu $submenuTitle -MenuItem $menuItem09; Write-Host -Object ''
                 $nestedHosts = @("ken-911c5-sfo01-w02-r01-esx01", "ken-911c5-sfo01-w02-r01-esx02", "ken-911c5-sfo01-w02-r01-esx03")
                 Reset-NestedHosts -hostArray $nestedHosts
                 Wait-AnyKey
@@ -638,6 +656,207 @@ Function Update-VCFVariableJsonFiles {
             } else {
                 Write-LogMessage -Type INFO -Message "No changes needed in $(Split-Path -Path $target.file -Leaf)"
             }
+        }
+    } Catch {
+        Write-CaughtException -object $_
+    }
+}
+
+Function Write-VmTable {
+    <#
+    .DESCRIPTION
+        Prints the VMs found as a table (name and power state) rather than a long comma-separated log line.
+    #>
+    Param (
+        [Parameter (Mandatory = $true)] [Array]$vms
+    )
+
+    Write-LogMessage -Type INFO -Message "Found $($vms.Count) VM(s):"
+    Write-Host ""
+    ($vms | Select-Object @{ Name = "VM Name"; Expression = { $_.Name } }, @{ Name = "Power State"; Expression = { $_.PowerState } } | Format-Table -AutoSize | Out-String).TrimEnd() | Write-Host
+    Write-Host ""
+}
+
+Function Get-PtrEnvironmentName {
+    <#
+    .DESCRIPTION
+        SSHes to the PTR and returns its hostname minus '-converged-ptr' (the environment name), or $null on failure.
+    #>
+    Param (
+        [Parameter (Mandatory = $false)] [String]$ptrAddress = "10.11.10.4",
+        [Parameter (Mandatory = $false)] [String]$ptrUsername = "root",
+        [Parameter (Mandatory = $false)] [String]$ptrPassword = 'VMw@re1!'
+    )
+
+    $securePassword = ConvertTo-SecureString -String $ptrPassword -AsPlainText -Force
+    $credential = New-Object System.Management.Automation.PSCredential ($ptrUsername, $securePassword)
+    $hostKey = Get-SSHHostKey -ComputerName $ptrAddress
+    If (!$hostKey) {
+        Write-LogMessage -Type ERROR -Message "Unable to retrieve SSH host key from $ptrAddress"
+        Return $null
+    }
+    $knownHosts = New-SSHMemoryKnownHost
+    New-SSHTrustedHost -KnownHostStore $knownHosts -HostName $ptrAddress -FingerPrint $hostKey.fingerprint | Out-Null
+    $sshSession = New-SSHSession -ComputerName $ptrAddress -Credential $credential -KnownHost $knownHosts
+    If (!$sshSession) {
+        Write-LogMessage -Type ERROR -Message "Failed to establish SSH session to $ptrAddress"
+        Return $null
+    }
+    $ptrHostname = ((Invoke-SSHCommand -SessionId $sshSession.SessionId -Command "hostname").Output | Select-Object -First 1).Trim()
+    Remove-SSHSession -SessionId $sshSession.SessionId | Out-Null
+    $environmentName = $ptrHostname -replace '-converged-ptr', ''
+    If (!$environmentName) {
+        Write-LogMessage -Type ERROR -Message "Unable to derive an environment name from PTR hostname '$ptrHostname'"
+        Return $null
+    }
+    Write-LogMessage -Type INFO -Message "Environment name: $environmentName"
+    Return $environmentName
+}
+
+Function Connect-InfrastructureVC {
+    <#
+    .DESCRIPTION
+        Connects to the infrastructure vCenter defined in infrastructure-settings.json. Returns the VIServer
+        connection, or $null if the settings file is missing.
+    #>
+    Param (
+        [Parameter (Mandatory = $false)] [String]$settingsFile = "C:\Users\Administrator\Documents\PlatformTools\infrastructure-settings.json"
+    )
+
+    If (!(Test-Path -Path $settingsFile)) {
+        Write-LogMessage -Type ERROR -Message "$settingsFile not found"
+        Return $null
+    }
+    $infraVc = (Get-Content -Path $settingsFile -Raw | ConvertFrom-Json).infrastructureVC
+    If ($infraVc.passwordModel -eq "Secure") {
+        Return (Connect-VIServer -Server $infraVc.fqdn -Credential (Get-StoredCredential -Target $infraVc.fqdn) -ErrorAction Stop)
+    }
+    Return (Connect-VIServer -Server $infraVc.fqdn -User $infraVc.username -Password $infraVc.password -ErrorAction Stop)
+}
+
+Function New-DomainHostSnapshots {
+    <#
+    .SYNOPSIS
+        Takes a memory-less, asynchronous snapshot of the nested ESX hosts of a chosen domain.
+    .DESCRIPTION
+        Derives the environment name from the PTR hostname (minus '-converged-ptr'), lets the user pick a domain,
+        connects to the infrastructure vCenter from infrastructure-settings.json and snapshots every VM matching
+        "<env>-sfo0*-<domain>-r01-esx*" (covers both sfo01 and sfo02).
+    #>
+    Try {
+        $environmentName = Get-PtrEnvironmentName
+        If (!$environmentName) {
+            Return
+        }
+
+        # Domain selection
+        $domains = [ordered]@{ "1" = @("sfo-m01-cl01", "m01"); "2" = @("sfo-w01-cl01", "w01"); "3" = @("sfo-w02-cl01", "w02") }
+        Write-Host ""
+        foreach ($key in $domains.Keys) {
+            Write-Host " $key. $($domains[$key][0])" -ForegroundColor White
+        }
+        Do {
+            $choice = Read-Host -Prompt " Select domain to snapshot"
+        } Until ($domains.Contains($choice))
+        $domainCode = $domains[$choice][1]
+        $vmPattern = "$environmentName-sfo0*-$domainCode-r01-esx*"
+
+        $viServer = Connect-InfrastructureVC
+        If (!$viServer) {
+            Return
+        }
+
+        Try {
+            $vms = @(Get-VM -Name $vmPattern -Server $viServer -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike "*-source" })
+            If ($vms.Count -eq 0) {
+                Write-LogMessage -Type ERROR -Message "No VMs found matching $vmPattern on $($viServer.Name)"
+                Return
+            }
+            Write-VmTable -vms $vms
+
+            Do {
+                $snapshotName = Read-Host -Prompt " Enter snapshot name"
+            } Until (![string]::IsNullOrWhiteSpace($snapshotName))
+
+            foreach ($vm in $vms) {
+                Write-LogMessage -Type INFO -Message "Starting snapshot '$snapshotName' of $($vm.Name) (no memory)"
+                New-Snapshot -VM $vm -Name $snapshotName -Memory:$false -Quiesce:$false -RunAsync -Confirm:$false | Out-Null
+            }
+            Write-LogMessage -Type INFO -Message "Snapshot tasks submitted for $($vms.Count) VM(s); they complete asynchronously in vCenter"
+        } Finally {
+            Disconnect-VIServer -Server $viServer -Confirm:$false -ErrorAction SilentlyContinue
+        }
+    } Catch {
+        Write-CaughtException -object $_
+    }
+}
+
+Function Restore-DomainHostSnapshots {
+    <#
+    .SYNOPSIS
+        Reverts the nested ESX hosts of a domain to a user-chosen snapshot and powers them on.
+    .DESCRIPTION
+        Finds the VMs matching "<env>-sfo0*-<domainCode>-r01-esx*" the same way as New-DomainHostSnapshots, lists the
+        snapshots on the first VM for the user to choose from, reverts every VM to the snapshot of that name, then
+        powers them on.
+    #>
+    Param (
+        [Parameter (Mandatory = $true)] [ValidateSet("m01", "w01", "w02")] [String]$domainCode
+    )
+
+    Try {
+        $environmentName = Get-PtrEnvironmentName
+        If (!$environmentName) {
+            Return
+        }
+        $vmPattern = "$environmentName-sfo0*-$domainCode-r01-esx*"
+
+        $viServer = Connect-InfrastructureVC
+        If (!$viServer) {
+            Return
+        }
+
+        Try {
+            $vms = @(Get-VM -Name $vmPattern -Server $viServer -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike "*-source" } | Sort-Object -Property Name)
+            If ($vms.Count -eq 0) {
+                Write-LogMessage -Type ERROR -Message "No VMs found matching $vmPattern on $($viServer.Name)"
+                Return
+            }
+            Write-VmTable -vms $vms
+
+            $snapshots = @(Get-Snapshot -VM $vms[0] | Sort-Object -Property Created -Descending)
+            If ($snapshots.Count -eq 0) {
+                Write-LogMessage -Type ERROR -Message "No snapshots found on $($vms[0].Name)"
+                Return
+            }
+            Write-Host ""
+            Write-Host " Snapshots on $($vms[0].Name):" -ForegroundColor Yellow
+            For ($i = 0; $i -lt $snapshots.Count; $i++) {
+                Write-Host " $($i + 1). $($snapshots[$i].Name) (created $($snapshots[$i].Created))" -ForegroundColor White
+            }
+            Do {
+                $choice = Read-Host -Prompt " Select snapshot to restore"
+            } Until (($choice -match '^\d+$') -and ([int]$choice -ge 1) -and ([int]$choice -le $snapshots.Count))
+            $snapshotName = $snapshots[[int]$choice - 1].Name
+
+            $restoredVms = @()
+            foreach ($vm in $vms) {
+                $snapshot = Get-Snapshot -VM $vm -Name $snapshotName -ErrorAction SilentlyContinue | Sort-Object -Property Created -Descending | Select-Object -First 1
+                If (!$snapshot) {
+                    Write-LogMessage -Type ERROR -Message "[$($vm.Name)] Snapshot '$snapshotName' not found - skipping"
+                    Continue
+                }
+                Write-LogMessage -Type INFO -Message "[$($vm.Name)] Reverting to snapshot '$snapshotName'"
+                Set-VM -VM $vm -Snapshot $snapshot -Confirm:$false | Out-Null
+                $restoredVms += $vm
+            }
+
+            foreach ($vm in $restoredVms) {
+                Write-LogMessage -Type INFO -Message "[$($vm.Name)] Powering on"
+                Start-VM -VM $vm -Confirm:$false -ErrorAction SilentlyContinue | Out-Null
+            }
+        } Finally {
+            Disconnect-VIServer -Server $viServer -Confirm:$false -ErrorAction SilentlyContinue
         }
     } Catch {
         Write-CaughtException -object $_
