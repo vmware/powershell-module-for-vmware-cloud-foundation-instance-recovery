@@ -139,9 +139,7 @@ Function New-TestingMenu {
 
     $headingItem02 = "IBR Repeat Testing Tasks"
     $menuItem04 = "Snapshot domain hosts"
-    $menuItem07 = "Restore sfo-m01-cl01 Nested Hosts from snapshot"
-    $menuItem08 = "Reset sfo-w01-cl01 Nested Hosts and relevant management VMs"
-    $menuItem09 = "Reset sfo-w02-cl01 Nested Hosts and relevant management VMs"
+    $menuItem05 = "Restore domain hosts from snapshot"
 
     Do {
         Clear-Host
@@ -165,9 +163,7 @@ Function New-TestingMenu {
 
         Write-Host ""; Write-Host -Object " $headingItem02" -ForegroundColor Yellow
         Write-Host -Object " 04. $menuItem04" -ForegroundColor White; $validMenuOptions += "04"
-        Write-Host -Object " 07. $menuItem07" -ForegroundColor White; $validMenuOptions += "07"
-        Write-Host -Object " 08. $menuItem08" -ForegroundColor White; $validMenuOptions += "08"
-        Write-Host -Object " 09. $menuItem09" -ForegroundColor White; $validMenuOptions += "09"
+        Write-Host -Object " 05. $menuItem05" -ForegroundColor White; $validMenuOptions += "05"
 
         Write-Host -Object ''
         $MenuInput = if ($clioptions) {
@@ -210,21 +206,9 @@ Function New-TestingMenu {
                 New-DomainHostSnapshots
                 Wait-AnyKey
             }
-            07 {
-                Clear-Host; Write-MenuBreadcrumb -Version $utilityBuild -Submenu $submenuTitle -MenuItem $menuItem07; Write-Host -Object ''
-                Restore-DomainHostSnapshots -domainCode m01
-                Wait-AnyKey
-            }
-            08 {
-                Clear-Host; Write-MenuBreadcrumb -Version $utilityBuild -Submenu $submenuTitle -MenuItem $menuItem08; Write-Host -Object ''
-                $nestedHosts = @("ken-911c5-ibr-osa-sfo01-w01-r01-esx01", "ken-911c5-ibr-osa-sfo01-w01-r01-esx02", "ken-911c5-ibr-osa-sfo01-w01-r01-esx03", "ken-911c5-ibr-osa-sfo02-w01-r01-esx01", "ken-911c5-ibr-osa-sfo02-w01-r01-esx02", "ken-911c5-ibr-osa-sfo02-w01-r01-esx03")
-                Reset-NestedHosts -hostArray $nestedHosts
-                Wait-AnyKey
-            }
-            09 {
-                Clear-Host; Write-MenuBreadcrumb -Version $utilityBuild -Submenu $submenuTitle -MenuItem $menuItem09; Write-Host -Object ''
-                $nestedHosts = @("ken-911c5-sfo01-w02-r01-esx01", "ken-911c5-sfo01-w02-r01-esx02", "ken-911c5-sfo01-w02-r01-esx03")
-                Reset-NestedHosts -hostArray $nestedHosts
+            05 {
+                Clear-Host; Write-MenuBreadcrumb -Version $utilityBuild -Submenu $submenuTitle -MenuItem $menuItem05; Write-Host -Object ''
+                Restore-DomainHostSnapshots
                 Wait-AnyKey
             }
             Q {
@@ -734,44 +718,67 @@ Function Connect-InfrastructureVC {
     Return (Connect-VIServer -Server $infraVc.fqdn -User $infraVc.username -Password $infraVc.password -ErrorAction Stop)
 }
 
+Function Select-EnvironmentDomain {
+    <#
+    .DESCRIPTION
+        Detects every nested ESX host in the environment (VMs named "<env>-sfo0<n>-<domain>-r01-esx<nn>", excluding any
+        ending in '-source'), groups them by the domain parsed from the name, and lets the user choose a domain.
+        Returns an object with the VIServer connection, domain code and that domain's VMs, or $null if nothing was
+        selected. The caller is responsible for disconnecting the returned connection.
+    #>
+    $environmentName = Get-PtrEnvironmentName
+    If (!$environmentName) {
+        Return $null
+    }
+
+    $viServer = Connect-InfrastructureVC
+    If (!$viServer) {
+        Return $null
+    }
+
+    $nameRegex = '^' + [regex]::Escape($environmentName) + '-sfo\d+-(?<domain>[a-z]\d+)-r01-esx\d+$'
+    $allVms = @(Get-VM -Name "$environmentName-sfo*-r01-esx*" -Server $viServer -ErrorAction SilentlyContinue | Where-Object { ($_.Name -notlike "*-source") -and ($_.Name -match $nameRegex) })
+    If ($allVms.Count -eq 0) {
+        Write-LogMessage -Type ERROR -Message "No nested ESX hosts found for environment $environmentName on $($viServer.Name)"
+        Disconnect-VIServer -Server $viServer -Confirm:$false -ErrorAction SilentlyContinue
+        Return $null
+    }
+
+    $domainGroups = @($allVms | Group-Object -Property { $null = $_.Name -match $nameRegex; $Matches['domain'] } | Sort-Object -Property Name)
+    Write-LogMessage -Type INFO -Message "Found $($allVms.Count) nested host(s) across $($domainGroups.Count) domain(s)"
+    Write-Host ""
+    Write-Host " Domains in $($environmentName):" -ForegroundColor Yellow
+    For ($i = 0; $i -lt $domainGroups.Count; $i++) {
+        Write-Host " $($i + 1). $($domainGroups[$i].Name) ($($domainGroups[$i].Count) hosts)" -ForegroundColor White
+    }
+    Do {
+        $choice = Read-Host -Prompt " Select domain"
+    } Until (($choice -match '^\d+$') -and ([int]$choice -ge 1) -and ([int]$choice -le $domainGroups.Count))
+    $selectedGroup = $domainGroups[[int]$choice - 1]
+
+    Return [PSCustomObject]@{
+        ViServer   = $viServer
+        DomainCode = $selectedGroup.Name
+        Vms        = @($selectedGroup.Group | Sort-Object -Property Name)
+    }
+}
+
 Function New-DomainHostSnapshots {
     <#
     .SYNOPSIS
         Takes a memory-less, asynchronous snapshot of the nested ESX hosts of a chosen domain.
     .DESCRIPTION
-        Derives the environment name from the PTR hostname (minus '-converged-ptr'), lets the user pick a domain,
-        connects to the infrastructure vCenter from infrastructure-settings.json and snapshots every VM matching
-        "<env>-sfo0*-<domain>-r01-esx*" (covers both sfo01 and sfo02).
+        Detects all nested hosts in the environment, lets the user choose a domain, asks for a snapshot name and
+        snapshots every host in that domain.
     #>
     Try {
-        $environmentName = Get-PtrEnvironmentName
-        If (!$environmentName) {
-            Return
-        }
-
-        # Domain selection
-        $domains = [ordered]@{ "1" = @("sfo-m01-cl01", "m01"); "2" = @("sfo-w01-cl01", "w01"); "3" = @("sfo-w02-cl01", "w02") }
-        Write-Host ""
-        foreach ($key in $domains.Keys) {
-            Write-Host " $key. $($domains[$key][0])" -ForegroundColor White
-        }
-        Do {
-            $choice = Read-Host -Prompt " Select domain to snapshot"
-        } Until ($domains.Contains($choice))
-        $domainCode = $domains[$choice][1]
-        $vmPattern = "$environmentName-sfo0*-$domainCode-r01-esx*"
-
-        $viServer = Connect-InfrastructureVC
-        If (!$viServer) {
+        $selection = Select-EnvironmentDomain
+        If (!$selection) {
             Return
         }
 
         Try {
-            $vms = @(Get-VM -Name $vmPattern -Server $viServer -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike "*-source" })
-            If ($vms.Count -eq 0) {
-                Write-LogMessage -Type ERROR -Message "No VMs found matching $vmPattern on $($viServer.Name)"
-                Return
-            }
+            $vms = $selection.Vms
             Write-VmTable -vms $vms
 
             Do {
@@ -784,7 +791,7 @@ Function New-DomainHostSnapshots {
             }
             Write-LogMessage -Type INFO -Message "Snapshot tasks submitted for $($vms.Count) VM(s); they complete asynchronously in vCenter"
         } Finally {
-            Disconnect-VIServer -Server $viServer -Confirm:$false -ErrorAction SilentlyContinue
+            Disconnect-VIServer -Server $selection.ViServer -Confirm:$false -ErrorAction SilentlyContinue
         }
     } Catch {
         Write-CaughtException -object $_
@@ -796,32 +803,18 @@ Function Restore-DomainHostSnapshots {
     .SYNOPSIS
         Reverts the nested ESX hosts of a domain to a user-chosen snapshot and powers them on.
     .DESCRIPTION
-        Finds the VMs matching "<env>-sfo0*-<domainCode>-r01-esx*" the same way as New-DomainHostSnapshots, lists the
-        snapshots on the first VM for the user to choose from, reverts every VM to the snapshot of that name, then
+        Detects all nested hosts in the environment, lets the user choose a domain, lists the snapshots on the first
+        host of that domain for the user to choose from, reverts every host to the snapshot of that name, then
         powers them on.
     #>
-    Param (
-        [Parameter (Mandatory = $true)] [ValidateSet("m01", "w01", "w02")] [String]$domainCode
-    )
-
     Try {
-        $environmentName = Get-PtrEnvironmentName
-        If (!$environmentName) {
-            Return
-        }
-        $vmPattern = "$environmentName-sfo0*-$domainCode-r01-esx*"
-
-        $viServer = Connect-InfrastructureVC
-        If (!$viServer) {
+        $selection = Select-EnvironmentDomain
+        If (!$selection) {
             Return
         }
 
         Try {
-            $vms = @(Get-VM -Name $vmPattern -Server $viServer -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike "*-source" } | Sort-Object -Property Name)
-            If ($vms.Count -eq 0) {
-                Write-LogMessage -Type ERROR -Message "No VMs found matching $vmPattern on $($viServer.Name)"
-                Return
-            }
+            $vms = $selection.Vms
             Write-VmTable -vms $vms
 
             $snapshots = @(Get-Snapshot -VM $vms[0] | Sort-Object -Property Created -Descending)
@@ -856,7 +849,7 @@ Function Restore-DomainHostSnapshots {
                 Start-VM -VM $vm -Confirm:$false -ErrorAction SilentlyContinue | Out-Null
             }
         } Finally {
-            Disconnect-VIServer -Server $viServer -Confirm:$false -ErrorAction SilentlyContinue
+            Disconnect-VIServer -Server $selection.ViServer -Confirm:$false -ErrorAction SilentlyContinue
         }
     } Catch {
         Write-CaughtException -object $_
