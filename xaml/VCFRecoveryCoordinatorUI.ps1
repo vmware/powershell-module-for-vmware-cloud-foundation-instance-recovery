@@ -4317,8 +4317,27 @@ $exitButton.Add_Click({
                 }
             )
 
+            # The plan's own extra toggles/radio groups (see Update-ExtraTogglesPanel) decide which
+            # steps are visible, and so what every saved Index below refers to. They live only in the
+            # UI, not in the answers file, so they have to be saved here too -- otherwise Resume
+            # rebuilds the panel at its defaults and the saved Index values point at different rows.
+            $extraToggleStates = [ordered]@{}
+            foreach ($toggleId in $global:extraToggleCheckBoxes.Keys) {
+                $extraToggleStates[$toggleId] = [bool]$global:extraToggleCheckBoxes[$toggleId].IsChecked
+            }
+            $extraRadioSelections = [ordered]@{}
+            foreach ($groupId in $global:extraRadioGroups.Keys) {
+                foreach ($optionId in $global:extraRadioGroups[$groupId].Buttons.Keys) {
+                    if ($global:extraRadioGroups[$groupId].Buttons[$optionId].IsChecked) {
+                        $extraRadioSelections[$groupId] = $optionId
+                    }
+                }
+            }
+
             $currentPlanEntry = Get-CurrentRecoveryPlanEntry
             $state = [PSCustomObject]@{
+                ExtraToggles             = $extraToggleStates
+                ExtraRadioSelections     = $extraRadioSelections
                 ExtractedDataFilePath    = $filePathTextBox.Text
                 # RecoveryPlanId is the catalog id (e.g. "ManagementDomain", "RecoverFleet") of
                 # whichever plan was selected on the Recovery Plan combo -- see Resume below, which
@@ -4403,6 +4422,26 @@ $resumeButton.Add_Click({
                 $domainsListBox.SelectedIndex = $state.SelectedDomainIndex
             }
 
+            # Restores the plan's extra toggles/radio groups now that the plan selection/data load above
+            # has rebuilt that panel at its defaults, and BEFORE the Variables file loads below -- that
+            # load is what filters the task list, so it must already see the saved values. Without this
+            # the visible rows differ from the saved run and CompletedSteps no longer line up.
+            if ($state.ExtraToggles) {
+                foreach ($property in $state.ExtraToggles.PSObject.Properties) {
+                    if ($global:extraToggleCheckBoxes.ContainsKey($property.Name)) {
+                        $global:extraToggleCheckBoxes[$property.Name].IsChecked = [bool]$property.Value
+                    }
+                }
+            }
+            if ($state.ExtraRadioSelections) {
+                foreach ($property in $state.ExtraRadioSelections.PSObject.Properties) {
+                    $group = $global:extraRadioGroups[$property.Name]
+                    if ($group -and $group.Buttons.ContainsKey([string]$property.Value)) {
+                        $group.Buttons[[string]$property.Value].IsChecked = $true
+                    }
+                }
+            }
+
             # VariablesAnswersFilePath is this refactor's own field name; VariablesAnswersFilePaths.Shared
             # is read as a fallback for a state file saved before every plan got its own independent
             # context (older saves only ever populated .Shared for the plans that used the flat-global
@@ -4453,18 +4492,24 @@ $resumeButton.Add_Click({
                 # Current format -- see the matching comment on $completedSteps in the Exit handler
                 # for why this has to be position (group + index), not just CommandLine text: two
                 # different steps in a plan can share byte-identical CommandLine.
+                $skippedSteps = 0
                 foreach ($savedStep in @($state.CompletedSteps)) {
                     $rows = $stepRowGroups[[string]$savedStep.Group]
-                    if (-not $rows) { continue }
+                    if (-not $rows) { $skippedSteps++; continue }
                     $stepIndex = [int]$savedStep.Index
-                    if ($stepIndex -lt 0 -or $stepIndex -ge $rows.Count) { continue }
+                    if ($stepIndex -lt 0 -or $stepIndex -ge $rows.Count) { $skippedSteps++; continue }
                     $row = $rows[$stepIndex]
                     # Only trust the saved position if this exact row still has the same CommandLine
                     # it did when saved -- otherwise the plan file changed since this save (a step
                     # inserted/removed/reordered) and Index no longer points at the same step.
                     if ($row.CommandLine -eq [string]$savedStep.CommandLine) {
                         Set-StepButtonsState @($row.PlanButton, $row.ManualButton) 'Done' ([System.Windows.Media.Brushes]::Green)
+                    } else {
+                        $skippedSteps++
                     }
+                }
+                if ($skippedSteps -gt 0) {
+                    New-Advisory "$skippedSteps saved completed step(s) were not restored because the current task list no longer matches the saved one (plan file or Run Options changed since the save)." -Failure
                 }
             } else {
                 $allRows = @($stepRowGroups.Values | ForEach-Object { $_ })
