@@ -1839,6 +1839,10 @@ Function New-RetrieveVCFCredentials
         LogMessage -Type EXCEPTION -Message "[$sddcManagerFQDN] Error at Script Line $($_.InvocationInfo.ScriptLineNumber)"
         LogMessage -Type EXCEPTION -Message "[$sddcManagerFQDN] Error Message: $($_.Exception.Message)"
     }
+    Finally
+    {
+        Try { Disconnect-VcfSddcManagerServer * -ErrorAction SilentlyContinue } Catch {}
+    }
 }
 Export-ModuleMember -Function New-RetrieveVCFCredentials
 
@@ -2050,6 +2054,7 @@ Function Update-ExtractedSDDCData {
 
         Disconnect-VIServer * -confirm:$false
     }
+    Disconnect-VcfSddcManagerServer *
     LogMessage -type INFO -message "[$jumpboxName] Updating Extracted Data"
     $extractedSddcData | ConvertTo-Json -Depth 20 | Out-File $extractedSDDCDataFile
     $StopWatch.Stop()
