@@ -606,9 +606,15 @@ Function Update-VCFVariableJsonFiles {
         }
 
         # Backups - management vCenter backup set, matched on the vCenter fqdn in the JSON
-        $vCenterFqdn = (Get-Content -Path $managementJsonFile -Raw | ConvertFrom-Json).vCenterFqdn
-        $vCenterBackupFolder = Join-Path -Path (Join-Path -Path $backupsPath -ChildPath "vCenter") -ChildPath "sn_$vCenterFqdn"
-        $vCenterBackupSetFolder = Get-ChildItem -Path $vCenterBackupFolder -Directory -ErrorAction SilentlyContinue | Sort-Object -Property LastWriteTime -Descending | Select-Object -First 1
+        # The variable trimming change (085fb83) renamed this key from vCenterFqdn to restoredVcenterFqdn
+        $vCenterFqdn = (Get-Content -Path $managementJsonFile -Raw | ConvertFrom-Json).restoredVcenterFqdn
+        If ([string]::IsNullOrWhiteSpace($vCenterFqdn)) {
+            Write-LogMessage -Type WARNING -Message "restoredVcenterFqdn is empty in $(Split-Path -Path $managementJsonFile -Leaf) - cannot locate the vCenter backup set, leaving vCenterBackupPath unchanged"
+            $vCenterBackupSetFolder = $null
+        } else {
+            $vCenterBackupFolder = Join-Path -Path (Join-Path -Path $backupsPath -ChildPath "vCenter") -ChildPath "sn_$vCenterFqdn"
+            $vCenterBackupSetFolder = Get-ChildItem -Path $vCenterBackupFolder -Directory -ErrorAction SilentlyContinue | Sort-Object -Property LastWriteTime -Descending | Select-Object -First 1
+        }
         If ($vCenterBackupSetFolder) {
             # Always detected fresh - the share path must point back at this machine
             $localIpAddress = ([System.Net.Dns]::GetHostAddresses([System.Net.Dns]::GetHostName()) | Where-Object { $_.AddressFamily -eq 'InterNetwork' -and $_.ToString() -notlike '169.254.*' } | Select-Object -First 1)
@@ -620,7 +626,7 @@ Function Update-VCFVariableJsonFiles {
                 $managementUpdates["vCenterBackupPath"] = "$($localIpAddress.ToString())/$driveLetter`$/$shareRelativePath"
                 Write-LogMessage -Type INFO -Message "Found vCenter backup set $($vCenterBackupSetFolder.Name) for $vCenterFqdn"
             }
-        } else {
+        } elseIf (![string]::IsNullOrWhiteSpace($vCenterFqdn)) {
             Write-LogMessage -Type WARNING -Message "No vCenter backup set found under $vCenterBackupFolder - leaving vCenterBackupPath unchanged"
         }
 
