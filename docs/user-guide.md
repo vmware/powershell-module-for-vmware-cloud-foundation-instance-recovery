@@ -519,8 +519,14 @@ restores the SDDC Manager, vCenter and NSX Manager side by side.
   after another in the same thread; different numbers run at the same time.
 - Each thread has its own tab in the console, called **Thread 2**, **Thread 3**, and so on. A thread's tab stays
   open for the rest of the session so later tasks on the same thread can reuse its state.
-- The run waits for **every** thread in a group to finish before the next task starts. If one thread fails, the
-  others keep running to completion, then the run stops with a message in Advisories.
+- A thread starts as soon as the main sequence has finished every task above it, then runs **alongside** the main
+  sequence. The main sequence does not stop to wait for it.
+- Where a task needs a thread (or an earlier task) to be finished first, the plan says so with `waitFor`. That task,
+  and everything behind it in its own sequence, holds until what it waits for is complete. The Fleet Components plan
+  uses this to run the VCF Operations restore alongside everything else, and to hold the final confirmations until the
+  threads they depend on are done.
+- If a task fails, tasks already running on other threads finish, nothing new starts, and the run stops with a
+  message in Advisories.
 - Turn off **Run parallel tasks using multiple threads** to run everything one task at a time, in the Main
   console. This is slower but simpler to follow, which can be useful when diagnosing a problem.
 

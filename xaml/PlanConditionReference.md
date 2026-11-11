@@ -14,6 +14,7 @@ Reference for anyone hand-authoring `"condition"` entries in a recovery plan JSO
   "id": "...",
   "condition": [ ... ],
   "threadId": "",
+  "waitFor": [],
   "interactive": false
 }
 ```
@@ -22,6 +23,12 @@ Reference for anyone hand-authoring `"condition"` entries in a recovery plan JSO
 always runs). Every entry must be one of the three typed objects below — there is no raw-
 PowerShell-expression form; that was removed deliberately, and every condition in the shipped plans
 has been migrated to one of these three kinds.
+
+`threadId` puts the step in a parallel thread ("" = the main sequence). A thread starts once the main
+sequence has finished every main step above it and then runs alongside the main sequence. `waitFor` is an
+optional array of thread ids and/or step `id`s that appear **earlier** in the file: the step (and the rest of
+its own thread) does not start until every one of them has finished. A target that matches nothing stops Run All
+before anything runs.
 
 `id` is optional — only add it to a step some other step's `stepStatus` condition needs to
 reference. No uniqueness is enforced across a plan file; a duplicate `id` is last-write-wins in the

@@ -11,7 +11,7 @@
         "value": "true"
       }
     ],
-    "threadId": "",
+    "threadId": "4",
     "interactive": false,
     "visible": true
   },
@@ -419,6 +419,9 @@
     "displayName": "Restore Telemetry Backup",
     "condition": [],
     "threadId": "",
+    "waitFor": [
+      "2"
+    ],
     "interactive": false,
     "visible": true
   },
@@ -428,6 +431,9 @@
     "displayName": "Confirm Manual Step: VCF Automation connections have been updated",
     "condition": [],
     "threadId": "",
+    "waitFor": [
+      "3"
+    ],
     "interactive": true,
     "visible": true
   },
@@ -437,6 +443,9 @@
     "displayName": "Confirm Manual Step: License Server has been redeployed",
     "condition": [],
     "threadId": "",
+    "waitFor": [
+      "4"
+    ],
     "interactive": true,
     "visible": true
   }

@@ -68,6 +68,9 @@
     "displayName": "Merge Extracted Data and Credentials Payload",
     "condition": [],
     "threadId": "",
+    "waitFor": [
+      "2"
+    ],
     "interactive": false,
     "visible": true
   },
@@ -122,6 +125,10 @@
     "displayName": "Update Extracted SDDC Data",
     "condition": [],
     "threadId": "",
+    "waitFor": [
+      "3",
+      "4"
+    ],
     "interactive": false,
     "visible": true
   },
@@ -317,6 +324,10 @@
       }
     ],
     "threadId": "",
+    "waitFor": [
+      "2",
+      "3"
+    ],
     "interactive": false,
     "visible": true
   },

@@ -12,7 +12,7 @@
     RootModule        = '.\VCF.RecoveryCoordinator.psm1'
 
     # Version number of this module.
-    ModuleVersion     = '9.1.2.1000'
+    ModuleVersion     = '9.1.2.1001'
 
     # Supported PSEditions
     # CompatiblePSEditions = @()

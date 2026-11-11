@@ -301,18 +301,18 @@ $global:consoleSequence = 0
 $global:activeStepWatches = [System.Collections.Generic.List[object]]::new()
 # The console this app starts with (see New-EmbeddedConsole), plus zero or more Run All has spawned
 # on demand to run a background thread's own steps concurrently with everything else -- see
-# Invoke-StepThread. Every other console-aware function (Send-ToConsole, Set-ConsoleFocus,
+# Get-ThreadConsole. Every other console-aware function (Send-ToConsole, Set-ConsoleFocus,
 # Add-StepWatch, Invoke-Step, the Exit/Closed handlers) defaults to or iterates these rather than
 # assuming there's only ever one.
 $global:mainConsole = $null
 $global:parallelConsoles = [System.Collections.Generic.List[object]]::new()
-# Keyed by ThreadId (e.g. "2", "3") -- see Invoke-StepThread. Persists for the whole app session so
+# Keyed by ThreadId (e.g. "2", "3") -- see Get-ThreadConsole. Persists for the whole app session so
 # a later, non-consecutive block reusing the same ThreadId reuses the exact same console/session
 # instead of spawning a fresh one; nothing ever removes an entry from this once created.
 $global:threadConsoles = @{}
 # The domain/cluster most recently pushed into Main via Set-SelectedTargetInConsole -- kept so
 # Initialize-ConsoleVariables can re-send the exact same "Set-SelectedRecoveryTarget" call to a
-# freshly spawned thread console (see Invoke-StepThread), the same way it already re-primes a new
+# freshly spawned thread console (see Get-ThreadConsole), the same way it already re-primes a new
 # console with $extractedSDDCDataFile/the loaded variables file. Without this, a threaded step
 # referencing $workloadDomain or $clusterName (e.g. management-domain-recovery-plan.json's/
 # workload-domain-recovery-plan.json's own threadId 2/3 blocks -- vCenter/NSX Manager OVA deployment
@@ -727,13 +727,13 @@ function Select-RecoveryTypeAndPlan([string]$RecoveryTypeId, [string]$PlanId) {
 # console's transcript -- see Add-StepWatch), so giving a step a friendlier display name later can
 # never break that matching. Falls back to the same cmdlet-name derivation if omitted. threadId
 # (empty = runs on the main
-# sequence) marks a step that belongs to a background thread: Run All bundles a CONSECUTIVE run of
-# rows carrying ANY non-empty threadId into one block, starts a fresh console per DISTINCT threadId
-# within it (so several different threads in the same block run concurrently), runs each thread's own
-# rows through that one console in file order, and only continues the main sequence past the whole
-# block once every thread in it has finished -- see Invoke-StepChain/Invoke-StepThread. A threadId
-# reappearing later, separated by a row with no threadId at all, starts a new block/console rather
-# than resuming the earlier one. interactive (true) marks a step that stops partway through to prompt
+# sequence) marks a step that belongs to a background thread: each run of CONSECUTIVE rows carrying a
+# threadId forms one segment per distinct threadId (each in its own "Thread N" console, rows in file
+# order). A segment starts as soon as the main sequence has completed every main row above it in the
+# file, then runs ALONGSIDE the main sequence -- the main sequence does not stop for it. waitFor (an
+# optional array of threadIds and/or step ids appearing earlier in the file) makes a row, and the lane
+# behind it, hold until every target has finished -- see Invoke-StepChain/Invoke-StepLanes.
+# interactive (true) marks a step that stops partway through to prompt
 # for real keyboard input (a Read-Host confirmation, a menu choice, ...) rather than running
 # unattended end to end -- New-StepRow shows this as a "Requires Input" badge on the row so Run All
 # doesn't look stalled on something that's actually just waiting on the user. $RecoveryType selects
@@ -783,6 +783,7 @@ function Get-RecoveryPlanSteps([string]$RecoveryType, [string]$PlanFileName) {
                 } else {
                     '' 
                 }
+                WaitFor     = @($rawStep.waitFor | Where-Object { $_ } | ForEach-Object { [string]$_ })
                 Interactive = [bool]$rawStep.interactive
                 # Explicit property-existence check, not "if ($rawStep.visible)" -- that would treat
                 # an explicit "visible": false exactly the same as the property being absent, and the
@@ -1628,7 +1629,7 @@ function Send-InteractiveAnswerFiles($Console) {
 # Resets every currently loaded interactive answer file back to a fresh, full copy in Main and in
 # every already-existing parallel/thread console -- called at the start of every "Run All" click.
 # Necessary because thread consoles persist across separate Run All invocations within the same UI
-# session (Invoke-StepThread reuses whatever's already in $global:threadConsoles for a given
+# session (Get-ThreadConsole reuses whatever's already in $global:threadConsoles for a given
 # threadId), and Get-VCFIRAnswerSet dequeues (mutates) $script:VCFIRAnswers as each interactive
 # cmdlet runs. Without this, a second run reusing an already-primed console just keeps draining
 # whatever answer sets were left over from the previous run instead of starting from the top of the
@@ -1649,7 +1650,7 @@ function Sync-InteractiveAnswerFiles {
 #
 # Blocks (bounded) until the last priming command sent actually finishes running, before returning,
 # whenever something was sent -- Send-ToConsole only queues keystrokes via WriteConsoleInput, it does
-# not wait for the target process to have consumed and run them yet. Invoke-StepThreadChain calls
+# not wait for the target process to have consumed and run them yet. Invoke-LaneNext calls
 # Add-StepWatch immediately after this returns, and Add-StepWatch's baseline offset has to be taken
 # from AFTER these priming commands have actually finished executing; captured any earlier, their own
 # transcript output would land inside that thread's own first watched step's slice once it does run,
@@ -1989,7 +1990,7 @@ $window.Add_ContentRendered({
 # write to; the real console echoes what's "typed" exactly as it always does, because as far as it
 # knows, that's exactly what happened. $Console defaults to Main, so every existing call site (a
 # lone Run button, Load Variables, the extraction flow, ...) keeps targeting it without having to
-# say so; only a background thread's own steps (see Invoke-StepThreadChain) ever pass a specific one.
+# say so; only a background thread's own steps (see Invoke-LaneNext) ever pass a specific one.
 function Send-ToConsole([string]$CommandLine, $Console) {
     if ($null -eq $Console) {
         $Console = $global:mainConsole
@@ -2093,7 +2094,7 @@ function Test-StepTranscriptClean([string]$TranscriptSlice) {
 # line, from whatever that transcript's current length is right now -- so an OLDER completion line
 # already in it from a previous run of the same cmdlet can't cause an immediate false-positive match
 # on a re-run. $OnComplete (optional) is called with one argument -- $isClean, per
-# Test-StepTranscriptClean -- once "Completed Task" is found; Invoke-StepChain/Invoke-StepThreadChain
+# Test-StepTranscriptClean -- once "Completed Task" is found; Invoke-StepChain/Invoke-LaneNext
 # use this to gate starting the next step (or continuing past a block of background threads) on the
 # previous one(s) actually having gone cleanly, not just having finished. $Console defaults to Main.
 function Add-StepWatch($Buttons, [string]$CmdletName, [scriptblock]$OnComplete, $Console, [string]$Id) {
@@ -2109,7 +2110,7 @@ function Add-StepWatch($Buttons, [string]$CmdletName, [scriptblock]$OnComplete, 
     }
     # Drop any earlier watch for this same row first, rather than stacking duplicates on a re-run.
     # $Buttons is the same @($row.PlanButton, $row.ManualButton) array reference every caller for
-    # this row passes (see New-StepRow/Invoke-StepChain/Invoke-StepThreadChain), so plain -ne here
+    # this row passes (see New-StepRow/Invoke-StepChain/Invoke-LaneNext), so plain -ne here
     # is reference-equality on that array, exactly like the single-Button comparison this replaced.
     # @(...) around the whole pipeline is required, not optional: Where-Object filtering everything
     # out (as it always does on the very first-ever call, since the list starts empty) produces $null,
@@ -2286,7 +2287,7 @@ function Stop-RunTimer($Timer) {
 # Resets a row to its "in progress" look (undoing any earlier Done/Failed state -- re-running a step
 # that previously completed should stop showing that until it completes again) and starts watching
 # for its completion. $OnStepComplete (optional) is threaded straight through to Add-StepWatch --
-# see Invoke-StepChain/Invoke-StepThreadChain. $Console (optional, defaults to Main) is which console
+# see Invoke-StepChain/Invoke-LaneNext. $Console (optional, defaults to Main) is which console
 # the command actually runs in -- only a background thread's own steps ever pass a different one.
 #
 # $Interactive (see the "interactive" plan-step property, and New-StepRow's "Requires Input" badge)
@@ -2518,17 +2519,17 @@ function Invoke-Step($Buttons, [string]$CmdletName, [string]$CommandLine, [scrip
 # fails any of those stops the whole chain right there instead of sending the next step's command
 # into a plan that assumed the previous one actually worked.
 #
-# A run of two or more consecutive rows carrying ANY non-empty ThreadId is dispatched as a block of
-# background threads instead of one at a time -- see Invoke-StepThread. Rows must be consecutive in
-# the plan file to be part of the same DISPATCH block -- a ThreadId reappearing later, separated by a
-# row with no ThreadId at all, starts a new block rather than being bundled into the earlier one's
-# own sequential run. The CONSOLE itself is a separate matter: Invoke-StepThread reuses the exact
-# same persistent console for every block that ever references a given ThreadId, however far apart
-# in the plan they are, rather than spawning a fresh one each time.
+# A plan whose rows carry ThreadIds is NOT run as one linear chain -- Run All schedules it as
+# parallel LANES (see Invoke-StepLanes). Rows with no ThreadId form the MAIN lane; each run of
+# consecutive rows sharing a ThreadId forms a thread segment that starts as soon as the main lane has
+# completed every main row ABOVE it in the plan file, then runs alongside the main lane (the main lane
+# does NOT stop to wait for it). Ordering between lanes is expressed explicitly with a row's optional
+# "waitFor" array -- see Invoke-StepLanes. Rows that carry no ThreadId and no waitFor simply run in
+# file order, one at a time, exactly as before.
 # -IgnoreThreads (driven by each panel's own "Run steps in parallel threads where possible" checkbox
-# -- unchecked means this) skips that dispatch entirely, running every row one at a time regardless of
-# ThreadId; it's threaded through every recursive call so unchecking it stays in effect for the rest
-# of that particular Run All run, not just its first row.
+# -- unchecked means this) skips lane scheduling entirely, running every row one at a time regardless
+# of ThreadId/waitFor; it's threaded through every recursive call so unchecking it stays in effect for
+# the rest of that particular Run All run, not just its first row.
 # $OnChainComplete (optional), if given, fires exactly once, at whichever terminal point the whole
 # call tree actually ends at -- every row ran cleanly ($true), or some row/thread stopped the chain
 # early ($false) -- threaded through every recursive call the same way $IgnoreThreads is, so it
@@ -2536,12 +2537,18 @@ function Invoke-Step($Buttons, [string]$CmdletName, [string]$CommandLine, [scrip
 # Currently used to re-enable every step's Run button (see Set-AllStepButtonsEnabled) once a Run
 # All run is fully finished, not before.
 function Invoke-StepChain([object[]]$Rows, [switch]$IgnoreThreads, [scriptblock]$OnChainComplete) {
+    # Routed BEFORE the leading-Done skip below: Invoke-StepLanes does its own per-lane Done skipping
+    # and needs the full row list so a waitFor can still resolve against an already-Done row's id.
+    if (-not $IgnoreThreads -and @($Rows | Where-Object { $_.ThreadId }).Count -gt 0) {
+        Invoke-StepLanes $Rows $OnChainComplete
+        return
+    }
     # Skip any leading rows already marked Done -- lets a fresh Run All click (most notably right
     # after Resume restores prior "Done" state from a saved session) continue from the next pending
     # step instead of re-running the whole plan from the top. Only ever matters on the very first
     # call a Run All button makes with its full row list: every recursive call below already strips
-    # off each row as it completes (Select-Object -Skip 1/-Skip $blockEnd), so $Rows here never
-    # starts with a Done row during normal step-by-step advancement.
+    # off each row as it completes (Select-Object -Skip 1), so $Rows here never starts with a Done
+    # row during normal step-by-step advancement.
     while ($Rows.Count -gt 0 -and $Rows[0].PlanButton.Content -eq 'Done') {
         $Rows = @($Rows | Select-Object -Skip 1)
     }
@@ -2552,65 +2559,6 @@ function Invoke-StepChain([object[]]$Rows, [switch]$IgnoreThreads, [scriptblock]
         return
     }
     $row = $Rows[0]
-    if ($row.ThreadId -and -not $IgnoreThreads) {
-        $blockEnd = 1
-        while ($blockEnd -lt $Rows.Count -and $Rows[$blockEnd].ThreadId) {
-            $blockEnd++
-        }
-        $threadBlockRows = @($Rows | Select-Object -First $blockEnd)
-        $remainingRows = @($Rows | Select-Object -Skip $blockEnd)
-
-        # A block can carry more than one DISTINCT ThreadId (e.g. two unrelated threads' steps
-        # interleaved in the plan file) -- bucketing by ThreadId, preserving each thread's own file
-        # order, is what lets "start every thread in this block at once, each running its own rows in
-        # sequence" and "one thread, several sequential steps" both fall out of the same logic.
-        $threadOrder = [System.Collections.Generic.List[string]]::new()
-        $threadRowsById = @{}
-        foreach ($blockRow in $threadBlockRows) {
-            if (-not $threadRowsById.ContainsKey($blockRow.ThreadId)) {
-                $threadRowsById[$blockRow.ThreadId] = [System.Collections.Generic.List[object]]::new()
-                [void]$threadOrder.Add($blockRow.ThreadId)
-            }
-            $threadRowsById[$blockRow.ThreadId].Add($blockRow)
-        }
-
-        # $state is a shared, mutated-in-place hashtable captured by every thread's own OnComplete
-        # closure (via .GetNewClosure()) -- safe because it's a reference type and none of the
-        # closures ever reassign $state itself, only its .Remaining/.AllClean entries. A thread
-        # finishing uncleanly does not attempt to stop the other still-running threads in this same
-        # block; the chain simply refuses to continue past the block once they've ALL finished if any
-        # of them were unclean.
-        $state = @{ Remaining = $threadOrder.Count; AllClean = $true }
-        $onThreadComplete = {
-            param($isClean)
-            if (-not $isClean) {
-                $state.AllClean = $false
-            }
-            $state.Remaining--
-            if ($state.Remaining -eq 0) {
-                if ($state.AllClean) {
-                    # The block's own steps may have left a thread's own tab selected/focused (an
-                    # Interactive step switches to whichever console IT runs on, same as any other
-                    # step) -- explicitly switch back to Main before continuing, rather than leaving
-                    # the chain's next (typically Main-thread) step to run invisibly under whatever
-                    # thread tab happens to still be showing.
-                    $consoleTabControl.SelectedItem = $global:mainConsole.TabItem
-                    Set-ConsoleFocus
-                    Invoke-StepChain $remainingRows -IgnoreThreads:$IgnoreThreads -OnChainComplete $OnChainComplete
-                } else {
-                    New-Advisory 'Run All stopped: one or more threads did not complete cleanly -- check each console/transcript before retrying.' -Failure
-                    if ($OnChainComplete) {
-                        & $OnChainComplete $false
-                    }
-                }
-            }
-        }.GetNewClosure()
-
-        foreach ($threadId in $threadOrder) {
-            Invoke-StepThread @($threadRowsById[$threadId]) $onThreadComplete
-        }
-        return
-    }
     $remainingRows = @($Rows | Select-Object -Skip 1)
     Invoke-Step @($row.PlanButton, $row.ManualButton) $row.CmdletName $row.CommandLine {
         param($isClean)
@@ -2625,50 +2573,266 @@ function Invoke-StepChain([object[]]$Rows, [switch]$IgnoreThreads, [scriptblock]
     }.GetNewClosure() $null $row.Interactive $row.Id $row.Condition
 }
 
-# One background thread: a console keyed by ThreadId (not by whichever task happens to run in it),
-# created once via New-EmbeddedConsole -Bootstrap the FIRST time this ThreadId is ever seen, and
-# reused as-is for every later, non-consecutive block that references the same ThreadId again --
-# see $global:threadConsoles. Named "Thread <N>" (matching the plan's own threadId value, e.g. a
-# step with threadId "2" gets a tab literally named "Thread 2") rather than after whichever task
-# happened to run in it first, since that identity now outlives any single task and would
-# otherwise go stale the moment a second, unrelated task reuses it. Runs $ThreadRows through it IN
-# SEQUENCE, exactly like the main sequence does but scoped to this one console -- see
-# Invoke-StepThreadChain. Deliberately never closed and never relayed into Main once its own
-# sequence finishes (clean or not) -- it stays open and its output stays in its own tab, in case a
-# later, unrelated block in the plan reuses this same ThreadId and expects to keep working in the
-# same session (e.g. variables/state it already set up) rather than starting fresh.
-function Invoke-StepThread([object[]]$ThreadRows, [scriptblock]$OnThreadComplete) {
-    $threadId = $ThreadRows[0].ThreadId
-    $console = $global:threadConsoles[$threadId]
-    if (-not $console) {
-        $console = New-EmbeddedConsole -TabHeader "Thread $threadId" -Bootstrap
-        $global:threadConsoles[$threadId] = $console
-        $global:parallelConsoles.Add($console)
+# The lane scheduler behind Invoke-StepChain for any plan with threaded rows.
+#
+# LANES: the main lane (every row with no ThreadId, in file order) plus one SEGMENT per distinct
+# ThreadId in each run of consecutive threaded rows. A segment runs its own rows one at a time, in
+# file order, in the persistent console for its ThreadId (Get-ThreadConsole -- the same "Thread N"
+# console is reused by every segment of that ThreadId, which therefore never overlap each other: a
+# later segment waits for earlier ones of the same ThreadId).
+#
+# FORKING: a segment starts the moment the main lane has completed every main row that precedes the
+# segment in the plan file (so a segment at the very top of the file starts immediately). From then
+# on it runs concurrently with the main lane -- the main lane never stops for it unless a row says so.
+#
+# WAITING: a row may carry "waitFor": ["2", "some-step-id"]. The row (and so its whole lane behind it)
+# does not start until every target has finished. A target is either a ThreadId (meaning every segment
+# of that thread that appears EARLIER in the plan file than the waiting row, other than the row's own
+# segment) or a step "id" (a row appearing earlier in the file). Only earlier targets are allowed, which
+# makes a wait cycle impossible. A target that matches nothing stops Run All before anything runs.
+#
+# FAILURE: the first row that finishes uncleanly stops the whole run -- rows already in flight on other
+# lanes are left to finish, but no lane starts another row, and lanes blocked on a waitFor are
+# abandoned. $OnChainComplete fires once, when every started lane has stopped ($false if anything
+# failed, $true otherwise). A lane whose rows are all skipped (conditions) or already Done finishes
+# immediately, so nothing ever waits on it forever.
+function Invoke-StepLanes([object[]]$Rows, [scriptblock]$OnChainComplete) {
+    $state = @{
+        Segments        = [System.Collections.Generic.List[object]]::new()
+        Waiters         = [System.Collections.Generic.List[object]]::new()
+        Deps            = @{}
+        DoneIds         = @{}
+        Active          = 0
+        MainDone        = 0
+        Failed          = $false
+        Finished        = $false
+        OnChainComplete = $OnChainComplete
     }
-    Invoke-StepThreadChain $ThreadRows $console $OnThreadComplete
+    $mainSeg = @{ IsMain = $true; ThreadId = ''; Entries = [System.Collections.Generic.List[object]]::new(); Next = 0; Started = $false; Done = $false; Terminated = $false; Console = $null; FirstIndex = -1; ForkIndex = 0 }
+    [void]$state.Segments.Add($mainSeg)
+
+    $mainCount = 0
+    $i = 0
+    while ($i -lt $Rows.Count) {
+        if (-not $Rows[$i].ThreadId) {
+            [void]$mainSeg.Entries.Add([PSCustomObject]@{ Row = $Rows[$i]; Index = $i })
+            $mainCount++
+            $i++
+            continue
+        }
+        # One run of consecutive threaded rows -> one segment per distinct ThreadId in it.
+        $blockSegs = @{}
+        while ($i -lt $Rows.Count -and $Rows[$i].ThreadId) {
+            $threadId = $Rows[$i].ThreadId
+            if (-not $blockSegs.ContainsKey($threadId)) {
+                $blockSegs[$threadId] = @{ IsMain = $false; ThreadId = $threadId; Entries = [System.Collections.Generic.List[object]]::new(); Next = 0; Started = $false; Done = $false; Terminated = $false; Console = $null; FirstIndex = $i; ForkIndex = $mainCount }
+                [void]$state.Segments.Add($blockSegs[$threadId])
+            }
+            [void]$blockSegs[$threadId].Entries.Add([PSCustomObject]@{ Row = $Rows[$i]; Index = $i })
+            $i++
+        }
+    }
+
+    # Resume: skip each lane's leading Done rows (same idea as the sequential chain's leading-Done
+    # skip), still recording their ids as finished and counting skipped main rows as completed.
+    foreach ($seg in $state.Segments) {
+        while ($seg.Next -lt $seg.Entries.Count -and $seg.Entries[$seg.Next].Row.PlanButton.Content -eq 'Done') {
+            $doneRow = $seg.Entries[$seg.Next].Row
+            if ($doneRow.Id) {
+                $state.DoneIds[$doneRow.Id] = $true
+            }
+            $seg.Next++
+            if ($seg.IsMain) {
+                $state.MainDone++
+            }
+        }
+    }
+
+    # Resolve every row's waitFor into concrete segment/id dependencies up front, so a typo stops the
+    # run before anything has started instead of deadlocking it halfway.
+    foreach ($seg in $state.Segments) {
+        foreach ($entry in $seg.Entries) {
+            foreach ($target in @($entry.Row.WaitFor | Where-Object { $_ })) {
+                $matched = $false
+                foreach ($other in $state.Segments) {
+                    if (-not $other.IsMain -and $other -ne $seg -and $other.ThreadId -eq $target -and $other.FirstIndex -lt $entry.Index) {
+                        [void](Get-LaneDeps $state $entry.Index).Segs.Add($other)
+                        $matched = $true
+                    }
+                }
+                for ($k = 0; $k -lt $entry.Index; $k++) {
+                    if ($Rows[$k].Id -and $Rows[$k].Id -eq $target) {
+                        [void](Get-LaneDeps $state $entry.Index).Ids.Add([string]$target)
+                        $matched = $true
+                        break
+                    }
+                }
+                if (-not $matched) {
+                    New-Advisory "Run All not started: $($entry.Row.CmdletName) waits for '$target', which matches no earlier thread or step id in this plan." -Failure
+                    if ($OnChainComplete) {
+                        & $OnChainComplete $false
+                    }
+                    return
+                }
+            }
+        }
+        # A later segment of a ThreadId waits for every earlier segment of that same ThreadId (they
+        # share one console, so they can never run at the same time).
+        if (-not $seg.IsMain -and $seg.Next -lt $seg.Entries.Count) {
+            foreach ($other in $state.Segments) {
+                if (-not $other.IsMain -and $other.ThreadId -eq $seg.ThreadId -and $other.FirstIndex -lt $seg.FirstIndex) {
+                    [void](Get-LaneDeps $state $seg.Entries[$seg.Next].Index).Segs.Add($other)
+                }
+            }
+        }
+    }
+
+    # Active starts at 1 for the main lane BEFORE any segment is started, so a segment that finishes
+    # synchronously (everything Done/skipped) can never drop the count to zero and end the run early.
+    $mainSeg.Started = $true
+    $state.Active = 1
+    Start-LaneSegments $state
+    Invoke-LaneNext $state $mainSeg
 }
 
-# Runs $Rows one at a time in $Console, in file order -- the same three-gate logic Invoke-StepChain
-# itself uses for the main sequence, just bound to one specific (non-Main) console throughout instead
-# of resolving $Console fresh for every row. A row that finishes uncleanly stops the REST OF THIS
-# THREAD's own rows (mirroring how an unclean row already stops everything after it on the main
-# sequence) without touching any other concurrently running thread. $OnComplete fires exactly once,
-# with $true once every row has run cleanly or $false the moment one doesn't.
-function Invoke-StepThreadChain([object[]]$Rows, $Console, [scriptblock]$OnComplete) {
-    if ($Rows.Count -eq 0) {
-        & $OnComplete $true
+# Lazily-created dependency record for one row (by its index in the plan's row list).
+function Get-LaneDeps($state, [int]$Index) {
+    if (-not $state.Deps.ContainsKey($Index)) {
+        $state.Deps[$Index] = @{ Segs = [System.Collections.Generic.List[object]]::new(); Ids = [System.Collections.Generic.List[string]]::new() }
+    }
+    return $state.Deps[$Index]
+}
+
+function Test-LaneDepsMet($state, $Deps) {
+    foreach ($dependency in $Deps.Segs) {
+        if (-not $dependency.Done) {
+            return $false
+        }
+    }
+    foreach ($dependencyId in $Deps.Ids) {
+        if (-not $state.DoneIds.ContainsKey($dependencyId)) {
+            return $false
+        }
+    }
+    return $true
+}
+
+# Starts every not-yet-started thread segment whose fork point (number of main rows above it in the
+# plan file) the main lane has now reached.
+function Start-LaneSegments($state) {
+    foreach ($seg in @($state.Segments)) {
+        if ($seg.IsMain -or $seg.Started -or $seg.ForkIndex -gt $state.MainDone) {
+            continue
+        }
+        $seg.Started = $true
+        $state.Active++
+        if ($seg.Next -lt $seg.Entries.Count) {
+            $seg.Console = Get-ThreadConsole $seg.ThreadId
+        }
+        Invoke-LaneNext $state $seg
+    }
+}
+
+# Advances one lane by one row: stops it if the run has failed, finishes it when out of rows, parks it
+# in the waiter list if the next row's waitFor isn't met yet, otherwise runs that row and, when it
+# completes, moves on.
+function Invoke-LaneNext($state, $seg) {
+    if ($state.Finished -or $seg.Terminated) {
         return
     }
-    $row = $Rows[0]
-    $remainingRows = @($Rows | Select-Object -Skip 1)
+    if ($state.Failed) {
+        Complete-LaneSegment $state $seg $false
+        return
+    }
+    if ($seg.Next -ge $seg.Entries.Count) {
+        Complete-LaneSegment $state $seg $true
+        return
+    }
+    $entry = $seg.Entries[$seg.Next]
+    $row = $entry.Row
+    if ($state.Deps.ContainsKey($entry.Index) -and -not (Test-LaneDepsMet $state $state.Deps[$entry.Index])) {
+        if (-not $state.Waiters.Contains($seg)) {
+            [void]$state.Waiters.Add($seg)
+        }
+        return
+    }
     Invoke-Step @($row.PlanButton, $row.ManualButton) $row.CmdletName $row.CommandLine {
         param($isClean)
         if ($isClean) {
-            Invoke-StepThreadChain $remainingRows $Console $OnComplete
+            if ($row.Id) {
+                $state.DoneIds[$row.Id] = $true
+            }
+            $seg.Next++
+            if ($seg.IsMain) {
+                $state.MainDone++
+                Start-LaneSegments $state
+            }
+            Resume-LaneWaiters $state
+            Invoke-LaneNext $state $seg
         } else {
-            & $OnComplete $false
+            if (-not $state.Failed) {
+                New-Advisory "Run All stopped: $($row.CmdletName) did not complete cleanly -- check the console/transcript for warnings, errors, or a PowerShell error record before retrying." -Failure
+            }
+            Complete-LaneSegment $state $seg $false
         }
-    }.GetNewClosure() $Console $row.Interactive $row.Id $row.Condition
+    }.GetNewClosure() $seg.Console $row.Interactive $row.Id $row.Condition
+}
+
+# Re-checks every parked lane (something just finished that may have unblocked it, or the run failed
+# and they need to be abandoned).
+function Resume-LaneWaiters($state) {
+    if ($state.Waiters.Count -eq 0) {
+        return
+    }
+    $parked = @($state.Waiters)
+    $state.Waiters.Clear()
+    foreach ($waiting in $parked) {
+        Invoke-LaneNext $state $waiting
+    }
+}
+
+function Complete-LaneSegment($state, $seg, $clean) {
+    if ($seg.Terminated) {
+        return
+    }
+    $seg.Terminated = $true
+    $state.Active--
+    if ($clean) {
+        $seg.Done = $true
+    } else {
+        $state.Failed = $true
+    }
+    Resume-LaneWaiters $state
+    if ($state.Active -le 0 -and -not $state.Finished) {
+        $state.Finished = $true
+        if (-not $state.Failed) {
+            # A thread's step (an Interactive one especially) may have left that thread's tab
+            # selected -- bring Main back to the front now that the whole run is over.
+            $consoleTabControl.SelectedItem = $global:mainConsole.TabItem
+            Set-ConsoleFocus
+        }
+        if ($state.OnChainComplete) {
+            & $state.OnChainComplete (-not $state.Failed)
+        }
+    }
+}
+
+# The persistent console for a ThreadId, created via New-EmbeddedConsole -Bootstrap the FIRST time
+# the ThreadId is ever seen and reused as-is by every later segment of the same ThreadId, however far
+# apart in the plan -- see $global:threadConsoles. Named "Thread <N>" (matching the plan's own
+# threadId value, e.g. a step with threadId "2" gets a tab literally named "Thread 2") rather than
+# after whichever task happens to run in it, since that identity outlives any single task.
+# Deliberately never closed and never relayed into Main once a segment finishes (clean or not) -- it
+# stays open and its output stays in its own tab, in case a later segment reuses the same ThreadId
+# and expects to keep working in the same session (variables/state it already set up).
+function Get-ThreadConsole([string]$ThreadId) {
+    $console = $global:threadConsoles[$ThreadId]
+    if (-not $console) {
+        $console = New-EmbeddedConsole -TabHeader "Thread $ThreadId" -Bootstrap
+        $global:threadConsoles[$ThreadId] = $console
+        $global:parallelConsoles.Add($console)
+    }
+    return $console
 }
 
 # One fixed color per thread number: 2 green, 3 blue, then violet and orchid for 4 and 5. Deliberately
@@ -2778,7 +2942,7 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
         }
 
         # Run All bundles a consecutive run of rows carrying a ThreadId into background threads (see
-        # Invoke-StepThread); manually clicking Run on a single row never does, even if it has one.
+        # Get-ThreadConsole); manually clicking Run on a single row never does, even if it has one.
         # A numbered circle, not a "[1]" text badge -- easier to scan at a glance, and its
         # background color is fixed per thread number (see Get-ThreadCircleColor), so each thread is
         # recognizable at a glance without having to read the numbers themselves.
@@ -2927,6 +3091,11 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
         CmdletName                 = $cmdletName
         DisplayName                = $DisplayName
         ThreadId                   = $ThreadId
+        WaitFor                    = if ($StepRef -and $StepRef.WaitFor) {
+            @($StepRef.WaitFor)
+        } else {
+            @()
+        }
         Interactive                = $Interactive
         Id                         = $Id
         Condition                  = $Condition

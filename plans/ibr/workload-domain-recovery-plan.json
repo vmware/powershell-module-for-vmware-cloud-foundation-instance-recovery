@@ -41,6 +41,10 @@
     "displayName": "Update Extracted SDDC Data",
     "condition": [],
     "threadId": "",
+    "waitFor": [
+      "2",
+      "3"
+    ],
     "interactive": false,
     "visible": true
   },
@@ -220,6 +224,10 @@
       }
     ],
     "threadId": "",
+    "waitFor": [
+      "2",
+      "3"
+    ],
     "interactive": true,
     "visible": true
   },
