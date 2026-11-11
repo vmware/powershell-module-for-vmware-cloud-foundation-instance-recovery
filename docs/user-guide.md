@@ -855,6 +855,8 @@ back and forth freely for the rest of the session without being asked again.
 Engineering mode:
 
 - Unlocks **engineering-only recovery types and plans**, such as Fleet Disaster Recovery.
+- Unlocks **storage clusters and compute clusters** in Additional Cluster Recovery. These rows carry an
+  *ENGINEERING-ONLY* badge, and selecting one in User mode prompts for the engineering password or one-time code.
 - Shows the **Advanced** tab.
 - Lets you set a **breakpoint** in the task list.
 

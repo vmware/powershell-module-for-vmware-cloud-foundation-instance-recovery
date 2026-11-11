@@ -614,6 +614,22 @@ function Get-CurrentRecoveryPlanTarget {
 # this marks a feature gated behind the engineering mode password rather than a fixed property of
 # an already-available one. Tag carries the catalog id (a recovery type id, plan id, or data
 # source id) so callers can resolve back to the catalog entry without re-parsing the label text.
+function New-EngineeringOnlyBadge {
+    $badge = New-Object System.Windows.Controls.Border
+    $badge.Background = [System.Windows.Media.Brushes]::LightGray
+    $badge.CornerRadius = 8
+    $badge.Padding = '6,1'
+    $badge.Margin = '8,0,0,0'
+    $badge.VerticalAlignment = 'Center'
+    $badgeText = New-Object System.Windows.Controls.TextBlock
+    $badgeText.Text = 'ENGINEERING-ONLY'
+    $badgeText.FontSize = 10.5
+    $badgeText.FontWeight = 'SemiBold'
+    $badgeText.Foreground = [System.Windows.Media.Brushes]::Black
+    $badge.Child = $badgeText
+    return $badge
+}
+
 function New-RecoveryOptionComboBoxItem([string]$Label, [bool]$EngineeringOnly, [string]$Tag) {
     $item = New-Object System.Windows.Controls.ComboBoxItem
     $item.Tag = $Tag
@@ -624,22 +640,19 @@ function New-RecoveryOptionComboBoxItem([string]$Label, [bool]$EngineeringOnly, 
     $textBlock.VerticalAlignment = 'Center'
     [void]$panel.Children.Add($textBlock)
     if ($EngineeringOnly) {
-        $badge = New-Object System.Windows.Controls.Border
-        $badge.Background = [System.Windows.Media.Brushes]::LightGray
-        $badge.CornerRadius = 8
-        $badge.Padding = '6,1'
-        $badge.Margin = '8,0,0,0'
-        $badge.VerticalAlignment = 'Center'
-        $badgeText = New-Object System.Windows.Controls.TextBlock
-        $badgeText.Text = 'ENGINEERING-ONLY'
-        $badgeText.FontSize = 10.5
-        $badgeText.FontWeight = 'SemiBold'
-        $badgeText.Foreground = [System.Windows.Media.Brushes]::Black
-        $badge.Child = $badgeText
-        [void]$panel.Children.Add($badge)
+        [void]$panel.Children.Add((New-EngineeringOnlyBadge))
     }
     $item.Content = $panel
     return $item
+}
+
+# True if this additional-cluster row's raw primaryDatastoreType is listed under the Additional
+# Cluster plan's engineeringOnlyClusterTypes in the catalog (Storage Cluster = VSAN_MAX, Compute
+# Cluster = VSAN_Remote), i.e. selecting it needs engineering mode.
+function Test-ClusterEngineeringOnly($Cluster) {
+    $entry = Get-RecoveryPlanCatalogEntry 'AdditionalCluster'
+    if (-not $entry -or -not $entry.engineeringOnlyClusterTypes) { return $false }
+    return (@($entry.engineeringOnlyClusterTypes) -contains [string]$Cluster.PrimaryDatastoreType)
 }
 
 # The plan a given Recovery Type should land on as soon as it's selected -- whichever of its plans
@@ -3315,6 +3328,19 @@ function Import-ExtractedSddcDataFile([string]$Path) {
             }
             $columnGroups = @('AdditionalClustersCol0', 'AdditionalClustersCol1', 'AdditionalClustersCol2', 'AdditionalClustersCol3', 'AdditionalClustersCol4')
             $row = New-TableRow -Values @($clusterNameText, $cluster.DomainName, (Get-DisplayDatastoreType $cluster.PrimaryDatastoreType), $stretchedText, $cluster.DependentOn) -ColumnGroups $columnGroups
+            if (Test-ClusterEngineeringOnly $cluster) {
+                # Move the Type cell's text into a horizontal panel alongside the badge.
+                $typeCell = $row.Children | Where-Object { [System.Windows.Controls.Grid]::GetColumn($_) -eq 2 } | Select-Object -First 1
+                $row.Children.Remove($typeCell)
+                $typeCell.Margin = '0'
+                $typePanel = New-Object System.Windows.Controls.StackPanel
+                $typePanel.Orientation = 'Horizontal'
+                $typePanel.Margin = '0,0,10,0'
+                [void]$typePanel.Children.Add($typeCell)
+                [void]$typePanel.Children.Add((New-EngineeringOnlyBadge))
+                [System.Windows.Controls.Grid]::SetColumn($typePanel, 2)
+                [void]$row.Children.Add($typePanel)
+            }
             # Wrapped in an explicit ListBoxItem (rather than adding $row directly) so selecting a
             # row is distinguishable from the "No additional clusters detected." placeholder above,
             # which is a plain string -- see Sync-AdditionalClusterSteps's ListBoxItem type check.
@@ -4111,6 +4137,23 @@ function Sync-AdditionalClusterSteps {
 
 $additionalClustersListBox.Add_SelectionChanged({
         try {
+            # Engineering-mode gate for cluster types the catalog lists under the plan's
+            # engineeringOnlyClusterTypes (storage/compute clusters). Same shape as the Recovery Plan
+            # combo's gate: clear the pick first (which re-fires this handler with nothing selected,
+            # resetting the panes), then prompt, and re-select on success -- the re-fired handler then
+            # sees the unlocked flag and falls through to Sync-AdditionalClusterSteps.
+            $pickedItem = $additionalClustersListBox.SelectedItem
+            if ($pickedItem -is [System.Windows.Controls.ListBoxItem] -and (Test-ClusterEngineeringOnly $pickedItem.Tag) -and -not $global:engineeringModeUnlocked) {
+                $additionalClustersListBox.SelectedItem = $null
+                $entered = Show-PasswordPromptDialog -Title 'Unlock Engineering Mode' -Message "Enter the engineering mode password or one-time code to select $(Get-DisplayDatastoreType $pickedItem.Tag.PrimaryDatastoreType) '$($pickedItem.Tag.ClusterName)'."
+                if ($entered -and (Test-EngineeringModePassword $entered)) {
+                    $global:engineeringModeUnlocked = $true
+                    $additionalClustersListBox.SelectedItem = $pickedItem
+                } elseif ($entered) {
+                    New-Advisory 'Incorrect or expired engineering mode password/one-time code.' -Failure
+                }
+                return
+            }
             Sync-AdditionalClusterSteps
         } catch {
             New-Advisory "Additional cluster selection handler failed: $($_.Exception.Message)" -Failure

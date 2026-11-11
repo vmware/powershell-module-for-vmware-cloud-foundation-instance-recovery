@@ -21,7 +21,7 @@
       "label": "Existing Extracted SDDC Data File"
     }
   ],
-  "_targetComment": "target is one of: managementDomain | workloadDomain | additionalCluster | fleetComponent | recoverFleet -- see Sync-RecoveryPlanSelection in the .ps1 for what each one does. Exactly one plan should claim a given target; two plans claiming the same one will fight over the same panel.",
+  "_targetComment": "target is one of: managementDomain | workloadDomain | additionalCluster | fleetComponent | recoverFleet -- see Sync-RecoveryPlanSelection in the .ps1 for what each one does. Exactly one plan should claim a given target; two plans claiming the same one will fight over the same panel. Optional engineeringOnlyClusterTypes (additionalCluster plan only) lists raw primaryDatastoreType values (e.g. VSAN_MAX = Storage Cluster, VSAN_Remote = Compute Cluster) whose clusters need engineering mode to be selected.",
   "_extraToggleComment": "extraToggleDefinitions defines every optional plan-specific toggle once (id + label), the same way recoveryTypes/dataSources are defined once above. A plan opts in to a toggle by listing its id + defaultChecked under its own extraToggles array; the toggle's id doubles as the variable name injected into step-condition evaluation and is excluded from that plan's persisted answers file.",
   "extraToggleDefinitions": [
     {
@@ -123,7 +123,11 @@
         "LoadExtractedData"
       ],
       "defaultDataSource": "LoadExtractedData",
-      "selectionList": "clusters"
+      "selectionList": "clusters",
+      "engineeringOnlyClusterTypes": [
+        "VSAN_MAX",
+        "VSAN_Remote"
+      ]
     },
     {
       "id": "RecoverFleet",
