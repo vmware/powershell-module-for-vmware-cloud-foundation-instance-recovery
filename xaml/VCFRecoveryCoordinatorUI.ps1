@@ -199,6 +199,11 @@ $global:currentPlanContext = New-RecoveryPlanContext $null
 # any time the operator picks a different plan or a different domain/cluster within one, so a stale
 # row/value from whatever was selected before can never survive into the new selection.
 function Reset-CurrentRecoveryPlanContext([string]$PlanId) {
+    # Unchecks the interactive answer-file toggle BEFORE the context is replaced: the new context has
+    # InteractiveAnswerFilePath = $null, so leaving the box ticked would show "on" with no file loaded,
+    # and the Unchecked handler needs the OLD path still set to send Clear-VCFIRAnswerFile to Main.
+    # Resume re-checks it afterward (see the Resume handler) once the plan has been re-selected.
+    Reset-AnswerFileToggle $runAllAnswerFileCheckBox
     $global:currentPlanContext = New-RecoveryPlanContext $PlanId
     $recoveryPlanStepsListBox.Items.Clear()
     $recoveryManualStepsListBox.Items.Clear()
@@ -1638,6 +1643,21 @@ function Send-InteractiveAnswerFiles($Console) {
 function Sync-InteractiveAnswerFiles {
     foreach ($console in @($global:mainConsole) + @($global:parallelConsoles)) {
         Send-InteractiveAnswerFiles $console | Out-Null
+    }
+}
+
+# Re-primes every already-existing parallel/thread console with the CURRENT plan's variables (answers
+# file, extracted-data path, credentials path, domain/cluster selection) -- called at the start of every
+# "Run All" click. Necessary because thread consoles are cached per threadId in $global:threadConsoles
+# and survive a plan switch within the same UI session: one created while running e.g. Management
+# Domain Recovery was only ever primed (see Initialize-ConsoleVariables) with THAT plan's answers
+# file, and every later "Import-RecoveryVariables" (a new plan's Load Variables, or any Variables-tab
+# edit) is sent to Main only. Running Fleet Component Recovery afterward therefore reused those stale
+# consoles for its threaded steps, and variables such as $vcfmsServicesRuntimePassword/$vcfUserPassword
+# were unset there ("Cannot bind argument to parameter ... because it is an empty string").
+function Sync-ParallelConsoleVariables {
+    foreach ($console in @($global:parallelConsoles)) {
+        Initialize-ConsoleVariables $console
     }
 }
 
@@ -4491,6 +4511,7 @@ $recoveryTypeComboBox.SelectedIndex = 0
 $runAllButton.Add_Click({
         try {
             Set-AllStepButtonsEnabled $false
+            Sync-ParallelConsoleVariables
             Sync-InteractiveAnswerFiles
             $runTimer = Start-RunTimer
             Invoke-StepChain $global:currentPlanContext.StepRows -IgnoreThreads:(-not $runAllParallelCheckBox.IsChecked) -OnChainComplete {
