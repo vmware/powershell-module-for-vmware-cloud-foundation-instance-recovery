@@ -377,7 +377,7 @@ The **Task List** is the plan, in the order it will run. Each row shows:
 | Element | Meaning |
 |---|---|
 | **Task name** | A readable name for the task. Hover over a row to see a longer description where one exists. |
-| **Numbered circle** | The task belongs to a parallel thread. Tasks with the same number and colour run in the same thread console. See [Parallel threads](#parallel-threads). |
+| **Numbered circle** | The thread the task runs in. Tasks with the same number and colour run one after another in the same thread console. Shown only while **Run parallel tasks using multiple threads** is on. See [Parallel threads](#parallel-threads). |
 | **Requires Input** | The task will stop and ask you a question in the console. If you have supplied an answer file that covers it, the badge reads **Auto Answered** instead. |
 | **Status button** (right-hand side) | The task's current state: see below. |
 
@@ -652,6 +652,10 @@ and Telemetry. Run it after the management domain has been recovered.
 
 **Data source:** an existing extracted data file. The management domain recovery must have been run so that the
 file contains the discovered details the fleet tasks use.
+**Parallel threads:** yes. Your VCF Operations restore script runs in Thread 1 alongside everything else. The
+VCFMS and VCFA Services Runtimes are rebuilt in Threads 3 and 4, which start once the backups have been gathered and
+the VCFMS runtime created in Thread 2. Telemetry is restored after both runtimes are finished, and the licence server
+confirmation waits for the VCF Operations restore.
 **Several steps are manual confirmations** (VCF Operations restored and state verified, unless you use a restore script; Log Management updated,
 VCF Automation connections updated, licence server redeployed). Pre-approve them in an answer file only if you
 are certain the underlying action is complete.

@@ -83,7 +83,7 @@ figcaption { margin-top: 8px; font-size: 13px; color: var(--subtle); text-align:
 <header class="header">
   <div class="brand"><span class="l1">VMware Cloud Foundation</span><span class="l2">Recovery Coordinator</span></div>
   <div class="spacer"></div>
-  <span class="version">v9.1.2.1000</span>
+  <span class="version">v9.1.2.1001</span>
 </header>
 <div class="layout">
   <nav class="sidenav" aria-label="Contents">
@@ -164,7 +164,7 @@ figcaption { margin-top: 8px; font-size: 13px; color: var(--subtle); text-align:
   <main class="content">
     <div class="content-inner">
       <h1 class="doc-title">Recovery Coordinator User Guide</h1>
-      <p class="doc-sub">Generated from the module documentation on 2026-11-09.</p>
+      <p class="doc-sub">Generated from the module documentation on 2026-11-11.</p>
 
 <p>The <strong>VMware Cloud Foundation Recovery Coordinator</strong> is a Windows desktop application, shipped with the
 <code>VCF.RecoveryCoordinator</code> module, that walks you through recovering a VMware Cloud Foundation instance
@@ -417,7 +417,7 @@ VCF instance. Which sources are offered depends on the plan.</p>
 <tr>
 <td><strong>SDDC Manager Backup File</strong></td>
 <td>Management Domain Recovery (default)</td>
-<td>You select the SDDC Manager backup (<code>*.tar.gz</code>). The application asks for the backup's encryption password, then runs <code>New-ExtractDataFromSDDCBackup</code> in the <strong>Main</strong> console to produce <code>extracted-sddc-data.json</code> in the <strong>same folder as the backup file</strong>. When extraction finishes, that file is loaded automatically.</td>
+<td>You select the SDDC Manager backup (<code>*.tar.gz</code>). The application asks for the backup's encryption password, then runs <code>New-ExtractDataFromSDDCBackup</code> in the <strong>Thread 1</strong> console to produce <code>extracted-sddc-data.json</code> in the <strong>same folder as the backup file</strong>. When extraction finishes, that file is loaded automatically.</td>
 </tr>
 <tr>
 <td><strong>Existing Extracted SDDC Data File</strong></td>
@@ -667,7 +667,7 @@ the <strong>Task List</strong> beneath them.</p>
 </tr>
 <tr>
 <td><strong>Numbered circle</strong></td>
-<td>The task belongs to a parallel thread. Tasks with the same number and colour run in the same thread console. See <a href="#parallel-threads">Parallel threads</a>.</td>
+<td>The thread the task runs in. Tasks with the same number and colour run one after another in the same thread console. Shown only while <strong>Run parallel tasks using multiple threads</strong> is on. See <a href="#parallel-threads">Parallel threads</a>.</td>
 </tr>
 <tr>
 <td><strong>Requires Input</strong></td>
@@ -761,13 +761,13 @@ failed task is run again from the beginning, so check that the failed task is sa
 <h3 id="watching-the-console">Watching the console</h3>
 <p>The <strong>Console</strong> panel on the right shows what is happening.</p>
 <ul>
-<li>The <strong>Main</strong> tab always exists. Most tasks run there.</li>
+<li>The <strong>Thread 1</strong> tab always exists. Tasks in Thread 1 run there.</li>
 <li>A <strong>Thread N</strong> tab appears for each parallel thread the first time the run needs it.</li>
 <li>The consoles are real PowerShell windows embedded in the application. You can click into one and type, which
 you need to do to answer prompts.</li>
 <li>For tasks marked <strong>Requires Input</strong>, the application switches to the right console tab and gives it the
 keyboard focus so you can answer straight away.</li>
-<li>After a group of parallel tasks finishes, the view returns to the <strong>Main</strong> tab.</li>
+<li>After a group of parallel tasks finishes, the view returns to the <strong>Thread 1</strong> tab.</li>
 </ul>
 <p>Console transcripts are written to your working directory so you have a record of every run.</p>
 <h3 id="advisories">Advisories</h3>
@@ -832,14 +832,22 @@ answer file.</p>
 <p>Some tasks do not depend on each other and can run at the same time. The management domain plan, for example,
 restores the SDDC Manager, vCenter and NSX Manager side by side.</p>
 <ul>
-<li>A <strong>numbered coloured circle</strong> on a task marks it as part of a thread. Tasks with the same number run one
-after another in the same thread; different numbers run at the same time.</li>
-<li>Each thread has its own tab in the console, called <strong>Thread 2</strong>, <strong>Thread 3</strong>, and so on. A thread's tab stays
-open for the rest of the session so later tasks on the same thread can reuse its state.</li>
-<li>The run waits for <strong>every</strong> thread in a group to finish before the next task starts. If one thread fails, the
-others keep running to completion, then the run stops with a message in Advisories.</li>
-<li>Turn off <strong>Run parallel tasks using multiple threads</strong> to run everything one task at a time, in the Main
-console. This is slower but simpler to follow, which can be useful when diagnosing a problem.</li>
+<li>Every task belongs to a thread. A <strong>numbered coloured circle</strong> on a task shows which one. Tasks with the same
+number run one after another in the same thread; different numbers run at the same time. The circles only show
+while <strong>Run parallel tasks using multiple threads</strong> is on.</li>
+<li>Each thread has its own tab in the console, called <strong>Thread 1</strong>, <strong>Thread 2</strong>, and so on. <strong>Thread 1</strong> is the
+original console tab and always exists. Every other thread's tab appears the first time a task in it starts, and
+stays open for the rest of the session so later tasks on the same thread can reuse its state.</li>
+<li>No thread has priority over another. All threads start together, and a thread only holds back when one of its
+tasks says it must wait.</li>
+<li>A task says what it must wait for with <code>waitFor</code>: one or more thread numbers, or the ids of earlier tasks. The task,
+and everything behind it in its own thread, holds until every task of those threads <strong>above it in the list</strong> has
+finished. The Fleet Components plan uses this to run the VCF Operations restore (Thread 1) alongside everything
+else, and to hold the final License Server confirmation until it has finished.</li>
+<li>If a task fails, tasks already running on other threads finish, nothing new starts, and the run stops with a
+message in Advisories.</li>
+<li>Turn off <strong>Run parallel tasks using multiple threads</strong> to run everything one task at a time, in the
+Thread 1 console. This is slower but simpler to follow, which can be useful when diagnosing a problem.</li>
 </ul>
 
 <h2 id="saving-your-progress-and-resuming">Saving your progress and resuming</h2>
@@ -1024,6 +1032,10 @@ and Telemetry. Run it after the management domain has been recovered.</p>
 </table></div>
 <p><strong>Data source:</strong> an existing extracted data file. The management domain recovery must have been run so that the
 file contains the discovered details the fleet tasks use.
+<strong>Parallel threads:</strong> yes. Your VCF Operations restore script runs in Thread 1 alongside everything else. The
+VCFMS and VCFA Services Runtimes are rebuilt in Threads 3 and 4, which start once the backups have been gathered and
+the VCFMS runtime created in Thread 2. Telemetry is restored after both runtimes are finished, and the licence server
+confirmation waits for the VCF Operations restore.
 <strong>Several steps are manual confirmations</strong> (VCF Operations restored and state verified, unless you use a restore script; Log Management updated,
 VCF Automation connections updated, licence server redeployed). Pre-approve them in an answer file only if you
 are certain the underlying action is complete.</p>
@@ -1070,7 +1082,7 @@ whether the task succeeded, exactly as it does for its own tasks.</p>
 </tr>
 <tr>
 <td><strong>Output</strong></td>
-<td>Everything the script writes, including its error stream, is shown live in the <strong>Main</strong> console and recorded in that console's transcript.</td>
+<td>Everything the script writes, including its error stream, is shown live in the <strong>Thread 1</strong> console and recorded in that console's transcript.</td>
 </tr>
 </tbody>
 </table></div>
@@ -1294,6 +1306,8 @@ back and forth freely for the rest of the session without being asked again.</p>
 <p>Engineering mode:</p>
 <ul>
 <li>Unlocks <strong>engineering-only recovery types and plans</strong>, such as Fleet Disaster Recovery.</li>
+<li>Unlocks <strong>storage clusters and compute clusters</strong> in Additional Cluster Recovery. These rows carry an
+<em>ENGINEERING-ONLY</em> badge, and selecting one in User mode prompts for the engineering password or one-time code.</li>
 <li>Shows the <strong>Advanced</strong> tab.</li>
 <li>Lets you set a <strong>breakpoint</strong> in the task list.</li>
 </ul>
@@ -1337,7 +1351,7 @@ run, or while a run is in progress.</p>
 <tr>
 <td><code>vcf-recoverycoordinator-transcript-&lt;date&gt;-&lt;time&gt;-&lt;id&gt;-&lt;n&gt;.log</code></td>
 <td>Each console</td>
-<td>One transcript per console (Main and each thread). Your record of what ran.</td>
+<td>One transcript per console (Thread 1 and each other thread). Your record of what ran.</td>
 </tr>
 <tr>
 <td><code>vcf-recoverycoordinator-state-&lt;date&gt;-&lt;time&gt;.json</code></td>

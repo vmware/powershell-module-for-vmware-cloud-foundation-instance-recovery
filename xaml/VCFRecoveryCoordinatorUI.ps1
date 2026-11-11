@@ -3276,9 +3276,17 @@ function New-VariableRow([string]$Name, [string]$Value, [scriptblock]$OnValueCha
     # screen any time Variables is open, so showing them in the clear is an unnecessary shoulder-
     # surfing/screenshot risk.
     $isPassword = $Name -match '(?i)password|passphrase'
+    # Password rows hold a masked PasswordBox plus a hidden TextBox in the same grid cell; an eye
+    # button beside them swaps which one is visible (WPF's PasswordBox has no built-in reveal).
+    # $reveal.On tracks which is active so $applyEdit reads the right one.
+    $reveal = @{ On = $false }
+    $textBox = $null
     if ($isPassword) {
         $valueBox = New-Object System.Windows.Controls.PasswordBox
         $valueBox.Password = $Value
+        $textBox = New-Object System.Windows.Controls.TextBox
+        $textBox.Visibility = 'Collapsed'
+        $textBox.Padding = '4,2'
     } else {
         $valueBox = New-Object System.Windows.Controls.TextBox
         $valueBox.Text = $Value
@@ -3297,7 +3305,11 @@ function New-VariableRow([string]$Name, [string]$Value, [scriptblock]$OnValueCha
     $lastApplied = @{ Value = $Value }
     $applyEdit = {
         $currentValue = if ($isPassword) {
-            $valueBox.Password 
+            if ($reveal.On) {
+                $textBox.Text
+            } else {
+                $valueBox.Password
+            }
         } else {
             $valueBox.Text 
         }
@@ -3314,17 +3326,56 @@ function New-VariableRow([string]$Name, [string]$Value, [scriptblock]$OnValueCha
             Send-ToConsole "`$$Name = '$(Protect-SingleQuotes $currentValue)'"
         }
     }.GetNewClosure()
+    $keyHandler = {
+        param($eventSender, $keyArgs)
+        if ($keyArgs.Key -eq 'Return') {
+            & $applyEdit
+            $keyArgs.Handled = $true
+        }
+    }.GetNewClosure()
     $valueBox.Add_LostFocus($applyEdit)
-    $valueBox.Add_KeyDown({
-            param($eventSender, $keyArgs)
-            if ($keyArgs.Key -eq 'Return') {
-                & $applyEdit
-                $keyArgs.Handled = $true
-            }
-        }.GetNewClosure())
+    $valueBox.Add_KeyDown($keyHandler)
 
     [void]$panel.Children.Add($label)
-    [void]$panel.Children.Add($valueBox)
+    if ($isPassword) {
+        $textBox.Add_LostFocus($applyEdit)
+        $textBox.Add_KeyDown($keyHandler)
+
+        $eyeButton = New-Object System.Windows.Controls.Button
+        $eyeButton.FontFamily = New-Object System.Windows.Media.FontFamily('Segoe MDL2 Assets')
+        $eyeButton.Content = [string][char]0xE7B3
+        $eyeButton.ToolTip = 'Show value'
+        $eyeButton.Width = 26
+        $eyeButton.Margin = '4,0,0,0'
+        # Not focusable, so clicking it doesn't steal focus from (and prematurely apply) the edit box.
+        $eyeButton.Focusable = $false
+        [System.Windows.Controls.DockPanel]::SetDock($eyeButton, [System.Windows.Controls.Dock]::Right)
+        $eyeButton.Add_Click({
+                if (-not $reveal.On) {
+                    $textBox.Text = $valueBox.Password
+                    $valueBox.Visibility = 'Collapsed'
+                    $textBox.Visibility = 'Visible'
+                    $eyeButton.Content = [string][char]0xED1A
+                    $eyeButton.ToolTip = 'Hide value'
+                    $reveal.On = $true
+                } else {
+                    $valueBox.Password = $textBox.Text
+                    $textBox.Visibility = 'Collapsed'
+                    $valueBox.Visibility = 'Visible'
+                    $eyeButton.Content = [string][char]0xE7B3
+                    $eyeButton.ToolTip = 'Show value'
+                    $reveal.On = $false
+                }
+            }.GetNewClosure())
+        [void]$panel.Children.Add($eyeButton)
+
+        $grid = New-Object System.Windows.Controls.Grid
+        [void]$grid.Children.Add($valueBox)
+        [void]$grid.Children.Add($textBox)
+        [void]$panel.Children.Add($grid)
+    } else {
+        [void]$panel.Children.Add($valueBox)
+    }
     return $panel
 }
 
