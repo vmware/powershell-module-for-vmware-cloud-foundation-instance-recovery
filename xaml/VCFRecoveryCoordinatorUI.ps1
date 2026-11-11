@@ -2835,21 +2835,32 @@ function Get-ThreadConsole([string]$ThreadId) {
     return $console
 }
 
-# One fixed color per thread number: 2 green, 3 blue, then violet and orchid for 4 and 5. Deliberately
-# no reds, oranges or ambers -- those read as warnings/errors. Any other number wraps around the same
-# four colors; a non-numeric ThreadId gets a neutral slate.
+# One fixed color per thread number, 2 through 9; any other number wraps around the same eight.
+# Taken from Clarity's own data-visualization categorical series (--cds-alias-viz-general-* in
+# @cds/core's global tokens, from which the Clarity-style look of this window is modeled), in Clarity's
+# order, so adjacent threads contrast the way Clarity intends. Clarity's palette is defined in HSL; each
+# value below is that hsl() converted to RGB. The white, bold, 10pt thread number drawn on the circle
+# (see New-StepRow) needs a WCAG contrast ratio of at least 4.5:1, so where Clarity's own shade falls
+# short (blue-600, lavender-400, lime-700) the next-darker shade of the SAME Clarity hue is used
+# instead, and the eighth slot uses jade (general-11) rather than a second aqua. No reds, oranges or
+# ambers -- those read as warnings/errors, matching Clarity's own severity colors. A non-numeric
+# ThreadId gets Clarity's neutral (construction-600).
 function Get-ThreadCircleColor([string]$ThreadId) {
     $palette = @(
-        @(0x2F, 0x9E, 0x8C),  # green
-        @(0x3E, 0x6B, 0xB8),  # blue
-        @(0x7E, 0x5B, 0xB5),  # violet
-        @(0xB0, 0x68, 0x9A)   # orchid
+        @(0x00, 0x79, 0xAD),  # 2 blue-700 (general-1, one step darker)  4.84:1
+        @(0x7C, 0x12, 0xA5),  # 3 violet-700 (general-2)  8.44:1
+        @(0x00, 0x56, 0x5C),  # 4 aqua-800 (general-3)  8.45:1
+        @(0x55, 0x59, 0xD3),  # 5 lavender-500 (general-4, one step darker)  5.59:1
+        @(0xD2, 0x32, 0x92),  # 6 pink-500 (general-5)  4.55:1
+        @(0x65, 0x70, 0x00),  # 7 lime-800 (general-6, one step darker)  5.42:1
+        @(0x1C, 0x7D, 0x5D),  # 8 jade-700 (general-11)  5.07:1
+        @(0x24, 0x29, 0xC2)   # 9 lavender-700 (general-7)  9.67:1
     )
     $number = 0
     if ([int]::TryParse($ThreadId, [ref]$number)) {
         $rgb = $palette[(($number - 2) % $palette.Count + $palette.Count) % $palette.Count]
     } else {
-        $rgb = @(0x6B, 0x7A, 0x8F)
+        $rgb = @(0x4F, 0x61, 0x69)  # construction-600  6.47:1
     }
     return [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.Color]::FromRgb($rgb[0], $rgb[1], $rgb[2]))
 }
