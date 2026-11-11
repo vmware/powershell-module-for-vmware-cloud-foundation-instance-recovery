@@ -40,7 +40,7 @@
     "commandLine": "Update-ExtractedSDDCData -extractedSDDCDataFile $extractedSDDCDataFile -sddcManagerFQDN $sddcManagerFQDN -sddcManagerAdmin $sddcManagerAdmin -sddcManagerAdminPassword $sddcManagerAdminPassword -vCenterFQDN $restoredVcenterFqdn",
     "displayName": "Update Extracted SDDC Data",
     "condition": [],
-    "threadId": "",
+    "threadId": "1",
     "waitFor": [
       "2",
       "3"
@@ -60,7 +60,7 @@
         "value": "t"
       }
     ],
-    "threadId": "",
+    "threadId": "1",
     "interactive": false,
     "visible": false
   },
@@ -69,7 +69,7 @@
     "commandLine": "Backup-ClusterVMOverrides -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName",
     "displayName": "Backup Cluster VM Overrides",
     "condition": [],
-    "threadId": "",
+    "threadId": "1",
     "interactive": false,
     "visible": true
   },
@@ -78,7 +78,7 @@
     "commandLine": "Backup-ClusterVMLocations -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName",
     "displayName": "Backup Cluster VM Locations",
     "condition": [],
-    "threadId": "",
+    "threadId": "1",
     "interactive": false,
     "visible": true
   },
@@ -87,7 +87,7 @@
     "commandLine": "Backup-ClusterDRSGroupsAndRules -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName",
     "displayName": "Backup Cluster DRS Groups and Rules",
     "condition": [],
-    "threadId": "",
+    "threadId": "1",
     "interactive": false,
     "visible": true
   },
@@ -96,7 +96,7 @@
     "commandLine": "Backup-ClusterVMTags -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName",
     "displayName": "Backup Cluster VM Tags",
     "condition": [],
-    "threadId": "",
+    "threadId": "1",
     "interactive": false,
     "visible": true
   },
@@ -105,7 +105,7 @@
     "commandLine": "Remove-NonResponsiveHosts -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -NsxManagerFQDN $restoredNsxManagerFqdn -NsxManagerAdmin $restoredNsxManagerAdmin -NsxManagerAdminPassword $restoredNsxManagerAdminPassword -NsxManagerRootPassword $restoredNsxManagerRootPassword",
     "displayName": "Remove Non Responsive Hosts",
     "condition": [],
-    "threadId": "",
+    "threadId": "1",
     "interactive": false,
     "visible": true
   },
@@ -114,7 +114,7 @@
     "commandLine": "Add-HostsToCluster -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -sddcManagerFqdn $sddcManagerFqdn -sddcManagerAdmin $sddcManagerAdmin -sddcManagerAdminPassword $sddcManagerAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile",
     "displayName": "Add Hosts to Cluster",
     "condition": [],
-    "threadId": "",
+    "threadId": "1",
     "interactive": false,
     "visible": true
   },
@@ -123,7 +123,7 @@
     "commandLine": "New-RebuiltVdsConfiguration -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile",
     "displayName": "Rebuild VDS Configuration",
     "condition": [],
-    "threadId": "",
+    "threadId": "1",
     "interactive": true,
     "visible": true
   },
@@ -132,7 +132,7 @@
     "commandLine": "Watch-NsxHostTransportNodeInstallation -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile",
     "displayName": "Monitor NSX Host Transport Node Installation",
     "condition": [],
-    "threadId": "",
+    "threadId": "1",
     "interactive": false,
     "visible": true
   },
@@ -141,7 +141,7 @@
     "commandLine": "Add-VMKernelsToHost -targetFqdn $restoredVcenterFqdn -targetAdmin $restoredVcenterAdmin -targetAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -sddcManagerFqdn $sddcManagerFqdn -sddcManagerAdmin $sddcManagerAdmin -sddcManagerAdminPassword $sddcManagerAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile",
     "displayName": "Add VMKernels to Hosts",
     "condition": [],
-    "threadId": "",
+    "threadId": "1",
     "interactive": false,
     "visible": true
   },
@@ -157,7 +157,7 @@
         "value": "t"
       }
     ],
-    "threadId": "",
+    "threadId": "1",
     "interactive": false,
     "visible": true
   },
@@ -166,7 +166,7 @@
     "commandLine": "New-RebuiltVsanDatastore -targetFqdn $restoredVcenterFqdn -targetAdmin $restoredVcenterAdmin -targetAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile",
     "displayName": "Rebuilt vSAN Datastore",
     "condition": [],
-    "threadId": "",
+    "threadId": "1",
     "interactive": true,
     "visible": true
   },
@@ -175,7 +175,7 @@
     "commandLine": "Invoke-NSXEdgeClusterRecoverySelective -nsxManagerFqdn $restoredNsxManagerFqdn -nsxManagerAdmin $restoredNsxManagerAdmin -nsxManagerAdminPassword $restoredNsxManagerAdminPassword -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile -monitor",
     "displayName": "Invoke NSX Edge Cluster Recovery Selective",
     "condition": [],
-    "threadId": "",
+    "threadId": "1",
     "interactive": true,
     "visible": true
   },
@@ -192,6 +192,9 @@
       }
     ],
     "threadId": "2",
+    "waitFor": [
+      "1"
+    ],
     "interactive": true,
     "visible": true
   },
@@ -208,6 +211,9 @@
       }
     ],
     "threadId": "3",
+    "waitFor": [
+      "1"
+    ],
     "interactive": true,
     "visible": true
   },
@@ -223,7 +229,7 @@
         "value": "1"
       }
     ],
-    "threadId": "",
+    "threadId": "1",
     "waitFor": [
       "2",
       "3"
@@ -236,7 +242,7 @@
     "commandLine": "Invoke-SddcManagerSSHKeyRefresh -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -clusterName $clusterName -workloadDomain $workloadDomain -VcfUserPassword $VcfUserPassword",
     "displayName": "Invoke SDDC Manager SSHKey Refresh",
     "condition": [],
-    "threadId": "",
+    "threadId": "1",
     "interactive": false,
     "visible": true
   },
@@ -245,7 +251,7 @@
     "commandLine": "Update-DomainDatastoreID -extractedSDDCDataFile $extractedSDDCDataFile -vCenterFqdn $restoredVcenterFqdn -clusterName $clusterName -VcfUserPassword $VcfUserPassword -RootPassword $RootPassword -autoConfirm",
     "displayName": "Update Domain Datastore ID",
     "condition": [],
-    "threadId": "",
+    "threadId": "1",
     "interactive": false,
     "visible": true
   },
@@ -254,7 +260,7 @@
     "commandLine": "Update-ClusterHostSourceIDs -extractedSDDCDataFile $extractedSDDCDataFile -vCenterFqdn $restoredVcenterFqdn -clusterName $clusterName -VcfUserPassword $VcfUserPassword -RootPassword $RootPassword -autoConfirm",
     "displayName": "Update Cluster Host Source IDs",
     "condition": [],
-    "threadId": "",
+    "threadId": "1",
     "interactive": false,
     "visible": true
   },
@@ -263,7 +269,7 @@
     "commandLine": "Resolve-PhysicalHostServiceAccounts -targetFQDN $restoredVcenterFqdn -targetAdmin $restoredVcenterAdmin -targetAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -svcAccountPassword $svcAccountPassword -sddcManagerFqdn $sddcManagerFqdn -sddcManagerAdmin $sddcManagerAdmin -sddcManagerAdminPassword $sddcManagerAdminPassword",
     "displayName": "Resolve Physical Host Service Accounts",
     "condition": [],
-    "threadId": "",
+    "threadId": "1",
     "interactive": false,
     "visible": true
   },
@@ -272,7 +278,7 @@
     "commandLine": "Clear-vCenterAlarms -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword",
     "displayName": "Clear vCenter Alarms",
     "condition": [],
-    "threadId": "",
+    "threadId": "1",
     "interactive": false,
     "visible": true
   }

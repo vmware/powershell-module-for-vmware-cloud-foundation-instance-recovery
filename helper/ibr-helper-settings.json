@@ -1,0 +1,8 @@
+{
+  "vcfInstaller": {
+    "fqdn": "sfo-ins01.sfo.rainpole.io",
+    "ipAddress": "10.11.10.9",
+    "rootUser": "root",
+    "rootPassword": "VMw@re1!VMw@re1!"
+  }
+}

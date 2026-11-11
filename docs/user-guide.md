@@ -187,7 +187,7 @@ VCF instance. Which sources are offered depends on the plan.
 
 | Data Source | Offered for | What happens |
 |---|---|---|
-| **SDDC Manager Backup File** | Management Domain Recovery (default) | You select the SDDC Manager backup (`*.tar.gz`). The application asks for the backup's encryption password, then runs `New-ExtractDataFromSDDCBackup` in the **Main** console to produce `extracted-sddc-data.json` in the **same folder as the backup file**. When extraction finishes, that file is loaded automatically. |
+| **SDDC Manager Backup File** | Management Domain Recovery (default) | You select the SDDC Manager backup (`*.tar.gz`). The application asks for the backup's encryption password, then runs `New-ExtractDataFromSDDCBackup` in the **Thread 1** console to produce `extracted-sddc-data.json` in the **same folder as the backup file**. When extraction finishes, that file is loaded automatically. |
 | **Existing Extracted SDDC Data File** | Every plan except FDR | You select an `extracted-sddc-data.json` that already exists, for example from the Management Domain Recovery run. |
 
 The file path you chose is shown in the box next to **Browse...**.
@@ -444,13 +444,13 @@ The same behaviour is what lets you continue after [resuming a saved session](#s
 
 The **Console** panel on the right shows what is happening.
 
-- The **Main** tab always exists. Most tasks run there.
+- The **Thread 1** tab always exists. Tasks in Thread 1 run there.
 - A **Thread N** tab appears for each parallel thread the first time the run needs it.
 - The consoles are real PowerShell windows embedded in the application. You can click into one and type, which
   you need to do to answer prompts.
 - For tasks marked **Requires Input**, the application switches to the right console tab and gives it the
   keyboard focus so you can answer straight away.
-- After a group of parallel tasks finishes, the view returns to the **Main** tab.
+- After a group of parallel tasks finishes, the view returns to the **Thread 1** tab.
 
 Console transcripts are written to your working directory so you have a record of every run.
 
@@ -515,20 +515,22 @@ answer file.
 Some tasks do not depend on each other and can run at the same time. The management domain plan, for example,
 restores the SDDC Manager, vCenter and NSX Manager side by side.
 
-- A **numbered coloured circle** on a task marks it as part of a thread. Tasks with the same number run one
-  after another in the same thread; different numbers run at the same time.
-- Each thread has its own tab in the console, called **Thread 2**, **Thread 3**, and so on. A thread's tab stays
-  open for the rest of the session so later tasks on the same thread can reuse its state.
-- A thread starts as soon as the main sequence has finished every task above it, then runs **alongside** the main
-  sequence. The main sequence does not stop to wait for it.
-- Where a task needs a thread (or an earlier task) to be finished first, the plan says so with `waitFor`. That task,
-  and everything behind it in its own sequence, holds until what it waits for is complete. The Fleet Components plan
-  uses this to run the VCF Operations restore alongside everything else, and to hold the final confirmations until the
-  threads they depend on are done.
+- Every task belongs to a thread. A **numbered coloured circle** on a task shows which one. Tasks with the same
+  number run one after another in the same thread; different numbers run at the same time. The circles only show
+  while **Run parallel tasks using multiple threads** is on.
+- Each thread has its own tab in the console, called **Thread 1**, **Thread 2**, and so on. **Thread 1** is the
+  original console tab and always exists. Every other thread's tab appears the first time a task in it starts, and
+  stays open for the rest of the session so later tasks on the same thread can reuse its state.
+- No thread has priority over another. All threads start together, and a thread only holds back when one of its
+  tasks says it must wait.
+- A task says what it must wait for with `waitFor`: one or more thread numbers, or the ids of earlier tasks. The task,
+  and everything behind it in its own thread, holds until every task of those threads **above it in the list** has
+  finished. The Fleet Components plan uses this to run the VCF Operations restore (Thread 1) alongside everything
+  else, and to hold the final License Server confirmation until it has finished.
 - If a task fails, tasks already running on other threads finish, nothing new starts, and the run stops with a
   message in Advisories.
-- Turn off **Run parallel tasks using multiple threads** to run everything one task at a time, in the Main
-  console. This is slower but simpler to follow, which can be useful when diagnosing a problem.
+- Turn off **Run parallel tasks using multiple threads** to run everything one task at a time, in the
+  Thread 1 console. This is slower but simpler to follow, which can be useful when diagnosing a problem.
 
 ---
 
@@ -688,7 +690,7 @@ What that means for you:
 | **No parameters** | Nothing is passed to the script. Anything it needs (host names, credentials, file locations) it must find for itself. |
 | **No profile** | `-NoProfile` means your PowerShell profile does not load. Import any modules your script needs inside the script. |
 | **Working directory** | It starts in the same folder as the console, which is the folder you launched the Recovery Coordinator from. Use absolute paths. |
-| **Output** | Everything the script writes, including its error stream, is shown live in the **Main** console and recorded in that console's transcript. |
+| **Output** | Everything the script writes, including its error stream, is shown live in the **Thread 1** console and recorded in that console's transcript. |
 
 ### The success contract
 
@@ -897,7 +899,7 @@ Everything below is created in your **working directory**, the folder you launch
 |---|---|---|
 | `extracted-sddc-data.json` | Extracting the SDDC Manager backup | Created in the **same folder as the backup file**. Updated by later tasks. Contains passwords once credentials are merged. |
 | `vcf-credentials-*.json` | *Retrieve SDDC Credentials Payload* | Credentials retrieved from SDDC Manager. Sensitive. |
-| `vcf-recoverycoordinator-transcript-<date>-<time>-<id>-<n>.log` | Each console | One transcript per console (Main and each thread). Your record of what ran. |
+| `vcf-recoverycoordinator-transcript-<date>-<time>-<id>-<n>.log` | Each console | One transcript per console (Thread 1 and each other thread). Your record of what ran. |
 | `vcf-recoverycoordinator-state-<date>-<time>.json` | **Save & Exit** | Session state for **Resume**. Holds no passwords. |
 | Your variables file | **New Variables File** or edits | Holds passwords in plain text. |
 | `backup-yaml\` and similar | Fleet Component Recovery tasks | Working files used while recovering fleet components. |

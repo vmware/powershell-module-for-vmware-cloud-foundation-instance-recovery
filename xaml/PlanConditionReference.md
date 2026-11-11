@@ -13,7 +13,7 @@ Reference for anyone hand-authoring `"condition"` entries in a recovery plan JSO
   "commandLine": "...",
   "id": "...",
   "condition": [ ... ],
-  "threadId": "",
+  "threadId": "1",
   "waitFor": [],
   "interactive": false
 }
@@ -24,11 +24,13 @@ always runs). Every entry must be one of the three typed objects below — there
 PowerShell-expression form; that was removed deliberately, and every condition in the shipped plans
 has been migrated to one of these three kinds.
 
-`threadId` puts the step in a parallel thread ("" = the main sequence). A thread starts once the main
-sequence has finished every main step above it and then runs alongside the main sequence. `waitFor` is an
-optional array of thread ids and/or step `id`s that appear **earlier** in the file: the step (and the rest of
-its own thread) does not start until every one of them has finished. A target that matches nothing stops Run All
-before anything runs.
+`threadId` says which numbered thread the step runs in ("1" is the Main console; every step should set one,
+and an empty/missing value also means "1"). Every thread starts at the same moment and runs its own steps one at a
+time, in file order; nothing is implicitly held back except by `waitFor`. `waitFor` is an optional array of thread
+ids and/or step `id`s: the step (and the rest of its own thread) does not start until every step with one of those
+thread ids, or that `id`, **above it in the file** has finished (a step skipped by its `condition` counts as
+finished). A target that matches no step above it stops Run All before anything runs. So a thread that must begin
+only after something else has finished puts `waitFor` on its first step.
 
 `id` is optional — only add it to a step some other step's `stepStatus` condition needs to
 reference. No uniqueness is enforced across a plan file; a duplicate `id` is last-write-wins in the

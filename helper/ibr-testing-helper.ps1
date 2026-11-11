@@ -9,7 +9,7 @@ If (!$logMutexName) {
     $Global:logMutexName = "Global\IBRTestingHelperLog"
 }
 If (!$logFile) {
-    $Global:logFile = Join-Path -Path $(If ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }) -ChildPath "ibr-testing-helper.log"
+    $Global:logFile = Join-Path -Path $(If ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }) -ChildPath "log-ibr-testing-helper.log"
 }
 
 Function Write-MenuBreadcrumb {
@@ -188,12 +188,18 @@ Function New-TestingMenu {
         Switch ($MenuInput) {
             01 {
                 Clear-Host; Write-MenuBreadcrumb -Version $utilityBuild -Submenu $submenuTitle -MenuItem $menuItem01; Write-Host -Object ''
-                Get-VCFBackups -PtrAddress $additionalSettings.userSettings.virtualRouter.public_ip -BackupUsername 'svc-vcf-bck' -BackupPassword 'VMw@re1!' -Destination "F:\VCFIR\backups"
+                Get-VCFBackups -PtrAddress "10.11.10.4"-BackupUsername 'svc-vcf-bck' -BackupPassword 'VMw@re1!' -Destination "F:\VCFIR\backups"
                 Wait-AnyKey
             }
             02 {
                 Clear-Host; Write-MenuBreadcrumb -Version $utilityBuild -Submenu $submenuTitle -MenuItem $menuItem02; Write-Host -Object ''
-                Get-VCFInstallerBundleAssets -instanceObject $managementInstanceAObject -destinationPath "F:\VCFIR\binaries"
+                $helperSettingsFile = "F:\VCFIR\scripts\settings-ibr-helper.json"
+                If (!(Test-Path -Path $helperSettingsFile)) {
+                    Write-LogMessage -Type ERROR -Message "$helperSettingsFile not found"
+                } else {
+                    $helperSettings = Get-Content -Path $helperSettingsFile -Raw | ConvertFrom-Json
+                    Get-VCFInstallerBundleAssets -instanceObject $helperSettings -destinationPath "F:\VCFIR\binaries"
+                }
                 Wait-AnyKey
             }
             03 {

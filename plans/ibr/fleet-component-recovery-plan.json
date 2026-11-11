@@ -11,7 +11,7 @@
         "value": "true"
       }
     ],
-    "threadId": "4",
+    "threadId": "1",
     "interactive": false,
     "visible": true
   },
@@ -27,7 +27,7 @@
         "value": "false"
       }
     ],
-    "threadId": "",
+    "threadId": "1",
     "interactive": true,
     "visible": true
   },
@@ -43,7 +43,7 @@
         "value": "false"
       }
     ],
-    "threadId": "",
+    "threadId": "1",
     "interactive": true,
     "visible": true
   },
@@ -59,7 +59,7 @@
         "value": "true"
       }
     ],
-    "threadId": "",
+    "threadId": "2",
     "interactive": false,
     "visible": true
   },
@@ -75,7 +75,7 @@
         "value": "false"
       }
     ],
-    "threadId": "",
+    "threadId": "2",
     "interactive": true,
     "visible": true
   },
@@ -91,7 +91,7 @@
         "value": "true"
       }
     ],
-    "threadId": "",
+    "threadId": "2",
     "interactive": true,
     "visible": true
   },
@@ -107,7 +107,7 @@
         "value": "false"
       }
     ],
-    "threadId": "",
+    "threadId": "2",
     "interactive": true,
     "visible": true
   },
@@ -123,7 +123,7 @@
         "value": "true"
       }
     ],
-    "threadId": "",
+    "threadId": "2",
     "interactive": true,
     "visible": true
   },
@@ -139,7 +139,7 @@
         "value": "false"
       }
     ],
-    "threadId": "",
+    "threadId": "2",
     "interactive": true,
     "visible": true
   },
@@ -155,7 +155,7 @@
         "value": "true"
       }
     ],
-    "threadId": "",
+    "threadId": "2",
     "interactive": true,
     "visible": true
   },
@@ -171,7 +171,7 @@
         "value": "false"
       }
     ],
-    "threadId": "",
+    "threadId": "2",
     "interactive": true,
     "visible": true
   },
@@ -187,7 +187,7 @@
         "value": "true"
       }
     ],
-    "threadId": "",
+    "threadId": "2",
     "interactive": true,
     "visible": true
   },
@@ -203,7 +203,7 @@
         "value": "false"
       }
     ],
-    "threadId": "",
+    "threadId": "2",
     "interactive": false,
     "visible": true
   },
@@ -219,7 +219,7 @@
         "value": "true"
       }
     ],
-    "threadId": "",
+    "threadId": "2",
     "interactive": false,
     "visible": true
   },
@@ -228,7 +228,7 @@
     "commandLine": "Invoke-SddcManagerBundleDownload -extractedSDDCDataFile $extractedSDDCDataFile -vcfUserPassword $vcfUserPassword -rootPassword $rootPassword -adminPassword $adminPassword -WaitForCompletion",
     "displayName": "Invoke SDDC Manager Bundle Download",
     "condition": [],
-    "threadId": "",
+    "threadId": "2",
     "interactive": false,
     "visible": true
   },
@@ -237,7 +237,7 @@
     "commandLine": "New-ExtractVcfmsBackup -LocalArchivePath $LocalArchivePath -EncryptionPassphrase $encryptionPassphrase -OutputDir \".\\backup-yaml\"",
     "displayName": "Extract Runtime Configuration from VCFMS Backup",
     "condition": [],
-    "threadId": "",
+    "threadId": "2",
     "interactive": false,
     "visible": true
   },
@@ -246,7 +246,7 @@
     "commandLine": "Remove-SddcManagerVspClusterEntry -extractedSDDCDataFile $extractedSDDCDataFile -VcfUserPassword $vcfUserPassword -RootPassword $rootPassword -ClusterType MANAGEMENT -autoConfirm",
     "displayName": "Remove VCFMS Services Runtime Cluster Entry",
     "condition": [],
-    "threadId": "",
+    "threadId": "2",
     "interactive": false,
     "visible": true
   },
@@ -255,7 +255,7 @@
     "commandLine": "New-ServicesRuntime -SddcManagerUser $sddcManagerAdmin -SddcManagerPassword $sddcManagerAdminPassword -SystemUserPassword $vcfmsServicesRuntimePassword -Ipv4Addresses ($ipv4Addresses.Split(',').Trim()) -Size $size -GatewayCidrIpv4 $gatewayCidrIpv4 -extractedSDDCDataFile $extractedSDDCDataFile -InternalClusterCidrIpv4 $internalClusterCidrIpv4 -type MANAGEMENT -autoConfirm",
     "displayName": "Create New Services Runtime for VCFMS",
     "condition": [],
-    "threadId": "",
+    "threadId": "2",
     "interactive": false,
     "visible": true
   },
@@ -264,7 +264,10 @@
     "commandLine": "Set-ServicesRuntimeSftpBackupSettings -Type MANAGEMENT -ServicesRuntimePassword $vcfmsServicesRuntimePassword -extractedSDDCDataFile $extractedSDDCDataFile -SftpHost $sftpHost -SftpUsername $sftpUsername -SftpPassword $sftpPassword -SftpDirectory $sftpDirectory -EncryptionPassphrase $encryptionPassphrase",
     "displayName": "Set VCFMS Services Runtime SFTP Backup Settings",
     "condition": [],
-    "threadId": "2",
+    "threadId": "3",
+    "waitFor": [
+      "2"
+    ],
     "interactive": false,
     "visible": true
   },
@@ -280,7 +283,7 @@
         "value": "false"
       }
     ],
-    "threadId": "2",
+    "threadId": "3",
     "interactive": false,
     "visible": true
   },
@@ -296,7 +299,7 @@
         "value": "true"
       }
     ],
-    "threadId": "2",
+    "threadId": "3",
     "interactive": false,
     "visible": true
   },
@@ -305,7 +308,7 @@
     "commandLine": "Restore-ServicesRuntimeComponentBackup -Type MANAGEMENT -extractedSDDCDataFile $extractedSDDCDataFile -ServicesRuntimePassword $vcfmsServicesRuntimePassword -RestoreJsonFile \".\\vcfms-restore-payload.json\" -autoConfirm",
     "displayName": "Restore VCFMS Backups",
     "condition": [],
-    "threadId": "2",
+    "threadId": "3",
     "interactive": false,
     "visible": true
   },
@@ -314,7 +317,7 @@
     "commandLine": "Set-ServicesRuntimeScale -Type MANAGEMENT -extractedSDDCDataFile $extractedSDDCDataFile -ServicesRuntimePassword $vcfmsServicesRuntimePassword -KubeconfigOutputDir \".\\backup-yaml\" -BackupYamlDir \".\\backup-yaml\"",
     "displayName": "Apply Services Runtime Configuration",
     "condition": [],
-    "threadId": "2",
+    "threadId": "3",
     "interactive": false,
     "visible": true
   },
@@ -323,7 +326,7 @@
     "commandLine": "Restore-ServicesRuntimeComponentBackup -Type MANAGEMENT -extractedSDDCDataFile $extractedSDDCDataFile -ServicesRuntimePassword $vcfmsServicesRuntimePassword -RestoreJsonFile \".\\opsLogs-restore-payload.json\" -autoConfirm",
     "displayName": "Restore Log Management Backup",
     "condition": [],
-    "threadId": "2",
+    "threadId": "3",
     "interactive": false,
     "visible": true
   },
@@ -332,7 +335,7 @@
     "commandLine": "Confirm-ManualStep -Message 'Press Enter once Log Management state is updated' -AnswerKey 'log-management-state-updated'",
     "displayName": "Confirm Manual Step: Log Management state is updated",
     "condition": [],
-    "threadId": "2",
+    "threadId": "3",
     "interactive": true,
     "visible": true
   },
@@ -341,7 +344,7 @@
     "commandLine": "Set-SDDCManagerFDSDepot -extractedSDDCDataFile $extractedSDDCDataFile -sddcManagerUser $sddcManagerAdmin -sddcManagerPassword $sddcManagerAdminPassword -originalConfigurationFile $originalConfigurationFile",
     "displayName": "Set SDDC Manager FDS Depot",
     "condition": [],
-    "threadId": "2",
+    "threadId": "3",
     "interactive": false,
     "visible": true
   },
@@ -350,7 +353,10 @@
     "commandLine": "Remove-SddcManagerVspClusterEntry -extractedSDDCDataFile $extractedSDDCDataFile -VcfUserPassword $vcfUserPassword -RootPassword $rootPassword -ClusterType CONSUMPTION -autoConfirm",
     "displayName": "Remove VCFA Services Runtime Cluster Entry",
     "condition": [],
-    "threadId": "3",
+    "threadId": "4",
+    "waitFor": [
+      "2"
+    ],
     "interactive": false,
     "visible": true
   },
@@ -359,7 +365,7 @@
     "commandLine": "New-ServicesRuntime -SddcManagerUser $sddcManagerAdmin -SddcManagerPassword $sddcManagerAdminPassword -SystemUserPassword $vcfaServicesRuntimePassword -Ipv4Addresses ($vcfaIpv4Addresses.Split(',').Trim()) -Size $vcfaSize -GatewayCidrIpv4 $vcfaGatewayCidrIpv4 -extractedSDDCDataFile $extractedSDDCDataFile -InternalClusterCidrIpv4 $vcfaInternalClusterCidrIpv4 -type CONSUMPTION -autoConfirm",
     "displayName": "Create New VCFA Services Runtime",
     "condition": [],
-    "threadId": "3",
+    "threadId": "4",
     "interactive": false,
     "visible": true
   },
@@ -368,7 +374,7 @@
     "commandLine": "Set-ServicesRuntimeSftpBackupSettings -Type CONSUMPTION -ServicesRuntimePassword $vcfaServicesRuntimePassword -extractedSDDCDataFile $extractedSDDCDataFile -SftpHost $sftpHost -SftpUsername $sftpUsername -SftpPassword $sftpPassword -SftpDirectory $sftpDirectory -EncryptionPassphrase $encryptionPassphrase",
     "displayName": "Set VCFA Services Runtime SFTP Backup Settings",
     "condition": [],
-    "threadId": "3",
+    "threadId": "4",
     "interactive": false,
     "visible": true
   },
@@ -384,7 +390,7 @@
         "value": "false"
       }
     ],
-    "threadId": "3",
+    "threadId": "4",
     "interactive": false,
     "visible": true
   },
@@ -400,7 +406,7 @@
         "value": "true"
       }
     ],
-    "threadId": "3",
+    "threadId": "4",
     "interactive": false,
     "visible": true
   },
@@ -409,7 +415,7 @@
     "commandLine": "Restore-ServicesRuntimeComponentBackup -Type CONSUMPTION -extractedSDDCDataFile $extractedSDDCDataFile -ServicesRuntimePassword $vcfaServicesRuntimePassword -RestoreJsonFile \".\\vcfa-restore-payload.json\" -autoConfirm",
     "displayName": "Restore VCF Automation Backup",
     "condition": [],
-    "threadId": "3",
+    "threadId": "4",
     "interactive": false,
     "visible": true
   },
@@ -418,9 +424,10 @@
     "commandLine": "Restore-ServicesRuntimeComponentBackup -Type MANAGEMENT -extractedSDDCDataFile $extractedSDDCDataFile -ServicesRuntimePassword $vcfmsServicesRuntimePassword -RestoreJsonFile \".\\restore-payload.json\" -autoConfirm",
     "displayName": "Restore Telemetry Backup",
     "condition": [],
-    "threadId": "",
+    "threadId": "2",
     "waitFor": [
-      "2"
+      "3",
+      "4"
     ],
     "interactive": false,
     "visible": true
@@ -430,10 +437,7 @@
     "commandLine": "Confirm-ManualStep -Message 'Press Enter once connections in VCF Automation have been updated' -AnswerKey 'vcf-automation-connections-updated'",
     "displayName": "Confirm Manual Step: VCF Automation connections have been updated",
     "condition": [],
-    "threadId": "",
-    "waitFor": [
-      "3"
-    ],
+    "threadId": "2",
     "interactive": true,
     "visible": true
   },
@@ -442,9 +446,9 @@
     "commandLine": "Confirm-ManualStep -Message 'Press Enter once the License Server has been redeployed' -AnswerKey 'license-server-redeployed'",
     "displayName": "Confirm Manual Step: License Server has been redeployed",
     "condition": [],
-    "threadId": "",
+    "threadId": "2",
     "waitFor": [
-      "4"
+      "1"
     ],
     "interactive": true,
     "visible": true
