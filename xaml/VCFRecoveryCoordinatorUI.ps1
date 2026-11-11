@@ -2937,13 +2937,14 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
             $variantThreadCircle.HorizontalAlignment = 'Center'
             $variantThreadCircle.VerticalAlignment = 'Center'
             $variantThreadCircle.Child = $threadCircleText
-            # Thread numbers only mean anything while "Run parallel tasks" is on -- hidden (not just
-            # blanked) when it's off, both for rows built while it's off and, via the toggle's own
-            # handler (see Set-ThreadCircleVisibility), for rows already on screen.
+            # Thread numbers only mean anything while "Run parallel tasks" is on -- Hidden (not
+            # Collapsed: a collapsed circle takes its 22px out of the row, so every row would change
+            # height as the toggle flips) when it is off, both for rows built while it is off and, via
+            # the toggle's own handler (see Set-ThreadCircleVisibility), for rows already on screen.
             $variantThreadCircle.Visibility = if ($runAllParallelCheckBox.IsChecked) {
                 'Visible'
             } else {
-                'Collapsed'
+                'Hidden'
             }
             [System.Windows.Controls.Grid]::SetColumn($variantThreadCircle, 1)
         }
@@ -4466,7 +4467,7 @@ function Set-ThreadCircleVisibility {
     $visibility = if ($runAllParallelCheckBox.IsChecked) {
         'Visible'
     } else {
-        'Collapsed'
+        'Hidden'
     }
     foreach ($stepRow in @($global:currentPlanContext.StepRows)) {
         foreach ($circle in @($stepRow.PlanThreadCircle, $stepRow.ManualThreadCircle)) {
