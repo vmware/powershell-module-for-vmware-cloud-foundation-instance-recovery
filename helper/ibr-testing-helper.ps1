@@ -12,6 +12,21 @@ If (!$logFile) {
     $Global:logFile = Join-Path -Path $(If ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }) -ChildPath "log-ibr-testing-helper.log"
 }
 
+Function Wait-AnyKey {
+    <#
+    .DESCRIPTION
+        Local copy so the helper does not depend on whatever Wait-AnyKey the host session provides - always shows
+        the prompt and always waits for a keypress before the menu is redrawn.
+    #>
+    Write-Host ''; Write-Host -Object ' Press any key to return to the menu...' -ForegroundColor Yellow; Write-Host ''
+    Try {
+        $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
+    } Catch {
+        # Hosts without a raw console (e.g. ISE) cannot ReadKey
+        $null = Read-Host -Prompt ' Press Enter to continue'
+    }
+}
+
 Function Write-MenuBreadcrumb {
     Param (
         [Parameter(Mandatory=$true)][String]$Version,
@@ -541,14 +556,52 @@ Function Set-JsonStringValue {
     [regex]::Replace($content, $pattern, $evaluator)
 }
 
+Function Get-VCenterBackupSharePath {
+    <#
+    .DESCRIPTION
+        Returns the share-style path (<this machine's IP>/<drive>$/<path>) to the latest vCenter backup set for the
+        vCenter named by restoredVcenterFqdn in $jsonFile, or $null (after logging a warning) if it can't be found.
+        The key was renamed from vCenterFqdn to restoredVcenterFqdn by the variable trimming change (085fb83).
+    #>
+    Param (
+        [Parameter (Mandatory = $true)] [String]$jsonFile,
+        [Parameter (Mandatory = $true)] [String]$backupsPath
+    )
+
+    $jsonName = Split-Path -Path $jsonFile -Leaf
+    $vCenterFqdn = (Get-Content -Path $jsonFile -Raw | ConvertFrom-Json).restoredVcenterFqdn
+    If ([string]::IsNullOrWhiteSpace($vCenterFqdn)) {
+        Write-LogMessage -Type WARNING -Message "[$jsonName] restoredVcenterFqdn is empty - cannot locate the vCenter backup set, leaving vCenterBackupPath unchanged"
+        Return $null
+    }
+
+    $vCenterBackupFolder = Join-Path -Path (Join-Path -Path $backupsPath -ChildPath "vCenter") -ChildPath "sn_$vCenterFqdn"
+    $vCenterBackupSetFolder = Get-ChildItem -Path $vCenterBackupFolder -Directory -ErrorAction SilentlyContinue | Sort-Object -Property LastWriteTime -Descending | Select-Object -First 1
+    If (!$vCenterBackupSetFolder) {
+        Write-LogMessage -Type WARNING -Message "[$jsonName] No vCenter backup set found under $vCenterBackupFolder - leaving vCenterBackupPath unchanged"
+        Return $null
+    }
+
+    # Always detected fresh - the share path must point back at this machine
+    $localIpAddress = ([System.Net.Dns]::GetHostAddresses([System.Net.Dns]::GetHostName()) | Where-Object { $_.AddressFamily -eq 'InterNetwork' -and $_.ToString() -notlike '169.254.*' } | Select-Object -First 1)
+    If (!$localIpAddress) {
+        Write-LogMessage -Type WARNING -Message "[$jsonName] Unable to detect this machine's IPv4 address - leaving vCenterBackupPath unchanged"
+        Return $null
+    }
+    $driveLetter = $vCenterBackupSetFolder.FullName.Substring(0, 1)
+    $shareRelativePath = ($vCenterBackupSetFolder.FullName -replace '^[A-Za-z]:\\', '') -replace '\\', '/'
+    Write-LogMessage -Type INFO -Message "[$jsonName] Found vCenter backup set $($vCenterBackupSetFolder.Name) for $vCenterFqdn"
+    Return "$($localIpAddress.ToString())/$driveLetter`$/$shareRelativePath"
+}
+
 Function Update-VCFVariableJsonFiles {
     <#
     .SYNOPSIS
         Aligns the backup/OVA paths and VCF version in the recovery variable JSON files with what is
         actually staged under the backups and binaries folders.
     .DESCRIPTION
-        Updates management-domain-recovery-variables-sfo-m01.json and fleet-component-recovery-variables.json
-        in $variablesPath. The VCF version (format 9.1.1.0) is parsed from the SDDC Manager OVA file name in
+        Updates management-domain-recovery-variables-sfo-m01.json, fleet-component-recovery-variables.json and every
+        workload-domain-recovery-variables-<domain>.json in $variablesPath. The VCF version (format 9.1.1.0) is parsed from the SDDC Manager OVA file name in
         $binariesPath. The archive subfolders of both staging folders are ignored.
     #>
     Param (
@@ -606,28 +659,9 @@ Function Update-VCFVariableJsonFiles {
         }
 
         # Backups - management vCenter backup set, matched on the vCenter fqdn in the JSON
-        # The variable trimming change (085fb83) renamed this key from vCenterFqdn to restoredVcenterFqdn
-        $vCenterFqdn = (Get-Content -Path $managementJsonFile -Raw | ConvertFrom-Json).restoredVcenterFqdn
-        If ([string]::IsNullOrWhiteSpace($vCenterFqdn)) {
-            Write-LogMessage -Type WARNING -Message "restoredVcenterFqdn is empty in $(Split-Path -Path $managementJsonFile -Leaf) - cannot locate the vCenter backup set, leaving vCenterBackupPath unchanged"
-            $vCenterBackupSetFolder = $null
-        } else {
-            $vCenterBackupFolder = Join-Path -Path (Join-Path -Path $backupsPath -ChildPath "vCenter") -ChildPath "sn_$vCenterFqdn"
-            $vCenterBackupSetFolder = Get-ChildItem -Path $vCenterBackupFolder -Directory -ErrorAction SilentlyContinue | Sort-Object -Property LastWriteTime -Descending | Select-Object -First 1
-        }
-        If ($vCenterBackupSetFolder) {
-            # Always detected fresh - the share path must point back at this machine
-            $localIpAddress = ([System.Net.Dns]::GetHostAddresses([System.Net.Dns]::GetHostName()) | Where-Object { $_.AddressFamily -eq 'InterNetwork' -and $_.ToString() -notlike '169.254.*' } | Select-Object -First 1)
-            If (!$localIpAddress) {
-                Write-LogMessage -Type WARNING -Message "Unable to detect this machine's IPv4 address - leaving vCenterBackupPath unchanged"
-            } else {
-                $driveLetter = $vCenterBackupSetFolder.FullName.Substring(0, 1)
-                $shareRelativePath = ($vCenterBackupSetFolder.FullName -replace '^[A-Za-z]:\\', '') -replace '\\', '/'
-                $managementUpdates["vCenterBackupPath"] = "$($localIpAddress.ToString())/$driveLetter`$/$shareRelativePath"
-                Write-LogMessage -Type INFO -Message "Found vCenter backup set $($vCenterBackupSetFolder.Name) for $vCenterFqdn"
-            }
-        } elseIf (![string]::IsNullOrWhiteSpace($vCenterFqdn)) {
-            Write-LogMessage -Type WARNING -Message "No vCenter backup set found under $vCenterBackupFolder - leaving vCenterBackupPath unchanged"
+        $managementVCenterBackupPath = Get-VCenterBackupSharePath -jsonFile $managementJsonFile -backupsPath $backupsPath
+        If ($managementVCenterBackupPath) {
+            $managementUpdates["vCenterBackupPath"] = $managementVCenterBackupPath
         }
 
         # Backups - VCF fleet (VCF Operations / services runtime) archive
@@ -640,7 +674,28 @@ Function Update-VCFVariableJsonFiles {
             Write-LogMessage -Type WARNING -Message "No vsp *.base.tgz archive found under $fleetBackupRoot - leaving LocalArchivePath unchanged"
         }
 
-        foreach ($target in @(@{ file = $managementJsonFile; updates = $managementUpdates }, @{ file = $fleetJsonFile; updates = $fleetUpdates })) {
+        $targets = @(@{ file = $managementJsonFile; updates = $managementUpdates }, @{ file = $fleetJsonFile; updates = $fleetUpdates })
+
+        # Workload domains - one workload-domain-recovery-variables-<domain>.json per domain, each with its own vCenter
+        $workloadJsonFiles = @(Get-ChildItem -Path $variablesPath -Filter "workload-domain-recovery-variables-*.json" -File -ErrorAction SilentlyContinue | Sort-Object -Property Name)
+        If ($workloadJsonFiles.Count -eq 0) {
+            Write-LogMessage -Type INFO -Message "No workload-domain-recovery-variables-*.json files found in $variablesPath"
+        }
+        foreach ($workloadJsonFile in $workloadJsonFiles) {
+            $workloadUpdates = [ordered]@{}
+            foreach ($key in @("vCenterOvaFile", "nsxManagerOvaFile")) {
+                If ($managementUpdates.Contains($key)) {
+                    $workloadUpdates[$key] = $managementUpdates[$key]
+                }
+            }
+            $workloadVCenterBackupPath = Get-VCenterBackupSharePath -jsonFile $workloadJsonFile.FullName -backupsPath $backupsPath
+            If ($workloadVCenterBackupPath) {
+                $workloadUpdates["vCenterBackupPath"] = $workloadVCenterBackupPath
+            }
+            $targets += @{ file = $workloadJsonFile.FullName; updates = $workloadUpdates }
+        }
+
+        foreach ($target in $targets) {
             $originalContent = Get-Content -Path $target.file -Raw
             $updatedContent = $originalContent
             foreach ($key in $target.updates.Keys) {
