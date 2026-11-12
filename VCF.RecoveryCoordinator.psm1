@@ -19541,9 +19541,9 @@ Function Set-ContentLibraryDatastoreMapping {
     LogMessage -type INFO -message "[$vCenterFQDN] Library GUID: $libraryId"
     LogMessage -type INFO -message "[$vCenterFQDN] vCenter ID: $existinvCenterId"
 
-    # Query cl_library_storage for the storage backing UUID (bytea decoded to readable UUID)
+    # Query cl_library_storage for the storage backing UUID
     LogMessage -type INFO -message "[$vCenterFQDN] Querying VCDB for Content Library storage_id of '$libraryId'"
-    $stream.WriteLine("echo `"select storage_id from cl_library_storage where library_id='$libraryId';`" | $psql")
+    $stream.WriteLine("echo `"SELECT storage_id FROM vc.cl_library_storage WHERE library_id='$libraryId';`" | $psql")
     Start-Sleep 3
     $storageId = (& $cleanSshOutput $stream.Read() | Select-String -Pattern $guidPattern -AllMatches).Matches | Select-Object -First 1 -ExpandProperty Value
     if (-not $storageId) {
@@ -19570,18 +19570,20 @@ Function Set-ContentLibraryDatastoreMapping {
     LogMessage -type INFO -message "[$vCenterFQDN] New storageuri: $newStorageUri"
 
     # Update cl_storage storageuri for the storage backing
-    LogMessage -type INFO -message "[$vCenterFQDN] Updating cl_storage storageuri for storage_id '$storageId'"
-    $stream.WriteLine("echo `"UPDATE cl_storage SET storageuri='$newStorageUri' WHERE id='$storageId';`" | $psql")
+    LogMessage -type INFO -message "[$vCenterFQDN] Updating vc.cl_storage storageuri for storage_id '$storageId'"
+    $stream.WriteLine("echo `"UPDATE vc.cl_storage SET storageuri='$newStorageUri' WHERE id='$storageId';`" | $psql")
     Start-Sleep 3
-    $stream.Read() | Out-Null
+    $storageUpdateOutput = & $cleanSshOutput $stream.Read()
+    $storageUpdateRows = ([regex]::Match($storageUpdateOutput, '(?m)^UPDATE (\d+)\s*$')).Groups[1].Value
+    if ($storageUpdateRows -ne '1') {
+        LogMessage -type WARNING -message "[$vCenterFQDN] Expected cl_storage UPDATE to affect 1 row for storage_id '$storageId' but got: '$storageUpdateRows'"
+    }
 
     # Verify the update by reading back the new storageuri
-    # COLUMNS=500 prevents psql/terminal from wrapping the URI across multiple lines
-    $stream.WriteLine("COLUMNS=500 echo `"SELECT storageuri FROM cl_storage WHERE id='$storageId';`" | $psql")
+    $stream.WriteLine("COLUMNS=500 echo `"SELECT storageuri FROM vc.cl_storage WHERE id='$storageId';`" | $psql")
     Start-Sleep 3
     $verifyRaw = $stream.Read()
     $verifyOutput = & $cleanSshOutput $verifyRaw
-    # Use a direct regex match against the full output to avoid line-split/wrap sensitivity
     $uriPattern = 'Datastore:[^\s\r\n]+'
     $verifiedUri = ([regex]::Match($verifyOutput, $uriPattern)).Value.Trim().Replace("`r", "")
     if ($verifiedUri -eq $newStorageUri) {
@@ -19590,8 +19592,52 @@ Function Set-ContentLibraryDatastoreMapping {
         LogMessage -type WARNING -message "[$vCenterFQDN] cl_storage UPDATE could not be verified. Expected: $newStorageUri | Got: $verifiedUri"
     }
 
-    $stream.WriteLine("service-control --restart vmware-content-library")
-    LogMessage -type INFO -message "[$vCenterFQDN] Restarted Content Library Service"
+    # Reset ondisk flag on individual files in vc.cl_file so on-demand fetching pulls them from upstream
+    LogMessage -type INFO -message "[$vCenterFQDN] Resetting ondisk state for files in storage_id '$storageId'"
+    $stream.WriteLine("echo `"UPDATE vc.cl_file SET ondisk = false WHERE storageid = '$storageId';`" | $psql")
+    Start-Sleep 3
+    $fileUpdateOutput = & $cleanSshOutput $stream.Read()
+    $fileUpdateRows = ([regex]::Match($fileUpdateOutput, '(?m)^UPDATE (\d+)\s*$')).Groups[1].Value
+    if ($fileUpdateRows -eq '') {
+        LogMessage -type WARNING -message "[$vCenterFQDN] cl_file UPDATE returned no row count for storage_id '$storageId' - the query may have failed"
+    } else {
+        LogMessage -type INFO -message "[$vCenterFQDN] Reset ondisk flag on $fileUpdateRows file(s) in storage_id '$storageId'"
+    }
+
+    # Verify that no files remain marked as ondisk = true using a unique tag prefix
+    $countSql = "SELECT 'ONDISK_COUNT:' || COUNT(id) FROM vc.cl_file WHERE ondisk = true AND storageid = '$storageId';"
+    $stream.WriteLine("echo `"$countSql`" | $psql")
+    Start-Sleep 3
+    $onDiskRaw = & $cleanSshOutput $stream.Read()
+    $onDiskCount = ([regex]::Match($onDiskRaw, 'ONDISK_COUNT:(\d+)')).Groups[1].Value
+    if ($onDiskCount -eq '0') {
+        LogMessage -type INFO -message "[$vCenterFQDN] Verified 0 files marked ondisk=true for storage_id '$storageId'"
+    } else {
+        LogMessage -type WARNING -message "[$vCenterFQDN] Unexpected ondisk file count: '$onDiskCount'"
+    }
+
+    # Restart vmware-content-library detached via nohup (survives SSH hangup), then poll for a marker file.
+    # The marker is matched at line start so the terminal's echo of the typed command cannot satisfy it.
+    LogMessage -type INFO -message "[$vCenterFQDN] Restarting Content Library Service..."
+    $stream.WriteLine("rm -f /tmp/cl_restart.done; nohup sh -c 'service-control --restart vmware-content-library; touch /tmp/cl_restart.done' > /tmp/cl_restart.log 2>&1 &")
+    Start-Sleep 2
+    $timeout = 0
+    $restartDone = $false
+    do {
+        Start-Sleep 5
+        $timeout += 5
+        $stream.Read() | Out-Null
+        $stream.WriteLine("[ -f /tmp/cl_restart.done ] && echo RESTART_DONE")
+        Start-Sleep 1
+        $restartDone = ($stream.Read() -match '(?m)^RESTART_DONE\s*$')
+    } until ($restartDone -or $timeout -ge 180)
+
+    if ($restartDone) {
+        LogMessage -type INFO -message "[$vCenterFQDN] Content Library Service restarted successfully"
+    } else {
+        LogMessage -type WARNING -message "[$vCenterFQDN] Timed out waiting for Content Library Service restart; it continues in the background on the appliance (see /tmp/cl_restart.log)"
+    }
+
     Remove-SSHSession -SSHSession $sshSession | Out-Null
 
     $StopWatch.Stop()
