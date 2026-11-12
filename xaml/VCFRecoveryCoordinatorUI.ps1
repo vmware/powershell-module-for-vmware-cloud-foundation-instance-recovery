@@ -3371,6 +3371,47 @@ function Get-VariableDescription([string]$Name) {
 # and is responsible for persisting it to that row's own answers file and re-applying it to the
 # console -- see this function's own comment on $applyEdit for why that's now the ONLY way an edit
 # ever reaches the console, not a direct assignment typed here.
+# A drawn eye icon (almond outline + iris) for the password Show/Hide button, in place of the
+# Segoe MDL2 "RedEye" glyph, which is a stylised symbol rather than a recognisable eye. -Slashed adds a
+# diagonal line through it (value currently shown, click to hide). White strokes/fill to match the
+# button's white foreground.
+function New-EyeIcon([switch]$Slashed) {
+    $canvas = New-Object System.Windows.Controls.Canvas
+    $canvas.Width = 20
+    $canvas.Height = 14
+    $outline = New-Object System.Windows.Shapes.Path
+    $outline.Data = [System.Windows.Media.Geometry]::Parse('M1,7 Q10,-1 19,7 Q10,15 1,7 Z')
+    $outline.Stroke = [System.Windows.Media.Brushes]::White
+    $outline.StrokeThickness = 1.5
+    $outline.StrokeLineJoin = 'Round'
+    [void]$canvas.Children.Add($outline)
+    $iris = New-Object System.Windows.Shapes.Ellipse
+    $iris.Width = 7
+    $iris.Height = 7
+    $iris.Fill = [System.Windows.Media.Brushes]::White
+    [System.Windows.Controls.Canvas]::SetLeft($iris, 6.5)
+    [System.Windows.Controls.Canvas]::SetTop($iris, 3.5)
+    [void]$canvas.Children.Add($iris)
+    if ($Slashed) {
+        $slash = New-Object System.Windows.Shapes.Line
+        $slash.X1 = 3
+        $slash.Y1 = 13
+        $slash.X2 = 17
+        $slash.Y2 = 1
+        $slash.Stroke = [System.Windows.Media.Brushes]::White
+        $slash.StrokeThickness = 1.8
+        $slash.StrokeStartLineCap = 'Round'
+        $slash.StrokeEndLineCap = 'Round'
+        [void]$canvas.Children.Add($slash)
+    }
+    $viewbox = New-Object System.Windows.Controls.Viewbox
+    $viewbox.Width = 20
+    $viewbox.Height = 14
+    $viewbox.Stretch = 'Uniform'
+    $viewbox.Child = $canvas
+    return $viewbox
+}
+
 function New-VariableRow([string]$Name, [string]$Value, [scriptblock]$OnValueChanged) {
     $panel = New-Object System.Windows.Controls.DockPanel
     $panel.Margin = '0,0,0,3'
@@ -3459,10 +3500,10 @@ function New-VariableRow([string]$Name, [string]$Value, [scriptblock]$OnValueCha
         $textBox.Add_KeyDown($keyHandler)
 
         $eyeButton = New-Object System.Windows.Controls.Button
-        $eyeButton.FontFamily = New-Object System.Windows.Media.FontFamily('Segoe MDL2 Assets')
-        $eyeButton.Content = [string][char]0xE7B3
+        $eyeButton.Content = New-EyeIcon
         $eyeButton.ToolTip = 'Show value'
-        $eyeButton.Width = 26
+        $eyeButton.Width = 30
+        $eyeButton.Padding = '0'
         $eyeButton.Margin = '4,0,0,0'
         # Not focusable, so clicking it doesn't steal focus from (and prematurely apply) the edit box.
         $eyeButton.Focusable = $false
@@ -3472,14 +3513,14 @@ function New-VariableRow([string]$Name, [string]$Value, [scriptblock]$OnValueCha
                     $textBox.Text = $valueBox.Password
                     $valueBox.Visibility = 'Collapsed'
                     $textBox.Visibility = 'Visible'
-                    $eyeButton.Content = [string][char]0xED1A
+                    $eyeButton.Content = New-EyeIcon -Slashed
                     $eyeButton.ToolTip = 'Hide value'
                     $reveal.On = $true
                 } else {
                     $valueBox.Password = $textBox.Text
                     $textBox.Visibility = 'Collapsed'
                     $valueBox.Visibility = 'Visible'
-                    $eyeButton.Content = [string][char]0xE7B3
+                    $eyeButton.Content = New-EyeIcon
                     $eyeButton.ToolTip = 'Show value'
                     $reveal.On = $false
                 }

@@ -62,8 +62,8 @@
                                            Padding="0,0,0,8" />
                                 <!-- Optional element shown at the right end of the title row, supplied through the
                                      GroupBox's Tag (null for every card that doesn't set one). Used by Recovery
-                                     Tasks for its badge legend. Top margin 9 centers the 22px legend on the 15pt title. -->
-                                <ContentPresenter Grid.Row="0" Content="{TemplateBinding Tag}" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,9,10,0" />
+                                     Tasks for its badge legend. Top margin 14 (the title's own 10px margin plus the ~4px between its text box and the top of its capitals) puts the top of the 22px legend level with the top of the title text. -->
+                                <ContentPresenter Grid.Row="0" Content="{TemplateBinding Tag}" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,14,10,0" />
                                 <ContentPresenter Grid.Row="1" Margin="{TemplateBinding Padding}" />
                             </Grid>
                         </Border>
