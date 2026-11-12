@@ -2953,8 +2953,8 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
         $threadColumn = New-Object System.Windows.Controls.ColumnDefinition
         $threadColumn.Width = New-Object System.Windows.GridLength(30)
         $interactiveColumn = New-Object System.Windows.Controls.ColumnDefinition
-        # Just wide enough for the round icon badge (see Set-InteractiveBadgeState) plus its margin.
-        $interactiveColumn.Width = New-Object System.Windows.GridLength(28)
+        # The 22px round icon badge (same size as the thread circle; see Set-InteractiveBadgeState) plus 4px each side.
+        $interactiveColumn.Width = New-Object System.Windows.GridLength(30)
         $runColumn = New-Object System.Windows.Controls.ColumnDefinition
         # 6px for the button's own left margin (below) plus its 80px width.
         $runColumn.Width = New-Object System.Windows.GridLength(86)
@@ -2964,7 +2964,9 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
         # Duration sits LEFT of the status button so the button stays the right-most column, directly
         # under the Run Plan button in the header.
         $durationColumn = New-Object System.Windows.Controls.ColumnDefinition
-        # 6px right margin (below) plus the 80px button, matching the status button's width.
+        # 4px left + 80px button + 2px right. Together with the thread circle's/badge's own 4px of
+        # padding inside their columns and the status button's 6px left margin, that makes every gap
+        # between circle -> badge -> duration -> status button exactly 8px.
         $durationColumn.Width = New-Object System.Windows.GridLength(86)
         [void]$variantPanel.ColumnDefinitions.Add($durationColumn)
         [void]$variantPanel.ColumnDefinitions.Add($runColumn)
@@ -3031,16 +3033,16 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
         $variantInteractiveBadge = $null
         if ($Interactive) {
             $variantInteractiveBadge = New-Object System.Windows.Controls.Border
-            $variantInteractiveBadge.Width = 20
-            $variantInteractiveBadge.Height = 20
-            $variantInteractiveBadge.CornerRadius = 10
+            $variantInteractiveBadge.Width = 22
+            $variantInteractiveBadge.Height = 22
+            $variantInteractiveBadge.CornerRadius = 11
             $variantInteractiveBadge.Margin = '4,0,4,0'
             $variantInteractiveBadge.HorizontalAlignment = 'Center'
             $variantInteractiveBadge.VerticalAlignment = 'Center'
             $interactiveBadgeGlyph = New-Object System.Windows.Controls.TextBlock
             $interactiveBadgeGlyph.Foreground = [System.Windows.Media.Brushes]::White
             $interactiveBadgeGlyph.FontFamily = 'Segoe UI Symbol'
-            $interactiveBadgeGlyph.FontSize = 12
+            $interactiveBadgeGlyph.FontSize = 10
             $interactiveBadgeGlyph.FontWeight = 'Bold'
             $interactiveBadgeGlyph.HorizontalAlignment = 'Center'
             $interactiveBadgeGlyph.VerticalAlignment = 'Center'
@@ -3073,19 +3075,28 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
         # status buttons' own enable/disable handling. Its own .Tag holds the step's start time for the
         # live timer. Hidden while blank.
         $durationText = New-Object System.Windows.Controls.Button
-        $durationText.Background = [System.Windows.Media.Brushes]::LightGray
+        # The Pending button is LightGray but DISABLED, which the app's button style renders at 50%
+        # opacity -- so a plain LightGray here would look darker. Half-alpha LightGray gives the same
+        # look over any backdrop, without dimming the (colored) text the way Opacity would.
+        $durationText.Background = [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.Color]::FromArgb(0x80, 0xD3, 0xD3, 0xD3))
         $durationText.Foreground = [System.Windows.Media.Brushes]::DimGray
         $durationText.FontSize = 11
         $durationText.FontWeight = 'SemiBold'
         $durationText.Width = 80
         $durationText.Padding = '6,2'
-        $durationText.Margin = '0,0,6,0'
-        $durationText.HorizontalAlignment = 'Right'
+        $durationText.Margin = '4,0,2,0'
+        $durationText.HorizontalAlignment = 'Left'
         $durationText.VerticalAlignment = 'Center'
         $durationText.IsHitTestVisible = $false
         $durationText.Focusable = $false
         $durationText.IsTabStop = $false
         $durationText.Visibility = 'Hidden'
+        # Same height as the status button (which uses the larger default font): bound to its actual
+        # height rather than hard-coded, so it stays equal whatever the font/DPI.
+        $heightBinding = New-Object System.Windows.Data.Binding 'ActualHeight'
+        $heightBinding.Source = $variantButton
+        $heightBinding.Mode = [System.Windows.Data.BindingMode]::OneWay
+        [void]$durationText.SetBinding([System.Windows.FrameworkElement]::HeightProperty, $heightBinding)
         [System.Windows.Controls.Grid]::SetColumn($durationText, 3)
         [void]$variantPanel.Children.Add($durationText)
         $variantButton.Tag = $durationText
