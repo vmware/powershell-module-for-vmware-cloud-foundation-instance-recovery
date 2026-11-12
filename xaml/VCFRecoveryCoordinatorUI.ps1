@@ -1073,7 +1073,7 @@ function Copy-StepRowCompletionState([object[]]$PreviousRows, [object[]]$NewRows
         $occurrence = [int]$occurrences[$row.CommandLine] + 1
         $occurrences[$row.CommandLine] = $occurrence
         if ($row.PlanButton.Content -in @('Done', 'Failed', 'Skipped', 'Running')) {
-            $completedStates["$($row.CommandLine)`0$occurrence"] = @{ Content = $row.PlanButton.Content; Background = $row.PlanButton.Background }
+            $completedStates["$($row.CommandLine)`0$occurrence"] = @{ Content = $row.PlanButton.Content; Background = $row.PlanButton.Background; Duration = $row.PlanButton.Tag.Text }
         }
     }
     if ($completedStates.Count -eq 0) {
@@ -1087,6 +1087,7 @@ function Copy-StepRowCompletionState([object[]]$PreviousRows, [object[]]$NewRows
         if ($completedStates.ContainsKey($key)) {
             $state = $completedStates[$key]
             Set-StepButtonsState @($row.PlanButton, $row.ManualButton) $state.Content $state.Background
+            Set-StepDuration @($row.PlanButton, $row.ManualButton) $state.Duration
         }
     }
 }
@@ -2341,6 +2342,33 @@ function Set-StepButtonsState($Buttons, [string]$Content, $Background) {
     foreach ($stepButton in $Buttons) {
         $stepButton.Content = $Content
         $stepButton.Background = $Background
+        # A step that (re)starts has no run time yet -- drop any stale one from a previous run.
+        if ($Content -eq 'Running' -and $stepButton.Tag) {
+            $stepButton.Tag.Text = ''
+        }
+    }
+}
+
+# Formats a run time as "xh ym zs", leaving off leading zero units (so "3m 5s", "45s").
+function Format-StepDuration([int]$TotalSeconds) {
+    $hours = [Math]::Floor($TotalSeconds / 3600)
+    $minutes = [Math]::Floor(($TotalSeconds % 3600) / 60)
+    $seconds = $TotalSeconds % 60
+    if ($hours -gt 0) {
+        return "${hours}h ${minutes}m ${seconds}s"
+    }
+    if ($minutes -gt 0) {
+        return "${minutes}m ${seconds}s"
+    }
+    return "${seconds}s"
+}
+
+# Shows $Text in the duration TextBlock next to each of $Buttons (see New-StepRow).
+function Set-StepDuration($Buttons, [string]$Text) {
+    foreach ($stepButton in $Buttons) {
+        if ($stepButton.Tag) {
+            $stepButton.Tag.Text = $Text
+        }
     }
 }
 
@@ -2893,7 +2921,10 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
         [void]$variantPanel.ColumnDefinitions.Add($nameColumn)
         [void]$variantPanel.ColumnDefinitions.Add($threadColumn)
         [void]$variantPanel.ColumnDefinitions.Add($interactiveColumn)
+        $durationColumn = New-Object System.Windows.Controls.ColumnDefinition
+        $durationColumn.Width = New-Object System.Windows.GridLength(80)
         [void]$variantPanel.ColumnDefinitions.Add($runColumn)
+        [void]$variantPanel.ColumnDefinitions.Add($durationColumn)
 
         $variantButton = New-Object System.Windows.Controls.Button
         # Wide enough for 'Running' -- the longest of the states this button ever shows (Pending/
@@ -2985,6 +3016,18 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
             [void]$variantPanel.Children.Add($variantInteractiveBadge)
         }
         [void]$variantPanel.Children.Add($variantButton)
+
+        # Run time of this step ("xh ym zs"), to the right of the status button. Blank until the step
+        # completes (or is restored by Resume). Reachable from either button via .Tag, so the
+        # completion watcher -- which only holds the buttons -- can fill it in (see Set-StepDuration).
+        $durationText = New-Object System.Windows.Controls.TextBlock
+        $durationText.Margin = '8,0,0,0'
+        $durationText.VerticalAlignment = 'Center'
+        $durationText.Foreground = [System.Windows.Media.Brushes]::DimGray
+        $durationText.FontSize = 11.5
+        [System.Windows.Controls.Grid]::SetColumn($durationText, 4)
+        [void]$variantPanel.Children.Add($durationText)
+        $variantButton.Tag = $durationText
 
         # Inline Radio Drop-Zone (Engineering mode's pause-point picker) -- Recovery Plan tab (the
         # read-only, Run-All-driven variant) only, never Manual Steps: that's the tab Run All actually
@@ -3438,6 +3481,11 @@ function Start-StepCompletionWatcher {
                 }
                 $isClean = Test-StepTranscriptClean $newText
                 if ($watch.Buttons) {
+                    # Duration comes from the "Completed Task <cmdlet> in N minutes and M seconds" line.
+                    $durationMatch = [regex]::Match($newText, [regex]::Escape($watch.TargetText) + '\s+in\s+(\d+)\s+minutes\s+and\s+(\d+)\s+seconds')
+                    if ($durationMatch.Success) {
+                        Set-StepDuration $watch.Buttons (Format-StepDuration (([int]$durationMatch.Groups[1].Value * 60) + [int]$durationMatch.Groups[2].Value))
+                    }
                     if ($isClean) {
                         Set-StepButtonsState $watch.Buttons 'Done' ([System.Windows.Media.Brushes]::Green)
                     } else {
@@ -4588,7 +4636,7 @@ $exitButton.Add_Click({
                     $rows = $stepRowGroups[$groupName]
                     for ($i = 0; $i -lt $rows.Count; $i++) {
                         if ($rows[$i].PlanButton.Content -eq 'Done') {
-                            [PSCustomObject]@{ Group = $groupName; Index = $i; CommandLine = $rows[$i].CommandLine }
+                            [PSCustomObject]@{ Group = $groupName; Index = $i; CommandLine = $rows[$i].CommandLine; Duration = [string]$rows[$i].PlanButton.Tag.Text }
                         }
                     }
                 }
@@ -4782,6 +4830,10 @@ $resumeButton.Add_Click({
                     # inserted/removed/reordered) and Index no longer points at the same step.
                     if ($row.CommandLine -eq [string]$savedStep.CommandLine) {
                         Set-StepButtonsState @($row.PlanButton, $row.ManualButton) 'Done' ([System.Windows.Media.Brushes]::Green)
+                        # Older saves have no Duration -- those steps simply stay blank.
+                        if ($savedStep.Duration) {
+                            Set-StepDuration @($row.PlanButton, $row.ManualButton) ([string]$savedStep.Duration)
+                        }
                     } else {
                         $skippedSteps++
                     }
