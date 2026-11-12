@@ -2895,18 +2895,40 @@ function Get-ThreadCircleColor([string]$ThreadId) {
 # the two tabs to show a different status for the same step. Id/Condition are carried through to
 # Invoke-Step so its stepStatus pre-flight gate (Test-StepStatusGate) applies identically regardless
 # of how a step's run was triggered.
+# White bold glyph for the inside of a round disc (thread circle, interactive badges, and the legend's
+# copies of them), centered on its actual INK, not its text line box. A TextBlock centers by line box,
+# which includes descender space and side bearings, so digits/letters sit visibly off-center in a
+# small disc (and a narrow "1" more than a wide "A"). Here the glyph outline's own bounds are placed
+# at the exact center of a $Diameter-square canvas, so every character is centered both ways.
+function New-DiscGlyph([string]$Text, [double]$Diameter, [double]$FontSize) {
+    $typeface = [System.Windows.Media.Typeface]::new([System.Windows.Media.FontFamily]::new('Segoe UI'), [System.Windows.FontStyles]::Normal, [System.Windows.FontWeights]::Bold, [System.Windows.FontStretches]::Normal)
+    $formatted = [System.Windows.Media.FormattedText]::new($Text, [System.Globalization.CultureInfo]::InvariantCulture, [System.Windows.FlowDirection]::LeftToRight, $typeface, $FontSize, [System.Windows.Media.Brushes]::White, 1.0)
+    $geometry = $formatted.BuildGeometry([System.Windows.Point]::new(0, 0))
+    $bounds = $geometry.Bounds
+    $path = New-Object System.Windows.Shapes.Path
+    $path.Data = $geometry
+    $path.Fill = [System.Windows.Media.Brushes]::White
+    [System.Windows.Controls.Canvas]::SetLeft($path, (($Diameter - $bounds.Width) / 2) - $bounds.X)
+    [System.Windows.Controls.Canvas]::SetTop($path, (($Diameter - $bounds.Height) / 2) - $bounds.Y)
+    $canvas = New-Object System.Windows.Controls.Canvas
+    $canvas.Width = $Diameter
+    $canvas.Height = $Diameter
+    [void]$canvas.Children.Add($path)
+    return $canvas
+}
+
 # Styles an interactive step's round icon badge: amber "?" = this step will pause and prompt the
-# operator; blue "A" = its responses come from the interactive answer file (not green or a tick,
+# operator; dark grey "A" = its responses come from the interactive answer file (not green or a tick,
 # which would read as the step's Done state). Text lives in the
 # tooltip so the row itself stays compact.
 function Set-InteractiveBadgeState([System.Windows.Controls.Border]$Badge, [bool]$IsAutoAnswered) {
     if ($IsAutoAnswered) {
-        $Badge.Background = [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.Color]::FromRgb(0x3D, 0x6F, 0xB5))
-        $Badge.Child.Text = 'A'
+        $Badge.Background = [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.Color]::FromRgb(0x55, 0x5B, 0x63))
+        $Badge.Child = New-DiscGlyph 'A' 22 10
         $Badge.ToolTip = 'Auto-answered - the response for this step is supplied by the interactive answer file'
     } else {
         $Badge.Background = [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.Color]::FromRgb(0xE0, 0x8A, 0x00))
-        $Badge.Child.Text = '?'
+        $Badge.Child = New-DiscGlyph '?' 22 10
         $Badge.ToolTip = 'Requires input - this step will pause and prompt you for a response'
     }
 }
@@ -2998,13 +3020,6 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
         # recognizable at a glance without having to read the numbers themselves.
         $variantThreadCircle = $null
         if ($ThreadId -and -not $IsBreakPoint) {
-            $threadCircleText = New-Object System.Windows.Controls.TextBlock
-            $threadCircleText.Text = $ThreadId
-            $threadCircleText.Foreground = [System.Windows.Media.Brushes]::White
-            $threadCircleText.FontSize = 10
-            $threadCircleText.FontWeight = 'Bold'
-            $threadCircleText.HorizontalAlignment = 'Center'
-            $threadCircleText.VerticalAlignment = 'Center'
             $variantThreadCircle = New-Object System.Windows.Controls.Border
             $variantThreadCircle.Width = 22
             $variantThreadCircle.Height = 22
@@ -3012,7 +3027,7 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
             $variantThreadCircle.Background = Get-ThreadCircleColor $ThreadId
             $variantThreadCircle.HorizontalAlignment = 'Center'
             $variantThreadCircle.VerticalAlignment = 'Center'
-            $variantThreadCircle.Child = $threadCircleText
+            $variantThreadCircle.Child = New-DiscGlyph $ThreadId 22 10
             # Thread numbers only mean anything while "Run parallel tasks" is on -- Hidden (not
             # Collapsed: a collapsed circle takes its 22px out of the row, so every row would change
             # height as the toggle flips) when it is off, both for rows built while it is off and, via
@@ -3039,14 +3054,6 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
             $variantInteractiveBadge.Margin = '4,0,4,0'
             $variantInteractiveBadge.HorizontalAlignment = 'Center'
             $variantInteractiveBadge.VerticalAlignment = 'Center'
-            $interactiveBadgeGlyph = New-Object System.Windows.Controls.TextBlock
-            $interactiveBadgeGlyph.Foreground = [System.Windows.Media.Brushes]::White
-            $interactiveBadgeGlyph.FontFamily = 'Segoe UI Symbol'
-            $interactiveBadgeGlyph.FontSize = 10
-            $interactiveBadgeGlyph.FontWeight = 'Bold'
-            $interactiveBadgeGlyph.HorizontalAlignment = 'Center'
-            $interactiveBadgeGlyph.VerticalAlignment = 'Center'
-            $variantInteractiveBadge.Child = $interactiveBadgeGlyph
             Set-InteractiveBadgeState $variantInteractiveBadge $false
             [System.Windows.Controls.Grid]::SetColumn($variantInteractiveBadge, 2)
         }
@@ -4975,5 +4982,10 @@ $global:stepDurationTimer.Add_Tick({
         }
     })
 $global:stepDurationTimer.Start()
+
+# Legend badges under the Task List heading: the very same disc/glyph/color code as the rows use, so
+# they can never drift apart from them.
+Set-InteractiveBadgeState $window.FindName('LegendRequiresInputBadge') $false
+Set-InteractiveBadgeState $window.FindName('LegendAutoAnsweredBadge') $true
 
 [void]$app.Run($window)
