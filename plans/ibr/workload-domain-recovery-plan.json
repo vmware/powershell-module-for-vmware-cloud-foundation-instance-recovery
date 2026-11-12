@@ -4,7 +4,7 @@
     "commandLine": "New-vCenterOvaDeployment -targetType $targetType -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -restoredvCenterDeploymentSize $restoredvCenterDeploymentSize -vCenterOvaFile $vCenterOvaFile",
     "displayName": "vCenter OVA Deployment",
     "condition": [],
-    "threadId": "2",
+    "threadId": "1",
     "interactive": false,
     "visible": true
   },
@@ -13,7 +13,7 @@
     "commandLine": "Invoke-vCenterRestore -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -vCenterBackupPath $vCenterBackupPath -locationtype $locationtype -locationUser $locationUser -locationPassword $locationPassword",
     "displayName": "Invoke vCenter Restore",
     "condition": [],
-    "threadId": "2",
+    "threadId": "1",
     "interactive": false,
     "visible": true
   },
@@ -22,7 +22,7 @@
     "commandLine": "New-NSXManagerOvaDeployment -targetType $targetType -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -restoredNsxManagerDeploymentSize $restoredNsxManagerDeploymentSize -nsxManagerOvaFile $nsxManagerOvaFile",
     "displayName": "NSX Manager OVA Deployment",
     "condition": [],
-    "threadId": "3",
+    "threadId": "2",
     "interactive": true,
     "visible": true
   },
@@ -31,7 +31,7 @@
     "commandLine": "Invoke-NSXManagerRestore -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -sftpServer $sftpServer -sftpUser $sftpUser -sftpPassword $sftpPassword -sftpServerBackupPath $sftpServerBackupPath -backupPassphrase $nsxBackupPassphrase",
     "displayName": "Invoke NSX Manager Restore",
     "condition": [],
-    "threadId": "3",
+    "threadId": "2",
     "interactive": true,
     "visible": true
   },
@@ -42,8 +42,8 @@
     "condition": [],
     "threadId": "1",
     "waitFor": [
-      "2",
-      "3"
+      "1",
+      "2"
     ],
     "interactive": false,
     "visible": true
@@ -172,6 +172,7 @@
   },
   {
     "description": "",
+    "id": "nsx-edge-cluster-recovery-selective",
     "commandLine": "Invoke-NSXEdgeClusterRecoverySelective -nsxManagerFqdn $restoredNsxManagerFqdn -nsxManagerAdmin $restoredNsxManagerAdmin -nsxManagerAdminPassword $restoredNsxManagerAdminPassword -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile -monitor",
     "displayName": "Invoke NSX Edge Cluster Recovery Selective",
     "condition": [],
@@ -191,7 +192,7 @@
         "value": "1"
       }
     ],
-    "threadId": "2",
+    "threadId": "1",
     "waitFor": [
       "1"
     ],
@@ -210,9 +211,9 @@
         "value": "1"
       }
     ],
-    "threadId": "3",
+    "threadId": "2",
     "waitFor": [
-      "1"
+      "nsx-edge-cluster-recovery-selective"
     ],
     "interactive": true,
     "visible": true
@@ -231,8 +232,8 @@
     ],
     "threadId": "1",
     "waitFor": [
-      "2",
-      "3"
+      "1",
+      "2"
     ],
     "interactive": true,
     "visible": true

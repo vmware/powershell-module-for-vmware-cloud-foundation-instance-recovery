@@ -4983,7 +4983,7 @@ $global:stepDurationTimer.Add_Tick({
     })
 $global:stepDurationTimer.Start()
 
-# Legend badges under the Task List heading: the very same disc/glyph/color code as the rows use, so
+# Legend badges in the Recovery Tasks card title row: the very same disc/glyph/color code as the rows use, so
 # they can never drift apart from them.
 Set-InteractiveBadgeState $window.FindName('LegendRequiresInputBadge') $false
 Set-InteractiveBadgeState $window.FindName('LegendAutoAnsweredBadge') $true

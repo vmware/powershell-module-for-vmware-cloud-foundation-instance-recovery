@@ -60,6 +60,10 @@
                                            FontSize="15"
                                            Margin="{TemplateBinding Padding}"
                                            Padding="0,0,0,8" />
+                                <!-- Optional element shown at the right end of the title row, supplied through the
+                                     GroupBox's Tag (null for every card that doesn't set one). Used by Recovery
+                                     Tasks for its badge legend. Top margin 9 centers the 22px legend on the 15pt title. -->
+                                <ContentPresenter Grid.Row="0" Content="{TemplateBinding Tag}" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,9,10,0" />
                                 <ContentPresenter Grid.Row="1" Margin="{TemplateBinding Padding}" />
                             </Grid>
                         </Border>
@@ -513,6 +517,16 @@
                      control here - see ExtraTogglesPanel below and Update-ExtraTogglesPanel in the
                      .ps1. -->
                 <GroupBox x:Name="StepsVariablesGroupBox" Grid.Row="2" Header="Recovery Tasks" Visibility="Collapsed">
+                    <!-- Legend for the round badges on interactive step rows (see Set-InteractiveBadgeState in the
+                         .ps1, which fills these two empty discs in with the same code the rows use, so they always match). -->
+                    <GroupBox.Tag>
+                        <StackPanel Orientation="Horizontal">
+                            <Border x:Name="LegendRequiresInputBadge" Width="22" Height="22" CornerRadius="11" VerticalAlignment="Center" />
+                            <TextBlock Text="Requires input" Foreground="Gray" FontSize="11" Margin="5,0,16,0" VerticalAlignment="Center" />
+                            <Border x:Name="LegendAutoAnsweredBadge" Width="22" Height="22" CornerRadius="11" VerticalAlignment="Center" />
+                            <TextBlock Text="Auto-answered" Foreground="Gray" FontSize="11" Margin="5,0,0,0" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </GroupBox.Tag>
                     <TabControl x:Name="StepsVariablesTabControl" Background="Transparent" BorderThickness="0" Margin="0,-8,0,0">
                         <TabItem Header="Variables">
                             <DockPanel Margin="0,8,0,0">
@@ -582,30 +596,23 @@
                                         <TextBlock x:Name="ExtraTogglesHeader" Grid.Row="0" Grid.Column="2" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource InactiveTabTextBrush}" Margin="0,0,0,6" Visibility="Collapsed" />
                                         <StackPanel x:Name="ExtraTogglesPanel" Grid.Row="1" Grid.Column="2" VerticalAlignment="Top" />
                                     </Grid>
-                                    <!-- "Task List" heading on its own row; the legend, the "Duration" column header and
-                                         Run Plan share the row below it, above the ListBox. Run Plan and "Duration"
-                                         are docked Right so they sit over the status button and duration button
-                                         columns of every step row. Margin right=6 on Run Plan lines its right edge
-                                         up with the right edge of every step row's own status button. The 6px is the
-                                         ListBox chrome the rows sit inside but this row does not: ListBox Padding (1)
-                                         + ListBoxItem Padding (3, see the style above) + each row Grid's own Margin
-                                         (2, set in New-StepRow). It holds whether or not the ListBox is showing a
-                                         vertical scrollbar - the scrollbar narrows the header and the rows by the
-                                         same amount. "Duration" is the same 80px width as the duration button under
-                                         it, with the 8px gap New-StepRow leaves between the two buttons (6px status
-                                         button margin + 2px duration column padding). -->
-                                    <TextBlock x:Name="RecoveryTaskListHeader" DockPanel.Dock="Top" Margin="0,8,0,0" Text="Task List" FontWeight="Bold" FontSize="14" />
-                                    <!-- Legend for the round badges on interactive step rows (see Set-InteractiveBadgeState
-                                         in the .ps1, which also fills these two empty discs in with the same code, so they always match). -->
-                                    <DockPanel DockPanel.Dock="Top" Margin="0,4,0,2" LastChildFill="False">
+                                    <!-- "Task List" heading, the "Duration" column header and Run Plan share one row,
+                                         below the toggle stack and above the ListBox: heading docked Left, the two
+                                         docked Right, all VerticalAlignment="Center" so they line up with each other.
+                                         Margin right=6 on Run Plan lines its right edge up with the right edge of every
+                                         step row's own status button in the ListBox below. The 6px is the ListBox chrome
+                                         the rows sit inside but this button does not: ListBox Padding (1) + ListBoxItem
+                                         Padding (3, see the style above) + each row Grid's own Margin (2, set in
+                                         New-StepRow). It holds whether or not the ListBox is showing a vertical
+                                         scrollbar - the scrollbar narrows the header and the rows by the same amount.
+                                         "Duration" is the same 80px width as the duration button under it, with the 8px
+                                         gap New-StepRow leaves between the two buttons (6px status button margin + 2px
+                                         duration column padding). The badge legend lives in the card's title row (see
+                                         the Recovery Tasks GroupBox's Tag). -->
+                                    <DockPanel DockPanel.Dock="Top" Margin="0,8,0,0" LastChildFill="False">
+                                        <TextBlock x:Name="RecoveryTaskListHeader" Text="Task List" FontWeight="Bold" FontSize="14" DockPanel.Dock="Left" VerticalAlignment="Center" />
                                         <Button x:Name="RunAllButton" Content="Run Plan" Width="80" Margin="0,0,6,0" DockPanel.Dock="Right" VerticalAlignment="Center" />
                                         <TextBlock Text="Duration" Width="80" TextAlignment="Center" Foreground="Gray" FontSize="11" FontWeight="SemiBold" Margin="0,0,8,0" DockPanel.Dock="Right" VerticalAlignment="Center" />
-                                        <StackPanel Orientation="Horizontal" DockPanel.Dock="Left" VerticalAlignment="Center">
-                                            <Border x:Name="LegendRequiresInputBadge" Width="22" Height="22" CornerRadius="11" VerticalAlignment="Center" />
-                                            <TextBlock Text="Requires input" Foreground="Gray" FontSize="11" Margin="5,0,16,0" VerticalAlignment="Center" />
-                                            <Border x:Name="LegendAutoAnsweredBadge" Width="22" Height="22" CornerRadius="11" VerticalAlignment="Center" />
-                                            <TextBlock Text="Auto-answered" Foreground="Gray" FontSize="11" Margin="5,0,0,0" VerticalAlignment="Center" />
-                                        </StackPanel>
                                     </DockPanel>
                                 </DockPanel>
                                 <ListBox x:Name="RecoveryPlanStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
