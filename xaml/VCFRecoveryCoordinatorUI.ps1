@@ -1073,7 +1073,7 @@ function Copy-StepRowCompletionState([object[]]$PreviousRows, [object[]]$NewRows
         $occurrence = [int]$occurrences[$row.CommandLine] + 1
         $occurrences[$row.CommandLine] = $occurrence
         if ($row.PlanButton.Content -in @('Done', 'Failed', 'Skipped', 'Running')) {
-            $completedStates["$($row.CommandLine)`0$occurrence"] = @{ Content = $row.PlanButton.Content; Background = $row.PlanButton.Background; Duration = $row.PlanButton.Tag.Text; Started = $row.PlanButton.Tag.Tag }
+            $completedStates["$($row.CommandLine)`0$occurrence"] = @{ Content = $row.PlanButton.Content; Background = $row.PlanButton.Background; Duration = $row.PlanButton.Tag.Content; Started = $row.PlanButton.Tag.Tag }
         }
     }
     if ($completedStates.Count -eq 0) {
@@ -2351,7 +2351,7 @@ function Set-StepButtonsState($Buttons, [string]$Content, $Background) {
         # the 1s tick below) in place of any stale time from a previous run.
         if ($stepButton.Tag) {
             if ($Content -eq 'Running') {
-                Set-DurationPillText $stepButton.Tag '0s'
+                Set-DurationButtonText $stepButton.Tag '0s'
                 $stepButton.Tag.Tag = Get-Date
             }
             # Text color follows the status pill: orange Running, green Done, red Failed.
@@ -2365,14 +2365,11 @@ function Set-StepButtonsState($Buttons, [string]$Content, $Background) {
     }
 }
 
-# Sets the duration pill's text and shows the pill only while it has text (a blank grey pill on every
-# not-yet-run row would just be clutter). $TextBlock is the pill's inner TextBlock (a button's .Tag);
-# its Parent is the grey Border pill.
-function Set-DurationPillText($TextBlock, [string]$Text) {
-    $TextBlock.Text = $Text
-    if ($TextBlock.Parent) {
-        $TextBlock.Parent.Visibility = if ($Text) { 'Visible' } else { 'Hidden' }
-    }
+# Sets the duration button's text and shows it only while it has text (a blank grey button on every
+# not-yet-run row would just be clutter). $DurationButton is a status button's .Tag.
+function Set-DurationButtonText($DurationButton, [string]$Text) {
+    $DurationButton.Content = $Text
+    $DurationButton.Visibility = if ($Text) { 'Visible' } else { 'Hidden' }
 }
 
 # Formats a run time as "xh ym zs", leaving off leading zero units (so "3m 5s", "45s").
@@ -2393,7 +2390,7 @@ function Format-StepDuration([int]$TotalSeconds) {
 function Set-StepDuration($Buttons, [string]$Text) {
     foreach ($stepButton in $Buttons) {
         if ($stepButton.Tag) {
-            Set-DurationPillText $stepButton.Tag $Text
+            Set-DurationButtonText $stepButton.Tag $Text
         }
     }
 }
@@ -2967,7 +2964,8 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
         # Duration sits LEFT of the status button so the button stays the right-most column, directly
         # under the Run Plan button in the header.
         $durationColumn = New-Object System.Windows.Controls.ColumnDefinition
-        $durationColumn.Width = New-Object System.Windows.GridLength(80)
+        # 6px right margin (below) plus the 80px button, matching the status button's width.
+        $durationColumn.Width = New-Object System.Windows.GridLength(86)
         [void]$variantPanel.ColumnDefinitions.Add($durationColumn)
         [void]$variantPanel.ColumnDefinitions.Add($runColumn)
 
@@ -3066,25 +3064,30 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
         [void]$variantPanel.Children.Add($variantButton)
 
         # Run time of this step ("xh ym zs"), to the left of the status button. Ticks live while the
-        # step is Running, then shows the final logged time; blank until it runs (or is restored by Resume). Reachable from either button via .Tag, so the
-        # completion watcher -- which only holds the buttons -- can fill it in (see Set-StepDuration).
-        # A grey pill (same LightGray as the Pending button) holding the time; the TextBlock's color
-        # follows the status button (see Set-StepButtonsState). Hidden while blank.
-        $durationText = New-Object System.Windows.Controls.TextBlock
+        # step is Running, then shows the final logged time; blank until it runs (or is restored by
+        # Resume). Reachable from either status button via .Tag, so the completion watcher -- which only holds the buttons -- can fill it in (see Set-StepDuration).
+        # A grey button (same LightGray as the Pending button, and the same template/size/corners as the
+        # status button) showing the time; its text color follows the status button (see
+        # Set-StepButtonsState). Display-only: IsHitTestVisible=$false (rather than IsEnabled=$false,
+        # which would dim it to 50%) makes it unclickable with no hover effect, and it is kept out of the
+        # status buttons' own enable/disable handling. Its own .Tag holds the step's start time for the
+        # live timer. Hidden while blank.
+        $durationText = New-Object System.Windows.Controls.Button
+        $durationText.Background = [System.Windows.Media.Brushes]::LightGray
         $durationText.Foreground = [System.Windows.Media.Brushes]::DimGray
         $durationText.FontSize = 11
         $durationText.FontWeight = 'SemiBold'
-        $durationPill = New-Object System.Windows.Controls.Border
-        $durationPill.Background = [System.Windows.Media.Brushes]::LightGray
-        $durationPill.CornerRadius = 9
-        $durationPill.Padding = '8,1'
-        $durationPill.Margin = '0,0,6,0'
-        $durationPill.HorizontalAlignment = 'Right'
-        $durationPill.VerticalAlignment = 'Center'
-        $durationPill.Visibility = 'Hidden'
-        $durationPill.Child = $durationText
-        [System.Windows.Controls.Grid]::SetColumn($durationPill, 3)
-        [void]$variantPanel.Children.Add($durationPill)
+        $durationText.Width = 80
+        $durationText.Padding = '6,2'
+        $durationText.Margin = '0,0,6,0'
+        $durationText.HorizontalAlignment = 'Right'
+        $durationText.VerticalAlignment = 'Center'
+        $durationText.IsHitTestVisible = $false
+        $durationText.Focusable = $false
+        $durationText.IsTabStop = $false
+        $durationText.Visibility = 'Hidden'
+        [System.Windows.Controls.Grid]::SetColumn($durationText, 3)
+        [void]$variantPanel.Children.Add($durationText)
         $variantButton.Tag = $durationText
 
         # Inline Radio Drop-Zone (Engineering mode's pause-point picker) -- Recovery Plan tab (the
@@ -4689,7 +4692,7 @@ $exitButton.Add_Click({
                     $rows = $stepRowGroups[$groupName]
                     for ($i = 0; $i -lt $rows.Count; $i++) {
                         if ($rows[$i].PlanButton.Content -eq 'Done') {
-                            [PSCustomObject]@{ Group = $groupName; Index = $i; CommandLine = $rows[$i].CommandLine; Duration = [string]$rows[$i].PlanButton.Tag.Text }
+                            [PSCustomObject]@{ Group = $groupName; Index = $i; CommandLine = $rows[$i].CommandLine; Duration = [string]$rows[$i].PlanButton.Tag.Content }
                         }
                     }
                 }
@@ -4951,7 +4954,7 @@ $global:stepDurationTimer.Add_Tick({
                     }
                     foreach ($stepButton in @($row.PlanButton, $row.ManualButton)) {
                         if ($stepButton.Tag -and $stepButton.Tag.Tag -is [datetime]) {
-                            Set-DurationPillText $stepButton.Tag (Format-StepDuration ([int][Math]::Floor(((Get-Date) - $stepButton.Tag.Tag).TotalSeconds)))
+                            Set-DurationButtonText $stepButton.Tag (Format-StepDuration ([int][Math]::Floor(((Get-Date) - $stepButton.Tag.Tag).TotalSeconds)))
                         }
                     }
                 }
