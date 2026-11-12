@@ -7,12 +7,12 @@ Checks for the presence of a content library folder on the target datastore and 
 ## Syntax
 
 ```powershell
-Confirm-ContentLibraryDatastoreFolder [-vCenterFQDN] <String> [-vCenterAdmin] <String> [-vCenterAdminPassword] <String> [-datastoreName] <String> [-contentLibraryName] <String> [<CommonParameters>]
+Confirm-ContentLibraryDatastoreFolder [-vCenterFQDN] <String> [-vCenterAdmin] <String> [-vCenterAdminPassword] <String> [-datastoreName] <String> [-contentLibraryName] <String[]> [<CommonParameters>]
 ```
 
 ## Description
 
-The `Confirm-ContentLibraryDatastoreFolder` cmdlet connects to the specified vCenter, resolves the named content library to its GUID, locates the named datastore, and verifies that a folder in the format `contentlib-<libraryId>` exists at the root of that datastore. If the folder is not found it is created.
+The `Confirm-ContentLibraryDatastoreFolder` cmdlet connects to the specified vCenter, resolves each named content library to its GUID, locates the named datastore, and verifies that a folder in the format `contentlib-<libraryId>` exists at the root of that datastore. If the folder is not found it is created.
 
 For vSAN datastores (both OSA and ESA), the function uses the PowerCLI VimDatastore PSDrive provider, which wraps vSphere's Datastore Browser API (`MakeDirectory`). vCenter exposes this API uniformly for all datastore types it manages, so the same code path also handles VMFS and NFS datastores that are registered as named datastores in vCenter.
 
@@ -31,6 +31,19 @@ Confirm-ContentLibraryDatastoreFolder `
     -vCenterAdminPassword "VMware1!" `
     -datastoreName        "sfo-m01-cl01-ds-vsan01" `
     -contentLibraryName   "sfo-m01-cl01"
+```
+
+### Example 2
+
+Confirm the folders for several content libraries in one call, as an array or a comma separated string.
+
+```powershell
+Confirm-ContentLibraryDatastoreFolder `
+    -vCenterFQDN          "sfo-w01-vc01.sfo.rainpole.io" `
+    -vCenterAdmin         "administrator@vsphere.local" `
+    -vCenterAdminPassword "VMware1!" `
+    -datastoreName        "sfo-w01-cl01-ds-vsan01" `
+    -contentLibraryName   @("sv-cl01", "Kubernetes Service Content Library")
 ```
 
 ## Parameters
@@ -101,10 +114,10 @@ Accept wildcard characters: False
 
 ### -contentLibraryName
 
-Name of the content library. Its GUID is resolved via `Get-ContentLibrary` and the folder name is constructed as `contentlib-<libraryId>`.
+Name of one or more content libraries, as an array and/or a comma separated string. Each GUID is resolved via `Get-ContentLibrary` and the folder name is constructed as `contentlib-<libraryId>`.
 
 ```yaml
-Type: String
+Type: String[]
 Parameter Sets: (All)
 Aliases:
 

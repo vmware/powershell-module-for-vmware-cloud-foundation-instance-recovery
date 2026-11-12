@@ -19376,7 +19376,7 @@ Function Confirm-ContentLibraryDatastoreFolder {
     Checks for the presence of a content library folder on the target datastore and creates it if absent.
 
     .DESCRIPTION
-    The Confirm-ContentLibraryDatastoreFolder cmdlet connects to the specified vCenter, resolves the named
+    The Confirm-ContentLibraryDatastoreFolder cmdlet connects to the specified vCenter, resolves each named
     content library to its GUID, locates the named datastore, and verifies that a folder in the format
     'contentlib-<libraryId>' exists at the root of that datastore. If the folder is not found it is created.
 
@@ -19405,8 +19405,8 @@ Function Confirm-ContentLibraryDatastoreFolder {
     Name of the datastore on which to confirm the content library folder.
 
     .PARAMETER contentLibraryName
-    Name of the content library. Its GUID is resolved via Get-ContentLibrary and the folder name is
-    constructed as 'contentlib-<libraryId>'.
+    Name of one or more content libraries, as an array and/or a comma separated string. Each GUID is
+    resolved via Get-ContentLibrary and the folder name is constructed as 'contentlib-<libraryId>'.
     #>
 
     Param(
@@ -19414,7 +19414,7 @@ Function Confirm-ContentLibraryDatastoreFolder {
         [Parameter (Mandatory = $true)][String] $vCenterAdmin,
         [Parameter (Mandatory = $true)][String] $vCenterAdminPassword,
         [Parameter (Mandatory = $true)][String] $datastoreName,
-        [Parameter (Mandatory = $true)][String] $contentLibraryName
+        [Parameter (Mandatory = $true)][String[]] $contentLibraryName  # one or more library names; comma separated list
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
@@ -19427,24 +19427,14 @@ Function Confirm-ContentLibraryDatastoreFolder {
         LogMessage -type INFO -message "[$vCenterFQDN] Connecting to vCenter"
         $viConnection = Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop
 
-        # Resolve the content library's GUID from its name
-        LogMessage -type INFO -message "[$vCenterFQDN] Resolving Content Library '$contentLibraryName'"
-        $library = Get-ContentLibrary -Name $contentLibraryName -ErrorAction Stop | Select-Object -First 1
-        if (-not $library) {
-            LogMessage -type ERROR -message "[$vCenterFQDN] Content Library '$contentLibraryName' not found"
-            Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
-            return
-        }
-        $libraryId = $library.Id
-        $folderName = "contentlib-$libraryId"
-        LogMessage -type INFO -message "[$vCenterFQDN] Content Library '$contentLibraryName' resolved (Id: $libraryId)"
+        # Accept an array and/or comma separated strings; normalise to a clean list of library names
+        $libraryNames = @($contentLibraryName | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
 
         # Resolve the datastore object — works for vSAN, VMFS, and NFS
         LogMessage -type INFO -message "[$vCenterFQDN] Resolving datastore '$datastoreName'"
         $datastore = Get-Datastore -Name $datastoreName -ErrorAction Stop | Select-Object -First 1
         if (-not $datastore) {
             LogMessage -type ERROR -message "[$vCenterFQDN] Datastore '$datastoreName' not found"
-            Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
             return
         }
         LogMessage -type INFO -message "[$vCenterFQDN] Datastore '$datastoreName' resolved (Type: $($datastore.Type))"
@@ -19454,14 +19444,32 @@ Function Confirm-ContentLibraryDatastoreFolder {
         LogMessage -type INFO -message "[$vCenterFQDN] Mounting datastore '$datastoreName' as PSDrive '$driveName'"
         New-PSDrive -Location $datastore -Name $driveName -PSProvider VimDatastore -Root "\" -ErrorAction Stop | Out-Null
 
-        $folderPath = "${driveName}:\$folderName"
+        foreach ($libraryName in $libraryNames) {
+            # A failure for one library is logged and does not prevent the remaining libraries being processed
+            Try {
+                # Resolve the content library's GUID from its name
+                LogMessage -type INFO -message "[$vCenterFQDN] Resolving Content Library '$libraryName'"
+                $library = Get-ContentLibrary -Name $libraryName -ErrorAction Stop | Select-Object -First 1
+                if (-not $library) {
+                    LogMessage -type ERROR -message "[$vCenterFQDN] Content Library '$libraryName' not found"
+                    continue
+                }
+                $libraryId = $library.Id
+                $folderName = "contentlib-$libraryId"
+                LogMessage -type INFO -message "[$vCenterFQDN] Content Library '$libraryName' resolved (Id: $libraryId)"
 
-        if (Test-Path -Path $folderPath) {
-            LogMessage -type INFO -message "[$vCenterFQDN] Folder '$folderName' already exists on datastore '$datastoreName' — no action required"
-        } else {
-            LogMessage -type INFO -message "[$vCenterFQDN] Folder '$folderName' not found on datastore '$datastoreName' — creating"
-            New-Item -ItemType Directory -Path $folderPath -ErrorAction Stop | Out-Null
-            LogMessage -type INFO -message "[$vCenterFQDN] Folder '$folderName' created successfully on datastore '$datastoreName'"
+                $folderPath = "${driveName}:\$folderName"
+
+                if (Test-Path -Path $folderPath) {
+                    LogMessage -type INFO -message "[$vCenterFQDN] Folder '$folderName' already exists on datastore '$datastoreName' — no action required"
+                } else {
+                    LogMessage -type INFO -message "[$vCenterFQDN] Folder '$folderName' not found on datastore '$datastoreName' — creating"
+                    New-Item -ItemType Directory -Path $folderPath -ErrorAction Stop | Out-Null
+                    LogMessage -type INFO -message "[$vCenterFQDN] Folder '$folderName' created successfully on datastore '$datastoreName'"
+                }
+            } Catch {
+                LogMessage -type ERROR -message "[$vCenterFQDN] Content Library '$libraryName': $($_.Exception.Message)"
+            }
         }
     } Catch {
         LogMessage -type ERROR -message "[$vCenterFQDN] $($_.Exception.Message)"
@@ -19592,22 +19600,33 @@ Function Set-ContentLibraryDatastoreMapping {
             LogMessage -type WARNING -message "[$vCenterFQDN] cl_storage UPDATE could not be verified. Expected: $newStorageUri | Got: $verifiedUri"
         }
 
-        # Reset ondisk flag on individual files in vc.cl_file so on-demand fetching pulls them from upstream
-        LogMessage -type INFO -message "[$vCenterFQDN] Resetting ondisk state for files in storage_id '$storageId'"
-        $stream.WriteLine("echo `"UPDATE vc.cl_file SET ondisk = false WHERE storageid = '$storageId';`" | $psql")
+        # Reset ondisk flag on the library's files in vc.cl_file so on-demand fetching pulls them from upstream.
+        # vc.cl_file.storageid is NULL on restored data, so files are matched to the library through
+        # cl_file_version -> cl_libraryitemversion -> cl_libraryitem (libraryid) instead.
+        $libraryFileIds = "SELECT fv.fileid FROM vc.cl_file_version fv JOIN vc.cl_libraryitemversion iv ON iv.id = fv.libraryitemversionid JOIN vc.cl_libraryitem li ON li.id = iv.libraryitemid WHERE li.libraryid = '$libraryId'"
+
+        # Count the library's files first so the later verification cannot pass vacuously on zero matching rows
+        $totalSql = "SELECT 'FILES_TOTAL:' || COUNT(id) FROM vc.cl_file WHERE id IN ($libraryFileIds);"
+        $stream.WriteLine("echo `"$totalSql`" | $psql")
+        Start-Sleep 3
+        $filesTotal = ([regex]::Match((& $cleanSshOutput $stream.Read()), 'FILES_TOTAL:(\d+)')).Groups[1].Value
+        LogMessage -type INFO -message "[$vCenterFQDN] Content Library '$libraryName' has '$filesTotal' file record(s) in VCDB"
+
+        LogMessage -type INFO -message "[$vCenterFQDN] Resetting ondisk state for files in Content Library '$libraryName'"
+        $stream.WriteLine("echo `"UPDATE vc.cl_file SET ondisk = false WHERE id IN ($libraryFileIds);`" | $psql")
         Start-Sleep 3
         $stream.Read() | Out-Null
 
         # Verify that no files remain marked as ondisk = true using a unique tag prefix
-        $countSql = "SELECT 'ONDISK_COUNT:' || COUNT(id) FROM vc.cl_file WHERE ondisk = true AND storageid = '$storageId';"
+        $countSql = "SELECT 'ONDISK_COUNT:' || COUNT(id) FROM vc.cl_file WHERE ondisk = true AND id IN ($libraryFileIds);"
         $stream.WriteLine("echo `"$countSql`" | $psql")
         Start-Sleep 3
         $onDiskRaw = & $cleanSshOutput $stream.Read()
         $onDiskCount = ([regex]::Match($onDiskRaw, 'ONDISK_COUNT:(\d+)')).Groups[1].Value
         if ($onDiskCount -eq '0') {
-            LogMessage -type INFO -message "[$vCenterFQDN] Verified 0 files marked ondisk=true for storage_id '$storageId'"
+            LogMessage -type INFO -message "[$vCenterFQDN] Verified 0 of '$filesTotal' files marked ondisk=true for Content Library '$libraryName'"
         } else {
-            LogMessage -type WARNING -message "[$vCenterFQDN] Unexpected ondisk file count: '$onDiskCount'"
+            LogMessage -type WARNING -message "[$vCenterFQDN] Unexpected ondisk file count for Content Library '$libraryName': '$onDiskCount'"
         }
 
         $librariesUpdated++
