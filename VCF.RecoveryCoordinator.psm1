@@ -1758,7 +1758,7 @@ Function New-ExtractDataFromSDDCBackup {
     Remove-Item -path "$parentFolder\$extractedBackupFolder" -Recurse #>
     Pop-Location
     $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
 Export-ModuleMember -Function New-ExtractDataFromSDDCBackup
 
@@ -1830,7 +1830,7 @@ Function New-RetrieveVCFCredentials
         LogMessage -Type NOTE -Message "[$sddcManagerFQDN] Finished the process of retrieving credentials from SDDC Manager"
 
         $StopWatch.Stop()
-        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
     }
     Catch
     {
@@ -2058,7 +2058,7 @@ Function Update-ExtractedSDDCData {
     LogMessage -type INFO -message "[$jumpboxName] Updating Extracted Data"
     $extractedSddcData | ConvertTo-Json -Depth 20 | Out-File $extractedSDDCDataFile
     $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
 Export-ModuleMember -Function Update-ExtractedSDDCData
 
@@ -2203,7 +2203,7 @@ Function Update-ExtractedSDDCDataWithSupervisorDetails {
     $extractedSddcData | ConvertTo-Json -Depth 20 | Out-File $extractedDataFilePath
 
     $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($StopWatch.Elapsed.Minutes) minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($StopWatch.Elapsed.TotalMinutes)) minutes and $($StopWatch.Elapsed.Seconds) seconds"
 }
 Export-ModuleMember -Function Update-ExtractedSDDCDataWithSupervisorDetails
 
@@ -2402,7 +2402,7 @@ Function New-NSXManagerOvaDeployment {
         }
     } While ($jobStatus -eq "Running")
     $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
 Export-ModuleMember -Function New-NSXManagerOvaDeployment
 
@@ -2551,7 +2551,7 @@ Function New-vCenterOvaDeployment {
         }
     } While ($jobStatus -eq "Running")
     $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
 Export-ModuleMember -Function New-vCenterOvaDeployment
 
@@ -2700,7 +2700,7 @@ Function New-SDDCManagerOvaDeployment {
         }
     } While ($jobStatus -eq "Running")
     $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
 Export-ModuleMember -Function New-SDDCManagerOvaDeployment
 
@@ -2874,7 +2874,7 @@ Function New-UploadAndModifySDDCManagerBackup {
     #Disconnect from vCenter
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
     $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
 Export-ModuleMember -Function New-UploadAndModifySDDCManagerBackup
 
@@ -3572,7 +3572,7 @@ Function Invoke-SDDCManagerRestore {
     Remove-SSHSession -SSHSession $sshSession | Out-Null
 
     $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
 Export-ModuleMember -Function Invoke-SDDCManagerRestore
 
@@ -3673,7 +3673,7 @@ Function Resolve-PhysicalHostServiceAccounts {
     }
     Disconnect-VcfSddcManagerServer *
     $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 
 }
 Export-ModuleMember -Function Resolve-PhysicalHostServiceAccounts
@@ -3880,7 +3880,7 @@ Function Set-SDDCManagerOfflineDepot {
     $result = Invoke-RestMethod -Uri $depotUri -Method PUT -Headers $headers -Body $depotBody -SkipCertificateCheck
 
     $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
 Export-ModuleMember -Function Set-SDDCManagerOfflineDepot
 
@@ -3937,7 +3937,7 @@ Function Set-SDDCManagerFDSDepot {
     Invoke-RestMethod -Uri $servicesConfigUri -Method PUT -Headers $headers -Body $servicesConfigBody -SkipCertificateCheck *>$null
 
     $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
 Export-ModuleMember -Function Set-SDDCManagerFDSDepot
 
@@ -4151,7 +4151,7 @@ Function Invoke-SddcManagerBundleDownload {
     Remove-SSHSession -SSHSession $sshSession | Out-Null
 
     $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
 Export-ModuleMember -Function Invoke-SddcManagerBundleDownload
 #EndRegion SDDC Manager Functions
@@ -4629,7 +4629,7 @@ Function Invoke-vCenterRestore {
     }
 
     $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
 Export-ModuleMember -Function Invoke-vCenterRestore
 
@@ -4774,7 +4774,7 @@ Function Remove-NonResponsiveHosts {
         Break
     }
     $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
 Export-ModuleMember -Function Remove-NonResponsiveHosts
 
@@ -5008,7 +5008,7 @@ Function Add-HostsToCluster {
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
     Disconnect-VcfSddcManagerServer *
     $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
 Export-ModuleMember -Function Add-HostsToCluster
 
@@ -5264,7 +5264,7 @@ Function Add-VMKernelsToHost {
     Disconnect-VcfSddcManagerServer *
     Disconnect-VIServer * -confirm:$false
     $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
 Export-ModuleMember -Function Add-VMKernelsToHost
 
@@ -5528,7 +5528,7 @@ Function New-RebuiltVsanDatastore {
     LogMessage -type INFO -message "[$clusterName] Renaming new datastore to original name: $datastoreName"
     Get-Cluster -name $clusterName | Get-Datastore -Name "vsanDatastore*" | Set-Datastore -Name $datastoreName | Out-Null
     $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
 Export-ModuleMember -Function New-RebuiltVsanDatastore
 
@@ -5795,7 +5795,7 @@ Function Add-DiskgroupsToManagementHosts {
                 LogMessage -type INFO -message "[$clusterName] User cancelled. No changes made."
                 Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
                 $StopWatch.Stop()
-                LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+                LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
                 return
             }
         }
@@ -5966,7 +5966,7 @@ Function Add-DiskgroupsToManagementHosts {
 
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
     $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
 Export-ModuleMember -Function Add-DiskgroupsToManagementHosts
 
@@ -6072,7 +6072,7 @@ Function Set-ManagementDatastorePolicy {
 
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
     $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
 Export-ModuleMember -Function Set-ManagementDatastorePolicy
 
@@ -6365,7 +6365,7 @@ Function New-SingleHostVsanDatastore {
     Get-Datastore -Name "vsanDatastore" | Set-Datastore -Name $datastoreName | Out-Null
     Disconnect-VIServer * -Confirm:$false
     $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
 Export-ModuleMember -Function New-SingleHostVsanDatastore
 
@@ -6858,7 +6858,7 @@ Function New-RebuiltVdsConfiguration {
 
         Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
         $StopWatch.Stop()
-        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
     }
 }
 Export-ModuleMember -Function New-RebuiltVdsConfiguration
@@ -6914,7 +6914,7 @@ Function Watch-NsxHostTransportNodeInstallation {
     If (!$workloadDomain) {
         LogMessage -type WARNING -message "[$jumpboxName] Could not find a workload domain containing cluster '$clusterName' in the extracted SDDC data."
         $StopWatch.Stop()
-        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
         Return
     }
     $nsxManagerFqdn = $workloadDomain.nsxClusterDetails.clusterFqdn
@@ -6932,7 +6932,7 @@ Function Watch-NsxHostTransportNodeInstallation {
     If (!$clusterComputeCollection) {
         LogMessage -type WARNING -message "[$nsxManagerFqdn] No compute collection found matching cluster name '$clusterName'. Verify the cluster name is correct."
         $StopWatch.Stop()
-        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
         Return
     }
 
@@ -6960,7 +6960,7 @@ Function Watch-NsxHostTransportNodeInstallation {
             If ($elapsed -ge $timeout) {
                 LogMessage -type ERROR -message "[$nsxManagerFqdn] Timeout of $timeoutMinutes minutes reached while waiting for host transport nodes to register. Found $($clusterTransportNodes.Count) of $expectedNodeCount expected node(s) in cluster '$clusterName'"
                 $StopWatch.Stop()
-                LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+                LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
                 Return
             }
             $registrationCycle++
@@ -6976,7 +6976,7 @@ Function Watch-NsxHostTransportNodeInstallation {
     If ($clusterTransportNodes.Count -eq 0) {
         LogMessage -type WARNING -message "[$nsxManagerFqdn] No host transport nodes found for cluster '$clusterName'. Verify that the transport node collection has been applied."
         $StopWatch.Stop()
-        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
         Return
     }
 
@@ -7037,7 +7037,7 @@ Function Watch-NsxHostTransportNodeInstallation {
     } While ($true)
 
     $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
 Export-ModuleMember -Function Watch-NsxHostTransportNodeInstallation
 
@@ -7494,7 +7494,7 @@ Function New-PrepareManagementHostNetworking {
         }
 
         $StopWatch.Stop()
-        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
     } else {
         Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false -ErrorAction SilentlyContinue
         LogMessage -type WARNING -message "[$jumpboxName] Configuration not accepted. Task aborted"
@@ -7704,7 +7704,7 @@ Function Add-VMKernelsToManagementHosts {
     }
 
     $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
 Export-ModuleMember -Function Add-VMKernelsToManagementHosts
 
@@ -7760,7 +7760,7 @@ Function New-ReconfiguredVsanStretchedCluster {
     if (!$workloadDomain) {
         LogMessage -type WARNING -message "[$jumpboxName] Could not find a workload domain with vCenter FQDN '$vCenterFQDN' in the extracted SDDC data."
         $StopWatch.Stop()
-        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
         Return
     }
 
@@ -7768,13 +7768,13 @@ Function New-ReconfiguredVsanStretchedCluster {
     if (!$clusterDetails) {
         LogMessage -type WARNING -message "[$jumpboxName] Could not find cluster '$clusterName' in the extracted SDDC data."
         $StopWatch.Stop()
-        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
         Return
     }
     if ($clusterDetails.isStretched -ne 't') {
         LogMessage -type WARNING -message "[$jumpboxName] Cluster '$clusterName' is not recorded as stretched in the extracted SDDC data. Nothing to do."
         $StopWatch.Stop()
-        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
         Return
     }
 
@@ -7784,7 +7784,7 @@ Function New-ReconfiguredVsanStretchedCluster {
     if (!$witnessFqdn) {
         LogMessage -type WARNING -message "[$jumpboxName] No witness host recorded for cluster '$clusterName' in the extracted SDDC data. Run Update-ExtractedSDDCData against the source environment first."
         $StopWatch.Stop()
-        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
         Return
     }
 
@@ -7940,7 +7940,7 @@ Function New-ReconfiguredVsanStretchedCluster {
 
     Disconnect-VIServer -Server $vCenterFQDN -Force -Confirm:$false
     $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
 Export-ModuleMember -Function New-ReconfiguredVsanStretchedCluster
 
@@ -8003,7 +8003,7 @@ Function Remove-VsanStretchedClusterWitness {
         LogMessage -type INFO -message "[$clusterName] No witness host reference found in the cluster's persisted vSAN configuration. Nothing to clear."
         Disconnect-VIServer -Server $vCenterFQDN -Force -Confirm:$false
         $StopWatch.Stop()
-        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
         Return
     }
 
@@ -8038,7 +8038,7 @@ Function Remove-VsanStretchedClusterWitness {
 
     Disconnect-VIServer -Server $vCenterFQDN -Force -Confirm:$false
     $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
 Export-ModuleMember -Function Remove-VsanStretchedClusterWitness
 
@@ -8115,7 +8115,7 @@ Function Backup-ClusterVMOverrides {
     $overRiddenData | ConvertTo-Json -depth 10 | Out-File "$clusterName-vmOverrides.json"
     Disconnect-VIServer -Server $vCenterFQDN -Force -Confirm:$false
     $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
 Export-ModuleMember -Function Backup-ClusterVMOverrides
 
@@ -8175,7 +8175,7 @@ Function Backup-ClusterVMLocations {
     }
     Disconnect-VIServer -Server $vCenterFQDN -Force -Confirm:$false
     $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
 Export-ModuleMember -Function Backup-ClusterVMLocations
 
@@ -8304,7 +8304,7 @@ Function Backup-ClusterDRSGroupsAndRules {
     }
     Disconnect-VIServer -Server $vCenterFQDN -Force -Confirm:$false
     $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
 Export-ModuleMember -Function Backup-ClusterDRSGroupsAndRules
 
@@ -8363,7 +8363,7 @@ Function Backup-ClusterVMTags {
     }
     Disconnect-VIServer -Server $vCenterFQDN -Force -Confirm:$false
     $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
 Export-ModuleMember -Function Backup-ClusterVMTags
 
@@ -8532,7 +8532,7 @@ Function Restore-ClusterVMOverrides {
     }
     Disconnect-VIServer -Server $vCenterFQDN -Force -Confirm:$false
     $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
 Export-ModuleMember -Function Restore-ClusterVMOverrides
 
@@ -8605,7 +8605,7 @@ Function Restore-ClusterVMLocations {
     }
     Disconnect-VIServer -Server $vCenterFQDN -Force -Confirm:$false
     $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
 Export-ModuleMember -Function Restore-ClusterVMLocations
 
@@ -8726,7 +8726,7 @@ Function Restore-ClusterDRSGroupsAndRules {
     }
     Disconnect-VIServer -Server $vCenterFQDN -Force -Confirm:$false
     $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
 Export-ModuleMember -Function Restore-ClusterDRSGroupsAndRules
 
@@ -8793,7 +8793,7 @@ Function Restore-ClusterVMTags {
     }
     Disconnect-VIServer -Server $vCenterFQDN -Force -Confirm:$false
     $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
 Export-ModuleMember -Function Restore-ClusterVMTags
 
@@ -8826,7 +8826,7 @@ Function Clear-vCenterAlarms {
     }
     Disconnect-VIServer * -confirm:$false
     $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
 Export-ModuleMember -Function Clear-vCenterAlarms
 
@@ -9046,7 +9046,7 @@ Function Invoke-NSXManagerRestore {
     } Until ($restoreStatus.status.value -eq "SUCCESS")
     LogMessage -type INFO -message "[$nsxManagerFQDN] Restore finished with status: $($restoreStatus.status.value)"
     $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
 Export-ModuleMember -Function Invoke-NSXManagerRestore
 
@@ -9223,7 +9223,7 @@ Function Invoke-NSXEdgeClusterRecovery {
         LogMessage -type NOTE -message "[$jumpboxName] Discovered Edge Redeployments have been initiated. Please monitor in NSX UI for completion"
     }
     $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
 Export-ModuleMember -Function Invoke-NSXEdgeClusterRecovery
 
@@ -9336,7 +9336,7 @@ Function Invoke-NSXEdgeClusterRecoverySelective {
         LogMessage -type INFO -message "[$nsxManagerFqdn] No Edges found associated with cluster $clusterName"
         Disconnect-VIServer * -confirm:$false
         $StopWatch.Stop()
-        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
         return
     }
 
@@ -9389,7 +9389,7 @@ Function Invoke-NSXEdgeClusterRecoverySelective {
         LogMessage -type INFO -message "[$jumpboxName] Recovery cancelled by user"
         Disconnect-VIServer * -confirm:$false
         $StopWatch.Stop()
-        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
         return
     }
 
@@ -9400,7 +9400,7 @@ Function Invoke-NSXEdgeClusterRecoverySelective {
         LogMessage -type INFO -message "[$jumpboxName] No valid Edge IDs selected. Exiting"
         Disconnect-VIServer * -confirm:$false
         $StopWatch.Stop()
-        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
         return
     }
 
@@ -9522,7 +9522,7 @@ Function Invoke-NSXEdgeClusterRecoverySelective {
     }
 
     $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
 Export-ModuleMember -Function Invoke-NSXEdgeClusterRecoverySelective
 
@@ -9710,7 +9710,7 @@ Function Add-AdditionalNSXManagers {
         LogMessage -type ERROR -message "[$jumpboxName] Unable to determine NSX Manager Version. Check that it was successfully restored."
     }
     $StopWatch.Stop()
-    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $($Stopwatch.Elapsed.Minutes) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 }
 Export-ModuleMember -Function Add-AdditionalNSXManagers
 
