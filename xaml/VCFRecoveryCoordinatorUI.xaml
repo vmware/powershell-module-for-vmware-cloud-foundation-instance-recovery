@@ -596,6 +596,7 @@
                                          by the same amount. -->
                                     <DockPanel DockPanel.Dock="Top" Margin="0,8,0,0" LastChildFill="False">
                                         <TextBlock x:Name="RecoveryTaskListHeader" Text="Task List" FontWeight="Bold" FontSize="14" DockPanel.Dock="Left" VerticalAlignment="Center" />
+                                        <TextBlock Text="?  needs input     &#x2713;  auto-answered" Foreground="Gray" FontSize="11" Margin="14,0,0,0" DockPanel.Dock="Left" VerticalAlignment="Center" />
                                         <Button x:Name="RunAllButton" Content="Run Plan" Width="80" Margin="0,0,6,0" DockPanel.Dock="Right" VerticalAlignment="Center" />
                                     </DockPanel>
                                 </DockPanel>

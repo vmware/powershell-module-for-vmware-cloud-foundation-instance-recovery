@@ -1073,7 +1073,7 @@ function Copy-StepRowCompletionState([object[]]$PreviousRows, [object[]]$NewRows
         $occurrence = [int]$occurrences[$row.CommandLine] + 1
         $occurrences[$row.CommandLine] = $occurrence
         if ($row.PlanButton.Content -in @('Done', 'Failed', 'Skipped', 'Running')) {
-            $completedStates["$($row.CommandLine)`0$occurrence"] = @{ Content = $row.PlanButton.Content; Background = $row.PlanButton.Background; Duration = $row.PlanButton.Tag.Text }
+            $completedStates["$($row.CommandLine)`0$occurrence"] = @{ Content = $row.PlanButton.Content; Background = $row.PlanButton.Background; Duration = $row.PlanButton.Tag.Text; Started = $row.PlanButton.Tag.Tag }
         }
     }
     if ($completedStates.Count -eq 0) {
@@ -1088,6 +1088,11 @@ function Copy-StepRowCompletionState([object[]]$PreviousRows, [object[]]$NewRows
             $state = $completedStates[$key]
             Set-StepButtonsState @($row.PlanButton, $row.ManualButton) $state.Content $state.Background
             Set-StepDuration @($row.PlanButton, $row.ManualButton) $state.Duration
+            if ($state.Content -eq 'Running' -and $state.Started) {
+                # Keep the live timer going from the ORIGINAL start, not from this rebuild.
+                $row.PlanButton.Tag.Tag = $state.Started
+                $row.ManualButton.Tag.Tag = $state.Started
+            }
         }
     }
 }
@@ -2342,9 +2347,16 @@ function Set-StepButtonsState($Buttons, [string]$Content, $Background) {
     foreach ($stepButton in $Buttons) {
         $stepButton.Content = $Content
         $stepButton.Background = $Background
-        # A step that (re)starts has no run time yet -- drop any stale one from a previous run.
-        if ($Content -eq 'Running' -and $stepButton.Tag) {
-            $stepButton.Tag.Text = ''
+        # A step that (re)starts begins a live timer (start time kept on the TextBlock's own Tag; see
+        # the 1s tick below) in place of any stale time from a previous run.
+        if ($stepButton.Tag) {
+            if ($Content -eq 'Running') {
+                $stepButton.Tag.Text = '0s'
+                $stepButton.Tag.Tag = Get-Date
+                $stepButton.Tag.Foreground = [System.Windows.Media.Brushes]::DarkOrange
+            } else {
+                $stepButton.Tag.Foreground = [System.Windows.Media.Brushes]::DimGray
+            }
         }
     }
 }
@@ -2872,6 +2884,21 @@ function Get-ThreadCircleColor([string]$ThreadId) {
 # the two tabs to show a different status for the same step. Id/Condition are carried through to
 # Invoke-Step so its stepStatus pre-flight gate (Test-StepStatusGate) applies identically regardless
 # of how a step's run was triggered.
+# Styles an interactive step's round icon badge: amber "?" = this step will pause and prompt the
+# operator; green check = its responses come from the interactive answer file. Text lives in the
+# tooltip so the row itself stays compact.
+function Set-InteractiveBadgeState([System.Windows.Controls.Border]$Badge, [bool]$IsAutoAnswered) {
+    if ($IsAutoAnswered) {
+        $Badge.Background = [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.Color]::FromRgb(0x2E, 0x7D, 0x32))
+        $Badge.Child.Text = [string][char]0x2713
+        $Badge.ToolTip = 'Auto-answered - the response for this step is supplied by the interactive answer file'
+    } else {
+        $Badge.Background = [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.Color]::FromRgb(0xE0, 0x8A, 0x00))
+        $Badge.Child.Text = '?'
+        $Badge.ToolTip = 'Requires input - this step will pause and prompt you for a response'
+    }
+}
+
 function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Description, $Interactive, [string]$Id = '', [object[]]$Condition = @(), [string]$DisplayName = '', [bool]$IsBreakPoint = $false, $OnSetBreakPointAfter = $null, $StepRef = $null) {
     if (-not $ThreadId) {
         $ThreadId = '1'
@@ -2914,17 +2941,20 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
         $threadColumn = New-Object System.Windows.Controls.ColumnDefinition
         $threadColumn.Width = New-Object System.Windows.GridLength(30)
         $interactiveColumn = New-Object System.Windows.Controls.ColumnDefinition
-        $interactiveColumn.Width = New-Object System.Windows.GridLength(100)
+        # Just wide enough for the round icon badge (see Set-InteractiveBadgeState) plus its margin.
+        $interactiveColumn.Width = New-Object System.Windows.GridLength(28)
         $runColumn = New-Object System.Windows.Controls.ColumnDefinition
         # 6px for the button's own left margin (below) plus its 80px width.
         $runColumn.Width = New-Object System.Windows.GridLength(86)
         [void]$variantPanel.ColumnDefinitions.Add($nameColumn)
         [void]$variantPanel.ColumnDefinitions.Add($threadColumn)
         [void]$variantPanel.ColumnDefinitions.Add($interactiveColumn)
+        # Duration sits LEFT of the status button so the button stays the right-most column, directly
+        # under the Run Plan button in the header.
         $durationColumn = New-Object System.Windows.Controls.ColumnDefinition
         $durationColumn.Width = New-Object System.Windows.GridLength(80)
-        [void]$variantPanel.ColumnDefinitions.Add($runColumn)
         [void]$variantPanel.ColumnDefinitions.Add($durationColumn)
+        [void]$variantPanel.ColumnDefinitions.Add($runColumn)
 
         $variantButton = New-Object System.Windows.Controls.Button
         # Wide enough for 'Running' -- the longest of the states this button ever shows (Pending/
@@ -2936,7 +2966,7 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
         $variantButton.Padding = '6,2'
         $variantButton.Margin = '6,0,0,0'
         $variantButton.HorizontalAlignment = 'Right'
-        [System.Windows.Controls.Grid]::SetColumn($variantButton, 3)
+        [System.Windows.Controls.Grid]::SetColumn($variantButton, 4)
         if ($ReadOnly) {
             $variantButton.Content = 'Pending'
             $variantButton.Background = [System.Windows.Media.Brushes]::LightGray
@@ -2987,19 +3017,22 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
         # fixed property of the step, not something that changes as it runs.
         $variantInteractiveBadge = $null
         if ($Interactive) {
-            $interactiveBadgeText = New-Object System.Windows.Controls.TextBlock
-            $interactiveBadgeText.Text = 'Requires Input'
-            $interactiveBadgeText.Foreground = [System.Windows.Media.Brushes]::White
-            $interactiveBadgeText.FontSize = 10.5
-            $interactiveBadgeText.FontWeight = 'SemiBold'
             $variantInteractiveBadge = New-Object System.Windows.Controls.Border
-            $variantInteractiveBadge.Background = [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.Color]::FromRgb(0x70, 0x80, 0x90))
-            $variantInteractiveBadge.CornerRadius = 8
-            $variantInteractiveBadge.Padding = '6,1'
-            $variantInteractiveBadge.Margin = '8,0,6,0'
-            $variantInteractiveBadge.HorizontalAlignment = 'Left'
+            $variantInteractiveBadge.Width = 20
+            $variantInteractiveBadge.Height = 20
+            $variantInteractiveBadge.CornerRadius = 10
+            $variantInteractiveBadge.Margin = '4,0,4,0'
+            $variantInteractiveBadge.HorizontalAlignment = 'Center'
             $variantInteractiveBadge.VerticalAlignment = 'Center'
-            $variantInteractiveBadge.Child = $interactiveBadgeText
+            $interactiveBadgeGlyph = New-Object System.Windows.Controls.TextBlock
+            $interactiveBadgeGlyph.Foreground = [System.Windows.Media.Brushes]::White
+            $interactiveBadgeGlyph.FontFamily = 'Segoe UI Symbol'
+            $interactiveBadgeGlyph.FontSize = 12
+            $interactiveBadgeGlyph.FontWeight = 'Bold'
+            $interactiveBadgeGlyph.HorizontalAlignment = 'Center'
+            $interactiveBadgeGlyph.VerticalAlignment = 'Center'
+            $variantInteractiveBadge.Child = $interactiveBadgeGlyph
+            Set-InteractiveBadgeState $variantInteractiveBadge $false
             [System.Windows.Controls.Grid]::SetColumn($variantInteractiveBadge, 2)
         }
 
@@ -3017,15 +3050,16 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
         }
         [void]$variantPanel.Children.Add($variantButton)
 
-        # Run time of this step ("xh ym zs"), to the right of the status button. Blank until the step
-        # completes (or is restored by Resume). Reachable from either button via .Tag, so the
+        # Run time of this step ("xh ym zs"), to the left of the status button. Ticks live while the
+        # step is Running, then shows the final logged time; blank until it runs (or is restored by Resume). Reachable from either button via .Tag, so the
         # completion watcher -- which only holds the buttons -- can fill it in (see Set-StepDuration).
         $durationText = New-Object System.Windows.Controls.TextBlock
-        $durationText.Margin = '8,0,0,0'
+        $durationText.Margin = '0,0,6,0'
+        $durationText.HorizontalAlignment = 'Right'
         $durationText.VerticalAlignment = 'Center'
         $durationText.Foreground = [System.Windows.Media.Brushes]::DimGray
         $durationText.FontSize = 11.5
-        [System.Windows.Controls.Grid]::SetColumn($durationText, 4)
+        [System.Windows.Controls.Grid]::SetColumn($durationText, 3)
         [void]$variantPanel.Children.Add($durationText)
         $variantButton.Tag = $durationText
 
@@ -3093,7 +3127,7 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
                 }.GetNewClosure())
         }
 
-        return [PSCustomObject]@{ Panel = $resultPanel; Button = $variantButton; InteractiveBadgeText = $interactiveBadgeText; ThreadCircle = $variantThreadCircle }
+        return [PSCustomObject]@{ Panel = $resultPanel; Button = $variantButton; InteractiveBadge = $variantInteractiveBadge; ThreadCircle = $variantThreadCircle }
     }
 
     $planVariant = & $buildVariant $true
@@ -3109,10 +3143,10 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
     return [PSCustomObject]@{
         PlanPanel                  = $planVariant.Panel
         PlanButton                 = $planVariant.Button
-        PlanInteractiveBadgeText   = $planVariant.InteractiveBadgeText
+        PlanInteractiveBadge       = $planVariant.InteractiveBadge
         ManualPanel                = $manualVariant.Panel
         ManualButton               = $manualVariant.Button
-        ManualInteractiveBadgeText = $manualVariant.InteractiveBadgeText
+        ManualInteractiveBadge     = $manualVariant.InteractiveBadge
         CommandLine                = $CommandLine
         CmdletName                 = $cmdletName
         DisplayName                = $DisplayName
@@ -3179,14 +3213,9 @@ function Update-StepRowAutoAnsweredBadges($StepRows, [string]$AnswerFilePath) {
             $seenCounts[$row.CmdletName] = 1 + [int]$seenCounts[$row.CmdletName]
             $isAutoAnswered = $answerCounts -and $answerCounts.ContainsKey($row.CmdletName) -and ($seenCounts[$row.CmdletName] -le $answerCounts[$row.CmdletName])
         }
-        $badgeText = if ($isAutoAnswered) {
-            'Auto Answered' 
-        } else {
-            'Requires Input' 
-        }
-        foreach ($textBlock in @($row.PlanInteractiveBadgeText, $row.ManualInteractiveBadgeText)) {
-            if ($textBlock) {
-                $textBlock.Text = $badgeText
+        foreach ($badge in @($row.PlanInteractiveBadge, $row.ManualInteractiveBadge)) {
+            if ($badge) {
+                Set-InteractiveBadgeState $badge ([bool]$isAutoAnswered)
             }
         }
     }
@@ -4884,5 +4913,29 @@ $resumeButton.Add_Click({
     }.GetNewClosure())
 
 Start-StepCompletionWatcher
+
+# Live per-step timer: once a second, every Running row's duration cell shows time since it started.
+# The completion watcher overwrites it with the exact logged time when the step finishes.
+$global:stepDurationTimer = New-Object System.Windows.Threading.DispatcherTimer
+$global:stepDurationTimer.Interval = [TimeSpan]::FromSeconds(1)
+$global:stepDurationTimer.Add_Tick({
+        try {
+            foreach ($group in (Get-StepRowGroups).Values) {
+                foreach ($row in $group) {
+                    if ($row.PlanButton.Content -ne 'Running') {
+                        continue
+                    }
+                    foreach ($stepButton in @($row.PlanButton, $row.ManualButton)) {
+                        if ($stepButton.Tag -and $stepButton.Tag.Tag -is [datetime]) {
+                            $stepButton.Tag.Text = Format-StepDuration ([int][Math]::Floor(((Get-Date) - $stepButton.Tag.Tag).TotalSeconds))
+                        }
+                    }
+                }
+            }
+        } catch {
+            # A display-only tick must never surface an error.
+        }
+    })
+$global:stepDurationTimer.Start()
 
 [void]$app.Run($window)
