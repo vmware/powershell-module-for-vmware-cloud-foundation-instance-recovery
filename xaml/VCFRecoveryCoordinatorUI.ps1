@@ -2351,7 +2351,7 @@ function Set-StepButtonsState($Buttons, [string]$Content, $Background) {
         # the 1s tick below) in place of any stale time from a previous run.
         if ($stepButton.Tag) {
             if ($Content -eq 'Running') {
-                Set-DurationButtonText $stepButton.Tag '0s'
+                Set-DurationButtonText $stepButton.Tag (Format-StepDuration 0)
                 $stepButton.Tag.Tag = Get-Date
             }
             # Text color follows the status pill: orange Running, green Done, red Failed.
@@ -2372,8 +2372,13 @@ function Set-DurationButtonText($DurationButton, [string]$Text) {
     $DurationButton.Visibility = if ($Text) { 'Visible' } else { 'Hidden' }
 }
 
-# Formats a run time as "xh ym zs", leaving off leading zero units (so "3m 5s", "45s").
+# Formats a run time as "xh ym zs", leaving off leading zero units (so "3m 5s", "45s"); 0 shows as "<1s".
 function Format-StepDuration([int]$TotalSeconds) {
+    # Anything that rounds to zero (a sub-second step, or a timer that has only just started) is
+    # shown as "<1s" rather than "0s".
+    if ($TotalSeconds -le 0) {
+        return '<1s'
+    }
     $hours = [Math]::Floor($TotalSeconds / 3600)
     $minutes = [Math]::Floor(($TotalSeconds % 3600) / 60)
     $seconds = $TotalSeconds % 60
