@@ -1,7 +1,7 @@
 [
   {
     "description": "Restore VCF Operations using the user-provided restore script (must exit 0 on success and non-zero on failure)",
-    "commandLine": "Invoke-UserOpsRestoreScript -ScriptPath $opsRestoreScriptPath",
+    "commandLine": "Invoke-UserScript -ScriptPath $opsRestoreScriptPath",
     "displayName": "Run User-Provided VCF Operations Restore Script",
     "condition": [
       {

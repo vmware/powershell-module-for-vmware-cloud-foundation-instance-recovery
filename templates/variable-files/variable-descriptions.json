@@ -35,6 +35,7 @@
   "localUserPassword": "Password for the local admin (admin@local) account on SDDC Manager.",
   "adminPassword": "Password for the local admin (admin@local) API user on SDDC Manager.",
   "opsRestoreScriptPath": "Path on this machine to your own script that restores the VCF Operations appliances.",
+  "vsanWitnessScriptPath": "Path on this machine to your own script that deploys a new vSAN Witness and registers it in the restored vCenter.",
   "vcfOperationsFqdn": "FQDN of VCF Operations.",
   "username": "User name for logging in to VCF Operations.",
   "password": "Password for the VCF Operations user.",

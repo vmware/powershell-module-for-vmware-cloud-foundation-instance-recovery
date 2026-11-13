@@ -22,11 +22,23 @@
     }
   ],
   "_targetComment": "target is one of: managementDomain | workloadDomain | additionalCluster | fleetComponent | recoverFleet -- see Sync-RecoveryPlanSelection in the .ps1 for what each one does. Exactly one plan should claim a given target; two plans claiming the same one will fight over the same panel. Optional engineeringOnlyClusterTypes (additionalCluster plan only) lists raw primaryDatastoreType values (e.g. VSAN_MAX = Storage Cluster, VSAN_Remote = Compute Cluster) whose clusters need engineering mode to be selected.",
-  "_extraToggleComment": "extraToggleDefinitions defines every optional plan-specific toggle once (id + label), the same way recoveryTypes/dataSources are defined once above. A plan opts in to a toggle by listing its id + defaultChecked under its own extraToggles array; the toggle's id doubles as the variable name injected into step-condition evaluation and is excluded from that plan's persisted answers file.",
+  "_extraToggleComment": "extraToggleDefinitions defines every optional plan-specific toggle once (id + label), the same way recoveryTypes/dataSources are defined once above. A definition may also carry an optional 'condition' array (same typed forms as a plan step's condition, e.g. a dataPath) -- the toggle is only shown while every entry passes, and a hidden toggle never counts as on. A plan opts in to a toggle by listing its id + defaultChecked under its own extraToggles array; the toggle's id doubles as the variable name injected into step-condition evaluation and is excluded from that plan's persisted answers file.",
   "extraToggleDefinitions": [
     {
       "id": "userProvidedOpsRestoreScript",
       "label": "User Provided VCF Operations Restore Script"
+    },
+    {
+      "id": "userProvidedVsanWitnessScript",
+      "label": "User Provided vSAN Witness Deployment Script",
+      "condition": [
+        {
+          "type": "dataPath",
+          "path": "selectedCluster.isStretched",
+          "operator": "eq",
+          "value": "t"
+        }
+      ]
     }
   ],
   "_extraRadioGroupComment": "extraRadioGroupDefinitions defines every optional plan-specific group of mutually exclusive radio buttons once. Each option has an id, a label and a 'variables' map of pseudo-variable name -> 'true'/'false' string that is injected into step-condition evaluation while that option is selected (never written to the answers file). Each group also has a 'label' (frame header) and optional 'tooltip'. A plan opts in by listing the group id + defaultOption under its own extraRadioGroups array.",
@@ -58,6 +70,12 @@
       "default": true,
       "planFolder": "ibr",
       "planFile": "management-domain-recovery-plan.json",
+      "extraToggles": [
+        {
+          "id": "userProvidedVsanWitnessScript",
+          "defaultChecked": false
+        }
+      ],
       "variablesFile": "management-domain-recovery-variables.json",
       "dataSources": [
         "ExtractBackup",
@@ -102,6 +120,12 @@
       "target": "workloadDomain",
       "planFolder": "ibr",
       "planFile": "workload-domain-recovery-plan.json",
+      "extraToggles": [
+        {
+          "id": "userProvidedVsanWitnessScript",
+          "defaultChecked": false
+        }
+      ],
       "variablesFile": "workload-domain-recovery-variables.json",
       "dataSources": [
         "LoadExtractedData"
@@ -118,6 +142,12 @@
       "target": "additionalCluster",
       "planFolder": "ibr",
       "planFile": "additional-cluster-recovery-plan.json",
+      "extraToggles": [
+        {
+          "id": "userProvidedVsanWitnessScript",
+          "defaultChecked": false
+        }
+      ],
       "variablesFile": "additional-cluster-recovery-variables.json",
       "dataSources": [
         "LoadExtractedData"

@@ -227,6 +227,9 @@ $global:allDiscoveredDomains = @()
 # into condition evaluation (see the matching comment there) without needing to know in advance
 # which, if any, extra toggles a given plan declares.
 $global:extraToggleCheckBoxes = @{}
+# Each live extra toggle's row container plus the optional "condition" array from its catalog definition, keyed by toggle
+# id -- see Update-ExtraToggleVisibility.
+$global:extraToggleContainers = @{}
 # Live radio groups currently shown in $extraTogglesPanel, keyed by catalog "extraRadioGroupDefinitions"
 # id: @{ Definition = <catalog definition>; Buttons = @{ optionId = RadioButton } }. Rebuilt with the panel.
 $global:extraRadioGroups = @{}
@@ -4154,6 +4157,7 @@ function Update-ExtraTogglesPanel($Entry) {
     $extraRunOptionsPanel.Children.Clear()
     $extraColumnDefinition.Width = [System.Windows.GridLength]::Auto
     $global:extraToggleCheckBoxes = @{}
+    $global:extraToggleContainers = @{}
     $global:extraRadioGroups = @{}
     $extraTogglesHeader.Visibility = 'Collapsed'
     $extraTogglesDivider.Visibility = 'Collapsed'
@@ -4219,6 +4223,7 @@ function Update-ExtraTogglesPanel($Entry) {
         [void]$extraRunOptionsPanel.Children.Add($stack)
 
         $global:extraToggleCheckBoxes[$toggleId] = $toggle
+        $global:extraToggleContainers[$toggleId] = @{ Panel = $stack; Condition = $definition.condition }
         # Re-filters the current plan's Steps list immediately on toggle (see Update-RevealedSteps's
         # own injection of every extra-toggle id as a pseudo-variable), the same way Fleet Component
         # Recovery's toggle used to re-filter only its own group. A no-op before Load/New Variables
@@ -4230,6 +4235,21 @@ function Update-ExtraTogglesPanel($Entry) {
         }.GetNewClosure()
         $toggle.Add_Checked($applyToggle)
         $toggle.Add_Unchecked($applyToggle)
+    }
+}
+
+# Shows or hides each extra toggle according to the optional "condition" array on its catalog
+# extraToggleDefinitions entry -- same typed condition forms and Test-StepConditions evaluation as a plan
+# step's own condition (e.g. a dataPath on selectedCluster.isStretched), so a toggle only appears when
+# the steps it controls could actually apply. A toggle with no condition is always shown. Called once the
+# selection's $global:conditionDataContext is set (Sync-DomainSteps/Sync-AdditionalClusterSteps) and on
+# every Update-RevealedSteps pass, so a Variables-tab override of a dataPath fact is honored too.
+function Update-ExtraToggleVisibility([System.Collections.IDictionary]$Variables) {
+    if (-not $Variables) { $Variables = @{} }
+    foreach ($toggleId in @($global:extraToggleContainers.Keys)) {
+        $container = $global:extraToggleContainers[$toggleId]
+        $conditions = @($container.Condition | Where-Object { $_ })
+        $container.Panel.Visibility = if ($conditions.Count -eq 0 -or (Test-StepConditions $conditions $Variables)) { 'Visible' } else { 'Collapsed' }
     }
 }
 
@@ -4361,9 +4381,12 @@ function Update-RevealedSteps([System.Collections.IDictionary]$Variables) {
         $cloned = [ordered]@{}
         foreach ($key in $Variables.Keys) { $cloned[$key] = $Variables[$key] }
         $Variables = $cloned
+        Update-ExtraToggleVisibility $Variables
         foreach ($toggleId in $extraToggleIds) {
             if ($global:extraToggleCheckBoxes.ContainsKey($toggleId)) {
-                $Variables[$toggleId] = if ($global:extraToggleCheckBoxes[$toggleId].IsChecked) { 'true' } else { 'false' }
+                # A toggle hidden by its own condition never counts as on, whatever its stale checked state.
+                $isShown = $global:extraToggleContainers[$toggleId].Panel.Visibility -eq 'Visible'
+                $Variables[$toggleId] = if ($isShown -and $global:extraToggleCheckBoxes[$toggleId].IsChecked) { 'true' } else { 'false' }
             }
         }
         # Each radio group injects the variables of whichever option is currently selected.
@@ -4428,6 +4451,7 @@ function Sync-DomainSteps {
                 domainName           = $selected.Tag.domainName
             }
         }
+        Update-ExtraToggleVisibility
 
         # See the matching call in Sync-AdditionalClusterSteps -- selecting a DOMAIN targets that
         # domain's own default cluster, so that's the cluster these plans' $clusterName refers to,
@@ -4492,6 +4516,7 @@ function Sync-AdditionalClusterSteps {
                 domainName           = $selected.Tag.DomainName
             }
         }
+        Update-ExtraToggleVisibility
 
         # $workloadDomain/$clusterName are selection-driven, exactly like $extractedSDDCDataFile is
         # Data-Source-driven (see Set-ExportedSDDCDataFilePath's own call site) -- the operator never

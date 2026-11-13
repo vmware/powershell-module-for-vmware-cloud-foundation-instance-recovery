@@ -240,6 +240,28 @@
     "visible": true
   },
   {
+    "description": "Deploy a new vSAN Witness using the user-provided script and register it in the restored vCenter (must exit 0 on success and non-zero on failure)",
+    "commandLine": "Invoke-UserScript -ScriptPath $vsanWitnessScriptPath",
+    "displayName": "Run User-Provided vSAN Witness Deployment Script",
+    "condition": [
+      {
+        "type": "variable",
+        "name": "userProvidedVsanWitnessScript",
+        "operator": "eq",
+        "value": "true"
+      },
+      {
+        "type": "dataPath",
+        "path": "selectedCluster.isStretched",
+        "operator": "eq",
+        "value": "t"
+      }
+    ],
+    "threadId": "1",
+    "interactive": false,
+    "visible": true
+  },
+  {
     "description": "",
     "commandLine": "New-ReconfiguredVsanStretchedCluster -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile",
     "displayName": "Reconfigure vSAN Stretched Cluster",

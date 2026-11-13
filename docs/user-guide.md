@@ -839,6 +839,22 @@ does not hang.
 If the toggle is on but `opsRestoreScriptPath` is empty, or the file is not found, the task fails straight away
 with a message saying so.
 
+### Using a script to deploy the vSAN Witness
+
+On the Management Domain, Workload Domain and Additional Cluster plans you can also supply your own script that
+deploys a new vSAN Witness. The **User Provided vSAN Witness Deployment Script** toggle only appears when the
+selected cluster is stretched, which is the same condition that makes *Reconfigure vSAN Stretched Cluster* part of
+the plan.
+
+1. Select the domain or cluster and load or create its variables.
+2. On the **Variables** tab, set `vsanWitnessScriptPath` to the full path of your script.
+3. On the **Recovery Plan** tab, turn on **User Provided vSAN Witness Deployment Script**. *Run User-Provided vSAN
+   Witness Deployment Script* is added immediately before *Reconfigure vSAN Stretched Cluster*.
+
+The same success contract applies as for the Operations script above. Your script must leave the new witness
+registered and connected in the restored vCenter, because *Reconfigure vSAN Stretched Cluster* waits for that.
+`scripts/Redeploy-VsanWitness.ps1` is a ready-made example.
+
 ### If the task fails
 
 | What you see | Likely cause |
