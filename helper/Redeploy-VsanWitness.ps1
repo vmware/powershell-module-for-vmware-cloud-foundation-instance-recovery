@@ -20,43 +20,43 @@ Requires: VCF.PowerCLI / VMware.PowerCLI, and VMware OVF Tool on the machine run
 # ======================================================================================
 
 # --- vCenter that manages the witness host (where the witness is registered / stretched cluster lives)
-$managedVcenterFqdn      = '<managed-vcenter-fqdn>'
-$managedVcenterUser      = '<administrator@vsphere.local>'
-$managedVcenterPassword  = '<managed-vcenter-password>'
-$managedDatacenterName   = '<managed-datacenter-name>'       # Datacenter the witness host is added to
+$managedVcenterFqdn      = 'sfo-w02-vc01.sfo.rainpole.io'
+$managedVcenterUser      = 'administrator@vsphere.local'
+$managedVcenterPassword  = 'VMw@re1!VMw@re1!'
+$managedDatacenterName   = 'sfo-w02-dc'       # Datacenter the witness host is added to
 
 # --- vCenter hosting the witness appliance VM (infrastructure vCenter)
-$infraVcenterFqdn        = '<infrastructure-vcenter-fqdn>'
-$infraVcenterUser        = '<administrator@vsphere.local>'
-$infraVcenterPassword    = '<infrastructure-vcenter-password>'
-$infraDatacenterName     = '<infrastructure-datacenter-name>'
-$infraClusterName        = '<infrastructure-cluster-name>'
-$infraDatastoreName      = '<infrastructure-datastore-name>'
-$infraVmFolder           = '<infrastructure-vm-folder>'      # e.g. owner-environment
+$infraVcenterFqdn        = 'vcf-pd-vc03.lvn.broadcom.net'
+$infraVcenterUser        = 'administrator@vsphere.local'
+$infraVcenterPassword    = 'VMw@re1!VMw@re1!'
+$infraDatacenterName     = 'vcf-pd-dc01'
+$infraClusterName        = 'vcf-pd-cl12'
+$infraDatastoreName      = 'vcf-pd-vcf-pd-cl12-vsan01'
+$infraVmFolder           = 'ken-912C5-ibr'      # e.g. owner-environment
 
 # --- Old witness (to unregister)
-$oldWitnessFqdn          = '<old-witness-fqdn>'              # Name it is registered under in the managed vCenter
+$oldWitnessFqdn          = 'sfo-w02-cl01-vsw01.sfo.rainpole.io'              # Name it is registered under in the managed vCenter
 $deleteOldWitnessVm      = $true                             # Also delete the old witness VM from the infrastructure vCenter
-$oldWitnessVmName        = '<old-witness-vm-name>'           # Only used if $deleteOldWitnessVm is $true
+$oldWitnessVmName        = 'ken-912C5-ibr-sfo-w02-cl01-vsw01'           # Only used if $deleteOldWitnessVm is $true
 
 # --- New witness
-$newWitnessFqdn          = '<new-witness-fqdn>'
-$newWitnessVmName        = '<new-witness-vm-name>'
-$newWitnessIp            = '<new-witness-mgmt-ip>'
-$newWitnessNetmask       = '<new-witness-netmask>'
-$newWitnessGateway       = '<new-witness-gateway>'
-$newWitnessVlanId        = '<new-witness-mgmt-vlan-id>'
-$witnessPortgroupName    = '<portgroup-for-witness-vm-networks>'   # Used for both "Management Network" and "Secondary Network"
-$witnessRootPassword     = '<witness-root-password>'         # Also used as the ESXi password when adding to vCenter
+$newWitnessFqdn          = 'sfo-w02-cl01-vsw01.sfo.rainpole.io'
+$newWitnessVmName        = 'ken-912C5-ibr-sfo-w02-cl01-vsw01'
+$newWitnessIp            = '10.21.10.220'
+$newWitnessNetmask       = '255.255.255.0'
+$newWitnessGateway       = '10.21.10.1'
+$newWitnessVlanId        = '2110'
+$witnessPortgroupName    = 'ken-912C5-ibr-isolated-segment'   # Used for both "Management Network" and "Secondary Network"
+$witnessRootPassword     = 'VMw@re1!'         # Also used as the ESXi password when adding to vCenter
 $witnessEsxiUsername     = 'root'
 
 # --- Network services
-$dnsServers              = '<dns1>,<dns2>'
-$dnsDomain               = '<dns-domain>'
-$ntpServers              = '<ntp1>,<ntp2>'
+$dnsServers              = '10.11.10.4,10.11.10.4'
+$dnsDomain               = 'sfo.rainpole.io'
+$ntpServers              = 'ntp0.sfo.rainpole.io,ntp1.sfo.rainpole.io'
 
 # --- Files / tools
-$witnessOvaPath          = '<full-path-to-witness.ova>'      # e.g. F:\binaries\VMware-VirtualSAN-Witness-<build>.ova
+$witnessOvaPath          = 'F:\PlatformTools\binaries\VMware-vSAN-ESA-Witness-9.1.2.0.25886086.ova'      # e.g. F:\binaries\VMware-VirtualSAN-Witness-<build>.ova
 $ovfToolPath             = 'C:\Program Files\VMware\VMware OVF Tool\ovftool.exe'
 $vsanNetworkName         = 'Management'                      # guestinfo.vsannetwork value used by Platform Tools
 
@@ -72,13 +72,19 @@ Function Write-Step {
 
 Function Test-Placeholders {
     $unset = Get-Variable -Scope Script | Where-Object { $_.Value -is [string] -and $_.Value -match '<[^>]+>' -and $_.Name -notin 'MyInvocation' } | Select-Object -ExpandProperty Name
-    If ($unset) { Throw "These variables still contain placeholders: $($unset -join ', ')" }
+    If ($unset) {
+        Throw "These variables still contain placeholders: $($unset -join ', ')" 
+    }
 }
 
 Try {
     Test-Placeholders
-    If (-not (Test-Path -LiteralPath $witnessOvaPath -PathType Leaf)) { Throw "Witness OVA '$witnessOvaPath' not found" }
-    If (-not (Test-Path -LiteralPath $ovfToolPath -PathType Leaf)) { Throw "ovftool '$ovfToolPath' not found" }
+    If (-not (Test-Path -LiteralPath $witnessOvaPath -PathType Leaf)) {
+        Throw "Witness OVA '$witnessOvaPath' not found" 
+    }
+    If (-not (Test-Path -LiteralPath $ovfToolPath -PathType Leaf)) {
+        Throw "ovftool '$ovfToolPath' not found" 
+    }
 
     Set-PowerCLIConfiguration -InvalidCertificateAction Ignore -Confirm:$false -Scope Session | Out-Null
 
@@ -107,7 +113,9 @@ Try {
         $oldVm = Get-VM -Name $oldWitnessVmName -ErrorAction SilentlyContinue
         If ($oldVm) {
             Write-Step "Deleting old witness VM $oldWitnessVmName"
-            If ($oldVm.PowerState -eq 'PoweredOn') { Stop-VM -VM $oldVm -Confirm:$false | Out-Null }
+            If ($oldVm.PowerState -eq 'PoweredOn') {
+                Stop-VM -VM $oldVm -Confirm:$false | Out-Null 
+            }
             Remove-VM -VM $oldVm -DeletePermanently -Confirm:$false
         } Else {
             Write-Step "Old witness VM $oldWitnessVmName not found - skipping delete" 'WARNING'
@@ -146,7 +154,9 @@ Try {
 
     Write-Step "Deploying witness appliance $newWitnessVmName (this can take several minutes)"
     & $ovfToolPath @ovfArgs $witnessOvaPath $target 2>&1 | ForEach-Object { Write-Host $_ }
-    If ($LASTEXITCODE -ne 0) { Throw "ovftool deployment failed (exit code $LASTEXITCODE)" }
+    If ($LASTEXITCODE -ne 0) {
+        Throw "ovftool deployment failed (exit code $LASTEXITCODE)" 
+    }
 
     # ---------------- 4. Configure management VLAN / SSH via guest operations ----------------
     Connect-VIServer -Server $infraVcenterFqdn -User $infraVcenterUser -Password $infraVcenterPassword | Out-Null
@@ -173,7 +183,9 @@ Try {
 
     # ---------------- 5. Register the new witness in the managed vCenter ----------------
     Write-Step "Waiting for $newWitnessIp to become reachable"
-    Do { Start-Sleep -Seconds 10 } Until (Test-Connection -ComputerName $newWitnessIp -Count 1 -Quiet)
+    Do {
+        Start-Sleep -Seconds 10 
+    } Until (Test-Connection -ComputerName $newWitnessIp -Count 1 -Quiet)
 
     Connect-VIServer -Server $managedVcenterFqdn -User $managedVcenterUser -Password $managedVcenterPassword | Out-Null
     Write-Step "Adding $newWitnessFqdn to vCenter"
