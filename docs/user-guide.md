@@ -853,7 +853,7 @@ the plan.
 
 The same success contract applies as for the Operations script above. Your script must leave the new witness
 registered and connected in the restored vCenter, because *Reconfigure vSAN Stretched Cluster* waits for that.
-`scripts/Redeploy-VsanWitness.ps1` is a ready-made example.
+`helper/Redeploy-VsanWitness.ps1` is a ready-made example.
 
 ### If the task fails
 

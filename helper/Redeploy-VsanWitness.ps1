@@ -9,10 +9,12 @@ Modelled on Platform Tools workload menu item 34 (Get-VSANWitnessOVA / New-VSANW
   1. Connects to the managed vCenter and removes the old witness host from inventory.
   2. (Optional) Connects to the infrastructure vCenter and deletes the old witness VM.
   3. Deploys the witness OVA with ovftool into the infrastructure vCenter.
-  4. Waits for VMware Tools, sets the management VLAN and enables SSH via guest operations.
+  4. Waits for VMware Tools, sets the management VLAN and enables SSH via VMware Tools guest operations.
   5. Adds the new witness to the managed vCenter, removes vmk1 / secondarySwitch, starts SSH, configures NTP.
 
-Requires: VCF.PowerCLI / VMware.PowerCLI, and VMware OVF Tool on the machine running the script.
+Safe to re-run. If the old witness is registered in the managed vCenter and is not disconnected, it is healthy and
+the script exits 0 without doing anything. If it is disconnected it is removed, and if it is already gone the script
+simply carries on, so a missing old host or VM never causes a failure.
 #>
 
 # ======================================================================================
@@ -21,32 +23,32 @@ Requires: VCF.PowerCLI / VMware.PowerCLI, and VMware OVF Tool on the machine run
 
 # --- vCenter that manages the witness host (where the witness is registered / stretched cluster lives)
 $managedVcenterFqdn      = 'sfo-w02-vc01.sfo.rainpole.io'
-$managedVcenterUser      = 'administrator@vsphere.local'
+$managedVcenterUser      = 'administrator@sfo-w02.local'
 $managedVcenterPassword  = 'VMw@re1!VMw@re1!'
 $managedDatacenterName   = 'sfo-w02-dc'       # Datacenter the witness host is added to
 
 # --- vCenter hosting the witness appliance VM (infrastructure vCenter)
-$infraVcenterFqdn        = 'vcf-pd-vc03.lvn.broadcom.net'
-$infraVcenterUser        = 'administrator@vsphere.local'
+$infraVcenterFqdn        = 'vcf-pd-vc01.lvn.broadcom.net'
+$infraVcenterUser        = 'breakglass@vsphere.local'
 $infraVcenterPassword    = 'VMw@re1!VMw@re1!'
 $infraDatacenterName     = 'vcf-pd-dc01'
-$infraClusterName        = 'vcf-pd-cl12'
-$infraDatastoreName      = 'vcf-pd-vcf-pd-cl12-vsan01'
-$infraVmFolder           = 'ken-912C5-ibr'      # e.g. owner-environment
+$infraClusterName        = 'vcf-pd-cl02'
+$infraDatastoreName      = 'vcf-pd-vcf-pd-cl02-vsan01'
+$infraVmFolder           = 'ken-912c4-ibr'      # e.g. owner-environment
 
 # --- Old witness (to unregister)
 $oldWitnessFqdn          = 'sfo-w02-cl01-vsw01.sfo.rainpole.io'              # Name it is registered under in the managed vCenter
 $deleteOldWitnessVm      = $true                             # Also delete the old witness VM from the infrastructure vCenter
-$oldWitnessVmName        = 'ken-912C5-ibr-sfo-w02-cl01-vsw01'           # Only used if $deleteOldWitnessVm is $true
+$oldWitnessVmName        = 'ken-912c4-ibr-sfo-w02-cl01-vsw01'           # Only used if $deleteOldWitnessVm is $true
 
 # --- New witness
 $newWitnessFqdn          = 'sfo-w02-cl01-vsw01.sfo.rainpole.io'
-$newWitnessVmName        = 'ken-912C5-ibr-sfo-w02-cl01-vsw01'
+$newWitnessVmName        = 'ken-912c4-ibr-sfo-w02-cl01-vsw01'
 $newWitnessIp            = '10.21.10.220'
 $newWitnessNetmask       = '255.255.255.0'
 $newWitnessGateway       = '10.21.10.1'
 $newWitnessVlanId        = '2110'
-$witnessPortgroupName    = 'ken-912C5-ibr-isolated-segment'   # Used for both "Management Network" and "Secondary Network"
+$witnessPortgroupName    = 'ken-912c4-ibr-isolated-segment'   # Used for both "Management Network" and "Secondary Network"
 $witnessRootPassword     = 'VMw@re1!'         # Also used as the ESXi password when adding to vCenter
 $witnessEsxiUsername     = 'root'
 
@@ -63,65 +65,181 @@ $vsanNetworkName         = 'Management'                      # guestinfo.vsannet
 # ======================================================================================
 # SCRIPT BODY
 # ======================================================================================
+
 $ErrorActionPreference = 'Stop'
 
-Function Write-Step {
-    Param([string]$Message, [string]$Type = 'INFO')
-    Write-Host ("[{0}] [{1}] {2}" -f (Get-Date -Format 'HH:mm:ss'), $Type, $Message)
+# Same look as the module's LogMessage (timestamp, coloured type tag). Use ERROR only for a real failure -
+# Invoke-UserScript treats an [ERROR] line as a failed task - and INFO for anything expected.
+Function LogMessage {
+    Param (
+        [Parameter(Mandatory = $true)] [AllowEmptyString()] [String]$message,
+        [Parameter(Mandatory = $false)] [Switch]$nonewline,
+        [Parameter(Mandatory = $false)] [ValidateSet("INFO", "ERROR", "WARNING", "EXCEPTION", "ADVISORY", "NOTE", "QUESTION", "WAIT")] [String]$type = "INFO"
+    )
+    If ($type -eq "INFO") {
+        $messageColour = "92m" #Green
+    } elseIf ($type -in "ERROR", "EXCEPTION") {
+        $messageColour = "91m" # Red
+    } elseIf ($type -in "WARNING", "ADVISORY", "QUESTION") {
+        $messageColour = "93m" #Yellow
+    } elseIf ($type -in "NOTE", "WAIT") {
+        $messageColour = "97m" # White
+    }
+    $ESC = [char]0x1b
+    $timeStamp = Get-Date -Format "MM-dd-yyyy_HH:mm:ss"
+    $timestampColour = "97m"
+    If ($nonewline) {
+        Write-Host "$ESC[${timestampcolour} [$timestamp]$ESC[${messageColour} [$type] $message$ESC[0m" -NoNewline
+    } else {
+        Write-Host "$ESC[${timestampcolour} [$timestamp]$ESC[${messageColour} [$type] $message$ESC[0m"
+    }
 }
 
 Function Test-Placeholders {
     $unset = Get-Variable -Scope Script | Where-Object { $_.Value -is [string] -and $_.Value -match '<[^>]+>' -and $_.Name -notin 'MyInvocation' } | Select-Object -ExpandProperty Name
     If ($unset) {
-        Throw "These variables still contain placeholders: $($unset -join ', ')" 
+        Throw "These variables still contain placeholders: $($unset -join ', ')"
     }
+}
+
+# Runs a program inside the witness appliance via VMware Tools guest operations. The witness is ESXi, so there is no
+# bash and Invoke-VMScript cannot be used. Same approach as Platform Tools' Invoke-VMGuestCommand, but this waits for
+# the program to finish and returns its exit code.
+Function Invoke-WitnessGuestProgram {
+    Param(
+        [Parameter(Mandatory)] $Server,
+        [Parameter(Mandatory)] $VM,
+        [Parameter(Mandatory)] [string]$GuestUser,
+        [Parameter(Mandatory)] [string]$GuestPassword,
+        [Parameter(Mandatory)] [string]$ProgramPath,
+        [Parameter(Mandatory)] [string]$Arguments,
+        [int]$TimeoutSeconds = 120
+    )
+    $guestOpMgr = Get-View $Server.ExtensionData.Content.GuestOperationsManager -Server $Server
+    $procMgr = Get-View $guestOpMgr.ProcessManager -Server $Server
+
+    $auth = New-Object VMware.Vim.NamePasswordAuthentication
+    $auth.Username = $GuestUser
+    $auth.Password = $GuestPassword
+    $auth.InteractiveSession = $false
+
+    $progSpec = New-Object VMware.Vim.GuestProgramSpec
+    $progSpec.ProgramPath = $ProgramPath
+    $progSpec.WorkingDirectory = '/tmp'
+    # "++group=host/vim/tmp" is required for ESXi to run the process
+    $progSpec.Arguments = "++group=host/vim/tmp $Arguments"
+
+    $guestPid = $procMgr.StartProgramInGuest($VM.ExtensionData.MoRef, $auth, $progSpec)
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    Do {
+        Start-Sleep -Seconds 2
+        $proc = $procMgr.ListProcessesInGuest($VM.ExtensionData.MoRef, $auth, @($guestPid)) | Select-Object -First 1
+    } Until ($proc.EndTime -or (Get-Date) -gt $deadline)
+    If (-not $proc.EndTime) {
+        Throw "Guest program '$ProgramPath $Arguments' did not finish within $TimeoutSeconds seconds"
+    }
+    Return [int]$proc.ExitCode
+}
+
+# Sends one line of ovftool output through LogMessage, dropping the noise (certificate dump, the harmless
+# "Unsupported value ... ExtraConfig" warnings, per-percent task progress) and reporting disk progress every 10%.
+# $State carries the filter state between lines: @{ InCert = $false; LastDisk = 0 }
+Function Write-OvfToolLine {
+    Param([string]$Line, [hashtable]$State, [string]$Tag)
+    $Line = $Line.TrimEnd()
+    If ([string]::IsNullOrWhiteSpace($Line)) {
+        Return
+    }
+    If ($Line -match '^Source is signed') {
+        $State.InCert = $true
+    }
+    If ($State.InCert) {
+        If ($Line -match 'END CERTIFICATE') {
+            $State.InCert = $false
+        }
+        Return
+    }
+    If ($Line -like 'Task progress*' -or $Line -eq 'Warning:' -or $Line -match "Unsupported value '.*' for attribute 'key' on element 'ExtraConfig'") {
+        Return
+    }
+    If ($Line -match '^Disk progress: (\d+)%') {
+        $bucket = [Math]::Floor([int]$Matches[1] / 10) * 10
+        If ($bucket -gt $State.LastDisk) {
+            $State.LastDisk = $bucket
+            LogMessage -type INFO -message "$Tag $Line"
+        }
+        Return
+    }
+    If ($Line -match '^Error' -or $Line -eq 'Completed with errors') {
+        LogMessage -type ERROR -message "$Tag $Line"
+    } else {
+        LogMessage -type INFO -message "$Tag $Line"
+    }
+}
+
+# Runs ovftool and returns @{ ExitCode; Lines }. Output is streamed through Write-OvfToolLine unless -Quiet, in
+# which case it is only collected (so a caller can replay it through Write-OvfToolLine if the run fails).
+Function Invoke-OvfTool {
+    Param(
+        [Parameter(Mandatory)] [string]$Path,
+        [Parameter(Mandatory)] [string[]]$Arguments,
+        [Parameter(Mandatory)] [string]$Tag,
+        [switch]$Quiet
+    )
+    $state = @{ InCert = $false; LastDisk = 0 }
+    $collected = [System.Collections.Generic.List[string]]::new()
+    & $Path @Arguments 2>&1 | ForEach-Object {
+        $line = "$_"
+        $collected.Add($line)
+        If (-not $Quiet) {
+            Write-OvfToolLine -Line $line -State $state -Tag $Tag
+        }
+    }
+    Return @{ ExitCode = $LASTEXITCODE; Lines = $collected }
 }
 
 Try {
     Test-Placeholders
     If (-not (Test-Path -LiteralPath $witnessOvaPath -PathType Leaf)) {
-        Throw "Witness OVA '$witnessOvaPath' not found" 
+        Throw "Witness OVA '$witnessOvaPath' not found"
     }
     If (-not (Test-Path -LiteralPath $ovfToolPath -PathType Leaf)) {
-        Throw "ovftool '$ovfToolPath' not found" 
+        Throw "ovftool '$ovfToolPath' not found"
     }
-
     Set-PowerCLIConfiguration -InvalidCertificateAction Ignore -Confirm:$false -Scope Session | Out-Null
 
-    # ---------------- 1. Unregister the old witness from the managed vCenter ----------------
-    Write-Step "Connecting to managed vCenter $managedVcenterFqdn"
-    Connect-VIServer -Server $managedVcenterFqdn -User $managedVcenterUser -Password $managedVcenterPassword | Out-Null
+    $tag = "[$newWitnessVmName]"
+    LogMessage -type INFO -message "$tag Connecting to managed vCenter $managedVcenterFqdn and infrastructure vCenter $infraVcenterFqdn"
+    $managedVi = Connect-VIServer -Server $managedVcenterFqdn -User $managedVcenterUser -Password $managedVcenterPassword
+    $infraVi = Connect-VIServer -Server $infraVcenterFqdn -User $infraVcenterUser -Password $infraVcenterPassword
 
-    $oldHost = Get-VMHost -Name $oldWitnessFqdn -ErrorAction SilentlyContinue
-    If ($oldHost) {
-        Write-Step "Removing witness host $oldWitnessFqdn from vCenter inventory"
-        If ($oldHost.ConnectionState -eq 'Connected') {
-            Set-VMHost -VMHost $oldHost -State Maintenance -Confirm:$false -ErrorAction SilentlyContinue | Out-Null
-        }
-        Remove-VMHost -VMHost $oldHost -Confirm:$false
-        Write-Step "Witness host $oldWitnessFqdn removed from inventory"
-    } Else {
-        Write-Step "Witness host $oldWitnessFqdn is not registered in $managedVcenterFqdn - nothing to unregister" 'WARNING'
+    # ---------------- 1. Unregister the old witness from the managed vCenter ----------------
+    $oldHost = Get-VMHost -Name $oldWitnessFqdn -Server $managedVi -ErrorAction SilentlyContinue
+    If ($oldHost -and $oldHost.ConnectionState -notin 'Disconnected', 'NotResponding') {
+        LogMessage -type INFO -message "$tag Witness host $oldWitnessFqdn is $($oldHost.ConnectionState) in $managedVcenterFqdn - nothing to do"
+        Disconnect-VIServer * -Force -Confirm:$false -WarningAction SilentlyContinue | Out-Null
+        Exit 0
     }
-    Disconnect-VIServer -Server $managedVcenterFqdn -Force -Confirm:$false | Out-Null
+    If ($oldHost) {
+        LogMessage -type INFO -message "$tag Removing disconnected witness host $oldWitnessFqdn from vCenter inventory"
+        Remove-VMHost -VMHost $oldHost -Confirm:$false
+    } else {
+        LogMessage -type INFO -message "$tag Witness host $oldWitnessFqdn is not registered in $managedVcenterFqdn - nothing to unregister"
+    }
 
     # ---------------- 2. Delete the old witness VM (optional) ----------------
-    Write-Step "Connecting to infrastructure vCenter $infraVcenterFqdn"
-    Connect-VIServer -Server $infraVcenterFqdn -User $infraVcenterUser -Password $infraVcenterPassword | Out-Null
-
     If ($deleteOldWitnessVm) {
-        $oldVm = Get-VM -Name $oldWitnessVmName -ErrorAction SilentlyContinue
+        $oldVm = Get-VM -Name $oldWitnessVmName -Server $infraVi -ErrorAction SilentlyContinue
         If ($oldVm) {
-            Write-Step "Deleting old witness VM $oldWitnessVmName"
+            LogMessage -type INFO -message "$tag Deleting old witness VM $oldWitnessVmName"
             If ($oldVm.PowerState -eq 'PoweredOn') {
-                Stop-VM -VM $oldVm -Confirm:$false | Out-Null 
+                Stop-VM -VM $oldVm -Confirm:$false | Out-Null
             }
             Remove-VM -VM $oldVm -DeletePermanently -Confirm:$false
-        } Else {
-            Write-Step "Old witness VM $oldWitnessVmName not found - skipping delete" 'WARNING'
+        } else {
+            LogMessage -type INFO -message "$tag Old witness VM $oldWitnessVmName not found - nothing to delete"
         }
     }
-    Disconnect-VIServer -Server $infraVcenterFqdn -Force -Confirm:$false | Out-Null
 
     # ---------------- 3. Deploy the new witness with ovftool ----------------
     $hostname = $newWitnessFqdn.Split('.')[0]
@@ -145,73 +263,132 @@ Try {
         "--prop:guestinfo.vsannetwork=$vsanNetworkName"
     )
 
-    Write-Step "Pre-validating witness deployment"
-    $verifyOutput = & $ovfToolPath '--verifyOnly' @ovfArgs $witnessOvaPath $target 2>&1
-    If ($verifyOutput[-1] -notmatch 'Completed successfully') {
-        $verifyOutput | ForEach-Object { Write-Host $_ }
+    # ovftool resolves --vmFolder as a top-level VM folder of the datacenter and only says "Invalid VM folder specified"
+    $dc = Get-Datacenter -Name $infraDatacenterName -Server $infraVi
+    $vmFolderObjects = @(Get-Folder -Type VM -Location $dc -Server $infraVi -ErrorAction SilentlyContinue)
+    $topLevelFolders = @($vmFolderObjects | Where-Object { $_.ParentId -eq $dc.ExtensionData.VmFolder.ToString() } | Select-Object -ExpandProperty Name)
+    If ($infraVmFolder -cnotin $topLevelFolders) {
+        $nested = @($vmFolderObjects | Where-Object { $_.Name -ceq $infraVmFolder })
+        If ($nested.Count -gt 0) {
+            Throw "VM folder '$infraVmFolder' exists in $infraDatacenterName but is not at the top level, which ovftool requires. Top-level folders: $($topLevelFolders -join ', ')"
+        }
+        Throw "VM folder '$infraVmFolder' was not found in datacenter $infraDatacenterName on $infraVcenterFqdn. Top-level VM folders: $($topLevelFolders -join ', ')"
+    }
+
+    LogMessage -type INFO -message "$tag Pre-validating witness deployment"
+    $verify = Invoke-OvfTool -Path $ovfToolPath -Arguments (@('--verifyOnly') + $ovfArgs + @($witnessOvaPath, $target)) -Tag $tag -Quiet
+    If ($verify.ExitCode -ne 0 -or $verify.Lines[-1] -notmatch 'Completed successfully') {
+        $verifyState = @{ InCert = $false; LastDisk = 0 }
+        ForEach ($line in $verify.Lines) {
+            Write-OvfToolLine -Line $line -State $verifyState -Tag $tag
+        }
         Throw 'ovftool pre-validation failed. Check the OVA, datastore, portgroup and credentials.'
     }
 
-    Write-Step "Deploying witness appliance $newWitnessVmName (this can take several minutes)"
-    & $ovfToolPath @ovfArgs $witnessOvaPath $target 2>&1 | ForEach-Object { Write-Host $_ }
-    If ($LASTEXITCODE -ne 0) {
-        Throw "ovftool deployment failed (exit code $LASTEXITCODE)" 
+    LogMessage -type INFO -message "$tag Deploying witness appliance (this can take several minutes)"
+    $deploy = Invoke-OvfTool -Path $ovfToolPath -Arguments ($ovfArgs + @($witnessOvaPath, $target)) -Tag $tag
+    If ($deploy.ExitCode -ne 0) {
+        Throw "ovftool deployment failed (exit code $($deploy.ExitCode))"
     }
 
     # ---------------- 4. Configure management VLAN / SSH via guest operations ----------------
-    Connect-VIServer -Server $infraVcenterFqdn -User $infraVcenterUser -Password $infraVcenterPassword | Out-Null
-    Write-Step "Waiting for VMware Tools on $newWitnessVmName"
+    $newVm = Get-VM -Name $newWitnessVmName -Server $infraVi
+    If ($newVm.PowerState -ne 'PoweredOn') {
+        LogMessage -type INFO -message "$tag Powering on witness appliance"
+        Start-VM -VM $newVm -Confirm:$false | Out-Null
+    }
+    LogMessage -type WAIT -message "$tag Waiting for VMware Tools to start"
+    $deadline = (Get-Date).AddMinutes(15)
     Do {
         Start-Sleep -Seconds 10
-        $toolsStatus = (Get-VM -Name $newWitnessVmName).ExtensionData.Guest.ToolsStatus
-    } Until ($toolsStatus -in 'toolsOld', 'toolsOk')
-    Start-Sleep -Seconds 60
-
-    # NOTE: guest commands mirror Platform Tools (python /bin/esxcli.py ...). Invoke-VMScript behaviour against the
-    # witness appliance has not been verified here - confirm on first run.
-    $vm = Get-VM -Name $newWitnessVmName
-    $guestCommands = @(
-        "/bin/python /bin/esxcli.py network vswitch standard portgroup set -p 'Management Network' -v $newWitnessVlanId",
-        '/bin/python /bin/vim-cmd hostsvc/start_ssh',
-        '/bin/python /bin/vim-cmd hostsvc/enable_ssh'
-    )
-    Write-Step "Configuring management VLAN $newWitnessVlanId and enabling SSH"
-    ForEach ($cmd in $guestCommands) {
-        Invoke-VMScript -VM $vm -ScriptType Bash -ScriptText $cmd -GuestUser $witnessEsxiUsername -GuestPassword $witnessRootPassword | Out-Null
+        $toolsStatus = (Get-VM -Name $newWitnessVmName -Server $infraVi).ExtensionData.Guest.ToolsStatus
+    } Until (($toolsStatus -in 'toolsOld', 'toolsOk') -or (Get-Date) -gt $deadline)
+    If ($toolsStatus -notin 'toolsOld', 'toolsOk') {
+        Throw "VMware Tools did not start on $newWitnessVmName within 15 minutes"
     }
-    Disconnect-VIServer -Server $infraVcenterFqdn -Force -Confirm:$false | Out-Null
+    Start-Sleep -Seconds 60   # Let the appliance finish booting
+
+    $newVm = Get-VM -Name $newWitnessVmName -Server $infraVi
+    LogMessage -type INFO -message "$tag Configuring management VLAN $newWitnessVlanId"
+    $exitCode = Invoke-WitnessGuestProgram -Server $infraVi -VM $newVm -GuestUser $witnessEsxiUsername -GuestPassword $witnessRootPassword `
+        -ProgramPath '/bin/python' -Arguments "/bin/esxcli.py network vswitch standard portgroup set -p `"Management Network`" -v $newWitnessVlanId"
+    If ($exitCode -ne 0) {
+        Throw "Setting the management VLAN on the witness failed (exit code $exitCode)"
+    }
+
+    # Best effort only - SSH is started again through vCenter in step 5, so a failure here is not fatal
+    LogMessage -type INFO -message "$tag Ensuring SSH is running"
+    ForEach ($sshCmd in 'hostsvc/start_ssh', 'hostsvc/enable_ssh') {
+        Try {
+            Invoke-WitnessGuestProgram -Server $infraVi -VM $newVm -GuestUser $witnessEsxiUsername -GuestPassword $witnessRootPassword `
+                -ProgramPath '/bin/vim-cmd' -Arguments $sshCmd | Out-Null
+        } Catch {
+            LogMessage -type INFO -message "$tag vim-cmd $sshCmd did not complete ($($_.Exception.Message)) - SSH is handled again once the host is in vCenter"
+        }
+    }
 
     # ---------------- 5. Register the new witness in the managed vCenter ----------------
-    Write-Step "Waiting for $newWitnessIp to become reachable"
+    LogMessage -type WAIT -message "$tag Waiting for $newWitnessIp to become reachable"
     Do {
-        Start-Sleep -Seconds 10 
+        Start-Sleep -Seconds 10
     } Until (Test-Connection -ComputerName $newWitnessIp -Count 1 -Quiet)
 
-    Connect-VIServer -Server $managedVcenterFqdn -User $managedVcenterUser -Password $managedVcenterPassword | Out-Null
-    Write-Step "Adding $newWitnessFqdn to vCenter"
-    $location = Get-Datacenter -Name $managedDatacenterName
-    Add-VMHost -Name $newWitnessFqdn -Location $location -User $witnessEsxiUsername -Password $witnessRootPassword -Force | Out-Null
-    Write-Step "Allowing vCenter inventory to synchronise" 'WAIT'
+    LogMessage -type INFO -message "$tag Adding $newWitnessFqdn to vCenter"
+    $location = Get-Datacenter -Name $managedDatacenterName -Server $managedVi
+    Add-VMHost -Name $newWitnessFqdn -Location $location -User $witnessEsxiUsername -Password $witnessRootPassword -Force -Server $managedVi | Out-Null
+    LogMessage -type WAIT -message "$tag Allowing vCenter inventory to synchronize"
     Start-Sleep -Seconds 90
 
-    Write-Step "Removing vmk1 and secondarySwitch"
-    Get-VMHost -Name $newWitnessFqdn | Get-VMHostNetworkAdapter -Name vmk1 | Remove-VMHostNetworkAdapter -Confirm:$false
-    Get-VMHost -Name $newWitnessFqdn | Get-VirtualSwitch -Name 'secondarySwitch' | Remove-VirtualSwitch -Confirm:$false
+    $newHost = Get-VMHost -Name $newWitnessFqdn -Server $managedVi
 
-    Write-Step "Starting SSH and configuring NTP"
-    $newHost = Get-VMHost -Name $newWitnessFqdn
-    $newHost | Get-VMHostService | Where-Object { $_.Label -eq 'SSH' } | Start-VMHostService | Out-Null
-    $ntpList = $ntpServers.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ }
-    Add-VMHostNtpServer -VMHost $newHost -NtpServer $ntpList -ErrorAction SilentlyContinue | Out-Null
+    $vmk1 = $newHost | Get-VMHostNetworkAdapter -Name vmk1 -ErrorAction SilentlyContinue
+    If ($vmk1) {
+        LogMessage -type INFO -message "$tag Removing vmk1"
+        $vmk1 | Remove-VMHostNetworkAdapter -Confirm:$false
+    } else {
+        LogMessage -type INFO -message "$tag vmk1 is already removed"
+    }
+    $secondarySwitch = $newHost | Get-VirtualSwitch -Name 'secondarySwitch' -ErrorAction SilentlyContinue
+    If ($secondarySwitch) {
+        LogMessage -type INFO -message "$tag Removing secondarySwitch"
+        $secondarySwitch | Remove-VirtualSwitch -Confirm:$false
+    } else {
+        LogMessage -type INFO -message "$tag secondarySwitch is already removed"
+    }
+
+    $sshService = $newHost | Get-VMHostService | Where-Object { $_.Key -eq 'TSM-SSH' }
+    If ($sshService -and -not $sshService.Running) {
+        LogMessage -type INFO -message "$tag Starting SSH"
+        $sshService | Start-VMHostService -Confirm:$false | Out-Null
+    }
+
+    $desiredNtp = @($ntpServers.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    $currentNtp = @(Get-VMHostNtpServer -VMHost $newHost)
+    $missingNtp = @($desiredNtp | Where-Object { $_ -notin $currentNtp })
     $ntpd = $newHost | Get-VMHostService | Where-Object { $_.Key -eq 'ntpd' }
-    $ntpd | Set-VMHostService -Policy On | Out-Null
-    $ntpd | Restart-VMHostService -Confirm:$false | Out-Null
-    Disconnect-VIServer * -Force -Confirm:$false -WarningAction SilentlyContinue | Out-Null
+    If ($missingNtp.Count -gt 0) {
+        LogMessage -type INFO -message "$tag Adding NTP server(s) $($missingNtp -join ', ')"
+        Add-VMHostNtpServer -VMHost $newHost -NtpServer $missingNtp | Out-Null
+    }
+    If ($ntpd.Policy -ne 'on') {
+        $ntpd | Set-VMHostService -Policy On | Out-Null
+    }
+    If ($missingNtp.Count -gt 0 -or -not $ntpd.Running) {
+        LogMessage -type INFO -message "$tag Starting NTP service"
+        If ($ntpd.Running) {
+            $ntpd | Restart-VMHostService -Confirm:$false | Out-Null
+        } else {
+            $ntpd | Start-VMHostService -Confirm:$false | Out-Null
+        }
+    } else {
+        LogMessage -type INFO -message "$tag NTP is already configured"
+    }
 
-    Write-Step "vSAN Witness $newWitnessFqdn redeployed and registered successfully"
+    Disconnect-VIServer * -Force -Confirm:$false -WarningAction SilentlyContinue | Out-Null
+    LogMessage -type INFO -message "$tag vSAN Witness $newWitnessFqdn is deployed and registered in $managedVcenterFqdn"
     Exit 0
 } Catch {
-    Write-Step $_.Exception.Message 'ERROR'
+    LogMessage -type ERROR -message "$($_.Exception.Message)"
     Disconnect-VIServer * -Force -Confirm:$false -WarningAction SilentlyContinue -ErrorAction SilentlyContinue | Out-Null
     Exit 1
 }
