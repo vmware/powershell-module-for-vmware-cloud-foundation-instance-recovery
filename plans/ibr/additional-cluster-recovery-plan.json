@@ -103,6 +103,28 @@
     "visible": true
   },
   {
+    "description": "Deploy a new vSAN Witness and register it in the restored vCenter (manual step)",
+    "commandLine": "Confirm-ManualStep -Message 'Press Enter once the new vSAN Witness has been deployed and is registered and connected in the restored vCenter' -AnswerKey 'vsan-witness-deployed'",
+    "displayName": "Confirm Manual Step: New vSAN Witness has been deployed",
+    "condition": [
+      {
+        "type": "variable",
+        "name": "userProvidedVsanWitnessScript",
+        "operator": "eq",
+        "value": "false"
+      },
+      {
+        "type": "dataPath",
+        "path": "selectedCluster.isStretched",
+        "operator": "eq",
+        "value": "t"
+      }
+    ],
+    "threadId": "1",
+    "interactive": true,
+    "visible": true
+  },
+  {
     "description": "Reconfigure Stretched Cluster",
     "commandLine": "New-ReconfiguredVsanStretchedCluster -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile",
     "displayName": "Reconfigure vSAN Stretched Cluster",
