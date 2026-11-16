@@ -516,6 +516,9 @@ function Set-UIMode([string]$Mode) {
     # Engineering must immediately show whichever instruction (insert vs remove) matches the current
     # plan's own already-set pause point, if any.
     Update-TaskListHeaderText $recoveryTaskListHeader $global:currentPlanContext.PausePointAfterStep
+
+    # Storage/compute clusters only appear in Discovered Infrastructure in Engineering mode.
+    if ($global:extractedDataLoaded) { Update-AdditionalClustersList }
 }
 
 # Help: opens the shipped HTML user guide in the default browser. Start-Process on the .html path hands it
@@ -3631,6 +3634,54 @@ function Start-StepCompletionWatcher {
     $checkTimer.Start()
 }
 
+# Fills the Additional Clusters list from $global:allAdditionalClusters. Cluster types the catalog
+# lists under the Additional Cluster plan's engineeringOnlyClusterTypes (storage/compute clusters)
+# are left out entirely unless the UI is in Engineering mode (see Set-UIMode, which re-runs this on
+# every mode switch). Skips the rebuild when the visible set hasn't changed, so toggling the mode
+# never clears a selection (or disturbs a run) needlessly; otherwise the current selection is
+# restored if that cluster is still visible.
+function Update-AdditionalClustersList([switch]$Force) {
+    $visible = @($global:allAdditionalClusters | Where-Object { $global:uiMode -eq 'Engineering' -or -not (Test-ClusterEngineeringOnly $_) })
+    $keyOf = { param($c) "$($c.DomainName)|$($c.ClusterName)" }
+    if (-not $Force) {
+        $currentKeys = @($additionalClustersListBox.Items | Where-Object { $_ -is [System.Windows.Controls.ListBoxItem] } | ForEach-Object { & $keyOf $_.Tag })
+        $newKeys = @($visible | ForEach-Object { & $keyOf $_ })
+        if (-not (Compare-Object $currentKeys $newKeys)) { return }
+    }
+    $previousKey = if ($additionalClustersListBox.SelectedItem -is [System.Windows.Controls.ListBoxItem]) { & $keyOf $additionalClustersListBox.SelectedItem.Tag }
+    $additionalClustersListBox.Items.Clear()
+    $additionalClusters = $visible
+    if ($additionalClusters.Count -eq 0) {
+        [void]$additionalClustersListBox.Items.Add('No additional clusters detected.')
+    } else {
+        foreach ($cluster in $additionalClusters) {
+            $stretchedText = if ($cluster.IsStretched -eq 't') {
+                'Y' 
+            } else {
+                'N' 
+            }
+            $clusterNameText = if ($cluster.ClusterName) {
+                $cluster.ClusterName 
+            } else {
+                '(unknown)' 
+            }
+            $columnGroups = @('AdditionalClustersCol0', 'AdditionalClustersCol1', 'AdditionalClustersCol2', 'AdditionalClustersCol3', 'AdditionalClustersCol4')
+            $row = New-TableRow -Values @($clusterNameText, $cluster.DomainName, (Get-DisplayDatastoreType $cluster.PrimaryDatastoreType), $stretchedText, $cluster.DependentOn) -ColumnGroups $columnGroups
+            # Wrapped in an explicit ListBoxItem (rather than adding $row directly) so selecting a
+            # row is distinguishable from the "No additional clusters detected." placeholder above,
+            # which is a plain string -- see Sync-AdditionalClusterSteps's ListBoxItem type check.
+            $item = New-Object System.Windows.Controls.ListBoxItem
+            $item.Content = $row
+            $item.Tag = $cluster
+            [void]$additionalClustersListBox.Items.Add($item)
+        }
+    }
+    if ($previousKey) {
+        $match = $additionalClustersListBox.Items | Where-Object { $_ -is [System.Windows.Controls.ListBoxItem] -and (& $keyOf $_.Tag) -eq $previousKey } | Select-Object -First 1
+        if ($match) { $additionalClustersListBox.SelectedItem = $match }
+    }
+}
+
 # Shared by the Browse button and Resume, so both end up driving the exact same domain-listing /
 # console-variable-setting logic instead of two copies drifting apart.
 function Import-ExtractedSddcDataFile([string]$Path) {
@@ -3673,7 +3724,9 @@ function Import-ExtractedSddcDataFile([string]$Path) {
     # this is the only place that tells you such a cluster even exists at all. ClusterName can be
     # blank: it's only populated once Update-ExtractedSDDCData resolves it against a live vCenter,
     # which hasn't necessarily happened yet for data that was just extracted or freshly loaded.
-    $additionalClusters = @(
+    # Cached raw/unfiltered; Update-AdditionalClustersList applies the engineering-mode filter (and
+    # is re-run by Set-UIMode when the mode changes).
+    $global:allAdditionalClusters = @(
         foreach ($domain in $extractedSddcData.workloadDomains) {
             foreach ($cluster in $domain.vsphereClusterDetails) {
                 if ($cluster.isDefault -eq 'f') {
@@ -3688,44 +3741,7 @@ function Import-ExtractedSddcDataFile([string]$Path) {
             }
         }
     )
-    if ($additionalClusters.Count -eq 0) {
-        [void]$additionalClustersListBox.Items.Add('No additional clusters detected.')
-    } else {
-        foreach ($cluster in $additionalClusters) {
-            $stretchedText = if ($cluster.IsStretched -eq 't') {
-                'Y' 
-            } else {
-                'N' 
-            }
-            $clusterNameText = if ($cluster.ClusterName) {
-                $cluster.ClusterName 
-            } else {
-                '(unknown)' 
-            }
-            $columnGroups = @('AdditionalClustersCol0', 'AdditionalClustersCol1', 'AdditionalClustersCol2', 'AdditionalClustersCol3', 'AdditionalClustersCol4')
-            $row = New-TableRow -Values @($clusterNameText, $cluster.DomainName, (Get-DisplayDatastoreType $cluster.PrimaryDatastoreType), $stretchedText, $cluster.DependentOn) -ColumnGroups $columnGroups
-            if (Test-ClusterEngineeringOnly $cluster) {
-                # Move the Type cell's text into a horizontal panel alongside the badge.
-                $typeCell = $row.Children | Where-Object { [System.Windows.Controls.Grid]::GetColumn($_) -eq 2 } | Select-Object -First 1
-                $row.Children.Remove($typeCell)
-                $typeCell.Margin = '0'
-                $typePanel = New-Object System.Windows.Controls.StackPanel
-                $typePanel.Orientation = 'Horizontal'
-                $typePanel.Margin = '0,0,10,0'
-                [void]$typePanel.Children.Add($typeCell)
-                [void]$typePanel.Children.Add((New-EngineeringOnlyBadge))
-                [System.Windows.Controls.Grid]::SetColumn($typePanel, 2)
-                [void]$row.Children.Add($typePanel)
-            }
-            # Wrapped in an explicit ListBoxItem (rather than adding $row directly) so selecting a
-            # row is distinguishable from the "No additional clusters detected." placeholder above,
-            # which is a plain string -- see Sync-AdditionalClusterSteps's ListBoxItem type check.
-            $item = New-Object System.Windows.Controls.ListBoxItem
-            $item.Content = $row
-            $item.Tag = $cluster
-            [void]$additionalClustersListBox.Items.Add($item)
-        }
-    }
+    Update-AdditionalClustersList -Force
 
     $global:extractedDataLoaded = $true
     Sync-RecoveryPlanSelection
@@ -4535,23 +4551,6 @@ function Sync-AdditionalClusterSteps {
 
 $additionalClustersListBox.Add_SelectionChanged({
         try {
-            # Engineering-mode gate for cluster types the catalog lists under the plan's
-            # engineeringOnlyClusterTypes (storage/compute clusters). Same shape as the Recovery Plan
-            # combo's gate: clear the pick first (which re-fires this handler with nothing selected,
-            # resetting the panes), then prompt, and re-select on success -- the re-fired handler then
-            # sees the unlocked flag and falls through to Sync-AdditionalClusterSteps.
-            $pickedItem = $additionalClustersListBox.SelectedItem
-            if ($pickedItem -is [System.Windows.Controls.ListBoxItem] -and (Test-ClusterEngineeringOnly $pickedItem.Tag) -and -not $global:engineeringModeUnlocked) {
-                $additionalClustersListBox.SelectedItem = $null
-                $entered = Show-PasswordPromptDialog -Title 'Unlock Engineering Mode' -Message "Enter the engineering mode password or one-time code to select $(Get-DisplayDatastoreType $pickedItem.Tag.PrimaryDatastoreType) '$($pickedItem.Tag.ClusterName)'."
-                if ($entered -and (Test-EngineeringModePassword $entered)) {
-                    $global:engineeringModeUnlocked = $true
-                    $additionalClustersListBox.SelectedItem = $pickedItem
-                } elseif ($entered) {
-                    New-Advisory 'Incorrect or expired engineering mode password/one-time code.' -Failure
-                }
-                return
-            }
             Sync-AdditionalClusterSteps
         } catch {
             New-Advisory "Additional cluster selection handler failed: $($_.Exception.Message)" -Failure

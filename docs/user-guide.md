@@ -156,7 +156,7 @@ The **Recovery Parameters** panel has three drop-down lists, completed from top 
 | Recovery Type | Purpose |
 |---|---|
 | **Instance Backup & Restore (IBR)** | Recover a VCF instance from backups. This is the normal choice. |
-| **Fleet Disaster Recovery (FDR)** | Fleet-level failover. Marked *Engineering only*; see [Engineering mode](#engineering-mode-and-the-advanced-tab). |
+| **Fleet Disaster Recovery (FDR)** | Fleet-level failover. Not covered by this guide. |
 
 ### Recovery Plan
 
@@ -168,7 +168,7 @@ The plans listed depend on the Recovery Type.
 | **Workload Domain Recovery** | A workload domain's vCenter and NSX Manager, then its default cluster. |
 | **Additional Cluster Recovery** | A cluster in a domain that is *not* that domain's default cluster. |
 | **Fleet Component Recovery** | The VCF fleet components: VCF Operations, the VCFMS and VCF Automation services runtimes, log management and telemetry. |
-| **Recover Fleet** (FDR) | Fleet disaster recovery. Engineering only. |
+| **Recover Fleet** (FDR) | Fleet disaster recovery. Not covered by this guide. |
 
 Recovery plans are sequenced. A full recovery normally runs **Management Domain Recovery** first, then
 **Workload Domain Recovery** for each workload domain, then **Additional Cluster Recovery** for any
@@ -662,8 +662,7 @@ are certain the underlying action is complete.
 
 ### Recover Fleet (FDR)
 
-Fleet disaster recovery. It is restricted to [Engineering mode](#engineering-mode-and-the-advanced-tab) and is
-not covered by this guide.
+Fleet disaster recovery. It is not covered by this guide.
 
 ---
 
@@ -882,9 +881,8 @@ back and forth freely for the rest of the session without being asked again.
 
 Engineering mode:
 
-- Unlocks **engineering-only recovery types and plans**, such as Fleet Disaster Recovery.
-- Unlocks **storage clusters and compute clusters** in Additional Cluster Recovery. These rows carry an
-  *ENGINEERING-ONLY* badge, and selecting one in User mode prompts for the engineering password or one-time code.
+- Shows **storage clusters and compute clusters** in the **Discovered Infrastructure** pane for Additional Cluster
+  Recovery. In User mode these cluster types are not listed at all.
 - Shows the **Advanced** tab.
 - Lets you set a **breakpoint** in the task list.
 

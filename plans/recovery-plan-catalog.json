@@ -7,8 +7,7 @@
     },
     {
       "id": "FDR",
-      "label": "Fleet Disaster Recovery (FDR)",
-      "engineeringOnly": true
+      "label": "Fleet Disaster Recovery (FDR)"
     }
   ],
   "dataSources": [
@@ -165,7 +164,6 @@
       "recoveryType": "FDR",
       "target": "recoverFleet",
       "default": true,
-      "engineeringOnly": true,
       "planFolder": "fdr",
       "planFile": "fdr-failover-plan.json",
       "variablesFile": "fdr-failover-variables.json",
