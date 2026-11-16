@@ -625,7 +625,7 @@ function Get-CurrentRecoveryPlanTarget {
 # this marks a feature gated behind the engineering mode password rather than a fixed property of
 # an already-available one. Tag carries the catalog id (a recovery type id, plan id, or data
 # source id) so callers can resolve back to the catalog entry without re-parsing the label text.
-function New-EngineeringOnlyBadge {
+function New-EngineeringOnlyBadge([string]$Text = 'ENGINEERING-ONLY') {
     $badge = New-Object System.Windows.Controls.Border
     $badge.Background = [System.Windows.Media.Brushes]::LightGray
     $badge.CornerRadius = 8
@@ -633,7 +633,7 @@ function New-EngineeringOnlyBadge {
     $badge.Margin = '8,0,0,0'
     $badge.VerticalAlignment = 'Center'
     $badgeText = New-Object System.Windows.Controls.TextBlock
-    $badgeText.Text = 'ENGINEERING-ONLY'
+    $badgeText.Text = $Text
     $badgeText.FontSize = 10.5
     $badgeText.FontWeight = 'SemiBold'
     $badgeText.Foreground = [System.Windows.Media.Brushes]::Black
@@ -3667,6 +3667,21 @@ function Update-AdditionalClustersList([switch]$Force) {
             }
             $columnGroups = @('AdditionalClustersCol0', 'AdditionalClustersCol1', 'AdditionalClustersCol2', 'AdditionalClustersCol3', 'AdditionalClustersCol4')
             $row = New-TableRow -Values @($clusterNameText, $cluster.DomainName, (Get-DisplayDatastoreType $cluster.PrimaryDatastoreType), $stretchedText, $cluster.DependentOn) -ColumnGroups $columnGroups
+            if (Test-ClusterEngineeringOnly $cluster) {
+                # Only reachable in Engineering mode (User mode filters these out above). Move the
+                # Type cell's text into a horizontal panel alongside a BETA pill (same pill style as
+                # the Recovery Parameters combos' badge).
+                $typeCell = $row.Children | Where-Object { [System.Windows.Controls.Grid]::GetColumn($_) -eq 2 } | Select-Object -First 1
+                $row.Children.Remove($typeCell)
+                $typeCell.Margin = '0'
+                $typePanel = New-Object System.Windows.Controls.StackPanel
+                $typePanel.Orientation = 'Horizontal'
+                $typePanel.Margin = '0,0,10,0'
+                [void]$typePanel.Children.Add($typeCell)
+                [void]$typePanel.Children.Add((New-EngineeringOnlyBadge 'BETA'))
+                [System.Windows.Controls.Grid]::SetColumn($typePanel, 2)
+                [void]$row.Children.Add($typePanel)
+            }
             # Wrapped in an explicit ListBoxItem (rather than adding $row directly) so selecting a
             # row is distinguishable from the "No additional clusters detected." placeholder above,
             # which is a plain string -- see Sync-AdditionalClusterSteps's ListBoxItem type check.

@@ -882,7 +882,7 @@ back and forth freely for the rest of the session without being asked again.
 Engineering mode:
 
 - Shows **storage clusters and compute clusters** in the **Discovered Infrastructure** pane for Additional Cluster
-  Recovery. In User mode these cluster types are not listed at all.
+  Recovery, marked with a **BETA** pill. In User mode these cluster types are not listed at all.
 - Shows the **Advanced** tab.
 - Lets you set a **breakpoint** in the task list.
 
