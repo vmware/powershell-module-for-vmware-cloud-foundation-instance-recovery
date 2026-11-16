@@ -90,5 +90,9 @@
   "VcfaSystemPassword": "Password of the admin@System account on VCF Automation.",
   "VidbFqdn": "FQDN of the external Identity Broker (VIDB).",
   "vspId": "ID of the VCF instance (top-level folder on the SFTP server) whose backups are searched.",
-  "componentNames": "Component types to find backups for (e.g. vsp, vcf-fleet-lcm, vidb, vcfa)."
+  "componentNames": "Component types to find backups for (e.g. vsp, vcf-fleet-lcm, vidb, vcfa).",
+  "RecoveryServicesRuntimeFqdn": "FQDN of the recovery-site VCF Management Services Services Runtime, from which the recovered fleet components are cleaned up.",
+  "RecoveryServicesRuntimePassword": "Password of the Services Runtime system user on the recovery-site VCF Management Services instance.",
+  "VidbVips": "IPv4 address(es) to set as the Identity Broker ingress VIP(s) on the original VCF Management Services instance.",
+  "VcfaVips": "IPv4 address(es) to set as the VCF Automation ingress VIP(s) on the VCF Automation Services Runtime."
 }
