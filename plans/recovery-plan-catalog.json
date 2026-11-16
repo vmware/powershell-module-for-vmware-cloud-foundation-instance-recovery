@@ -159,14 +159,26 @@
       ]
     },
     {
-      "id": "RecoverFleet",
-      "label": "Recover Fleet",
+      "id": "FailoverFleet",
+      "label": "Failover Fleet Components",
       "recoveryType": "FDR",
       "target": "recoverFleet",
       "default": true,
       "planFolder": "fdr",
       "planFile": "fdr-failover-plan.json",
       "variablesFile": "fdr-failover-variables.json",
+      "dataSources": [],
+      "selectionList": "none"
+    },
+    {
+      "id": "FailbackFleet",
+      "label": "Failback Fleet Components",
+      "recoveryType": "FDR",
+      "target": "recoverFleet",
+      "default": false,
+      "planFolder": "fdr",
+      "planFile": "fdr-failback-plan.json",
+      "variablesFile": "fdr-failback-variables.json",
       "dataSources": [],
       "selectionList": "none"
     }

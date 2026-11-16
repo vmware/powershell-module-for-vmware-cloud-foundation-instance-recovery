@@ -1,0 +1,191 @@
+[
+  {
+    "description": "Retrieve Component Details from VCF Operations",
+    "commandLine": "Get-VcfOperationsRegisteredComponents -VcfOperationsFqdn $VcfOperationsFqdn -Username $Username -Password $Password -AuthSource $AuthSource -OutputDir $OutputDir",
+    "displayName": "Get VCF Operations Registered Components",
+    "condition": [],
+    "threadId": "1",
+    "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "Extract Fleet VIP Address Configuration from the Source Services Runtime Backup",
+    "commandLine": "New-ExtractVcfmsBackup -LocalArchivePath $LocalArchivePath -EncryptionPassphrase $EncryptionPassphrase -OutputDir $OutputDir -ServicesRuntimeFqdn $ServicesRuntimeFqdn -ServicesRuntimePassword $ServicesRuntimePassword",
+    "displayName": "Extract VCFMS Backup",
+    "condition": [],
+    "threadId": "1",
+    "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "Scale Target Cluster Size",
+    "commandLine": "Set-ServicesRuntimeScale -KubeconfigPath $KubeconfigPath -BackupYamlDir $BackupYamlDir",
+    "displayName": "Set Services Runtime Scale",
+    "condition": [],
+    "threadId": "1",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Apply Fleet VIP on Recovery VCF Management Services Instance",
+    "commandLine": "Set-VcfmsFleetIdentity -BackupYamlDir $BackupYamlDir -KubeconfigPath $KubeconfigPath -ServicesRuntimeFqdn $ServicesRuntimeFqdn -ServicesRuntimePassword $ServicesRuntimePassword -FleetFqdn $FleetFqdn -FleetVip $FleetVip",
+    "displayName": "Set VCFMS Fleet Identity",
+    "condition": [],
+    "threadId": "1",
+    "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "Retrieve a List of Backups for VCF Management Services Fleet Components ($vspId is the ID of the VCF Management Services instance from the \"Retrieve Component Details from VCF Operations\" step above)",
+    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpServer -sftpUser $sftpUser -sftpPassword $sftpPassword -sftpServerBackupPath $sftpServerBackupPath -vspId $vspId -componentNames $componentNames",
+    "displayName": "Get Backups from SFTP Server",
+    "condition": [],
+    "threadId": "1",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Restore the Fleet Components on the Recovery VCF Management Services Instance",
+    "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $ServicesRuntimeFqdn -ServicesRuntimePassword $ServicesRuntimePassword -RestoreJsonFile $RestoreJsonFile",
+    "displayName": "Restore Services Runtime Component Backup",
+    "condition": [],
+    "threadId": "1",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Update SDDC LCM with Credentials",
+    "commandLine": "./sddclcm-backup-secrets-to-yaml.sh --sftp-host $sftpServer --sftp-user $sftpUser --sftp-remote-dir $SddcLcmSftpRemoteDir --sftp-password $sftpPassword --output-dir $BackupYamlDir",
+    "displayName": "Update SDDC LCM Backup Secrets",
+    "condition": [],
+    "threadId": "1",
+    "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "Update the Identity Broker VIP Address",
+    "commandLine": "Set-ServicesRuntimeComponentVips -ServicesRuntimeFqdn $ServicesRuntimeFqdn -ServicesRuntimePassword $ServicesRuntimePassword -ComponentType $ComponentType -Vips $vips",
+    "displayName": "Set Services Runtime Component VIPs",
+    "condition": [],
+    "threadId": "1",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Update the Identity Broker VCF Instance Association - Requires User Input",
+    "commandLine": "Invoke-VcfOpsVidbVcfInstanceUpdate -VcfOpsFqdn $VcfOpsFqdn -VcfOpsRootPassword $VcfOpsRootPassword -VcfOpsAdminPassword $VcfOpsAdminPassword -VidbFqdn $VidbFqdn",
+    "displayName": "Invoke VCF Ops VIDB VCF Instance Update",
+    "condition": [],
+    "threadId": "1",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Update Fleet Component Registration",
+    "commandLine": "Invoke-VcfmsFleetComponentRegistration -ServicesRuntimeFqdn $ServicesRuntimeFqdn -ServicesRuntimePassword $ServicesRuntimePassword -TargetVcfInstance $TargetVcfInstance -ConfirmOpsMove -ConfirmOpsNetworksMove",
+    "displayName": "Invoke VCFMS Fleet Component Registration",
+    "condition": [],
+    "threadId": "1",
+    "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "Update VCF Operations Inventory (manual step)",
+    "commandLine": "Confirm-ManualStep -Message 'Press Enter once VCF Operations inventory has been updated' -AnswerKey 'vcf-ops-inventory-updated'",
+    "displayName": "Confirm Manual Step: VCF Operations inventory has been updated",
+    "condition": [],
+    "threadId": "1",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Retrieve a List of Backups for Log Management",
+    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpServer -sftpUser $sftpUser -sftpPassword $sftpPassword -sftpServerBackupPath $sftpServerBackupPath -vspId $vspId -componentNames $componentNames",
+    "displayName": "Get Backups from SFTP Server",
+    "condition": [],
+    "threadId": "1",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Restore Log Management",
+    "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $ServicesRuntimeFqdn -ServicesRuntimePassword $ServicesRuntimePassword -RestoreJsonFile $RestoreJsonFile",
+    "displayName": "Restore Services Runtime Component Backup",
+    "condition": [],
+    "threadId": "1",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Update the Log Management VIP Address",
+    "commandLine": "Set-ServicesRuntimeComponentVips -ServicesRuntimeFqdn $ServicesRuntimeFqdn -ServicesRuntimePassword $ServicesRuntimePassword -ComponentType $ComponentType -Vips $vips",
+    "displayName": "Set Services Runtime Component VIPs",
+    "condition": [],
+    "threadId": "1",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Update the Log Management State (manual step)",
+    "commandLine": "Confirm-ManualStep -Message 'Press Enter once Log Management state is updated' -AnswerKey 'log-management-state-updated'",
+    "displayName": "Confirm Manual Step: Log Management state is updated",
+    "condition": [],
+    "threadId": "1",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Deploy a VCF Automation Services Runtime Cluster",
+    "commandLine": "New-ServicesRuntime -SddcManagerFqdn $SddcManagerFqdn -SddcManagerUser $SddcManagerUser -SddcManagerPassword $SddcManagerPassword -PlatformFqdn $PlatformFqdn -SystemUserPassword $SystemUserPassword -Ipv4Addresses ($Ipv4Addresses.Split(',').Trim()) -Size $Size -NetworkMoId $NetworkMoId -GatewayCidrIpv4 $GatewayCidrIpv4 -extractedSDDCDataFile $extractedSDDCDataFile -InternalClusterCidrIpv4 $InternalClusterCidrIpv4 -Type CONSUMPTION",
+    "displayName": "Create New Services Runtime for VCF Automation",
+    "condition": [],
+    "threadId": "1",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Update SFTP Settings on a new Services Runtime Instance",
+    "commandLine": "Set-ServicesRuntimeSftpBackupSettings -ServicesRuntimeFqdn $ServicesRuntimeFqdn -ServicesRuntimePassword $ServicesRuntimePassword -extractedSDDCDataFile $extractedSDDCDataFile -SftpHost $SftpHost -SftpUsername $SftpUsername -SftpPassword $sftpPassword -SftpDirectory $SftpDirectory -EncryptionPassphrase $EncryptionPassphrase",
+    "displayName": "Set Services Runtime SFTP Backup Settings",
+    "condition": [],
+    "threadId": "1",
+    "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "Retrieve a List of Backups for VCF Automation",
+    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpServer -sftpUser $sftpUser -sftpPassword $sftpPassword -sftpServerBackupPath $sftpServerBackupPath -vspId $vspId -componentNames $componentNames",
+    "displayName": "Get Backups from SFTP Server",
+    "condition": [],
+    "threadId": "1",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Restore VCF Automation for VCF Fleet Disaster Recovery",
+    "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $ServicesRuntimeFqdn -ServicesRuntimePassword $ServicesRuntimePassword -RestoreJsonFile $RestoreJsonFile",
+    "displayName": "Restore Services Runtime Component Backup",
+    "condition": [],
+    "threadId": "1",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Update the VCF Automation VIP Address",
+    "commandLine": "Set-ServicesRuntimeComponentVips -ServicesRuntimeFqdn $ServicesRuntimeFqdn -ServicesRuntimePassword $ServicesRuntimePassword -ComponentType $ComponentType -Vips $vips",
+    "displayName": "Set Services Runtime Component VIPs",
+    "condition": [],
+    "threadId": "1",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Update VCFA Registration",
+    "commandLine": "Invoke-VcfmsVcfaRegistration -ServicesRuntimeFqdn $ServicesRuntimeFqdn -ServicesRuntimePassword $ServicesRuntimePassword -VcfaRuntimeFqdn $VcfaRuntimeFqdn -OpsFqdn $OpsFqdn -VspPassword $VspPassword -VcfaSystemPassword $VcfaSystemPassword -OpsPassword $OpsPassword",
+    "displayName": "Invoke VCFMS VCFA Registration",
+    "condition": [],
+    "threadId": "1",
+    "interactive": false,
+    "visible": true
+  }
+]
