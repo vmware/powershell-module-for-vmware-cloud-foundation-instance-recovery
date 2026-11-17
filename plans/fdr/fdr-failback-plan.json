@@ -64,7 +64,7 @@
   },
   {
     "description": "Clean up the recovered fleet components on the recovery-site VCF Management Services instance",
-    "commandLine": "Remove-VcfmsRecoveredComponents -ServicesRuntimeFqdn $RecoveryServicesRuntimeFqdn -ServicesRuntimePassword $RecoveryServicesRuntimePassword",
+    "commandLine": "Remove-VcfmsRecoveredComponents -ServicesRuntimeFqdn $recoveryServicesRuntimeFqdn -ServicesRuntimePassword $recoveryServicesRuntimePassword",
     "displayName": "Remove VCFMS Recovered Components",
     "condition": [],
     "threadId": "1",
@@ -73,7 +73,7 @@
   },
   {
     "description": "Clear the fleet VIP on the recovery-site VCF Management Services instance before failback",
-    "commandLine": "Clear-VcfmsFleetIdentity -ServicesRuntimeFqdn $RecoveryServicesRuntimeFqdn -ServicesRuntimePassword $RecoveryServicesRuntimePassword",
+    "commandLine": "Clear-VcfmsFleetIdentity -ServicesRuntimeFqdn $recoveryServicesRuntimeFqdn -ServicesRuntimePassword $recoveryServicesRuntimePassword",
     "displayName": "Clear VCFMS Fleet Identity",
     "condition": [],
     "threadId": "1",
@@ -150,7 +150,7 @@
   },
   {
     "description": "Update the Identity Broker VIP Address",
-    "commandLine": "Set-ServicesRuntimeComponentVips -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -ComponentType \"vidb\" -Vips $VidbVips",
+    "commandLine": "Set-ServicesRuntimeComponentVips -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -ComponentType \"vidb\" -Vips $vidbVip",
     "displayName": "Set Services Runtime Component VIPs",
     "condition": [],
     "threadId": "1",
@@ -240,7 +240,7 @@
   },
   {
     "description": "Update the VCF Automation VIP Address (run against the VCF Automation Services Runtime)",
-    "commandLine": "Set-ServicesRuntimeComponentVips -ServicesRuntimePassword $vcfaServicesRuntimePassword -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -ComponentType \"vcfa\" -Vips $VcfaVips",
+    "commandLine": "Set-ServicesRuntimeComponentVips -ServicesRuntimePassword $vcfaServicesRuntimePassword -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -ComponentType \"vcfa\" -Vips $vcfaVip",
     "displayName": "Set Services Runtime Component VIPs",
     "condition": [],
     "threadId": "1",

@@ -60,7 +60,7 @@
   },
   {
     "description": "Extract Fleet VIP Address Configuration from the Source Services Runtime Backup",
-    "commandLine": "New-ExtractVcfmsBackup -LocalArchivePath $LocalArchivePath -EncryptionPassphrase $encryptionPassphrase -OutputDir \".\\backup-yaml\" -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword",
+    "commandLine": "New-ExtractVcfmsBackup -LocalArchivePath $localArchivePath -EncryptionPassphrase $encryptionPassphrase -OutputDir \".\\backup-yaml\" -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword",
     "displayName": "Extract VCFMS Backup",
     "condition": [],
     "threadId": "1",
@@ -78,7 +78,7 @@
   },
   {
     "description": "Apply Fleet VIP on Recovery VCF Management Services Instance",
-    "commandLine": "Set-VcfmsFleetIdentity -BackupYamlDir \".\\backup-yaml\" -KubeconfigOutputDir \".\\backup-yaml\" -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -FleetVip $FleetVip -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\"",
+    "commandLine": "Set-VcfmsFleetIdentity -BackupYamlDir \".\\backup-yaml\" -KubeconfigOutputDir \".\\backup-yaml\" -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -FleetVip $fleetVip -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\"",
     "displayName": "Set VCFMS Fleet Identity",
     "condition": [],
     "threadId": "1",
@@ -123,7 +123,7 @@
   },
   {
     "description": "Update SDDC LCM with Credentials",
-    "commandLine": "./sddclcm-backup-secrets-to-yaml.sh --sftp-host $sftpHost --sftp-user $sftpUsername --sftp-remote-dir $SddcLcmSftpRemoteDir --sftp-password $sftpPassword --output-dir \".\\backup-yaml\"",
+    "commandLine": "./sddclcm-backup-secrets-to-yaml.sh --sftp-host $sftpHost --sftp-user $sftpUsername --sftp-remote-dir $sddcLcmSftpRemoteDir --sftp-password $sftpPassword --output-dir \".\\backup-yaml\"",
     "displayName": "Update SDDC LCM Backup Secrets",
     "condition": [],
     "threadId": "1",
@@ -132,7 +132,7 @@
   },
   {
     "description": "Update the Identity Broker VIP Address",
-    "commandLine": "Set-ServicesRuntimeComponentVips -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -ComponentType \"vidb\" -Vips $VidbVips",
+    "commandLine": "Set-ServicesRuntimeComponentVips -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -ComponentType \"vidb\" -Vips $vidbVip",
     "displayName": "Set Services Runtime Component VIPs",
     "condition": [],
     "threadId": "1",
@@ -186,7 +186,7 @@
   },
   {
     "description": "Update the Log Management VIP Address",
-    "commandLine": "Set-ServicesRuntimeComponentVips -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -ComponentType \"ops-logs\" -Vips $LogManagementVips",
+    "commandLine": "Set-ServicesRuntimeComponentVips -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -ComponentType \"ops-logs\" -Vips $logManagementVip",
     "displayName": "Set Services Runtime Component VIPs",
     "condition": [],
     "threadId": "1",
@@ -258,7 +258,7 @@
   },
   {
     "description": "Update the VCF Automation VIP Address",
-    "commandLine": "Set-ServicesRuntimeComponentVips -ServicesRuntimePassword $vcfaServicesRuntimePassword -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -ComponentType \"vcfa\" -Vips $VcfaVips",
+    "commandLine": "Set-ServicesRuntimeComponentVips -ServicesRuntimePassword $vcfaServicesRuntimePassword -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -ComponentType \"vcfa\" -Vips $vcfaVip",
     "displayName": "Set Services Runtime Component VIPs",
     "condition": [],
     "threadId": "1",

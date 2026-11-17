@@ -8,14 +8,14 @@
   "sftpPassword": "",
   "sftpDirectory": "",
   "vspId": "",
-  "RecoveryServicesRuntimeFqdn": "",
-  "RecoveryServicesRuntimePassword": "",
+  "recoveryServicesRuntimeFqdn": "",
+  "recoveryServicesRuntimePassword": "",
   "dnsScriptPath": "",
   "vcfmsServicesRuntimeFqdn": "",
   "vcfmsServicesRuntimePassword": "",
-  "VidbVips": "",
+  "vidbVip": "",
   "vcfOperationsRootPassword": "",
   "vcfaServicesRuntimePassword": "",
-  "VcfaVips": "",
+  "vcfaVip": "",
   "vcfaSystemPassword": ""
 }
