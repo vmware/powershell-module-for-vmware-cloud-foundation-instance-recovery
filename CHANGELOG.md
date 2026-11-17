@@ -14,6 +14,7 @@
 - FDR failover and failback plans: added a "User Provided DNS Entry Modification Script" toggle (off by default, which keeps the manual confirmation task) and `helper/Update-FleetVipDns.ps1` as a ready-made `-Failover` / `-Failback` script
 - Added `-ScriptArguments` to `Invoke-UserScript`
 - FDR plans: rationalised the variables. Duplicates are merged (e.g. `vcfOperationsFqdn`, `vcfOperationsAdminPassword`, `vcfaServicesRuntimePassword`, `sftpHost`/`sftpUsername`/`sftpDirectory`) and values that can be assumed or derived are no longer asked for. The plans no longer use an extracted SDDC data file
+- Added `Update-VcfmsSddcLcmCredentials` to restore the primary site SDDC LCM identity secrets on the recovery site
 - Added `Get-OpsRegisteredComponentValue` and `-opsRegisteredComponentsFile` to `Get-BackupsFromSFTPServer`, `New-ServicesRuntime`, `Set-ServicesRuntimeSftpBackupSettings`, `Add-VcfmsTrustedCertificate`, `Restore-ServicesRuntimeComponentBackup`, `Set-ServicesRuntimeScale`, `Set-ServicesRuntimeComponentVips`, `Set-VcfmsFleetIdentity`, `Invoke-VcfOpsVidbVcfInstanceUpdate`, `Invoke-VcfmsFleetComponentRegistration`, `Invoke-VcfmsVcfaRegistration` and `Update-VcfmsVcfaRegistration`, so values such as the fleet, Identity Broker and VCF Automation Services Runtime FQDNs, the VSP ID and the target VCF instance can be read from `VCFOps-Registered-Component-Details.json` instead of being passed
 - `Restore-ServicesRuntimeComponentBackup` now defaults `-RestoreJsonFile` to `.\restore-payload.json`
 - Updated `Invoke-NSXEdgeClusterRecovery`

@@ -17376,6 +17376,248 @@ Function Invoke-VcfmsFleetComponentRegistration {
 }
 Export-ModuleMember -Function Invoke-VcfmsFleetComponentRegistration
 
+Function Update-VcfmsSddcLcmCredentials {
+    <#
+    .SYNOPSIS
+    Updates SDDC LCM in the recovery site with the credentials (identity secrets) from the
+    primary site's SDDC LCM backup.
+
+    .DESCRIPTION
+    The Update-VcfmsSddcLcmCredentials cmdlet automates the "Update SDDC LCM in the
+    Recovery Site with Credentials from the Primary Site" Fleet Disaster Recovery task. It:
+
+      1. Resolves the recovery site Services Runtime control plane node (handles worker-node
+         redirect automatically).
+      2. Uploads the bundled sddclcm-backup-secrets-to-yaml.sh script and a small wrapper
+         script to /tmp on the control plane node via the existing SSH session (base64, no
+         SCP binary required).
+      3. Under sudo with KUBECONFIG=/etc/kubernetes/admin.conf (the recovery site cluster):
+           a. Downloads the primary site SDDC LCM backup from SFTP, decrypts it using the
+              supplied passphrase and extracts the following Secret manifests to a
+              temporary directory:
+                vcf-iam-ops-admin.json, vcf-iam-ops-networks-admin.json,
+                vcf-iam-salt-raas-admin.json, vcf-iam-vcfa-admin.json,
+                vcf-iam-vsp-admin.json
+           b. Runs 'kubectl replace --force -f <file>' for each of the five secrets.
+           c. Deletes the temporary directory (it contains secrets) on completion.
+      4. Streams the output to the console and removes the temporary scripts.
+
+    The SFTP and encryption passwords are passed to the remote script through environment
+    variables, not command-line flags. The remote node must have sshpass, sftp and jq
+    available (as required by the script).
+
+    .EXAMPLE
+    Update-VcfmsSddcLcmCredentials `
+        -ServicesRuntimeFqdn     "lax-sr01.lax.rainpole.io" `
+        -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
+        -SftpHost                "10.167.173.130" `
+        -SftpUser                "svc-vcf-bck" `
+        -SftpPassword            "VMw@re1!VMw@re1!" `
+        -SftpRemoteDir           "/media/backups/vcf/backups/sddclcm-mgmt/9.1.0.0" `
+        -EncryptionPassphrase    "VMw@re1!VMw@re1!"
+
+    .EXAMPLE
+    # Dry run - extract the secrets but do not replace them on the recovery site
+    Update-VcfmsSddcLcmCredentials `
+        -ServicesRuntimeFqdn     "lax-sr01.lax.rainpole.io" `
+        -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
+        -SftpHost                "10.167.173.130" `
+        -SftpUser                "svc-vcf-bck" `
+        -SftpPassword            "VMw@re1!VMw@re1!" `
+        -SftpRemoteDir           "/media/backups/vcf/backups/sddclcm-mgmt/9.1.0.0" `
+        -EncryptionPassphrase    "VMw@re1!VMw@re1!" `
+        -DryRun
+
+    .PARAMETER ServicesRuntimeFqdn
+    FQDN or IP of any recovery site Services Runtime cluster node. If a worker node is
+    supplied the function automatically resolves and connects to the control plane.
+
+    .PARAMETER ServicesRuntimePassword
+    Password for vmware-system-user (SSH login and sudo elevation).
+
+    .PARAMETER SftpHost
+    SFTP server host or IP holding the primary site SDDC LCM backup.
+
+    .PARAMETER SftpUser
+    SFTP username.
+
+    .PARAMETER SftpPassword
+    SFTP password. Passed as SDDCLCM_SFTP_PASSWORD.
+
+    .PARAMETER SftpPort
+    SFTP port. Default is 22.
+
+    .PARAMETER SftpRemoteDir
+    Remote SFTP directory holding the SDDC LCM backup (either the directory containing the
+    archive, or a parent of timestamped directories, in which case the latest is used).
+
+    .PARAMETER RemoteArchive
+    Optional full SFTP path to a specific *.backup.tgz / *.base.tgz. When omitted the latest
+    backup under -SftpRemoteDir is discovered automatically.
+
+    .PARAMETER EncryptionPassphrase
+    SDDC LCM backup encryption passphrase for the primary site. Passed as
+    SDDCLCM_ENCRYPTION_PASSPHRASE. Not required if the backup blob is not encrypted.
+
+    .PARAMETER BackupNamespace
+    Optional. Force the namespace the secrets are read from inside the backup instead of
+    trying vmsp-platform then vcf-sddc-lcm.
+
+    .PARAMETER DryRun
+    Extract and list the secrets but do not run 'kubectl replace --force'.
+
+    .PARAMETER RemoteScriptTimeout
+    Seconds to wait for the remote script to complete. Default is 600 (10 minutes).
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][String] $ServicesRuntimeFqdn,
+        [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
+        [Parameter(Mandatory = $true)][String] $SftpHost,
+        [Parameter(Mandatory = $true)][String] $SftpUser,
+        [Parameter(Mandatory = $true)][String] $SftpPassword,
+        [Parameter(Mandatory = $false)][Int] $SftpPort = 22,
+        [Parameter(Mandatory = $true)][String] $SftpRemoteDir,
+        [Parameter(Mandatory = $false)][String] $RemoteArchive,
+        [Parameter(Mandatory = $false)][String] $EncryptionPassphrase,
+        [Parameter(Mandatory = $false)][String] $BackupNamespace,
+        [Parameter(Mandatory = $false)][Switch] $DryRun,
+        [Parameter(Mandatory = $false)][Int] $RemoteScriptTimeout = 600
+    )
+
+    $jumpboxName = hostname
+    $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
+    $StopWatch.Start()
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    $localScript = Join-Path -Path $PSScriptRoot -ChildPath "scripts/sddclcm-backup-secrets-to-yaml.sh"
+    if (-not (Test-Path $localScript)) {
+        LogMessage -type ERROR -message "[$jumpboxName] Script not found: $localScript"
+        $StopWatch.Stop(); return
+    }
+
+    LogMessage -type INFO -message "[$jumpboxName] Resolving control plane node from $ServicesRuntimeFqdn"
+    $kubeconfigResult = Get-VcfmsServicesRuntimeKubeconfig `
+        -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
+        -Password $ServicesRuntimePassword `
+        -OutputDir "."
+    if (-not $kubeconfigResult) {
+        LogMessage -type ERROR -message "[$jumpboxName] Could not resolve control plane node. Aborting."
+        $StopWatch.Stop(); return
+    }
+    $controlPlaneHost = $kubeconfigResult.ControlPlaneHost
+    LogMessage -type INFO -message "[$jumpboxName] Control plane node  : $controlPlaneHost"
+    if ($DryRun) {
+        LogMessage -type INFO -message "[$jumpboxName] Mode               : DRY RUN (secrets are not replaced)"
+    }
+    if (-not $EncryptionPassphrase) {
+        LogMessage -type WARNING -message "[$jumpboxName] No -EncryptionPassphrase supplied; this only works if the backup is not encrypted"
+    }
+
+    # Wrapper run on the remote node: extracts the secrets, replaces them on the
+    # local (recovery) cluster, and always removes the temporary directory.
+    $wrapper = @'
+set -uo pipefail
+OUT=$(mktemp -d /tmp/sddclcm-secrets.XXXXXX)
+trap 'rm -rf "$OUT"' EXIT
+args=(--sftp-host "$SFTP_HOST" --sftp-port "$SFTP_PORT" --sftp-user "$SFTP_USER" --sftp-remote-dir "$SFTP_REMOTE_DIR" --output-dir "$OUT")
+[[ -n "${REMOTE_ARCHIVE:-}" ]] && args+=(--remote-archive "$REMOTE_ARCHIVE")
+[[ -n "${BACKUP_NAMESPACE:-}" ]] && args+=(--backup-namespace "$BACKUP_NAMESPACE")
+bash /tmp/sddclcm-backup-secrets-to-yaml.sh "${args[@]}" || { echo "Secret extraction failed"; exit 1; }
+rc=0
+for n in vcf-iam-ops-admin vcf-iam-ops-networks-admin vcf-iam-salt-raas-admin vcf-iam-vcfa-admin vcf-iam-vsp-admin; do
+  f="$OUT/$n.json"
+  if [[ ! -f "$f" ]]; then echo "ERROR: $n.json was not extracted"; rc=1; continue; fi
+  if [[ "${DRY_RUN:-0}" == 1 ]]; then echo "DRY RUN: would run kubectl replace --force -f $n.json"; continue; fi
+  kubectl replace --force -f "$f" || rc=1
+done
+exit $rc
+'@
+
+    # Single-quote a value for safe use in the remote shell command line
+    $q = { param($v) "'" + ("$v" -replace "'", "'\''") + "'" }
+
+    $SecurePassword = ConvertTo-SecureString -String $ServicesRuntimePassword -AsPlainText -Force
+    $creds = New-Object System.Management.Automation.PSCredential ('vmware-system-user', $SecurePassword)
+    $session = $null
+    $remoteScript = "/tmp/sddclcm-backup-secrets-to-yaml.sh"
+    $remoteWrapper = "/tmp/sddclcm-credentials-update.sh"
+
+    try {
+        $session = Open-VcfmsSshSession -Fqdn $controlPlaneHost -Creds $creds
+
+        LogMessage -type INFO -message "[$controlPlaneHost] Uploading scripts to /tmp"
+        foreach ($item in @(
+                @{ Bytes = [System.IO.File]::ReadAllBytes($localScript); Path = $remoteScript },
+                @{ Bytes = [System.Text.Encoding]::UTF8.GetBytes($wrapper); Path = $remoteWrapper }
+            )) {
+            # Strip CR bytes so the files always have Unix line endings on the remote node
+            $bytes = [byte[]]($item.Bytes | Where-Object { $_ -ne 0x0D })
+            $b64 = [System.Convert]::ToBase64String($bytes)
+            $uploadResult = Invoke-SSHCommand -SessionId $session.SessionId -Command "printf '%s' '$b64' | base64 -d > $($item.Path) && chmod +x $($item.Path)" -TimeOut 60
+            if ($uploadResult.ExitStatus -ne 0) {
+                LogMessage -type ERROR -message "[$controlPlaneHost] Upload of $($item.Path) failed (exit $($uploadResult.ExitStatus)): $($uploadResult.Error -join ' ')"
+                return
+            }
+        }
+        LogMessage -type INFO -message "[$controlPlaneHost] Scripts uploaded successfully"
+
+        $envVars = @(
+            "KUBECONFIG=/etc/kubernetes/admin.conf",
+            "SFTP_HOST=$(& $q $SftpHost)",
+            "SFTP_PORT=$(& $q $SftpPort)",
+            "SFTP_USER=$(& $q $SftpUser)",
+            "SFTP_REMOTE_DIR=$(& $q $SftpRemoteDir)",
+            "REMOTE_ARCHIVE=$(& $q $RemoteArchive)",
+            "BACKUP_NAMESPACE=$(& $q $BackupNamespace)",
+            "SDDCLCM_SFTP_PASSWORD=$(& $q $SftpPassword)",
+            "SDDCLCM_ENCRYPTION_PASSPHRASE=$(& $q $EncryptionPassphrase)",
+            "DRY_RUN=$(if ($DryRun) { 1 } else { 0 })"
+        ) -join " "
+        $execCmd = "cd /tmp && echo $(& $q $ServicesRuntimePassword) | sudo -S env $envVars bash $remoteWrapper 2>&1"
+
+        LogMessage -type INFO -message "[$controlPlaneHost] Executing script (timeout: ${RemoteScriptTimeout}s)"
+        Write-Host ""
+        Write-Host " ── sddclcm credentials update output ───────────────────────────────" -ForegroundColor Cyan
+
+        $execResult = Invoke-SSHCommand -SessionId $session.SessionId -Command $execCmd -TimeOut $RemoteScriptTimeout
+
+        $execResult.Output |
+            Where-Object { $_ -notmatch '^\[sudo\]' } |
+                ForEach-Object { Write-Host "  $_" }
+
+        if ($execResult.Error) {
+            (($execResult.Error -join "`n") -split "`r?`n") |
+                Where-Object { $_ -notmatch '^\[sudo\]' -and $_ -ne '' } |
+                    ForEach-Object { Write-Host "  $_" -ForegroundColor Yellow }
+        }
+
+        Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
+        Write-Host ""
+
+        if ($execResult.ExitStatus -eq 0) {
+            LogMessage -type INFO -message "[$controlPlaneHost] SDDC LCM credentials updated successfully"
+        } else {
+            LogMessage -type ERROR -message "[$controlPlaneHost] Script exited with code $($execResult.ExitStatus)"
+        }
+
+    } catch {
+        LogMessage -type ERROR -message "[$jumpboxName] $($_.Exception.Message)"
+    } finally {
+        if ($session) {
+            Invoke-SSHCommand -SessionId $session.SessionId `
+                -Command "rm -f $remoteScript $remoteWrapper" -TimeOut 15 | Out-Null
+            Remove-SSHSession -SSHSession $session | Out-Null
+            LogMessage -type INFO -message "[$controlPlaneHost] Temporary scripts removed"
+        }
+    }
+
+    $StopWatch.Stop()
+    $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+    LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+}
+Export-ModuleMember -Function Update-VcfmsSddcLcmCredentials
+
 Function Invoke-VcfmsVcfaRegistration {
     <#
     .SYNOPSIS
