@@ -1,5 +1,32 @@
 [
   {
+    "description": "NSX Federation (manual, only if NSX Federation is used between VCF Instances): assign the Active role to the NSX Global Manager in the recovery VCF Instance, reconfigure the NSX Tier-1 Gateway for dynamic routing, and connect the NSX Load Balancer to the standalone Tier-1 Gateway",
+    "commandLine": "Confirm-ManualStep -Message 'Press Enter once the NSX Federation tasks are complete (or not applicable)' -AnswerKey 'nsx-federation-tasks-complete'",
+    "displayName": "Confirm Manual Step: NSX Federation tasks are complete (if applicable)",
+    "condition": [],
+    "threadId": "1",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Initiate a disaster recovery of VCF Operations for Fleet Disaster Recovery and VCF Operations for networks in the recovery VCF Instance (manual)",
+    "commandLine": "Confirm-ManualStep -Message 'Press Enter once VCF Operations and VCF Operations for networks have been recovered' -AnswerKey 'vcf-ops-recovered'",
+    "displayName": "Confirm Manual Step: VCF Operations appliances have been recovered",
+    "condition": [],
+    "threadId": "1",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Modify DNS entries for the fleet component VIPs before recovery (manual)",
+    "commandLine": "Confirm-ManualStep -Message 'Press Enter once the DNS entries for the fleet component VIPs have been modified' -AnswerKey 'fleet-vip-dns-updated'",
+    "displayName": "Confirm Manual Step: DNS entries for fleet component VIPs have been modified",
+    "condition": [],
+    "threadId": "1",
+    "interactive": true,
+    "visible": true
+  },
+  {
     "description": "Retrieve Component Details from VCF Operations",
     "commandLine": "Get-VcfOperationsRegisteredComponents -VcfOperationsFqdn $VcfOperationsFqdn -Username $Username -Password $Password -AuthSource $AuthSource -OutputDir $OutputDir",
     "displayName": "Get VCF Operations Registered Components",
@@ -135,6 +162,15 @@
     "visible": true
   },
   {
+    "description": "Redeploy a license server for VCF Instance backup and restore (manual, only required if the failover will last more than 90 days)",
+    "commandLine": "Confirm-ManualStep -Message 'Press Enter once the license server has been redeployed (or not applicable)' -AnswerKey 'license-server-redeployed'",
+    "displayName": "Confirm Manual Step: License server has been redeployed (if applicable)",
+    "condition": [],
+    "threadId": "1",
+    "interactive": true,
+    "visible": true
+  },
+  {
     "description": "Deploy a VCF Automation Services Runtime Cluster",
     "commandLine": "New-ServicesRuntime -SddcManagerFqdn $SddcManagerFqdn -SddcManagerUser $SddcManagerUser -SddcManagerPassword $SddcManagerPassword -PlatformFqdn $PlatformFqdn -SystemUserPassword $SystemUserPassword -Ipv4Addresses ($Ipv4Addresses.Split(',').Trim()) -Size $Size -NetworkMoId $NetworkMoId -GatewayCidrIpv4 $GatewayCidrIpv4 -extractedSDDCDataFile $extractedSDDCDataFile -InternalClusterCidrIpv4 $InternalClusterCidrIpv4 -Type CONSUMPTION",
     "displayName": "Create New Services Runtime for VCF Automation",
@@ -186,6 +222,42 @@
     "condition": [],
     "threadId": "1",
     "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "Update the backup schedule configuration for the recovered components (manual)",
+    "commandLine": "Confirm-ManualStep -Message 'Press Enter once the backup schedule configuration for the recovered components has been updated' -AnswerKey 'backup-schedule-updated'",
+    "displayName": "Confirm Manual Step: Backup schedule configuration has been updated",
+    "condition": [],
+    "threadId": "1",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "NSX Federation post-failover (manual, only if NSX Federation is used, once the original site is available again): disconnect the NSX Load Balancer in the original VCF Instance from the standalone Tier-1 Gateway, obtain the NSX Global Manager VIP certificate thumbprint, reconfigure the NSX Global Manager, and reconfigure the Tier-1 Gateway for dynamic routing",
+    "commandLine": "Confirm-ManualStep -Message 'Press Enter once the NSX Federation post-failover tasks are complete (or not applicable)' -AnswerKey 'nsx-federation-post-failover-complete'",
+    "displayName": "Confirm Manual Step: NSX Federation post-failover tasks are complete (if applicable)",
+    "condition": [],
+    "threadId": "1",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Reprotect VCF Operations for Fleet Disaster Recovery and VCF Operations for networks, after completing the reprotection prerequisites (manual)",
+    "commandLine": "Confirm-ManualStep -Message 'Press Enter once VCF Operations and VCF Operations for networks have been reprotected' -AnswerKey 'vcf-ops-reprotected'",
+    "displayName": "Confirm Manual Step: VCF Operations appliances have been reprotected",
+    "condition": [],
+    "threadId": "1",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Back up the recovered components to a highly available SFTP server (manual)",
+    "commandLine": "Confirm-ManualStep -Message 'Press Enter once the recovered components have been backed up to the SFTP server' -AnswerKey 'recovered-components-backed-up'",
+    "displayName": "Confirm Manual Step: Recovered components have been backed up to the SFTP server",
+    "condition": [],
+    "threadId": "1",
+    "interactive": true,
     "visible": true
   }
 ]

@@ -4624,23 +4624,21 @@ function Sync-RecoveryPlanSelection {
     }
 
     if (-not $requiresDataSource) {
-        # A plan that permits no data source at all (Recover Fleet/FDR): no discovery, loads
-        # immediately. No variable values are known yet at this point, so conditional steps fail
-        # open (see Test-StepCondition) and show unconditionally until Load Variables/New Variables
-        # File re-filters them for real.
+        # A plan that permits no data source at all (Recover Fleet/FDR): no discovery, so the
+        # Steps/Variables pane is available immediately -- but, exactly like every other plan, steps
+        # are NOT revealed here. Update-RevealedSteps does that only once variables have been loaded
+        # or created, so no Run button is ever in front of anyone before values exist for it. Steps
+        # are still resolved into the context now so Variables can list the right names and
+        # Update-RevealedSteps has them to filter.
         $discoveredInfrastructureGroupBox.Visibility = [System.Windows.Visibility]::Collapsed
         $global:conditionDataContext = @{}
         $global:stepRunStatus = @{}
 
-        $steps = Get-RecoveryPlanSteps $entry.planFolder $entry.planFile
-        $global:currentPlanContext.Steps = $steps
-        $applicableSteps = Get-ApplicableSteps $steps @{}
-        $global:currentPlanContext.LastApplicableSteps = $applicableSteps
-        $global:currentPlanContext.StepRows = Update-BucketStepsListBox $recoveryPlanStepsListBox $recoveryManualStepsListBox $applicableSteps $null $null 'Set-BreakPointAfter' $recoveryTaskListHeader
+        $global:currentPlanContext.Steps = Get-RecoveryPlanSteps $entry.planFolder $entry.planFile
         Update-ExtraTogglesPanel $entry
 
         $stepsVariablesGroupBox.Visibility = [System.Windows.Visibility]::Visible
-        $stepsVariablesTabControl.SelectedIndex = 1   # "Steps"
+        $stepsVariablesTabControl.SelectedIndex = 0   # "Variables"
         Update-ExecutionVisibility
         return
     }

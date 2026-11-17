@@ -11659,6 +11659,9 @@ Function Get-VcfOperationsRegisteredComponents {
         [Parameter(Mandatory = $false)][String] $OutputDir = "."
     )
 
+    if (-not (Test-Path -LiteralPath $OutputDir)) {
+        New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
+    }
     $outputFile = (Resolve-Path -Path $OutputDir).path + "\VCFOps-Registered-Component-Details.json"
 
     $jumpboxName = hostname
