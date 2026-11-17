@@ -64,7 +64,7 @@
   },
   {
     "description": "Retrieve a List of Backups for VCF Management Services Fleet Components ($vspId is the ID of the VCF Management Services instance from the \"Retrieve Component Details from VCF Operations\" step above)",
-    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpServer -sftpUser $sftpUser -sftpPassword $sftpPassword -sftpServerBackupPath $sftpServerBackupPath -vspId $vspId -componentNames $componentNames",
+    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpServer -sftpUser $sftpUser -sftpPassword $sftpPassword -sftpServerBackupPath $sftpServerBackupPath -vspId $vspId -componentNames ($componentNames.Split(',').Trim().Trim([char]34,[char]39))",
     "displayName": "Get Backups from SFTP Server",
     "condition": [],
     "threadId": "1",
@@ -127,7 +127,7 @@
   },
   {
     "description": "Retrieve a List of Backups for Log Management",
-    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpServer -sftpUser $sftpUser -sftpPassword $sftpPassword -sftpServerBackupPath $sftpServerBackupPath -vspId $vspId -componentNames $componentNames",
+    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpServer -sftpUser $sftpUser -sftpPassword $sftpPassword -sftpServerBackupPath $sftpServerBackupPath -vspId $vspId -componentNames ($componentNames.Split(',').Trim().Trim([char]34,[char]39))",
     "displayName": "Get Backups from SFTP Server",
     "condition": [],
     "threadId": "1",
@@ -190,7 +190,7 @@
   },
   {
     "description": "Retrieve a List of Backups for VCF Automation",
-    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpServer -sftpUser $sftpUser -sftpPassword $sftpPassword -sftpServerBackupPath $sftpServerBackupPath -vspId $vspId -componentNames $componentNames",
+    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpServer -sftpUser $sftpUser -sftpPassword $sftpPassword -sftpServerBackupPath $sftpServerBackupPath -vspId $vspId -componentNames ($componentNames.Split(',').Trim().Trim([char]34,[char]39))",
     "displayName": "Get Backups from SFTP Server",
     "condition": [],
     "threadId": "1",
