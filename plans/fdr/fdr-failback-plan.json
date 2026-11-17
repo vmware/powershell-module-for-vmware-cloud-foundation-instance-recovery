@@ -45,8 +45,17 @@
     "visible": true
   },
   {
+    "description": "Trust the Offline Depot Certificate on this machine (needed to read the offline depot's directory index)",
+    "commandLine": "Add-OfflineDepotTrustedCertificate -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
+    "displayName": "Trust Offline Depot Certificate on Jumpbox",
+    "condition": [],
+    "threadId": "1",
+    "interactive": false,
+    "visible": true
+  },
+  {
     "description": "Retrieve a List of Backups for the VCF Management Services Fleet Components",
-    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpServer -sftpUser $sftpUser -sftpPassword $sftpPassword -sftpServerBackupPath $sftpServerBackupPath -vspId $vspId -componentNames \"vcf-fleet-lcm\",\"vcf-fleet-depot\",\"salt-raas\",\"vidb\"",
+    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpServer -sftpUser $sftpUser -sftpPassword $sftpPassword -sftpServerBackupPath $sftpServerBackupPath -vspId $vspId -componentNames \"vcf-fleet-lcm\",\"vcf-fleet-depot\",\"salt-raas\",\"vidb\" -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
     "displayName": "Get Backups from SFTP Server",
     "condition": [],
     "threadId": "1",
@@ -87,6 +96,15 @@
     "condition": [],
     "threadId": "1",
     "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Trust the Offline Depot Certificate on the VCF Management Services Services Runtime (needed to retrieve the packages from the offline depot during restore)",
+    "commandLine": "Add-VcfmsTrustedCertificate -ServicesRuntimeFqdn $ServicesRuntimeFqdn -ServicesRuntimePassword $ServicesRuntimePassword -RemoteHostFqdn $offlineDepotFqdn -RemoteHostPort $offlineDepotPort",
+    "displayName": "Trust Offline Depot Certificate on VCF Management Services Services Runtime",
+    "condition": [],
+    "threadId": "1",
+    "interactive": false,
     "visible": true
   },
   {
@@ -172,11 +190,20 @@
   },
   {
     "description": "Retrieve a List of Backups for VCF Automation",
-    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpServer -sftpUser $sftpUser -sftpPassword $sftpPassword -sftpServerBackupPath $sftpServerBackupPath -vspId $vspId -componentNames \"vcfa\"",
+    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpServer -sftpUser $sftpUser -sftpPassword $sftpPassword -sftpServerBackupPath $sftpServerBackupPath -vspId $vspId -componentNames \"vcfa\" -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
     "displayName": "Get Backups from SFTP Server",
     "condition": [],
     "threadId": "1",
     "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Trust the Offline Depot Certificate on the VCF Automation Services Runtime (needed to retrieve the packages from the offline depot during restore)",
+    "commandLine": "Add-VcfmsTrustedCertificate -ServicesRuntimeFqdn $ServicesRuntimeFqdn -ServicesRuntimePassword $ServicesRuntimePassword -RemoteHostFqdn $offlineDepotFqdn -RemoteHostPort $offlineDepotPort",
+    "displayName": "Trust Offline Depot Certificate on VCF Automation Services Runtime",
+    "condition": [],
+    "threadId": "1",
+    "interactive": false,
     "visible": true
   },
   {

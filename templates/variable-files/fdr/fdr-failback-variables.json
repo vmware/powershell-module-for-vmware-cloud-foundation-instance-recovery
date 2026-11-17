@@ -9,6 +9,8 @@
   "sftpPassword": "",
   "sftpServerBackupPath": "",
   "vspId": "",
+  "offlineDepotFqdn": "",
+  "offlineDepotPort": "",
   "RecoveryServicesRuntimeFqdn": "",
   "RecoveryServicesRuntimePassword": "",
   "ServicesRuntimeFqdn": "",
