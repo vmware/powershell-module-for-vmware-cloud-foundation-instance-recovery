@@ -46,7 +46,7 @@
   },
   {
     "description": "Add New Hosts to the Cluster in the Restored vCenter",
-    "commandLine": "Add-HostsToCluster -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -sddcManagerFqdn $sddcManagerFqdn -sddcManagerAdmin $sddcManagerAdmin -sddcManagerAdminPassword $sddcManagerAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile",
+    "commandLine": "Add-HostsToCluster -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -sddcManagerFqdn $sddcManagerFqdn -sddcManagerAdmin $sddcManagerAdmin -sddcManagerAdminPassword $sddcManagerAdminPassword -extractedSDDCDataFile $extractedSddcDataFile",
     "displayName": "Add Hosts to Cluster",
     "condition": [],
     "threadId": "1",
@@ -55,7 +55,7 @@
   },
   {
     "description": "Migrate the ESX Hosts and VMkernel Adapters to the vSphere Distributed Switch on the Restored vCenter",
-    "commandLine": "New-RebuiltVdsConfiguration -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile",
+    "commandLine": "New-RebuiltVdsConfiguration -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSddcDataFile",
     "displayName": "Rebuild VDS Configuration",
     "condition": [],
     "threadId": "1",
@@ -64,7 +64,7 @@
   },
   {
     "description": "Wait for NSX Installation to Complete on Hosts",
-    "commandLine": "Watch-NsxHostTransportNodeInstallation -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile",
+    "commandLine": "Watch-NsxHostTransportNodeInstallation -clusterName $clusterName -extractedSDDCDataFile $extractedSddcDataFile",
     "displayName": "Monitor NSX Host Transport Node Installation",
     "condition": [],
     "threadId": "1",
@@ -73,7 +73,7 @@
   },
   {
     "description": "Add VMkernel Adapters to the ESX Hosts",
-    "commandLine": "Add-VMKernelsToHost -targetFqdn $restoredVcenterFqdn -targetAdmin $restoredVcenterAdmin -targetAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -sddcManagerFqdn $sddcManagerFqdn -sddcManagerAdmin $sddcManagerAdmin -sddcManagerAdminPassword $sddcManagerAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile",
+    "commandLine": "Add-VMKernelsToHost -targetFqdn $restoredVcenterFqdn -targetAdmin $restoredVcenterAdmin -targetAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -sddcManagerFqdn $sddcManagerFqdn -sddcManagerAdmin $sddcManagerAdmin -sddcManagerAdminPassword $sddcManagerAdminPassword -extractedSDDCDataFile $extractedSddcDataFile",
     "displayName": "Add VMKernels to Hosts",
     "condition": [],
     "threadId": "1",
@@ -126,7 +126,7 @@
   },
   {
     "description": "Reconfigure Stretched Cluster",
-    "commandLine": "New-ReconfiguredVsanStretchedCluster -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile",
+    "commandLine": "New-ReconfiguredVsanStretchedCluster -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSddcDataFile",
     "displayName": "Reconfigure vSAN Stretched Cluster",
     "condition": [
       {
@@ -142,7 +142,7 @@
   },
   {
     "description": "Recreate a vSAN Datastore",
-    "commandLine": "New-RebuiltVsanDatastore -targetFqdn $restoredVcenterFqdn -targetAdmin $restoredVcenterAdmin -targetAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile",
+    "commandLine": "New-RebuiltVsanDatastore -targetFqdn $restoredVcenterFqdn -targetAdmin $restoredVcenterAdmin -targetAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSddcDataFile",
     "displayName": "Rebuilt vSAN Datastore",
     "condition": [],
     "threadId": "1",
@@ -151,7 +151,7 @@
   },
   {
     "description": "Redeploy NSX Edge Cluster (selective recovery)",
-    "commandLine": "Invoke-NSXEdgeClusterRecoverySelective -nsxManagerFqdn $restoredNsxManagerFqdn -nsxManagerAdmin $restoredNsxManagerAdmin -nsxManagerAdminPassword $restoredNsxManagerAdminPassword -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile -monitor",
+    "commandLine": "Invoke-NSXEdgeClusterRecoverySelective -nsxManagerFqdn $restoredNsxManagerFqdn -nsxManagerAdmin $restoredNsxManagerAdmin -nsxManagerAdminPassword $restoredNsxManagerAdminPassword -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSddcDataFile -monitor",
     "displayName": "Invoke NSX Edge Cluster Recovery Selective",
     "condition": [],
     "threadId": "1",
@@ -160,7 +160,7 @@
   },
   {
     "description": "Update SSH Keys for Hosts",
-    "commandLine": "Invoke-SddcManagerSSHKeyRefresh -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -clusterName $clusterName -VcfUserPassword $VcfUserPassword",
+    "commandLine": "Invoke-SddcManagerSSHKeyRefresh -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -extractedSDDCDataFile $extractedSddcDataFile -clusterName $clusterName -VcfUserPassword $vcfUserPassword",
     "displayName": "Invoke SDDC Manager SSHKey Refresh",
     "condition": [],
     "threadId": "1",
@@ -169,7 +169,7 @@
   },
   {
     "description": "Update Datastore ID",
-    "commandLine": "Update-DomainDatastoreID -extractedSDDCDataFile $extractedSDDCDataFile -vCenterFqdn $restoredVcenterFqdn -clusterName $clusterName -VcfUserPassword $VcfUserPassword -RootPassword $RootPassword -autoConfirm",
+    "commandLine": "Update-DomainDatastoreID -extractedSDDCDataFile $extractedSddcDataFile -vCenterFqdn $restoredVcenterFqdn -clusterName $clusterName -VcfUserPassword $vcfUserPassword -RootPassword $rootPassword -autoConfirm",
     "displayName": "Update Domain Datastore ID",
     "condition": [],
     "threadId": "1",
@@ -178,7 +178,7 @@
   },
   {
     "description": "Update Host IDs",
-    "commandLine": "Update-ClusterHostSourceIDs -extractedSDDCDataFile $extractedSDDCDataFile -vCenterFqdn $restoredVcenterFqdn -clusterName $clusterName -VcfUserPassword $VcfUserPassword -RootPassword $RootPassword -autoConfirm",
+    "commandLine": "Update-ClusterHostSourceIDs -extractedSDDCDataFile $extractedSddcDataFile -vCenterFqdn $restoredVcenterFqdn -clusterName $clusterName -VcfUserPassword $vcfUserPassword -RootPassword $rootPassword -autoConfirm",
     "displayName": "Update Cluster Host Source IDs",
     "condition": [],
     "threadId": "1",

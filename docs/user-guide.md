@@ -308,9 +308,9 @@ Management Domain template:
   "targetFqdn": "",
   "targetAdmin": "",
   "targetAdminPassword": "",
-  "restoredvCenterDeploymentSize": "",
+  "restoredVcenterDeploymentSize": "",
   "vCenterOvaFile": "",
-  "sddcManagerFQDN": "",
+  "sddcManagerFqdn": "",
   "sddcManagerAdmin": "",
   "sddcManagerAdminPassword": ""
 }

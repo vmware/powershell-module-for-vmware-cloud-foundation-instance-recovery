@@ -234,7 +234,7 @@ $global:extraToggleContainers = @{}
 # id: @{ Definition = <catalog definition>; Buttons = @{ optionId = RadioButton } }. Rebuilt with the panel.
 $global:extraRadioGroups = @{}
 # Variables the UI owns outright, so the operator never types them and they are never rendered as
-# editable rows: $extractedSDDCDataFile comes from the Data Source selection (pushed by
+# editable rows: $extractedSddcDataFile comes from the Data Source selection (pushed by
 # Set-ExportedSDDCDataFilePath), and $workloadDomain/$clusterName from the domain/additional-cluster
 # selection (pushed by Set-SelectedRecoveryTarget). Filtered out of every answers file this app
 # generates AND out of every one it loads, and Import-RecoveryVariables skips all three names too --
@@ -248,7 +248,7 @@ $global:extraRadioGroups = @{}
 # secureEncryptionPassword is UI-owned too: defined in each console, on demand, from the password the
 # operator enters (see Get-SecureEncryptionPasswordAssignment) -- never typed on, nor saved to, the
 # Variables tab.
-$script:selectionDrivenVariables = @('extractedSDDCDataFile', 'workloadDomain', 'clusterName', 'secureEncryptionPassword')
+$script:selectionDrivenVariables = @('extractedSddcDataFile', 'workloadDomain', 'clusterName', 'secureEncryptionPassword')
 # The live "selectedDomain"/"selectedCluster" data a "dataPath" condition (see Test-DataPathCondition)
 # walks into generically, e.g. "selectedCluster.isStretched" -- set in Sync-DomainSteps/
 # Sync-AdditionalClusterSteps, exposing the WHOLE selected object so a new plan condition can
@@ -321,7 +321,7 @@ $global:threadConsoles = @{}
 # The domain/cluster most recently pushed into Main via Set-SelectedTargetInConsole -- kept so
 # Initialize-ConsoleVariables can re-send the exact same "Set-SelectedRecoveryTarget" call to a
 # freshly spawned thread console (see Get-ThreadConsole), the same way it already re-primes a new
-# console with $extractedSDDCDataFile/the loaded variables file. Without this, a threaded step
+# console with $extractedSddcDataFile/the loaded variables file. Without this, a threaded step
 # referencing $workloadDomain or $clusterName (e.g. management-domain-recovery-plan.json's/
 # workload-domain-recovery-plan.json's own threadId 2/3 blocks -- vCenter/NSX Manager OVA deployment
 # and restore) would run in a brand-new console that never received either value at all.
@@ -3358,7 +3358,7 @@ function Get-ReferencedVariableNames([string[]]$CommandLines) {
 # One-line description of a variable, for its Variables-panel tooltip, from the shared
 # templates\variable-files\variable-descriptions.json (name -> text; every plan's variables file draws
 # from the same vocabulary, so one file serves all). Looked up case-insensitively because plans spell
-# some names differently (sddcManagerFQDN/sddcManagerFqdn). Loaded once; returns $null for a name with
+# some names differently (sddcManagerFqdn). Loaded once; returns $null for a name with
 # no entry, or when the file is missing/unreadable -- the tooltip then just shows the name.
 function Get-VariableDescription([string]$Name) {
     if ($null -eq $script:variableDescriptions) {
@@ -3962,7 +3962,7 @@ function Get-VariablesStructureMismatch([string[]]$AnswerMapKeys, [string[]]$Tem
 # with anything not referenced by any step appended afterward, in file order, so nothing loaded is
 # ever silently dropped from view). The console itself never sees these values directly; it's handed
 # the answers file path and reads it itself via Import-RecoveryVariables, below, so every step's Run
-# button can reference $targetFqdn etc. directly, the same way $extractedSDDCDataFile already works.
+# button can reference $targetFqdn etc. directly, the same way $extractedSddcDataFile already works.
 #
 # Shared by the Load Variables button and Resume, same reasoning as Import-ExtractedSddcDataFile.
 function Import-VariablesAnswersFile([string]$Path) {
@@ -3973,7 +3973,7 @@ function Import-VariablesAnswersFile([string]$Path) {
             $answerMap[$property.Name] = [string]$property.Value
         }
 
-        # extractedSDDCDataFile comes from the Data Source browse selection and clusterName from the
+        # extractedSddcDataFile comes from the Data Source browse selection and clusterName from the
         # cluster selection, not the answers file -- an answer file that happens to also define
         # either must not overwrite the live selection or show up as an editable row here. See
         # $script:selectionDrivenVariables.
@@ -4066,7 +4066,7 @@ $loadVariablesButton.Add_Click({
 # right away, not only once something's typed) and rewritten in full every time a field loses focus
 # -- no separate "Save" action to remember.
 function New-VariablesFile([string]$Path) {
-    # Excludes the UI-owned, selection-driven names ($extractedSDDCDataFile, $clusterName) plus the
+    # Excludes the UI-owned, selection-driven names ($extractedSddcDataFile, $clusterName) plus the
     # current plan's own extra-toggle ids (e.g. Fleet Component Recovery's
     # "originalVcfInstallerAvailable") so a newly created answers file never contains a row the
     # console would ignore, or a UI-toggle-driven pseudo-variable that isn't meant to be operator-typed
@@ -4549,7 +4549,7 @@ function Sync-AdditionalClusterSteps {
         }
         Update-ExtraToggleVisibility
 
-        # $workloadDomain/$clusterName are selection-driven, exactly like $extractedSDDCDataFile is
+        # $workloadDomain/$clusterName are selection-driven, exactly like $extractedSddcDataFile is
         # Data-Source-driven (see Set-ExportedSDDCDataFilePath's own call site) -- the operator never
         # types them, and Import-RecoveryVariables ignores any left in an answers file so a stale file
         # can never point these steps at a different domain or cluster than the one highlighted on

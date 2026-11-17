@@ -4,12 +4,12 @@
   "targetFqdn": "",
   "targetAdmin": "",
   "targetAdminPassword": "",
-  "restoredvCenterDeploymentSize": "",
+  "restoredVcenterDeploymentSize": "",
   "vCenterOvaFile": "",
   "restoredNsxManagerDeploymentSize": "",
   "nsxManagerOvaFile": "",
   "vCenterBackupPath": "",
-  "locationtype": "",
+  "locationType": "",
   "locationUser": "",
   "locationPassword": "",
   "sftpServer": "",
@@ -17,7 +17,7 @@
   "sftpPassword": "",
   "sftpServerBackupPath": "",
   "nsxBackupPassphrase": "",
-  "sddcManagerFQDN": "",
+  "sddcManagerFqdn": "",
   "sddcManagerAdmin": "",
   "sddcManagerAdminPassword": "",
   "restoredVcenterFqdn": "",
@@ -27,7 +27,7 @@
   "restoredNsxManagerAdmin": "",
   "restoredNsxManagerAdminPassword": "",
   "restoredNsxManagerRootPassword": "",
-  "VcfUserPassword": "",
+  "vcfUserPassword": "",
   "svcAccountPassword": "",
-  "RootPassword": ""
+  "rootPassword": ""
 }

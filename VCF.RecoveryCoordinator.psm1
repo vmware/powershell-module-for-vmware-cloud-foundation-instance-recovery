@@ -20071,12 +20071,12 @@ Function Import-RecoveryVariables {
     LogMessage -type INFO -message "[$jumpboxName] Loading variables from '$Path'"
     $answers = Get-Content -Path $Path -Raw | ConvertFrom-Json
     foreach ($property in $answers.PSObject.Properties) {
-        # extractedSDDCDataFile comes from the orchestrator UI's own Data Source selection, and
+        # extractedSddcDataFile comes from the orchestrator UI's own Data Source selection, and
         # workloadDomain/clusterName from its domain/cluster selection -- not the answers file. An
         # answer file that happens to also define any of them (e.g. one saved before these became
         # selection-driven) must never overwrite the live selection, or a step would silently run
         # against the wrong domain or cluster.
-        if ($property.Name -in @('extractedSDDCDataFile', 'workloadDomain', 'clusterName')) {
+        if ($property.Name -in @('extractedSddcDataFile', 'workloadDomain', 'clusterName')) {
             continue
         }
         Set-Variable -Name $property.Name -Value ([string]$property.Value) -Scope Global
@@ -20121,10 +20121,10 @@ Export-ModuleMember -Function ConvertFrom-VCFIRProtectedString
 Function Set-ExportedSDDCDataFilePath {
     <#
     .SYNOPSIS
-    Sets $extractedSDDCDataFile in the current session
+    Sets $extractedSddcDataFile in the current session
 
     .DESCRIPTION
-    The Set-ExportedSDDCDataFilePath cmdlet sets $extractedSDDCDataFile to the given path, so the
+    The Set-ExportedSDDCDataFilePath cmdlet sets $extractedSddcDataFile to the given path, so the
     other cmdlets in this module can reference it directly without it needing to be
     passed explicitly on the command line every time.
 
@@ -20143,7 +20143,7 @@ Function Set-ExportedSDDCDataFilePath {
     $StopWatch.Start()
 
     LogMessage -type INFO -message "[$jumpboxName] Setting extracted SDDC data file path to '$Path'"
-    Set-Variable -Name 'extractedSDDCDataFile' -Value $Path -Scope Global
+    Set-Variable -Name 'extractedSddcDataFile' -Value $Path -Scope Global
 
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)

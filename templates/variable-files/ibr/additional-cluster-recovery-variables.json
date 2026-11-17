@@ -10,7 +10,7 @@
   "sddcManagerFqdn": "",
   "sddcManagerAdmin": "",
   "sddcManagerAdminPassword": "",
-  "VcfUserPassword": "",
-  "RootPassword": "",
+  "vcfUserPassword": "",
+  "rootPassword": "",
   "svcAccountPassword": ""
 }

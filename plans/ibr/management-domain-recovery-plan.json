@@ -1,7 +1,7 @@
 [
   {
     "description": "",
-    "commandLine": "New-PrepareManagementHostNetworking -extractedSDDCDataFile $extractedSDDCDataFile -mtu 8900 -esxiRootPassword $targetAdminPassword",
+    "commandLine": "New-PrepareManagementHostNetworking -extractedSDDCDataFile $extractedSddcDataFile -mtu 8900 -esxiRootPassword $targetAdminPassword",
     "displayName": "Prepare Management Host Networking",
     "condition": [],
     "threadId": "1",
@@ -10,7 +10,7 @@
   },
   {
     "description": "",
-    "commandLine": "Add-VMKernelsToManagementHosts -extractedSDDCDataFile $extractedSDDCDataFile -esxiRootPassword $targetAdminPassword",
+    "commandLine": "Add-VMKernelsToManagementHosts -extractedSDDCDataFile $extractedSddcDataFile -esxiRootPassword $targetAdminPassword",
     "displayName": "Add VMKernels to Management Hosts",
     "condition": [],
     "threadId": "1",
@@ -19,7 +19,7 @@
   },
   {
     "description": "",
-    "commandLine": "New-SingleHostVsanDatastore -extractedSDDCDataFile $extractedSDDCDataFile -esxiRootPassword $targetAdminPassword",
+    "commandLine": "New-SingleHostVsanDatastore -extractedSDDCDataFile $extractedSddcDataFile -esxiRootPassword $targetAdminPassword",
     "displayName": "Create Single Host vSAN Datastore",
     "condition": [],
     "threadId": "1",
@@ -28,7 +28,7 @@
   },
   {
     "description": "",
-    "commandLine": "New-SDDCManagerOvaDeployment -targetType esx -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -sddcManagerOvaFile $sddcManagerOvaFile -rootUserPassword $newSddcManagerPassword -vcfUserPassword $newSddcManagerPassword -localUserPassword $newSddcManagerPassword -basicAuthUserPassword $newSddcManagerPassword",
+    "commandLine": "New-SDDCManagerOvaDeployment -targetType esx -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSddcDataFile -sddcManagerOvaFile $sddcManagerOvaFile -rootUserPassword $newSddcManagerPassword -vcfUserPassword $newSddcManagerPassword -localUserPassword $newSddcManagerPassword -basicAuthUserPassword $newSddcManagerPassword",
     "displayName": "SDDC Manager OVA Deployment",
     "condition": [],
     "threadId": "1",
@@ -37,7 +37,7 @@
   },
   {
     "description": "",
-    "commandLine": "New-UploadAndModifySDDCManagerBackup -targetType esx -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -rootUserPassword $newSddcManagerPassword -vcfUserPassword $newSddcManagerPassword -backupFilePath $vcfbackupFilePath -secureEncryptionPassword $secureEncryptionPassword -extractedSDDCDataFile $extractedSDDCDataFile",
+    "commandLine": "New-UploadAndModifySDDCManagerBackup -targetType esx -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -rootUserPassword $newSddcManagerPassword -vcfUserPassword $newSddcManagerPassword -backupFilePath $vcfBackupFilePath -secureEncryptionPassword $secureEncryptionPassword -extractedSDDCDataFile $extractedSddcDataFile",
     "displayName": "Upload and Modify SDDC Manager Backup",
     "condition": [],
     "threadId": "1",
@@ -46,7 +46,7 @@
   },
   {
     "description": "",
-    "commandLine": "Invoke-SDDCManagerRestore -extractedSDDCDataFile $extractedSDDCDataFile -backupFilePath $vcfbackupFilePath -vcfUserPassword $newSddcManagerPassword -localUserPassword $newSddcManagerPassword -rootUserPassword $newSddcManagerPassword -secureEncryptionPassword $secureEncryptionPassword",
+    "commandLine": "Invoke-SDDCManagerRestore -extractedSDDCDataFile $extractedSddcDataFile -backupFilePath $vcfBackupFilePath -vcfUserPassword $newSddcManagerPassword -localUserPassword $newSddcManagerPassword -rootUserPassword $newSddcManagerPassword -secureEncryptionPassword $secureEncryptionPassword",
     "displayName": "Partial SDDC Manager Restore",
     "condition": [],
     "threadId": "1",
@@ -73,7 +73,7 @@
   },
   {
     "description": "",
-    "commandLine": "New-vCenterOvaDeployment -targetType esx -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -restoredvCenterDeploymentSize $restoredvCenterDeploymentSize -vCenterOvaFile $vCenterOvaFile",
+    "commandLine": "New-vCenterOvaDeployment -targetType esx -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSddcDataFile -workloadDomain $workloadDomain -restoredvCenterDeploymentSize $restoredVcenterDeploymentSize -vCenterOvaFile $vCenterOvaFile",
     "displayName": "vCenter OVA Deployment",
     "condition": [],
     "threadId": "2",
@@ -85,7 +85,7 @@
   },
   {
     "description": "",
-    "commandLine": "New-NSXManagerOvaDeployment -targetType esx -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -restoredNsxManagerDeploymentSize $restoredNsxManagerDeploymentSize -nsxManagerOvaFile $nsxManagerOvaFile",
+    "commandLine": "New-NSXManagerOvaDeployment -targetType esx -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSddcDataFile -workloadDomain $workloadDomain -restoredNsxManagerDeploymentSize $restoredNsxManagerDeploymentSize -nsxManagerOvaFile $nsxManagerOvaFile",
     "displayName": "First NSX Manager OVA Deployment",
     "condition": [],
     "threadId": "3",
@@ -97,7 +97,7 @@
   },
   {
     "description": "",
-    "commandLine": "Invoke-vCenterRestore -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -vCenterBackupPath $vCenterBackupPath -locationtype $locationtype -locationUser $locationUser -locationPassword $locationPassword",
+    "commandLine": "Invoke-vCenterRestore -extractedSDDCDataFile $extractedSddcDataFile -workloadDomain $workloadDomain -vCenterBackupPath $vCenterBackupPath -locationtype $locationType -locationUser $locationUser -locationPassword $locationPassword",
     "displayName": "Invoke vCenter Restore",
     "condition": [],
     "threadId": "2",
@@ -106,7 +106,7 @@
   },
   {
     "description": "",
-    "commandLine": "Invoke-NSXManagerRestore -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -sftpServer $sftpServer -sftpUser $sftpUser -sftpPassword $sftpPassword -sftpServerBackupPath $sftpServerBackupPath -backupPassphrase $nsxBackupPassphrase",
+    "commandLine": "Invoke-NSXManagerRestore -extractedSDDCDataFile $extractedSddcDataFile -workloadDomain $workloadDomain -sftpServer $sftpServer -sftpUser $sftpUser -sftpPassword $sftpPassword -sftpServerBackupPath $sftpServerBackupPath -backupPassphrase $nsxBackupPassphrase",
     "displayName": "Invoke NSX Manager Restore",
     "condition": [],
     "threadId": "3",
@@ -115,7 +115,7 @@
   },
   {
     "description": "",
-    "commandLine": "Invoke-SDDCManagerRestore -extractedSDDCDataFile $extractedSDDCDataFile -backupFilePath $vcfbackupFilePath -vcfUserPassword $newSddcManagerPassword -localUserPassword $newSddcManagerPassword -rootUserPassword $newSddcManagerPassword -secureEncryptionPassword $secureEncryptionPassword",
+    "commandLine": "Invoke-SDDCManagerRestore -extractedSDDCDataFile $extractedSddcDataFile -backupFilePath $vcfBackupFilePath -vcfUserPassword $newSddcManagerPassword -localUserPassword $newSddcManagerPassword -rootUserPassword $newSddcManagerPassword -secureEncryptionPassword $secureEncryptionPassword",
     "displayName": "Full SDDC Manager Restore",
     "condition": [],
     "threadId": "2",
@@ -124,7 +124,7 @@
   },
   {
     "description": "",
-    "commandLine": "Update-ExtractedSDDCData -extractedSDDCDataFile $extractedSDDCDataFile -sddcManagerFQDN $sddcManagerFQDN -sddcManagerAdmin $sddcManagerAdmin -sddcManagerAdminPassword $sddcManagerAdminPassword -vCenterFQDN $restoredVcenterFqdn",
+    "commandLine": "Update-ExtractedSDDCData -extractedSDDCDataFile $extractedSddcDataFile -sddcManagerFQDN $sddcManagerFqdn -sddcManagerAdmin $sddcManagerAdmin -sddcManagerAdminPassword $sddcManagerAdminPassword -vCenterFQDN $restoredVcenterFqdn",
     "displayName": "Update Extracted SDDC Data",
     "condition": [],
     "threadId": "1",
@@ -198,7 +198,7 @@
   },
   {
     "description": "",
-    "commandLine": "Add-HostsToCluster -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -sddcManagerFqdn $sddcManagerFqdn -sddcManagerAdmin $sddcManagerAdmin -sddcManagerAdminPassword $sddcManagerAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile",
+    "commandLine": "Add-HostsToCluster -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -sddcManagerFqdn $sddcManagerFqdn -sddcManagerAdmin $sddcManagerAdmin -sddcManagerAdminPassword $sddcManagerAdminPassword -extractedSDDCDataFile $extractedSddcDataFile",
     "displayName": "Add Hosts to Cluster",
     "condition": [],
     "threadId": "1",
@@ -207,7 +207,7 @@
   },
   {
     "description": "",
-    "commandLine": "New-RebuiltVdsConfiguration -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile",
+    "commandLine": "New-RebuiltVdsConfiguration -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSddcDataFile",
     "displayName": "Rebuild VDS Configuration",
     "condition": [],
     "threadId": "1",
@@ -216,7 +216,7 @@
   },
   {
     "description": "",
-    "commandLine": "Watch-NsxHostTransportNodeInstallation -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile",
+    "commandLine": "Watch-NsxHostTransportNodeInstallation -clusterName $clusterName -extractedSDDCDataFile $extractedSddcDataFile",
     "displayName": "Monitor NSX Host Transport Node Installation",
     "condition": [],
     "threadId": "1",
@@ -225,7 +225,7 @@
   },
   {
     "description": "",
-    "commandLine": "Add-DiskgroupsToManagementHosts -targetFqdn $restoredVcenterFqdn -targetAdmin $restoredVcenterAdmin -targetAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile -serial -autoConfirm",
+    "commandLine": "Add-DiskgroupsToManagementHosts -targetFqdn $restoredVcenterFqdn -targetAdmin $restoredVcenterAdmin -targetAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSddcDataFile -serial -autoConfirm",
     "displayName": "Add Diskgroups to Management Hosts",
     "condition": [
       {
@@ -285,7 +285,7 @@
   },
   {
     "description": "",
-    "commandLine": "New-ReconfiguredVsanStretchedCluster -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile",
+    "commandLine": "New-ReconfiguredVsanStretchedCluster -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSddcDataFile",
     "displayName": "Reconfigure vSAN Stretched Cluster",
     "condition": [
       {
@@ -301,7 +301,7 @@
   },
   {
     "description": "",
-    "commandLine": "Set-ManagementDatastorePolicy -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile",
+    "commandLine": "Set-ManagementDatastorePolicy -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSddcDataFile",
     "displayName": "Set Management Datastore Policy",
     "condition": [],
     "threadId": "1",
@@ -320,7 +320,7 @@
   {
     "description": "",
     "id": "nsx-edge-cluster-recovery-selective",
-    "commandLine": "Invoke-NSXEdgeClusterRecoverySelective -nsxManagerFqdn $restoredNsxManagerFqdn -nsxManagerAdmin $restoredNsxManagerAdmin -nsxManagerAdminPassword $restoredNsxManagerAdminPassword -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSDDCDataFile -monitor",
+    "commandLine": "Invoke-NSXEdgeClusterRecoverySelective -nsxManagerFqdn $restoredNsxManagerFqdn -nsxManagerAdmin $restoredNsxManagerAdmin -nsxManagerAdminPassword $restoredNsxManagerAdminPassword -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSddcDataFile -monitor",
     "displayName": "Invoke NSX Edge Cluster Recovery Selective",
     "condition": [],
     "threadId": "1",
@@ -329,7 +329,7 @@
   },
   {
     "description": "",
-    "commandLine": "New-NSXManagerOvaDeployment -targetType esx -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -restoredNsxManagerDeploymentSize $restoredNsxManagerDeploymentSize -nsxManagerOvaFile $nsxManagerOvaFile",
+    "commandLine": "New-NSXManagerOvaDeployment -targetType esx -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSddcDataFile -workloadDomain $workloadDomain -restoredNsxManagerDeploymentSize $restoredNsxManagerDeploymentSize -nsxManagerOvaFile $nsxManagerOvaFile",
     "displayName": "Second NSX Manager OVA Deployment",
     "condition": [
       {
@@ -345,7 +345,7 @@
   },
   {
     "description": "",
-    "commandLine": "New-NSXManagerOvaDeployment -targetType esx -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -workloadDomain $workloadDomain -restoredNsxManagerDeploymentSize $restoredNsxManagerDeploymentSize -nsxManagerOvaFile $nsxManagerOvaFile",
+    "commandLine": "New-NSXManagerOvaDeployment -targetType esx -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -extractedSDDCDataFile $extractedSddcDataFile -workloadDomain $workloadDomain -restoredNsxManagerDeploymentSize $restoredNsxManagerDeploymentSize -nsxManagerOvaFile $nsxManagerOvaFile",
     "displayName": "Third NSX Manager OVA Deployment",
     "condition": [
       {
@@ -364,7 +364,7 @@
   },
   {
     "description": "",
-    "commandLine": "Add-AdditionalNSXManagers -workloadDomain $workloadDomain -extractedSDDCDataFile $extractedSDDCDataFile",
+    "commandLine": "Add-AdditionalNSXManagers -workloadDomain $workloadDomain -extractedSDDCDataFile $extractedSddcDataFile",
     "displayName": "Add NSX Managers to Cluster",
     "condition": [
       {
@@ -383,7 +383,7 @@
   },
   {
     "description": "",
-    "commandLine": "Invoke-SddcManagerSSHKeyRefresh -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -extractedSDDCDataFile $extractedSDDCDataFile -clusterName $clusterName -workloadDomain $workloadDomain -VcfUserPassword $newSddcManagerPassword",
+    "commandLine": "Invoke-SddcManagerSSHKeyRefresh -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -extractedSDDCDataFile $extractedSddcDataFile -clusterName $clusterName -workloadDomain $workloadDomain -VcfUserPassword $newSddcManagerPassword",
     "displayName": "Invoke SDDC Manager SSHKey Refresh",
     "condition": [],
     "threadId": "1",
@@ -392,7 +392,7 @@
   },
   {
     "description": "",
-    "commandLine": "Update-DomainDatastoreID -extractedSDDCDataFile $extractedSDDCDataFile -vCenterFqdn $restoredVcenterFqdn -clusterName $clusterName -VcfUserPassword $newSddcManagerPassword -RootPassword $newSddcManagerPassword -autoConfirm",
+    "commandLine": "Update-DomainDatastoreID -extractedSDDCDataFile $extractedSddcDataFile -vCenterFqdn $restoredVcenterFqdn -clusterName $clusterName -VcfUserPassword $newSddcManagerPassword -RootPassword $newSddcManagerPassword -autoConfirm",
     "displayName": "Update Domain Datastore ID",
     "condition": [],
     "threadId": "1",
@@ -401,7 +401,7 @@
   },
   {
     "description": "",
-    "commandLine": "Update-ClusterHostSourceIDs -extractedSDDCDataFile $extractedSDDCDataFile -vCenterFqdn $restoredVcenterFqdn -clusterName $clusterName -VcfUserPassword $newSddcManagerPassword -RootPassword $newSddcManagerPassword -autoConfirm",
+    "commandLine": "Update-ClusterHostSourceIDs -extractedSDDCDataFile $extractedSddcDataFile -vCenterFqdn $restoredVcenterFqdn -clusterName $clusterName -VcfUserPassword $newSddcManagerPassword -RootPassword $newSddcManagerPassword -autoConfirm",
     "displayName": "Update Cluster Host Source IDs",
     "condition": [],
     "threadId": "1",

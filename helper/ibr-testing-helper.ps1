@@ -642,20 +642,20 @@ Function Update-VCFVariableJsonFiles {
         }
         If ($managementUpdates.Contains("sddcManagerOvaFile") -and ((Split-Path -Path $managementUpdates["sddcManagerOvaFile"] -Leaf) -match '\d+\.\d+\.\d+\.\d+')) {
             $vcfVersion = $Matches[0]
-            $fleetUpdates["VcfVersion"] = $vcfVersion
+            $fleetUpdates["vcfVersion"] = $vcfVersion
             Write-LogMessage -Type INFO -Message "Parsed VCF version $vcfVersion from $($managementUpdates["sddcManagerOvaFile"])"
         } else {
-            Write-LogMessage -Type WARNING -Message "Unable to parse a VCF version from an SDDC Manager OVA under $binariesPath - leaving VcfVersion unchanged"
+            Write-LogMessage -Type WARNING -Message "Unable to parse a VCF version from an SDDC Manager OVA under $binariesPath - leaving vcfVersion unchanged"
         }
 
         # Backups - SDDC Manager backup archive
         $sddcManagerBackupFolder = Join-Path -Path $backupsPath -ChildPath "sddc-manager-backup"
         $sddcManagerBackupFile = Get-ChildItem -Path $sddcManagerBackupFolder -Filter "*.tar.gz" -File -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike "decrypted*" } | Sort-Object -Property LastWriteTime -Descending | Select-Object -First 1
         If ($sddcManagerBackupFile) {
-            $managementUpdates["vcfbackupFilePath"] = $sddcManagerBackupFile.FullName
+            $managementUpdates["vcfBackupFilePath"] = $sddcManagerBackupFile.FullName
             Write-LogMessage -Type INFO -Message "Found SDDC Manager backup $($sddcManagerBackupFile.Name)"
         } else {
-            Write-LogMessage -Type WARNING -Message "No .tar.gz backup archive found under $sddcManagerBackupFolder - leaving vcfbackupFilePath unchanged"
+            Write-LogMessage -Type WARNING -Message "No .tar.gz backup archive found under $sddcManagerBackupFolder - leaving vcfBackupFilePath unchanged"
         }
 
         # Backups - management vCenter backup set, matched on the vCenter fqdn in the JSON
@@ -668,10 +668,10 @@ Function Update-VCFVariableJsonFiles {
         $fleetBackupRoot = Join-Path -Path $backupsPath -ChildPath "vcf\backups"
         $fleetArchiveFile = Get-ChildItem -Path $fleetBackupRoot -Filter "*.base.tgz" -File -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -match '[\\/]vsp[\\/]' } | Sort-Object -Property LastWriteTime -Descending | Select-Object -First 1
         If ($fleetArchiveFile) {
-            $fleetUpdates["LocalArchivePath"] = $fleetArchiveFile.FullName
+            $fleetUpdates["localArchivePath"] = $fleetArchiveFile.FullName
             Write-LogMessage -Type INFO -Message "Found fleet backup archive $($fleetArchiveFile.Name)"
         } else {
-            Write-LogMessage -Type WARNING -Message "No vsp *.base.tgz archive found under $fleetBackupRoot - leaving LocalArchivePath unchanged"
+            Write-LogMessage -Type WARNING -Message "No vsp *.base.tgz archive found under $fleetBackupRoot - leaving localArchivePath unchanged"
         }
 
         $targets = @(@{ file = $managementJsonFile; updates = $managementUpdates }, @{ file = $fleetJsonFile; updates = $fleetUpdates })

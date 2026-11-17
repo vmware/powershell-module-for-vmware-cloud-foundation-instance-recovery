@@ -69,10 +69,10 @@ An unrecognized operator name fails open (treated as `true`) — see
 ## `variable` — operator-typed-in values
 
 ```json
-{ "type": "variable", "name": "locationtype", "operator": "eq", "value": "SFTP" }
+{ "type": "variable", "name": "locationType", "operator": "eq", "value": "SFTP" }
 ```
 
-Looks up `$Variables['locationtype']` — the same dict the Variables tab builds from an answers
+Looks up `$Variables['locationType']` — the same dict the Variables tab builds from an answers
 file/manual edits. There is no fixed catalog of names: whatever variable names actually appear
 across a plan's own `commandLine`s (and typed conditions' `name`/`path` leaf) is what shows up as a
 promptable row on the Variables tab for that plan. To find out what's available for a given plan,
@@ -182,7 +182,7 @@ Run only if the targeted cluster is stretched.
 Run for either vSAN flavor.
 
 ```json
-{ "condition": [ { "type": "variable", "name": "locationtype", "operator": "eq", "value": "SFTP" } ] }
+{ "condition": [ { "type": "variable", "name": "locationType", "operator": "eq", "value": "SFTP" } ] }
 ```
 Run only if the operator chose an SFTP backup location.
 

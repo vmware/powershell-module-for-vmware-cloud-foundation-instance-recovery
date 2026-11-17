@@ -65,7 +65,7 @@
   },
   {
     "description": "Retrieve a List of Backups for the VCF Management Services (VCFMS)",
-    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -Type vcfms -extractedSDDCDataFile $extractedSDDCDataFile",
+    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -Type vcfms -extractedSDDCDataFile $extractedSddcDataFile",
     "displayName": "Retrieve VCFMS Backups",
     "condition": [
       {
@@ -81,7 +81,7 @@
   },
   {
     "description": "Retrieve a List of Backups for the VCF Management Services (VCFMS)",
-    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -Type vcfms -extractedSDDCDataFile $extractedSDDCDataFile -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
+    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -Type vcfms -extractedSDDCDataFile $extractedSddcDataFile -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
     "displayName": "Retrieve VCFMS Backups",
     "condition": [
       {
@@ -97,7 +97,7 @@
   },
   {
     "description": "Retrieve Backups for Log Management (ops-logs)",
-    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -Type opsLogs -extractedSDDCDataFile $extractedSDDCDataFile",
+    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -Type opsLogs -extractedSDDCDataFile $extractedSddcDataFile",
     "displayName": "Retrieve Log Management Backups",
     "condition": [
       {
@@ -113,7 +113,7 @@
   },
   {
     "description": "Retrieve Backups for Log Management (ops-logs)",
-    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -Type opsLogs -extractedSDDCDataFile $extractedSDDCDataFile -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
+    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -Type opsLogs -extractedSDDCDataFile $extractedSddcDataFile -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
     "displayName": "Retrieve Log Management Backups",
     "condition": [
       {
@@ -129,7 +129,7 @@
   },
   {
     "description": "Retrieve a List of Backups for the VCF Automation Component",
-    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -Type vcfa -extractedSDDCDataFile $extractedSDDCDataFile",
+    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -Type vcfa -extractedSDDCDataFile $extractedSddcDataFile",
     "displayName": "Retrieve VCF Automation Backups",
     "condition": [
       {
@@ -145,7 +145,7 @@
   },
   {
     "description": "Retrieve a List of Backups for the VCF Automation Component",
-    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -Type vcfa -extractedSDDCDataFile $extractedSDDCDataFile -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
+    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -Type vcfa -extractedSDDCDataFile $extractedSddcDataFile -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
     "displayName": "Retrieve VCF Automation Backups",
     "condition": [
       {
@@ -161,7 +161,7 @@
   },
   {
     "description": "Retrieve Telemetry Component Backup",
-    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -componentNames telemetry-acceptor -extractedSDDCDataFile $extractedSDDCDataFile",
+    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -componentNames telemetry-acceptor -extractedSDDCDataFile $extractedSddcDataFile",
     "displayName": "Retrieve Telemetry Backups",
     "condition": [
       {
@@ -177,7 +177,7 @@
   },
   {
     "description": "Retrieve Telemetry Component Backup",
-    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -componentNames telemetry-acceptor -extractedSDDCDataFile $extractedSDDCDataFile -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
+    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -componentNames telemetry-acceptor -extractedSDDCDataFile $extractedSddcDataFile -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
     "displayName": "Retrieve Telemetry Backups",
     "condition": [
       {
@@ -193,7 +193,7 @@
   },
   {
     "description": "Repoint SDDC Manager to the Offline Depot",
-    "commandLine": "Set-SDDCManagerOfflineDepot -extractedSDDCDataFile $extractedSDDCDataFile -sddcManagerUser $sddcManagerAdmin -sddcManagerPassword $sddcManagerAdminPassword -vcfUserPassword $vcfUserPassword -localUserPassword $localUserPassword -rootPassword $rootPassword -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort -offlineDepotUsername $offlineDepotUsername -offlineDepotPassword $offlineDepotPassword",
+    "commandLine": "Set-SDDCManagerOfflineDepot -extractedSDDCDataFile $extractedSddcDataFile -sddcManagerUser $sddcManagerAdmin -sddcManagerPassword $sddcManagerAdminPassword -vcfUserPassword $vcfUserPassword -localUserPassword $localUserPassword -rootPassword $rootPassword -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort -offlineDepotUsername $offlineDepotUsername -offlineDepotPassword $offlineDepotPassword",
     "displayName": "Set SDDC Manager Offline Depot",
     "condition": [
       {
@@ -209,7 +209,7 @@
   },
   {
     "description": "Repoint SDDC Manager to the Unauthorized Offline Depot",
-    "commandLine": "Set-SDDCManagerOfflineDepot -extractedSDDCDataFile $extractedSDDCDataFile -sddcManagerUser $sddcManagerAdmin -sddcManagerPassword $sddcManagerAdminPassword -vcfUserPassword $vcfUserPassword -localUserPassword $localUserPassword -rootPassword $rootPassword -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort -unauthorizedDepot",
+    "commandLine": "Set-SDDCManagerOfflineDepot -extractedSDDCDataFile $extractedSddcDataFile -sddcManagerUser $sddcManagerAdmin -sddcManagerPassword $sddcManagerAdminPassword -vcfUserPassword $vcfUserPassword -localUserPassword $localUserPassword -rootPassword $rootPassword -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort -unauthorizedDepot",
     "displayName": "Set SDDC Manager Unauthorized Offline Depot",
     "condition": [
       {
@@ -225,7 +225,7 @@
   },
   {
     "description": "Trigger Download of Binaries Needed for Recovery",
-    "commandLine": "Invoke-SddcManagerBundleDownload -extractedSDDCDataFile $extractedSDDCDataFile -vcfUserPassword $vcfUserPassword -rootPassword $rootPassword -adminPassword $adminPassword -WaitForCompletion",
+    "commandLine": "Invoke-SddcManagerBundleDownload -extractedSDDCDataFile $extractedSddcDataFile -vcfUserPassword $vcfUserPassword -rootPassword $rootPassword -adminPassword $adminPassword -WaitForCompletion",
     "displayName": "Invoke SDDC Manager Bundle Download",
     "condition": [],
     "threadId": "2",
@@ -234,7 +234,7 @@
   },
   {
     "description": "Extract Runtime Configuration from the Services Runtime Backup",
-    "commandLine": "New-ExtractVcfmsBackup -LocalArchivePath $LocalArchivePath -EncryptionPassphrase $encryptionPassphrase -OutputDir \".\\backup-yaml\"",
+    "commandLine": "New-ExtractVcfmsBackup -LocalArchivePath $localArchivePath -EncryptionPassphrase $encryptionPassphrase -OutputDir \".\\backup-yaml\"",
     "displayName": "Extract Runtime Configuration from VCFMS Backup",
     "condition": [],
     "threadId": "2",
@@ -243,7 +243,7 @@
   },
   {
     "description": "Prepare to Restore VCF Management Services (remove the existing VSP cluster entry)",
-    "commandLine": "Remove-SddcManagerVspClusterEntry -extractedSDDCDataFile $extractedSDDCDataFile -VcfUserPassword $vcfUserPassword -RootPassword $rootPassword -ClusterType MANAGEMENT -autoConfirm",
+    "commandLine": "Remove-SddcManagerVspClusterEntry -extractedSDDCDataFile $extractedSddcDataFile -VcfUserPassword $vcfUserPassword -RootPassword $rootPassword -ClusterType MANAGEMENT -autoConfirm",
     "displayName": "Remove VCFMS Services Runtime Cluster Entry",
     "condition": [],
     "threadId": "2",
@@ -252,7 +252,7 @@
   },
   {
     "description": "Redeploy VCF Management Services (VCFMS)",
-    "commandLine": "New-ServicesRuntime -SddcManagerUser $sddcManagerAdmin -SddcManagerPassword $sddcManagerAdminPassword -SystemUserPassword $vcfmsServicesRuntimePassword -Ipv4Addresses ($ipv4Addresses.Split(',').Trim()) -Size $size -GatewayCidrIpv4 $gatewayCidrIpv4 -extractedSDDCDataFile $extractedSDDCDataFile -InternalClusterCidrIpv4 $internalClusterCidrIpv4 -type MANAGEMENT -autoConfirm",
+    "commandLine": "New-ServicesRuntime -SddcManagerUser $sddcManagerAdmin -SddcManagerPassword $sddcManagerAdminPassword -SystemUserPassword $vcfmsServicesRuntimePassword -Ipv4Addresses ($ipv4Addresses.Split(',').Trim()) -Size $size -GatewayCidrIpv4 $gatewayCidrIpv4 -extractedSDDCDataFile $extractedSddcDataFile -InternalClusterCidrIpv4 $internalClusterCidrIpv4 -type MANAGEMENT -autoConfirm",
     "displayName": "Create New Services Runtime for VCFMS",
     "condition": [],
     "threadId": "2",
@@ -261,7 +261,7 @@
   },
   {
     "description": "Set SFTP Backup Settings on the Redeployed Services Runtime",
-    "commandLine": "Set-ServicesRuntimeSftpBackupSettings -Type MANAGEMENT -ServicesRuntimePassword $vcfmsServicesRuntimePassword -extractedSDDCDataFile $extractedSDDCDataFile -SftpHost $sftpHost -SftpUsername $sftpUsername -SftpPassword $sftpPassword -SftpDirectory $sftpDirectory -EncryptionPassphrase $encryptionPassphrase",
+    "commandLine": "Set-ServicesRuntimeSftpBackupSettings -Type MANAGEMENT -ServicesRuntimePassword $vcfmsServicesRuntimePassword -extractedSDDCDataFile $extractedSddcDataFile -SftpHost $sftpHost -SftpUsername $sftpUsername -SftpPassword $sftpPassword -SftpDirectory $sftpDirectory -EncryptionPassphrase $encryptionPassphrase",
     "displayName": "Set VCFMS Services Runtime SFTP Backup Settings",
     "condition": [],
     "threadId": "3",
@@ -273,7 +273,7 @@
   },
   {
     "description": "Trust the Installer Host Certificate (only needed when using an authorized offline depot with the original VCF Installer)",
-    "commandLine": "Add-VcfmsTrustedCertificate -Type MANAGEMENT -extractedSDDCDataFile $extractedSDDCDataFile -ServicesRuntimePassword $vcfmsServicesRuntimePassword -RemoteHostFqdn $vcfInstallerFqdn",
+    "commandLine": "Add-VcfmsTrustedCertificate -Type MANAGEMENT -extractedSDDCDataFile $extractedSddcDataFile -ServicesRuntimePassword $vcfmsServicesRuntimePassword -RemoteHostFqdn $vcfInstallerFqdn",
     "displayName": "Trust Installer Certificate on VCFMS Services Runtime",
     "condition": [
       {
@@ -289,7 +289,7 @@
   },
   {
     "description": "Trust the Offline Depot Certificate (only needed when using an unauthorized offline depot instead of the original VCF Installer)",
-    "commandLine": "Add-VcfmsTrustedCertificate -Type MANAGEMENT -extractedSDDCDataFile $extractedSDDCDataFile -ServicesRuntimePassword $vcfmsServicesRuntimePassword -RemoteHostFqdn $offlineDepotFqdn -RemoteHostPort $offlineDepotPort",
+    "commandLine": "Add-VcfmsTrustedCertificate -Type MANAGEMENT -extractedSDDCDataFile $extractedSddcDataFile -ServicesRuntimePassword $vcfmsServicesRuntimePassword -RemoteHostFqdn $offlineDepotFqdn -RemoteHostPort $offlineDepotPort",
     "displayName": "Trust Offline Depot Certificate on VCFMS Services Runtime",
     "condition": [
       {
@@ -305,7 +305,7 @@
   },
   {
     "description": "Restore VCF Management Services (VCFMS)",
-    "commandLine": "Restore-ServicesRuntimeComponentBackup -Type MANAGEMENT -extractedSDDCDataFile $extractedSDDCDataFile -ServicesRuntimePassword $vcfmsServicesRuntimePassword -RestoreJsonFile \".\\vcfms-restore-payload.json\" -autoConfirm",
+    "commandLine": "Restore-ServicesRuntimeComponentBackup -Type MANAGEMENT -extractedSDDCDataFile $extractedSddcDataFile -ServicesRuntimePassword $vcfmsServicesRuntimePassword -RestoreJsonFile \".\\vcfms-restore-payload.json\" -autoConfirm",
     "displayName": "Restore VCFMS Backups",
     "condition": [],
     "threadId": "3",
@@ -314,7 +314,7 @@
   },
   {
     "description": "Apply Services Runtime Configuration",
-    "commandLine": "Set-ServicesRuntimeScale -Type MANAGEMENT -extractedSDDCDataFile $extractedSDDCDataFile -ServicesRuntimePassword $vcfmsServicesRuntimePassword -KubeconfigOutputDir \".\\backup-yaml\" -BackupYamlDir \".\\backup-yaml\"",
+    "commandLine": "Set-ServicesRuntimeScale -Type MANAGEMENT -extractedSDDCDataFile $extractedSddcDataFile -ServicesRuntimePassword $vcfmsServicesRuntimePassword -KubeconfigOutputDir \".\\backup-yaml\" -BackupYamlDir \".\\backup-yaml\"",
     "displayName": "Apply Services Runtime Configuration",
     "condition": [],
     "threadId": "3",
@@ -323,7 +323,7 @@
   },
   {
     "description": "Restore Log Management",
-    "commandLine": "Restore-ServicesRuntimeComponentBackup -Type MANAGEMENT -extractedSDDCDataFile $extractedSDDCDataFile -ServicesRuntimePassword $vcfmsServicesRuntimePassword -RestoreJsonFile \".\\opsLogs-restore-payload.json\" -autoConfirm",
+    "commandLine": "Restore-ServicesRuntimeComponentBackup -Type MANAGEMENT -extractedSDDCDataFile $extractedSddcDataFile -ServicesRuntimePassword $vcfmsServicesRuntimePassword -RestoreJsonFile \".\\opsLogs-restore-payload.json\" -autoConfirm",
     "displayName": "Restore Log Management Backup",
     "condition": [],
     "threadId": "3",
@@ -341,7 +341,7 @@
   },
   {
     "description": "Point SDDC Manager to the FDS Depot",
-    "commandLine": "Set-SDDCManagerFDSDepot -extractedSDDCDataFile $extractedSDDCDataFile -sddcManagerUser $sddcManagerAdmin -sddcManagerPassword $sddcManagerAdminPassword -originalConfigurationFile $originalConfigurationFile",
+    "commandLine": "Set-SDDCManagerFDSDepot -extractedSDDCDataFile $extractedSddcDataFile -sddcManagerUser $sddcManagerAdmin -sddcManagerPassword $sddcManagerAdminPassword -originalConfigurationFile $originalConfigurationFile",
     "displayName": "Set SDDC Manager FDS Depot",
     "condition": [],
     "threadId": "3",
@@ -350,7 +350,7 @@
   },
   {
     "description": "Prepare to Restore VCF Automation (remove the existing VSP cluster entry)",
-    "commandLine": "Remove-SddcManagerVspClusterEntry -extractedSDDCDataFile $extractedSDDCDataFile -VcfUserPassword $vcfUserPassword -RootPassword $rootPassword -ClusterType CONSUMPTION -autoConfirm",
+    "commandLine": "Remove-SddcManagerVspClusterEntry -extractedSDDCDataFile $extractedSddcDataFile -VcfUserPassword $vcfUserPassword -RootPassword $rootPassword -ClusterType CONSUMPTION -autoConfirm",
     "displayName": "Remove VCFA Services Runtime Cluster Entry",
     "condition": [],
     "threadId": "4",
@@ -362,7 +362,7 @@
   },
   {
     "description": "Redeploy VCF Automation Services Runtime Cluster",
-    "commandLine": "New-ServicesRuntime -SddcManagerUser $sddcManagerAdmin -SddcManagerPassword $sddcManagerAdminPassword -SystemUserPassword $vcfaServicesRuntimePassword -Ipv4Addresses ($vcfaIpv4Addresses.Split(',').Trim()) -Size $vcfaSize -GatewayCidrIpv4 $vcfaGatewayCidrIpv4 -extractedSDDCDataFile $extractedSDDCDataFile -InternalClusterCidrIpv4 $vcfaInternalClusterCidrIpv4 -type CONSUMPTION -autoConfirm",
+    "commandLine": "New-ServicesRuntime -SddcManagerUser $sddcManagerAdmin -SddcManagerPassword $sddcManagerAdminPassword -SystemUserPassword $vcfaServicesRuntimePassword -Ipv4Addresses ($vcfaIpv4Addresses.Split(',').Trim()) -Size $vcfaSize -GatewayCidrIpv4 $vcfaGatewayCidrIpv4 -extractedSDDCDataFile $extractedSddcDataFile -InternalClusterCidrIpv4 $vcfaInternalClusterCidrIpv4 -type CONSUMPTION -autoConfirm",
     "displayName": "Create New VCFA Services Runtime",
     "condition": [],
     "threadId": "4",
@@ -371,7 +371,7 @@
   },
   {
     "description": "Set SFTP Backup Settings on the VCF Automation Services Runtime",
-    "commandLine": "Set-ServicesRuntimeSftpBackupSettings -Type CONSUMPTION -ServicesRuntimePassword $vcfaServicesRuntimePassword -extractedSDDCDataFile $extractedSDDCDataFile -SftpHost $sftpHost -SftpUsername $sftpUsername -SftpPassword $sftpPassword -SftpDirectory $sftpDirectory -EncryptionPassphrase $encryptionPassphrase",
+    "commandLine": "Set-ServicesRuntimeSftpBackupSettings -Type CONSUMPTION -ServicesRuntimePassword $vcfaServicesRuntimePassword -extractedSDDCDataFile $extractedSddcDataFile -SftpHost $sftpHost -SftpUsername $sftpUsername -SftpPassword $sftpPassword -SftpDirectory $sftpDirectory -EncryptionPassphrase $encryptionPassphrase",
     "displayName": "Set VCFA Services Runtime SFTP Backup Settings",
     "condition": [],
     "threadId": "4",
@@ -380,7 +380,7 @@
   },
   {
     "description": "Trust the Installer Host Certificate on VCF Automation",
-    "commandLine": "Add-VcfmsTrustedCertificate -Type CONSUMPTION -extractedSDDCDataFile $extractedSDDCDataFile -ServicesRuntimePassword $vcfaServicesRuntimePassword -RemoteHostFqdn $vcfInstallerFqdn",
+    "commandLine": "Add-VcfmsTrustedCertificate -Type CONSUMPTION -extractedSDDCDataFile $extractedSddcDataFile -ServicesRuntimePassword $vcfaServicesRuntimePassword -RemoteHostFqdn $vcfInstallerFqdn",
     "displayName": "Trust Installer Certificate on VCFA Services Runtime",
     "condition": [
       {
@@ -396,7 +396,7 @@
   },
   {
     "description": "Trust the Offline Depot Certificate (only needed when using an unauthorized offline depot instead of the original VCF Installer)",
-    "commandLine": "Add-VcfmsTrustedCertificate -Type CONSUMPTION -extractedSDDCDataFile $extractedSDDCDataFile -ServicesRuntimePassword $vcfaServicesRuntimePassword -RemoteHostFqdn $offlineDepotFqdn -RemoteHostPort $offlineDepotPort",
+    "commandLine": "Add-VcfmsTrustedCertificate -Type CONSUMPTION -extractedSDDCDataFile $extractedSddcDataFile -ServicesRuntimePassword $vcfaServicesRuntimePassword -RemoteHostFqdn $offlineDepotFqdn -RemoteHostPort $offlineDepotPort",
     "displayName": "Trust Offline Depot Certificate on VCFA Services Runtime",
     "condition": [
       {
@@ -412,7 +412,7 @@
   },
   {
     "description": "Restore VCF Automation",
-    "commandLine": "Restore-ServicesRuntimeComponentBackup -Type CONSUMPTION -extractedSDDCDataFile $extractedSDDCDataFile -ServicesRuntimePassword $vcfaServicesRuntimePassword -RestoreJsonFile \".\\vcfa-restore-payload.json\" -autoConfirm",
+    "commandLine": "Restore-ServicesRuntimeComponentBackup -Type CONSUMPTION -extractedSDDCDataFile $extractedSddcDataFile -ServicesRuntimePassword $vcfaServicesRuntimePassword -RestoreJsonFile \".\\vcfa-restore-payload.json\" -autoConfirm",
     "displayName": "Restore VCF Automation Backup",
     "condition": [],
     "threadId": "4",
@@ -421,7 +421,7 @@
   },
   {
     "description": "Restore Telemetry",
-    "commandLine": "Restore-ServicesRuntimeComponentBackup -Type MANAGEMENT -extractedSDDCDataFile $extractedSDDCDataFile -ServicesRuntimePassword $vcfmsServicesRuntimePassword -RestoreJsonFile \".\\restore-payload.json\" -autoConfirm",
+    "commandLine": "Restore-ServicesRuntimeComponentBackup -Type MANAGEMENT -extractedSDDCDataFile $extractedSddcDataFile -ServicesRuntimePassword $vcfmsServicesRuntimePassword -RestoreJsonFile \".\\restore-payload.json\" -autoConfirm",
     "displayName": "Restore Telemetry Backup",
     "condition": [],
     "threadId": "2",
