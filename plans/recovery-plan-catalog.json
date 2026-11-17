@@ -28,6 +28,10 @@
       "label": "User Provided VCF Operations Restore Script"
     },
     {
+      "id": "userProvidedDnsScript",
+      "label": "User Provided DNS Entry Modification Script"
+    },
+    {
       "id": "userProvidedVsanWitnessScript",
       "label": "User Provided vSAN Witness Deployment Script",
       "condition": [
@@ -166,6 +170,12 @@
       "default": true,
       "planFolder": "fdr",
       "planFile": "fdr-failover-plan.json",
+      "extraToggles": [
+        {
+          "id": "userProvidedDnsScript",
+          "defaultChecked": false
+        }
+      ],
       "variablesFile": "fdr-failover-variables.json",
       "dataSources": [],
       "selectionList": "none"
@@ -178,6 +188,12 @@
       "default": false,
       "planFolder": "fdr",
       "planFile": "fdr-failback-plan.json",
+      "extraToggles": [
+        {
+          "id": "userProvidedDnsScript",
+          "defaultChecked": false
+        }
+      ],
       "variablesFile": "fdr-failback-variables.json",
       "dataSources": [],
       "selectionList": "none"

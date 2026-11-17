@@ -368,6 +368,12 @@ Some plans add their own options to the right of these. **Fleet Component Recove
 | **User Provided VCF Operations Restore Script** (toggle) | Runs your own script to restore VCF Operations, *instead of* the two manual confirmation tasks. Off by default. See [Authoring a VCF Operations restore script](#authoring-a-vcf-operations-restore-script). |
 | **Binary Sourcing** (choose one) | **Unauthorized Offline Depot** (default) or **Authorized Offline Depot & Original VCF Installer**. Chooses where the recovery binaries come from. Hover over the heading for a description. |
 
+The **Failover Fleet Components** and **Failback Fleet Components** plans add:
+
+| Option | What it does |
+|---|---|
+| **User Provided DNS Entry Modification Script** (toggle) | Runs your own script to modify the fleet component VIP DNS entries, *instead of* the manual confirmation task. Off by default. Set `dnsScriptPath` on the Variables tab. The script is run with `-Failover` or `-Failback` to match the plan, and follows the same success contract as the other user scripts. `helper/Update-FleetVipDns.ps1` is a ready-made example. |
+
 Changing an option changes which tasks appear in the list straight away.
 
 ### The Task List

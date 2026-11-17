@@ -56,7 +56,7 @@
   {
     "description": "Retrieve a List of Backups for the VCF Management Services Fleet Components",
     "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpServer -sftpUser $sftpUser -sftpPassword $sftpPassword -sftpServerBackupPath $sftpServerBackupPath -vspId $vspId -componentNames \"vcf-fleet-lcm\",\"vcf-fleet-depot\",\"salt-raas\",\"vidb\" -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
-    "displayName": "Get Backups from SFTP Server",
+    "displayName": "Retrieve VCFMS Backups",
     "condition": [],
     "threadId": "1",
     "interactive": true,
@@ -81,10 +81,33 @@
     "visible": true
   },
   {
+    "description": "Modify the fleet component VIP DNS entries for failback using the user-provided script (must exit 0 on success and non-zero on failure)",
+    "commandLine": "Invoke-UserScript -ScriptPath $dnsScriptPath -ScriptArguments '-Failback'",
+    "displayName": "Run User-Provided DNS Entry Modification Script",
+    "condition": [
+      {
+        "type": "variable",
+        "name": "userProvidedDnsScript",
+        "operator": "eq",
+        "value": "true"
+      }
+    ],
+    "threadId": "1",
+    "interactive": false,
+    "visible": true
+  },
+  {
     "description": "Modify the DNS entries for the fleet component VIPs (manual, no PowerShell equivalent)",
     "commandLine": "Confirm-ManualStep -Message 'Press Enter once the DNS entries for the fleet component VIPs have been modified' -AnswerKey 'fleet-vip-dns-updated'",
     "displayName": "Confirm Manual Step: fleet component VIP DNS entries have been modified",
-    "condition": [],
+    "condition": [
+      {
+        "type": "variable",
+        "name": "userProvidedDnsScript",
+        "operator": "eq",
+        "value": "false"
+      }
+    ],
     "threadId": "1",
     "interactive": true,
     "visible": true
@@ -110,7 +133,7 @@
   {
     "description": "Restore the Fleet Components on the Original VCF Management Services Instance (only required if components were changed while failed over)",
     "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $ServicesRuntimeFqdn -ServicesRuntimePassword $ServicesRuntimePassword -RestoreJsonFile $RestoreJsonFile",
-    "displayName": "Restore Services Runtime Component Backup",
+    "displayName": "Restore VCFMS Backups",
     "condition": [],
     "threadId": "1",
     "interactive": true,
@@ -191,7 +214,7 @@
   {
     "description": "Retrieve a List of Backups for VCF Automation",
     "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpServer -sftpUser $sftpUser -sftpPassword $sftpPassword -sftpServerBackupPath $sftpServerBackupPath -vspId $vspId -componentNames \"vcfa\" -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
-    "displayName": "Get Backups from SFTP Server",
+    "displayName": "Retrieve VCF Automation Backups",
     "condition": [],
     "threadId": "1",
     "interactive": true,
@@ -209,7 +232,7 @@
   {
     "description": "Restore VCF Automation (only required if VCF Automation was changed while failed over)",
     "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $ServicesRuntimeFqdn -ServicesRuntimePassword $ServicesRuntimePassword -RestoreJsonFile $RestoreJsonFile",
-    "displayName": "Restore Services Runtime Component Backup",
+    "displayName": "Restore VCF Automation Backup",
     "condition": [],
     "threadId": "1",
     "interactive": true,

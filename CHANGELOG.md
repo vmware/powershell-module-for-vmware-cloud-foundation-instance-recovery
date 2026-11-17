@@ -11,6 +11,8 @@
 - Engineering mode now also accepts a signed 12-hour one-time code (`helper/New-EngineeringOtp.ps1`) alongside the password
 - Additional Cluster Recovery: storage clusters and compute clusters are only listed in Discovered Infrastructure when Engineering mode is enabled (driven by `engineeringOnlyClusterTypes` in `recovery-plan-catalog.json`)
 - Fleet Disaster Recovery (FDR) is no longer engineering-only
+- FDR failover and failback plans: added a "User Provided DNS Entry Modification Script" toggle (off by default, which keeps the manual confirmation task) and `helper/Update-FleetVipDns.ps1` as a ready-made `-Failover` / `-Failback` script
+- Added `-ScriptArguments` to `Invoke-UserScript`
 - Updated `Invoke-NSXEdgeClusterRecovery`
 - Updated `Invoke-NSXEdgeClusterRecoverySelective`
 

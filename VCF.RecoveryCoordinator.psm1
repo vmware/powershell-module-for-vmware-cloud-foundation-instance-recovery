@@ -419,16 +419,23 @@ Function Invoke-UserScript {
       - any other code    -> failure: logs an [ERROR] line before "Completed Task", so the step is shown as failed
     The user script is therefore responsible for deciding whether the restore truly succeeded (including waiting for VCF Operations to be available,
     if that is what "restored" means for them) and for exiting 0 only in that case. An uncaught terminating error in the script also yields a non-zero exit code.
-    The user script must run unattended, and is not passed any parameters.
+    The user script must run unattended. It is not passed any parameters unless -ScriptArguments is supplied (e.g. the FDR plans pass -Failover or -Failback to the DNS entry modification script).
 
     .EXAMPLE
     Invoke-UserScript -ScriptPath 'F:\VCFIR\Restore-OpsAppliances.ps1'
 
+    .EXAMPLE
+    Invoke-UserScript -ScriptPath 'F:\VCFIR\Update-FleetVipDns.ps1' -ScriptArguments '-Failover'
+
     .PARAMETER ScriptPath
     Path to the PowerShell script to run
+
+    .PARAMETER ScriptArguments
+    Optional. Arguments passed to the script on its command line, e.g. '-Failover'
     #>
     Param(
-        [Parameter (Mandatory = $false)][String] $ScriptPath
+        [Parameter (Mandatory = $false)][String] $ScriptPath,
+        [Parameter (Mandatory = $false)][String[]] $ScriptArguments
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
@@ -443,7 +450,7 @@ Function Invoke-UserScript {
         LogMessage -type INFO -message "[$jumpboxName] Running user-provided script '$ScriptPath'"
         Try {
             $pwshPath = (Get-Process -Id $PID).Path
-            & $pwshPath -NoProfile -File $ScriptPath 2>&1 | ForEach-Object { Write-Host $_ }
+            & $pwshPath -NoProfile -File $ScriptPath @ScriptArguments 2>&1 | ForEach-Object { Write-Host $_ }
             $exitCode = $LASTEXITCODE
             If ($exitCode -eq 0) {
                 LogMessage -type INFO -message "[$jumpboxName] User script completed successfully (exit code 0)"
@@ -13275,6 +13282,9 @@ Function Restore-ServicesRuntimeComponentBackup {
         Write-Host "   $componentName" -ForegroundColor Yellow -NoNewline
         Write-Host " -> point: $($comp.point)" -ForegroundColor White
         Write-Host "     path: $($comp.path)" -ForegroundColor Gray
+        if ($comp.packageUrl) {
+            Write-Host "     packageUrl: $($comp.packageUrl)" -ForegroundColor Gray
+        }
     }
     Write-Host ""
 

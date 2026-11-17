@@ -18,10 +18,33 @@
     "visible": true
   },
   {
+    "description": "Modify the fleet component VIP DNS entries for failover using the user-provided script (must exit 0 on success and non-zero on failure)",
+    "commandLine": "Invoke-UserScript -ScriptPath $dnsScriptPath -ScriptArguments '-Failover'",
+    "displayName": "Run User-Provided DNS Entry Modification Script",
+    "condition": [
+      {
+        "type": "variable",
+        "name": "userProvidedDnsScript",
+        "operator": "eq",
+        "value": "true"
+      }
+    ],
+    "threadId": "1",
+    "interactive": false,
+    "visible": true
+  },
+  {
     "description": "Modify DNS entries for the fleet component VIPs before recovery (manual)",
     "commandLine": "Confirm-ManualStep -Message 'Press Enter once the DNS entries for the fleet component VIPs have been modified' -AnswerKey 'fleet-vip-dns-updated'",
     "displayName": "Confirm Manual Step: DNS entries for fleet component VIPs have been modified",
-    "condition": [],
+    "condition": [
+      {
+        "type": "variable",
+        "name": "userProvidedDnsScript",
+        "operator": "eq",
+        "value": "false"
+      }
+    ],
     "threadId": "1",
     "interactive": true,
     "visible": true
@@ -74,7 +97,7 @@
   {
     "description": "Retrieve a List of Backups for VCF Management Services Fleet Components ($vspId is the ID of the VCF Management Services instance from the \"Retrieve Component Details from VCF Operations\" step above)",
     "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpServer -sftpUser $sftpUser -sftpPassword $sftpPassword -sftpServerBackupPath $sftpServerBackupPath -vspId $vspId -componentNames ($componentNames.Split(',').Trim().Trim([char]34,[char]39)) -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
-    "displayName": "Get Backups from SFTP Server",
+    "displayName": "Retrieve VCFMS Backups",
     "condition": [],
     "threadId": "1",
     "interactive": true,
@@ -92,7 +115,7 @@
   {
     "description": "Restore the Fleet Components on the Recovery VCF Management Services Instance",
     "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $ServicesRuntimeFqdn -ServicesRuntimePassword $ServicesRuntimePassword -RestoreJsonFile $RestoreJsonFile",
-    "displayName": "Restore Services Runtime Component Backup",
+    "displayName": "Restore VCFMS Backups",
     "condition": [],
     "threadId": "1",
     "interactive": true,
@@ -146,7 +169,7 @@
   {
     "description": "Retrieve a List of Backups for Log Management",
     "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpServer -sftpUser $sftpUser -sftpPassword $sftpPassword -sftpServerBackupPath $sftpServerBackupPath -vspId $vspId -componentNames ($componentNames.Split(',').Trim().Trim([char]34,[char]39)) -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
-    "displayName": "Get Backups from SFTP Server",
+    "displayName": "Retrieve Log Management Backups",
     "condition": [],
     "threadId": "1",
     "interactive": true,
@@ -155,7 +178,7 @@
   {
     "description": "Restore Log Management",
     "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $ServicesRuntimeFqdn -ServicesRuntimePassword $ServicesRuntimePassword -RestoreJsonFile $RestoreJsonFile",
-    "displayName": "Restore Services Runtime Component Backup",
+    "displayName": "Restore Log Management Backup",
     "condition": [],
     "threadId": "1",
     "interactive": true,
@@ -209,7 +232,7 @@
   {
     "description": "Retrieve a List of Backups for VCF Automation",
     "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpServer -sftpUser $sftpUser -sftpPassword $sftpPassword -sftpServerBackupPath $sftpServerBackupPath -vspId $vspId -componentNames ($componentNames.Split(',').Trim().Trim([char]34,[char]39)) -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
-    "displayName": "Get Backups from SFTP Server",
+    "displayName": "Retrieve VCF Automation Backups",
     "condition": [],
     "threadId": "1",
     "interactive": true,
@@ -227,7 +250,7 @@
   {
     "description": "Restore VCF Automation for VCF Fleet Disaster Recovery",
     "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $ServicesRuntimeFqdn -ServicesRuntimePassword $ServicesRuntimePassword -RestoreJsonFile $RestoreJsonFile",
-    "displayName": "Restore Services Runtime Component Backup",
+    "displayName": "Restore VCF Automation Backup",
     "condition": [],
     "threadId": "1",
     "interactive": true,
