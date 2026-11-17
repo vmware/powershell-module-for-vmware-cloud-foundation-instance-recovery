@@ -2969,6 +2969,12 @@ Function Get-BackupsFromSFTPServer {
 
     .PARAMETER offlineDepotPort
     HTTPS port of the offline depot. Defaults to 443. Only used with -unauthorizedDepot.
+
+    .PARAMETER opsRegisteredComponentsFile
+    Path to the VCFOps-Registered-Component-Details.json file (created by Get-VcfOperationsRegisteredComponents). Used to resolve -vspId: the VCF Automation Services Runtime ID when -Type is vcfa (or the component list contains vcfa/vcd-migrator), otherwise the ID of the Services Runtime given by -ServicesRuntimeFqdn when it is not supplied directly and no -extractedSDDCDataFile is given.
+
+    .PARAMETER ServicesRuntimeFqdn
+    FQDN of the Services Runtime whose backups are searched. Only used with -opsRegisteredComponentsFile, to look up its ID as -vspId for everything other than VCF Automation backups. If omitted, the one Services Runtime not yet registered to a fleet is used, if there is exactly one.
     #>
     Param(
         [Parameter (Mandatory = $true)][String] $sftpServer,
@@ -2978,6 +2984,8 @@ Function Get-BackupsFromSFTPServer {
         [Parameter (Mandatory = $false)][String] $vspId,
         [Parameter (Mandatory = $false)][ValidateSet("vcfa", "vcfms", "opsLogs")][String] $Type,
         [Parameter (Mandatory = $false)][String] $extractedSDDCDataFile,
+        [Parameter (Mandatory = $false)][String] $opsRegisteredComponentsFile,
+        [Parameter (Mandatory = $false)][String] $ServicesRuntimeFqdn,
         [Parameter (Mandatory = $false)][ValidateSet("vsp", "vcf-fleet-lcm", "vcf-fleet-depot", "vcf-sddc-lcm", "salt", "salt-raas", "vidb", "ops-logs", "vcfms-metrics-store", "vcf-obs-data-platform", "telemetry-acceptor", "vcfa", "vcd-migrator")][String[]] $componentNames = @("vcf-fleet-lcm", "vcf-fleet-depot", "salt-raas", "vidb"),
         [Parameter (Mandatory = $false)][Switch] $unauthorizedDepot,
         [Parameter (Mandatory = $false)][String] $offlineDepotFqdn,
@@ -3032,8 +3040,24 @@ Function Get-BackupsFromSFTPServer {
             return
         }
         LogMessage -type INFO -message "[$jumpboxName] Resolved vspId '$vspId' ($vspClusterType) via '$extractedSDDCDataFile'"
+    } elseif ($opsRegisteredComponentsFile) {
+        # The VCF Automation Services Runtime for -Type vcfa (or a component list containing vcfa/vcd-migrator); otherwise
+        # the Services Runtime given by -ServicesRuntimeFqdn.
+        $isVcfaBackup = if ($PSBoundParameters.ContainsKey('Type')) {
+            $Type -eq 'vcfa'
+        } else {
+            ($resolvedComponentNames -contains 'vcfa') -or ($resolvedComponentNames -contains 'vcd-migrator')
+        }
+        $vspId = if ($isVcfaBackup) {
+            Get-OpsRegisteredComponentValue -Name VcfaVspId -opsRegisteredComponentsFile $opsRegisteredComponentsFile
+        } else {
+            Get-OpsRegisteredComponentValue -Name ServicesRuntimeComponentId -ServicesRuntimeFqdn $ServicesRuntimeFqdn -opsRegisteredComponentsFile $opsRegisteredComponentsFile
+        }
+        if (-not $vspId) {
+            return
+        }
     } else {
-        LogMessage -type ERROR -message "[$jumpboxName] Either -vspId or -extractedSDDCDataFile must be specified."
+        LogMessage -type ERROR -message "[$jumpboxName] Either -vspId, -extractedSDDCDataFile or -opsRegisteredComponentsFile must be specified."
         return
     }
 
@@ -10906,6 +10930,110 @@ Function Get-ExtractedSddcDataValue {
     return $value
 }
 
+Function Get-OpsRegisteredComponentValue {
+    <#
+    .SYNOPSIS
+    Returns a single well-known value from the VCF Operations registered components file, so a plan step doesn't need the operator to supply it.
+
+    .DESCRIPTION
+    The Get-OpsRegisteredComponentValue cmdlet reads the registered components file (VCFOps-Registered-Component-Details.json, created by Get-VcfOperationsRegisteredComponents) and returns one of:
+    - FleetFqdn: the FQDN of the VCF fleet component (the FLEET_LCM entry of components).
+    - VidbFqdn: the FQDN of the external Identity Broker (the VIDB entry of components).
+    - VcfaRuntimeFqdn: the FQDN of the VCF Automation Services Runtime (vcfa.platformFqdn).
+    - VcfaVspId: the ID of the VCF Automation Services Runtime (vcfa.vspComponentUuid).
+    - TargetVcfInstance: the instanceFqdn of the VCF instance that owns the Services Runtime given by -ServicesRuntimeFqdn.
+    - SddcManagerFqdn: the vcfInstanceFqdn (SDDC Manager) of the VCF instance that owns the Services Runtime given by -ServicesRuntimeFqdn.
+    - ServicesRuntimeComponentId: the ID of the Services Runtime given by -ServicesRuntimeFqdn (the VCF Automation Services Runtime when it is the vcfa platformFqdn, otherwise the matching vsp entry).
+
+    For the three values that depend on -ServicesRuntimeFqdn, if it is not supplied the vsp entry that is not yet registered to a fleet (empty fleetFqdn) is used, provided there is exactly one.
+
+    Writes the value to the pipeline and nothing else on success. Logs an error and returns $null if the file or entry is missing, or the lookup is ambiguous.
+
+    .EXAMPLE
+    Get-OpsRegisteredComponentValue -Name FleetFqdn -opsRegisteredComponentsFile ".\VCFOps-Registered-Component-Details.json"
+
+    .EXAMPLE
+    Get-OpsRegisteredComponentValue -Name TargetVcfInstance -opsRegisteredComponentsFile ".\VCFOps-Registered-Component-Details.json" -ServicesRuntimeFqdn "lax-sr01.lax.rainpole.io"
+
+    .PARAMETER Name
+    The value to return: FleetFqdn, VidbFqdn, VcfaRuntimeFqdn, VcfaVspId, TargetVcfInstance, SddcManagerFqdn or ServicesRuntimeComponentId.
+
+    .PARAMETER opsRegisteredComponentsFile
+    Path to the VCFOps-Registered-Component-Details.json file.
+
+    .PARAMETER ServicesRuntimeFqdn
+    FQDN of the Services Runtime that identifies the vsp entry for TargetVcfInstance, SddcManagerFqdn and ServicesRuntimeComponentId.
+    #>
+
+    Param(
+        [Parameter(Mandatory = $true)][ValidateSet("FleetFqdn", "VidbFqdn", "VcfaRuntimeFqdn", "VcfaVspId", "TargetVcfInstance", "SddcManagerFqdn", "ServicesRuntimeComponentId")][String] $Name,
+        [Parameter(Mandatory = $true)][String] $opsRegisteredComponentsFile,
+        [Parameter(Mandatory = $false)][String] $ServicesRuntimeFqdn
+    )
+
+    $jumpboxName = hostname
+    if (-not (Test-Path -LiteralPath $opsRegisteredComponentsFile)) {
+        LogMessage -type ERROR -message "[$jumpboxName] Registered components file '$opsRegisteredComponentsFile' not found (run Get-VcfOperationsRegisteredComponents first). Unable to resolve $Name. Aborting."
+        return $null
+    }
+    try {
+        $opsComponents = Get-Content -LiteralPath $opsRegisteredComponentsFile -Raw | ConvertFrom-Json
+    } catch {
+        LogMessage -type ERROR -message "[$jumpboxName] Failed to parse '$opsRegisteredComponentsFile': $($_.Exception.Message)"
+        return $null
+    }
+
+    $vspEntries = @($opsComponents.vsp | Where-Object { $_ })
+    $fleetFqdnValue = @($opsComponents.components | Where-Object { $_.componentType -eq "FLEET_LCM" } | ForEach-Object { $_.fqdn })[0]
+    $value = $null
+    $problem = $null
+
+    switch ($Name) {
+        "FleetFqdn" {
+            $value = $fleetFqdnValue
+        }
+        "VidbFqdn" {
+            $value = @($opsComponents.components | Where-Object { $_.componentType -eq "VIDB" } | ForEach-Object { $_.fqdn })[0]
+        }
+        "VcfaRuntimeFqdn" {
+            $value = $opsComponents.vcfa.platformFqdn
+        }
+        "VcfaVspId" {
+            $value = $opsComponents.vcfa.vspComponentUuid
+        }
+        default {
+            if ($Name -eq "ServicesRuntimeComponentId" -and $ServicesRuntimeFqdn -and $opsComponents.vcfa.platformFqdn -eq $ServicesRuntimeFqdn) {
+                $value = $opsComponents.vcfa.vspComponentUuid
+            } else {
+                if ($ServicesRuntimeFqdn) {
+                    $matchingVsp = @($vspEntries | Where-Object { $_.fqdn -eq $ServicesRuntimeFqdn })
+                    $problem = "Expected exactly one vsp entry with fqdn '$ServicesRuntimeFqdn' but found $($matchingVsp.Count)"
+                } else {
+                    $matchingVsp = @($vspEntries | Where-Object { -not $_.fleetFqdn })
+                    $problem = "Expected exactly one vsp entry not yet registered to a fleet but found $($matchingVsp.Count). Supply the Services Runtime FQDN"
+                }
+                if ($matchingVsp.Count -eq 1) {
+                    $problem = $null
+                    $value = switch ($Name) {
+                        "TargetVcfInstance" { $matchingVsp[0].instanceFqdn }
+                        "SddcManagerFqdn" { $matchingVsp[0].vcfInstanceFqdn }
+                        "ServicesRuntimeComponentId" { $matchingVsp[0].id }
+                    }
+                }
+            }
+        }
+    }
+    if (-not $value) {
+        if (-not $problem) {
+            $problem = "No value found"
+        }
+        LogMessage -type ERROR -message "[$jumpboxName] Unable to resolve $Name from '$opsRegisteredComponentsFile': $problem. Aborting."
+        return $null
+    }
+    LogMessage -type INFO -message "[$jumpboxName] Resolved $Name '$value' from '$opsRegisteredComponentsFile'"
+    return $value
+}
+
 Function Resolve-ServicesRuntimeFqdn {
     <#
     .SYNOPSIS
@@ -10922,16 +11050,25 @@ Function Resolve-ServicesRuntimeFqdn {
 
     .PARAMETER Type
     The Services Runtime type to look up: MANAGEMENT or CONSUMPTION.
+
+    .PARAMETER opsRegisteredComponentsFile
+    Path to the VCFOps-Registered-Component-Details.json file. Used instead of -extractedSDDCDataFile, for -Type CONSUMPTION only, to return the VCF Automation Services Runtime FQDN (vcfa.platformFqdn).
+
     #>
 
     Param(
         [Parameter(Mandatory = $false)][String] $extractedSDDCDataFile,
-        [Parameter(Mandatory = $false)][ValidateSet("MANAGEMENT", "CONSUMPTION")][String] $Type
+        [Parameter(Mandatory = $false)][ValidateSet("MANAGEMENT", "CONSUMPTION")][String] $Type,
+        [Parameter(Mandatory = $false)][String] $opsRegisteredComponentsFile
     )
 
     $jumpboxName = hostname
+    # No extracted SDDC data: the VCF Operations registered components file can still name the VCF Automation Services Runtime
+    if (-not $extractedSDDCDataFile -and $opsRegisteredComponentsFile -and $Type -eq "CONSUMPTION") {
+        return Get-OpsRegisteredComponentValue -Name VcfaRuntimeFqdn -opsRegisteredComponentsFile $opsRegisteredComponentsFile
+    }
     if (-not $extractedSDDCDataFile -or -not $Type) {
-        LogMessage -type ERROR -message "[$jumpboxName] Supply either the Services Runtime FQDN, or both -extractedSDDCDataFile and -Type so it can be resolved from the extracted SDDC data. Aborting."
+        LogMessage -type ERROR -message "[$jumpboxName] Supply either the Services Runtime FQDN, or both -extractedSDDCDataFile and -Type so it can be resolved from the extracted SDDC data (or -Type CONSUMPTION with -opsRegisteredComponentsFile). Aborting."
         return $null
     }
     if (-not (Test-Path -LiteralPath $extractedSDDCDataFile)) {
@@ -11023,6 +11160,10 @@ Function New-ServicesRuntime {
 
     .PARAMETER autoConfirm
     If specified, submits the proposed deployment payload without prompting for confirmation.
+
+    .PARAMETER ServicesRuntimeFqdn
+    (ByParameter) FQDN of an existing Services Runtime in the same VCF instance. Only used with -opsRegisteredComponentsFile, to pick which registered VCF instance to take the SDDC Manager FQDN from when -SddcManagerFqdn is not supplied.
+
     #>
 
     Param(
@@ -11077,6 +11218,9 @@ Function New-ServicesRuntime {
         [String] $opsRegisteredComponentsFile,
 
         [Parameter(Mandatory = $false, ParameterSetName = "ByParameter")]
+        [String] $ServicesRuntimeFqdn,
+
+        [Parameter(Mandatory = $false, ParameterSetName = "ByParameter")]
         [String] $clusterId,
 
         [Parameter(Mandatory = $true, ParameterSetName = "ByParameter")]
@@ -11099,7 +11243,11 @@ Function New-ServicesRuntime {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     if (-not $SddcManagerFqdn) {
-        $SddcManagerFqdn = Get-ExtractedSddcDataValue -Name SddcManagerFqdn -extractedSDDCDataFile $extractedSDDCDataFile
+        if (-not $extractedSDDCDataFile -and $opsRegisteredComponentsFile) {
+            $SddcManagerFqdn = Get-OpsRegisteredComponentValue -Name SddcManagerFqdn -opsRegisteredComponentsFile $opsRegisteredComponentsFile -ServicesRuntimeFqdn $ServicesRuntimeFqdn
+        } else {
+            $SddcManagerFqdn = Get-ExtractedSddcDataValue -Name SddcManagerFqdn -extractedSDDCDataFile $extractedSDDCDataFile
+        }
         if (-not $SddcManagerFqdn) {
             return
         }
@@ -11119,7 +11267,7 @@ Function New-ServicesRuntime {
         }
     }
     if ($PSCmdlet.ParameterSetName -eq "ByParameter" -and -not $PlatformFqdn) {
-        $PlatformFqdn = Resolve-ServicesRuntimeFqdn -extractedSDDCDataFile $extractedSDDCDataFile -Type $Type
+        $PlatformFqdn = Resolve-ServicesRuntimeFqdn -extractedSDDCDataFile $extractedSDDCDataFile -Type $Type -opsRegisteredComponentsFile $opsRegisteredComponentsFile
         if (-not $PlatformFqdn) {
             return
         }
@@ -11182,13 +11330,15 @@ Function New-ServicesRuntime {
                 $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-Json
                 $ClusterId = ($extractedSddcData.vspClusters | Where-Object { $_.primaryFqdn -eq $PlatformFqdn }).vspClusterID
             } elseif ($opsRegisteredComponentsFile) {
-                $opsRegisteredComponentsFilePath = (Resolve-Path -Path $opsRegisteredComponentsFile).path
-                $opsRegisteredComponents = Get-Content $opsRegisteredComponentsFilePath | ConvertFrom-Json
-                $ClusterId = $opsRegisteredComponents.vcfa.vspComponentUuid
+                if ($Type -eq 'CONSUMPTION') {
+                    $ClusterId = Get-OpsRegisteredComponentValue -Name VcfaVspId -opsRegisteredComponentsFile $opsRegisteredComponentsFile
+                } else {
+                    $ClusterId = Get-OpsRegisteredComponentValue -Name ServicesRuntimeComponentId -ServicesRuntimeFqdn $PlatformFqdn -opsRegisteredComponentsFile $opsRegisteredComponentsFile
+                }
             }
         }
         if (-not $ClusterId) {
-            LogMessage -type ERROR -message "[$jumpboxName] No vspClusters entry in '$extractedSDDCDataFile' matches PlatformFqdn '$PlatformFqdn'. Aborting."
+            LogMessage -type ERROR -message "[$jumpboxName] Unable to resolve the cluster ID for PlatformFqdn '$PlatformFqdn' (no matching vspClusters entry in -extractedSDDCDataFile, or no -extractedSDDCDataFile / -opsRegisteredComponentsFile / -clusterId supplied). Aborting."
             return
         }
         LogMessage -type INFO -message "[$jumpboxName] Resolved cluster ID '$ClusterId' for '$PlatformFqdn'"
@@ -11961,12 +12111,17 @@ Function Add-VcfmsTrustedCertificate {
     .PARAMETER extractedSDDCDataFile
     Path to the extracted-sddc-data.json file. Used with -Type to resolve -ServicesRuntimeFqdn when it is not supplied.
 
+
+    .PARAMETER opsRegisteredComponentsFile
+    Path to the VCFOps-Registered-Component-Details.json file (created by Get-VcfOperationsRegisteredComponents). Used to resolve -ServicesRuntimeFqdn (with -Type CONSUMPTION) when it is not supplied directly and no -extractedSDDCDataFile is given.
+
     #>
 
     Param(
         [Parameter(Mandatory = $false)][String] $ServicesRuntimeFqdn,
         [Parameter(Mandatory = $false)][ValidateSet("MANAGEMENT", "CONSUMPTION")][String] $Type,
         [Parameter(Mandatory = $false)][String] $extractedSDDCDataFile,
+        [Parameter(Mandatory = $false)][String] $opsRegisteredComponentsFile,
         [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
         [Parameter(Mandatory = $false)][String] $ServicesRuntimeUsername = "admin@vsp.local",
         [Parameter(Mandatory = $true)][String] $RemoteHostFqdn,
@@ -11980,7 +12135,7 @@ Function Add-VcfmsTrustedCertificate {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     if (-not $ServicesRuntimeFqdn) {
-        $ServicesRuntimeFqdn = Resolve-ServicesRuntimeFqdn -extractedSDDCDataFile $extractedSDDCDataFile -Type $Type
+        $ServicesRuntimeFqdn = Resolve-ServicesRuntimeFqdn -extractedSDDCDataFile $extractedSDDCDataFile -Type $Type -opsRegisteredComponentsFile $opsRegisteredComponentsFile
         if (-not $ServicesRuntimeFqdn) {
             return
         }
@@ -12124,7 +12279,7 @@ Function Set-ServicesRuntimeSftpBackupSettings {
     Username for the Services Runtime token. Default is "admin@vsp.local".
 
     .PARAMETER extractedSDDCDataFile
-    Relative or absolute path to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup). Used to look up the component ID (vsp cluster ID) to apply the SFTP settings to, by matching -ServicesRuntimeFqdn against the primaryFqdn of the entries in the file's vspClusters section.
+    Optional if -opsRegisteredComponentsFile is supplied. Relative or absolute path to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup). Used to look up the component ID (vsp cluster ID) to apply the SFTP settings to, by matching -ServicesRuntimeFqdn against the primaryFqdn of the entries in the file's vspClusters section.
 
     .PARAMETER SftpHost
     IP address or FQDN of the SFTP server.
@@ -12153,6 +12308,10 @@ Function Set-ServicesRuntimeSftpBackupSettings {
     .PARAMETER Type
     MANAGEMENT (VCFMS Services Runtime) or CONSUMPTION (VCF Automation Services Runtime). Used with -extractedSDDCDataFile to resolve -ServicesRuntimeFqdn when it is not supplied.
 
+
+    .PARAMETER opsRegisteredComponentsFile
+    Path to the VCFOps-Registered-Component-Details.json file (created by Get-VcfOperationsRegisteredComponents). Used to resolve -ServicesRuntimeFqdn (with -Type CONSUMPTION) when it is not supplied directly and no -extractedSDDCDataFile is given.
+
     #>
 
     Param(
@@ -12160,7 +12319,8 @@ Function Set-ServicesRuntimeSftpBackupSettings {
         [Parameter(Mandatory = $false)][ValidateSet("MANAGEMENT", "CONSUMPTION")][String] $Type,
         [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
         [Parameter(Mandatory = $false)][String] $ServicesRuntimeUsername = "admin@vsp.local",
-        [Parameter(Mandatory = $true)][String] $extractedSDDCDataFile,
+        [Parameter(Mandatory = $false)][String] $extractedSDDCDataFile,
+        [Parameter(Mandatory = $false)][String] $opsRegisteredComponentsFile,
         [Parameter(Mandatory = $true)][String] $SftpHost,
         [Parameter(Mandatory = $false)][String] $SftpPort = "22",
         [Parameter(Mandatory = $true)][String] $SftpUsername,
@@ -12177,7 +12337,7 @@ Function Set-ServicesRuntimeSftpBackupSettings {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     if (-not $ServicesRuntimeFqdn) {
-        $ServicesRuntimeFqdn = Resolve-ServicesRuntimeFqdn -extractedSDDCDataFile $extractedSDDCDataFile -Type $Type
+        $ServicesRuntimeFqdn = Resolve-ServicesRuntimeFqdn -extractedSDDCDataFile $extractedSDDCDataFile -Type $Type -opsRegisteredComponentsFile $opsRegisteredComponentsFile
         if (-not $ServicesRuntimeFqdn) {
             return
         }
@@ -12185,11 +12345,21 @@ Function Set-ServicesRuntimeSftpBackupSettings {
 
     # Look up the component ID (vsp cluster ID) by matching the Services Runtime FQDN against the
     # vspClusters section of the extracted SDDC data, rather than requiring it to be passed directly.
-    $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
-    $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-Json
-    $ComponentId = ($extractedSddcData.vspClusters | Where-Object { $_.primaryFqdn -eq $ServicesRuntimeFqdn }).vspClusterID
-    if (-not $ComponentId) {
-        LogMessage -type ERROR -message "[$jumpboxName] No vspClusters entry in '$extractedSDDCDataFile' matches ServicesRuntimeFqdn '$ServicesRuntimeFqdn'. Aborting."
+    if ($extractedSDDCDataFile) {
+        $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
+        $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-Json
+        $ComponentId = ($extractedSddcData.vspClusters | Where-Object { $_.primaryFqdn -eq $ServicesRuntimeFqdn }).vspClusterID
+        if (-not $ComponentId) {
+            LogMessage -type ERROR -message "[$jumpboxName] No vspClusters entry in '$extractedSDDCDataFile' matches ServicesRuntimeFqdn '$ServicesRuntimeFqdn'. Aborting."
+            return
+        }
+    } elseif ($opsRegisteredComponentsFile) {
+        $ComponentId = Get-OpsRegisteredComponentValue -Name ServicesRuntimeComponentId -ServicesRuntimeFqdn $ServicesRuntimeFqdn -opsRegisteredComponentsFile $opsRegisteredComponentsFile
+        if (-not $ComponentId) {
+            return
+        }
+    } else {
+        LogMessage -type ERROR -message "[$jumpboxName] Supply either -extractedSDDCDataFile or -opsRegisteredComponentsFile so the Services Runtime component ID can be resolved. Aborting."
         return
     }
     LogMessage -type INFO -message "[$jumpboxName] Resolved component ID '$ComponentId' for '$ServicesRuntimeFqdn'"
@@ -13195,7 +13365,7 @@ Function Restore-ServicesRuntimeComponentBackup {
     Username for the Services Runtime token. Default is "admin@vsp.local".
 
     .PARAMETER RestoreJsonFile
-    Path to a JSON file containing the restore payload. The file must contain a "components" array with "path" and "point" for each component to restore.
+    Path to a JSON file containing the restore payload. Defaults to .\restore-payload.json (the file Get-BackupsFromSFTPServer writes when -Type is not used). The file must contain a "components" array with "path" and "point" for each component to restore.
 
     .PARAMETER autoConfirm
     If specified, submits the proposed restore payload without prompting for confirmation.
@@ -13212,15 +13382,20 @@ Function Restore-ServicesRuntimeComponentBackup {
     .PARAMETER extractedSDDCDataFile
     Path to the extracted-sddc-data.json file. Used with -Type to resolve -ServicesRuntimeFqdn when it is not supplied.
 
+
+    .PARAMETER opsRegisteredComponentsFile
+    Path to the VCFOps-Registered-Component-Details.json file (created by Get-VcfOperationsRegisteredComponents). Used to resolve -ServicesRuntimeFqdn (with -Type CONSUMPTION) when it is not supplied directly and no -extractedSDDCDataFile is given.
+
     #>
 
     Param(
         [Parameter(Mandatory = $false)][String] $ServicesRuntimeFqdn,
         [Parameter(Mandatory = $false)][ValidateSet("MANAGEMENT", "CONSUMPTION")][String] $Type,
         [Parameter(Mandatory = $false)][String] $extractedSDDCDataFile,
+        [Parameter(Mandatory = $false)][String] $opsRegisteredComponentsFile,
         [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
         [Parameter(Mandatory = $false)][String] $ServicesRuntimeUsername = "admin@vsp.local",
-        [Parameter(Mandatory = $true)][String] $RestoreJsonFile,
+        [Parameter(Mandatory = $false)][String] $RestoreJsonFile = ".\restore-payload.json",
         [Parameter(Mandatory = $false)][Switch] $autoConfirm,
         [Parameter(Mandatory = $false)][Int] $ReadyRetryIntervalSeconds = 120,
         [Parameter(Mandatory = $false)][Int] $ReadyTimeoutMinutes = 30
@@ -13234,7 +13409,7 @@ Function Restore-ServicesRuntimeComponentBackup {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     if (-not $ServicesRuntimeFqdn) {
-        $ServicesRuntimeFqdn = Resolve-ServicesRuntimeFqdn -extractedSDDCDataFile $extractedSDDCDataFile -Type $Type
+        $ServicesRuntimeFqdn = Resolve-ServicesRuntimeFqdn -extractedSDDCDataFile $extractedSDDCDataFile -Type $Type -opsRegisteredComponentsFile $opsRegisteredComponentsFile
         if (-not $ServicesRuntimeFqdn) {
             return
         }
@@ -14544,10 +14719,15 @@ Function Set-ServicesRuntimeComponentVips {
     .PARAMETER IngressKey
     Explicit JSON property name under spec.configuration.ingress (e.g. ops_logs vs ops-logs).
     If omitted, the name is taken from GET /api/v1/components/{id} so it matches what the platform stores.
+
+    .PARAMETER opsRegisteredComponentsFile
+    Path to the VCFOps-Registered-Component-Details.json file (created by Get-VcfOperationsRegisteredComponents). Used to resolve -ServicesRuntimeFqdn when -ComponentType is vcfa and it is not supplied directly.
+
     #>
 
     Param(
-        [Parameter(Mandatory = $true)][String] $ServicesRuntimeFqdn,
+        [Parameter(Mandatory = $false)][String] $ServicesRuntimeFqdn,
+        [Parameter(Mandatory = $false)][String] $opsRegisteredComponentsFile,
         [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
         [Parameter(Mandatory = $false)][String] $ServicesRuntimeUsername = "admin@vsp.local",
         [Parameter(Mandatory = $true)][ValidateSet("vcfa", "vidb", "ops-logs")][String] $ComponentType,
@@ -14569,6 +14749,19 @@ Function Set-ServicesRuntimeComponentVips {
         "Succeeded", "Failed"
     )
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    if (-not $ServicesRuntimeFqdn) {
+        # Only the VCF Automation Services Runtime can be identified from the registered components file
+        if ($ComponentType -eq "vcfa" -and $opsRegisteredComponentsFile) {
+            $ServicesRuntimeFqdn = Get-OpsRegisteredComponentValue -Name VcfaRuntimeFqdn -opsRegisteredComponentsFile $opsRegisteredComponentsFile
+            if (-not $ServicesRuntimeFqdn) {
+                return
+            }
+        } else {
+            LogMessage -type ERROR -message "[$jumpboxName] -ServicesRuntimeFqdn is required (it can only be resolved for -ComponentType vcfa, from -opsRegisteredComponentsFile). Aborting."
+            return
+        }
+    }
     LogMessage -type INFO -message "[$jumpboxName] Component type : $ComponentType"
     LogMessage -type INFO -message "[$jumpboxName] New VIPs       : $($Vips -join ', ')"
 
@@ -16414,11 +16607,16 @@ Function Set-VcfmsFleetIdentity {
 
     .PARAMETER PollIntervalSeconds
     Interval in seconds between task status polls. Default is 30.
+
+    .PARAMETER opsRegisteredComponentsFile
+    Path to the VCFOps-Registered-Component-Details.json file (created by Get-VcfOperationsRegisteredComponents). Used to resolve -FleetFqdn when it is not supplied directly.
+
     #>
 
     Param(
         [Parameter(Mandatory = $true)][String] $BackupYamlDir,
-        [Parameter(Mandatory = $true)][String] $FleetFqdn,
+        [Parameter(Mandatory = $false)][String] $FleetFqdn,
+        [Parameter(Mandatory = $false)][String] $opsRegisteredComponentsFile,
         [Parameter(Mandatory = $true)][String] $FleetVip,
         [Parameter(Mandatory = $true)][String] $ServicesRuntimeFqdn,
         [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
@@ -16433,6 +16631,17 @@ Function Set-VcfmsFleetIdentity {
     $terminalStates = @("COMPLETED", "Completed", "COMPLETE", "FAILED", "CANCELLED", "ERROR", "SUCCESS", "SUCCESSFUL", "Succeeded", "Failed")
     $StopWatch.Start()
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    if (-not $FleetFqdn) {
+        if (-not $opsRegisteredComponentsFile) {
+            LogMessage -type ERROR -message "[$jumpboxName] Supply either -FleetFqdn or -opsRegisteredComponentsFile. Aborting."
+            $StopWatch.Stop(); return
+        }
+        $FleetFqdn = Get-OpsRegisteredComponentValue -Name FleetFqdn -opsRegisteredComponentsFile $opsRegisteredComponentsFile
+        if (-not $FleetFqdn) {
+            $StopWatch.Stop(); return
+        }
+    }
 
     # -------------------------------------------------------------------------
     # Pre-flight: validate YAML files
@@ -16966,12 +17175,18 @@ Function Invoke-VcfmsFleetComponentRegistration {
 
     .PARAMETER RemoteScriptTimeout
     Seconds to wait for the remote script to complete. Default is 300 (5 minutes).
+
+    .PARAMETER opsRegisteredComponentsFile
+    Path to the VCFOps-Registered-Component-Details.json file (created by Get-VcfOperationsRegisteredComponents). Used to resolve -TargetVcfInstance (the instanceFqdn of the VCF instance that owns -ServicesRuntimeFqdn) when no target is supplied directly.
+
     #>
 
+    [CmdletBinding(DefaultParameterSetName = "ByVcfInstance")]
     Param(
         [Parameter(Mandatory = $true)][String] $ServicesRuntimeFqdn,
         [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
-        [Parameter(Mandatory = $true, ParameterSetName = "ByVcfInstance")][String] $TargetVcfInstance,
+        [Parameter(Mandatory = $false, ParameterSetName = "ByVcfInstance")][String] $TargetVcfInstance,
+        [Parameter(Mandatory = $false, ParameterSetName = "ByVcfInstance")][String] $opsRegisteredComponentsFile,
         [Parameter(Mandatory = $true, ParameterSetName = "ByFqdn")][String]        $TargetFqdn,
         [Parameter(Mandatory = $true, ParameterSetName = "BySddcId")][String]      $TargetSddcId,
         [Parameter(Mandatory = $false)][Switch] $DryRun,
@@ -16984,6 +17199,18 @@ Function Invoke-VcfmsFleetComponentRegistration {
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    if ($PSCmdlet.ParameterSetName -eq "ByVcfInstance" -and -not $TargetVcfInstance) {
+        if (-not $opsRegisteredComponentsFile) {
+            LogMessage -type ERROR -message "[$jumpboxName] Supply one of -TargetVcfInstance, -TargetFqdn, -TargetSddcId, or -opsRegisteredComponentsFile. Aborting."
+            $StopWatch.Stop(); return
+        }
+        # The VCF instance that owns the Services Runtime being updated
+        $TargetVcfInstance = Get-OpsRegisteredComponentValue -Name TargetVcfInstance -opsRegisteredComponentsFile $opsRegisteredComponentsFile -ServicesRuntimeFqdn $ServicesRuntimeFqdn
+        if (-not $TargetVcfInstance) {
+            $StopWatch.Stop(); return
+        }
+    }
 
     # -------------------------------------------------------------------------
     # Validate the local script exists
@@ -17232,12 +17459,17 @@ Function Invoke-VcfmsVcfaRegistration {
 
     .PARAMETER RemoteScriptTimeout
     Seconds to wait for the remote script to complete. Default is 600 (10 minutes).
+
+    .PARAMETER opsRegisteredComponentsFile
+    Path to the VCFOps-Registered-Component-Details.json file (created by Get-VcfOperationsRegisteredComponents). Used to resolve -VcfaRuntimeFqdn when it is not supplied directly.
+
     #>
 
     Param(
         [Parameter(Mandatory = $true)][String]  $ServicesRuntimeFqdn,
         [Parameter(Mandatory = $true)][String]  $ServicesRuntimePassword,
-        [Parameter(Mandatory = $true)][String]  $VcfaRuntimeFqdn,
+        [Parameter(Mandatory = $false)][String] $VcfaRuntimeFqdn,
+        [Parameter(Mandatory = $false)][String] $opsRegisteredComponentsFile,
         [Parameter(Mandatory = $true)][String]  $OpsFqdn,
         [Parameter(Mandatory = $true)][String]  $VspPassword,
         [Parameter(Mandatory = $true)][String]  $VcfaSystemPassword,
@@ -17250,6 +17482,17 @@ Function Invoke-VcfmsVcfaRegistration {
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    if (-not $VcfaRuntimeFqdn) {
+        if (-not $opsRegisteredComponentsFile) {
+            LogMessage -type ERROR -message "[$jumpboxName] Supply either -VcfaRuntimeFqdn or -opsRegisteredComponentsFile. Aborting."
+            $StopWatch.Stop(); return
+        }
+        $VcfaRuntimeFqdn = Get-OpsRegisteredComponentValue -Name VcfaRuntimeFqdn -opsRegisteredComponentsFile $opsRegisteredComponentsFile
+        if (-not $VcfaRuntimeFqdn) {
+            $StopWatch.Stop(); return
+        }
+    }
 
     # -------------------------------------------------------------------------
     # Validate the local scripts exist — the main script and the two companion
@@ -17479,12 +17722,17 @@ Function Update-VcfmsVcfaRegistration {
 
     .PARAMETER RemoteScriptTimeout
     Seconds to wait for the remote script to complete. Default is 600 (10 minutes).
+
+    .PARAMETER opsRegisteredComponentsFile
+    Path to the VCFOps-Registered-Component-Details.json file (created by Get-VcfOperationsRegisteredComponents). Used to resolve -VcfaRuntimeFqdn when it is not supplied directly.
+
     #>
 
     Param(
         [Parameter(Mandatory = $true)][String]  $ServicesRuntimeFqdn,
         [Parameter(Mandatory = $true)][String]  $ServicesRuntimePassword,
-        [Parameter(Mandatory = $true)][String]  $VcfaRuntimeFqdn,
+        [Parameter(Mandatory = $false)][String] $VcfaRuntimeFqdn,
+        [Parameter(Mandatory = $false)][String] $opsRegisteredComponentsFile,
         [Parameter(Mandatory = $true)][String]  $OpsFqdn,
         [Parameter(Mandatory = $true)][String]  $VspPassword,
         [Parameter(Mandatory = $true)][String]  $VcfaSystemPassword,
@@ -17497,6 +17745,17 @@ Function Update-VcfmsVcfaRegistration {
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+
+    if (-not $VcfaRuntimeFqdn) {
+        if (-not $opsRegisteredComponentsFile) {
+            LogMessage -type ERROR -message "[$jumpboxName] Supply either -VcfaRuntimeFqdn or -opsRegisteredComponentsFile. Aborting."
+            $StopWatch.Stop(); return
+        }
+        $VcfaRuntimeFqdn = Get-OpsRegisteredComponentValue -Name VcfaRuntimeFqdn -opsRegisteredComponentsFile $opsRegisteredComponentsFile
+        if (-not $VcfaRuntimeFqdn) {
+            $StopWatch.Stop(); return
+        }
+    }
 
     # -------------------------------------------------------------------------
     # Validate the local scripts exist — the main script and the two companion
@@ -18014,12 +18273,17 @@ Function Set-ServicesRuntimeScale {
     .PARAMETER extractedSDDCDataFile
     Path to the extracted-sddc-data.json file. Used with -Type to resolve -ServicesRuntimeFqdn when it is not supplied.
 
+
+    .PARAMETER opsRegisteredComponentsFile
+    Path to the VCFOps-Registered-Component-Details.json file (created by Get-VcfOperationsRegisteredComponents). Used to resolve -ServicesRuntimeFqdn (with -Type CONSUMPTION) when it is not supplied directly and no -extractedSDDCDataFile is given.
+
     #>
 
     Param(
         [Parameter(Mandatory = $false)][String] $ServicesRuntimeFqdn,
         [Parameter(Mandatory = $false)][ValidateSet("MANAGEMENT", "CONSUMPTION")][String] $Type,
         [Parameter(Mandatory = $false)][String] $extractedSDDCDataFile,
+        [Parameter(Mandatory = $false)][String] $opsRegisteredComponentsFile,
         [Parameter(Mandatory = $false)][String] $ServicesRuntimePassword,
         [Parameter(Mandatory = $false)][String] $KubeconfigPath,
         [Parameter(Mandatory = $false)][String] $KubeconfigOutputDir = ".",
@@ -18041,7 +18305,7 @@ Function Set-ServicesRuntimeScale {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     if (-not $ServicesRuntimeFqdn -and -not $KubeconfigPath -and $Type) {
-        $ServicesRuntimeFqdn = Resolve-ServicesRuntimeFqdn -extractedSDDCDataFile $extractedSDDCDataFile -Type $Type
+        $ServicesRuntimeFqdn = Resolve-ServicesRuntimeFqdn -extractedSDDCDataFile $extractedSDDCDataFile -Type $Type -opsRegisteredComponentsFile $opsRegisteredComponentsFile
         if (-not $ServicesRuntimeFqdn) {
             $StopWatch.Stop(); return
         }
@@ -18646,6 +18910,10 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
     Seconds to wait for the remote migrate-vidb-vcf-instance.sh execution to complete.
     Default is 1500 (25 minutes) to accommodate the script's built-in 20-minute VIDB
     eligibility poll.
+
+    .PARAMETER opsRegisteredComponentsFile
+    Path to the VCFOps-Registered-Component-Details.json file (created by Get-VcfOperationsRegisteredComponents). Used to resolve -VidbFqdn when it is not supplied directly.
+
     #>
 
     Param(
@@ -18653,7 +18921,8 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
         [Parameter(Mandatory = $true)][String]  $VcfOpsRootPassword,
         [Parameter(Mandatory = $true)][String]  $VcfOpsAdminPassword,
         [Parameter(Mandatory = $false)][String] $VcfOpsAdminUsername = "admin",
-        [Parameter(Mandatory = $true)][String]  $VidbFqdn,
+        [Parameter(Mandatory = $false)][String] $VidbFqdn,
+        [Parameter(Mandatory = $false)][String] $opsRegisteredComponentsFile,
         [Parameter(Mandatory = $false)][String] $IdentityBrokerTenant,
         [Parameter(Mandatory = $false)][String] $VcfInstanceId,
         [Parameter(Mandatory = $false)][String] $SsoRealmId,
@@ -18666,6 +18935,16 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
     $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
     [int]$__ansIdx = 0
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    if (-not $VidbFqdn) {
+        if (-not $opsRegisteredComponentsFile) {
+            LogMessage -type ERROR -message "[$jumpboxName] Supply either -VidbFqdn or -opsRegisteredComponentsFile. Aborting."
+            $StopWatch.Stop(); return
+        }
+        $VidbFqdn = Get-OpsRegisteredComponentValue -Name VidbFqdn -opsRegisteredComponentsFile $opsRegisteredComponentsFile
+        if (-not $VidbFqdn) {
+            $StopWatch.Stop(); return
+        }
+    }
     LogMessage -type INFO -message "[$jumpboxName] VCF Ops Host   : $VcfOpsFqdn"
     LogMessage -type INFO -message "[$jumpboxName] VIDB Host      : $VidbFqdn"
 

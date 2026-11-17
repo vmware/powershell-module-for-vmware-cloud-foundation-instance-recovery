@@ -28,7 +28,7 @@
   },
   {
     "description": "Retrieve Component Details from VCF Operations ($vspId is the ID of the original VCF Management Services instance from this step)",
-    "commandLine": "Get-VcfOperationsRegisteredComponents -VcfOperationsFqdn $VcfOperationsFqdn -Username $Username -Password $Password -AuthSource $AuthSource -OutputDir $OutputDir",
+    "commandLine": "Get-VcfOperationsRegisteredComponents -VcfOperationsFqdn $vcfOperationsFqdn -Password $vcfOperationsAdminPassword",
     "displayName": "Get VCF Operations Registered Components",
     "condition": [],
     "threadId": "1",
@@ -55,7 +55,7 @@
   },
   {
     "description": "Retrieve a List of Backups for the VCF Management Services Fleet Components",
-    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpServer -sftpUser $sftpUser -sftpPassword $sftpPassword -sftpServerBackupPath $sftpServerBackupPath -vspId $vspId -componentNames \"vcf-fleet-lcm\",\"vcf-fleet-depot\",\"salt-raas\",\"vidb\" -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
+    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -vspId $vspId -componentNames \"vcf-fleet-lcm\",\"vcf-fleet-depot\",\"salt-raas\",\"vidb\" -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
     "displayName": "Retrieve VCFMS Backups",
     "condition": [],
     "threadId": "1",
@@ -123,7 +123,7 @@
   },
   {
     "description": "Trust the Offline Depot Certificate on the VCF Management Services Services Runtime (needed to retrieve the packages from the offline depot during restore)",
-    "commandLine": "Add-VcfmsTrustedCertificate -ServicesRuntimeFqdn $ServicesRuntimeFqdn -ServicesRuntimePassword $ServicesRuntimePassword -RemoteHostFqdn $offlineDepotFqdn -RemoteHostPort $offlineDepotPort",
+    "commandLine": "Add-VcfmsTrustedCertificate -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -RemoteHostFqdn $offlineDepotFqdn -RemoteHostPort $offlineDepotPort",
     "displayName": "Trust Offline Depot Certificate on VCF Management Services Services Runtime",
     "condition": [],
     "threadId": "1",
@@ -132,7 +132,7 @@
   },
   {
     "description": "Restore the Fleet Components on the Original VCF Management Services Instance (only required if components were changed while failed over)",
-    "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $ServicesRuntimeFqdn -ServicesRuntimePassword $ServicesRuntimePassword -RestoreJsonFile $RestoreJsonFile",
+    "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword",
     "displayName": "Restore VCFMS Backups",
     "condition": [],
     "threadId": "1",
@@ -150,7 +150,7 @@
   },
   {
     "description": "Update the Identity Broker VIP Address",
-    "commandLine": "Set-ServicesRuntimeComponentVips -ServicesRuntimeFqdn $ServicesRuntimeFqdn -ServicesRuntimePassword $ServicesRuntimePassword -ComponentType \"vidb\" -Vips $VidbVips",
+    "commandLine": "Set-ServicesRuntimeComponentVips -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -ComponentType \"vidb\" -Vips $VidbVips",
     "displayName": "Set Services Runtime Component VIPs",
     "condition": [],
     "threadId": "1",
@@ -159,7 +159,7 @@
   },
   {
     "description": "Update the Identity Broker VCF Instance Association - Requires User Input (service registration can take up to 15 minutes to complete)",
-    "commandLine": "Invoke-VcfOpsVidbVcfInstanceUpdate -VcfOpsFqdn $VcfOpsFqdn -VcfOpsRootPassword $VcfOpsRootPassword -VcfOpsAdminPassword $VcfOpsAdminPassword -VidbFqdn $VidbFqdn",
+    "commandLine": "Invoke-VcfOpsVidbVcfInstanceUpdate -VcfOpsFqdn $vcfOperationsFqdn -VcfOpsRootPassword $vcfOperationsRootPassword -VcfOpsAdminPassword $vcfOperationsAdminPassword -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\"",
     "displayName": "Invoke VCF Ops VIDB VCF Instance Update",
     "condition": [],
     "threadId": "1",
@@ -168,7 +168,7 @@
   },
   {
     "description": "Update Fleet Component Registration",
-    "commandLine": "Invoke-VcfmsFleetComponentRegistration -ServicesRuntimeFqdn $ServicesRuntimeFqdn -ServicesRuntimePassword $ServicesRuntimePassword -TargetVcfInstance $TargetVcfInstance -ConfirmOpsMove -ConfirmOpsNetworksMove",
+    "commandLine": "Invoke-VcfmsFleetComponentRegistration -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -ConfirmOpsMove -ConfirmOpsNetworksMove",
     "displayName": "Invoke VCFMS Fleet Component Registration",
     "condition": [],
     "threadId": "1",
@@ -213,7 +213,7 @@
   },
   {
     "description": "Retrieve a List of Backups for VCF Automation",
-    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpServer -sftpUser $sftpUser -sftpPassword $sftpPassword -sftpServerBackupPath $sftpServerBackupPath -vspId $vspId -componentNames \"vcfa\" -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
+    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -componentNames \"vcfa\" -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
     "displayName": "Retrieve VCF Automation Backups",
     "condition": [],
     "threadId": "1",
@@ -222,7 +222,7 @@
   },
   {
     "description": "Trust the Offline Depot Certificate on the VCF Automation Services Runtime (needed to retrieve the packages from the offline depot during restore)",
-    "commandLine": "Add-VcfmsTrustedCertificate -ServicesRuntimeFqdn $ServicesRuntimeFqdn -ServicesRuntimePassword $ServicesRuntimePassword -RemoteHostFqdn $offlineDepotFqdn -RemoteHostPort $offlineDepotPort",
+    "commandLine": "Add-VcfmsTrustedCertificate -Type CONSUMPTION -ServicesRuntimePassword $vcfaServicesRuntimePassword -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -RemoteHostFqdn $offlineDepotFqdn -RemoteHostPort $offlineDepotPort",
     "displayName": "Trust Offline Depot Certificate on VCF Automation Services Runtime",
     "condition": [],
     "threadId": "1",
@@ -231,7 +231,7 @@
   },
   {
     "description": "Restore VCF Automation (only required if VCF Automation was changed while failed over)",
-    "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $ServicesRuntimeFqdn -ServicesRuntimePassword $ServicesRuntimePassword -RestoreJsonFile $RestoreJsonFile",
+    "commandLine": "Restore-ServicesRuntimeComponentBackup -Type CONSUMPTION -ServicesRuntimePassword $vcfaServicesRuntimePassword -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\"",
     "displayName": "Restore VCF Automation Backup",
     "condition": [],
     "threadId": "1",
@@ -240,7 +240,7 @@
   },
   {
     "description": "Update the VCF Automation VIP Address (run against the VCF Automation Services Runtime)",
-    "commandLine": "Set-ServicesRuntimeComponentVips -ServicesRuntimeFqdn $VcfaRuntimeFqdn -ServicesRuntimePassword $VspPassword -ComponentType \"vcfa\" -Vips $VcfaVips",
+    "commandLine": "Set-ServicesRuntimeComponentVips -ServicesRuntimePassword $vcfaServicesRuntimePassword -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -ComponentType \"vcfa\" -Vips $VcfaVips",
     "displayName": "Set Services Runtime Component VIPs",
     "condition": [],
     "threadId": "1",
@@ -249,7 +249,7 @@
   },
   {
     "description": "Update VCF Automation Registration to VCF Operations",
-    "commandLine": "Update-VcfmsVcfaRegistration -ServicesRuntimeFqdn $ServicesRuntimeFqdn -ServicesRuntimePassword $ServicesRuntimePassword -VcfaRuntimeFqdn $VcfaRuntimeFqdn -OpsFqdn $OpsFqdn -VspPassword $VspPassword -VcfaSystemPassword $VcfaSystemPassword -OpsPassword $OpsPassword",
+    "commandLine": "Update-VcfmsVcfaRegistration -ServicesRuntimeFqdn $vcfmsServicesRuntimeFqdn -ServicesRuntimePassword $vcfmsServicesRuntimePassword -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -OpsFqdn $vcfOperationsFqdn -VspPassword $vcfaServicesRuntimePassword -VcfaSystemPassword $vcfaSystemPassword -OpsPassword $vcfOperationsAdminPassword",
     "displayName": "Update VCFMS VCFA Registration",
     "condition": [],
     "threadId": "1",
