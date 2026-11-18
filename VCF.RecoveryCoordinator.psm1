@@ -15788,7 +15788,7 @@ Function New-ExtractVcfmsBackup {
     $resolvedArchive = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($LocalArchivePath)
     if (-not (Test-Path $resolvedArchive)) {
         LogMessage -type ERROR -message "[$jumpboxName] Local archive not found: $resolvedArchive"
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
 
     # Resolve output directory
@@ -15811,7 +15811,7 @@ Function New-ExtractVcfmsBackup {
                 -OutputDir $resolvedOutputDir
             if (-not $kubeconfigResult) {
                 LogMessage -type ERROR -message "[$jumpboxName] Failed to retrieve kubeconfig. Aborting."
-                $StopWatch.Stop(); return
+                Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
             }
             $resolvedKubeconfig = $kubeconfigResult.KubeconfigPath
         }
@@ -15833,7 +15833,7 @@ Function New-ExtractVcfmsBackup {
             Invoke-VcfmsOpensslDecrypt -InPath $resolvedArchive -OutPath $outerTgz -Passphrase $EncryptionPassphrase
         } catch {
             LogMessage -type ERROR -message "[$jumpboxName] Decryption failed: $($_.Exception.Message)"
-            $StopWatch.Stop(); return
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
         }
 
         # Step 2: Extract the outer tar.gz — look for the inner *-vsp-*.tar.gz
@@ -15843,14 +15843,14 @@ Function New-ExtractVcfmsBackup {
             Expand-VcfmsTarGz -ArchivePath $outerTgz -DestDir $outerRoot
         } catch {
             LogMessage -type ERROR -message "[$jumpboxName] Outer archive extraction failed: $($_.Exception.Message)"
-            $StopWatch.Stop(); return
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
         }
 
         $innerTgz = Get-ChildItem -Path $outerRoot -Recurse -Filter '*-vsp-*.tar.gz' |
             Select-Object -First 1 -ExpandProperty FullName
         if (-not $innerTgz) {
             LogMessage -type ERROR -message "[$jumpboxName] Could not find inner *-vsp-*.tar.gz under extracted archive"
-            $StopWatch.Stop(); return
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
         }
 
         # Step 3: Extract the inner Velero tar.gz
@@ -15860,7 +15860,7 @@ Function New-ExtractVcfmsBackup {
             Expand-VcfmsTarGz -ArchivePath $innerTgz -DestDir $veleroRoot
         } catch {
             LogMessage -type ERROR -message "[$jumpboxName] Inner archive extraction failed: $($_.Exception.Message)"
-            $StopWatch.Stop(); return
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
         }
 
         # Step 4: Walk the Velero tree and write YAML files
@@ -16034,7 +16034,7 @@ Function Invoke-VcfmsBackupSftpToYaml {
     $localScript = Join-Path -Path $PSScriptRoot -ChildPath "scripts/vmsp-backup-sftp-to-yaml.sh"
     if (-not (Test-Path $localScript)) {
         LogMessage -type ERROR -message "[$jumpboxName] Script not found: $localScript"
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
 
     # -------------------------------------------------------------------------
@@ -16048,7 +16048,7 @@ Function Invoke-VcfmsBackupSftpToYaml {
         -OutputDir "."
     if (-not $kubeconfigResult) {
         LogMessage -type ERROR -message "[$jumpboxName] Could not resolve control plane node. Aborting."
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
     $controlPlaneHost = $kubeconfigResult.ControlPlaneHost
     LogMessage -type INFO -message "[$jumpboxName] Control plane node  : $controlPlaneHost"
@@ -16210,21 +16210,21 @@ Function Disable-VcfmsClusterLogging {
     # Pre-requisite: kubectl must be available on the local machine
     if (-not (Get-Command kubectl -ErrorAction SilentlyContinue)) {
         LogMessage -type WARNING -message "[$jumpboxName] kubectl not found on PATH. Please install kubectl and ensure it is available before running this cmdlet."
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
     LogMessage -type INFO -message "[$jumpboxName] kubectl found: $((Get-Command kubectl).Source)"
 
     # Pre-requisite: if a kubeconfig path was supplied, verify it exists before starting the apply task
     if ($KubeconfigPath -and -not (Test-Path $KubeconfigPath)) {
         LogMessage -type WARNING -message "[$jumpboxName] KubeconfigPath not found: $KubeconfigPath — verify the path and re-run."
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
 
     # Step 1: Token
     $srToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
     if (-not $srToken) {
         LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Unable to obtain Services Runtime token. Aborting."
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
     $tokenFetchedAt = [DateTime]::UtcNow
     $headers = @{
@@ -16243,12 +16243,12 @@ Function Disable-VcfmsClusterLogging {
             $componentsResponse = Invoke-RestMethod -Uri "https://$ServicesRuntimeFqdn/api/v1/components" -Method GET -Headers $headers -SkipCertificateCheck
         } catch {
             LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Failed to retrieve components: $($_.Exception.Message)"
-            $StopWatch.Stop(); return
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
         }
         $vspComponent = @($componentsResponse.components | Where-Object { $_.type -eq "vsp" }) | Select-Object -First 1
         if (-not $vspComponent) {
             LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] No component of type 'vsp' found. Pass -ComponentId to specify manually."
-            $StopWatch.Stop(); return
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
         }
         $componentId = $vspComponent.id
         LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Resolved VSP component ID: $componentId"
@@ -16273,13 +16273,13 @@ Function Disable-VcfmsClusterLogging {
         $applyResponse = Invoke-RestMethod -Uri "https://$ServicesRuntimeFqdn/api/v1/components/$componentId`?action=apply" -Method POST -Headers $headers -Body $body -SkipCertificateCheck
     } catch {
         LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Apply request failed: $($_.Exception.Message)"
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
 
     $taskId = $applyResponse.id
     if (-not $taskId) {
         LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] No task ID returned from apply response"
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
     LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Apply task created: $taskId"
 
@@ -16450,7 +16450,7 @@ Function Enable-VcfmsClusterLogging {
         -Password $ServicesRuntimePassword
     if (-not $srToken) {
         LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Unable to obtain Services Runtime token. Aborting."
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
     $tokenFetchedAt = [DateTime]::UtcNow
     $headers = @{
@@ -16472,12 +16472,12 @@ Function Enable-VcfmsClusterLogging {
                 -Method GET -Headers $headers -SkipCertificateCheck
         } catch {
             LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Failed to retrieve components: $($_.Exception.Message)"
-            $StopWatch.Stop(); return
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
         }
         $vspComponent = @($componentsResponse.components | Where-Object { $_.type -eq "vsp" }) | Select-Object -First 1
         if (-not $vspComponent) {
             LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] No component of type 'vsp' found. Pass -ComponentId to specify manually."
-            $StopWatch.Stop(); return
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
         }
         $componentId = $vspComponent.id
         LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Resolved VSP component ID : $componentId  (status: $($vspComponent.status))"
@@ -16513,13 +16513,13 @@ Function Enable-VcfmsClusterLogging {
             -Method POST -Headers $headers -Body $body -SkipCertificateCheck
     } catch {
         LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Apply request failed: $($_.Exception.Message)"
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
 
     $taskId = $applyResponse.id
     if (-not $taskId) {
         LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] No task ID returned from apply response."
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
     LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Apply task created: $taskId"
 
@@ -16574,7 +16574,7 @@ Function Enable-VcfmsClusterLogging {
         if ($taskResponse -and $taskResponse.description.localizedMessage) {
             LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] $($taskResponse.description.localizedMessage)"
         }
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
 
     LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Logging enabled successfully on component $componentId"
@@ -16671,18 +16671,18 @@ Function Confirm-VcfmsFluentdOperatorState {
                 -OutputDir $KubeconfigOutputDir
             if (-not $kubeconfigResult) {
                 LogMessage -type ERROR -message "[$jumpboxName] Failed to retrieve kubeconfig. Aborting."
-                $StopWatch.Stop(); return
+                Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
             }
             $resolvedKubeconfig = $kubeconfigResult.KubeconfigPath
         } else {
             LogMessage -type ERROR -message "[$jumpboxName] Provide -KubeconfigPath or both -ServicesRuntimeFqdn and -ServicesRuntimePassword."
-            $StopWatch.Stop(); return
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
         }
     }
 
     if (-not (Test-Path $resolvedKubeconfig)) {
         LogMessage -type ERROR -message "[$jumpboxName] Kubeconfig not found: $resolvedKubeconfig"
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
 
     LogMessage -type INFO -message "[$jumpboxName] Kubeconfig     : $resolvedKubeconfig"
@@ -16892,11 +16892,11 @@ Function Set-VcfmsFleetIdentity {
     if (-not $FleetFqdn) {
         if (-not $opsRegisteredComponentsFile) {
             LogMessage -type ERROR -message "[$jumpboxName] Supply either -FleetFqdn or -opsRegisteredComponentsFile. Aborting."
-            $StopWatch.Stop(); return
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
         }
         $FleetFqdn = Get-OpsRegisteredComponentValue -Name FleetFqdn -opsRegisteredComponentsFile $opsRegisteredComponentsFile
         if (-not $FleetFqdn) {
-            $StopWatch.Stop(); return
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
         }
     }
 
@@ -16906,7 +16906,7 @@ Function Set-VcfmsFleetIdentity {
     $resolvedYamlDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($BackupYamlDir)
     if (-not (Test-Path $resolvedYamlDir)) {
         LogMessage -type ERROR -message "[$jumpboxName] BackupYamlDir not found: $resolvedYamlDir"
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
 
     $tlsYaml = Join-Path $resolvedYamlDir "ingress-fleet-tls.yaml"
@@ -16922,7 +16922,7 @@ Function Set-VcfmsFleetIdentity {
         foreach ($f in $missingFiles) {
             LogMessage -type ERROR -message "[$jumpboxName] Required YAML file not found: $f"
         }
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
 
     # -------------------------------------------------------------------------
@@ -16937,14 +16937,14 @@ Function Set-VcfmsFleetIdentity {
             -OutputDir $KubeconfigOutputDir
         if (-not $kubeconfigResult) {
             LogMessage -type ERROR -message "[$jumpboxName] Failed to retrieve kubeconfig. Aborting."
-            $StopWatch.Stop(); return
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
         }
         $resolvedKubeconfig = $kubeconfigResult.KubeconfigPath
     }
 
     if (-not (Test-Path $resolvedKubeconfig)) {
         LogMessage -type ERROR -message "[$jumpboxName] Kubeconfig not found: $resolvedKubeconfig"
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
 
     LogMessage -type INFO -message "[$jumpboxName] YAML directory  : $resolvedYamlDir"
@@ -16972,7 +16972,7 @@ Function Set-VcfmsFleetIdentity {
 
     if (-not $allSucceeded) {
         LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] One or more YAML files failed to apply — aborting ingress configuration"
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
     LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Fleet identity secrets applied successfully"
 
@@ -16988,7 +16988,7 @@ Function Set-VcfmsFleetIdentity {
     $exitCode = $LASTEXITCODE
     if ($exitCode -ne 0 -or [string]::IsNullOrWhiteSpace($nsLabelOutput)) {
         LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Failed to read VSP component ID from namespace label (exit $exitCode): $nsLabelOutput"
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
     $componentId = $nsLabelOutput.Trim()
     LogMessage -type INFO -message "[$ServicesRuntimeFqdn] VSP component ID: $componentId"
@@ -16997,7 +16997,7 @@ Function Set-VcfmsFleetIdentity {
     $srToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
     if (-not $srToken) {
         LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Unable to obtain Services Runtime token. Aborting."
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
     $tokenFetchedAt = [DateTime]::UtcNow
     $headers = @{
@@ -17028,13 +17028,13 @@ Function Set-VcfmsFleetIdentity {
             -Method POST -Headers $headers -Body $body -SkipCertificateCheck
     } catch {
         LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Apply request failed: $($_.Exception.Message)"
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
 
     $taskId = $applyResponse.id
     if (-not $taskId) {
         LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] No task ID returned from apply response"
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
     LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Apply task created: $taskId"
 
@@ -17179,14 +17179,14 @@ Function Clear-VcfmsFleetIdentity {
             -OutputDir $KubeconfigOutputDir
         if (-not $kubeconfigResult) {
             LogMessage -type ERROR -message "[$jumpboxName] Failed to retrieve kubeconfig. Aborting."
-            $StopWatch.Stop(); return
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
         }
         $resolvedKubeconfig = $kubeconfigResult.KubeconfigPath
     }
 
     if (-not (Test-Path $resolvedKubeconfig)) {
         LogMessage -type ERROR -message "[$jumpboxName] Kubeconfig not found: $resolvedKubeconfig"
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
     LogMessage -type INFO -message "[$jumpboxName] Kubeconfig : $resolvedKubeconfig"
 
@@ -17199,7 +17199,7 @@ Function Clear-VcfmsFleetIdentity {
     $exitCode = $LASTEXITCODE
     if ($exitCode -ne 0 -or [string]::IsNullOrWhiteSpace($nsLabelOutput)) {
         LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Failed to read VSP component ID from namespace label (exit $exitCode): $nsLabelOutput"
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
     $componentId = $nsLabelOutput.Trim()
     LogMessage -type INFO -message "[$ServicesRuntimeFqdn] VSP component ID : $componentId"
@@ -17213,7 +17213,7 @@ Function Clear-VcfmsFleetIdentity {
         -Password $ServicesRuntimePassword
     if (-not $srToken) {
         LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Unable to obtain Services Runtime token. Aborting."
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
     $tokenFetchedAt = [DateTime]::UtcNow
     $headers = @{
@@ -17248,13 +17248,13 @@ Function Clear-VcfmsFleetIdentity {
             -Method POST -Headers $headers -Body $body -SkipCertificateCheck
     } catch {
         LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Apply request failed: $($_.Exception.Message)"
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
 
     $taskId = $applyResponse.id
     if (-not $taskId) {
         LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] No task ID returned from apply response."
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
     LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Apply task created: $taskId"
 
@@ -17460,12 +17460,12 @@ Function Invoke-VcfmsFleetComponentRegistration {
     if ($PSCmdlet.ParameterSetName -eq "ByVcfInstance" -and -not $TargetVcfInstance) {
         if (-not $opsRegisteredComponentsFile) {
             LogMessage -type ERROR -message "[$jumpboxName] Supply one of -TargetVcfInstance, -TargetFqdn, -TargetSddcId, or -opsRegisteredComponentsFile. Aborting."
-            $StopWatch.Stop(); return
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
         }
         # The VCF instance that owns the Services Runtime being updated
         $TargetVcfInstance = Get-OpsRegisteredComponentValue -Name TargetVcfInstance -opsRegisteredComponentsFile $opsRegisteredComponentsFile -ServicesRuntimeFqdn $ServicesRuntimeFqdn
         if (-not $TargetVcfInstance) {
-            $StopWatch.Stop(); return
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
         }
     }
 
@@ -17475,7 +17475,7 @@ Function Invoke-VcfmsFleetComponentRegistration {
     $localScript = Join-Path -Path $PSScriptRoot -ChildPath "scripts/update_fleet_component_registration.sh"
     if (-not (Test-Path $localScript)) {
         LogMessage -type ERROR -message "[$jumpboxName] Script not found: $localScript"
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
 
     # -------------------------------------------------------------------------
@@ -17490,7 +17490,7 @@ Function Invoke-VcfmsFleetComponentRegistration {
         -OutputDir "."
     if (-not $kubeconfigResult) {
         LogMessage -type ERROR -message "[$jumpboxName] Could not resolve control plane node. Aborting."
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
     $controlPlaneHost = $kubeconfigResult.ControlPlaneHost
     LogMessage -type INFO -message "[$jumpboxName] Control plane node  : $controlPlaneHost"
@@ -17751,7 +17751,7 @@ Function Update-VcfmsSddcLcmCredentials {
     $localScript = Join-Path -Path $PSScriptRoot -ChildPath "scripts/sddclcm-backup-secrets-to-yaml.sh"
     if (-not (Test-Path $localScript)) {
         LogMessage -type ERROR -message "[$jumpboxName] Script not found: $localScript"
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
 
     LogMessage -type INFO -message "[$jumpboxName] Resolving control plane node from $ServicesRuntimeFqdn"
@@ -17761,7 +17761,7 @@ Function Update-VcfmsSddcLcmCredentials {
         -OutputDir "."
     if (-not $kubeconfigResult) {
         LogMessage -type ERROR -message "[$jumpboxName] Could not resolve control plane node. Aborting."
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
     $controlPlaneHost = $kubeconfigResult.ControlPlaneHost
     LogMessage -type INFO -message "[$jumpboxName] Control plane node  : $controlPlaneHost"
@@ -17987,11 +17987,11 @@ Function Invoke-VcfmsVcfaRegistration {
     if (-not $VcfaRuntimeFqdn) {
         if (-not $opsRegisteredComponentsFile) {
             LogMessage -type ERROR -message "[$jumpboxName] Supply either -VcfaRuntimeFqdn or -opsRegisteredComponentsFile. Aborting."
-            $StopWatch.Stop(); return
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
         }
         $VcfaRuntimeFqdn = Get-OpsRegisteredComponentValue -Name VcfaRuntimeFqdn -opsRegisteredComponentsFile $opsRegisteredComponentsFile
         if (-not $VcfaRuntimeFqdn) {
-            $StopWatch.Stop(); return
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
         }
     }
 
@@ -18009,7 +18009,7 @@ Function Invoke-VcfmsVcfaRegistration {
         $localScript = Join-Path -Path $PSScriptRoot -ChildPath "scripts/$scriptName"
         if (-not (Test-Path $localScript)) {
             LogMessage -type ERROR -message "[$jumpboxName] Script not found: $localScript"
-            $StopWatch.Stop(); return
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
         }
         $localScripts[$scriptName] = $localScript
     }
@@ -18026,7 +18026,7 @@ Function Invoke-VcfmsVcfaRegistration {
         -OutputDir "."
     if (-not $kubeconfigResult) {
         LogMessage -type ERROR -message "[$jumpboxName] Could not resolve control plane node. Aborting."
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
     $controlPlaneHost = $kubeconfigResult.ControlPlaneHost
     LogMessage -type INFO -message "[$jumpboxName] Control plane node  : $controlPlaneHost"
@@ -18251,11 +18251,11 @@ Function Update-VcfmsVcfaRegistration {
     if (-not $VcfaRuntimeFqdn) {
         if (-not $opsRegisteredComponentsFile) {
             LogMessage -type ERROR -message "[$jumpboxName] Supply either -VcfaRuntimeFqdn or -opsRegisteredComponentsFile. Aborting."
-            $StopWatch.Stop(); return
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
         }
         $VcfaRuntimeFqdn = Get-OpsRegisteredComponentValue -Name VcfaRuntimeFqdn -opsRegisteredComponentsFile $opsRegisteredComponentsFile
         if (-not $VcfaRuntimeFqdn) {
-            $StopWatch.Stop(); return
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
         }
     }
 
@@ -18273,7 +18273,7 @@ Function Update-VcfmsVcfaRegistration {
         $localScript = Join-Path -Path $PSScriptRoot -ChildPath "scripts/$scriptName"
         if (-not (Test-Path $localScript)) {
             LogMessage -type ERROR -message "[$jumpboxName] Script not found: $localScript"
-            $StopWatch.Stop(); return
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
         }
         $localScripts[$scriptName] = $localScript
     }
@@ -18290,7 +18290,7 @@ Function Update-VcfmsVcfaRegistration {
         -OutputDir "."
     if (-not $kubeconfigResult) {
         LogMessage -type ERROR -message "[$jumpboxName] Could not resolve control plane node. Aborting."
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
     $controlPlaneHost = $kubeconfigResult.ControlPlaneHost
     LogMessage -type INFO -message "[$jumpboxName] Control plane node  : $controlPlaneHost"
@@ -18523,7 +18523,7 @@ Function Update-ServicesRuntimePackageDeployment {
     # -------------------------------------------------------------------------
     if (-not (Get-Command kubectl -ErrorAction SilentlyContinue)) {
         LogMessage -type WARNING -message "[$jumpboxName] kubectl not found on PATH. Install kubectl and re-run."
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
 
     # =========================================================================
@@ -18601,7 +18601,7 @@ Function Update-ServicesRuntimePackageDeployment {
 
     } catch {
         LogMessage -type ERROR -message "[$vCenterFqdn] Failed to resolve vSphere inventory: $_"
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     } finally {
         if ($null -ne $vcConnection -and $vcConnection.IsConnected) {
             Disconnect-VIServer -Server $vcConnection -Confirm:$false -ErrorAction SilentlyContinue | Out-Null
@@ -18619,7 +18619,7 @@ Function Update-ServicesRuntimePackageDeployment {
         -OutputDir $OutputDir
     if (-not $kubeconfigResult) {
         LogMessage -type ERROR -message "[$jumpboxName] Could not retrieve kubeconfig. Aborting."
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
     $resolvedKubeconfig = $kubeconfigResult.KubeconfigPath
     LogMessage -type INFO -message "[$jumpboxName] Kubeconfig written to $resolvedKubeconfig"
@@ -18653,7 +18653,7 @@ Function Update-ServicesRuntimePackageDeployment {
         LogMessage -type INFO -message "[$jumpboxName] pd/vmsp-platform patched successfully"
     } else {
         LogMessage -type ERROR -message "[$jumpboxName] kubectl patch failed (exit $exitCode)"
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
 
     $StopWatch.Stop()
@@ -18810,7 +18810,7 @@ Function Set-ServicesRuntimeScale {
     if (-not $ServicesRuntimeFqdn -and -not $KubeconfigPath -and $Type) {
         $ServicesRuntimeFqdn = Resolve-ServicesRuntimeFqdn -extractedSDDCDataFile $extractedSDDCDataFile -Type $Type -opsRegisteredComponentsFile $opsRegisteredComponentsFile
         if (-not $ServicesRuntimeFqdn) {
-            $StopWatch.Stop(); return
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
         }
     }
 
@@ -18819,7 +18819,7 @@ Function Set-ServicesRuntimeScale {
     # -------------------------------------------------------------------------
     if (-not (Get-Command kubectl -ErrorAction SilentlyContinue)) {
         LogMessage -type WARNING -message "[$jumpboxName] kubectl not found on PATH. Install kubectl and re-run."
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
 
     # -------------------------------------------------------------------------
@@ -18828,19 +18828,19 @@ Function Set-ServicesRuntimeScale {
     if ($WorkerSize -or $MachineType -or $ProfileName) {
         if (-not $WorkerSize -or -not $MachineType -or -not $ProfileName) {
             LogMessage -type ERROR -message "[$jumpboxName] -WorkerSize, -MachineType and -ProfileName must be supplied together."
-            $StopWatch.Stop(); return
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
         }
         LogMessage -type INFO -message "[$jumpboxName] Using supplied target values — WorkerSize: $WorkerSize, MachineType: $MachineType, ProfileName: $ProfileName"
     } else {
         if (-not $BackupYamlDir) {
             LogMessage -type ERROR -message "[$jumpboxName] Supply either -BackupYamlDir, or -WorkerSize, -MachineType and -ProfileName together."
-            $StopWatch.Stop(); return
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
         }
         $resolvedYamlDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($BackupYamlDir)
         $vmspPlatformYaml = Join-Path $resolvedYamlDir "vmsp-platform.yaml"
         if (-not (Test-Path $vmspPlatformYaml)) {
             LogMessage -type ERROR -message "[$jumpboxName] vmsp-platform.yaml not found: $vmspPlatformYaml"
-            $StopWatch.Stop(); return
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
         }
 
         LogMessage -type INFO -message "[$jumpboxName] Reading target worker size / machine type / profile name from $vmspPlatformYaml"
@@ -18899,7 +18899,7 @@ Function Set-ServicesRuntimeScale {
 
         if (-not $WorkerSize -or -not $MachineType -or -not $ProfileName) {
             LogMessage -type ERROR -message "[$jumpboxName] Could not determine worker size / machine type / profile name from $vmspPlatformYaml (WorkerSize: '$WorkerSize', MachineType: '$MachineType', ProfileName: '$ProfileName'). Supply -WorkerSize, -MachineType and -ProfileName directly instead."
-            $StopWatch.Stop(); return
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
         }
         LogMessage -type INFO -message "[$jumpboxName] Resolved from backup — WorkerSize: $WorkerSize, MachineType: $MachineType, ProfileName: $ProfileName"
     }
@@ -18911,7 +18911,7 @@ Function Set-ServicesRuntimeScale {
     if (-not $resolvedKubeconfig) {
         if (-not $ServicesRuntimeFqdn -or -not $ServicesRuntimePassword) {
             LogMessage -type ERROR -message "[$jumpboxName] Supply -KubeconfigPath, or both -ServicesRuntimeFqdn and -ServicesRuntimePassword."
-            $StopWatch.Stop(); return
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
         }
         LogMessage -type INFO -message "[$jumpboxName] Retrieving kubeconfig from $ServicesRuntimeFqdn"
         $kubeconfigResult = Get-VcfmsServicesRuntimeKubeconfig `
@@ -18920,13 +18920,13 @@ Function Set-ServicesRuntimeScale {
             -OutputDir $KubeconfigOutputDir
         if (-not $kubeconfigResult) {
             LogMessage -type ERROR -message "[$jumpboxName] Could not retrieve kubeconfig. Aborting."
-            $StopWatch.Stop(); return
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
         }
         $resolvedKubeconfig = $kubeconfigResult.KubeconfigPath
     }
     if (-not (Test-Path $resolvedKubeconfig)) {
         LogMessage -type ERROR -message "[$jumpboxName] Kubeconfig not found: $resolvedKubeconfig"
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
     LogMessage -type INFO -message "[$jumpboxName] Kubeconfig : $resolvedKubeconfig"
 
@@ -18972,7 +18972,7 @@ Function Set-ServicesRuntimeScale {
 
         if ($confirmation -in @("N", "n")) {
             LogMessage -type INFO -message "[$jumpboxName] Operation cancelled by user."
-            $StopWatch.Stop(); return
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
         }
     }
 
@@ -19044,7 +19044,7 @@ Function Set-ServicesRuntimeScale {
     $patchOutput | ForEach-Object { LogMessage -type INFO -message "[$jumpboxName] $_" }
     if ($exitCode -ne 0) {
         LogMessage -type ERROR -message "[$jumpboxName] kubectl patch failed (exit $exitCode)"
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
     LogMessage -type INFO -message "[$jumpboxName] Patch applied successfully"
 
@@ -19227,7 +19227,7 @@ Function Get-VcfmsFleetComponentRegistration {
         -OutputDir "."
     if (-not $kubeconfigResult) {
         LogMessage -type ERROR -message "[$jumpboxName] Could not resolve control plane node. Aborting."
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
     $controlPlaneHost = $kubeconfigResult.ControlPlaneHost
     LogMessage -type INFO -message "[$jumpboxName] Control plane node: $controlPlaneHost"
@@ -19442,11 +19442,11 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
     if (-not $VidbFqdn) {
         if (-not $opsRegisteredComponentsFile) {
             LogMessage -type ERROR -message "[$jumpboxName] Supply either -VidbFqdn or -opsRegisteredComponentsFile. Aborting."
-            $StopWatch.Stop(); return
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
         }
         $VidbFqdn = Get-OpsRegisteredComponentValue -Name VidbFqdn -opsRegisteredComponentsFile $opsRegisteredComponentsFile
         if (-not $VidbFqdn) {
-            $StopWatch.Stop(); return
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
         }
     }
     LogMessage -type INFO -message "[$jumpboxName] VCF Ops Host   : $VcfOpsFqdn"
@@ -19461,7 +19461,7 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
         $localScript = Join-Path -Path $PSScriptRoot -ChildPath "scripts/$scriptName"
         if (-not (Test-Path $localScript)) {
             LogMessage -type ERROR -message "[$jumpboxName] Script not found: $localScript"
-            $StopWatch.Stop(); return
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
         }
         $localScripts[$scriptName] = $localScript
     }
@@ -19479,7 +19479,7 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
         LogMessage -type ERROR -message "[$jumpboxName]   1. Log in to the VCF Operations management UI at https://$VcfOpsFqdn"
         LogMessage -type ERROR -message "[$jumpboxName]   2. Navigate to Administration > Support > SSH Service"
         LogMessage -type ERROR -message "[$jumpboxName]   3. Enable the SSH service, then re-run this function"
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
     LogMessage -type INFO -message "[$jumpboxName] SSH is reachable on $VcfOpsFqdn"
 
@@ -19558,12 +19558,12 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
                 -ContentType "application/json" -SkipCertificateCheck
         } catch {
             LogMessage -type ERROR -message "[$VcfOpsFqdn] Failed to acquire VCF Operations API token: $($_.Exception.Message)"
-            $StopWatch.Stop(); return
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
         }
         $apiToken = $tokenResp.token
         if (-not $apiToken) {
             LogMessage -type ERROR -message "[$VcfOpsFqdn] VCF Operations API token was empty. Check credentials."
-            $StopWatch.Stop(); return
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
         }
         $apiHeaders = @{
             "Authorization"                     = "vRealizeOpsToken $apiToken"
@@ -19584,13 +19584,13 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
                 $vidbsResp = Invoke-RestMethod -Uri $vidbsUri -Method GET -Headers $apiHeaders -SkipCertificateCheck
             } catch {
                 LogMessage -type ERROR -message "[$VcfOpsFqdn] Failed to query VCF adapter instances: $($_.Exception.Message)"
-                $StopWatch.Stop(); return
+                Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
             }
 
             $vcfInstances = @($vidbsResp | Where-Object { $_.vcfInstanceId -and $_.fqdn })
             if ($vcfInstances.Count -eq 0) {
                 LogMessage -type ERROR -message "[$VcfOpsFqdn] No VCF adapter instances were returned by the API."
-                $StopWatch.Stop(); return
+                Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
             }
 
             # Build and display numbered selection table
@@ -19625,7 +19625,7 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
 
             if ($vcfInstanceSelection -ieq "C") {
                 LogMessage -type INFO -message "[$jumpboxName] Operation cancelled by user at VCF instance selection."
-                $StopWatch.Stop(); return
+                Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
             }
 
             $VcfInstanceId = $vcfInstances[$vcfInstanceSelection - 1].vcfInstanceId
@@ -19647,7 +19647,7 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
                 $ssoRealmsResp = Invoke-RestMethod -Uri $ssoRealmsUri -Method GET -Headers $apiHeaders -SkipCertificateCheck
             } catch {
                 LogMessage -type ERROR -message "[$VcfOpsFqdn] Failed to query SSO Realms: $($_.Exception.Message)"
-                $StopWatch.Stop(); return
+                Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
             }
 
             $ssoRealms = @($ssoRealmsResp.ssoRealms)
@@ -19686,7 +19686,7 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
 
                 if ($ssoSelection -ieq "C") {
                     LogMessage -type INFO -message "[$jumpboxName] Operation cancelled by user at SSO Realm selection."
-                    $StopWatch.Stop(); return
+                    Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
                 }
 
                 if ($ssoSelection -ieq "S") {
@@ -19841,7 +19841,7 @@ Function Install-VcfaMigrationServiceEngine {
         -Password $VcfaServiceRuntimePassword
     if (-not $srToken) {
         LogMessage -type ERROR -message "[$VcfaServiceRuntimeFqdn] Unable to obtain VCFA Services Runtime token. Aborting."
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
     $tokenFetchedAt = [DateTime]::UtcNow
     $headers = @{
@@ -19892,13 +19892,13 @@ Function Install-VcfaMigrationServiceEngine {
             -Method POST -Headers $headers -Body $stageBody -SkipCertificateCheck
     } catch {
         LogMessage -type ERROR -message "[$VcfaServiceRuntimeFqdn] Stage request failed: $($_.Exception.Message)"
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
 
     $stageTaskId = $stageResponse.id
     if (-not $stageTaskId) {
         LogMessage -type ERROR -message "[$VcfaServiceRuntimeFqdn] No task ID returned from stage response."
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
     LogMessage -type INFO -message "[$VcfaServiceRuntimeFqdn] Stage task created: $stageTaskId"
 
@@ -19937,7 +19937,7 @@ Function Install-VcfaMigrationServiceEngine {
         if ($taskResponse -and $taskResponse.description.localizedMessage) {
             LogMessage -type ERROR -message "[$VcfaServiceRuntimeFqdn] $($taskResponse.description.localizedMessage)"
         }
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
     LogMessage -type INFO -message "[$VcfaServiceRuntimeFqdn] Migration Service Engine staged successfully"
 
@@ -19966,13 +19966,13 @@ Function Install-VcfaMigrationServiceEngine {
             -Method POST -Headers $headers -Body $installBody -SkipCertificateCheck
     } catch {
         LogMessage -type ERROR -message "[$VcfaServiceRuntimeFqdn] Install request failed: $($_.Exception.Message)"
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
 
     $installTaskId = $installResponse.id
     if (-not $installTaskId) {
         LogMessage -type ERROR -message "[$VcfaServiceRuntimeFqdn] No task ID returned from install response."
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
     LogMessage -type INFO -message "[$VcfaServiceRuntimeFqdn] Install task created: $installTaskId"
 
@@ -20010,7 +20010,7 @@ Function Install-VcfaMigrationServiceEngine {
         if ($taskResponse -and $taskResponse.description.localizedMessage) {
             LogMessage -type ERROR -message "[$VcfaServiceRuntimeFqdn] $($taskResponse.description.localizedMessage)"
         }
-        $StopWatch.Stop(); return
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
     }
     LogMessage -type INFO -message "[$VcfaServiceRuntimeFqdn] Migration Service Engine installed successfully"
 
@@ -20099,7 +20099,7 @@ Function Remove-VcfmsRecoveredComponents {
             -OutputDir $KubeconfigOutputDir
         if (-not $kubeconfigResult) {
             LogMessage -type ERROR -message "[$jumpboxName] Could not retrieve kubeconfig. Aborting."
-            $StopWatch.Stop(); return
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
         }
         $resolvedKubeconfig = $kubeconfigResult.KubeconfigPath
         $controlPlaneHost = $kubeconfigResult.ControlPlaneHost
