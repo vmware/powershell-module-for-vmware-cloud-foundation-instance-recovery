@@ -1,17 +1,14 @@
 <#
 .SYNOPSIS
-Moves the fleet component VIP DNS entries to the other site's network for a Fleet Disaster Recovery failover or failback.
+Moves the fleet component VIP DNS entries to the recovery site's network for a Fleet Disaster Recovery failover.
 
 .DESCRIPTION
-Standalone script intended to be run by Invoke-UserScript (child pwsh process, exit code 0 = success).
+Standalone script intended to be run by Invoke-UserScript (child pwsh process, no parameters, exit code 0 = success).
 Modelled on Platform Tools' Remove-BindDnsEntry / New-BindDnsEntry: the forward (A) and reverse (PTR) records are
 removed from, and added to, the BIND zone files on the PTR router over SSH, then BIND is restarted.
 
-Run with exactly one switch:
-  -Failover   re-creates each FQDN as 10.21.yy.zz
-  -Failback   re-creates each FQDN as 10.11.yy.zz
-
-yy and zz are taken from the IP address each FQDN resolves to before its entries are removed.
+Re-creates each FQDN as 10.21.yy.zz. yy and zz are taken from the IP address each FQDN resolves to before its
+entries are removed. The matching script for the other direction is Update-FleetVipDnsFailback.ps1.
 
   1. Resolves every FQDN and works out its new IP. Nothing is changed unless every FQDN can be processed.
   2. Removes the old forward and reverse records and adds the new ones (creating a missing zone file if needed).
@@ -24,16 +21,8 @@ Exit code: 0 = success, 1 = failure (any [ERROR] line also marks the Invoke-User
 Requires the Posh-SSH module and network access to the PTR router.
 
 .EXAMPLE
-pwsh -NoProfile -File .\Update-FleetVipDns.ps1 -Failover
-
-.EXAMPLE
-pwsh -NoProfile -File .\Update-FleetVipDns.ps1 -Failback
+pwsh -NoProfile -File .\Update-FleetVipDnsFailover.ps1
 #>
-[CmdletBinding()]
-Param(
-    [Parameter(Mandatory = $false)] [Switch]$Failover,
-    [Parameter(Mandatory = $false)] [Switch]$Failback
-)
 
 # ======================================================================================
 # VARIABLES TO SET - replace every <placeholder> before running
@@ -53,9 +42,8 @@ $fqdns = @(
     'flt-auto01.rainpole.io'
 )
 
-# --- Second octet of the 10.xx.yy.zz network each direction moves the entries to
-$failoverSecondOctet = '21'
-$failbackSecondOctet = '11'
+# --- Second octet of the 10.xx.yy.zz network the entries are moved to
+$targetSecondOctet = '21'
 
 # ======================================================================================
 # SCRIPT BODY
@@ -158,15 +146,12 @@ Function Confirm-BindZone {
 
 Try {
     # ---------------- 0. Validate input ----------------
-    If ($Failover -eq $Failback) {
-        Throw "Specify exactly one of -Failover or -Failback"
-    }
     Test-Placeholders
     If (-not (Get-Module -ListAvailable -Name Posh-SSH)) {
         Throw "Posh-SSH module is not installed"
     }
-    $direction = If ($Failover) { 'Failover' } Else { 'Failback' }
-    $targetOctet = If ($Failover) { $failoverSecondOctet } Else { $failbackSecondOctet }
+    $direction = 'Failover'
+    $targetOctet = $targetSecondOctet
     $tag = "[DNS]"
 
     # ---------------- 1. Note existing IPs and work out the new ones ----------------

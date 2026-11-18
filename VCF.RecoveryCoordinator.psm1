@@ -151,6 +151,17 @@ Function LogMessage {
     #Add-Content -path $logFile $logContent
 }
 
+# Emits the "Completed Task" line the Recovery Coordinator UI waits for before marking a task finished.
+# Call it on every early-exit path of a task function; an ERROR logged before it marks the task failed.
+Function Write-TaskCompleted {
+    Param (
+        [Parameter (Mandatory = $true)] [String]$TaskName,
+        [Parameter (Mandatory = $true)] [System.Diagnostics.Stopwatch]$Stopwatch
+    )
+    $Stopwatch.Stop()
+    LogMessage -type NOTE -message "[$(hostname)] Completed Task $TaskName in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.Seconds) seconds"
+}
+
 
 Function Test-MemberOfSubnet {
     [cmdletbinding()]
@@ -419,23 +430,16 @@ Function Invoke-UserScript {
       - any other code    -> failure: logs an [ERROR] line before "Completed Task", so the step is shown as failed
     The user script is therefore responsible for deciding whether the restore truly succeeded (including waiting for VCF Operations to be available,
     if that is what "restored" means for them) and for exiting 0 only in that case. An uncaught terminating error in the script also yields a non-zero exit code.
-    The user script must run unattended. It is not passed any parameters unless -ScriptArguments is supplied (e.g. the FDR plans pass -Failover or -Failback to the DNS entry modification script).
+    The user script must run unattended, and is not passed any parameters.
 
     .EXAMPLE
     Invoke-UserScript -ScriptPath 'F:\VCFIR\Restore-OpsAppliances.ps1'
 
-    .EXAMPLE
-    Invoke-UserScript -ScriptPath 'F:\VCFIR\Update-FleetVipDns.ps1' -ScriptArguments '-Failover'
-
     .PARAMETER ScriptPath
     Path to the PowerShell script to run
-
-    .PARAMETER ScriptArguments
-    Optional. Arguments passed to the script on its command line, e.g. '-Failover'
     #>
     Param(
-        [Parameter (Mandatory = $false)][String] $ScriptPath,
-        [Parameter (Mandatory = $false)][String[]] $ScriptArguments
+        [Parameter (Mandatory = $false)][String] $ScriptPath
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
@@ -450,7 +454,7 @@ Function Invoke-UserScript {
         LogMessage -type INFO -message "[$jumpboxName] Running user-provided script '$ScriptPath'"
         Try {
             $pwshPath = (Get-Process -Id $PID).Path
-            & $pwshPath -NoProfile -File $ScriptPath @ScriptArguments 2>&1 | ForEach-Object { Write-Host $_ }
+            & $pwshPath -NoProfile -File $ScriptPath 2>&1 | ForEach-Object { Write-Host $_ }
             $exitCode = $LASTEXITCODE
             If ($exitCode -eq 0) {
                 LogMessage -type INFO -message "[$jumpboxName] User script completed successfully (exit code 0)"
@@ -2104,6 +2108,7 @@ Function Update-ExtractedSDDCDataWithSupervisorDetails {
     $workloadDomain = $extractedSddcData.workloadDomains | Where-Object { $_.vcenterDetails.fqdn -eq $vCenterFQDN }
     if (-not $workloadDomain) {
         LogMessage -type ERROR -message "[$jumpboxName] Could not find a workload domain with vCenter FQDN '$vCenterFQDN' in extracted data"
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
     LogMessage -type INFO -message "[$vCenterFQDN] Processing workload domain '$($workloadDomain.domainName)'"
@@ -2997,6 +3002,12 @@ Function Get-BackupsFromSFTPServer {
     $StopWatch.Start()
     $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
     [int]$__ansIdx = 0
+    # Early-exit paths must still emit "Completed Task" -- the Recovery Coordinator UI marks a task finished only when it sees that line.
+    $completeTask = {
+        $StopWatch.Stop()
+        $m = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
+        LogMessage -type NOTE -message "[$jumpboxName] Completed Task Get-BackupsFromSFTPServer in $m minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    }
 
     # -componentNames wins over -Type for the component list itself if both are supplied -- resolved into a SEPARATE
     # $resolvedComponentNames variable rather than reassigning $componentNames itself, since PowerShell re-checks a
@@ -3037,6 +3048,7 @@ Function Get-BackupsFromSFTPServer {
         $vspId = ($extractedSddcData.vspClusters | Where-Object { $_.type -eq $vspClusterType }).vspClusterID
         if (-not $vspId) {
             LogMessage -type ERROR -message "[$jumpboxName] No vspClusters entry of type '$vspClusterType' found in '$extractedSDDCDataFile'. Aborting."
+            & $completeTask
             return
         }
         LogMessage -type INFO -message "[$jumpboxName] Resolved vspId '$vspId' ($vspClusterType) via '$extractedSDDCDataFile'"
@@ -3054,15 +3066,18 @@ Function Get-BackupsFromSFTPServer {
             Get-OpsRegisteredComponentValue -Name ServicesRuntimeComponentId -ServicesRuntimeFqdn $ServicesRuntimeFqdn -opsRegisteredComponentsFile $opsRegisteredComponentsFile
         }
         if (-not $vspId) {
+            & $completeTask
             return
         }
     } else {
         LogMessage -type ERROR -message "[$jumpboxName] Either -vspId, -extractedSDDCDataFile or -opsRegisteredComponentsFile must be specified."
+        & $completeTask
         return
     }
 
     if ($unauthorizedDepot -and -not $offlineDepotFqdn) {
         LogMessage -type ERROR -message "[$jumpboxName] -offlineDepotFqdn must be specified with -unauthorizedDepot."
+        & $completeTask
         return
     }
 
@@ -3149,7 +3164,8 @@ Function Get-BackupsFromSFTPServer {
     }
 
     if ($parsedBackups.Count -eq 0) {
-        LogMessage -type WARNING -message "[$sftpServer] No backups found for components: $($resolvedComponentNames -join ', ')"
+        LogMessage -type ERROR -message "[$sftpServer] No backups found for components: $($resolvedComponentNames -join ', ')"
+        & $completeTask
         return
     }
 
@@ -3438,6 +3454,7 @@ Function Get-BackupsFromSFTPServer {
 
         if ($packageUrlFailed) {
             LogMessage -type ERROR -message "[$jumpboxName] Restore JSON not written: packageUrl could not be resolved for every component."
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
 
@@ -3742,11 +3759,13 @@ Function Add-OfflineDepotTrustedCertificate {
 
     if (-not $IsWindows -and $PSVersionTable.PSVersion.Major -ge 6) {
         LogMessage -type ERROR -message "[$jumpboxName] $($MyInvocation.MyCommand) only supports Windows."
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
     $principal = New-Object System.Security.Principal.WindowsPrincipal([System.Security.Principal.WindowsIdentity]::GetCurrent())
     if (-not $principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)) {
         LogMessage -type ERROR -message "[$jumpboxName] $($MyInvocation.MyCommand) must be run from an elevated (Administrator) session."
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -3768,11 +3787,13 @@ Function Add-OfflineDepotTrustedCertificate {
         $tcpClient.Close()
     } catch {
         LogMessage -type ERROR -message "[$jumpboxName] Failed to retrieve certificate from ${offlineDepotFqdn}:${offlineDepotPort}: $($_.Exception.Message)"
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
     if ($script:depotChainCerts.Count -eq 0) {
         LogMessage -type ERROR -message "[$jumpboxName] No certificate returned from ${offlineDepotFqdn}:${offlineDepotPort}"
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -3819,6 +3840,7 @@ Function Set-SDDCManagerOfflineDepot {
     if (-not $sddcManagerFqdn) {
         $sddcManagerFqdn = Get-ExtractedSddcDataValue -Name SddcManagerFqdn -extractedSDDCDataFile $extractedSDDCDataFile
         if (-not $sddcManagerFqdn) {
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
     }
@@ -3929,6 +3951,7 @@ Function Set-SDDCManagerFDSDepot {
     if (-not $sddcManagerFqdn) {
         $sddcManagerFqdn = Get-ExtractedSddcDataValue -Name SddcManagerFqdn -extractedSDDCDataFile $extractedSDDCDataFile
         if (-not $sddcManagerFqdn) {
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
     }
@@ -4020,6 +4043,7 @@ Function Invoke-SddcManagerBundleDownload {
     if (-not $sddcManagerFqdn) {
         $sddcManagerFqdn = Get-ExtractedSddcDataValue -Name SddcManagerFqdn -extractedSDDCDataFile $extractedSDDCDataFile
         if (-not $sddcManagerFqdn) {
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
     }
@@ -4027,6 +4051,7 @@ Function Invoke-SddcManagerBundleDownload {
     if (-not $VcfVersion) {
         $VcfVersion = Get-ExtractedSddcDataValue -Name VcfVersion -extractedSDDCDataFile $extractedSDDCDataFile
         if (-not $VcfVersion) {
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
     }
@@ -5618,6 +5643,7 @@ Function Add-DiskgroupsToManagementHosts {
 
     If ($datastoreType -eq "VSAN_ESA") {
         LogMessage -type ERROR -message "[$clusterName] This function is for vSAN OSA clusters only. Use the appropriate ESA expansion function for VSAN_ESA clusters."
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -5636,6 +5662,7 @@ Function Add-DiskgroupsToManagementHosts {
     If (-not $referenceDiskGroups) {
         LogMessage -type ERROR -message "[$($referenceHost.Name)] No existing vSAN OSA disk groups found on reference host. Ensure New-SingleHostVsanDatastore has been run successfully."
         Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -6050,6 +6077,7 @@ Function Set-ManagementDatastorePolicy {
 
     If (-not $datastorePolicy) {
         LogMessage -type ERROR -message "[$clusterName] No primaryDatastorePolicy found in extracted data. Ensure Update-ExtractedSDDCData has been run."
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -6063,6 +6091,7 @@ Function Set-ManagementDatastorePolicy {
         LogMessage -type ERROR -message "[$clusterName] Storage policy '$datastorePolicy' not found in vCenter. Available policies:"
         Get-SpbmStoragePolicy | ForEach-Object { LogMessage -type INFO -message "  - $($_.Name)" }
         Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -6070,6 +6099,7 @@ Function Set-ManagementDatastorePolicy {
     If (-not $datastore) {
         LogMessage -type ERROR -message "[$clusterName] Datastore '$datastoreName' not found"
         Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -9918,6 +9948,7 @@ Function Remove-SddcManagerVspClusterEntry {
     if (-not $sddcManagerFqdn) {
         $sddcManagerFqdn = Get-ExtractedSddcDataValue -Name SddcManagerFqdn -extractedSDDCDataFile $extractedSDDCDataFile
         if (-not $sddcManagerFqdn) {
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
     }
@@ -9970,6 +10001,7 @@ Function Remove-SddcManagerVspClusterEntry {
         LogMessage -type INFO -message "[$SddcManagerFqdn] Raw output for diagnostics:"
         Write-Host (& $cleanSshOutput $rawOutput)
         Remove-SSHSession -SSHSession $sshSession | Out-Null
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -9991,6 +10023,7 @@ Function Remove-SddcManagerVspClusterEntry {
         if ($confirmation -in @("N", "n")) {
             LogMessage -type INFO -message "[$SddcManagerFqdn] Operation cancelled by user."
             Remove-SSHSession -SSHSession $sshSession | Out-Null
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
     }
@@ -10081,6 +10114,7 @@ Function Update-DomainDatastoreID {
     $SddcManagerFqdn = $extractedSddcData.sddcManager.fqdn
     if (-not $SddcManagerFqdn) {
         LogMessage -type ERROR -message "[$jumpboxName] Could not determine SDDC Manager FQDN from extracted data"
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -10088,6 +10122,7 @@ Function Update-DomainDatastoreID {
     $workloadDomain = $extractedSddcData.workloadDomains | Where-Object { $_.vCenterDetails.fqdn -eq $vCenterFQDN }
     if (-not $workloadDomain) {
         LogMessage -type ERROR -message "[$jumpboxName] No workload domain found with vCenter FQDN '$vCenterFQDN' in extracted SDDC data"
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -10095,6 +10130,7 @@ Function Update-DomainDatastoreID {
     $domainCluster = $workloadDomain.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }
     if (-not $domainCluster) {
         LogMessage -type ERROR -message "[$jumpboxName] No cluster named '$clusterName' found in domain '$($workloadDomain.domainName)'"
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -10103,6 +10139,7 @@ Function Update-DomainDatastoreID {
 
     if (-not $datastoreName) {
         LogMessage -type ERROR -message "[$jumpboxName] No primaryDatastoreName found in extracted data for cluster '$clusterName'. Ensure Update-ExtractedSDDCData has been run."
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -10111,6 +10148,7 @@ Function Update-DomainDatastoreID {
 
     if (-not $vCenterAdmin -or -not $vCenterAdminPassword) {
         LogMessage -type ERROR -message "[$vCenterFQDN] Could not find SSO credentials for vCenter in extracted data"
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -10125,6 +10163,7 @@ Function Update-DomainDatastoreID {
     if (-not $datastore) {
         LogMessage -type ERROR -message "[$vCenterFQDN] Datastore '$datastoreName' not found in vCenter"
         Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -10199,6 +10238,7 @@ Function Update-DomainDatastoreID {
         if ($confirmation -in @("N", "n")) {
             LogMessage -type INFO -message "[$SddcManagerFqdn] Operation cancelled by user."
             Remove-SSHSession -SSHSession $sshSession | Out-Null
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
     }
@@ -10297,6 +10337,7 @@ Function Update-ClusterHostSourceIDs {
     $SddcManagerFqdn = $extractedSddcData.sddcManager.fqdn
     if (-not $SddcManagerFqdn) {
         LogMessage -type ERROR -message "[$jumpboxName] Could not determine SDDC Manager FQDN from extracted data"
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -10304,6 +10345,7 @@ Function Update-ClusterHostSourceIDs {
     $workloadDomain = $extractedSddcData.workloadDomains | Where-Object { $_.vCenterDetails.fqdn -eq $vCenterFQDN }
     if (-not $workloadDomain) {
         LogMessage -type ERROR -message "[$jumpboxName] No workload domain found with vCenter FQDN '$vCenterFQDN' in extracted SDDC data"
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -10311,6 +10353,7 @@ Function Update-ClusterHostSourceIDs {
     $domainCluster = $workloadDomain.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }
     if (-not $domainCluster) {
         LogMessage -type ERROR -message "[$jumpboxName] No cluster named '$clusterName' found in domain '$($workloadDomain.domainName)'"
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -10319,6 +10362,7 @@ Function Update-ClusterHostSourceIDs {
 
     if (-not $vCenterAdmin -or -not $vCenterAdminPassword) {
         LogMessage -type ERROR -message "[$vCenterFQDN] Could not find SSO credentials for vCenter in extracted data"
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -10332,6 +10376,7 @@ Function Update-ClusterHostSourceIDs {
     if ($clusterHosts.Count -eq 0) {
         LogMessage -type ERROR -message "[$vCenterFQDN] No hosts found in cluster '$clusterName'"
         Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -10434,6 +10479,7 @@ Function Update-ClusterHostSourceIDs {
         if ($confirmation -in @("N", "n")) {
             LogMessage -type INFO -message "[$SddcManagerFqdn] Operation cancelled by user."
             Remove-SSHSession -SSHSession $sshSession | Out-Null
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
     }
@@ -10572,6 +10618,7 @@ Function Invoke-SddcManagerSSHKeyRefresh {
     $SddcManagerFqdn = $extractedSddcData.sddcManager.fqdn
     if (-not $SddcManagerFqdn) {
         LogMessage -type ERROR -message "[$jumpboxName] Could not determine SDDC Manager FQDN from extracted data"
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -10580,10 +10627,12 @@ Function Invoke-SddcManagerSSHKeyRefresh {
     if (-not $matchAllOutput) {
         if (-not $workloadDomain -and -not $clusterName) {
             LogMessage -type ERROR -message "[$jumpboxName] Specify -workloadDomain, -clusterName (with -vCenterFQDN/-vCenterAdmin/-vCenterAdminPassword), or -all"
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
         if ($clusterName -and (-not $vCenterFQDN -or -not $vCenterAdmin -or -not $vCenterAdminPassword)) {
             LogMessage -type ERROR -message "[$jumpboxName] -clusterName requires -vCenterFQDN, -vCenterAdmin, and -vCenterAdminPassword"
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
     }
@@ -10598,6 +10647,7 @@ Function Invoke-SddcManagerSSHKeyRefresh {
         $domainByNameDetails = $extractedSddcData.workloadDomains | Where-Object { $_.domainName -eq $workloadDomain }
         if (-not $domainByNameDetails) {
             LogMessage -type ERROR -message "[$jumpboxName] No workload domain named '$workloadDomain' found in extracted SDDC data"
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
 
@@ -10606,6 +10656,7 @@ Function Invoke-SddcManagerSSHKeyRefresh {
         $vCenterRootPassword = ($extractedSddcData.passwords | Where-Object { ($_.entityType -eq "VCENTER") -and ($_.domainName -eq $workloadDomain) -and ($_.credentialType -eq "SSH") }).password
         if (-not $vCenterRootPassword) {
             LogMessage -type ERROR -message "[$domainVCenterFqdn] Could not find a VCENTER/SSH credential for domain '$workloadDomain' in extracted data"
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
         $vamiHeaders = VCFIRCreateHeader -username "root" -password $vCenterRootPassword
@@ -10631,11 +10682,13 @@ Function Invoke-SddcManagerSSHKeyRefresh {
         $domainByVCenterDetails = $extractedSddcData.workloadDomains | Where-Object { $_.vCenterDetails.fqdn -eq $vCenterFQDN }
         if (-not $domainByVCenterDetails) {
             LogMessage -type ERROR -message "[$jumpboxName] No workload domain found with vCenter FQDN '$vCenterFQDN' in extracted SDDC data"
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
         $domainCluster = $domainByVCenterDetails.vsphereClusterDetails | Where-Object { $_.name -eq $clusterName }
         if (-not $domainCluster) {
             LogMessage -type ERROR -message "[$jumpboxName] No cluster named '$clusterName' found in domain '$($domainByVCenterDetails.domainName)'"
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
 
@@ -10667,6 +10720,7 @@ Function Invoke-SddcManagerSSHKeyRefresh {
     $localScript = Join-Path -Path $PSScriptRoot -ChildPath "scripts/refreshsshkeys.py"
     if (-not (Test-Path $localScript)) {
         LogMessage -type ERROR -message "[$jumpboxName] Script not found: $localScript"
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -10686,6 +10740,7 @@ Function Invoke-SddcManagerSSHKeyRefresh {
     } Catch {
         LogMessage -type ERROR -message "[$SddcManagerFqdn] SCP upload threw an exception: $($_.Exception.Message)"
         Remove-SSHSession -SSHSession $sshSession | Out-Null
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -10696,6 +10751,7 @@ Function Invoke-SddcManagerSSHKeyRefresh {
     if ($verifyResult.ExitStatus -ne 0) {
         LogMessage -type ERROR -message "[$SddcManagerFqdn] Uploaded file not found at $remotePath from this SSH session (exit $($verifyResult.ExitStatus)): $($verifyResult.Error -join ' ')"
         Remove-SSHSession -SSHSession $sshSession | Out-Null
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -10703,6 +10759,7 @@ Function Invoke-SddcManagerSSHKeyRefresh {
     if ($chmodResult.ExitStatus -ne 0) {
         LogMessage -type ERROR -message "[$SddcManagerFqdn] chmod +x on uploaded script failed (exit $($chmodResult.ExitStatus)): $($chmodResult.Error -join ' ')"
         Remove-SSHSession -SSHSession $sshSession | Out-Null
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -11249,6 +11306,7 @@ Function New-ServicesRuntime {
             $SddcManagerFqdn = Get-ExtractedSddcDataValue -Name SddcManagerFqdn -extractedSDDCDataFile $extractedSDDCDataFile
         }
         if (-not $SddcManagerFqdn) {
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
     }
@@ -11256,12 +11314,14 @@ Function New-ServicesRuntime {
         if (-not $InstanceFqdn) {
             $InstanceFqdn = Get-ExtractedSddcDataValue -Name InstanceFqdn -extractedSDDCDataFile $extractedSDDCDataFile
             if (-not $InstanceFqdn) {
+                Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
                 return
             }
         }
         if (-not $FleetFqdn) {
             $FleetFqdn = Get-ExtractedSddcDataValue -Name FleetFqdn -extractedSDDCDataFile $extractedSDDCDataFile
             if (-not $FleetFqdn) {
+                Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
                 return
             }
         }
@@ -11269,6 +11329,7 @@ Function New-ServicesRuntime {
     if ($PSCmdlet.ParameterSetName -eq "ByParameter" -and -not $PlatformFqdn) {
         $PlatformFqdn = Resolve-ServicesRuntimeFqdn -extractedSDDCDataFile $extractedSDDCDataFile -Type $Type -opsRegisteredComponentsFile $opsRegisteredComponentsFile
         if (-not $PlatformFqdn) {
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
     }
@@ -11277,6 +11338,7 @@ Function New-ServicesRuntime {
     $accessToken = Get-SddcManagerToken -SddcManagerFqdn $SddcManagerFqdn -Username $SddcManagerUser -Password $SddcManagerPassword
     if (-not $accessToken) {
         LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain SDDC Manager token. Aborting."
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
     $tokenFetchedAt = [DateTime]::UtcNow
@@ -11292,6 +11354,7 @@ Function New-ServicesRuntime {
         $payloadPath = (Resolve-Path -Path $JsonFile -ErrorAction SilentlyContinue).Path
         if (-not $payloadPath) {
             LogMessage -type ERROR -message "[$jumpboxName] Payload file not found: $JsonFile"
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
 
@@ -11300,6 +11363,7 @@ Function New-ServicesRuntime {
             $payloadObject = $requestBody | ConvertFrom-Json
         } catch {
             LogMessage -type ERROR -message "[$jumpboxName] Failed to parse JSON from $JsonFile : $($_.Exception.Message)"
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
 
@@ -11307,6 +11371,7 @@ Function New-ServicesRuntime {
         $missingFields = $requiredFields | Where-Object { -not $payloadObject.$_ }
         if ($missingFields) {
             LogMessage -type ERROR -message "[$jumpboxName] Payload is missing required fields: $($missingFields -join ', ')"
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
     } else {
@@ -11314,10 +11379,12 @@ Function New-ServicesRuntime {
         if ($Type -eq 'MANAGEMENT') {
             if ([string]::IsNullOrWhiteSpace($InstanceFqdn)) {
                 LogMessage -type ERROR -message "[$jumpboxName] -InstanceFqdn is required when -Type is MANAGEMENT"
+                Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
                 return
             }
             if ([string]::IsNullOrWhiteSpace($FleetFqdn)) {
                 LogMessage -type ERROR -message "[$jumpboxName] -FleetFqdn is required when -Type is MANAGEMENT"
+                Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
                 return
             }
         }
@@ -11339,6 +11406,7 @@ Function New-ServicesRuntime {
         }
         if (-not $ClusterId) {
             LogMessage -type ERROR -message "[$jumpboxName] Unable to resolve the cluster ID for PlatformFqdn '$PlatformFqdn' (no matching vspClusters entry in -extractedSDDCDataFile, or no -extractedSDDCDataFile / -opsRegisteredComponentsFile / -clusterId supplied). Aborting."
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
         LogMessage -type INFO -message "[$jumpboxName] Resolved cluster ID '$ClusterId' for '$PlatformFqdn'"
@@ -11352,6 +11420,7 @@ Function New-ServicesRuntime {
         }
         if (-not $NetworkMoId) {
             LogMessage -type ERROR -message "[$jumpboxName] -NetworkMoId was not supplied and no portGroupMoId is recorded for '$PlatformFqdn' in '$extractedSDDCDataFile'. Aborting."
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
         LogMessage -type INFO -message "[$jumpboxName] Using network '$NetworkMoId' for '$PlatformFqdn'"
@@ -11363,12 +11432,14 @@ Function New-ServicesRuntime {
             $mgmtDomain = $domainsResponse.elements | Where-Object { $_.type -eq "MANAGEMENT" } | Select-Object -First 1
             if (-not $mgmtDomain) {
                 LogMessage -type ERROR -message "[$SddcManagerFqdn] No MANAGEMENT domain found in /v1/domains response"
+                Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
                 return
             }
             $domainId = $mgmtDomain.id
             LogMessage -type INFO -message "[$SddcManagerFqdn] Management domain ID: $domainId"
         } catch {
             LogMessage -type ERROR -message "[$SddcManagerFqdn] Failed to retrieve domains: $($_.Exception.Message)"
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
 
@@ -11409,6 +11480,7 @@ Function New-ServicesRuntime {
 
         if ($confirmation -in @("N", "n")) {
             LogMessage -type INFO -message "[$SddcManagerFqdn] VCFMS runtime deployment cancelled by user."
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
     }
@@ -11429,6 +11501,7 @@ Function New-ServicesRuntime {
             } catch {
             }
         }
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -11573,6 +11646,7 @@ Function Get-ServicesRuntime {
     $accessToken = Get-SddcManagerToken -SddcManagerFqdn $SddcManagerFqdn -Username $SddcManagerUser -Password $SddcManagerPassword
     if (-not $accessToken) {
         LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain SDDC Manager token. Aborting."
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -11597,6 +11671,7 @@ Function Get-ServicesRuntime {
             } catch {
             }
         }
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -11829,6 +11904,7 @@ Function Get-VcfOperationsRegisteredComponents {
     $opsToken = Get-VcfOperationsToken -VcfOperationsFqdn $VcfOperationsFqdn -Username $Username -Password $Password -AuthSource $AuthSource
     if (-not $opsToken) {
         LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain VCF Operations token. Aborting."
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return $null
     }
 
@@ -11845,12 +11921,14 @@ Function Get-VcfOperationsRegisteredComponents {
         $response = Invoke-RestMethod -Uri $componentsUri -Method GET -Headers $headers -SkipCertificateCheck
     } catch {
         LogMessage -type ERROR -message "[$VcfOperationsFqdn] Failed to retrieve components: $($_.Exception.Message)"
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return $null
     }
 
     $allComponents = $response.components
     if (-not $allComponents -or ($allComponents | Measure-Object).Count -eq 0) {
-        LogMessage -type WARNING -message "[$VcfOperationsFqdn] No components returned."
+        LogMessage -type ERROR -message "[$VcfOperationsFqdn] No components returned."
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return $null
     }
 
@@ -11978,6 +12056,7 @@ Function Get-RegisteredComponentIds {
     $opsToken = Get-VcfOperationsToken -VcfOperationsFqdn $VcfOperationsFqdn -Username $Username -Password $Password -AuthSource $AuthSource
     if (-not $opsToken) {
         LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain VCF Operations token. Aborting."
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return $null
     }
 
@@ -11994,12 +12073,14 @@ Function Get-RegisteredComponentIds {
         $response = Invoke-RestMethod -Uri $componentsUri -Method GET -Headers $headers -SkipCertificateCheck
     } catch {
         LogMessage -type ERROR -message "[$VcfOperationsFqdn] Failed to retrieve components: $($_.Exception.Message)"
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return $null
     }
 
     $allComponents = $response.components
     if (-not $allComponents -or ($allComponents | Measure-Object).Count -eq 0) {
-        LogMessage -type WARNING -message "[$VcfOperationsFqdn] No components returned."
+        LogMessage -type ERROR -message "[$VcfOperationsFqdn] No components returned."
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return $null
     }
 
@@ -12137,6 +12218,7 @@ Function Add-VcfmsTrustedCertificate {
     if (-not $ServicesRuntimeFqdn) {
         $ServicesRuntimeFqdn = Resolve-ServicesRuntimeFqdn -extractedSDDCDataFile $extractedSDDCDataFile -Type $Type -opsRegisteredComponentsFile $opsRegisteredComponentsFile
         if (-not $ServicesRuntimeFqdn) {
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
     }
@@ -12152,11 +12234,13 @@ Function Add-VcfmsTrustedCertificate {
         $tcpClient.Close()
     } catch {
         LogMessage -type ERROR -message "[$jumpboxName] Failed to retrieve certificate from ${RemoteHostFqdn}:${RemoteHostPort}: $($_.Exception.Message)"
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
     if (-not $remoteCert) {
         LogMessage -type ERROR -message "[$jumpboxName] No certificate returned from ${RemoteHostFqdn}:${RemoteHostPort}"
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -12171,6 +12255,7 @@ Function Add-VcfmsTrustedCertificate {
     $srToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
     if (-not $srToken) {
         LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain Services Runtime token. Aborting."
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
     $tokenFetchedAt = [DateTime]::UtcNow
@@ -12199,6 +12284,7 @@ Function Add-VcfmsTrustedCertificate {
             } catch {
             }
         }
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -12339,6 +12425,7 @@ Function Set-ServicesRuntimeSftpBackupSettings {
     if (-not $ServicesRuntimeFqdn) {
         $ServicesRuntimeFqdn = Resolve-ServicesRuntimeFqdn -extractedSDDCDataFile $extractedSDDCDataFile -Type $Type -opsRegisteredComponentsFile $opsRegisteredComponentsFile
         if (-not $ServicesRuntimeFqdn) {
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
     }
@@ -12351,15 +12438,18 @@ Function Set-ServicesRuntimeSftpBackupSettings {
         $ComponentId = ($extractedSddcData.vspClusters | Where-Object { $_.primaryFqdn -eq $ServicesRuntimeFqdn }).vspClusterID
         if (-not $ComponentId) {
             LogMessage -type ERROR -message "[$jumpboxName] No vspClusters entry in '$extractedSDDCDataFile' matches ServicesRuntimeFqdn '$ServicesRuntimeFqdn'. Aborting."
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
     } elseif ($opsRegisteredComponentsFile) {
         $ComponentId = Get-OpsRegisteredComponentValue -Name ServicesRuntimeComponentId -ServicesRuntimeFqdn $ServicesRuntimeFqdn -opsRegisteredComponentsFile $opsRegisteredComponentsFile
         if (-not $ComponentId) {
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
     } else {
         LogMessage -type ERROR -message "[$jumpboxName] Supply either -extractedSDDCDataFile or -opsRegisteredComponentsFile so the Services Runtime component ID can be resolved. Aborting."
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
     LogMessage -type INFO -message "[$jumpboxName] Resolved component ID '$ComponentId' for '$ServicesRuntimeFqdn'"
@@ -12371,11 +12461,13 @@ Function Set-ServicesRuntimeSftpBackupSettings {
             $keyScanOutput = & ssh-keyscan -p $SftpPort $SftpHost 2>$null
             if (-not $keyScanOutput) {
                 LogMessage -type ERROR -message "[$jumpboxName] ssh-keyscan returned no output for ${SftpHost}:${SftpPort}. Verify the host is reachable."
+                Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
                 return
             }
             $fingerprintOutput = $keyScanOutput | & ssh-keygen -lf - 2>$null
             if (-not $fingerprintOutput) {
                 LogMessage -type ERROR -message "[$jumpboxName] ssh-keygen could not compute fingerprint from keyscan output."
+                Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
                 return
             }
             # Parse the fingerprint (e.g. "256 SHA256:xxxx host (ECDSA)" -> take the SHA256 part)
@@ -12388,6 +12480,7 @@ Function Set-ServicesRuntimeSftpBackupSettings {
             LogMessage -type INFO -message "[$jumpboxName] SFTP fingerprint: $SftpFingerprint"
         } catch {
             LogMessage -type ERROR -message "[$jumpboxName] Failed to retrieve SFTP fingerprint: $($_.Exception.Message)"
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
     } else {
@@ -12398,6 +12491,7 @@ Function Set-ServicesRuntimeSftpBackupSettings {
     $srToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
     if (-not $srToken) {
         LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain Services Runtime token. Aborting."
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
     $tokenFetchedAt = [DateTime]::UtcNow
@@ -12452,6 +12546,7 @@ Function Set-ServicesRuntimeSftpBackupSettings {
             } catch {
             }
         }
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -12571,10 +12666,12 @@ Function Set-ServicesRuntimeBackupSchedule {
 
     if ($FullBackupEnabled -and [string]::IsNullOrWhiteSpace($FullBackupSchedule)) {
         LogMessage -type ERROR -message "[$jumpboxName] -FullBackupSchedule is required when -FullBackupEnabled is `$true"
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
     if ($IncrementalBackupEnabled -and [string]::IsNullOrWhiteSpace($IncrementalBackupSchedule)) {
         LogMessage -type ERROR -message "[$jumpboxName] -IncrementalBackupSchedule is required when -IncrementalBackupEnabled is `$true"
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -12582,6 +12679,7 @@ Function Set-ServicesRuntimeBackupSchedule {
     $srToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
     if (-not $srToken) {
         LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain Services Runtime token. Aborting."
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
     $tokenFetchedAt = [DateTime]::UtcNow
@@ -12601,11 +12699,13 @@ Function Set-ServicesRuntimeBackupSchedule {
             $componentsResponse = Invoke-RestMethod -Uri "https://$ServicesRuntimeFqdn/api/v1/components" -Method GET -Headers $headers -SkipCertificateCheck
         } catch {
             LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Failed to retrieve components: $($_.Exception.Message)"
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
         $vspComponent = @($componentsResponse.components | Where-Object { $_.type -eq "vsp" }) | Select-Object -First 1
         if (-not $vspComponent) {
             LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] No component of type 'vsp' found. Pass -ComponentId to specify manually."
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
         $componentId = $vspComponent.id
@@ -12675,6 +12775,7 @@ Function Set-ServicesRuntimeBackupSchedule {
         } else {
             LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Failed to apply backup schedule: $errorMessage"
         }
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -12776,6 +12877,7 @@ Function Get-ServicesRuntimeBackupSchedule {
     $srToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
     if (-not $srToken) {
         LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain Services Runtime token. Aborting."
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -12794,11 +12896,13 @@ Function Get-ServicesRuntimeBackupSchedule {
             $componentsResponse = Invoke-RestMethod -Uri "https://$ServicesRuntimeFqdn/api/v1/components" -Method GET -Headers $headers -SkipCertificateCheck
         } catch {
             LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Failed to retrieve components: $($_.Exception.Message)"
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
         $vspComponent = @($componentsResponse.components | Where-Object { $_.type -eq "vsp" }) | Select-Object -First 1
         if (-not $vspComponent) {
             LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] No component of type 'vsp' found. Pass -ComponentId to specify manually."
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
         $componentId = $vspComponent.id
@@ -12811,6 +12915,7 @@ Function Get-ServicesRuntimeBackupSchedule {
         $componentDetail = Invoke-RestMethod -Uri "https://$ServicesRuntimeFqdn/api/v1/components/$componentId" -Method GET -Headers $headers -SkipCertificateCheck
     } catch {
         LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] GET /api/v1/components/$componentId failed: $($_.Exception.Message)"
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -12926,6 +13031,7 @@ Function Get-ServicesRuntimeComponentBackups {
         }
     } else {
         LogMessage -type ERROR -message "[$jumpboxName] Either -Components or -Type must be specified."
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -12933,6 +13039,7 @@ Function Get-ServicesRuntimeComponentBackups {
     $srToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
     if (-not $srToken) {
         LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain Services Runtime token. Aborting."
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -12948,12 +13055,14 @@ Function Get-ServicesRuntimeComponentBackups {
         $response = Invoke-RestMethod -Uri $backupsUri -Method GET -Headers $headers -SkipCertificateCheck
     } catch {
         LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Failed to retrieve backups: $($_.Exception.Message)"
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
     $allBackups = $response.backups
     if (-not $allBackups -or ($allBackups | Measure-Object).Count -eq 0) {
-        LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] No backups found."
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] No backups found."
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -12968,7 +13077,8 @@ Function Get-ServicesRuntimeComponentBackups {
         } else {
             $allBackups = @($allBackups | Where-Object { $_.path -match ('/vcf/backups/' + [regex]::Escape($VspId) + '(/|$)') })
             if ($allBackups.Count -eq 0) {
-                LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] No backups found with VspId '$VspId' in path."
+                LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] No backups found with VspId '$VspId' in path."
+                Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
                 return
             }
             LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Filtered to $($allBackups.Count) backup(s) matching VspId '$VspId'"
@@ -13005,7 +13115,8 @@ Function Get-ServicesRuntimeComponentBackups {
     }
 
     if ($parsedBackups.Count -eq 0) {
-        LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] No backups found for components: $($resolvedComponents -join ', ')"
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] No backups found for components: $($resolvedComponents -join ', ')"
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -13411,6 +13522,7 @@ Function Restore-ServicesRuntimeComponentBackup {
     if (-not $ServicesRuntimeFqdn) {
         $ServicesRuntimeFqdn = Resolve-ServicesRuntimeFqdn -extractedSDDCDataFile $extractedSDDCDataFile -Type $Type -opsRegisteredComponentsFile $opsRegisteredComponentsFile
         if (-not $ServicesRuntimeFqdn) {
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
     }
@@ -13419,6 +13531,7 @@ Function Restore-ServicesRuntimeComponentBackup {
     $payloadPath = (Resolve-Path -Path $RestoreJsonFile -ErrorAction SilentlyContinue).Path
     if (-not $payloadPath) {
         LogMessage -type ERROR -message "[$jumpboxName] Restore payload file not found: $RestoreJsonFile"
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -13427,11 +13540,13 @@ Function Restore-ServicesRuntimeComponentBackup {
         $payloadObject = $payloadContent | ConvertFrom-Json
     } catch {
         LogMessage -type ERROR -message "[$jumpboxName] Failed to parse JSON from $RestoreJsonFile : $($_.Exception.Message)"
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
     if (-not $payloadObject.components -or ($payloadObject.components | Measure-Object).Count -eq 0) {
         LogMessage -type ERROR -message "[$jumpboxName] Payload file must contain a 'components' array with at least one entry."
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -13472,6 +13587,7 @@ Function Restore-ServicesRuntimeComponentBackup {
 
         if ($confirmation -in @("N", "n")) {
             LogMessage -type INFO -message "[$jumpboxName] Restore cancelled by user."
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
     }
@@ -13480,6 +13596,7 @@ Function Restore-ServicesRuntimeComponentBackup {
     $srToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
     if (-not $srToken) {
         LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain Services Runtime token. Aborting."
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
     $tokenFetchedAt = [DateTime]::UtcNow
@@ -13552,6 +13669,7 @@ Function Restore-ServicesRuntimeComponentBackup {
             } catch {
             }
         }
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -13847,6 +13965,7 @@ Function Get-VcfmsComponents {
     $fcToken = Get-VcfmsFleetLCMToken -FleetLCMFqdn $FleetLCMFqdn -Username $FleetLCMUsername -Password $FleetLCMPassword
     if (-not $fcToken) {
         LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain Fleet LCM token. Aborting."
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -13862,12 +13981,14 @@ Function Get-VcfmsComponents {
         $response = Invoke-RestMethod -Uri $componentsUri -Method GET -Headers $headers -SkipCertificateCheck
     } catch {
         LogMessage -type ERROR -message "[$FleetLCMFqdn] Failed to retrieve components: $($_.Exception.Message)"
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
     $allComponents = $response.components
     if (-not $allComponents -or ($allComponents | Measure-Object).Count -eq 0) {
-        LogMessage -type WARNING -message "[$FleetLCMFqdn] No components found."
+        LogMessage -type ERROR -message "[$FleetLCMFqdn] No components found."
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -13879,7 +14000,8 @@ Function Get-VcfmsComponents {
     }
 
     if (-not $filteredComponents -or ($filteredComponents | Measure-Object).Count -eq 0) {
-        LogMessage -type WARNING -message "[$FleetLCMFqdn] No components found matching: $($ComponentTypes -join ', ')"
+        LogMessage -type ERROR -message "[$FleetLCMFqdn] No components found matching: $($ComponentTypes -join ', ')"
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -14265,6 +14387,7 @@ Function Start-ServicesRuntimeComponentBackup {
     $fcToken = Get-VcfmsFleetLCMToken -FleetLCMFqdn $FleetLCMFqdn -Username $FleetLCMUsername -Password $FleetLCMPassword
     if (-not $fcToken) {
         LogMessage -type ERROR -message "[$jumpboxName] Unable to obtain Fleet LCM token. Aborting."
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -14280,13 +14403,15 @@ Function Start-ServicesRuntimeComponentBackup {
         $componentsResponse = Invoke-RestMethod -Uri $componentsUri -Method GET -Headers $fcHeaders -SkipCertificateCheck
     } catch {
         LogMessage -type ERROR -message "[$FleetLCMFqdn] Failed to retrieve components: $($_.Exception.Message)"
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
     $unsupportedComponentTypes = @("VCF Operations", "VCF Operations for networks", "Telemetry", "Real-time metrics store", "Real-time metrics", "Migration service engine")
     $allComponents = @($componentsResponse.components | Where-Object { $_.componentTypeDescription -notin $unsupportedComponentTypes })
     if (-not $allComponents -or $allComponents.Count -eq 0) {
-        LogMessage -type WARNING -message "[$FleetLCMFqdn] No components found."
+        LogMessage -type ERROR -message "[$FleetLCMFqdn] No components found."
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -14317,11 +14442,13 @@ Function Start-ServicesRuntimeComponentBackup {
         $missingIds = $ComponentIds | Where-Object { $_ -notin $allComponentsList.Id }
         if ($missingIds) {
             LogMessage -type ERROR -message "[$FleetLCMFqdn] Component ID(s) not found: $($missingIds -join ', ')"
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
         $distinctInstances = @($selectedComponents.VcfInstance | Sort-Object -Unique)
         if ($distinctInstances.Count -gt 1) {
             LogMessage -type ERROR -message "[$FleetLCMFqdn] Component IDs span multiple VCF instances ($($distinctInstances -join ', ')). Select components from a single VCF instance."
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
     } else {
@@ -14473,6 +14600,7 @@ Function Start-ServicesRuntimeComponentBackup {
             } catch {
             }
         }
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -14556,6 +14684,7 @@ Function Remove-VcfmsComponent {
 
     if ($confirmation -in @("N", "n")) {
         LogMessage -type INFO -message "[$jumpboxName] Operation cancelled by user."
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -14755,10 +14884,12 @@ Function Set-ServicesRuntimeComponentVips {
         if ($ComponentType -eq "vcfa" -and $opsRegisteredComponentsFile) {
             $ServicesRuntimeFqdn = Get-OpsRegisteredComponentValue -Name VcfaRuntimeFqdn -opsRegisteredComponentsFile $opsRegisteredComponentsFile
             if (-not $ServicesRuntimeFqdn) {
+                Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
                 return
             }
         } else {
             LogMessage -type ERROR -message "[$jumpboxName] -ServicesRuntimeFqdn is required (it can only be resolved for -ComponentType vcfa, from -opsRegisteredComponentsFile). Aborting."
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
     }
@@ -14769,6 +14900,7 @@ Function Set-ServicesRuntimeComponentVips {
     $srToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
     if (-not $srToken) {
         LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Unable to obtain Services Runtime token. Aborting."
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
     $headers = @{
@@ -14787,12 +14919,14 @@ Function Set-ServicesRuntimeComponentVips {
             $componentsResponse = Invoke-RestMethod -Uri "https://$ServicesRuntimeFqdn/api/v1/components" -Method GET -Headers $headers -SkipCertificateCheck
         } catch {
             LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Failed to retrieve components: $($_.Exception.Message)"
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
 
         $matching = @($componentsResponse.components | Where-Object { $_.type -eq $ComponentType })
         if ($matching.Count -eq 0) {
             LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] No installed component found with type '$ComponentType'"
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
         if ($matching.Count -gt 1) {
@@ -14809,6 +14943,7 @@ Function Set-ServicesRuntimeComponentVips {
         $compDetail = Invoke-RestMethod -Uri "https://$ServicesRuntimeFqdn/api/v1/components/$componentId" -Method GET -Headers $headers -SkipCertificateCheck
     } catch {
         LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] GET /api/v1/components/$componentId failed: $($_.Exception.Message)"
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -14834,6 +14969,7 @@ Function Set-ServicesRuntimeComponentVips {
                 LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Ingress uses a single key '$resolvedIngressKey' (component type filter was '$ComponentType')."
             } else {
                 LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Could not map type '$ComponentType' to an ingress key. Available keys: $($propNames -join ', '). Re-run with -IngressKey."
+                Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
                 return
             }
         }
@@ -14896,6 +15032,7 @@ Function Set-ServicesRuntimeComponentVips {
 
         if ($confirmation -in @("N", "n")) {
             LogMessage -type INFO -message "[$jumpboxName] Operation cancelled by user."
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
     }
@@ -14905,6 +15042,7 @@ Function Set-ServicesRuntimeComponentVips {
     $srToken = Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword
     if (-not $srToken) {
         LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Unable to refresh Services Runtime token. Aborting."
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
     $tokenFetchedAt = [DateTime]::UtcNow
@@ -14922,6 +15060,7 @@ Function Set-ServicesRuntimeComponentVips {
             } catch {
             }
         }
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -15824,6 +15963,7 @@ Function Invoke-VcfmsBackupSftpToYaml {
         $uploadResult = Invoke-SSHCommand -SessionId $session.SessionId -Command $uploadCmd -TimeOut 60
         if ($uploadResult.ExitStatus -ne 0) {
             LogMessage -type ERROR -message "[$controlPlaneHost] Script upload failed (exit $($uploadResult.ExitStatus)): $($uploadResult.Error -join ' ')"
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
         LogMessage -type INFO -message "[$controlPlaneHost] Script uploaded successfully"
@@ -17278,6 +17418,7 @@ Function Invoke-VcfmsFleetComponentRegistration {
         $uploadResult = Invoke-SSHCommand -SessionId $session.SessionId -Command $uploadCmd -TimeOut 60
         if ($uploadResult.ExitStatus -ne 0) {
             LogMessage -type ERROR -message "[$controlPlaneHost] Script upload failed (exit $($uploadResult.ExitStatus)): $($uploadResult.Error -join ' ')"
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
         LogMessage -type INFO -message "[$controlPlaneHost] Script uploaded successfully"
@@ -17557,6 +17698,7 @@ exit $rc
             $uploadResult = Invoke-SSHCommand -SessionId $session.SessionId -Command "printf '%s' '$b64' | base64 -d > $($item.Path) && chmod +x $($item.Path)" -TimeOut 60
             if ($uploadResult.ExitStatus -ne 0) {
                 LogMessage -type ERROR -message "[$controlPlaneHost] Upload of $($item.Path) failed (exit $($uploadResult.ExitStatus)): $($uploadResult.Error -join ' ')"
+                Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
                 return
             }
         }
@@ -17808,6 +17950,7 @@ Function Invoke-VcfmsVcfaRegistration {
             $uploadResult = Invoke-SSHCommand -SessionId $session.SessionId -Command $uploadCmd -TimeOut 60
             if ($uploadResult.ExitStatus -ne 0) {
                 LogMessage -type ERROR -message "[$controlPlaneHost] Script upload failed (exit $($uploadResult.ExitStatus)): $($uploadResult.Error -join ' ')"
+                Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
                 return
             }
         }
@@ -18071,6 +18214,7 @@ Function Update-VcfmsVcfaRegistration {
             $uploadResult = Invoke-SSHCommand -SessionId $session.SessionId -Command $uploadCmd -TimeOut 60
             if ($uploadResult.ExitStatus -ne 0) {
                 LogMessage -type ERROR -message "[$controlPlaneHost] Script upload failed (exit $($uploadResult.ExitStatus)): $($uploadResult.Error -join ' ')"
+                Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
                 return
             }
         }
@@ -19023,6 +19167,7 @@ kubectl exec -n vcf-fleet-lcm "$FLEET_DB_POD" -c postgres -- \
         $uploadResult = Invoke-SSHCommand -SessionId $session.SessionId -Command $uploadCmd -TimeOut 60
         if ($uploadResult.ExitStatus -ne 0) {
             LogMessage -type ERROR -message "[$controlPlaneHost] Script upload failed (exit $($uploadResult.ExitStatus))"
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
 
@@ -19247,6 +19392,7 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
             $uploadResult = Invoke-SSHCommand -SessionId $session.SessionId -Command $uploadCmd -TimeOut 60
             if ($uploadResult.ExitStatus -ne 0) {
                 LogMessage -type ERROR -message "[$VcfOpsFqdn] Script upload failed for ${scriptName} (exit $($uploadResult.ExitStatus)): $($uploadResult.Error -join ' ')"
+                Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
                 return
             }
         }
@@ -19969,6 +20115,7 @@ Function Confirm-ContentLibraryDatastoreFolder {
         $datastore = Get-Datastore -Name $datastoreName -ErrorAction Stop | Select-Object -First 1
         if (-not $datastore) {
             LogMessage -type ERROR -message "[$vCenterFQDN] Datastore '$datastoreName' not found"
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
         LogMessage -type INFO -message "[$vCenterFQDN] Datastore '$datastoreName' resolved (Type: $($datastore.Type))"
@@ -20079,6 +20226,7 @@ Function Set-ContentLibraryDatastoreMapping {
     if (-not $newDatastoreMoRef) {
         LogMessage -type ERROR -message "[$vCenterFQDN] Could not find datastore '$datastoreName' in VCDB"
         Remove-SSHSession -SSHSession $sshSession | Out-Null
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
     LogMessage -type INFO -message "[$vCenterFQDN] Datastore MoRef: $newDatastoreMoRef"
@@ -20169,6 +20317,7 @@ Function Set-ContentLibraryDatastoreMapping {
     if ($librariesUpdated -eq 0) {
         LogMessage -type ERROR -message "[$vCenterFQDN] No Content Libraries were updated; skipping Content Library Service restart"
         Remove-SSHSession -SSHSession $sshSession | Out-Null
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
 
@@ -20242,6 +20391,7 @@ Function Invoke-SupervisorRestore {
     $supervisorId = ($supervisors.items | Where-Object { $_.supervisor_summary.display_name -eq $supervisorName } | Select-Object -First 1).supervisor
     if (-not $supervisorId) {
         LogMessage -type ERROR -message "[$vCenterFQDN] Could not find supervisor '$supervisorName'"
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
     LogMessage -type INFO -message "[$vCenterFQDN] Supervisor ID: $supervisorId"
@@ -20252,6 +20402,7 @@ Function Invoke-SupervisorRestore {
     $archiveId = ($archives | Where-Object { $_.location -like "*$backupFileName*" } | Select-Object -First 1).archive
     if (-not $archiveId) {
         LogMessage -type ERROR -message "[$vCenterFQDN] Could not find backup archive matching '$backupFileName'"
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
     LogMessage -type INFO -message "[$vCenterFQDN] Archive ID: $archiveId"
