@@ -1,0 +1,29 @@
+[
+  {
+    "description": "Deploy SDDC Manager to custom placement in the alternate vCenter, retaining its original identity and IP configuration.",
+    "commandLine": "New-SDDCManagerOvaDeployment -targetType vcenter -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -CustomPlacement -TargetDatacenter $targetDatacenter -TargetCluster $targetCluster -TargetDatastore $targetDatastore -TargetNetwork $targetNetwork -extractedSDDCDataFile $extractedSddcDataFile -sddcManagerOvaFile $sddcManagerOvaFile -rootUserPassword $newSddcManagerPassword -vcfUserPassword $newSddcManagerPassword -localUserPassword $newSddcManagerPassword -basicAuthUserPassword $newSddcManagerPassword",
+    "displayName": "SDDC Manager OVA Deployment",
+    "condition": [],
+    "threadId": "1",
+    "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "Upload the backup through the alternate vCenter and prepare it for restore. The original management vCenter must be reachable for SSH key retrieval. The UI prompts for the backup encryption password.",
+    "commandLine": "New-UploadAndModifySDDCManagerBackup -targetType vcenter -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -rootUserPassword $newSddcManagerPassword -vcfUserPassword $newSddcManagerPassword -backupFilePath $vcfBackupFilePath -secureEncryptionPassword $secureEncryptionPassword -extractedSDDCDataFile $extractedSddcDataFile",
+    "displayName": "Upload and Modify SDDC Manager Backup",
+    "condition": [],
+    "threadId": "1",
+    "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "Restore SDDC Manager from the uploaded backup using the encryption password already supplied.",
+    "commandLine": "Invoke-SDDCManagerRestore -extractedSDDCDataFile $extractedSddcDataFile -backupFilePath $vcfBackupFilePath -vcfUserPassword $newSddcManagerPassword -localUserPassword $newSddcManagerPassword -rootUserPassword $newSddcManagerPassword -secureEncryptionPassword $secureEncryptionPassword",
+    "displayName": "Invoke SDDC Manager Restore",
+    "condition": [],
+    "threadId": "1",
+    "interactive": false,
+    "visible": true
+  }
+]

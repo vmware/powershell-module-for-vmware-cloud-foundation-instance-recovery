@@ -1,4 +1,9 @@
 {
+  "targetDatacenter": "Existing datacenter in the alternate deployment vCenter. Used with custom placement.",
+  "targetCluster": "Existing cluster within targetDatacenter in the alternate deployment vCenter. Used with custom placement.",
+  "targetDatastore": "Existing datastore accessible to the target cluster. Used with custom placement.",
+  "targetNetwork": "Existing VM port group in the alternate deployment vCenter. Its connectivity must support the original appliance IP configuration from the extracted SDDC data.",
+  "vCenterBackupPassword": "Password used to encrypt the vCenter backup. Leave blank for an unencrypted backup.",
   "targetType": "What the appliances are deployed onto: 'esx' (a standalone ESX host) or 'vcenter' (an existing vCenter).",
   "targetFqdn": "FQDN of the ESX host or vCenter the restored appliances are deployed to. For the management domain, leave blank to use the first ESX host in the extracted SDDC data.",
   "targetAdmin": "Administrator account used to log in to the deployment target (e.g. root for an ESX host, administrator@vsphere.local for a vCenter). For the management domain, leave blank to use root.",

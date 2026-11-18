@@ -156,7 +156,7 @@ The **Recovery Parameters** panel has three drop-down lists, completed from top 
 | Recovery Type | Purpose |
 |---|---|
 | **Instance Backup & Restore (IBR)** | Recover a VCF instance from backups. This is the normal choice. |
-| **Fleet Disaster Recovery (FDR)** | Fleet-level failover. Not covered by this guide. |
+| **Fleet Disaster Recovery (FDR)** | Fleet-level failover/failback and individual appliance recovery in an alternate location. |
 
 ### Recovery Plan
 
@@ -168,7 +168,10 @@ The plans listed depend on the Recovery Type.
 | **Workload Domain Recovery** | A workload domain's vCenter and NSX Manager, then its default cluster. |
 | **Additional Cluster Recovery** | A cluster in a domain that is *not* that domain's default cluster. |
 | **Fleet Component Recovery** | The VCF fleet components: VCF Operations, the VCFMS and VCF Automation services runtimes, log management and telemetry. |
-| **Recover Fleet** (FDR) | Fleet disaster recovery. Not covered by this guide. |
+| **Failover / Failback Fleet Components** (FDR) | Fleet disaster recovery. |
+| **Recover NSX Manager in alternate location** (FDR) | Deploy one selected NSX Manager to an alternate vCenter and restore its backup. |
+| **Recover vCenter in alternate location** (FDR) | Deploy the selected domain's vCenter to an alternate vCenter and restore its backup. |
+| **Recover SDDC Manager in alternate location** (FDR) | Deploy SDDC Manager to an alternate vCenter, upload and prepare its backup, then restore it. |
 
 Recovery plans are sequenced. A full recovery normally runs **Management Domain Recovery** first, then
 **Workload Domain Recovery** for each workload domain, then **Additional Cluster Recovery** for any
@@ -188,7 +191,7 @@ VCF instance. Which sources are offered depends on the plan.
 | Data Source | Offered for | What happens |
 |---|---|---|
 | **SDDC Manager Backup File** | Management Domain Recovery (default) | You select the SDDC Manager backup (`*.tar.gz`). The application asks for the backup's encryption password, then runs `New-ExtractDataFromSDDCBackup` in the **Thread 1** console to produce `extracted-sddc-data.json` in the **same folder as the backup file**. When extraction finishes, that file is loaded automatically. |
-| **Existing Extracted SDDC Data File** | Every plan except FDR | You select an `extracted-sddc-data.json` that already exists, for example from the Management Domain Recovery run. |
+| **Existing Extracted SDDC Data File** | All IBR plans and the three FDR alternate-location appliance recovery plans | You select an `extracted-sddc-data.json` that already exists, for example from the Management Domain Recovery run. |
 
 The file path you chose is shown in the box next to **Browse...**.
 
@@ -209,8 +212,8 @@ Manager, and details discovered from the restored vCenter. Plans that run later 
 ### Which plans need a data source
 
 - **Fleet Component Recovery** uses an existing extracted data file only, and has no domain list to choose from.
-- **Recover Fleet (FDR)** needs no data source. The **Data Source** row is hidden and the task list appears
-  immediately.
+- **Failover / Failback Fleet Components (FDR)** need no data source. The **Data Source** row is hidden and the task list appears immediately.
+- **FDR alternate-location appliance recovery** requires an existing extracted SDDC data file. For NSX Manager and vCenter, select the original management or workload domain. SDDC Manager recovery has no domain selection.
 
 ### The encryption password
 
@@ -490,7 +493,7 @@ If you want to run a plan with no one at the keyboard, or to repeat a run with t
 
 Turning the toggle off again clears the answer file and goes back to normal prompting.
 
-The module ships a sample answer file for each plan in `templates\answer-files\ibr` to use as a starting point.
+The module ships sample answer files in `templates\answer-files\ibr` and `templates\answer-files\fdr` to use as a starting point.
 
 !!! warning "Check an answer file against your environment"
     The answers are applied **in order**, as each task asks. A sample file assumes a typical case (for
@@ -666,9 +669,27 @@ confirmation waits for the VCF Operations restore.
 VCF Automation connections updated, licence server redeployed). Pre-approve them in an answer file only if you
 are certain the underlying action is complete.
 
-### Recover Fleet (FDR)
+### Alternate-location appliance recovery (FDR)
 
-Fleet disaster recovery. It is not covered by this guide.
+These three plans use the existing **ENGINEERING-ONLY** badge and engineering-mode selection gate. They recover individual appliances using an existing extracted SDDC data file. They do not run the host, cluster or fleet recovery steps in the broader plans.
+
+| Plan | Ordered tasks | Template filename prefix |
+|---|---|---|
+| Recover NSX Manager in alternate location | Deploy the selected NSX Manager OVA; select the same manager and restore its SFTP backup | `fdr-nsx-recovery` |
+| Recover vCenter in alternate location | Deploy the selected domain's vCenter OVA; restore its backup through VAMI | `fdr-vcenter-recovery` |
+| Recover SDDC Manager in alternate location | Deploy the SDDC Manager OVA; upload and modify its backup; restore SDDC Manager | `fdr-sddc-recovery` |
+
+Plan files are in `plans\fdr`. Matching `*-variables.json` and `*-answers.json` templates are in `templates\variable-files\fdr` and `templates\answer-files\fdr` respectively.
+
+All three plans use `-CustomPlacement` with `targetDatacenter`, `targetCluster`, `targetDatastore` and `targetNetwork`, plus the alternate vCenter's `targetFqdn`, `targetAdmin` and `targetAdminPassword`. The destination inventory, datastore and port group must already exist. Appliance identity and IP configuration remain those from the extracted data, so the destination network must support those addresses and the original appliance must be offline or isolated. The extracted file must contain the credentials required by the chosen deployment and restore functions.
+
+For NSX, the answer template selects manager 1 and backup 1; review the IDs and timestamp before using it. The vCenter and SDDC Manager plans have no cmdlet answer-file prompts, so their answer templates contain instructions only. For an encrypted vCenter backup, set `vCenterBackupPassword`; otherwise leave it blank. The deployed appliance version and size must be appropriate for the backup.
+
+SDDC Manager recovery uses `newSddcManagerPassword` for the appliance's initial accounts, following the management-domain plan convention. The UI prompts for the backup encryption password on first use and reuses it for upload and restore. Upload uses VMware guest file transfer through the alternate vCenter, and backup preparation needs connectivity to the original management vCenter for SSH key retrieval. Recover that vCenter first if necessary.
+
+### Fleet failover and failback (FDR)
+
+The Failover / Failback Fleet Components plans are not covered by this guide.
 
 ---
 

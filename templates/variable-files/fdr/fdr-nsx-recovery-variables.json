@@ -1,0 +1,16 @@
+{
+  "targetFqdn": "",
+  "targetAdmin": "",
+  "targetAdminPassword": "",
+  "targetDatacenter": "",
+  "targetCluster": "",
+  "targetDatastore": "",
+  "targetNetwork": "",
+  "restoredNsxManagerDeploymentSize": "",
+  "nsxManagerOvaFile": "",
+  "sftpServer": "",
+  "sftpUser": "",
+  "sftpPassword": "",
+  "sftpServerBackupPath": "",
+  "nsxBackupPassphrase": ""
+}

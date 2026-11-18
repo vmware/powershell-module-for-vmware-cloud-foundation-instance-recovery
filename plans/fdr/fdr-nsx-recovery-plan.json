@@ -1,0 +1,20 @@
+[
+  {
+    "description": "Deploy the selected NSX Manager to custom placement in the alternate vCenter, retaining its original identity and IP configuration.",
+    "commandLine": "New-NSXManagerOvaDeployment -targetType vcenter -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -CustomPlacement -TargetDatacenter $targetDatacenter -TargetCluster $targetCluster -TargetDatastore $targetDatastore -TargetNetwork $targetNetwork -extractedSDDCDataFile $extractedSddcDataFile -workloadDomain $workloadDomain -restoredNsxManagerDeploymentSize $restoredNsxManagerDeploymentSize -nsxManagerOvaFile $nsxManagerOvaFile",
+    "displayName": "NSX Manager OVA Deployment",
+    "condition": [],
+    "threadId": "1",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Select the same NSX Manager deployed in the preceding step, then select its SFTP backup to restore.",
+    "commandLine": "Invoke-NSXManagerRestore -extractedSDDCDataFile $extractedSddcDataFile -workloadDomain $workloadDomain -sftpServer $sftpServer -sftpUser $sftpUser -sftpPassword $sftpPassword -sftpServerBackupPath $sftpServerBackupPath -backupPassphrase $nsxBackupPassphrase",
+    "displayName": "Invoke NSX Manager Restore",
+    "condition": [],
+    "threadId": "1",
+    "interactive": true,
+    "visible": true
+  }
+]

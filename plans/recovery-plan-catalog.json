@@ -20,7 +20,7 @@
       "label": "Existing Extracted SDDC Data File"
     }
   ],
-  "_targetComment": "target is one of: managementDomain | workloadDomain | additionalCluster | fleetComponent | recoverFleet -- see Sync-RecoveryPlanSelection in the .ps1 for what each one does. Exactly one plan should claim a given target; two plans claiming the same one will fight over the same panel. Optional engineeringOnlyClusterTypes (additionalCluster plan only) lists raw primaryDatastoreType values (e.g. VSAN_MAX = Storage Cluster, VSAN_Remote = Compute Cluster) whose clusters need engineering mode to be selected.",
+  "_targetComment": "target is one of: managementDomain | workloadDomain | additionalCluster | fleetComponent | recoverFleet -- see Sync-RecoveryPlanSelection in the .ps1 for what each one does. Plans may reuse a target when they use the same existing UI plumbing; the selected catalog entry determines the plan and variables files. Optional engineeringOnlyClusterTypes (additionalCluster plan only) lists raw primaryDatastoreType values (e.g. VSAN_MAX = Storage Cluster, VSAN_Remote = Compute Cluster) whose clusters need engineering mode to be selected.",
   "_extraToggleComment": "extraToggleDefinitions defines every optional plan-specific toggle once (id + label), the same way recoveryTypes/dataSources are defined once above. A definition may also carry an optional 'condition' array (same typed forms as a plan step's condition, e.g. a dataPath) -- the toggle is only shown while every entry passes, and a hidden toggle never counts as on. A plan opts in to a toggle by listing its id + defaultChecked under its own extraToggles array; the toggle's id doubles as the variable name injected into step-condition evaluation and is excluded from that plan's persisted answers file.",
   "extraToggleDefinitions": [
     {
@@ -196,6 +196,55 @@
       ],
       "variablesFile": "fdr-failback-variables.json",
       "dataSources": [],
+      "selectionList": "none"
+    },
+    {
+      "id": "FdrNsxRecovery",
+      "label": "Recover NSX Manager in alternate location",
+      "engineeringOnly": true,
+      "recoveryType": "FDR",
+      "target": "workloadDomain",
+      "planFolder": "fdr",
+      "planFile": "fdr-nsx-recovery-plan.json",
+      "variablesFile": "fdr-nsx-recovery-variables.json",
+      "dataSources": [
+        "LoadExtractedData"
+      ],
+      "defaultDataSource": "LoadExtractedData",
+      "selectionList": "domains",
+      "domainFilter": "ALL",
+      "tabHeaderLabel": "Domains"
+    },
+    {
+      "id": "FdrVcenterRecovery",
+      "label": "Recover vCenter in alternate location",
+      "engineeringOnly": true,
+      "recoveryType": "FDR",
+      "target": "workloadDomain",
+      "planFolder": "fdr",
+      "planFile": "fdr-vcenter-recovery-plan.json",
+      "variablesFile": "fdr-vcenter-recovery-variables.json",
+      "dataSources": [
+        "LoadExtractedData"
+      ],
+      "defaultDataSource": "LoadExtractedData",
+      "selectionList": "domains",
+      "domainFilter": "ALL",
+      "tabHeaderLabel": "Domains"
+    },
+    {
+      "id": "FdrSddcRecovery",
+      "label": "Recover SDDC Manager in alternate location",
+      "engineeringOnly": true,
+      "recoveryType": "FDR",
+      "target": "fleetComponent",
+      "planFolder": "fdr",
+      "planFile": "fdr-sddc-recovery-plan.json",
+      "variablesFile": "fdr-sddc-recovery-variables.json",
+      "dataSources": [
+        "LoadExtractedData"
+      ],
+      "defaultDataSource": "LoadExtractedData",
       "selectionList": "none"
     }
   ]

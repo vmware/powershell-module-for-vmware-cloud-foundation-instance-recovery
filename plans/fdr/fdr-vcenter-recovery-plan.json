@@ -1,0 +1,20 @@
+[
+  {
+    "description": "Deploy the selected domain's vCenter to custom placement in the alternate vCenter, retaining its original identity and IP configuration.",
+    "commandLine": "New-vCenterOvaDeployment -targetType vcenter -targetFqdn $targetFqdn -targetAdmin $targetAdmin -targetAdminPassword $targetAdminPassword -CustomPlacement -TargetDatacenter $targetDatacenter -TargetCluster $targetCluster -TargetDatastore $targetDatastore -TargetNetwork $targetNetwork -extractedSDDCDataFile $extractedSddcDataFile -workloadDomain $workloadDomain -restoredvCenterDeploymentSize $restoredVcenterDeploymentSize -vCenterOvaFile $vCenterOvaFile",
+    "displayName": "vCenter OVA Deployment",
+    "condition": [],
+    "threadId": "1",
+    "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "Restore the vCenter backup through VAMI. Leave vCenterBackupPassword blank for an unencrypted backup.",
+    "commandLine": "Invoke-vCenterRestore -extractedSDDCDataFile $extractedSddcDataFile -workloadDomain $workloadDomain -vCenterBackupPath $vCenterBackupPath -locationtype $locationType -locationUser $locationUser -locationPassword $locationPassword -backupPassword $vCenterBackupPassword",
+    "displayName": "Invoke vCenter Restore",
+    "condition": [],
+    "threadId": "1",
+    "interactive": false,
+    "visible": true
+  }
+]

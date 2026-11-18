@@ -1,0 +1,16 @@
+{
+  "targetFqdn": "",
+  "targetAdmin": "",
+  "targetAdminPassword": "",
+  "targetDatacenter": "",
+  "targetCluster": "",
+  "targetDatastore": "",
+  "targetNetwork": "",
+  "restoredVcenterDeploymentSize": "",
+  "vCenterOvaFile": "",
+  "vCenterBackupPath": "",
+  "locationType": "",
+  "locationUser": "",
+  "locationPassword": "",
+  "vCenterBackupPassword": ""
+}

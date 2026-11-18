@@ -1,0 +1,12 @@
+{
+  "targetFqdn": "",
+  "targetAdmin": "",
+  "targetAdminPassword": "",
+  "targetDatacenter": "",
+  "targetCluster": "",
+  "targetDatastore": "",
+  "targetNetwork": "",
+  "sddcManagerOvaFile": "",
+  "newSddcManagerPassword": "",
+  "vcfBackupFilePath": ""
+}

@@ -1,0 +1,8 @@
+{
+  "_readme": [
+    "Sample answer file for fdr-sddc-recovery-plan.json, consumed via Import-VCFIRAnswerFile.",
+    "Deployment uses custom vCenter placement. Appliance identity and IP configuration remain those in the existing extracted SDDC data.",
+    "This plan has no cmdlet answer-file prompts, so no cmdlet keys are required. Deployment and backup settings belong in the matching variables file.",
+    "The UI prompts for the SDDC Manager backup encryption password on first use and reuses it for upload and restore. This password is not an interactive-task answer and is not stored in this template."
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "_readme": [
+    "Sample answer file for fdr-nsx-recovery-plan.json, consumed via Import-VCFIRAnswerFile.",
+    "Deployment uses custom vCenter placement. Appliance identity and IP configuration remain those in the existing extracted SDDC data.",
+    "Each cmdlet key contains one answer set for its single invocation in this plan.",
+    "New-NSXManagerOvaDeployment answers: NSX Manager ID. Invoke-NSXManagerRestore answers: the same NSX Manager ID, then backup ID.",
+    "The sample selects manager 1 and backup 1. Review the discovered IDs and backup timestamp interactively before using these answers.",
+    "Omit a cmdlet key to answer its prompts manually. A supplied key with missing or invalid answers fails the run."
+  ],
+  "New-NSXManagerOvaDeployment": [
+    [
+      "1"
+    ]
+  ],
+  "Invoke-NSXManagerRestore": [
+    [
+      "1",
+      "1"
+    ]
+  ]
+}
