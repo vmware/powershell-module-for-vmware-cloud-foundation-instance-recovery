@@ -130,7 +130,8 @@ figcaption { margin-top: 8px; font-size: 13px; color: var(--subtle); text-align:
 <a class="nav-link nav-l3" href="#workload-domain-recovery">Workload Domain Recovery</a>
 <a class="nav-link nav-l3" href="#additional-cluster-recovery">Additional Cluster Recovery</a>
 <a class="nav-link nav-l3" href="#fleet-component-recovery">Fleet Component Recovery</a>
-<a class="nav-link nav-l3" href="#recover-fleet-fdr">Recover Fleet (FDR)</a>
+<a class="nav-link nav-l3" href="#alternate-location-appliance-recovery-fdr">Alternate-location appliance recovery (FDR)</a>
+<a class="nav-link nav-l3" href="#fleet-failover-and-failback-fdr">Fleet failover and failback (FDR)</a>
 <a class="nav-link nav-l2" href="#authoring-a-vcf-operations-restore-script">Authoring a VCF Operations restore script</a>
 <a class="nav-link nav-l3" href="#how-your-script-is-run">How your script is run</a>
 <a class="nav-link nav-l3" href="#the-success-contract">The success contract</a>
@@ -139,6 +140,7 @@ figcaption { margin-top: 8px; font-size: 13px; color: var(--subtle); text-align:
 <a class="nav-link nav-l3" href="#a-template-to-start-from">A template to start from</a>
 <a class="nav-link nav-l3" href="#test-it-before-the-recovery">Test it before the recovery</a>
 <a class="nav-link nav-l3" href="#using-the-script">Using the script</a>
+<a class="nav-link nav-l3" href="#using-a-script-to-deploy-the-vsan-witness">Using a script to deploy the vSAN Witness</a>
 <a class="nav-link nav-l3" href="#if-the-task-fails">If the task fails</a>
 <a class="nav-link nav-l2" href="#engineering-mode-and-the-advanced-tab">Engineering mode and the Advanced tab</a>
 <a class="nav-link nav-l3" href="#the-advanced-tab">The Advanced tab</a>
@@ -164,7 +166,7 @@ figcaption { margin-top: 8px; font-size: 13px; color: var(--subtle); text-align:
   <main class="content">
     <div class="content-inner">
       <h1 class="doc-title">Recovery Coordinator User Guide</h1>
-      <p class="doc-sub">Generated from the module documentation on 2026-11-11.</p>
+      <p class="doc-sub">Generated from the module documentation on 2026-11-18.</p>
 
 <p>The <strong>VMware Cloud Foundation Recovery Coordinator</strong> is a Windows desktop application, shipped with the
 <code>VCF.RecoveryCoordinator</code> module, that walks you through recovering a VMware Cloud Foundation instance
@@ -359,7 +361,7 @@ problem.</li>
 </tr>
 <tr>
 <td><strong>Fleet Disaster Recovery (FDR)</strong></td>
-<td>Fleet-level failover. Marked <em>Engineering only</em>; see <a href="#engineering-mode-and-the-advanced-tab">Engineering mode</a>.</td>
+<td>Fleet-level failover/failback and individual appliance recovery in an alternate location.</td>
 </tr>
 </tbody>
 </table></div>
@@ -390,8 +392,20 @@ problem.</li>
 <td>The VCF fleet components: VCF Operations, the VCFMS and VCF Automation services runtimes, log management and telemetry.</td>
 </tr>
 <tr>
-<td><strong>Recover Fleet</strong> (FDR)</td>
-<td>Fleet disaster recovery. Engineering only.</td>
+<td><strong>Failover / Failback Fleet Components</strong> (FDR)</td>
+<td>Fleet disaster recovery.</td>
+</tr>
+<tr>
+<td><strong>Recover NSX Manager in alternate location</strong> (FDR)</td>
+<td>Deploy one selected NSX Manager to an alternate vCenter and restore its backup.</td>
+</tr>
+<tr>
+<td><strong>Recover vCenter in alternate location</strong> (FDR)</td>
+<td>Deploy the selected domain's vCenter to an alternate vCenter and restore its backup.</td>
+</tr>
+<tr>
+<td><strong>Recover SDDC Manager in alternate location</strong> (FDR)</td>
+<td>Deploy SDDC Manager to an alternate vCenter, upload and prepare its backup, then restore it.</td>
 </tr>
 </tbody>
 </table></div>
@@ -421,7 +435,7 @@ VCF instance. Which sources are offered depends on the plan.</p>
 </tr>
 <tr>
 <td><strong>Existing Extracted SDDC Data File</strong></td>
-<td>Every plan except FDR</td>
+<td>All IBR plans and the three FDR alternate-location appliance recovery plans</td>
 <td>You select an <code>extracted-sddc-data.json</code> that already exists, for example from the Management Domain Recovery run.</td>
 </tr>
 </tbody>
@@ -440,8 +454,8 @@ finished.</p>
 <h3 id="which-plans-need-a-data-source">Which plans need a data source</h3>
 <ul>
 <li><strong>Fleet Component Recovery</strong> uses an existing extracted data file only, and has no domain list to choose from.</li>
-<li><strong>Recover Fleet (FDR)</strong> needs no data source. The <strong>Data Source</strong> row is hidden and the task list appears
-immediately.</li>
+<li><strong>Failover / Failback Fleet Components (FDR)</strong> need no data source. The <strong>Data Source</strong> row is hidden and the task list appears immediately.</li>
+<li><strong>FDR alternate-location appliance recovery</strong> requires an existing extracted SDDC data file. For NSX Manager and vCenter, select the original management or workload domain. SDDC Manager recovery has no domain selection.</li>
 </ul>
 <h3 id="the-encryption-password">The encryption password</h3>
 <p>When you choose <strong>SDDC Manager Backup File</strong>, a password dialog asks for the backup encryption password. The
@@ -570,9 +584,9 @@ Management Domain template:</p>
   &quot;targetFqdn&quot;: &quot;&quot;,
   &quot;targetAdmin&quot;: &quot;&quot;,
   &quot;targetAdminPassword&quot;: &quot;&quot;,
-  &quot;restoredvCenterDeploymentSize&quot;: &quot;&quot;,
+  &quot;restoredVcenterDeploymentSize&quot;: &quot;&quot;,
   &quot;vCenterOvaFile&quot;: &quot;&quot;,
-  &quot;sddcManagerFQDN&quot;: &quot;&quot;,
+  &quot;sddcManagerFqdn&quot;: &quot;&quot;,
   &quot;sddcManagerAdmin&quot;: &quot;&quot;,
   &quot;sddcManagerAdminPassword&quot;: &quot;&quot;
 }
@@ -647,6 +661,21 @@ the <strong>Task List</strong> beneath them.</p>
 <tr>
 <td><strong>Binary Sourcing</strong> (choose one)</td>
 <td><strong>Unauthorized Offline Depot</strong> (default) or <strong>Authorized Offline Depot &amp; Original VCF Installer</strong>. Chooses where the recovery binaries come from. Hover over the heading for a description.</td>
+</tr>
+</tbody>
+</table></div>
+<p>The <strong>Failover Fleet Components</strong> and <strong>Failback Fleet Components</strong> plans add:</p>
+<div class="table-wrap"><table class="table">
+<thead>
+<tr>
+<th>Option</th>
+<th>What it does</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>User Provided DNS Entry Modification Script</strong> (toggle)</td>
+<td>Runs your own script to modify the fleet component VIP DNS entries, <em>instead of</em> the manual confirmation task. Off by default. Set <code>dnsScriptPath</code> on the Variables tab. The script is run with no parameters and follows the same success contract as the other user scripts. <code>helper/Update-FleetVipDnsFailover.ps1</code> and <code>helper/Update-FleetVipDnsFailback.ps1</code> are ready-made examples for the two plans.</td>
 </tr>
 </tbody>
 </table></div>
@@ -792,7 +821,7 @@ press <strong>Enter</strong> to say it is done.</p>
 <li>The task list updates: tasks the file covers show <strong>Auto Answered</strong>; the rest still show <strong>Requires Input</strong>.</li>
 </ol>
 <p>Turning the toggle off again clears the answer file and goes back to normal prompting.</p>
-<p>The module ships a sample answer file for each plan in <code>templates\answer-files\ibr</code> to use as a starting point.</p>
+<p>The module ships sample answer files in <code>templates\answer-files\ibr</code> and <code>templates\answer-files\fdr</code> to use as a starting point.</p>
 <div class="alert alert-warning" role="note"><div class="alert-icon" aria-hidden="true"></div><div class="alert-content"><div class="alert-title">Check an answer file against your environment</div><p>The answers are applied <strong>in order</strong>, as each task asks. A sample file assumes a typical case (for
 example, exactly one matching backup on the SFTP server). Run each interactive task by hand once first so
 you know what the real prompts and options are, then record the answers. If an answer is wrong or missing,
@@ -1039,9 +1068,40 @@ confirmation waits for the VCF Operations restore.
 <strong>Several steps are manual confirmations</strong> (VCF Operations restored and state verified, unless you use a restore script; Log Management updated,
 VCF Automation connections updated, licence server redeployed). Pre-approve them in an answer file only if you
 are certain the underlying action is complete.</p>
-<h3 id="recover-fleet-fdr">Recover Fleet (FDR)</h3>
-<p>Fleet disaster recovery. It is restricted to <a href="#engineering-mode-and-the-advanced-tab">Engineering mode</a> and is
-not covered by this guide.</p>
+<h3 id="alternate-location-appliance-recovery-fdr">Alternate-location appliance recovery (FDR)</h3>
+<p>These three plans are <strong>beta</strong>: they are only listed in the Recovery Plan dropdown when Engineering mode is enabled, and carry a <strong>BETA</strong> badge. They recover individual appliances using an existing extracted SDDC data file. They do not run the host, cluster or fleet recovery steps in the broader plans.</p>
+<div class="table-wrap"><table class="table">
+<thead>
+<tr>
+<th>Plan</th>
+<th>Ordered tasks</th>
+<th>Template filename prefix</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Recover NSX Manager in alternate location</td>
+<td>Deploy the selected NSX Manager OVA; select the same manager and restore its SFTP backup</td>
+<td><code>fdr-nsx-recovery</code></td>
+</tr>
+<tr>
+<td>Recover vCenter in alternate location</td>
+<td>Deploy the selected domain's vCenter OVA; restore its backup through VAMI</td>
+<td><code>fdr-vcenter-recovery</code></td>
+</tr>
+<tr>
+<td>Recover SDDC Manager in alternate location</td>
+<td>Deploy the SDDC Manager OVA; upload and modify its backup; restore SDDC Manager</td>
+<td><code>fdr-sddc-recovery</code></td>
+</tr>
+</tbody>
+</table></div>
+<p>Plan files are in <code>plans\fdr</code>. Matching <code>*-variables.json</code> and <code>*-answers.json</code> templates are in <code>templates\variable-files\fdr</code> and <code>templates\answer-files\fdr</code> respectively.</p>
+<p>All three plans use <code>-CustomPlacement</code> with <code>targetDatacenter</code>, <code>targetCluster</code>, <code>targetDatastore</code> and <code>targetNetwork</code>, plus the alternate vCenter's <code>targetFqdn</code>, <code>targetAdmin</code> and <code>targetAdminPassword</code>. The destination inventory, datastore and port group must already exist. Appliance identity and IP configuration remain those from the extracted data, so the destination network must support those addresses and the original appliance must be offline or isolated. The extracted file must contain the credentials required by the chosen deployment and restore functions.</p>
+<p>For NSX, the answer template selects manager 1 and backup 1; review the IDs and timestamp before using it. The vCenter and SDDC Manager plans have no cmdlet answer-file prompts, so their answer templates contain instructions only. For an encrypted vCenter backup, set <code>vCenterBackupPassword</code>; otherwise leave it blank. The deployed appliance version and size must be appropriate for the backup.</p>
+<p>SDDC Manager recovery uses <code>newSddcManagerPassword</code> for the appliance's initial accounts, following the management-domain plan convention. The UI prompts for the backup encryption password on first use and reuses it for upload and restore. Upload uses VMware guest file transfer through the alternate vCenter, and backup preparation needs connectivity to the original management vCenter for SSH key retrieval. Recover that vCenter first if necessary.</p>
+<h3 id="fleet-failover-and-failback-fdr">Fleet failover and failback (FDR)</h3>
+<p>The Failover / Failback Fleet Components plans are not covered by this guide.</p>
 
 <h2 id="authoring-a-vcf-operations-restore-script">Authoring a VCF Operations restore script</h2>
 <p>VCF Operations is restored outside this tool, with whatever process your organisation uses. By default, the
@@ -1256,6 +1316,20 @@ hold your script's full output.</li>
 </ol>
 <p>If the toggle is on but <code>opsRestoreScriptPath</code> is empty, or the file is not found, the task fails straight away
 with a message saying so.</p>
+<h3 id="using-a-script-to-deploy-the-vsan-witness">Using a script to deploy the vSAN Witness</h3>
+<p>On the Management Domain, Workload Domain and Additional Cluster plans you can also supply your own script that
+deploys a new vSAN Witness. The <strong>User Provided vSAN Witness Deployment Script</strong> toggle only appears when the
+selected cluster is stretched, which is the same condition that makes <em>Reconfigure vSAN Stretched Cluster</em> part of
+the plan.</p>
+<ol>
+<li>Select the domain or cluster and load or create its variables.</li>
+<li>On the <strong>Variables</strong> tab, set <code>vsanWitnessScriptPath</code> to the full path of your script.</li>
+<li>On the <strong>Recovery Plan</strong> tab, turn on <strong>User Provided vSAN Witness Deployment Script</strong>. <em>Run User-Provided vSAN
+Witness Deployment Script</em> is added immediately before <em>Reconfigure vSAN Stretched Cluster</em>.</li>
+</ol>
+<p>The same success contract applies as for the Operations script above. Your script must leave the new witness
+registered and connected in the restored vCenter, because <em>Reconfigure vSAN Stretched Cluster</em> waits for that.
+<code>helper/Redeploy-VsanWitness.ps1</code> is a ready-made example.</p>
 <h3 id="if-the-task-fails">If the task fails</h3>
 <div class="table-wrap"><table class="table">
 <thead>
@@ -1305,9 +1379,8 @@ one-time code</strong>. These are provided by Broadcom Support or the engineerin
 back and forth freely for the rest of the session without being asked again.</p>
 <p>Engineering mode:</p>
 <ul>
-<li>Unlocks <strong>engineering-only recovery types and plans</strong>, such as Fleet Disaster Recovery.</li>
-<li>Unlocks <strong>storage clusters and compute clusters</strong> in Additional Cluster Recovery. These rows carry an
-<em>ENGINEERING-ONLY</em> badge, and selecting one in User mode prompts for the engineering password or one-time code.</li>
+<li>Shows <strong>storage clusters and compute clusters</strong> in the <strong>Discovered Infrastructure</strong> pane for Additional Cluster
+Recovery, marked with a <strong>BETA</strong> pill. In User mode these cluster types are not listed at all.</li>
 <li>Shows the <strong>Advanced</strong> tab.</li>
 <li>Lets you set a <strong>breakpoint</strong> in the task list.</li>
 </ul>

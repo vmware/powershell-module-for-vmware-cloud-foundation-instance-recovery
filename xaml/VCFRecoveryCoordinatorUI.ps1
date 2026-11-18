@@ -517,6 +517,11 @@ function Set-UIMode([string]$Mode) {
     # plan's own already-set pause point, if any.
     Update-TaskListHeaderText $recoveryTaskListHeader $global:currentPlanContext.PausePointAfterStep
 
+    # Beta recovery plans only appear in the Recovery Plan combo in Engineering mode. Guarded on a selected
+    # Recovery Type because Set-UIMode's startup call runs before Sync-RecoveryPlanComboBetaItems' own
+    # "function" statement has executed (see Update-TaskListHeaderText) -- at that point nothing is selected yet.
+    if ($recoveryTypeComboBox.SelectedItem) { Sync-RecoveryPlanComboBetaItems }
+
     # Storage/compute clusters only appear in Discovered Infrastructure in Engineering mode.
     if ($global:extractedDataLoaded) { Update-AdditionalClustersList }
 }
@@ -620,10 +625,8 @@ function Get-CurrentRecoveryPlanTarget {
 }
 
 # Shared by all three Recovery Parameters combos. Content is a StackPanel (label + optional
-# ENGINEERING-ONLY pill), not a plain string -- the same LightGray/Black pairing New-StepRow uses
-# for a step's own "Pending" button (not the slate-grey "Requires Input" pill elsewhere), since
-# this marks a feature gated behind the engineering mode password rather than a fixed property of
-# an already-available one. Tag carries the catalog id (a recovery type id, plan id, or data
+# BETA pill), not a plain string -- the same LightGray/Black pairing New-StepRow uses
+# for a step's own "Pending" button (not the slate-grey "Requires Input" pill elsewhere). Tag carries the catalog id (a recovery type id, plan id, or data
 # source id) so callers can resolve back to the catalog entry without re-parsing the label text.
 function New-EngineeringOnlyBadge([string]$Text = 'ENGINEERING-ONLY') {
     $badge = New-Object System.Windows.Controls.Border
@@ -641,7 +644,7 @@ function New-EngineeringOnlyBadge([string]$Text = 'ENGINEERING-ONLY') {
     return $badge
 }
 
-function New-RecoveryOptionComboBoxItem([string]$Label, [bool]$EngineeringOnly, [string]$Tag) {
+function New-RecoveryOptionComboBoxItem([string]$Label, [string]$Tag, [bool]$Beta = $false) {
     $item = New-Object System.Windows.Controls.ComboBoxItem
     $item.Tag = $Tag
     $panel = New-Object System.Windows.Controls.StackPanel
@@ -650,8 +653,8 @@ function New-RecoveryOptionComboBoxItem([string]$Label, [bool]$EngineeringOnly, 
     $textBlock.Text = $Label
     $textBlock.VerticalAlignment = 'Center'
     [void]$panel.Children.Add($textBlock)
-    if ($EngineeringOnly) {
-        [void]$panel.Children.Add((New-EngineeringOnlyBadge))
+    if ($Beta) {
+        [void]$panel.Children.Add((New-EngineeringOnlyBadge 'BETA'))
     }
     $item.Content = $panel
     return $item
@@ -664,6 +667,47 @@ function Test-ClusterEngineeringOnly($Cluster) {
     $entry = Get-RecoveryPlanCatalogEntry 'AdditionalCluster'
     if (-not $entry -or -not $entry.engineeringOnlyClusterTypes) { return $false }
     return (@($entry.engineeringOnlyClusterTypes) -contains [string]$Cluster.PrimaryDatastoreType)
+}
+
+# Beta plans (catalog "beta": true) are only listed while the UI is in Engineering mode -- the same rule
+# beta cluster types follow in Update-AdditionalClustersList.
+function Get-VisibleRecoveryPlans([string]$RecoveryTypeId) {
+    return @((Get-RecoveryPlanCatalog).recoveryPlans | Where-Object { $_.recoveryType -eq $RecoveryTypeId -and ($global:uiMode -eq 'Engineering' -or -not $_.beta) })
+}
+
+function New-RecoveryPlanComboBoxItem($Plan) {
+    return New-RecoveryOptionComboBoxItem $Plan.label ([string]$Plan.id) ([bool]$Plan.beta)
+}
+
+# Adds/removes beta plans in place when the UI mode changes (called from Set-UIMode). Edits the existing
+# items rather than clearing and rebuilding them so that toggling mode never re-fires the plan's
+# SelectionChanged (which would reset the loaded plan context) unless the selected plan itself has to go.
+function Sync-RecoveryPlanComboBetaItems {
+    $selectedType = $recoveryTypeComboBox.SelectedItem
+    if ($null -eq $selectedType) {
+        return
+    }
+    $visiblePlans = Get-VisibleRecoveryPlans ([string]$selectedType.Tag)
+    $visibleIds = @($visiblePlans | ForEach-Object { [string]$_.id })
+    foreach ($item in @($recoveryPlanComboBox.Items)) {
+        if ($visibleIds -notcontains [string]$item.Tag) {
+            if ($recoveryPlanComboBox.SelectedItem -eq $item) {
+                $fallbackId = Get-DefaultRecoveryPlanId ([string]$selectedType.Tag)
+                $fallback = $recoveryPlanComboBox.Items | Where-Object { $_.Tag -eq $fallbackId -and $visibleIds -contains [string]$_.Tag } | Select-Object -First 1
+                if (-not $fallback) {
+                    $fallback = $recoveryPlanComboBox.Items | Where-Object { $visibleIds -contains [string]$_.Tag } | Select-Object -First 1
+                }
+                $recoveryPlanComboBox.SelectedItem = $fallback
+            }
+            $recoveryPlanComboBox.Items.Remove($item)
+        }
+    }
+    for ($i = 0; $i -lt $visiblePlans.Count; $i++) {
+        $planId = [string]$visiblePlans[$i].id
+        if (-not ($recoveryPlanComboBox.Items | Where-Object { $_.Tag -eq $planId })) {
+            $recoveryPlanComboBox.Items.Insert([Math]::Min($i, $recoveryPlanComboBox.Items.Count), (New-RecoveryPlanComboBoxItem $visiblePlans[$i]))
+        }
+    }
 }
 
 # The plan a given Recovery Type should land on as soon as it's selected -- whichever of its plans
@@ -3772,18 +3816,8 @@ function Import-ExtractedSddcDataFile([string]$Path) {
 # Sync-IbrRecoveryScopeSelection/Sync-DomainSteps/Sync-AdditionalClusterSteps it replaces/reuses)
 # plus the two SelectionChanged handlers below.
 foreach ($recoveryType in (Get-RecoveryPlanCatalog).recoveryTypes) {
-    [void]$recoveryTypeComboBox.Items.Add((New-RecoveryOptionComboBoxItem $recoveryType.label ([bool]$recoveryType.engineeringOnly) ([string]$recoveryType.id)))
+    [void]$recoveryTypeComboBox.Items.Add((New-RecoveryOptionComboBoxItem $recoveryType.label ([string]$recoveryType.id)))
 }
-
-# Remembers the last selection that was NOT rejected by the engineering-mode gate below, so a
-# rejected/cancelled unlock attempt on an ENGINEERING-ONLY plan (Fleet Component Recovery, Recover
-# Fleet) reverts to exactly where the operator actually was, not a fixed default -- same idea as
-# Register-EngineeringModeGate's own $gateState.LastSafeTab. Set for real the first time
-# RecoveryPlanComboBox's own SelectionChanged (below) lands on a plan that isn't engineering-only,
-# which happens naturally the moment the startup selection is triggered near the bottom of this
-# script.
-$script:lastSafeRecoveryTypeId = $null
-$script:lastSafeRecoveryPlanId = $null
 
 # Rebuilds Recovery Plan's own Items to whichever plans the catalog lists under the newly selected
 # Recovery Type, then selects that type's default plan (Management Domain Recovery for IBR,
@@ -3797,8 +3831,8 @@ $recoveryTypeComboBox.Add_SelectionChanged({
         }
         $typeId = [string]$selectedType.Tag
         $recoveryPlanComboBox.Items.Clear()
-        foreach ($plan in @((Get-RecoveryPlanCatalog).recoveryPlans | Where-Object { $_.recoveryType -eq $typeId })) {
-            [void]$recoveryPlanComboBox.Items.Add((New-RecoveryOptionComboBoxItem $plan.label ([bool]$plan.engineeringOnly) ([string]$plan.id)))
+        foreach ($plan in (Get-VisibleRecoveryPlans $typeId)) {
+            [void]$recoveryPlanComboBox.Items.Add((New-RecoveryPlanComboBoxItem $plan))
         }
         $defaultPlanId = Get-DefaultRecoveryPlanId $typeId
         $defaultItem = $recoveryPlanComboBox.Items | Where-Object { $_.Tag -eq $defaultPlanId } | Select-Object -First 1
@@ -3809,13 +3843,8 @@ $recoveryTypeComboBox.Add_SelectionChanged({
         }
     }.GetNewClosure())
 
-# The one dispatcher for every recovery plan pick -- gates ENGINEERING-ONLY plans behind the
-# engineering mode password (same $global:engineeringModeUnlocked flag Register-EngineeringModeGate
-# uses for Advanced), then hands off to Sync-RecoveryPlanSelection. Combining the gate and the real
-# selection-handling logic in this single handler (rather than two independently-registered ones,
-# the way the old RadioButton-based Register-RadioEngineeringModeGate worked) is what lets a
-# rejected attempt revert the pick cleanly without Sync-RecoveryPlanSelection ever running for a
-# plan that was never actually allowed through.
+# The one dispatcher for every recovery plan pick -- hands off to Sync-RecoveryPlanSelection. (Beta plans are
+# simply not listed outside Engineering mode, so there is no per-pick gate.)
 $recoveryPlanComboBox.Add_SelectionChanged({
         $selectedPlan = $recoveryPlanComboBox.SelectedItem
         if ($null -eq $selectedPlan) {
@@ -3826,30 +3855,6 @@ $recoveryPlanComboBox.Add_SelectionChanged({
             return 
         }
 
-        if ($entry.engineeringOnly -and -not $global:engineeringModeUnlocked) {
-            # Revert first (mirrors Register-EngineeringModeGate's own TabControl revert): puts the
-            # UI back exactly where it was, synchronously, before the modal password prompt even
-            # opens. $script:lastSafeRecoveryPlanId is $null only if EVERY plan under every type
-            # were engineering-only, which the shipped catalog never does -- nothing to revert to
-            # in that case, so the pick is just left as-is (still gated; Sync-RecoveryPlanSelection
-            # is never reached below either way).
-            if ($script:lastSafeRecoveryPlanId) {
-                Select-RecoveryTypeAndPlan $script:lastSafeRecoveryTypeId $script:lastSafeRecoveryPlanId
-            }
-            $entered = Show-PasswordPromptDialog -Title 'Unlock Engineering Mode' -Message "Enter the engineering mode password or one-time code to select $($entry.label)."
-            if ($entered -and (Test-EngineeringModePassword $entered)) {
-                $global:engineeringModeUnlocked = $true
-                # Re-selecting now that the flag is set re-fires this same SelectionChanged; the
-                # guard above is skipped that time and falls through to Sync-RecoveryPlanSelection.
-                Select-RecoveryTypeAndPlan $entry.recoveryType $entry.id
-            } elseif ($entered) {
-                New-Advisory 'Incorrect or expired engineering mode password/one-time code.' -Failure
-            }
-            return
-        }
-
-        $script:lastSafeRecoveryTypeId = $entry.recoveryType
-        $script:lastSafeRecoveryPlanId = $entry.id
         Sync-RecoveryPlanSelection
     }.GetNewClosure())
 
@@ -4573,8 +4578,7 @@ $additionalClustersListBox.Add_SelectionChanged({
     }.GetNewClosure())
 
 # Dispatcher for every Recovery Plan pick -- called by RecoveryPlanComboBox's own SelectionChanged
-# (once the engineering-mode gate there has let an ENGINEERING-ONLY plan through, or immediately
-# for one that isn't), and again at the end of Import-ExtractedSddcDataFile (so loading/reloading data
+# and again at the end of Import-ExtractedSddcDataFile (so loading/reloading data
 # after a plan was already picked re-applies its filtering correctly). Owns Discovered
 # Infrastructure's own visibility/content and Data Source's own permitted-options/visibility;
 # actual Steps/Variables reveal for Workload Domain/Additional Cluster continues to come from their
@@ -4612,7 +4616,7 @@ function Sync-RecoveryPlanSelection {
         $previouslySelectedId = if ($dataSourceComboBox.SelectedItem) { [string]$dataSourceComboBox.SelectedItem.Tag } else { $null }
         $dataSourceComboBox.Items.Clear()
         foreach ($source in @((Get-RecoveryPlanCatalog).dataSources | Where-Object { $permittedDataSourceIds -contains $_.id })) {
-            [void]$dataSourceComboBox.Items.Add((New-RecoveryOptionComboBoxItem $source.label $false ([string]$source.id)))
+            [void]$dataSourceComboBox.Items.Add((New-RecoveryOptionComboBoxItem $source.label ([string]$source.id)))
         }
         $wantedId = if ($previouslySelectedId -and ($permittedDataSourceIds -contains $previouslySelectedId)) { $previouslySelectedId } else { [string]$entry.defaultDataSource }
         $wantedItem = $dataSourceComboBox.Items | Where-Object { $_.Tag -eq $wantedId } | Select-Object -First 1
@@ -4715,7 +4719,6 @@ function Sync-RecoveryPlanSelection {
 # defined -- the default Recovery Type (IBR, the catalog's first entry) selects its own default
 # plan (Management Domain Recovery) via RecoveryTypeComboBox's own SelectionChanged, which cascades
 # into RecoveryPlanComboBox's, which is what actually runs Sync-RecoveryPlanSelection. This also
-# gives $script:lastSafeRecoveryTypeId/$script:lastSafeRecoveryPlanId their real starting values.
 $recoveryTypeComboBox.SelectedIndex = 0
 
 # Shows/hides every step row's numbered thread circle to match the "Run parallel tasks" toggle.

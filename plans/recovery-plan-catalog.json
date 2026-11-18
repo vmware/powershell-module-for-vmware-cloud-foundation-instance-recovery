@@ -20,7 +20,7 @@
       "label": "Existing Extracted SDDC Data File"
     }
   ],
-  "_targetComment": "target is one of: managementDomain | workloadDomain | additionalCluster | fleetComponent | recoverFleet -- see Sync-RecoveryPlanSelection in the .ps1 for what each one does. Plans may reuse a target when they use the same existing UI plumbing; the selected catalog entry determines the plan and variables files. Optional engineeringOnlyClusterTypes (additionalCluster plan only) lists raw primaryDatastoreType values (e.g. VSAN_MAX = Storage Cluster, VSAN_Remote = Compute Cluster) whose clusters need engineering mode to be selected.",
+  "_targetComment": "target is one of: managementDomain | workloadDomain | additionalCluster | fleetComponent | recoverFleet -- see Sync-RecoveryPlanSelection in the .ps1 for what each one does. Plans may reuse a target when they use the same existing UI plumbing; the selected catalog entry determines the plan and variables files. Optional beta (true) marks a plan as beta: it is only listed in the Recovery Plan combo while the UI is in Engineering mode, and carries a BETA pill (same behaviour as beta cluster types). Optional engineeringOnlyClusterTypes (additionalCluster plan only) lists raw primaryDatastoreType values (e.g. VSAN_MAX = Storage Cluster, VSAN_Remote = Compute Cluster) whose clusters need engineering mode to be selected.",
   "_extraToggleComment": "extraToggleDefinitions defines every optional plan-specific toggle once (id + label), the same way recoveryTypes/dataSources are defined once above. A definition may also carry an optional 'condition' array (same typed forms as a plan step's condition, e.g. a dataPath) -- the toggle is only shown while every entry passes, and a hidden toggle never counts as on. A plan opts in to a toggle by listing its id + defaultChecked under its own extraToggles array; the toggle's id doubles as the variable name injected into step-condition evaluation and is excluded from that plan's persisted answers file.",
   "extraToggleDefinitions": [
     {
@@ -94,7 +94,6 @@
       "label": "Fleet Component Recovery",
       "recoveryType": "IBR",
       "target": "fleetComponent",
-      "engineeringOnly": false,
       "planFolder": "ibr",
       "planFile": "fleet-component-recovery-plan.json",
       "variablesFile": "fleet-component-recovery-variables.json",
@@ -201,7 +200,7 @@
     {
       "id": "FdrNsxRecovery",
       "label": "Recover NSX Manager in alternate location",
-      "engineeringOnly": true,
+      "beta": true,
       "recoveryType": "FDR",
       "target": "workloadDomain",
       "planFolder": "fdr",
@@ -218,7 +217,7 @@
     {
       "id": "FdrVcenterRecovery",
       "label": "Recover vCenter in alternate location",
-      "engineeringOnly": true,
+      "beta": true,
       "recoveryType": "FDR",
       "target": "workloadDomain",
       "planFolder": "fdr",
@@ -235,7 +234,7 @@
     {
       "id": "FdrSddcRecovery",
       "label": "Recover SDDC Manager in alternate location",
-      "engineeringOnly": true,
+      "beta": true,
       "recoveryType": "FDR",
       "target": "fleetComponent",
       "planFolder": "fdr",

@@ -671,7 +671,7 @@ are certain the underlying action is complete.
 
 ### Alternate-location appliance recovery (FDR)
 
-These three plans use the existing **ENGINEERING-ONLY** badge and engineering-mode selection gate. They recover individual appliances using an existing extracted SDDC data file. They do not run the host, cluster or fleet recovery steps in the broader plans.
+These three plans are **beta**: they are only listed in the Recovery Plan dropdown when Engineering mode is enabled, and carry a **BETA** badge. They recover individual appliances using an existing extracted SDDC data file. They do not run the host, cluster or fleet recovery steps in the broader plans.
 
 | Plan | Ordered tasks | Template filename prefix |
 |---|---|---|
