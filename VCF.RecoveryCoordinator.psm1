@@ -103,6 +103,8 @@ Function Get-InstalledSoftware {
     Return $software
 }
 
+$script:VCFIRTaskState = @{}
+
 Function LogMessage {
     Param (
         [Parameter (Mandatory = $true)] [AllowEmptyString()] [String]$message,
@@ -138,6 +140,11 @@ Function LogMessage {
     96m Bright Cyan
     97m Bright White
     #>
+    # Track task start/completion so Complete-TaskIfOpen can tell whether a task function already logged "Completed Task".
+    If ($message -match '^\[[^\]]*\] (Starting|Completed) Task (\S+)') {
+        $script:VCFIRTaskState[$Matches[2]] = $Matches[1]
+    }
+
     $ESC = [char]0x1b
     $timeStamp = Get-Date -Format "MM-dd-yyyy_HH:mm:ss"
     $timestampColour = "97m"
@@ -162,6 +169,17 @@ Function Write-TaskCompleted {
     LogMessage -type NOTE -message "[$(hostname)] Completed Task $TaskName in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.Seconds) seconds"
 }
 
+# Called from the finally block of every task function: emits "Completed Task" only if the function has not already logged it
+# (e.g. it ended on an unhandled exception or an exit path that never logged completion).
+Function Complete-TaskIfOpen {
+    Param (
+        [Parameter (Mandatory = $true)] [String]$TaskName,
+        [Parameter (Mandatory = $true)] [System.Diagnostics.Stopwatch]$Stopwatch
+    )
+    If ($script:VCFIRTaskState[$TaskName] -ne 'Completed') {
+        Write-TaskCompleted -TaskName $TaskName -Stopwatch $Stopwatch
+    }
+}
 
 Function Test-MemberOfSubnet {
     [cmdletbinding()]
@@ -250,6 +268,7 @@ Function Import-VCFIRAnswerFile {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
 
     $resolvedPath = (Resolve-Path -Path $Path).Path
     $script:VCFIRAnswers = Get-Content $resolvedPath -Raw | ConvertFrom-Json -AsHashtable
@@ -258,6 +277,13 @@ Function Import-VCFIRAnswerFile {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Import-VCFIRAnswerFile
 
@@ -397,6 +423,7 @@ Function Confirm-ManualStep {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
 
     $autoAnswered = $false
     if ($AnswerKey -and $script:VCFIRAnswers -and $script:VCFIRAnswers.ContainsKey('Confirm-ManualStep')) {
@@ -414,6 +441,13 @@ Function Confirm-ManualStep {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Confirm-ManualStep
 
@@ -445,6 +479,7 @@ Function Invoke-UserScript {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
 
     If ([string]::IsNullOrWhiteSpace($ScriptPath)) {
         LogMessage -type ERROR -message "[$jumpboxName] No script path was supplied (is the script path variable set in the Variables tab?)"
@@ -469,6 +504,13 @@ Function Invoke-UserScript {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Invoke-UserScript
 
@@ -655,6 +697,7 @@ Function New-ExtractDataFromSDDCBackup {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     If ($requireCredentials -and !$credentialsFilePath) {
         # Logs the usual completion line too: the Recovery Coordinator UI only decides a step has
         # finished when it sees "Completed Task <cmdlet>", and it is the ERROR tag that marks it failed.
@@ -1770,6 +1813,13 @@ Function New-ExtractDataFromSDDCBackup {
     Pop-Location
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function New-ExtractDataFromSDDCBackup
 
@@ -1787,6 +1837,7 @@ Function New-RetrieveVCFCredentials
         LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
         $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
         $StopWatch.Start()
+    try {
 
         $timeoutMinutes = 15
         $retryIntervalSeconds = 10
@@ -1854,6 +1905,13 @@ Function New-RetrieveVCFCredentials
     {
         Try { Disconnect-VcfSddcManagerServer * -ErrorAction SilentlyContinue } Catch {}
     }
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function New-RetrieveVCFCredentials
 
@@ -1897,6 +1955,7 @@ Function Update-ExtractedSDDCData {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
@@ -2070,6 +2129,13 @@ Function Update-ExtractedSDDCData {
     $extractedSddcData | ConvertTo-Json -Depth 20 | Out-File $extractedSDDCDataFile
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Update-ExtractedSDDCData
 
@@ -2099,6 +2165,7 @@ Function Update-ExtractedSDDCDataWithSupervisorDetails {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
 
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
@@ -2216,6 +2283,13 @@ Function Update-ExtractedSDDCDataWithSupervisorDetails {
 
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($StopWatch.Elapsed.TotalMinutes)) minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Update-ExtractedSDDCDataWithSupervisorDetails
 
@@ -2318,6 +2392,7 @@ Function New-NSXManagerOvaDeployment {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
     [int]$__ansIdx = 0
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
@@ -2454,6 +2529,13 @@ Function New-NSXManagerOvaDeployment {
     } While ($jobStatus -eq "Running")
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function New-NSXManagerOvaDeployment
 
@@ -2544,6 +2626,7 @@ Function New-vCenterOvaDeployment {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
@@ -2642,6 +2725,13 @@ Function New-vCenterOvaDeployment {
     } While ($jobStatus -eq "Running")
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function New-vCenterOvaDeployment
 
@@ -2740,6 +2830,7 @@ Function New-SDDCManagerOvaDeployment {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
@@ -2830,6 +2921,13 @@ Function New-SDDCManagerOvaDeployment {
     } While ($jobStatus -eq "Running")
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function New-SDDCManagerOvaDeployment
 
@@ -2898,6 +2996,7 @@ Function New-UploadAndModifySDDCManagerBackup {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     If ($PSCmdlet.ParameterSetName -eq 'SecurePassword') {
         $encryptionPassword = [System.Net.NetworkCredential]::new('', $secureEncryptionPassword).Password
     }
@@ -3004,6 +3103,13 @@ Function New-UploadAndModifySDDCManagerBackup {
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function New-UploadAndModifySDDCManagerBackup
 
@@ -3117,6 +3223,7 @@ Function Get-BackupsFromSFTPServer {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
     [int]$__ansIdx = 0
     # Early-exit paths must still emit "Completed Task" -- the Recovery Coordinator UI marks a task finished only when it sees that line.
@@ -3593,6 +3700,13 @@ Function Get-BackupsFromSFTPServer {
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
     Return $finalEntries
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Get-BackupsFromSFTPServer
 
@@ -3646,6 +3760,7 @@ Function Invoke-SDDCManagerRestore {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     If ($PSCmdlet.ParameterSetName -eq 'SecurePassword') {
         $encryptionPassword = [System.Net.NetworkCredential]::new('', $secureEncryptionPassword).Password
     }
@@ -3738,6 +3853,13 @@ Function Invoke-SDDCManagerRestore {
 
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Invoke-SDDCManagerRestore
 
@@ -3791,6 +3913,7 @@ Function Resolve-PhysicalHostServiceAccounts {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     $vCenterConnection = Connect-VIServer -server $targetFQDN -username $targetAdmin -password $targetAdminPassword
     $clusterHosts = Get-Cluster -name $clusterName | Get-VMHost
     Disconnect-VIServer * -confirm:$false
@@ -3840,6 +3963,13 @@ Function Resolve-PhysicalHostServiceAccounts {
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
 
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Resolve-PhysicalHostServiceAccounts
 
@@ -3872,6 +4002,7 @@ Function Add-OfflineDepotTrustedCertificate {
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     if (-not $IsWindows -and $PSVersionTable.PSVersion.Major -ge 6) {
@@ -3932,6 +4063,13 @@ Function Add-OfflineDepotTrustedCertificate {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Add-OfflineDepotTrustedCertificate
 
@@ -3963,6 +4101,7 @@ Function Set-SDDCManagerOfflineDepot {
     }
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
 
     # Get SDDC Manager API Token
     LogMessage -type INFO -message "[$sddcManagerFqdn] Getting Authentication Token"
@@ -4051,6 +4190,13 @@ Function Set-SDDCManagerOfflineDepot {
 
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Set-SDDCManagerOfflineDepot
 
@@ -4074,6 +4220,7 @@ Function Set-SDDCManagerFDSDepot {
     }
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
 
     LogMessage -type INFO -message "[$sddcManagerFqdn] Retrieving Original Configuration from JSON file"
     $servicesConfigBody = Get-Content -path $originalConfigurationFile -Raw
@@ -4109,6 +4256,13 @@ Function Set-SDDCManagerFDSDepot {
 
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Set-SDDCManagerFDSDepot
 
@@ -4174,6 +4328,7 @@ Function Invoke-SddcManagerBundleDownload {
     }
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
 
     # Use StringBuilder for efficient string concatenation
     $sb = [System.Text.StringBuilder]::new()
@@ -4325,6 +4480,13 @@ Function Invoke-SddcManagerBundleDownload {
 
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Invoke-SddcManagerBundleDownload
 #EndRegion SDDC Manager Functions
@@ -4379,6 +4541,7 @@ Function Invoke-vCenterRestore {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
 
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
@@ -4803,6 +4966,13 @@ Function Invoke-vCenterRestore {
 
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Invoke-vCenterRestore
 
@@ -4856,6 +5026,7 @@ Function Remove-NonResponsiveHosts {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
 
     #Get Non-Repsonsive Hosts from vCenter
     $vCenterConnection = Connect-Viserver $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
@@ -4948,6 +5119,13 @@ Function Remove-NonResponsiveHosts {
     }
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Remove-NonResponsiveHosts
 
@@ -5001,6 +5179,7 @@ Function Add-HostsToCluster {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
@@ -5182,6 +5361,13 @@ Function Add-HostsToCluster {
     Disconnect-VcfSddcManagerServer *
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Add-HostsToCluster
 
@@ -5318,6 +5504,7 @@ Function Add-VMKernelsToHost {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
@@ -5438,6 +5625,13 @@ Function Add-VMKernelsToHost {
     Disconnect-VIServer * -confirm:$false
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Add-VMKernelsToHost
 
@@ -5480,6 +5674,7 @@ Function New-RebuiltVsanDatastore {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
     [int]$__ansIdx = 0
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
@@ -5702,6 +5897,13 @@ Function New-RebuiltVsanDatastore {
     Get-Cluster -name $clusterName | Get-Datastore -Name "vsanDatastore*" | Set-Datastore -Name $datastoreName | Out-Null
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function New-RebuiltVsanDatastore
 
@@ -5753,6 +5955,7 @@ Function Add-DiskgroupsToManagementHosts {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
@@ -6142,6 +6345,13 @@ Function Add-DiskgroupsToManagementHosts {
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Add-DiskgroupsToManagementHosts
 
@@ -6185,6 +6395,7 @@ Function Set-ManagementDatastorePolicy {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
@@ -6251,6 +6462,13 @@ Function Set-ManagementDatastorePolicy {
     Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Set-ManagementDatastorePolicy
 
@@ -6279,6 +6497,7 @@ Function New-SingleHostVsanDatastore {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
     [int]$__ansIdx = 0
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
@@ -6544,6 +6763,13 @@ Function New-SingleHostVsanDatastore {
     Disconnect-VIServer * -Confirm:$false
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function New-SingleHostVsanDatastore
 
@@ -6588,6 +6814,7 @@ Function New-RebuiltVdsConfiguration {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
     [int]$__ansIdx = 0
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
@@ -7038,6 +7265,13 @@ Function New-RebuiltVdsConfiguration {
         $StopWatch.Stop()
         LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
     }
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function New-RebuiltVdsConfiguration
 
@@ -7072,6 +7306,7 @@ Function Watch-NsxHostTransportNodeInstallation {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
 
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
@@ -7216,6 +7451,13 @@ Function Watch-NsxHostTransportNodeInstallation {
 
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Watch-NsxHostTransportNodeInstallation
 
@@ -7247,6 +7489,7 @@ Function New-PrepareManagementHostNetworking {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
     [int]$__ansIdx = 0
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
@@ -7677,6 +7920,13 @@ Function New-PrepareManagementHostNetworking {
         Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false -ErrorAction SilentlyContinue
         LogMessage -type WARNING -message "[$jumpboxName] Configuration not accepted. Task aborted"
     }
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function New-PrepareManagementHostNetworking
 
@@ -7706,6 +7956,7 @@ Function Add-VMKernelsToManagementHosts {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
@@ -7883,6 +8134,13 @@ Function Add-VMKernelsToManagementHosts {
 
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Add-VMKernelsToManagementHosts
 
@@ -7930,6 +8188,7 @@ Function New-ReconfiguredVsanStretchedCluster {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
 
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
@@ -8119,6 +8378,13 @@ Function New-ReconfiguredVsanStretchedCluster {
     Disconnect-VIServer -Server $vCenterFQDN -Force -Confirm:$false
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function New-ReconfiguredVsanStretchedCluster
 
@@ -8166,6 +8432,7 @@ Function Remove-VsanStretchedClusterWitness {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
 
     LogMessage -type INFO -message "[$vCenterFQDN] Connecting to vCenter"
     Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop | Out-Null
@@ -8217,6 +8484,13 @@ Function Remove-VsanStretchedClusterWitness {
     Disconnect-VIServer -Server $vCenterFQDN -Force -Confirm:$false
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Remove-VsanStretchedClusterWitness
 
@@ -8254,6 +8528,7 @@ Function Backup-ClusterVMOverrides {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type INFO -message "[$vCenterFQDN] Connecting to vCenter"
     Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop | Out-Null
     $cluster = Get-Cluster -Name $clusterName
@@ -8294,6 +8569,13 @@ Function Backup-ClusterVMOverrides {
     Disconnect-VIServer -Server $vCenterFQDN -Force -Confirm:$false
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Backup-ClusterVMOverrides
 
@@ -8331,6 +8613,7 @@ Function Backup-ClusterVMLocations {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type INFO -message "[$vCenterFQDN] Connecting to vCenter"
     Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop | Out-Null
     Try {
@@ -8354,6 +8637,13 @@ Function Backup-ClusterVMLocations {
     Disconnect-VIServer -Server $vCenterFQDN -Force -Confirm:$false
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Backup-ClusterVMLocations
 
@@ -8391,6 +8681,7 @@ Function Backup-ClusterDRSGroupsAndRules {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type INFO -message "[$vCenterFQDN] Connecting to vCenter"
     Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop | Out-Null
     Try {
@@ -8483,6 +8774,13 @@ Function Backup-ClusterDRSGroupsAndRules {
     Disconnect-VIServer -Server $vCenterFQDN -Force -Confirm:$false
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Backup-ClusterDRSGroupsAndRules
 
@@ -8520,6 +8818,7 @@ Function Backup-ClusterVMTags {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type INFO -message "[$vCenterFQDN] Connecting to vCenter"
     Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop | Out-Null
     Try {
@@ -8542,6 +8841,13 @@ Function Backup-ClusterVMTags {
     Disconnect-VIServer -Server $vCenterFQDN -Force -Confirm:$false
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Backup-ClusterVMTags
 
@@ -8583,6 +8889,7 @@ Function Restore-ClusterVMOverrides {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type INFO -message "[$vCenterFQDN] Connecting to vCenter"
     Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop | Out-Null
     try {
@@ -8711,6 +9018,13 @@ Function Restore-ClusterVMOverrides {
     Disconnect-VIServer -Server $vCenterFQDN -Force -Confirm:$false
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Restore-ClusterVMOverrides
 
@@ -8752,6 +9066,7 @@ Function Restore-ClusterVMLocations {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type INFO -message "[$vCenterFQDN] Connecting to vCenter"
     Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop | Out-Null
     try {
@@ -8784,6 +9099,13 @@ Function Restore-ClusterVMLocations {
     Disconnect-VIServer -Server $vCenterFQDN -Force -Confirm:$false
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Restore-ClusterVMLocations
 
@@ -8825,6 +9147,7 @@ Function Restore-ClusterDRSGroupsAndRules {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type INFO -message "[$vCenterFQDN] Connecting to vCenter"
     Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop | Out-Null
     try {
@@ -8905,6 +9228,13 @@ Function Restore-ClusterDRSGroupsAndRules {
     Disconnect-VIServer -Server $vCenterFQDN -Force -Confirm:$false
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Restore-ClusterDRSGroupsAndRules
 
@@ -8946,6 +9276,7 @@ Function Restore-ClusterVMTags {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type INFO -message "[$vCenterFQDN] Connecting to vCenter"
     Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop | Out-Null
     try {
@@ -8972,6 +9303,13 @@ Function Restore-ClusterVMTags {
     Disconnect-VIServer -Server $vCenterFQDN -Force -Confirm:$false
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Restore-ClusterVMTags
 
@@ -8985,6 +9323,7 @@ Function Clear-vCenterAlarms {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type INFO -Message "[$jumpboxName] Connecting to $vCenterFQDN"
     $vcenterConnection = Connect-VIServer -server $vCenterFQDN -user $vCenterAdmin -password $vCenterAdminPassword
 
@@ -9005,6 +9344,13 @@ Function Clear-vCenterAlarms {
     Disconnect-VIServer * -confirm:$false
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Clear-vCenterAlarms
 
@@ -9054,6 +9400,7 @@ Function Invoke-NSXManagerRestore {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
     [int]$__ansIdx = 0
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
@@ -9225,6 +9572,13 @@ Function Invoke-NSXManagerRestore {
     LogMessage -type INFO -message "[$nsxManagerFQDN] Restore finished with status: $($restoreStatus.status.value)"
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Invoke-NSXManagerRestore
 
@@ -9278,6 +9632,7 @@ Function Invoke-NSXEdgeClusterRecovery {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
@@ -9402,6 +9757,13 @@ Function Invoke-NSXEdgeClusterRecovery {
     }
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Invoke-NSXEdgeClusterRecovery
 
@@ -9467,6 +9829,7 @@ Function Invoke-NSXEdgeClusterRecoverySelective {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
@@ -9701,6 +10064,13 @@ Function Invoke-NSXEdgeClusterRecoverySelective {
 
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Invoke-NSXEdgeClusterRecoverySelective
 
@@ -9730,6 +10100,7 @@ Function Add-AdditionalNSXManagers {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
     [int]$__ansIdx = 0
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
@@ -9889,6 +10260,13 @@ Function Add-AdditionalNSXManagers {
     }
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Add-AdditionalNSXManagers
 
@@ -10060,6 +10438,7 @@ Function Remove-SddcManagerVspClusterEntry {
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     if (-not $sddcManagerFqdn) {
@@ -10171,6 +10550,13 @@ Function Remove-SddcManagerVspClusterEntry {
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
     #return $vspClusterId
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Remove-SddcManagerVspClusterEntry
 
@@ -10221,6 +10607,7 @@ Function Update-DomainDatastoreID {
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     # Load extracted SDDC data
@@ -10385,6 +10772,13 @@ Function Update-DomainDatastoreID {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Update-DomainDatastoreID
 
@@ -10444,6 +10838,7 @@ Function Update-ClusterHostSourceIDs {
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     # Load extracted SDDC data
@@ -10626,6 +11021,13 @@ Function Update-ClusterHostSourceIDs {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Update-ClusterHostSourceIDs
 
@@ -10726,6 +11128,7 @@ Function Invoke-SddcManagerSSHKeyRefresh {
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
@@ -10987,6 +11390,13 @@ Function Invoke-SddcManagerSSHKeyRefresh {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Invoke-SddcManagerSSHKeyRefresh
 
@@ -11412,6 +11822,7 @@ Function New-ServicesRuntime {
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
     [int]$__ansIdx = 0
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
@@ -11720,6 +12131,13 @@ Function New-ServicesRuntime {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function New-ServicesRuntime
 
@@ -11758,6 +12176,7 @@ Function Get-ServicesRuntime {
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     $accessToken = Get-SddcManagerToken -SddcManagerFqdn $SddcManagerFqdn -Username $SddcManagerUser -Password $SddcManagerPassword
@@ -11849,6 +12268,13 @@ Function Get-ServicesRuntime {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Get-ServicesRuntime
 
@@ -12016,6 +12442,7 @@ Function Get-VcfOperationsRegisteredComponents {
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     $opsToken = Get-VcfOperationsToken -VcfOperationsFqdn $VcfOperationsFqdn -Username $Username -Password $Password -AuthSource $AuthSource
@@ -12122,6 +12549,13 @@ Function Get-VcfOperationsRegisteredComponents {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Get-VcfOperationsRegisteredComponents
 
@@ -12168,6 +12602,7 @@ Function Get-RegisteredComponentIds {
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     $opsToken = Get-VcfOperationsToken -VcfOperationsFqdn $VcfOperationsFqdn -Username $Username -Password $Password -AuthSource $AuthSource
@@ -12267,6 +12702,13 @@ Function Get-RegisteredComponentIds {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Get-RegisteredComponentIds
 
@@ -12330,6 +12772,7 @@ Function Add-VcfmsTrustedCertificate {
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     if (-not $ServicesRuntimeFqdn) {
@@ -12457,6 +12900,13 @@ Function Add-VcfmsTrustedCertificate {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Add-VcfmsTrustedCertificate
 
@@ -12537,6 +12987,7 @@ Function Set-ServicesRuntimeSftpBackupSettings {
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     if (-not $ServicesRuntimeFqdn) {
@@ -12719,6 +13170,13 @@ Function Set-ServicesRuntimeSftpBackupSettings {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Set-ServicesRuntimeSftpBackupSettings
 
@@ -12779,6 +13237,7 @@ Function Set-ServicesRuntimeBackupSchedule {
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     if ($FullBackupEnabled -and [string]::IsNullOrWhiteSpace($FullBackupSchedule)) {
@@ -12948,6 +13407,13 @@ Function Set-ServicesRuntimeBackupSchedule {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Set-ServicesRuntimeBackupSchedule
 
@@ -12988,6 +13454,7 @@ Function Get-ServicesRuntimeBackupSchedule {
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     # Get Services Runtime token
@@ -13064,6 +13531,13 @@ Function Get-ServicesRuntimeBackupSchedule {
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
 
     return $result
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Get-ServicesRuntimeBackupSchedule
 
@@ -13125,6 +13599,7 @@ Function Get-ServicesRuntimeComponentBackups {
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     # -Components wins if both are supplied. Resolved into a SEPARATE
@@ -13546,6 +14021,13 @@ Function Get-ServicesRuntimeComponentBackups {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Get-ServicesRuntimeComponentBackups
 
@@ -13632,6 +14114,7 @@ Function Restore-ServicesRuntimeComponentBackup {
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
     [int]$__ansIdx = 0
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
@@ -13985,6 +14468,13 @@ Function Restore-ServicesRuntimeComponentBackup {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Restore-ServicesRuntimeComponentBackup
 
@@ -14076,6 +14566,7 @@ Function Get-VcfmsComponents {
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     # Get Fleet LCM token
@@ -14151,6 +14642,13 @@ Function Get-VcfmsComponents {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Get-VcfmsComponents
 
@@ -14498,6 +14996,7 @@ Function Start-ServicesRuntimeComponentBackup {
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     # Get Fleet LCM token and enumerate components
@@ -14738,6 +15237,13 @@ Function Start-ServicesRuntimeComponentBackup {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Start-ServicesRuntimeComponentBackup
 
@@ -14782,6 +15288,7 @@ Function Remove-VcfmsComponent {
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     $terminalStates = @("COMPLETED", "FAILED", "CANCELLED", "ERROR", "SUCCESS", "SUCCESSFUL", "Succeeded", "Failed")
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     LogMessage -type INFO -message "[$jumpboxName] $($ComponentIds.Count) component(s) to delete (serial processing)"
@@ -14895,6 +15402,13 @@ Function Remove-VcfmsComponent {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Remove-VcfmsComponent
 
@@ -14988,6 +15502,7 @@ Function Set-ServicesRuntimeComponentVips {
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
     [int]$__ansIdx = 0
     $terminalStates = @(
@@ -15277,6 +15792,13 @@ Function Set-ServicesRuntimeComponentVips {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Set-ServicesRuntimeComponentVips
 
@@ -15782,6 +16304,7 @@ Function New-ExtractVcfmsBackup {
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     # Validate inputs
@@ -15944,6 +16467,13 @@ Function New-ExtractVcfmsBackup {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function New-ExtractVcfmsBackup
 
@@ -16026,6 +16556,7 @@ Function Invoke-VcfmsBackupSftpToYaml {
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     # -------------------------------------------------------------------------
@@ -16138,6 +16669,13 @@ Function Invoke-VcfmsBackupSftpToYaml {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Invoke-VcfmsBackupSftpToYaml
 
@@ -16204,6 +16742,7 @@ Function Disable-VcfmsClusterLogging {
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     $terminalStates = @("COMPLETED", "Completed", "COMPLETE", "FAILED", "CANCELLED", "ERROR", "SUCCESS", "SUCCESSFUL", "Succeeded", "Failed")
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
@@ -16345,6 +16884,13 @@ Function Disable-VcfmsClusterLogging {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Disable-VcfmsClusterLogging
 
@@ -16437,6 +16983,7 @@ Function Enable-VcfmsClusterLogging {
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $terminalStates = @("COMPLETED", "Completed", "COMPLETE", "FAILED", "CANCELLED", "ERROR", "SUCCESS", "SUCCESSFUL", "Succeeded", "Failed")
     $StopWatch.Start()
+    try {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     LogMessage -type INFO -message "[$jumpboxName] Services Runtime : $ServicesRuntimeFqdn"
     LogMessage -type INFO -message "[$jumpboxName] Log Management   : $LogManagementVip port $LogManagementPort"
@@ -16594,6 +17141,13 @@ Function Enable-VcfmsClusterLogging {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Enable-VcfmsClusterLogging
 
@@ -16658,6 +17212,7 @@ Function Confirm-VcfmsFluentdOperatorState {
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     # Resolve kubeconfig
@@ -16792,6 +17347,13 @@ Function Confirm-VcfmsFluentdOperatorState {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Confirm-VcfmsFluentdOperatorState
 
@@ -16887,6 +17449,7 @@ Function Set-VcfmsFleetIdentity {
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $terminalStates = @("COMPLETED", "Completed", "COMPLETE", "FAILED", "CANCELLED", "ERROR", "SUCCESS", "SUCCESSFUL", "Succeeded", "Failed")
     $StopWatch.Start()
+    try {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     if (-not $FleetFqdn) {
@@ -17091,6 +17654,13 @@ Function Set-VcfmsFleetIdentity {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Set-VcfmsFleetIdentity
 
@@ -17164,6 +17734,7 @@ Function Clear-VcfmsFleetIdentity {
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $terminalStates = @("COMPLETED", "Completed", "COMPLETE", "FAILED", "CANCELLED", "ERROR", "SUCCESS", "SUCCESSFUL", "Succeeded", "Failed")
     $StopWatch.Start()
+    try {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     LogMessage -type INFO -message "[$jumpboxName] Services Runtime : $ServicesRuntimeFqdn"
 
@@ -17316,6 +17887,13 @@ Function Clear-VcfmsFleetIdentity {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Clear-VcfmsFleetIdentity
 
@@ -17455,6 +18033,7 @@ Function Invoke-VcfmsFleetComponentRegistration {
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     if ($PSCmdlet.ParameterSetName -eq "ByVcfInstance" -and -not $TargetVcfInstance) {
@@ -17631,6 +18210,13 @@ Function Invoke-VcfmsFleetComponentRegistration {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Invoke-VcfmsFleetComponentRegistration
 
@@ -17746,6 +18332,7 @@ Function Update-VcfmsSddcLcmCredentials {
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     $localScript = Join-Path -Path $PSScriptRoot -ChildPath "scripts/sddclcm-backup-secrets-to-yaml.sh"
@@ -17874,6 +18461,13 @@ exit $rc
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Update-VcfmsSddcLcmCredentials
 
@@ -17982,6 +18576,7 @@ Function Invoke-VcfmsVcfaRegistration {
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     if (-not $VcfaRuntimeFqdn) {
@@ -18133,6 +18728,13 @@ Function Invoke-VcfmsVcfaRegistration {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Invoke-VcfmsVcfaRegistration
 
@@ -18246,6 +18848,7 @@ Function Update-VcfmsVcfaRegistration {
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     if (-not $VcfaRuntimeFqdn) {
@@ -18397,6 +19000,13 @@ Function Update-VcfmsVcfaRegistration {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Update-VcfmsVcfaRegistration
 
@@ -18516,6 +19126,7 @@ Function Update-ServicesRuntimePackageDeployment {
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     # -------------------------------------------------------------------------
@@ -18659,6 +19270,13 @@ Function Update-ServicesRuntimePackageDeployment {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Update-ServicesRuntimePackageDeployment
 
@@ -18803,6 +19421,7 @@ Function Set-ServicesRuntimeScale {
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
     [int]$__ansIdx = 0
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
@@ -19179,6 +19798,13 @@ Function Set-ServicesRuntimeScale {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Set-ServicesRuntimeScale
 
@@ -19217,6 +19843,7 @@ Function Get-VcfmsFleetComponentRegistration {
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     # Resolve control plane node
@@ -19317,6 +19944,13 @@ kubectl exec -n vcf-fleet-lcm "$FLEET_DB_POD" -c postgres -- \
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Get-VcfmsFleetComponentRegistration
 
@@ -19436,6 +20070,7 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
     [int]$__ansIdx = 0
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
@@ -19749,6 +20384,13 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Invoke-VcfOpsVidbVcfInstanceUpdate
 
@@ -19826,6 +20468,7 @@ Function Install-VcfaMigrationServiceEngine {
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $terminalStates = @("COMPLETED", "Completed", "COMPLETE", "FAILED", "CANCELLED", "ERROR", "SUCCESS", "SUCCESSFUL", "Succeeded", "Failed")
     $StopWatch.Start()
+    try {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     LogMessage -type INFO -message "[$jumpboxName] VCFA Services Runtime    : $VcfaServiceRuntimeFqdn"
     LogMessage -type INFO -message "[$jumpboxName] Migration Service version : $Version"
@@ -20017,6 +20660,13 @@ Function Install-VcfaMigrationServiceEngine {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Install-VcfaMigrationServiceEngine
 
@@ -20084,6 +20734,7 @@ Function Remove-VcfmsRecoveredComponents {
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     LogMessage -type INFO -message "[$jumpboxName] Services Runtime : $ServicesRuntimeFqdn"
 
@@ -20161,6 +20812,13 @@ Function Remove-VcfmsRecoveredComponents {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Remove-VcfmsRecoveredComponents
 
@@ -20217,6 +20875,7 @@ Function Confirm-ContentLibraryDatastoreFolder {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
 
     $driveName = "clDSCheck_$(Get-Random)"
 
@@ -20282,6 +20941,13 @@ Function Confirm-ContentLibraryDatastoreFolder {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Confirm-ContentLibraryDatastoreFolder
 
@@ -20296,6 +20962,7 @@ Function Set-ContentLibraryDatastoreMapping {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
 
     # Establish SSH connection to vCenter as root
     $SecurePassword = ConvertTo-SecureString -String $vCenterRootPassword -AsPlainText -Force
@@ -20466,6 +21133,13 @@ Function Set-ContentLibraryDatastoreMapping {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Set-ContentLibraryDatastoreMapping
 
@@ -20482,6 +21156,7 @@ Function Invoke-SupervisorRestore {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
 
     $backupFileName = (Get-Item -Path $backupFilePath).Name
     $remoteBackupPath = "/storage/supervisorbackup/$backupFileName"
@@ -20546,6 +21221,13 @@ Function Invoke-SupervisorRestore {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Invoke-SupervisorRestore
 
@@ -20577,6 +21259,7 @@ Function Import-RecoveryVariables {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
 
     LogMessage -type INFO -message "[$jumpboxName] Loading variables from '$Path'"
     $answers = Get-Content -Path $Path -Raw | ConvertFrom-Json
@@ -20595,6 +21278,13 @@ Function Import-RecoveryVariables {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Import-RecoveryVariables
 
@@ -20651,6 +21341,7 @@ Function Set-ExportedSDDCDataFilePath {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
 
     LogMessage -type INFO -message "[$jumpboxName] Setting extracted SDDC data file path to '$Path'"
     Set-Variable -Name 'extractedSddcDataFile' -Value $Path -Scope Global
@@ -20658,6 +21349,13 @@ Function Set-ExportedSDDCDataFilePath {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Set-ExportedSDDCDataFilePath
 
@@ -20685,6 +21383,7 @@ Function Set-VCFCredentialsFilePath {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
 
     LogMessage -type INFO -message "[$jumpboxName] Setting credentials file path to '$Path'"
     Set-Variable -Name 'credentialsFilePath' -Value $Path -Scope Global
@@ -20692,6 +21391,13 @@ Function Set-VCFCredentialsFilePath {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Set-VCFCredentialsFilePath
 
@@ -20733,6 +21439,7 @@ Function Set-SelectedRecoveryTarget {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    try {
 
     if ($PSBoundParameters.ContainsKey('WorkloadDomain')) {
         LogMessage -type INFO -message "[$jumpboxName] Setting selected workload domain to '$WorkloadDomain'"
@@ -20749,6 +21456,13 @@ Function Set-SelectedRecoveryTarget {
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
+    } catch {
+        LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
+        throw
+    } finally {
+        # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
+        Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+    }
 }
 Export-ModuleMember -Function Set-SelectedRecoveryTarget
 
