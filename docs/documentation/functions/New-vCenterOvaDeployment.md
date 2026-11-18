@@ -8,6 +8,8 @@ Deploys a vCenter Server appliance from OVA using data previously extracted from
 
 ```powershell
 New-vCenterOvaDeployment [[-targetFqdn] <String>] [[-targetAdmin] <String>] [-targetAdminPassword] <String> [-extractedSDDCDataFile] <String> [-workloadDomain] <String> [-restoredvCenterDeploymentSize] <String> [-vCenterOvaFile] <String> [[-targetType] <String>] [<CommonParameters>]
+
+New-vCenterOvaDeployment [[-targetFqdn] <String>] [[-targetAdmin] <String>] [-targetAdminPassword] <String> [-extractedSDDCDataFile] <String> [-workloadDomain] <String> [-restoredvCenterDeploymentSize] <String> [-vCenterOvaFile] <String> [[-targetType] <String>] -CustomPlacement -TargetDatacenter <String> -TargetCluster <String> -TargetDatastore <String> -TargetNetwork <String> [<CommonParameters>]
 ```
 
 ## Description
@@ -34,6 +36,27 @@ Deploys to the first ESX host of the management domain; `-targetFqdn` is omitted
 
 ```powershell
 New-vCenterOvaDeployment -targetAdmin "root" -targetAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -workloadDomain "sfo-m01" -restoredvCenterDeploymentSize "small" -vCenterOvaFile "F:\OVA\VMware-vCenter-Server-Appliance-7.0.3.01400-21477706_OVF10.ova" -targetType "esx"
+```
+
+### Example 4
+
+Deploys to an existing recovery vCenter using custom inventory placement. The target does not need to appear in the extracted SDDC data. Appliance identity, IP configuration and credentials still come from that data.
+
+```powershell
+New-vCenterOvaDeployment `
+    -targetFqdn "recovery-vc.example.com" `
+    -targetAdmin "administrator@vsphere.local" `
+    -targetAdminPassword $targetPassword `
+    -extractedSDDCDataFile ".\extracted-sddc-data.json" `
+    -workloadDomain "sfo-m01" `
+    -restoredvCenterDeploymentSize "small" `
+    -vCenterOvaFile $ovaPath `
+    -targetType vcenter `
+    -CustomPlacement `
+    -TargetDatacenter "Recovery-DC" `
+    -TargetCluster "Recovery-Cluster" `
+    -TargetDatastore "Recovery-Datastore" `
+    -TargetNetwork "Recovery-Management"
 ```
 
 ## Parameters
@@ -166,6 +189,36 @@ Default value: vcenter
 Accept pipeline input: False
 Accept wildcard characters: False
 ```
+
+### -CustomPlacement
+
+Uses explicit placement for a `vcenter` target. All four `Target*` placement parameters are required. Cannot be combined with `-targetType esx` or explicitly set to `$false` when supplying placement parameters. Existing calls without custom placement continue to use the extracted SDDC data, including the `vm_mgmt` network for direct ESX deployment.
+
+Type: SwitchParameter. Parameter set: CustomPlacement. Required: True. Position: Named.
+
+### -TargetDatacenter
+
+Name of the existing datacenter in the target vCenter.
+
+Type: String. Parameter set: CustomPlacement. Required: True. Position: Named. Must not be empty or whitespace.
+
+### -TargetCluster
+
+Name of the existing cluster within `TargetDatacenter`.
+
+Type: String. Parameter set: CustomPlacement. Required: True. Position: Named. Must not be empty or whitespace.
+
+### -TargetDatastore
+
+Name of the existing datastore accessible to the target cluster.
+
+Type: String. Parameter set: CustomPlacement. Required: True. Position: Named. Must not be empty or whitespace.
+
+### -TargetNetwork
+
+Name of the existing VM port group accessible to the deployment host. Its connectivity must support the appliance IP configuration from the extracted data.
+
+Type: String. Parameter set: CustomPlacement. Required: True. Position: Named. Must not be empty or whitespace.
 
 ### -ProgressAction
 

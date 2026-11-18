@@ -8,6 +8,8 @@ Deploys an SDDC Manager appliance from OVA using data previously extracted from 
 
 ```powershell
 New-SDDCManagerOvaDeployment [[-targetFqdn] <String>] [[-targetAdmin] <String>] [-targetAdminPassword] <String> [-extractedSDDCDataFile] <String> [-sddcManagerOvaFile] <String> [-rootUserPassword] <String> [-vcfUserPassword] <String> [-localUserPassword] <String> [-basicAuthUserPassword] <String> [[-targetType] <String>] [<CommonParameters>]
+
+New-SDDCManagerOvaDeployment [[-targetFqdn] <String>] [[-targetAdmin] <String>] [-targetAdminPassword] <String> [-extractedSDDCDataFile] <String> [-sddcManagerOvaFile] <String> [-rootUserPassword] <String> [-vcfUserPassword] <String> [-localUserPassword] <String> [-basicAuthUserPassword] <String> [[-targetType] <String>] -CustomPlacement -TargetDatacenter <String> -TargetCluster <String> -TargetDatastore <String> -TargetNetwork <String> [<CommonParameters>]
 ```
 
 ## Description
@@ -34,6 +36,29 @@ Deploys to the first ESX host of the management domain; `-targetFqdn` is omitted
 
 ```powershell
 New-SDDCManagerOvaDeployment -targetAdmin "root" -targetAdminPassword "VMw@re1!" -extractedSDDCDataFile ".\extracted-sddc-data.json" -sddcManagerOvaFile "F:\OVA\VCF-SDDC-Manager-Appliance-4.5.1.0-21682411.ova" -rootUserPassword "VMw@re1!" -vcfUserPassword "VMw@re1!" -localUserPassword "VMw@re1!VMw@re1!" -basicAuthUserPassword "VMw@re1!" -targetType "esx"
+```
+
+### Example 4
+
+Deploys to an existing recovery vCenter using custom inventory placement. The target does not need to appear in the extracted SDDC data. Appliance identity and IP configuration still come from that data; passwords are supplied through the existing password parameters.
+
+```powershell
+New-SDDCManagerOvaDeployment `
+    -targetFqdn "recovery-vc.example.com" `
+    -targetAdmin "administrator@vsphere.local" `
+    -targetAdminPassword $targetPassword `
+    -extractedSDDCDataFile ".\extracted-sddc-data.json" `
+    -sddcManagerOvaFile $ovaPath `
+    -rootUserPassword $rootPassword `
+    -vcfUserPassword $vcfPassword `
+    -localUserPassword $localPassword `
+    -basicAuthUserPassword $basicAuthPassword `
+    -targetType vcenter `
+    -CustomPlacement `
+    -TargetDatacenter "Recovery-DC" `
+    -TargetCluster "Recovery-Cluster" `
+    -TargetDatastore "Recovery-Datastore" `
+    -TargetNetwork "Recovery-Management"
 ```
 
 ## Parameters
@@ -198,6 +223,36 @@ Default value: vcenter
 Accept pipeline input: False
 Accept wildcard characters: False
 ```
+
+### -CustomPlacement
+
+Uses explicit placement for a `vcenter` target. All four `Target*` placement parameters are required. Cannot be combined with `-targetType esx` or explicitly set to `$false` when supplying placement parameters. Existing calls without custom placement continue to use the extracted SDDC data for the datacenter, cluster and datastore, and the `vm_mgmt` network for both vCenter and direct ESX deployment.
+
+Type: SwitchParameter. Parameter set: CustomPlacement. Required: True. Position: Named.
+
+### -TargetDatacenter
+
+Name of the existing datacenter in the target vCenter.
+
+Type: String. Parameter set: CustomPlacement. Required: True. Position: Named. Must not be empty or whitespace.
+
+### -TargetCluster
+
+Name of the existing cluster within `TargetDatacenter`.
+
+Type: String. Parameter set: CustomPlacement. Required: True. Position: Named. Must not be empty or whitespace.
+
+### -TargetDatastore
+
+Name of the existing datastore accessible to the target cluster.
+
+Type: String. Parameter set: CustomPlacement. Required: True. Position: Named. Must not be empty or whitespace.
+
+### -TargetNetwork
+
+Name of the existing VM port group accessible to the deployment host. Its connectivity must support the appliance IP configuration from the extracted data.
+
+Type: String. Parameter set: CustomPlacement. Required: True. Position: Named. Must not be empty or whitespace.
 
 ### -ProgressAction
 

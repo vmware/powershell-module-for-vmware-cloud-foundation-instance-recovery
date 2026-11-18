@@ -2270,18 +2270,50 @@ Function New-NSXManagerOvaDeployment {
 
     .PARAMETER targetType
     Specifies the deployment target type. Valid values are 'vcenter' or 'esx'. Default is 'vcenter'.
+
+    .PARAMETER CustomPlacement
+    Use explicit placement for a vCenter target. Requires TargetDatacenter, TargetCluster, TargetDatastore and TargetNetwork.
+    Without this switch, placement continues to come from the extracted SDDC data.
+
+    .PARAMETER TargetDatacenter
+    Existing datacenter in the target vCenter. Required with CustomPlacement.
+
+    .PARAMETER TargetCluster
+    Existing cluster in TargetDatacenter. Required with CustomPlacement.
+
+    .PARAMETER TargetDatastore
+    Existing datastore accessible to the target cluster. Required with CustomPlacement.
+
+    .PARAMETER TargetNetwork
+    Existing VM port group accessible to the deployment host. Required with CustomPlacement.
+    Appliance identity, IP configuration and credentials still come from the extracted SDDC data.
     #>
 
+    [CmdletBinding(DefaultParameterSetName = "ExtractedPlacement", PositionalBinding = $false)]
     Param(
-        [Parameter (Mandatory = $false)][String] $targetFqdn,
-        [Parameter (Mandatory = $false)][String] $targetAdmin,
-        [Parameter (Mandatory = $true)][String] $targetAdminPassword,
-        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
-        [Parameter (Mandatory = $true)][String] $workloadDomain,
-        [Parameter (Mandatory = $true)][String] $restoredNsxManagerDeploymentSize,
-        [Parameter (Mandatory = $true)][String] $nsxManagerOvaFile,
-        [Parameter (Mandatory = $false)][ValidateSet("vcenter", "esx")][String] $targetType = "vcenter"
+        [Parameter (Position = 0, Mandatory = $false)][String] $targetFqdn,
+        [Parameter (Position = 1, Mandatory = $false)][String] $targetAdmin,
+        [Parameter (Position = 2, Mandatory = $true)][String] $targetAdminPassword,
+        [Parameter (Position = 3, Mandatory = $true)][String] $extractedSDDCDataFile,
+        [Parameter (Position = 4, Mandatory = $true)][String] $workloadDomain,
+        [Parameter (Position = 5, Mandatory = $true)][String] $restoredNsxManagerDeploymentSize,
+        [Parameter (Position = 6, Mandatory = $true)][String] $nsxManagerOvaFile,
+        [Parameter (Position = 7, Mandatory = $false)][ValidateSet("vcenter", "esx")][String] $targetType = "vcenter",
+        [Parameter (Mandatory = $true, ParameterSetName = "CustomPlacement")][Switch] $CustomPlacement,
+        [Parameter (Mandatory = $true, ParameterSetName = "CustomPlacement")][ValidateScript({ -not [string]::IsNullOrWhiteSpace($_) })][String] $TargetDatacenter,
+        [Parameter (Mandatory = $true, ParameterSetName = "CustomPlacement")][ValidateScript({ -not [string]::IsNullOrWhiteSpace($_) })][String] $TargetCluster,
+        [Parameter (Mandatory = $true, ParameterSetName = "CustomPlacement")][ValidateScript({ -not [string]::IsNullOrWhiteSpace($_) })][String] $TargetDatastore,
+        [Parameter (Mandatory = $true, ParameterSetName = "CustomPlacement")][ValidateScript({ -not [string]::IsNullOrWhiteSpace($_) })][String] $TargetNetwork
     )
+
+    If ($PSCmdlet.ParameterSetName -eq 'CustomPlacement') {
+        If (-not $CustomPlacement) {
+            Throw 'Custom placement parameters require -CustomPlacement.'
+        }
+        If ($targetType -ne 'vcenter') {
+            Throw '-CustomPlacement is only supported with -targetType vcenter.'
+        }
+    }
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
@@ -2341,14 +2373,21 @@ Function New-NSXManagerOvaDeployment {
     }
     $selectedNsxManager = $nsxNodes | Where-Object { $_.vmName -eq ($nsxManagersDisplayObject | Where-Object { $_.id -eq $nsxManagerSelection }).manager }
 
-    $vmDatastore = $extractedSDDCData.mgmtDomainInfrastructure.vsan_datastore
-    If ($targetType -eq 'esx') {
-        $vmNetwork = "vm_mgmt"
+    If ($CustomPlacement) {
+        $vmDatastore = $TargetDatastore
+        $vmNetwork = $TargetNetwork
+        $datacenterName = $TargetDatacenter
+        $clusterName = $TargetCluster
     } else {
-        $vmNetwork = $extractedSDDCData.mgmtDomainInfrastructure.port_group
+        $vmDatastore = $extractedSDDCData.mgmtDomainInfrastructure.vsan_datastore
+        If ($targetType -eq 'esx') {
+            $vmNetwork = "vm_mgmt"
+        } else {
+            $vmNetwork = $extractedSDDCData.mgmtDomainInfrastructure.port_group
+        }
+        $datacenterName = $extractedSDDCData.mgmtDomainInfrastructure.datacenter
+        $clusterName = $extractedSDDCData.mgmtDomainInfrastructure.cluster
     }
-    $datacenterName = $extractedSDDCData.mgmtDomainInfrastructure.datacenter
-    $clusterName = $extractedSDDCData.mgmtDomainInfrastructure.cluster
     <# #Following parameters converted to known entities for 9.0. Consider refactoring in 9.1 if data is saved in manifest.json
 
         $vmNetwork = "vcfir-cl01-vds01-pg-vm-mgmt"
@@ -2457,18 +2496,50 @@ Function New-vCenterOvaDeployment {
 
     .PARAMETER targetType
     Specifies the deployment target type. Valid values are 'vcenter' or 'esx'. Default is 'vcenter'.
+
+    .PARAMETER CustomPlacement
+    Use explicit placement for a vCenter target. Requires TargetDatacenter, TargetCluster, TargetDatastore and TargetNetwork.
+    Without this switch, placement continues to come from the extracted SDDC data.
+
+    .PARAMETER TargetDatacenter
+    Existing datacenter in the target vCenter. Required with CustomPlacement.
+
+    .PARAMETER TargetCluster
+    Existing cluster in TargetDatacenter. Required with CustomPlacement.
+
+    .PARAMETER TargetDatastore
+    Existing datastore accessible to the target cluster. Required with CustomPlacement.
+
+    .PARAMETER TargetNetwork
+    Existing VM port group accessible to the deployment host. Required with CustomPlacement.
+    Appliance identity, IP configuration and credentials still come from the extracted SDDC data.
     #>
 
+    [CmdletBinding(DefaultParameterSetName = "ExtractedPlacement", PositionalBinding = $false)]
     Param(
-        [Parameter (Mandatory = $false)][String] $targetFqdn,
-        [Parameter (Mandatory = $false)][String] $targetAdmin,
-        [Parameter (Mandatory = $true)][String] $targetAdminPassword,
-        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
-        [Parameter (Mandatory = $true)][String] $workloadDomain,
-        [Parameter (Mandatory = $true)][String] $restoredvCenterDeploymentSize,
-        [Parameter (Mandatory = $true)][String] $vCenterOvaFile,
-        [Parameter (Mandatory = $false)][ValidateSet("vcenter", "esx")][String] $targetType = "vcenter"
+        [Parameter (Position = 0, Mandatory = $false)][String] $targetFqdn,
+        [Parameter (Position = 1, Mandatory = $false)][String] $targetAdmin,
+        [Parameter (Position = 2, Mandatory = $true)][String] $targetAdminPassword,
+        [Parameter (Position = 3, Mandatory = $true)][String] $extractedSDDCDataFile,
+        [Parameter (Position = 4, Mandatory = $true)][String] $workloadDomain,
+        [Parameter (Position = 5, Mandatory = $true)][String] $restoredvCenterDeploymentSize,
+        [Parameter (Position = 6, Mandatory = $true)][String] $vCenterOvaFile,
+        [Parameter (Position = 7, Mandatory = $false)][ValidateSet("vcenter", "esx")][String] $targetType = "vcenter",
+        [Parameter (Mandatory = $true, ParameterSetName = "CustomPlacement")][Switch] $CustomPlacement,
+        [Parameter (Mandatory = $true, ParameterSetName = "CustomPlacement")][ValidateScript({ -not [string]::IsNullOrWhiteSpace($_) })][String] $TargetDatacenter,
+        [Parameter (Mandatory = $true, ParameterSetName = "CustomPlacement")][ValidateScript({ -not [string]::IsNullOrWhiteSpace($_) })][String] $TargetCluster,
+        [Parameter (Mandatory = $true, ParameterSetName = "CustomPlacement")][ValidateScript({ -not [string]::IsNullOrWhiteSpace($_) })][String] $TargetDatastore,
+        [Parameter (Mandatory = $true, ParameterSetName = "CustomPlacement")][ValidateScript({ -not [string]::IsNullOrWhiteSpace($_) })][String] $TargetNetwork
     )
+
+    If ($PSCmdlet.ParameterSetName -eq 'CustomPlacement') {
+        If (-not $CustomPlacement) {
+            Throw 'Custom placement parameters require -CustomPlacement.'
+        }
+        If ($targetType -ne 'vcenter') {
+            Throw '-CustomPlacement is only supported with -targetType vcenter.'
+        }
+    }
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
@@ -2496,14 +2567,21 @@ Function New-vCenterOvaDeployment {
     }
 
     $workloadDomainDetails = ($extractedSDDCData.workloadDomains | Where-Object { $_.domainName -eq $workloadDomain })
-    $vmDatastore = $extractedSDDCData.mgmtDomainInfrastructure.vsan_datastore
-    If ($targetType -eq 'esx') {
-        $vmNetwork = "vm_mgmt"
+    If ($CustomPlacement) {
+        $vmDatastore = $TargetDatastore
+        $vmNetwork = $TargetNetwork
+        $datacenterName = $TargetDatacenter
+        $clusterName = $TargetCluster
     } else {
-        $vmNetwork = $extractedSDDCData.mgmtDomainInfrastructure.port_group
+        $vmDatastore = $extractedSDDCData.mgmtDomainInfrastructure.vsan_datastore
+        If ($targetType -eq 'esx') {
+            $vmNetwork = "vm_mgmt"
+        } else {
+            $vmNetwork = $extractedSDDCData.mgmtDomainInfrastructure.port_group
+        }
+        $datacenterName = $extractedSDDCData.mgmtDomainInfrastructure.datacenter
+        $clusterName = $extractedSDDCData.mgmtDomainInfrastructure.cluster
     }
-    $datacenterName = $extractedSDDCData.mgmtDomainInfrastructure.datacenter
-    $clusterName = $extractedSDDCData.mgmtDomainInfrastructure.cluster
     <# #Following parameters converted to known entities for 9.0. Consider refactoring in 9.1 if data is saved in manifest.json
 
         $vmNetwork = "vcfir-cl01-vds01-pg-vm-mgmt"
@@ -2612,20 +2690,52 @@ Function New-SDDCManagerOvaDeployment {
 
     .PARAMETER targetType
     Specifies the deployment target type. Valid values are 'vcenter' or 'esx'. Default is 'vcenter'.
+
+    .PARAMETER CustomPlacement
+    Use explicit placement for a vCenter target. Requires TargetDatacenter, TargetCluster, TargetDatastore and TargetNetwork.
+    Without this switch, datacenter, cluster and datastore come from the extracted SDDC data, and the network remains vm_mgmt.
+
+    .PARAMETER TargetDatacenter
+    Existing datacenter in the target vCenter. Required with CustomPlacement.
+
+    .PARAMETER TargetCluster
+    Existing cluster in TargetDatacenter. Required with CustomPlacement.
+
+    .PARAMETER TargetDatastore
+    Existing datastore accessible to the target cluster. Required with CustomPlacement.
+
+    .PARAMETER TargetNetwork
+    Existing VM port group accessible to the deployment host. Required with CustomPlacement.
+    Appliance identity and IP configuration still come from the extracted SDDC data. Existing password parameters are unchanged.
     #>
 
+    [CmdletBinding(DefaultParameterSetName = "ExtractedPlacement", PositionalBinding = $false)]
     Param(
-        [Parameter (Mandatory = $false)][String] $targetFqdn,
-        [Parameter (Mandatory = $false)][String] $targetAdmin,
-        [Parameter (Mandatory = $true)][String] $targetAdminPassword,
-        [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
-        [Parameter (Mandatory = $true)][String] $sddcManagerOvaFile,
-        [Parameter (Mandatory = $true)][String] $rootUserPassword,
-        [Parameter (Mandatory = $true)][String] $vcfUserPassword,
-        [Parameter (Mandatory = $true)][String] $localUserPassword,
-        [Parameter (Mandatory = $true)][String] $basicAuthUserPassword,
-        [Parameter (Mandatory = $false)][ValidateSet("vcenter", "esx")][String] $targetType = "vcenter"
+        [Parameter (Position = 0, Mandatory = $false)][String] $targetFqdn,
+        [Parameter (Position = 1, Mandatory = $false)][String] $targetAdmin,
+        [Parameter (Position = 2, Mandatory = $true)][String] $targetAdminPassword,
+        [Parameter (Position = 3, Mandatory = $true)][String] $extractedSDDCDataFile,
+        [Parameter (Position = 4, Mandatory = $true)][String] $sddcManagerOvaFile,
+        [Parameter (Position = 5, Mandatory = $true)][String] $rootUserPassword,
+        [Parameter (Position = 6, Mandatory = $true)][String] $vcfUserPassword,
+        [Parameter (Position = 7, Mandatory = $true)][String] $localUserPassword,
+        [Parameter (Position = 8, Mandatory = $true)][String] $basicAuthUserPassword,
+        [Parameter (Position = 9, Mandatory = $false)][ValidateSet("vcenter", "esx")][String] $targetType = "vcenter",
+        [Parameter (Mandatory = $true, ParameterSetName = "CustomPlacement")][Switch] $CustomPlacement,
+        [Parameter (Mandatory = $true, ParameterSetName = "CustomPlacement")][ValidateScript({ -not [string]::IsNullOrWhiteSpace($_) })][String] $TargetDatacenter,
+        [Parameter (Mandatory = $true, ParameterSetName = "CustomPlacement")][ValidateScript({ -not [string]::IsNullOrWhiteSpace($_) })][String] $TargetCluster,
+        [Parameter (Mandatory = $true, ParameterSetName = "CustomPlacement")][ValidateScript({ -not [string]::IsNullOrWhiteSpace($_) })][String] $TargetDatastore,
+        [Parameter (Mandatory = $true, ParameterSetName = "CustomPlacement")][ValidateScript({ -not [string]::IsNullOrWhiteSpace($_) })][String] $TargetNetwork
     )
+
+    If ($PSCmdlet.ParameterSetName -eq 'CustomPlacement') {
+        If (-not $CustomPlacement) {
+            Throw 'Custom placement parameters require -CustomPlacement.'
+        }
+        If ($targetType -ne 'vcenter') {
+            Throw '-CustomPlacement is only supported with -targetType vcenter.'
+        }
+    }
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
@@ -2653,10 +2763,17 @@ Function New-SDDCManagerOvaDeployment {
     }
 
     # SDDC Manager Configuration
-    $vmDatastore = $extractedSDDCData.mgmtDomainInfrastructure.vsan_datastore
-    $vmNetwork = "vm_mgmt"
-    $datacenterName = $extractedSDDCData.mgmtDomainInfrastructure.datacenter
-    $clusterName = $extractedSDDCData.mgmtDomainInfrastructure.cluster
+    If ($CustomPlacement) {
+        $vmDatastore = $TargetDatastore
+        $vmNetwork = $TargetNetwork
+        $datacenterName = $TargetDatacenter
+        $clusterName = $TargetCluster
+    } else {
+        $vmDatastore = $extractedSDDCData.mgmtDomainInfrastructure.vsan_datastore
+        $vmNetwork = "vm_mgmt"
+        $datacenterName = $extractedSDDCData.mgmtDomainInfrastructure.datacenter
+        $clusterName = $extractedSDDCData.mgmtDomainInfrastructure.cluster
+    }
     <# #Following parameters converted to known entities for 9.0. Consider refactoring in 9.1 if data is saved in manifest.json
 
         $vmNetwork = "vcfir-cl01-vds01-pg-vm-mgmt"
