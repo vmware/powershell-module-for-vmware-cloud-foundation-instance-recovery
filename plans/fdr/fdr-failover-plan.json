@@ -123,7 +123,7 @@
   },
   {
     "description": "Update SDDC LCM with Credentials",
-    "commandLine": "./sddclcm-backup-secrets-to-yaml.sh --sftp-host $sftpHost --sftp-user $sftpUsername --sftp-remote-dir $sddcLcmSftpRemoteDir --sftp-password $sftpPassword --output-dir \".\\backup-yaml\"",
+    "commandLine": "Update-VcfmsSddcLcmCredentials -ServicesRuntimeFqdn $ServicesRuntimeFqdn -ServicesRuntimePassword $ServicesRuntimePassword -SftpHost $sftpHost -SftpUser $sftpUsername -SftpPassword $sftpPassword -SftpRemoteDir $SddcLcmSftpRemoteDir -EncryptionPassphrase $encryptionPassphrase",
     "displayName": "Update SDDC LCM Backup Secrets",
     "condition": [],
     "threadId": "1",
