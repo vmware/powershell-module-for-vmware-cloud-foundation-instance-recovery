@@ -55,7 +55,7 @@
   },
   {
     "description": "Retrieve a List of Backups for the VCF Management Services Fleet Components",
-    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -ServicesRuntimeFqdn $sourceServicesRuntimeFqdn -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -componentNames \"vcf-fleet-lcm\",\"vcf-fleet-depot\",\"salt-raas\",\"vidb\" -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
+    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -ServicesRuntimeFqdn $sourceVcfmsServicesRuntimeFqdn -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -componentNames \"vcf-fleet-lcm\",\"vcf-fleet-depot\",\"salt-raas\",\"vidb\" -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
     "displayName": "Retrieve VCFMS Backups",
     "condition": [],
     "threadId": "1",
@@ -64,7 +64,7 @@
   },
   {
     "description": "Clean up the recovered fleet components on the recovery-site VCF Management Services instance",
-    "commandLine": "Remove-VcfmsRecoveredComponents -ServicesRuntimeFqdn $sourceServicesRuntimeFqdn -ServicesRuntimePassword $sourceServicesRuntimePassword",
+    "commandLine": "Remove-VcfmsRecoveredComponents -ServicesRuntimeFqdn $sourceVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $targetVcfmsServicesRuntimePassword",
     "displayName": "Remove VCFMS Recovered Components",
     "condition": [],
     "threadId": "1",
@@ -73,7 +73,7 @@
   },
   {
     "description": "Clear the fleet VIP on the recovery-site VCF Management Services instance before failback",
-    "commandLine": "Clear-VcfmsFleetIdentity -ServicesRuntimeFqdn $sourceServicesRuntimeFqdn -ServicesRuntimePassword $sourceServicesRuntimePassword",
+    "commandLine": "Clear-VcfmsFleetIdentity -ServicesRuntimeFqdn $sourceVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $targetVcfmsServicesRuntimePassword",
     "displayName": "Clear VCFMS Fleet Identity",
     "condition": [],
     "threadId": "1",
@@ -123,7 +123,7 @@
   },
   {
     "description": "Trust the Offline Depot Certificate on the VCF Management Services Services Runtime (needed to retrieve the packages from the offline depot during restore)",
-    "commandLine": "Add-VcfmsTrustedCertificate -ServicesRuntimeFqdn $targetServicesRuntimeFqdn -ServicesRuntimePassword $targetServicesRuntimePassword -RemoteHostFqdn $offlineDepotFqdn -RemoteHostPort $offlineDepotPort",
+    "commandLine": "Add-VcfmsTrustedCertificate -ServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $targetVcfmsServicesRuntimePassword -RemoteHostFqdn $offlineDepotFqdn -RemoteHostPort $offlineDepotPort",
     "displayName": "Trust Offline Depot Certificate on VCF Management Services Services Runtime",
     "condition": [],
     "threadId": "1",
@@ -132,7 +132,7 @@
   },
   {
     "description": "Restore the Fleet Components on the Original VCF Management Services Instance (only required if components were changed while failed over)",
-    "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $targetServicesRuntimeFqdn -ServicesRuntimePassword $targetServicesRuntimePassword",
+    "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $targetVcfmsServicesRuntimePassword",
     "displayName": "Restore VCFMS Backups",
     "condition": [],
     "threadId": "1",
@@ -150,7 +150,7 @@
   },
   {
     "description": "Update the Identity Broker VIP Address",
-    "commandLine": "Set-ServicesRuntimeComponentVips -ServicesRuntimeFqdn $targetServicesRuntimeFqdn -ServicesRuntimePassword $targetServicesRuntimePassword -ComponentType \"vidb\" -Vips $vidbVip",
+    "commandLine": "Set-ServicesRuntimeComponentVips -ServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $targetVcfmsServicesRuntimePassword -ComponentType \"vidb\" -Vips $vidbVip",
     "displayName": "Set Services Runtime Component VIPs",
     "condition": [],
     "threadId": "1",
@@ -168,7 +168,7 @@
   },
   {
     "description": "Update Fleet Component Registration",
-    "commandLine": "Invoke-VcfmsFleetComponentRegistration -ServicesRuntimeFqdn $targetServicesRuntimeFqdn -ServicesRuntimePassword $targetServicesRuntimePassword -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -ConfirmOpsMove -ConfirmOpsNetworksMove",
+    "commandLine": "Invoke-VcfmsFleetComponentRegistration -ServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $targetVcfmsServicesRuntimePassword -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -ConfirmOpsMove -ConfirmOpsNetworksMove",
     "displayName": "Invoke VCFMS Fleet Component Registration",
     "condition": [],
     "threadId": "1",
@@ -249,7 +249,7 @@
   },
   {
     "description": "Update VCF Automation Registration to VCF Operations",
-    "commandLine": "Update-VcfmsVcfaRegistration -ServicesRuntimeFqdn $targetServicesRuntimeFqdn -ServicesRuntimePassword $targetServicesRuntimePassword -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -OpsFqdn $vcfOperationsFqdn -VspPassword $vcfaServicesRuntimePassword -VcfaSystemPassword $vcfaSystemPassword -OpsPassword $vcfOperationsAdminPassword",
+    "commandLine": "Update-VcfmsVcfaRegistration -ServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $targetVcfmsServicesRuntimePassword -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -OpsFqdn $vcfOperationsFqdn -VspPassword $vcfaServicesRuntimePassword -VcfaSystemPassword $vcfaSystemPassword -OpsPassword $vcfOperationsAdminPassword",
     "displayName": "Update VCFMS VCFA Registration",
     "condition": [],
     "threadId": "1",

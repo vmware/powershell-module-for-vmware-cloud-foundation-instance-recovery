@@ -68,10 +68,9 @@
   "vcfaVip": "IPv4 address to set as the VCF Automation ingress VIP on the VCF Automation Services Runtime.",
   "vcfOperationsAdminPassword": "Password of the VCF Operations admin account. Used to log in to the VCF Operations API and to re-register components with VCF Operations.",
   "vcfOperationsRootPassword": "Password of the root account on the VCF Operations primary node.",
-  "sourceServicesRuntimeFqdn": "FQDN of the SOURCE VCF Management Services Services Runtime, as registered in VCF Operations. Failover: the primary site, used only to locate its backups on the SFTP server. Failback: the recovery site, used to locate the post-failover backups and to remove the recovered components from it.",
-  "sourceServicesRuntimePassword": "Password of the system user (admin@vsp.local) on the SOURCE VCF Management Services Services Runtime. Failback only, needed to remove the recovered components from the recovery site.",
-  "targetServicesRuntimeFqdn": "FQDN of the TARGET VCF Management Services Services Runtime that the fleet components are restored to (failover: the recovery site; failback: the original primary site).",
-  "targetServicesRuntimePassword": "Password of the system user (admin@vsp.local) on the TARGET VCF Management Services Services Runtime.",
+  "sourceVcfmsServicesRuntimeFqdn": "FQDN of the SOURCE VCF Management Services Services Runtime, as registered in VCF Operations. Failover: the primary site, used only to locate its backups on the SFTP server. Failback: the recovery site, used to locate the post-failover backups and as the runtime the recovered components are removed from.",
+  "targetVcfmsServicesRuntimeFqdn": "FQDN of the TARGET VCF Management Services Services Runtime that the fleet components are restored to (failover: the recovery site; failback: the original primary site).",
+  "targetVcfmsServicesRuntimePassword": "Password of the system user (admin@vsp.local) on the TARGET VCF Management Services Services Runtime.",
   "vcfmsServicesRuntimeFqdn": "FQDN of the VCF Management Services Services Runtime the fleet components are restored to (the recovery site for failover, the original site for failback). Its backups, VCF instance and SDDC Manager are looked up from it.",
   "logManagementVip": "IPv4 address to set as the Log Management ingress VIP on the VCF Management Services Services Runtime.",
   "vcfaNetworkMoId": "vCenter ID of the port group (e.g. dvportgroup-28) the VCF Automation Services Runtime VMs connect to."
