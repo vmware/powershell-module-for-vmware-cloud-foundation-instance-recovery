@@ -177,25 +177,62 @@ Function Write-OvfToolLine {
     }
 }
 
-# Runs ovftool and returns @{ ExitCode; Lines }. Output is streamed through Write-OvfToolLine unless -Quiet, in
-# which case it is only collected (so a caller can replay it through Write-OvfToolLine if the run fails).
+# Runs ovftool and returns @{ ExitCode; Lines }. Like the module's OVA deployments, ovftool runs in a background job
+# and this session only polls it, so LogMessage never writes while a native program is running in this session's
+# console (which prints the colour codes as literal text). Output is streamed through Write-OvfToolLine unless
+# -Quiet, in which case it is only collected (so a caller can replay it through Write-OvfToolLine if the run fails).
 Function Invoke-OvfTool {
     Param(
         [Parameter(Mandatory)] [string]$Path,
         [Parameter(Mandatory)] [string[]]$Arguments,
         [Parameter(Mandatory)] [string]$Tag,
-        [switch]$Quiet
+        [switch]$Quiet,
+        [int]$PollSeconds = 5
     )
     $state = @{ InCert = $false; LastDisk = 0 }
     $collected = [System.Collections.Generic.List[string]]::new()
-    & $Path @Arguments 2>&1 | ForEach-Object {
-        $line = "$_"
-        $collected.Add($line)
-        If (-not $Quiet) {
-            Write-OvfToolLine -Line $line -State $state -Tag $Tag
+    $exitMarker = '__OVFTOOL_EXIT__:'
+    $exitCode = $null
+
+    $scriptBlock = {
+        Param($ovfPath, $ovfArguments, $marker)
+        & $ovfPath @ovfArguments 2>&1 | ForEach-Object { "$_" }
+        "$marker$LASTEXITCODE"
+    }
+    $job = Start-Job -ScriptBlock $scriptBlock -ArgumentList $Path, $Arguments, $exitMarker
+
+    $processLines = {
+        Param($lines)
+        ForEach ($line in $lines) {
+            If ($line -like "$exitMarker*") {
+                $script:ovfExit = [int]($line.Substring($exitMarker.Length))
+                Continue
+            }
+            $collected.Add($line)
+            If (-not $Quiet) {
+                Write-OvfToolLine -Line $line -State $state -Tag $Tag
+            }
         }
     }
-    Return @{ ExitCode = $LASTEXITCODE; Lines = $collected }
+    $script:ovfExit = $null
+    Try {
+        Do {
+            Start-Sleep -Seconds $PollSeconds
+            $jobState = $job.State
+            & $processLines @(Receive-Job -Job $job -ErrorAction SilentlyContinue)
+        } While ($jobState -eq 'Running')
+        & $processLines @(Receive-Job -Job $job -ErrorAction SilentlyContinue)
+        If ($job.State -eq 'Failed') {
+            Throw "ovftool job failed: $($job.ChildJobs[0].JobStateInfo.Reason.Message)"
+        }
+        $exitCode = $script:ovfExit
+    } Finally {
+        Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
+    }
+    If ($null -eq $exitCode) {
+        Throw 'ovftool did not report an exit code'
+    }
+    Return @{ ExitCode = $exitCode; Lines = $collected }
 }
 
 Try {
