@@ -15598,7 +15598,7 @@ Function Set-ServicesRuntimeComponentVips {
                 LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Ingress key in API is '$resolvedIngressKey' (underscore form); apply will use this key."
             } elseif ($propNames.Count -eq 1) {
                 $resolvedIngressKey = $propNames[0]
-                LogMessage -type WARNING -message "[$ServicesRuntimeFqdn] Ingress uses a single key '$resolvedIngressKey' (component type filter was '$ComponentType')."
+                LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Ingress uses a single key '$resolvedIngressKey' (component type filter was '$ComponentType')."
             } else {
                 LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Could not map type '$ComponentType' to an ingress key. Available keys: $($propNames -join ', '). Re-run with -IngressKey."
                 Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
