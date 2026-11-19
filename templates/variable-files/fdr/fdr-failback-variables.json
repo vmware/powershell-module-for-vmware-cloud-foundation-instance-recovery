@@ -12,7 +12,7 @@
   "targetVcfmsServicesRuntimeFqdn": "",
   "targetVcfmsServicesRuntimePassword": "",
   "vidbVip": "",
-  "vcfOperationsRootPassword": "",
+  "vcfUserPassword": "",
   "sddcManagerAdmin": "",
   "sddcManagerAdminPassword": "",
   "vcfaServicesRuntimePassword": "",

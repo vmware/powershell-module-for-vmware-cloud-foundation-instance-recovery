@@ -19975,17 +19975,15 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
     unique VCF Operations record for each ID being discovered. If discovery fails,
     the cmdlet stops before opening SSH.
 
-    The cmdlet uploads and runs migrate-vidb-vcf-instance.sh on the VCF Operations
-    primary node over SSH as root. Enable SSH on that node before running the cmdlet.
-    The script requires curl and attempts to install jq when it is missing. The local
-    database flow used on VCF Operations 9.1.0 also requires python3. Newer versions
-    use the API flow.
+    The cmdlet requires VCF Operations 9.1.1 or later. It uploads and runs
+    migrate-vidb-vcf-instance.sh in API mode on the target SDDC Manager as the vcf
+    SSH user. SDDC Manager needs Bash, curl, jq, and HTTPS access to VCF Operations.
 
     .EXAMPLE
     $componentsFile = ".\VCFOps-Registered-Component-Details.json"
     Invoke-VcfOpsVidbVcfInstanceUpdate `
         -VcfOpsFqdn "flt-ops01a.rainpole.io" `
-        -VcfOpsRootPassword $vcfOperationsRootPassword `
+        -VcfUserPassword $vcfUserPassword `
         -VcfOpsAdminPassword $vcfOperationsAdminPassword `
         -opsRegisteredComponentsFile $componentsFile `
         -ServicesRuntimeFqdn "lax-sr01.lax.rainpole.io" `
@@ -19997,8 +19995,9 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
     .EXAMPLE
     Invoke-VcfOpsVidbVcfInstanceUpdate `
         -VcfOpsFqdn "flt-ops01a.rainpole.io" `
-        -VcfOpsRootPassword $vcfOperationsRootPassword `
+        -VcfUserPassword $vcfUserPassword `
         -VcfOpsAdminPassword $vcfOperationsAdminPassword `
+        -SddcManagerFqdn "lax-vcf01.lax.rainpole.io" `
         -VidbFqdn "flt-idb01.rainpole.io" `
         -VcfInstanceId "f7bba463-8dad-45ce-9ec1-6fc0c583a3b3" `
         -SsoRealmId "d8757ff0-d3e0-4e5c-b08e-0f5855cbfd05"
@@ -20006,10 +20005,14 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
     Runs the migration with the supplied broker FQDN and IDs.
 
     .PARAMETER VcfOpsFqdn
-    FQDN of the VCF Operations primary node. SSH is opened to this host as root.
+    FQDN of the VCF Operations API endpoint.
 
-    .PARAMETER VcfOpsRootPassword
-    Root password for SSH access to the VCF Operations primary node.
+    .PARAMETER VcfUserPassword
+    Password for the vcf SSH user on the target SDDC Manager appliance.
+
+    .PARAMETER SddcManagerFqdn
+    FQDN of the target SDDC Manager appliance. When omitted, the cmdlet resolves it
+    from -ServicesRuntimeFqdn and the registered components file.
 
     .PARAMETER VcfOpsAdminPassword
     Password for the VCF Operations admin user. Used to acquire an API token for discovery
@@ -20044,10 +20047,10 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
     .PARAMETER opsRegisteredComponentsFile
     Path to the VCFOps-Registered-Component-Details.json file created by
     Get-VcfOperationsRegisteredComponents. Required when either -VidbFqdn or
-    -VcfInstanceId is omitted.
+    -SddcManagerFqdn is omitted.
 
     .PARAMETER ServicesRuntimeFqdn
-    FQDN of the target VCF Management Services Runtime. Required when -VcfInstanceId is omitted.
+    FQDN of the target VCF Management Services Runtime. Required when -SddcManagerFqdn is omitted.
 
     .PARAMETER SddcManagerUser
     API username for the target SDDC Manager. Required when -VcfInstanceId is omitted.
@@ -20059,7 +20062,7 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
 
     Param(
         [Parameter(Mandatory = $true)][String]  $VcfOpsFqdn,
-        [Parameter(Mandatory = $true)][String]  $VcfOpsRootPassword,
+        [Parameter(Mandatory = $true)][String]  $VcfUserPassword,
         [Parameter(Mandatory = $true)][String]  $VcfOpsAdminPassword,
         [Parameter(Mandatory = $false)][String] $VcfOpsAdminUsername = "admin",
         [Parameter(Mandatory = $false)][String] $VidbFqdn,
@@ -20070,7 +20073,8 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
         [Parameter(Mandatory = $false)][Int]    $RemoteScriptTimeout = 1500,
         [Parameter(Mandatory = $false)][String] $ServicesRuntimeFqdn,
         [Parameter(Mandatory = $false)][String] $SddcManagerUser,
-        [Parameter(Mandatory = $false)][String] $SddcManagerPassword
+        [Parameter(Mandatory = $false)][String] $SddcManagerPassword,
+        [Parameter(Mandatory = $false)][String] $SddcManagerFqdn
     )
 
     $jumpboxName = hostname
@@ -20092,21 +20096,25 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
     LogMessage -type INFO -message "[$jumpboxName] VIDB Host      : $VidbFqdn"
 
     $localScript = Join-Path -Path $PSScriptRoot -ChildPath "scripts/migrate-vidb-vcf-instance.sh"
-    $remotePath = "/tmp/migrate-vidb-vcf-instance.sh"
     if (-not (Test-Path -LiteralPath $localScript -PathType Leaf)) {
         throw "Migration script not found at '$localScript'."
     }
 
-    if (-not $VcfInstanceId) {
-        if (-not ($opsRegisteredComponentsFile -and $ServicesRuntimeFqdn -and $SddcManagerUser -and $SddcManagerPassword)) {
-            throw "Supply -VcfInstanceId or provide -opsRegisteredComponentsFile, -ServicesRuntimeFqdn, -SddcManagerUser and -SddcManagerPassword to discover it."
+    if (-not $SddcManagerFqdn) {
+        if (-not ($opsRegisteredComponentsFile -and $ServicesRuntimeFqdn)) {
+            throw "Supply -SddcManagerFqdn or provide -opsRegisteredComponentsFile and -ServicesRuntimeFqdn to discover it."
         }
-
-        $sddcManagerFqdn = Get-OpsRegisteredComponentValue -Name SddcManagerFqdn -opsRegisteredComponentsFile $opsRegisteredComponentsFile -ServicesRuntimeFqdn $ServicesRuntimeFqdn
-        if (-not $sddcManagerFqdn) {
+        $SddcManagerFqdn = Get-OpsRegisteredComponentValue -Name SddcManagerFqdn -opsRegisteredComponentsFile $opsRegisteredComponentsFile -ServicesRuntimeFqdn $ServicesRuntimeFqdn
+        if (-not $SddcManagerFqdn) {
             return
         }
-        $sddcToken = Get-SddcManagerToken -SddcManagerFqdn $sddcManagerFqdn -Username $SddcManagerUser -Password $SddcManagerPassword
+    }
+
+    if (-not $VcfInstanceId) {
+        if (-not ($SddcManagerUser -and $SddcManagerPassword)) {
+            throw "Supply -VcfInstanceId or provide -SddcManagerUser and -SddcManagerPassword to discover it."
+        }
+        $sddcToken = Get-SddcManagerToken -SddcManagerFqdn $SddcManagerFqdn -Username $SddcManagerUser -Password $SddcManagerPassword
         if (-not $sddcToken) {
             return
         }
@@ -20125,16 +20133,26 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
         LogMessage -type INFO -message "[$sddcManagerFqdn] Management domain vCenter: $managementVcenterFqdn"
     }
 
+    $opsToken = Get-VcfOperationsToken -VcfOperationsFqdn $VcfOpsFqdn -Username $VcfOpsAdminUsername -Password $VcfOpsAdminPassword
+    if (-not $opsToken) {
+        return
+    }
+    $opsHeaders = @{
+        "Authorization"                     = "vRealizeOpsToken $opsToken"
+        "x-vrealizeops-api-use-unsupported" = "true"
+        "Accept"                            = "application/json"
+    }
+    $versionInfo = Invoke-RestMethod -Uri "https://$VcfOpsFqdn/suite-api/api/versions/current?_no_links=true" -Method GET -Headers $opsHeaders -SkipCertificateCheck -ErrorAction Stop
+    $opsVersion = $null
+    $versionText = "{0}.{1}.{2}" -f $versionInfo.major, $versionInfo.minor, $versionInfo.minorMinor
+    if (-not [version]::TryParse($versionText, [ref]$opsVersion)) {
+        throw "Could not determine the VCF Operations version on '$VcfOpsFqdn'."
+    }
+    if ($opsVersion -lt [version]"9.1.1") {
+        throw "VCF Operations $opsVersion cannot run VIDB migration from SDDC Manager. This task requires VCF Operations 9.1.1 or later."
+    }
+
     if (-not $VcfInstanceId -or -not $SsoRealmId) {
-        $opsToken = Get-VcfOperationsToken -VcfOperationsFqdn $VcfOpsFqdn -Username $VcfOpsAdminUsername -Password $VcfOpsAdminPassword
-        if (-not $opsToken) {
-            return
-        }
-        $opsHeaders = @{
-            "Authorization"                     = "vRealizeOpsToken $opsToken"
-            "x-vrealizeops-api-use-unsupported" = "true"
-            "Accept"                            = "application/json"
-        }
         $vidbs = Invoke-RestMethod -Uri "https://$VcfOpsFqdn/suite-api/internal/vidb/vidbs" -Method GET -Headers $opsHeaders -SkipCertificateCheck -ErrorAction Stop
 
         if (-not $VcfInstanceId) {
@@ -20155,55 +20173,48 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
     LogMessage -type INFO -message "[$VcfOpsFqdn] Target VCF instance ID: $VcfInstanceId"
     LogMessage -type INFO -message "[$VcfOpsFqdn] Identity Broker SSO Realm ID: $SsoRealmId"
 
-    # -------------------------------------------------------------------------
-    # Verify SSH (TCP/22) is reachable on the VCF Operations node before
-    # attempting to open a session — gives an actionable error message when
-    # SSH has not been enabled on the appliance.
-    # -------------------------------------------------------------------------
-    LogMessage -type INFO -message "[$jumpboxName] Checking SSH reachability on $VcfOpsFqdn port 22"
-    $sshCheck = Test-NetConnection -ComputerName $VcfOpsFqdn -Port 22 -WarningAction SilentlyContinue
-    if (-not $sshCheck.TcpTestSucceeded) {
-        LogMessage -type ERROR -message "[$jumpboxName] SSH (TCP/22) is not reachable on $VcfOpsFqdn"
-        LogMessage -type ERROR -message "[$jumpboxName] Enable SSH on the VCF Operations appliance before retrying:"
-        LogMessage -type ERROR -message "[$jumpboxName]   1. Log in to the VCF Operations management UI at https://$VcfOpsFqdn"
-        LogMessage -type ERROR -message "[$jumpboxName]   2. Navigate to Administration > Support > SSH Service"
-        LogMessage -type ERROR -message "[$jumpboxName]   3. Enable the SSH service, then re-run this function"
-        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
-    }
-    LogMessage -type INFO -message "[$jumpboxName] SSH is reachable on $VcfOpsFqdn"
-
-    # -------------------------------------------------------------------------
-    # Open SSH session to the VCF Operations primary node as root
-    # -------------------------------------------------------------------------
-    $SecurePassword = ConvertTo-SecureString -String $VcfOpsRootPassword -AsPlainText -Force
-    $creds = New-Object System.Management.Automation.PSCredential ('root', $SecurePassword)
+    $SecurePassword = ConvertTo-SecureString -String $VcfUserPassword -AsPlainText -Force
+    $creds = [pscredential]::new('vcf', $SecurePassword)
     $session = $null
+    $remotePath = $null
 
     try {
-        $session = Open-VcfmsSshSession -Fqdn $VcfOpsFqdn -Creds $creds
+        LogMessage -type INFO -message "[$SddcManagerFqdn] Opening SSH session as vcf for VIDB migration"
+        $knownHosts = New-SSHMemoryKnownHost
+        $hostKey = Get-SSHHostKey -ComputerName $SddcManagerFqdn -ErrorAction Stop
+        New-SSHTrustedHost -KnownHostStore $knownHosts -HostName $SddcManagerFqdn -FingerPrint $hostKey.fingerprint -ErrorAction Stop | Out-Null
+        $session = New-SSHSession -ComputerName $SddcManagerFqdn -Credential $creds -KnownHost $knownHosts -ErrorAction Stop
 
-        LogMessage -type INFO -message "[$VcfOpsFqdn] Uploading migration script to $remotePath"
+        $tempFile = Invoke-SSHCommand -SessionId $session.SessionId -Command "mktemp /tmp/migrate-vidb-vcf-instance.XXXXXX" -TimeOut 15 -ErrorAction Stop
+        $tempPath = ($tempFile.Output -join "").Trim()
+        if ($tempFile.ExitStatus -ne 0 -or $tempPath -cnotmatch '^/tmp/migrate-vidb-vcf-instance\.[a-zA-Z0-9]{6}$') {
+            throw "Could not create a temporary migration script on '$SddcManagerFqdn'."
+        }
+        $remotePath = $tempPath
+        LogMessage -type INFO -message "[$SddcManagerFqdn] Uploading migration script to $remotePath"
         $scriptBytes = [System.IO.File]::ReadAllBytes($localScript)
         # Strip CR bytes so the file always has Unix line endings on the remote node
         $scriptBytes = [byte[]]($scriptBytes | Where-Object { $_ -ne 0x0D })
         $b64 = [System.Convert]::ToBase64String($scriptBytes)
 
-        $uploadCmd = "printf '%s' '$b64' | base64 -d > $remotePath && chmod +x $remotePath"
-        $uploadResult = Invoke-SSHCommand -SessionId $session.SessionId -Command $uploadCmd -TimeOut 60
+        $uploadCmd = "printf '%s' '$b64' | base64 -d > '$remotePath'"
+        $uploadResult = Invoke-SSHCommand -SessionId $session.SessionId -Command $uploadCmd -TimeOut 60 -ErrorAction Stop
         if ($uploadResult.ExitStatus -ne 0) {
-            LogMessage -type ERROR -message "[$VcfOpsFqdn] Migration script upload failed (exit $($uploadResult.ExitStatus)): $($uploadResult.Error -join ' ')"
+            LogMessage -type ERROR -message "[$SddcManagerFqdn] Migration script upload failed (exit $($uploadResult.ExitStatus)): $($uploadResult.Error -join ' ')"
             Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }
 
         # =====================================================================
-        # Confirm the Identity Broker is reachable on the new VCF instance
-        # (matches the documented pre-check). Requires the tenant path segment,
+        # Check Identity Broker reachability from SDDC Manager.
+        # The check requires the tenant path segment,
         # which varies per environment, so this only runs when supplied.
         # =====================================================================
         if ($IdentityBrokerTenant) {
             LogMessage -type INFO -message "[$VidbFqdn] Verifying Identity Broker OIDC discovery endpoint (tenant: $IdentityBrokerTenant)"
-            $wellKnownCmd = "curl -sk -o /dev/null -w '%{http_code}' https://$VidbFqdn/acs/t/$IdentityBrokerTenant/.well-known/openid-configuration"
+            $oidcUrl = "https://$VidbFqdn/acs/t/$IdentityBrokerTenant/.well-known/openid-configuration"
+            $quotedUrl = "'" + $oidcUrl.Replace("'", "'\''") + "'"
+            $wellKnownCmd = "curl -sk -o /dev/null -w '%{http_code}' $quotedUrl"
             $wellKnownResult = Invoke-SSHCommand -SessionId $session.SessionId -Command $wellKnownCmd -TimeOut 30
             $httpCode = ($wellKnownResult.Output -join '').Trim()
             if ($httpCode -eq "200") {
@@ -20219,15 +20230,23 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
         # Run migrate-vidb-vcf-instance.sh with the resolved values. The script
         # prompts for the OPS password on stdin (no --password flag); pipe it in.
         # -------------------------------------------------------------------------
-        $scriptArgs = "--ops-fqdn '$VcfOpsFqdn' --username '$VcfOpsAdminUsername' --vidb-host '$VidbFqdn' --target-vcf '$VcfInstanceId' --sso-realm '$SsoRealmId'"
+        $arguments = @(
+            '--flow', 'api',
+            '--ops-fqdn', $VcfOpsFqdn,
+            '--username', $VcfOpsAdminUsername,
+            '--vidb-host', $VidbFqdn,
+            '--target-vcf', $VcfInstanceId,
+            '--sso-realm', $SsoRealmId
+        )
+        $scriptArgs = ($arguments | ForEach-Object { "'" + $_.Replace("'", "'\''") + "'" }) -join " "
+        $quotedPassword = "'" + $VcfOpsAdminPassword.Replace("'", "'\''") + "'"
+        $execCmd = "printf '%s\n' $quotedPassword | bash '$remotePath' $scriptArgs 2>&1"
 
-        $execCmd = "printf '%s\n' '$VcfOpsAdminPassword' | bash $remotePath $scriptArgs 2>&1"
-
-        LogMessage -type INFO -message "[$VcfOpsFqdn] Executing migrate-vidb-vcf-instance.sh (timeout: ${RemoteScriptTimeout}s)"
+        LogMessage -type INFO -message "[$SddcManagerFqdn] Executing migrate-vidb-vcf-instance.sh (timeout: ${RemoteScriptTimeout}s)"
         Write-Host ""
         Write-Host " ── migrate-vidb-vcf-instance.sh output ──────────────────────────────" -ForegroundColor Cyan
 
-        $execResult = Invoke-SSHCommand -SessionId $session.SessionId -Command $execCmd -TimeOut $RemoteScriptTimeout
+        $execResult = Invoke-SSHCommand -SessionId $session.SessionId -Command $execCmd -TimeOut $RemoteScriptTimeout -ErrorAction Stop
 
         $execResult.Output | Where-Object { $_ -notmatch 'Enter OPS Password' } | ForEach-Object { Write-Host "  $_" }
 
@@ -20241,18 +20260,27 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
         Write-Host ""
 
         if ($execResult.ExitStatus -eq 0) {
-            LogMessage -type INFO -message "[$VcfOpsFqdn] Script completed successfully"
+            LogMessage -type INFO -message "[$SddcManagerFqdn] Script completed successfully"
         } else {
-            LogMessage -type ERROR -message "[$VcfOpsFqdn] Script exited with code $($execResult.ExitStatus)"
+            LogMessage -type ERROR -message "[$SddcManagerFqdn] Script exited with code $($execResult.ExitStatus)"
         }
 
     } catch {
         LogMessage -type ERROR -message "[$jumpboxName] $($_.Exception.Message)"
     } finally {
         if ($session) {
-            Invoke-SSHCommand -SessionId $session.SessionId -Command "rm -f $remotePath" -TimeOut 15 | Out-Null
-            Remove-SSHSession -SSHSession $session | Out-Null
-            LogMessage -type INFO -message "[$VcfOpsFqdn] Temporary migration script removed"
+            try {
+                if ($remotePath) {
+                    $cleanup = Invoke-SSHCommand -SessionId $session.SessionId -Command "rm -f '$remotePath'" -TimeOut 15 -ErrorAction Stop
+                    if ($cleanup.ExitStatus -ne 0) {
+                        throw "Remote cleanup exited with code $($cleanup.ExitStatus)."
+                    }
+                }
+            } catch {
+                LogMessage -type WARNING -message "[$SddcManagerFqdn] Could not remove temporary migration script '$remotePath'. $($_.Exception.Message)"
+            } finally {
+                Remove-SSHSession -SSHSession $session | Out-Null
+            }
         }
     }
 
