@@ -2040,9 +2040,12 @@ $window.Add_Loaded({
 # rather than automatically following either. Exactly the kind of gap that would leave a step's own
 # interactive prompt (Read-Host) visibly sitting on screen but genuinely unable to receive anything
 # typed at it, indefinitely, with nothing to indicate why.
-$window.Add_Activated({
-        Set-ConsoleFocus
-    })
+# Temporarily skip activation-time console focus when testing taskbar restore on Windows.
+if ($env:VCFRC_TEST_SKIP_ACTIVATION_FOCUS -ne '1') {
+    $window.Add_Activated({
+            Set-ConsoleFocus
+        })
+}
 
 $consoleTabControl.Add_SelectionChanged({
         Set-ConsoleFocus
