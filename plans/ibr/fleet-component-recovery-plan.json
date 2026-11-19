@@ -341,7 +341,7 @@
   },
   {
     "description": "Point SDDC Manager to the FDS Depot",
-    "commandLine": "Set-SDDCManagerFDSDepot -extractedSDDCDataFile $extractedSddcDataFile -sddcManagerUser $sddcManagerAdmin -sddcManagerPassword $sddcManagerAdminPassword -originalConfigurationFile $originalConfigurationFile",
+    "commandLine": "Set-SDDCManagerFDSDepot -extractedSDDCDataFile $extractedSddcDataFile -sddcManagerUser $sddcManagerAdmin -sddcManagerPassword $sddcManagerAdminPassword",
     "displayName": "Set SDDC Manager FDS Depot",
     "condition": [],
     "threadId": "3",

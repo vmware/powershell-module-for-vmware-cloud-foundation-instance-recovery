@@ -60,7 +60,6 @@
   "sftpUsername": "User name for the SFTP backup server.",
   "sftpDirectory": "Directory on the SFTP server where the backups are stored (e.g. /media/backups).",
   "vcfInstallerFqdn": "FQDN of the VCF Installer appliance.",
-  "originalConfigurationFile": "Path on this machine to the saved original depot services configuration, restored after the temporary depot is removed.",
   "vcfaServicesRuntimePassword": "Password of the VCF Automation Services Runtime system user (admin@vsp.local). Set on the new runtime when it is created, and used to connect to it afterwards.",
   "vcfaIpv4Addresses": "Comma-separated IPv4 addresses for the VCF Automation Services Runtime IP pool.",
   "vcfaSize": "Deployment size of the VCF Automation Services Runtime (small, medium or large).",

@@ -22,7 +22,6 @@
   "sftpPassword": "",
   "sftpDirectory": "",
   "vcfInstallerFqdn": "",
-  "originalConfigurationFile": "",
   "vcfaServicesRuntimePassword": "",
   "vcfaIpv4Addresses": "",
   "vcfaSize": "",

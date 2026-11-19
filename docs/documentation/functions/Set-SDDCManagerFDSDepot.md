@@ -7,7 +7,7 @@ Restores the SDDC Manager depot configuration to the original Fleet Depot Servic
 ## Syntax
 
 ```powershell
-Set-SDDCManagerFDSDepot [-sddcManagerFqdn] <String> [-sddcManagerUser] <String> [-sddcManagerPassword] <String> [-originalConfigurationFile] <String> [<CommonParameters>]
+Set-SDDCManagerFDSDepot [[-sddcManagerFqdn] <String>] [[-extractedSDDCDataFile] <String>] [-sddcManagerUser] <String> [-sddcManagerPassword] <String> [[-originalConfigurationFile] <String>] [<CommonParameters>]
 ```
 
 ## Description
@@ -22,27 +22,30 @@ The `Set-SDDCManagerFDSDepot` cmdlet reverts the SDDC Manager depot from an offl
 Set-SDDCManagerFDSDepot `
     -sddcManagerFqdn           "sfo-vcf01.sfo.rainpole.io" `
     -sddcManagerUser           "administrator@vsphere.local" `
-    -sddcManagerPassword       "VMw@re1!VMw@re1!" `
-    -originalConfigurationFile ".\originalDepotServicesconfig.json"
+    -sddcManagerPassword       "VMw@re1!VMw@re1!"
 ```
 
 ## Parameters
 
 ### -sddcManagerFqdn
 
-FQDN of the SDDC Manager instance.
+FQDN of the SDDC Manager instance. If omitted, the cmdlet looks up the FQDN in the extracted SDDC data file.
 
 ```yaml
 Type: String
 Parameter Sets: (All)
 Aliases:
 
-Required: True
+Required: False
 Position: 1
 Default value: None
 Accept pipeline input: False
 Accept wildcard characters: False
 ```
+
+### -extractedSDDCDataFile
+
+Path to the extracted SDDC data file used to look up the SDDC Manager FQDN.
 
 ### -sddcManagerUser
 
@@ -54,7 +57,7 @@ Parameter Sets: (All)
 Aliases:
 
 Required: True
-Position: 2
+Position: 3
 Default value: None
 Accept pipeline input: False
 Accept wildcard characters: False
@@ -70,7 +73,7 @@ Parameter Sets: (All)
 Aliases:
 
 Required: True
-Position: 3
+Position: 4
 Default value: None
 Accept pipeline input: False
 Accept wildcard characters: False
@@ -78,16 +81,16 @@ Accept wildcard characters: False
 
 ### -originalConfigurationFile
 
-Path to the JSON file containing the original depot services configuration, as saved by `Set-SDDCManagerOfflineDepot`.
+Path to the JSON file containing the original depot services configuration. Defaults to `originalDepotServicesconfig.json` in the current working directory, where `Set-SDDCManagerOfflineDepot` saves it.
 
 ```yaml
 Type: String
 Parameter Sets: (All)
 Aliases:
 
-Required: True
-Position: 4
-Default value: None
+Required: False
+Position: 5
+Default value: originalDepotServicesconfig.json
 Accept pipeline input: False
 Accept wildcard characters: False
 ```

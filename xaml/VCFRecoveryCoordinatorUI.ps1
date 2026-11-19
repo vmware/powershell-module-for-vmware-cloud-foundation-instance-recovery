@@ -3457,7 +3457,19 @@ function New-EyeIcon([switch]$Slashed) {
     return $viewbox
 }
 
-function New-VariableRow([string]$Name, [string]$Value, [scriptblock]$OnValueChanged) {
+# Only variables that point to local files get a picker. Backup paths on remote servers are text fields.
+$script:variableFileFilters = @{
+    vCenterOvaFile            = 'OVA files (*.ova)|*.ova'
+    nsxManagerOvaFile         = 'OVA files (*.ova)|*.ova'
+    sddcManagerOvaFile        = 'OVA files (*.ova)|*.ova'
+    opsRestoreScriptPath      = 'PowerShell scripts (*.ps1)|*.ps1'
+    dnsScriptPath             = 'PowerShell scripts (*.ps1)|*.ps1'
+    vsanWitnessScriptPath     = 'PowerShell scripts (*.ps1)|*.ps1'
+    vcfBackupFilePath         = 'SDDC Manager backups (*.tar.gz)|*.tar.gz'
+    localArchivePath          = 'VCFMS backup archives (*.base.tgz)|*.base.tgz'
+}
+
+function New-VariableRow([string]$Name, [string]$Value, [scriptblock]$OnValueChanged, [string[]]$TemplateKeys) {
     $panel = New-Object System.Windows.Controls.DockPanel
     $panel.Margin = '0,0,0,3'
 
@@ -3577,6 +3589,25 @@ function New-VariableRow([string]$Name, [string]$Value, [scriptblock]$OnValueCha
         [void]$grid.Children.Add($textBox)
         [void]$panel.Children.Add($grid)
     } else {
+        $fileFilter = $script:variableFileFilters[$Name]
+        if ($fileFilter -and $Name -in $TemplateKeys) {
+            $fileButton = New-Object System.Windows.Controls.Button
+            $fileButton.Content = 'Browse...'
+            $fileButton.ToolTip = "Select a local file for $Name"
+            $fileButton.Width = 80
+            $fileButton.Margin = '4,0,0,0'
+            [System.Windows.Controls.DockPanel]::SetDock($fileButton, [System.Windows.Controls.Dock]::Right)
+            $fileButton.Add_Click({
+                    $dialog = New-Object Microsoft.Win32.OpenFileDialog
+                    $dialog.Title = "Select a file for $Name"
+                    $dialog.Filter = "$fileFilter|All files (*.*)|*.*"
+                    if ($dialog.ShowDialog() -eq $true) {
+                        $valueBox.Text = $dialog.FileName
+                        & $applyEdit
+                    }
+                }.GetNewClosure())
+            [void]$panel.Children.Add($fileButton)
+        }
         [void]$panel.Children.Add($valueBox)
     }
     return $panel
@@ -4010,7 +4041,7 @@ function Import-VariablesAnswersFile([string]$Path) {
                 Send-ToConsole "Import-RecoveryVariables -Path '$escapedAnswersPath'"
                 Update-RevealedSteps $answerMap
             }.GetNewClosure()
-            [void]$variablesItemsPanel.Children.Add((New-VariableRow $name $answerMap[$name] $onValueChanged))
+            [void]$variablesItemsPanel.Children.Add((New-VariableRow $name $answerMap[$name] $onValueChanged $templateKeys))
         }
 
         # Import-RecoveryVariables (a real, exported module cmdlet -- see the "Recovery Variables"
@@ -4080,6 +4111,7 @@ function New-VariablesFile([string]$Path) {
     }
     $values | ConvertTo-Json | Set-Content -LiteralPath $Path -Encoding utf8
 
+    $templateKeys = Get-VariablesTemplateKeys $entry
     $variablesItemsPanel.Children.Clear()
     foreach ($name in $variableNames) {
         $onValueChanged = {
@@ -4097,7 +4129,7 @@ function New-VariablesFile([string]$Path) {
             # known (see above), but should still react live if it's edited or was genuinely blank.
             Update-RevealedSteps $values
         }.GetNewClosure()
-        [void]$variablesItemsPanel.Children.Add((New-VariableRow $name $values[$name] $onValueChanged))
+        [void]$variablesItemsPanel.Children.Add((New-VariableRow $name $values[$name] $onValueChanged $templateKeys))
     }
 
     $loadedVariablesTextBlock.Text = "Creating '$Path' -- values save automatically as you fill them in."

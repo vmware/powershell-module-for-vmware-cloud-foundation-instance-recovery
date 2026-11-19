@@ -4206,7 +4206,7 @@ Function Set-SDDCManagerFDSDepot {
         [Parameter(Mandatory = $false)] [String] $extractedSDDCDataFile,
         [Parameter(Mandatory = $true)] [String] $sddcManagerUser,
         [Parameter(Mandatory = $true)] [String] $sddcManagerPassword,
-        [Parameter(Mandatory = $true)] [String] $originalConfigurationFile
+        [Parameter(Mandatory = $false)] [String] $originalConfigurationFile = 'originalDepotServicesconfig.json'
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
@@ -4223,7 +4223,7 @@ Function Set-SDDCManagerFDSDepot {
     try {
 
     LogMessage -type INFO -message "[$sddcManagerFqdn] Retrieving Original Configuration from JSON file"
-    $servicesConfigBody = Get-Content -path $originalConfigurationFile -Raw
+    $servicesConfigBody = Get-Content -Path $originalConfigurationFile -Raw -ErrorAction Stop
 
     LogMessage -type INFO -message "[$sddcManagerFqdn] Getting Authentication Token"
     # Get SDDC Manager API Token
