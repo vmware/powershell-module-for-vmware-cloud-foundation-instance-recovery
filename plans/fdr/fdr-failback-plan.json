@@ -158,12 +158,12 @@
     "visible": true
   },
   {
-    "description": "Update the Identity Broker VCF Instance Association - Requires User Input (service registration can take up to 15 minutes to complete)",
-    "commandLine": "Invoke-VcfOpsVidbVcfInstanceUpdate -VcfOpsFqdn $vcfOperationsFqdn -VcfOpsRootPassword $vcfOperationsRootPassword -VcfOpsAdminPassword $vcfOperationsAdminPassword -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\"",
+    "description": "Update the Identity Broker VCF Instance Association (service registration can take up to 15 minutes to complete)",
+    "commandLine": "Invoke-VcfOpsVidbVcfInstanceUpdate -VcfOpsFqdn $vcfOperationsFqdn -VcfOpsRootPassword $vcfOperationsRootPassword -VcfOpsAdminPassword $vcfOperationsAdminPassword -ServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -SddcManagerUser $sddcManagerAdmin -SddcManagerPassword $sddcManagerAdminPassword -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\"",
     "displayName": "Invoke VCF Ops VIDB VCF Instance Update",
     "condition": [],
     "threadId": "1",
-    "interactive": true,
+    "interactive": false,
     "visible": true
   },
   {

@@ -7,36 +7,41 @@ Re-associates an external Identity Broker (VIDB) with a new VCF instance in VCF 
 ## Syntax
 
 ```powershell
-Invoke-VcfOpsVidbVcfInstanceUpdate [-VcfOpsFqdn] <String> [-VcfOpsRootPassword] <String> [-VcfOpsAdminPassword] <String> [-VidbFqdn] <String> [[-VcfOpsAdminUsername] <String>] [[-VcfInstanceId] <String>] [[-SsoDomainId] <String>] [[-RemoteScriptTimeout] <Int32>] [<CommonParameters>]
+Invoke-VcfOpsVidbVcfInstanceUpdate -VcfOpsFqdn <String> -VcfOpsRootPassword <String>
+    -VcfOpsAdminPassword <String> [-VcfOpsAdminUsername <String>] [-VidbFqdn <String>]
+    [-opsRegisteredComponentsFile <String>] [-ServicesRuntimeFqdn <String>]
+    [-SddcManagerUser <String>] [-SddcManagerPassword <String>] [-IdentityBrokerTenant <String>]
+    [-VcfInstanceId <String>] [-SsoRealmId <String>] [-RemoteScriptTimeout <Int32>] [<CommonParameters>]
 ```
 
 ## Description
 
-The `Invoke-VcfOpsVidbVcfInstanceUpdate` cmdlet re-associates an external Identity Broker with a new VCF instance in VCF Operations after a disaster recovery failover. It performs two interactive discovery steps before executing the remediation script:
+The cmdlet reads the Identity Broker FQDN and the target Services Runtime's SDDC Manager FQDN from `VCFOps-Registered-Component-Details.json`. It queries SDDC Manager for the management domain vCenter FQDN using [Get Domains](https://developer.broadcom.com/xapis/sddc-manager-api/latest/v1/domains/get/).
 
-**Step 3** — Queries the VCF Operations API to list all registered VCF adapter instances and presents a numbered list for operator selection. Skipped when `-VcfInstanceId` is supplied.
+The cmdlet queries `/suite-api/internal/vidb/vidbs` on VCF Operations. The management vCenter record supplies `vcfInstanceId`, and the Identity Broker record supplies `ssoDomainId`. The lookup must return a single matching record with the required ID for each value being discovered.
 
-**Step 4** — Queries the `kv_vidb_sso_domain` table in the VCF Operations postgres database via SSH and presents a numbered list of stale SSO domain entries for operator selection. Skipped when `-SsoDomainId` is supplied.
-
-The cmdlet then uploads the bundled `update-vidb-vcf-instance.sh` script to the VCF Operations primary node via SSH (as root) and executes it. SSH reachability is verified before attempting a connection. SSH must be enabled on the VCF Operations appliance (`Administration > Support > SSH Service`).
+The cmdlet uploads and runs `migrate-vidb-vcf-instance.sh` on the VCF Operations primary node over SSH as root. Enable SSH on the appliance under **Administration > Support > SSH Service** before running the cmdlet.
 
 ## Examples
 
 ### Example 1
 
-Interactive — VCF instance and SSO domain are selected from discovered lists.
+Discover the VCF instance and SSO Realm IDs automatically.
 
 ```powershell
 Invoke-VcfOpsVidbVcfInstanceUpdate `
     -VcfOpsFqdn          "flt-ops01a.rainpole.io" `
     -VcfOpsRootPassword  "VMw@re1!VMw@re1!" `
     -VcfOpsAdminPassword "VMw@re1!VMw@re1!" `
-    -VidbFqdn            "flt-idb01.rainpole.io"
+    -opsRegisteredComponentsFile ".\VCFOps-Registered-Component-Details.json" `
+    -ServicesRuntimeFqdn "lax-sr01.lax.rainpole.io" `
+    -SddcManagerUser     $sddcManagerAdmin `
+    -SddcManagerPassword $sddcManagerAdminPassword
 ```
 
 ### Example 2
 
-Non-interactive — VCF instance and SSO domain ID supplied directly.
+Supply the VCF instance and SSO Realm IDs directly.
 
 ```powershell
 Invoke-VcfOpsVidbVcfInstanceUpdate `
@@ -45,7 +50,7 @@ Invoke-VcfOpsVidbVcfInstanceUpdate `
     -VcfOpsAdminPassword "VMw@re1!VMw@re1!" `
     -VidbFqdn            "flt-idb01.rainpole.io" `
     -VcfInstanceId       "e1855511-d704-49ea-8caa-a45895dd0137" `
-    -SsoDomainId         "8aa85146-c6ef-4758-9346-4957e4a67dc4"
+    -SsoRealmId         "8aa85146-c6ef-4758-9346-4957e4a67dc4"
 ```
 
 ## Parameters
@@ -100,15 +105,15 @@ Accept wildcard characters: False
 
 ### -VidbFqdn
 
-FQDN of the external Identity Broker (VIDB), e.g. `flt-idb01.rainpole.io`.
+FQDN of the external Identity Broker (VIDB). Defaults to the VIDB entry in the registered components file.
 
 ```yaml
 Type: String
 Parameter Sets: (All)
 Aliases:
 
-Required: True
-Position: 4
+Required: False
+Position: Named
 Default value: None
 Accept pipeline input: False
 Accept wildcard characters: False
@@ -130,9 +135,9 @@ Accept pipeline input: False
 Accept wildcard characters: False
 ```
 
-### -VcfInstanceId
+### -opsRegisteredComponentsFile
 
-Optional. UUID of the new VCF instance to associate with the Identity Broker. When omitted the function queries the VCF Operations API and presents a numbered list for selection.
+Path to the JSON file produced by `Get-VcfOperationsRegisteredComponents`. The cmdlet uses it to discover the Identity Broker FQDN and the SDDC Manager for the target Services Runtime.
 
 ```yaml
 Type: String
@@ -146,9 +151,89 @@ Accept pipeline input: False
 Accept wildcard characters: False
 ```
 
-### -SsoDomainId
+### -ServicesRuntimeFqdn
 
-Optional. UUID key to remove from the `kv_vidb_sso_domain` table. When omitted the function queries the postgres database and presents a numbered list. Enter `S` at the prompt to skip cleanup.
+FQDN of the target VCF Management Services Runtime. Required for automatic VCF instance ID discovery.
+
+```yaml
+Type: String
+Parameter Sets: (All)
+Aliases:
+
+Required: False
+Position: Named
+Default value: None
+Accept pipeline input: False
+Accept wildcard characters: False
+```
+
+### -SddcManagerUser
+
+SDDC Manager API username. Required for automatic VCF instance ID discovery.
+
+```yaml
+Type: String
+Parameter Sets: (All)
+Aliases:
+
+Required: False
+Position: Named
+Default value: None
+Accept pipeline input: False
+Accept wildcard characters: False
+```
+
+### -SddcManagerPassword
+
+SDDC Manager API password. Required for automatic VCF instance ID discovery.
+
+```yaml
+Type: String
+Parameter Sets: (All)
+Aliases:
+
+Required: False
+Position: Named
+Default value: None
+Accept pipeline input: False
+Accept wildcard characters: False
+```
+
+### -IdentityBrokerTenant
+
+Tenant path segment for an optional Identity Broker OIDC discovery endpoint reachability check.
+
+```yaml
+Type: String
+Parameter Sets: (All)
+Aliases:
+
+Required: False
+Position: Named
+Default value: None
+Accept pipeline input: False
+Accept wildcard characters: False
+```
+
+### -VcfInstanceId
+
+Optional override for the UUID of the target VCF instance. By default, the cmdlet looks up the UUID using the management domain vCenter FQDN.
+
+```yaml
+Type: String
+Parameter Sets: (All)
+Aliases:
+
+Required: False
+Position: Named
+Default value: None
+Accept pipeline input: False
+Accept wildcard characters: False
+```
+
+### -SsoRealmId
+
+Optional override for the SSO Realm UUID. By default, the cmdlet uses the `ssoDomainId` associated with the Identity Broker FQDN.
 
 ```yaml
 Type: String

@@ -19957,58 +19957,53 @@ Export-ModuleMember -Function Get-VcfmsFleetComponentRegistration
 Function Invoke-VcfOpsVidbVcfInstanceUpdate {
     <#
     .SYNOPSIS
-    Re-associates an external Identity Broker (VIDB) with a new VCF instance in VCF Operations after a disaster recovery failover.
+    Re-associates an external Identity Broker (VIDB) with the target VCF instance during fleet failover or failback.
 
     .DESCRIPTION
-    The Invoke-VcfOpsVidbVcfInstanceUpdate cmdlet implements the "Update the Identity Broker
-    VCF Instance Association" fleet disaster recovery task. It performs the following steps
-    over an SSH session to the VCF Operations primary node:
+    When -VidbFqdn is omitted, the cmdlet reads the VIDB entry in the components array
+    of VCFOps-Registered-Component-Details.json.
 
-      1. Verifies SSH is reachable on the VCF Operations primary node (root access is
-         required; the migration script's "db" flow needs it to query the local postgres
-         database via `su - postgres`).
-      2. Uploads the bundled vidb-sso-info.sh and migrate-vidb-vcf-instance.sh scripts to
-         /tmp and makes them executable.
-      3. Optionally confirms the Identity Broker's OIDC discovery endpoint is reachable
-         (only when -IdentityBrokerTenant is supplied, since the tenant path segment is
-         environment-specific).
-      4. Runs vidb-sso-info.sh to print the current VIDB <-> VCF instance <-> SSO Realm
-         mapping — the same two reference tables shown in the documented procedure.
-      5. Resolves the target VCF instance ID — either the supplied -VcfInstanceId, or an
-         interactive selection from the registered VCF adapter instances
-         (GET /suite-api/internal/vidb/vidbs).
-      6. Resolves the SSO Realm ID — either the supplied -SsoRealmId, or an interactive
-         selection from the registered SSO Realms
-         (GET /suite-api/api/fleet-management/iam/ssorealms), or skipped.
-      7. Runs migrate-vidb-vcf-instance.sh with the resolved values. That script
-         auto-detects the running VCF Operations version and re-associates the external
-         VIDB with the target VCF instance and SSO Realm — via a local-DB "db" flow on
-         VCF Operations 9.1.0, or an API-only "api" flow (PATCH + SSO Realm update) on
-         VCF Operations newer than 9.1.0 — then polls until the VIDB is eligible again.
+    When -VcfInstanceId is omitted, the cmdlet matches -ServicesRuntimeFqdn to vsp[].fqdn
+    in that file. It uses vcfInstanceFqdn from the matching entry to connect to the target
+    SDDC Manager and retrieve the management domain's vCenter FQDN from GET /v1/domains.
 
-    Prerequisites:
-      - SSH must be enabled on the VCF Operations primary node.
-      - The caller must supply the root password for SSH access.
-      - curl and jq (auto-installed if absent) must be available on the appliance;
-        python3 is additionally required if the script's "db" flow is selected.
+    For either ID that was omitted, the cmdlet queries GET /suite-api/internal/vidb/vidbs
+    in VCF Operations. The record matching the management vCenter FQDN supplies
+    vcfInstanceId. The record matching the external Identity Broker FQDN supplies
+    ssoDomainId, which the cmdlet passes to the migration script as the SSO Realm ID.
+    Discovery runs without prompts. It requires a unique management vCenter and a
+    unique VCF Operations record for each ID being discovered. If discovery fails,
+    the cmdlet stops before opening SSH.
+
+    The cmdlet uploads and runs migrate-vidb-vcf-instance.sh on the VCF Operations
+    primary node over SSH as root. Enable SSH on that node before running the cmdlet.
+    The script requires curl and attempts to install jq when it is missing. The local
+    database flow used on VCF Operations 9.1.0 also requires python3. Newer versions
+    use the API flow.
 
     .EXAMPLE
-    # Interactive — VCF instance and SSO Realm are selected from discovered lists
+    $componentsFile = ".\VCFOps-Registered-Component-Details.json"
     Invoke-VcfOpsVidbVcfInstanceUpdate `
-        -VcfOpsFqdn          "flt-ops01a.rainpole.io" `
-        -VcfOpsRootPassword  "VMw@re1!VMw@re1!" `
-        -VcfOpsAdminPassword "VMw@re1!VMw@re1!" `
-        -VidbFqdn            "flt-idb01.rainpole.io"
+        -VcfOpsFqdn "flt-ops01a.rainpole.io" `
+        -VcfOpsRootPassword $vcfOperationsRootPassword `
+        -VcfOpsAdminPassword $vcfOperationsAdminPassword `
+        -opsRegisteredComponentsFile $componentsFile `
+        -ServicesRuntimeFqdn "lax-sr01.lax.rainpole.io" `
+        -SddcManagerUser $sddcManagerAdmin `
+        -SddcManagerPassword $sddcManagerAdminPassword
+
+    Discovers the broker, target VCF instance ID, and SSO Realm ID for the target Services Runtime.
 
     .EXAMPLE
-    # Non-interactive — VCF instance and SSO Realm ID supplied directly
     Invoke-VcfOpsVidbVcfInstanceUpdate `
-        -VcfOpsFqdn          "flt-ops01a.rainpole.io" `
-        -VcfOpsRootPassword  "VMw@re1!VMw@re1!" `
-        -VcfOpsAdminPassword "VMw@re1!VMw@re1!" `
-        -VidbFqdn            "flt-idb01.rainpole.io" `
-        -VcfInstanceId       "f7bba463-8dad-45ce-9ec1-6fc0c583a3b3" `
-        -SsoRealmId          "d8757ff0-d3e0-4e5c-b08e-0f5855cbfd05"
+        -VcfOpsFqdn "flt-ops01a.rainpole.io" `
+        -VcfOpsRootPassword $vcfOperationsRootPassword `
+        -VcfOpsAdminPassword $vcfOperationsAdminPassword `
+        -VidbFqdn "flt-idb01.rainpole.io" `
+        -VcfInstanceId "f7bba463-8dad-45ce-9ec1-6fc0c583a3b3" `
+        -SsoRealmId "d8757ff0-d3e0-4e5c-b08e-0f5855cbfd05"
+
+    Runs the migration with the supplied broker FQDN and IDs.
 
     .PARAMETER VcfOpsFqdn
     FQDN of the VCF Operations primary node. SSH is opened to this host as root.
@@ -20018,13 +20013,14 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
 
     .PARAMETER VcfOpsAdminPassword
     Password for the VCF Operations admin user. Used to acquire an API token for discovery
-    queries and piped to the remote scripts' interactive password prompts.
+    queries and passed to the remote migration script.
 
     .PARAMETER VcfOpsAdminUsername
     Username for the VCF Operations API. Default is "admin".
 
     .PARAMETER VidbFqdn
-    FQDN of the external Identity Broker (VIDB), e.g. "flt-idb01.rainpole.io".
+    FQDN of the external Identity Broker. When omitted, the cmdlet uses the FQDN of
+    the VIDB entry in the registered components file.
 
     .PARAMETER IdentityBrokerTenant
     Optional. Tenant path segment used to build the Identity Broker OIDC discovery URL
@@ -20033,16 +20029,12 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
     to run it manually is logged instead.
 
     .PARAMETER VcfInstanceId
-    Optional. UUID of the new VCF instance to associate with the Identity Broker. When
-    omitted the function queries the VCF Operations API and presents a numbered list for
-    interactive selection.
+    Optional override for the UUID of the target VCF instance. When omitted, the cmdlet
+    looks up the instance by its management domain vCenter FQDN in VCF Operations.
 
     .PARAMETER SsoRealmId
-    Optional. UUID of the SSO Realm to update with the target VCF instance ID
-    (GET /suite-api/api/fleet-management/iam/ssorealms). When omitted the function queries
-    the API and presents a numbered list for interactive selection. Choose "S" at the
-    prompt to skip — required if migrate-vidb-vcf-instance.sh resolves to the "api" flow
-    (VCF Operations newer than 9.1.0), optional for the "db" flow (VCF Operations 9.1.0).
+    Optional override for the UUID of the SSO Realm. When omitted, the cmdlet uses the
+    ssoDomainId of the record matching the Identity Broker FQDN in VCF Operations.
 
     .PARAMETER RemoteScriptTimeout
     Seconds to wait for the remote migrate-vidb-vcf-instance.sh execution to complete.
@@ -20050,7 +20042,18 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
     eligibility poll.
 
     .PARAMETER opsRegisteredComponentsFile
-    Path to the VCFOps-Registered-Component-Details.json file (created by Get-VcfOperationsRegisteredComponents). Used to resolve -VidbFqdn when it is not supplied directly.
+    Path to the VCFOps-Registered-Component-Details.json file created by
+    Get-VcfOperationsRegisteredComponents. Required when either -VidbFqdn or
+    -VcfInstanceId is omitted.
+
+    .PARAMETER ServicesRuntimeFqdn
+    FQDN of the target VCF Management Services Runtime. Required when -VcfInstanceId is omitted.
+
+    .PARAMETER SddcManagerUser
+    API username for the target SDDC Manager. Required when -VcfInstanceId is omitted.
+
+    .PARAMETER SddcManagerPassword
+    API password for the target SDDC Manager. Required when -VcfInstanceId is omitted.
 
     #>
 
@@ -20064,15 +20067,16 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
         [Parameter(Mandatory = $false)][String] $IdentityBrokerTenant,
         [Parameter(Mandatory = $false)][String] $VcfInstanceId,
         [Parameter(Mandatory = $false)][String] $SsoRealmId,
-        [Parameter(Mandatory = $false)][Int]    $RemoteScriptTimeout = 1500
+        [Parameter(Mandatory = $false)][Int]    $RemoteScriptTimeout = 1500,
+        [Parameter(Mandatory = $false)][String] $ServicesRuntimeFqdn,
+        [Parameter(Mandatory = $false)][String] $SddcManagerUser,
+        [Parameter(Mandatory = $false)][String] $SddcManagerPassword
     )
 
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
     try {
-    $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
-    [int]$__ansIdx = 0
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     if (-not $VidbFqdn) {
         if (-not $opsRegisteredComponentsFile) {
@@ -20087,19 +20091,69 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
     LogMessage -type INFO -message "[$jumpboxName] VCF Ops Host   : $VcfOpsFqdn"
     LogMessage -type INFO -message "[$jumpboxName] VIDB Host      : $VidbFqdn"
 
-    # -------------------------------------------------------------------------
-    # Validate the local scripts exist
-    # -------------------------------------------------------------------------
-    $scriptNames = @("vidb-sso-info.sh", "migrate-vidb-vcf-instance.sh")
-    $localScripts = @{}
-    foreach ($scriptName in $scriptNames) {
-        $localScript = Join-Path -Path $PSScriptRoot -ChildPath "scripts/$scriptName"
-        if (-not (Test-Path $localScript)) {
-            LogMessage -type ERROR -message "[$jumpboxName] Script not found: $localScript"
-            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
-        }
-        $localScripts[$scriptName] = $localScript
+    $localScript = Join-Path -Path $PSScriptRoot -ChildPath "scripts/migrate-vidb-vcf-instance.sh"
+    $remotePath = "/tmp/migrate-vidb-vcf-instance.sh"
+    if (-not (Test-Path -LiteralPath $localScript -PathType Leaf)) {
+        throw "Migration script not found at '$localScript'."
     }
+
+    if (-not $VcfInstanceId) {
+        if (-not ($opsRegisteredComponentsFile -and $ServicesRuntimeFqdn -and $SddcManagerUser -and $SddcManagerPassword)) {
+            throw "Supply -VcfInstanceId or provide -opsRegisteredComponentsFile, -ServicesRuntimeFqdn, -SddcManagerUser and -SddcManagerPassword to discover it."
+        }
+
+        $sddcManagerFqdn = Get-OpsRegisteredComponentValue -Name SddcManagerFqdn -opsRegisteredComponentsFile $opsRegisteredComponentsFile -ServicesRuntimeFqdn $ServicesRuntimeFqdn
+        if (-not $sddcManagerFqdn) {
+            return
+        }
+        $sddcToken = Get-SddcManagerToken -SddcManagerFqdn $sddcManagerFqdn -Username $SddcManagerUser -Password $SddcManagerPassword
+        if (-not $sddcToken) {
+            return
+        }
+
+        $sddcHeaders = @{ Authorization = "Bearer $sddcToken"; Accept = "application/json" }
+        $domains = Invoke-RestMethod -Uri "https://$sddcManagerFqdn/v1/domains?type=MANAGEMENT" -Method GET -Headers $sddcHeaders -SkipCertificateCheck -ErrorAction Stop
+        $managementDomains = @($domains.elements | Where-Object { $_.type -eq "MANAGEMENT" })
+        if ($managementDomains.Count -ne 1) {
+            throw "Expected one management domain on SDDC Manager '$sddcManagerFqdn' but found $($managementDomains.Count)."
+        }
+        $managementVcenters = @($managementDomains[0].vcenters | Where-Object { $_.fqdn })
+        if ($managementVcenters.Count -ne 1) {
+            throw "Expected one management domain vCenter with an FQDN on SDDC Manager '$sddcManagerFqdn' but found $($managementVcenters.Count)."
+        }
+        $managementVcenterFqdn = $managementVcenters[0].fqdn
+        LogMessage -type INFO -message "[$sddcManagerFqdn] Management domain vCenter: $managementVcenterFqdn"
+    }
+
+    if (-not $VcfInstanceId -or -not $SsoRealmId) {
+        $opsToken = Get-VcfOperationsToken -VcfOperationsFqdn $VcfOpsFqdn -Username $VcfOpsAdminUsername -Password $VcfOpsAdminPassword
+        if (-not $opsToken) {
+            return
+        }
+        $opsHeaders = @{
+            "Authorization"                     = "vRealizeOpsToken $opsToken"
+            "x-vrealizeops-api-use-unsupported" = "true"
+            "Accept"                            = "application/json"
+        }
+        $vidbs = Invoke-RestMethod -Uri "https://$VcfOpsFqdn/suite-api/internal/vidb/vidbs" -Method GET -Headers $opsHeaders -SkipCertificateCheck -ErrorAction Stop
+
+        if (-not $VcfInstanceId) {
+            $targetRecords = @($vidbs | Where-Object { $_.fqdn -eq $managementVcenterFqdn })
+            if ($targetRecords.Count -ne 1 -or -not $targetRecords[0].vcfInstanceId) {
+                throw "Could not resolve a unique VCF instance ID for management vCenter '$managementVcenterFqdn' on '$VcfOpsFqdn'."
+            }
+            $VcfInstanceId = $targetRecords[0].vcfInstanceId
+        }
+        if (-not $SsoRealmId) {
+            $brokerRecords = @($vidbs | Where-Object { $_.fqdn -eq $VidbFqdn })
+            if ($brokerRecords.Count -ne 1 -or -not $brokerRecords[0].ssoDomainId) {
+                throw "Could not resolve a unique SSO Realm ID for Identity Broker '$VidbFqdn' on '$VcfOpsFqdn'."
+            }
+            $SsoRealmId = $brokerRecords[0].ssoDomainId
+        }
+    }
+    LogMessage -type INFO -message "[$VcfOpsFqdn] Target VCF instance ID: $VcfInstanceId"
+    LogMessage -type INFO -message "[$VcfOpsFqdn] Identity Broker SSO Realm ID: $SsoRealmId"
 
     # -------------------------------------------------------------------------
     # Verify SSH (TCP/22) is reachable on the VCF Operations node before
@@ -20123,32 +20177,24 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
     # -------------------------------------------------------------------------
     $SecurePassword = ConvertTo-SecureString -String $VcfOpsRootPassword -AsPlainText -Force
     $creds = New-Object System.Management.Automation.PSCredential ('root', $SecurePassword)
-    $remotePaths = $scriptNames | ForEach-Object { "/tmp/$_" }
     $session = $null
 
     try {
         $session = Open-VcfmsSshSession -Fqdn $VcfOpsFqdn -Creds $creds
 
-        # -------------------------------------------------------------------------
-        # Upload both scripts via base64 pipe — avoids any SCP binary dependency
-        # -------------------------------------------------------------------------
-        foreach ($scriptName in $scriptNames) {
-            $remotePath = "/tmp/$scriptName"
-            LogMessage -type INFO -message "[$VcfOpsFqdn] Uploading script to $remotePath"
-            $scriptBytes = [System.IO.File]::ReadAllBytes($localScripts[$scriptName])
-            # Strip CR bytes so the file always has Unix line endings on the remote node
-            $scriptBytes = [byte[]]($scriptBytes | Where-Object { $_ -ne 0x0D })
-            $b64 = [System.Convert]::ToBase64String($scriptBytes)
+        LogMessage -type INFO -message "[$VcfOpsFqdn] Uploading migration script to $remotePath"
+        $scriptBytes = [System.IO.File]::ReadAllBytes($localScript)
+        # Strip CR bytes so the file always has Unix line endings on the remote node
+        $scriptBytes = [byte[]]($scriptBytes | Where-Object { $_ -ne 0x0D })
+        $b64 = [System.Convert]::ToBase64String($scriptBytes)
 
-            $uploadCmd = "printf '%s' '$b64' | base64 -d > $remotePath && chmod +x $remotePath"
-            $uploadResult = Invoke-SSHCommand -SessionId $session.SessionId -Command $uploadCmd -TimeOut 60
-            if ($uploadResult.ExitStatus -ne 0) {
-                LogMessage -type ERROR -message "[$VcfOpsFqdn] Script upload failed for ${scriptName} (exit $($uploadResult.ExitStatus)): $($uploadResult.Error -join ' ')"
-                Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
-                return
-            }
+        $uploadCmd = "printf '%s' '$b64' | base64 -d > $remotePath && chmod +x $remotePath"
+        $uploadResult = Invoke-SSHCommand -SessionId $session.SessionId -Command $uploadCmd -TimeOut 60
+        if ($uploadResult.ExitStatus -ne 0) {
+            LogMessage -type ERROR -message "[$VcfOpsFqdn] Migration script upload failed (exit $($uploadResult.ExitStatus)): $($uploadResult.Error -join ' ')"
+            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+            return
         }
-        LogMessage -type INFO -message "[$VcfOpsFqdn] Scripts uploaded successfully"
 
         # =====================================================================
         # Confirm the Identity Broker is reachable on the new VCF instance
@@ -20169,182 +20215,13 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
             LogMessage -type INFO -message "[$VidbFqdn] Skipping Identity Broker reachability pre-check (-IdentityBrokerTenant not supplied). To check manually: curl -sk https://$VidbFqdn/acs/t/<TENANT>/.well-known/openid-configuration"
         }
 
-        # =====================================================================
-        # Run vidb-sso-info.sh to display the current VIDB <-> VCF instance <->
-        # SSO Realm mapping, exactly as in the documented procedure.
-        # =====================================================================
-        LogMessage -type INFO -message "[$VcfOpsFqdn] Retrieving VIDB <-> VCF instance <-> SSO Realm mapping (vidb-sso-info.sh)"
-        $ssoInfoCmd = "printf '%s\n' '$VcfOpsAdminPassword' | bash /tmp/vidb-sso-info.sh --ops-fqdn '$VcfOpsFqdn' 2>&1"
-        $ssoInfoResult = Invoke-SSHCommand -SessionId $session.SessionId -Command $ssoInfoCmd -TimeOut 60
-
-        Write-Host ""
-        Write-Host " ── vidb-sso-info.sh output ──────────────────────────────────────────" -ForegroundColor Cyan
-        $ssoInfoResult.Output | Where-Object { $_ -notmatch 'Enter Ops Admin Password' } | ForEach-Object { Write-Host "  $_" }
-        Write-Host " ────────────────────────────────────────────────────────────────────" -ForegroundColor Cyan
-        Write-Host ""
-
-        # =====================================================================
-        # Acquire a VCF Operations API token for the discovery queries below
-        # =====================================================================
-        $tokenUri = "https://$VcfOpsFqdn/suite-api/api/auth/token/acquire"
-        $tokenBody = @{ username = $VcfOpsAdminUsername; password = $VcfOpsAdminPassword } | ConvertTo-Json -Compress
-        try {
-            $tokenResp = Invoke-RestMethod -Uri $tokenUri -Method POST -Body $tokenBody `
-                -ContentType "application/json" -SkipCertificateCheck
-        } catch {
-            LogMessage -type ERROR -message "[$VcfOpsFqdn] Failed to acquire VCF Operations API token: $($_.Exception.Message)"
-            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
-        }
-        $apiToken = $tokenResp.token
-        if (-not $apiToken) {
-            LogMessage -type ERROR -message "[$VcfOpsFqdn] VCF Operations API token was empty. Check credentials."
-            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
-        }
-        $apiHeaders = @{
-            "Authorization"                     = "vRealizeOpsToken $apiToken"
-            "x-vrealizeops-api-use-unsupported" = "true"
-            "Accept"                            = "application/json"
-        }
-
-        # =====================================================================
-        # Resolve the target VCF Instance ID
-        #   GET /suite-api/internal/vidb/vidbs
-        #   Skipped when -VcfInstanceId is supplied directly.
-        # =====================================================================
-        if (-not $VcfInstanceId) {
-            LogMessage -type INFO -message "[$VcfOpsFqdn] Querying VCF adapter instances from VCF Operations API"
-
-            $vidbsUri = "https://$VcfOpsFqdn/suite-api/internal/vidb/vidbs"
-            try {
-                $vidbsResp = Invoke-RestMethod -Uri $vidbsUri -Method GET -Headers $apiHeaders -SkipCertificateCheck
-            } catch {
-                LogMessage -type ERROR -message "[$VcfOpsFqdn] Failed to query VCF adapter instances: $($_.Exception.Message)"
-                Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
-            }
-
-            $vcfInstances = @($vidbsResp | Where-Object { $_.vcfInstanceId -and $_.fqdn })
-            if ($vcfInstances.Count -eq 0) {
-                LogMessage -type ERROR -message "[$VcfOpsFqdn] No VCF adapter instances were returned by the API."
-                Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
-            }
-
-            # Build and display numbered selection table
-            $vcfInstanceTable = @()
-            $vcfInstanceTable += [pscustomobject]@{ ID = "ID"; VCFInstanceId = "VCF Instance ID"; FQDN = "FQDN"; Type = "Type"; ResourceName = "Resource Name" }
-            $vcfInstanceTable += [pscustomobject]@{ ID = "--"; VCFInstanceId = "------------------------------------"; FQDN = "----"; Type = "--------"; ResourceName = "-------------" }
-            $idx = 1
-            foreach ($inst in $vcfInstances) {
-                $vcfInstanceTable += [pscustomobject]@{
-                    ID            = $idx
-                    VCFInstanceId = $inst.vcfInstanceId
-                    FQDN          = $inst.fqdn
-                    Type          = $inst.deploymentType
-                    ResourceName  = $inst.vcfResourceName
-                }
-                $idx++
-            }
-
-            Write-Host ""
-            Write-Host " Select the VCF instance to associate with the Identity Broker" -ForegroundColor Cyan
-            Write-Host ""
-            $vcfInstanceTable | Format-Table -Property @{Expression = " " }, ID, VCFInstanceId, FQDN, Type, ResourceName -AutoSize -HideTableHeaders |
-                Out-String | ForEach-Object { $_.Trim("`r", "`n") }
-
-            $validIds = 1..($vcfInstances.Count) | ForEach-Object { "$_" }
-            Do {
-                Write-Host ""
-                Write-Host " Enter the ID of the VCF instance to use, or C to Cancel: " -ForegroundColor Yellow -NoNewline
-                $vcfInstanceSelection = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
-                Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid (($vcfInstanceSelection -in $validIds) -or ($vcfInstanceSelection -ieq "C")) -Value $vcfInstanceSelection -PromptDescription "VCF instance selection"
-            } Until (($vcfInstanceSelection -in $validIds) -or ($vcfInstanceSelection -ieq "C"))
-
-            if ($vcfInstanceSelection -ieq "C") {
-                LogMessage -type INFO -message "[$jumpboxName] Operation cancelled by user at VCF instance selection."
-                Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
-            }
-
-            $VcfInstanceId = $vcfInstances[$vcfInstanceSelection - 1].vcfInstanceId
-            LogMessage -type INFO -message "[$VcfOpsFqdn] Selected VCF Instance ID : $VcfInstanceId"
-        } else {
-            LogMessage -type INFO -message "[$VcfOpsFqdn] Using supplied VCF Instance ID : $VcfInstanceId"
-        }
-
-        # =====================================================================
-        # Resolve the SSO Realm ID
-        #   GET /suite-api/api/fleet-management/iam/ssorealms
-        #   Skipped when -SsoRealmId is supplied directly.
-        # =====================================================================
-        if (-not $SsoRealmId) {
-            LogMessage -type INFO -message "[$VcfOpsFqdn] Querying SSO Realms from VCF Operations API"
-
-            $ssoRealmsUri = "https://$VcfOpsFqdn/suite-api/api/fleet-management/iam/ssorealms"
-            try {
-                $ssoRealmsResp = Invoke-RestMethod -Uri $ssoRealmsUri -Method GET -Headers $apiHeaders -SkipCertificateCheck
-            } catch {
-                LogMessage -type ERROR -message "[$VcfOpsFqdn] Failed to query SSO Realms: $($_.Exception.Message)"
-                Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
-            }
-
-            $ssoRealms = @($ssoRealmsResp.ssoRealms)
-            if ($ssoRealms.Count -eq 0) {
-                LogMessage -type INFO -message "[$VcfOpsFqdn] No SSO Realms were returned by the API — SSO Realm update will be skipped."
-            } else {
-                # Build and display numbered selection table
-                $ssoRealmTable = @()
-                $ssoRealmTable += [pscustomobject]@{ ID = "ID"; SsoRealmId = "SSO Realm ID"; Name = "Name"; VidbResourceId = "VIDB Resource ID"; VcfInstanceId = "VCF Instance ID" }
-                $ssoRealmTable += [pscustomobject]@{ ID = "--"; SsoRealmId = "------------------------------------"; Name = "----"; VidbResourceId = "------------------------------------"; VcfInstanceId = "------------------------------------" }
-                $idx = 1
-                foreach ($realm in $ssoRealms) {
-                    $ssoRealmTable += [pscustomobject]@{
-                        ID             = $idx
-                        SsoRealmId     = $realm.id
-                        Name           = $realm.name
-                        VidbResourceId = $realm.vidbResourceId
-                        VcfInstanceId  = $realm.vcfInstanceId
-                    }
-                    $idx++
-                }
-
-                Write-Host ""
-                Write-Host " Select the SSO Realm to update with the target VCF instance ID" -ForegroundColor Cyan
-                Write-Host ""
-                $ssoRealmTable | Format-Table -Property @{Expression = " " }, ID, SsoRealmId, Name, VidbResourceId, VcfInstanceId -AutoSize -HideTableHeaders |
-                    Out-String | ForEach-Object { $_.Trim("`r", "`n") }
-
-                $validSsoIds = 1..($ssoRealms.Count) | ForEach-Object { "$_" }
-                Do {
-                    Write-Host ""
-                    Write-Host " Enter the ID of the SSO Realm to update, S to Skip, or C to Cancel: " -ForegroundColor Yellow -NoNewline
-                    $ssoSelection = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
-                    Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid (($ssoSelection -in $validSsoIds) -or ($ssoSelection -ieq "S") -or ($ssoSelection -ieq "C")) -Value $ssoSelection -PromptDescription "SSO domain entry selection"
-                } Until (($ssoSelection -in $validSsoIds) -or ($ssoSelection -ieq "S") -or ($ssoSelection -ieq "C"))
-
-                if ($ssoSelection -ieq "C") {
-                    LogMessage -type INFO -message "[$jumpboxName] Operation cancelled by user at SSO Realm selection."
-                    Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch; return
-                }
-
-                if ($ssoSelection -ieq "S") {
-                    LogMessage -type INFO -message "[$VcfOpsFqdn] SSO Realm update skipped by user."
-                } else {
-                    $SsoRealmId = $ssoRealms[$ssoSelection - 1].id
-                    LogMessage -type INFO -message "[$VcfOpsFqdn] Selected SSO Realm ID : $SsoRealmId"
-                }
-            }
-        } else {
-            LogMessage -type INFO -message "[$VcfOpsFqdn] Using supplied SSO Realm ID : $SsoRealmId"
-        }
-
         # -------------------------------------------------------------------------
         # Run migrate-vidb-vcf-instance.sh with the resolved values. The script
         # prompts for the OPS password on stdin (no --password flag); pipe it in.
         # -------------------------------------------------------------------------
-        $scriptArgs = "--ops-fqdn '$VcfOpsFqdn' --username '$VcfOpsAdminUsername' --vidb-host '$VidbFqdn' --target-vcf '$VcfInstanceId'"
-        if ($SsoRealmId) {
-            $scriptArgs += " --sso-realm '$SsoRealmId'"
-        }
+        $scriptArgs = "--ops-fqdn '$VcfOpsFqdn' --username '$VcfOpsAdminUsername' --vidb-host '$VidbFqdn' --target-vcf '$VcfInstanceId' --sso-realm '$SsoRealmId'"
 
-        $execCmd = "printf '%s\n' '$VcfOpsAdminPassword' | bash /tmp/migrate-vidb-vcf-instance.sh $scriptArgs 2>&1"
+        $execCmd = "printf '%s\n' '$VcfOpsAdminPassword' | bash $remotePath $scriptArgs 2>&1"
 
         LogMessage -type INFO -message "[$VcfOpsFqdn] Executing migrate-vidb-vcf-instance.sh (timeout: ${RemoteScriptTimeout}s)"
         Write-Host ""
@@ -20373,11 +20250,9 @@ Function Invoke-VcfOpsVidbVcfInstanceUpdate {
         LogMessage -type ERROR -message "[$jumpboxName] $($_.Exception.Message)"
     } finally {
         if ($session) {
-            foreach ($remotePath in $remotePaths) {
-                Invoke-SSHCommand -SessionId $session.SessionId -Command "rm -f $remotePath" -TimeOut 15 | Out-Null
-            }
+            Invoke-SSHCommand -SessionId $session.SessionId -Command "rm -f $remotePath" -TimeOut 15 | Out-Null
             Remove-SSHSession -SSHSession $session | Out-Null
-            LogMessage -type INFO -message "[$VcfOpsFqdn] Temporary scripts removed"
+            LogMessage -type INFO -message "[$VcfOpsFqdn] Temporary migration script removed"
         }
     }
 
