@@ -4790,13 +4790,23 @@ $exitButton.Add_Click({
             # group's row list, and index within it) is what's actually unique per step; CommandLine
             # is carried along too so Resume can tell whether the plan file has changed since this
             # save and refuse to trust a now-stale index rather than risk marking the wrong row Done.
+            #
+            # EVERY step in the plan is saved, each with a Completed true/false flag (and a Name for
+            # readability), not just the completed ones -- so when a step has been remediated out of
+            # band, the save file can simply be edited ("Completed": false -> true) before Resume.
             $stepRowGroups = Get-StepRowGroups
-            $completedSteps = @(
+            $savedSteps = @(
                 foreach ($groupName in $stepRowGroups.Keys) {
                     $rows = $stepRowGroups[$groupName]
                     for ($i = 0; $i -lt $rows.Count; $i++) {
-                        if ($rows[$i].PlanButton.Content -eq 'Done') {
-                            [PSCustomObject]@{ Group = $groupName; Index = $i; CommandLine = $rows[$i].CommandLine; Duration = [string]$rows[$i].PlanButton.Tag.Content }
+                        $isDone = ($rows[$i].PlanButton.Content -eq 'Done')
+                        [PSCustomObject]@{
+                            Group       = $groupName
+                            Index       = $i
+                            Name        = if ($rows[$i].DisplayName) { $rows[$i].DisplayName } else { $rows[$i].CmdletName }
+                            Completed   = $isDone
+                            Duration    = if ($isDone) { [string]$rows[$i].PlanButton.Tag.Content } else { '' }
+                            CommandLine = $rows[$i].CommandLine
                         }
                     }
                 }
@@ -4837,7 +4847,7 @@ $exitButton.Add_Click({
                 # different file from VariablesAnswersFilePath above.
                 InteractiveAnswerFilePath = $global:currentPlanContext.InteractiveAnswerFilePath
                 SelectedDomainIndex      = $domainsListBox.SelectedIndex
-                CompletedSteps           = $completedSteps
+                Steps                    = $savedSteps
             }
 
             $dialog = New-Object Microsoft.Win32.SaveFileDialog
@@ -4974,12 +4984,22 @@ $resumeButton.Add_Click({
             }
 
             $stepRowGroups = Get-StepRowGroups
-            if ($state.CompletedSteps) {
-                # Current format -- see the matching comment on $completedSteps in the Exit handler
-                # for why this has to be position (group + index), not just CommandLine text: two
-                # different steps in a plan can share byte-identical CommandLine.
+            # Current format: "Steps" lists every step with a Completed flag (see the Exit handler) -- only
+            # the ones flagged true are restored. The previous format, "CompletedSteps", listed just the
+            # completed ones; it is handled the same way below.
+            $completedSavedSteps = if ($state.Steps) {
+                @($state.Steps | Where-Object { $_.Completed -eq $true })
+            } elseif ($state.CompletedSteps) {
+                @($state.CompletedSteps)
+            } else {
+                $null
+            }
+            if ($state.Steps -or $state.CompletedSteps) {
+                # See the matching comment on $savedSteps in the Exit handler for why this has to be
+                # position (group + index), not just CommandLine text: two different steps in a plan
+                # can share byte-identical CommandLine.
                 $skippedSteps = 0
-                foreach ($savedStep in @($state.CompletedSteps)) {
+                foreach ($savedStep in $completedSavedSteps) {
                     $rows = $stepRowGroups[[string]$savedStep.Group]
                     if (-not $rows) { $skippedSteps++; continue }
                     $stepIndex = [int]$savedStep.Index

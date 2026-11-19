@@ -561,9 +561,14 @@ The state file records:
 - Your selected domain
 - The variables file and answer file you were using
 - The path of the credentials file
-- Which tasks were **Done**
+- Every task in the plan, each with a `Completed` flag (`true` if it was **Done**, otherwise `false`)
 
 It does **not** record passwords or other variable values. Those stay in your variables file.
+
+If you fix a task outside the application, open the state file in a text editor and change that task's
+`"Completed": false` to `"Completed": true` before you **Resume**. Leave the other fields as they are: the
+`CommandLine` is how **Resume** confirms the task list still matches. Each entry's `Name` is only there to
+help you find the task.
 
 !!! warning
     Closing the window with the **✕** instead of **Save & Exit** ends the console sessions and does **not**

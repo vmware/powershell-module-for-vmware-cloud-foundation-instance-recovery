@@ -166,7 +166,7 @@ figcaption { margin-top: 8px; font-size: 13px; color: var(--subtle); text-align:
   <main class="content">
     <div class="content-inner">
       <h1 class="doc-title">Recovery Coordinator User Guide</h1>
-      <p class="doc-sub">Generated from the module documentation on 2026-11-18.</p>
+      <p class="doc-sub">Generated from the module documentation on 2026-11-19.</p>
 
 <p>The <strong>VMware Cloud Foundation Recovery Coordinator</strong> is a Windows desktop application, shipped with the
 <code>VCF.RecoveryCoordinator</code> module, that walks you through recovering a VMware Cloud Foundation instance
@@ -894,9 +894,13 @@ Thread 1 console. This is slower but simpler to follow, which can be useful when
 <li>Your selected domain</li>
 <li>The variables file and answer file you were using</li>
 <li>The path of the credentials file</li>
-<li>Which tasks were <strong>Done</strong></li>
+<li>Every task in the plan, each with a <code>Completed</code> flag (<code>true</code> if it was <strong>Done</strong>, otherwise <code>false</code>)</li>
 </ul>
 <p>It does <strong>not</strong> record passwords or other variable values. Those stay in your variables file.</p>
+<p>If you fix a task outside the application, open the state file in a text editor and change that task's
+<code>&quot;Completed&quot;: false</code> to <code>&quot;Completed&quot;: true</code> before you <strong>Resume</strong>. Leave the other fields as they are: the
+<code>CommandLine</code> is how <strong>Resume</strong> confirms the task list still matches. Each entry's <code>Name</code> is only there to
+help you find the task.</p>
 <div class="alert alert-warning" role="note"><div class="alert-icon" aria-hidden="true"></div><div class="alert-content"><div class="alert-title">Warning</div><p>Closing the window with the <strong>✕</strong> instead of <strong>Save &amp; Exit</strong> ends the console sessions and does <strong>not</strong>
 save your progress. Use <strong>Save &amp; Exit</strong>.</p>
 </div></div>
