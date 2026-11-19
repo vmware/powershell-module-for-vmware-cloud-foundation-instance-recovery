@@ -1891,9 +1891,8 @@ $window.Add_Closed({
 # even though it reports success. Attached only for the instant it takes to call SetFocus, then
 # immediately detached again -- this only needs to be true for that one call, not for the whole
 # app's lifetime. Always acts on Get-ActiveConsole (whichever tab is currently selected), never a
-# specific console passed in -- switching tabs, clicking a console, the window regaining activation,
-# and Send-ToConsole injecting a command should all give focus to whatever's actually on screen,
-# never silently steal it onto some other tab.
+# specific console passed in. Switching tabs, clicking a console, and Send-ToConsole injecting a
+# command all give focus to the console on screen.
 function Set-ConsoleFocus {
     $console = Get-ActiveConsole
     if ($null -eq $console -or $console.Hwnd -eq [IntPtr]::Zero) {
@@ -2033,20 +2032,8 @@ $window.Add_Loaded({
         Set-ConsoleFocus
     })
 
-# Window activation and tab switching are the two other moments Set-ConsoleFocus's own comment
-# describes as needing an explicit re-assertion -- this window regaining activation after having
-# lost it for a while (screen lock, RDP disconnect/reconnect, alt-tabbing away and back), or
-# switching to a different console's tab, both leave real OS keyboard focus wherever it already was
-# rather than automatically following either. Exactly the kind of gap that would leave a step's own
-# interactive prompt (Read-Host) visibly sitting on screen but genuinely unable to receive anything
-# typed at it, indefinitely, with nothing to indicate why.
-# Temporarily skip activation-time console focus when testing taskbar restore on Windows.
-if ($env:VCFRC_TEST_SKIP_ACTIVATION_FOCUS -ne '1') {
-    $window.Add_Activated({
-            Set-ConsoleFocus
-        })
-}
-
+# Keep cross-thread console focus out of window activation because it can stall taskbar restore.
+# Selecting a console tab or clicking the console gives it keyboard focus.
 $consoleTabControl.Add_SelectionChanged({
         Set-ConsoleFocus
     })
