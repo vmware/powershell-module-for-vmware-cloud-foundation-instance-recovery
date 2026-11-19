@@ -1796,7 +1796,7 @@ function Initialize-ConsoleVariables($Console) {
     }
 
     $targetText = "Completed Task $lastCmdletSent"
-    $deadline = (Get-Date).AddSeconds(10)
+    $deadline = (Get-Date).AddSeconds(60)
     while ((Get-Date) -lt $deadline) {
         $transcriptText = Get-Content -Path $Console.TranscriptPath -Raw -ErrorAction SilentlyContinue
         if ($transcriptText -and $transcriptText.Contains($targetText)) {
@@ -1804,7 +1804,7 @@ function Initialize-ConsoleVariables($Console) {
         }
         Start-Sleep -Milliseconds 50
     }
-    New-Advisory "Console '$($Console.TabItem.Header)' did not confirm its bootstrap variables within 10 seconds." -Failure
+    New-Advisory "Console '$($Console.TabItem.Header)' did not confirm its bootstrap variables within 60 seconds." -Failure
 }
 
 # Resolves to whichever console's tab is currently selected, for the benefit of anything that
