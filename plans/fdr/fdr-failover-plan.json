@@ -223,6 +223,15 @@
     "visible": true
   },
   {
+    "description": "Download the VSP Bundle Required for VCF Automation Recovery",
+    "commandLine": "Invoke-SddcManagerBundleDownload -sddcManagerFqdn $sddcManagerFqdn -vcfUserPassword $vcfUserPassword -rootPassword $rootPassword -adminPassword $localUserPassword -VcfVersion $vcfVersion -WaitForCompletion",
+    "displayName": "Invoke SDDC Manager Bundle Download",
+    "condition": [],
+    "threadId": "3",
+    "interactive": false,
+    "visible": true
+  },
+  {
     "description": "Deploy a VCF Automation Services Runtime Cluster",
     "commandLine": "New-ServicesRuntime -SddcManagerUser $sddcManagerAdmin -SddcManagerPassword $sddcManagerAdminPassword -ServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -SystemUserPassword $vcfaServicesRuntimePassword -Ipv4Addresses ($vcfaIpv4Addresses.Split(',').Trim()) -Size $vcfaSize -NetworkMoId $vcfaNetworkMoId -GatewayCidrIpv4 $vcfaGatewayCidrIpv4 -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -InternalClusterCidrIpv4 $vcfaInternalClusterCidrIpv4 -Type CONSUMPTION",
     "displayName": "Create New Services Runtime for VCF Automation",
