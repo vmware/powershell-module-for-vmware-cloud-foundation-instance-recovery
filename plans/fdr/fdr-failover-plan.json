@@ -69,7 +69,7 @@
   },
   {
     "description": "Retrieve a List of Backups for VCF Management Services Fleet Components",
-    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -ServicesRuntimeFqdn $sourceVcfmsServicesRuntimeFqdn -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -Type vcfms -componentNames \"vcf-fleet-lcm\",\"vcf-fleet-depot\",\"salt-raas\",\"vidb\" -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
+    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -ServicesRuntimeFqdn $sourceVcfmsServicesRuntimeFqdn -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -componentNames \"vcf-fleet-lcm\",\"vcf-fleet-depot\",\"salt-raas\",\"vidb\" -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
     "displayName": "Retrieve VCFMS Backups",
     "condition": [],
     "threadId": "1",
@@ -135,7 +135,7 @@
   },
   {
     "description": "Restore the Fleet Components on the Recovery VCF Management Services Instance",
-    "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $targetVcfmsServicesRuntimePassword -RestoreJsonFile \".\\vcfms-restore-payload.json\"",
+    "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $targetVcfmsServicesRuntimePassword",
     "displayName": "Restore VCFMS Backups",
     "condition": [],
     "threadId": "2",
