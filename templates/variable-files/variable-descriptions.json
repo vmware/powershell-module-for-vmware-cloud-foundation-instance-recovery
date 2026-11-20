@@ -1,81 +1,405 @@
 {
-  "targetDatacenter": "Existing datacenter in the alternate deployment vCenter. Used with custom placement.",
-  "targetCluster": "Existing cluster within targetDatacenter in the alternate deployment vCenter. Used with custom placement.",
-  "targetDatastore": "Existing datastore accessible to the target cluster. Used with custom placement.",
-  "targetNetwork": "Existing VM port group in the alternate deployment vCenter. Its connectivity must support the original appliance IP configuration from the extracted SDDC data.",
-  "vCenterBackupPassword": "Password used to encrypt the vCenter backup. Leave blank for an unencrypted backup.",
-  "targetType": "What the appliances are deployed onto: 'esx' (a standalone ESX host) or 'vcenter' (an existing vCenter).",
-  "targetFqdn": "FQDN of the ESX host or vCenter the restored appliances are deployed to. For the management domain, leave blank to use the first ESX host in the extracted SDDC data.",
-  "targetAdmin": "Administrator account used to log in to the deployment target (e.g. root for an ESX host, administrator@vsphere.local for a vCenter). For the management domain, leave blank to use root.",
-  "targetAdminPassword": "Password for the deployment target administrator account.",
-  "restoredVcenterDeploymentSize": "Size of the vCenter appliance to deploy (e.g. small, medium, large, optionally with a storage suffix such as small-lstorage).",
-  "vCenterOvaFile": "Path on this machine to the vCenter Server Appliance OVA used to deploy the restored vCenter.",
-  "restoredNsxManagerDeploymentSize": "Size of the NSX Manager appliance to deploy (e.g. medium, large).",
-  "nsxManagerOvaFile": "Path on this machine to the NSX Manager OVA used to deploy the restored NSX Manager.",
-  "sddcManagerOvaFile": "Path on this machine to the SDDC Manager OVA used to deploy the restored SDDC Manager.",
-  "newSddcManagerPassword": "Password to set for the vcf, root and local admin accounts on the newly deployed SDDC Manager. Also used afterwards to log in to it.",
-  "vCenterBackupPath": "Path to the vCenter backup on the backup location, e.g. 10.0.0.5/share/vCenter/sn_<vcenter-fqdn>/M_<version>_<timestamp>.",
-  "locationType": "Protocol of the vCenter backup location: FTP, FTPS, HTTP, HTTPS, SFTP, NFS or SMB.",
-  "locationUser": "User account for connecting to the vCenter backup location.",
-  "locationPassword": "Password for the vCenter backup location user.",
-  "sftpServer": "FQDN or IP address of the SFTP server holding the NSX / VCF backups.",
-  "sftpUser": "User account for the SFTP backup server.",
-  "sftpPassword": "Password for the SFTP backup server user.",
-  "sftpServerBackupPath": "Directory on the SFTP server under which the backups are stored (e.g. /media/backups).",
-  "nsxBackupPassphrase": "Passphrase the NSX Manager backup was encrypted with.",
-  "vcfBackupFilePath": "Path on this machine to the SDDC Manager backup file (vcf-backup-*.tar.gz).",
-  "sddcManagerFqdn": "FQDN of SDDC Manager.",
-  "sddcManagerAdmin": "SSO administrator account used to authenticate to the SDDC Manager API (e.g. administrator@vsphere.local).",
-  "sddcManagerAdminPassword": "Password for the SDDC Manager API administrator account.",
-  "restoredVcenterFqdn": "FQDN of the restored vCenter.",
-  "restoredVcenterAdmin": "SSO administrator account of the restored vCenter (e.g. administrator@vsphere.local, or administrator@<domain>.local for a workload domain).",
-  "restoredVcenterAdminPassword": "Password for the restored vCenter administrator account.",
-  "restoredNsxManagerFqdn": "FQDN of the restored NSX Manager.",
-  "restoredNsxManagerAdmin": "NSX Manager administrator account (normally admin).",
-  "restoredNsxManagerAdminPassword": "Password for the NSX Manager administrator account.",
-  "restoredNsxManagerRootPassword": "Password for the root account of the restored NSX Manager appliance.",
-  "svcAccountPassword": "Password to set on the service accounts created on the rebuilt ESX hosts.",
-  "vcfUserPassword": "Password for the vcf account on SDDC Manager.",
-  "rootPassword": "Password for the root account on SDDC Manager.",
-  "localUserPassword": "Password for the local admin (admin@local) account on SDDC Manager.",
-  "adminPassword": "Password for the local admin (admin@local) API user on SDDC Manager.",
-  "opsRestoreScriptPath": "Path on this machine to your own script that restores the VCF Operations appliances.",
-  "dnsScriptPath": "Path on this machine to your own script that modifies the fleet component VIP DNS entries for this plan. It is run with no parameters and must exit 0 on success. Ready-made examples are helper\\Update-FleetVipDnsFailover.ps1 and helper\\Update-FleetVipDnsFailback.ps1.",
-  "vsanWitnessScriptPath": "Path on this machine to your own script that deploys a new vSAN Witness and registers it in the restored vCenter.",
-  "vcfOperationsFqdn": "FQDN of VCF Operations (e.g. flt-ops01a.rainpole.io). Its registered components are retrieved to work out the fleet, Identity Broker, VCF Automation and VCF instance details, so those are not asked for.",
-  "offlineDepotFqdn": "FQDN of the offline depot that serves VCF bundles and backups.",
-  "offlineDepotPort": "HTTPS port of the offline depot (normally 443).",
-  "offlineDepotUsername": "User name for the offline depot.",
-  "offlineDepotPassword": "Password for the offline depot user.",
-  "vcfVersion": "VCF version to download bundles for, e.g. 9.1.0.0.",
-  "localArchivePath": "Path on this machine to the VCFMS backup archive (*.base.tgz) to extract.",
-  "encryptionPassphrase": "Passphrase used to encrypt the VCFMS backups. Also set as the backup encryption passphrase on the new VCF Automation Services Runtime.",
-  "instanceFqdn": "FQDN of the VCF instance that the VCFMS Services Runtime belongs to.",
-  "ipv4Addresses": "Comma-separated IPv4 addresses for the Services Runtime IP pool.",
-  "size": "Deployment size of the VCFMS Services Runtime (small, medium or large).",
-  "gatewayCidrIpv4": "Gateway of the Services Runtime network, as an IPv4 CIDR (e.g. 10.11.10.1/24).",
-  "internalClusterCidrIpv4": "Internal cluster network of the Services Runtime, as an IPv4 CIDR (e.g. 198.18.0.0/15).",
-  "vcfmsServicesRuntimePassword": "Password of the VCFMS Services Runtime system user (admin@vsp.local).",
-  "sftpHost": "FQDN or IP address of the SFTP server that holds the backups and that the Services Runtime backs up to.",
-  "sftpUsername": "User name for the SFTP backup server.",
-  "sftpDirectory": "Directory on the SFTP server where the backups are stored (e.g. /media/backups).",
-  "vcfInstallerFqdn": "FQDN of the VCF Installer appliance.",
-  "vcfaServicesRuntimePassword": "Password of the VCF Automation Services Runtime system user (admin@vsp.local). Set on the new runtime when it is created, and used to connect to it afterwards.",
-  "vcfaIpv4Addresses": "Comma-separated IPv4 addresses for the VCF Automation Services Runtime IP pool.",
-  "vcfaSize": "Deployment size of the VCF Automation Services Runtime (small, medium or large).",
-  "vcfaGatewayCidrIpv4": "Gateway of the VCF Automation Services Runtime network, as an IPv4 CIDR.",
-  "vcfaInternalClusterCidrIpv4": "Internal cluster network of the VCF Automation Services Runtime, as an IPv4 CIDR.",
-  "fleetVip": "IPv4 address to set as the Fleet LCM ingress VIP.",
-  "sddcLcmSftpRemoteDir": "Remote directory on the SFTP server used by the SDDC LCM backup secrets script.",
-  "vcfaSystemPassword": "Password of the admin@System account on VCF Automation.",
-  "vidbVip": "IPv4 address to set as the Identity Broker ingress VIP on the VCF Management Services Services Runtime.",
-  "vcfaVip": "IPv4 address to set as the VCF Automation ingress VIP on the VCF Automation Services Runtime.",
-  "vcfOperationsAdminPassword": "Password of the VCF Operations admin account. Used to log in to the VCF Operations API and to re-register components with VCF Operations.",
-  "vcfOperationsRootPassword": "Password of the root account on the VCF Operations primary node.",
-  "sourceVcfmsServicesRuntimeFqdn": "FQDN of the SOURCE VCF Management Services Services Runtime, as registered in VCF Operations. Failover: the primary site, used only to locate its backups on the SFTP server. Failback: the recovery site, used to locate the post-failover backups and as the runtime the recovered components are removed from.",
-  "targetVcfmsServicesRuntimeFqdn": "FQDN of the TARGET VCF Management Services Services Runtime that the fleet components are restored to (failover: the recovery site; failback: the original primary site).",
-  "targetVcfmsServicesRuntimePassword": "Password of the system user (admin@vsp.local) on the TARGET VCF Management Services Services Runtime.",
-  "vcfmsServicesRuntimeFqdn": "FQDN of the VCF Management Services Services Runtime the fleet components are restored to (the recovery site for failover, the original site for failback). Its backups, VCF instance and SDDC Manager are looked up from it.",
-  "logManagementVip": "IPv4 address to set as the Log Management ingress VIP on the VCF Management Services Services Runtime.",
-  "vcfaNetworkMoId": "vCenter ID of the port group (e.g. dvportgroup-28) the VCF Automation Services Runtime VMs connect to."
+  "targetDatacenter": {
+    "description": "Existing datacenter in the alternate deployment vCenter. Used with custom placement.",
+    "masked": false,
+    "browse": false
+  },
+  "targetCluster": {
+    "description": "Existing cluster within targetDatacenter in the alternate deployment vCenter. Used with custom placement.",
+    "masked": false,
+    "browse": false
+  },
+  "targetDatastore": {
+    "description": "Existing datastore accessible to the target cluster. Used with custom placement.",
+    "masked": false,
+    "browse": false
+  },
+  "targetNetwork": {
+    "description": "Existing VM port group in the alternate deployment vCenter. Its connectivity must support the original appliance IP configuration from the extracted SDDC data.",
+    "masked": false,
+    "browse": false
+  },
+  "vCenterBackupPassword": {
+    "description": "Password used to encrypt the vCenter backup. Leave blank for an unencrypted backup.",
+    "masked": true,
+    "browse": false
+  },
+  "targetType": {
+    "description": "What the appliances are deployed onto: 'esx' (a standalone ESX host) or 'vcenter' (an existing vCenter).",
+    "masked": false,
+    "browse": false
+  },
+  "targetFqdn": {
+    "description": "FQDN of the ESX host or vCenter the restored appliances are deployed to. For the management domain, leave blank to use the first ESX host in the extracted SDDC data.",
+    "masked": false,
+    "browse": false
+  },
+  "targetAdmin": {
+    "description": "Administrator account used to log in to the deployment target (e.g. root for an ESX host, administrator@vsphere.local for a vCenter). For the management domain, leave blank to use root.",
+    "masked": false,
+    "browse": false
+  },
+  "targetAdminPassword": {
+    "description": "Password for the deployment target administrator account.",
+    "masked": true,
+    "browse": false
+  },
+  "restoredVcenterDeploymentSize": {
+    "description": "Size of the vCenter appliance to deploy (e.g. small, medium, large, optionally with a storage suffix such as small-lstorage).",
+    "masked": false,
+    "browse": false
+  },
+  "vCenterOvaFile": {
+    "description": "Path on this machine to the vCenter Server Appliance OVA used to deploy the restored vCenter.",
+    "masked": false,
+    "browse": true,
+    "fileFilter": "OVA files (*.ova)|*.ova"
+  },
+  "restoredNsxManagerDeploymentSize": {
+    "description": "Size of the NSX Manager appliance to deploy (e.g. medium, large).",
+    "masked": false,
+    "browse": false
+  },
+  "nsxManagerOvaFile": {
+    "description": "Path on this machine to the NSX Manager OVA used to deploy the restored NSX Manager.",
+    "masked": false,
+    "browse": true,
+    "fileFilter": "OVA files (*.ova)|*.ova"
+  },
+  "sddcManagerOvaFile": {
+    "description": "Path on this machine to the SDDC Manager OVA used to deploy the restored SDDC Manager.",
+    "masked": false,
+    "browse": true,
+    "fileFilter": "OVA files (*.ova)|*.ova"
+  },
+  "newSddcManagerPassword": {
+    "description": "Password to set for the vcf, root and local admin accounts on the newly deployed SDDC Manager. Also used afterwards to log in to it.",
+    "masked": true,
+    "browse": false
+  },
+  "vCenterBackupPath": {
+    "description": "Path to the vCenter backup on the backup location, e.g. 10.0.0.5/share/vCenter/sn_<vcenter-fqdn>/M_<version>_<timestamp>.",
+    "masked": false,
+    "browse": false
+  },
+  "locationType": {
+    "description": "Protocol of the vCenter backup location: FTP, FTPS, HTTP, HTTPS, SFTP, NFS or SMB.",
+    "masked": false,
+    "browse": false
+  },
+  "locationUser": {
+    "description": "User account for connecting to the vCenter backup location.",
+    "masked": false,
+    "browse": false
+  },
+  "locationPassword": {
+    "description": "Password for the vCenter backup location user.",
+    "masked": true,
+    "browse": false
+  },
+  "sftpServer": {
+    "description": "FQDN or IP address of the SFTP server holding the NSX / VCF backups.",
+    "masked": false,
+    "browse": false
+  },
+  "sftpUser": {
+    "description": "User account for the SFTP backup server.",
+    "masked": false,
+    "browse": false
+  },
+  "sftpPassword": {
+    "description": "Password for the SFTP backup server user.",
+    "masked": true,
+    "browse": false
+  },
+  "sftpServerBackupPath": {
+    "description": "Directory on the SFTP server under which the backups are stored (e.g. /media/backups).",
+    "masked": false,
+    "browse": false
+  },
+  "nsxBackupPassphrase": {
+    "description": "Passphrase the NSX Manager backup was encrypted with.",
+    "masked": true,
+    "browse": false
+  },
+  "vcfBackupFilePath": {
+    "description": "Path on this machine to the SDDC Manager backup file (vcf-backup-*.tar.gz).",
+    "masked": false,
+    "browse": true,
+    "fileFilter": "SDDC Manager backups (*.tar.gz)|*.tar.gz"
+  },
+  "sddcManagerFqdn": {
+    "description": "FQDN of SDDC Manager.",
+    "masked": false,
+    "browse": false
+  },
+  "sddcManagerAdmin": {
+    "description": "SSO administrator account used to authenticate to the SDDC Manager API (e.g. administrator@vsphere.local).",
+    "masked": false,
+    "browse": false
+  },
+  "sddcManagerAdminPassword": {
+    "description": "Password for the SDDC Manager API administrator account.",
+    "masked": true,
+    "browse": false
+  },
+  "restoredVcenterFqdn": {
+    "description": "FQDN of the restored vCenter.",
+    "masked": false,
+    "browse": false
+  },
+  "restoredVcenterAdmin": {
+    "description": "SSO administrator account of the restored vCenter (e.g. administrator@vsphere.local, or administrator@<domain>.local for a workload domain).",
+    "masked": false,
+    "browse": false
+  },
+  "restoredVcenterAdminPassword": {
+    "description": "Password for the restored vCenter administrator account.",
+    "masked": true,
+    "browse": false
+  },
+  "restoredNsxManagerFqdn": {
+    "description": "FQDN of the restored NSX Manager.",
+    "masked": false,
+    "browse": false
+  },
+  "restoredNsxManagerAdmin": {
+    "description": "NSX Manager administrator account (normally admin).",
+    "masked": false,
+    "browse": false
+  },
+  "restoredNsxManagerAdminPassword": {
+    "description": "Password for the NSX Manager administrator account.",
+    "masked": true,
+    "browse": false
+  },
+  "restoredNsxManagerRootPassword": {
+    "description": "Password for the root account of the restored NSX Manager appliance.",
+    "masked": true,
+    "browse": false
+  },
+  "svcAccountPassword": {
+    "description": "Password to set on the service accounts created on the rebuilt ESX hosts.",
+    "masked": true,
+    "browse": false
+  },
+  "vcfUserPassword": {
+    "description": "Password for the vcf account on SDDC Manager.",
+    "masked": true,
+    "browse": false
+  },
+  "rootPassword": {
+    "description": "Password for the root account on SDDC Manager.",
+    "masked": true,
+    "browse": false
+  },
+  "localUserPassword": {
+    "description": "Password for the local admin (admin@local) account on SDDC Manager.",
+    "masked": true,
+    "browse": false
+  },
+  "adminPassword": {
+    "description": "Password for the local admin (admin@local) API user on SDDC Manager.",
+    "masked": true,
+    "browse": false
+  },
+  "opsRestoreScriptPath": {
+    "description": "Path on this machine to your own script that restores the VCF Operations appliances.",
+    "masked": false,
+    "browse": true,
+    "fileFilter": "PowerShell scripts (*.ps1)|*.ps1"
+  },
+  "dnsScriptPath": {
+    "description": "Path on this machine to your own script that modifies the fleet component VIP DNS entries for this plan. It is run with no parameters and must exit 0 on success. Ready-made examples are helper\\Update-FleetVipDnsFailover.ps1 and helper\\Update-FleetVipDnsFailback.ps1.",
+    "masked": false,
+    "browse": true,
+    "fileFilter": "PowerShell scripts (*.ps1)|*.ps1"
+  },
+  "vsanWitnessScriptPath": {
+    "description": "Path on this machine to your own script that deploys a new vSAN Witness and registers it in the restored vCenter.",
+    "masked": false,
+    "browse": true,
+    "fileFilter": "PowerShell scripts (*.ps1)|*.ps1"
+  },
+  "vcfOperationsFqdn": {
+    "description": "FQDN of VCF Operations (e.g. flt-ops01a.rainpole.io). Its registered components are retrieved to work out the fleet, Identity Broker, VCF Automation and VCF instance details, so those are not asked for.",
+    "masked": false,
+    "browse": false
+  },
+  "offlineDepotFqdn": {
+    "description": "FQDN of the offline depot that serves VCF bundles and backups.",
+    "masked": false,
+    "browse": false
+  },
+  "offlineDepotPort": {
+    "description": "HTTPS port of the offline depot (normally 443).",
+    "masked": false,
+    "browse": false
+  },
+  "offlineDepotUsername": {
+    "description": "User name for the offline depot.",
+    "masked": false,
+    "browse": false
+  },
+  "offlineDepotPassword": {
+    "description": "Password for the offline depot user.",
+    "masked": true,
+    "browse": false
+  },
+  "vcfVersion": {
+    "description": "VCF version to download bundles for, e.g. 9.1.0.0.",
+    "masked": false,
+    "browse": false
+  },
+  "localArchivePath": {
+    "description": "Path on this machine to the VCFMS backup archive (*.base.tgz) to extract.",
+    "masked": false,
+    "browse": true,
+    "fileFilter": "VCFMS backup archives (*.base.tgz)|*.base.tgz"
+  },
+  "encryptionPassphrase": {
+    "description": "Passphrase used to encrypt the VCFMS backups. Also set as the backup encryption passphrase on the new VCF Automation Services Runtime.",
+    "masked": true,
+    "browse": false
+  },
+  "instanceFqdn": {
+    "description": "FQDN of the VCF instance that the VCFMS Services Runtime belongs to.",
+    "masked": false,
+    "browse": false
+  },
+  "ipv4Addresses": {
+    "description": "Comma-separated IPv4 addresses for the Services Runtime IP pool.",
+    "masked": false,
+    "browse": false
+  },
+  "size": {
+    "description": "Deployment size of the VCFMS Services Runtime (small, medium or large).",
+    "masked": false,
+    "browse": false
+  },
+  "gatewayCidrIpv4": {
+    "description": "Gateway of the Services Runtime network, as an IPv4 CIDR (e.g. 10.11.10.1/24).",
+    "masked": false,
+    "browse": false
+  },
+  "internalClusterCidrIpv4": {
+    "description": "Internal cluster network of the Services Runtime, as an IPv4 CIDR (e.g. 198.18.0.0/15).",
+    "masked": false,
+    "browse": false
+  },
+  "vcfmsServicesRuntimePassword": {
+    "description": "Password of the VCFMS Services Runtime system user (admin@vsp.local).",
+    "masked": true,
+    "browse": false
+  },
+  "sftpHost": {
+    "description": "FQDN or IP address of the SFTP server that holds the backups and that the Services Runtime backs up to.",
+    "masked": false,
+    "browse": false
+  },
+  "sftpUsername": {
+    "description": "User name for the SFTP backup server.",
+    "masked": false,
+    "browse": false
+  },
+  "sftpDirectory": {
+    "description": "Directory on the SFTP server where the backups are stored (e.g. /media/backups).",
+    "masked": false,
+    "browse": false
+  },
+  "vcfInstallerFqdn": {
+    "description": "FQDN of the VCF Installer appliance.",
+    "masked": false,
+    "browse": false
+  },
+  "vcfaServicesRuntimePassword": {
+    "description": "Password of the VCF Automation Services Runtime system user (admin@vsp.local). Set on the new runtime when it is created, and used to connect to it afterwards.",
+    "masked": true,
+    "browse": false
+  },
+  "vcfaIpv4Addresses": {
+    "description": "Comma-separated IPv4 addresses for the VCF Automation Services Runtime IP pool.",
+    "masked": false,
+    "browse": false
+  },
+  "vcfaSize": {
+    "description": "Deployment size of the VCF Automation Services Runtime (small, medium or large).",
+    "masked": false,
+    "browse": false
+  },
+  "vcfaGatewayCidrIpv4": {
+    "description": "Gateway of the VCF Automation Services Runtime network, as an IPv4 CIDR.",
+    "masked": false,
+    "browse": false
+  },
+  "vcfaInternalClusterCidrIpv4": {
+    "description": "Internal cluster network of the VCF Automation Services Runtime, as an IPv4 CIDR.",
+    "masked": false,
+    "browse": false
+  },
+  "fleetVip": {
+    "description": "IPv4 address to set as the Fleet LCM ingress VIP.",
+    "masked": false,
+    "browse": false
+  },
+  "sddcLcmSftpRemoteDir": {
+    "description": "Remote directory on the SFTP server used by the SDDC LCM backup secrets script.",
+    "masked": false,
+    "browse": false
+  },
+  "vcfaSystemPassword": {
+    "description": "Password of the admin@System account on VCF Automation.",
+    "masked": true,
+    "browse": false
+  },
+  "vidbVip": {
+    "description": "IPv4 address to set as the Identity Broker ingress VIP on the VCF Management Services Services Runtime.",
+    "masked": false,
+    "browse": false
+  },
+  "vcfaVip": {
+    "description": "IPv4 address to set as the VCF Automation ingress VIP on the VCF Automation Services Runtime.",
+    "masked": false,
+    "browse": false
+  },
+  "vcfOperationsAdminPassword": {
+    "description": "Password of the VCF Operations admin account. Used to log in to the VCF Operations API and to re-register components with VCF Operations.",
+    "masked": true,
+    "browse": false
+  },
+  "vcfOperationsRootPassword": {
+    "description": "Password of the root account on the VCF Operations primary node.",
+    "masked": true,
+    "browse": false
+  },
+  "sourceVcfmsServicesRuntimeFqdn": {
+    "description": "FQDN of the SOURCE VCF Management Services Services Runtime, as registered in VCF Operations. Failover: the primary site, used only to locate its backups on the SFTP server. Failback: the recovery site, used to locate the post-failover backups and as the runtime the recovered components are removed from.",
+    "masked": false,
+    "browse": false
+  },
+  "targetVcfmsServicesRuntimeFqdn": {
+    "description": "FQDN of the TARGET VCF Management Services Services Runtime that the fleet components are restored to (failover: the recovery site; failback: the original primary site).",
+    "masked": false,
+    "browse": false
+  },
+  "targetVcfmsServicesRuntimePassword": {
+    "description": "Password of the system user (admin@vsp.local) on the TARGET VCF Management Services Services Runtime.",
+    "masked": true,
+    "browse": false
+  },
+  "vcfmsServicesRuntimeFqdn": {
+    "description": "FQDN of the VCF Management Services Services Runtime the fleet components are restored to (the recovery site for failover, the original site for failback). Its backups, VCF instance and SDDC Manager are looked up from it.",
+    "masked": false,
+    "browse": false
+  },
+  "logManagementVip": {
+    "description": "IPv4 address to set as the Log Management ingress VIP on the VCF Management Services Services Runtime.",
+    "masked": false,
+    "browse": false
+  },
+  "vcfaNetworkMoId": {
+    "description": "vCenter ID of the port group (e.g. dvportgroup-28) the VCF Automation Services Runtime VMs connect to.",
+    "masked": false,
+    "browse": false
+  }
 }

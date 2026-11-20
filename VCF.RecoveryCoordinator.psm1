@@ -10074,6 +10074,256 @@ Function Invoke-NSXEdgeClusterRecoverySelective {
 }
 Export-ModuleMember -Function Invoke-NSXEdgeClusterRecoverySelective
 
+Function Invoke-NSXVirtualNetworkApplianceRecoverySelective {
+    <#
+    .SYNOPSIS
+    Selectively redeploys missing NSX Virtual Network Appliances (VNAs).
+
+    .DESCRIPTION
+    Discovers VNAs placed in the specified vSphere cluster or its resource pools. Lists VM presence in the
+    restored vCenter and accepts a comma-separated list of IDs for missing appliances, or C to cancel.
+    Redeploys each selected VNA through NSX Policy and waits for it to reach SUCCESS and UP before continuing.
+
+    .PARAMETER vCenterFQDN
+    Address of the restored vCenter. Use the server address registered as the Compute Manager in NSX.
+
+    .PARAMETER vnaClusterId
+    Optional NSX Policy ID of a single VNA cluster. Otherwise all VNA clusters in the enforcement point are queried.
+
+    .PARAMETER placementMap
+    Optional hashtable mapping saved cluster, resource pool, datastore, or management network IDs to their
+    restored values. Supply a mapping for a stale cluster or resource pool ID to include its VNAs in discovery.
+    Compute Manager mappings are preserved.
+
+    .PARAMETER timeoutMinutes
+    Maximum time to wait for each redeployed member to become healthy. Defaults to 30 minutes.
+
+    .NOTES
+    Draft based on the NSX Policy API 9.1.1.0 specification. Post-restore redeployment requires live validation.
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    Param(
+        [Parameter(Mandatory)][String] $nsxManagerFqdn,
+        [Parameter(Mandatory)][String] $nsxManagerAdmin,
+        [Parameter(Mandatory)][String] $nsxManagerAdminPassword,
+        [Parameter(Mandatory)][String] $vCenterFQDN,
+        [Parameter(Mandatory)][String] $vCenterAdmin,
+        [Parameter(Mandatory)][String] $vCenterAdminPassword,
+        [Parameter(Mandatory)][String] $clusterName,
+        [String] $siteId = 'default',
+        [String] $enforcementPointId = 'default',
+        [String] $vnaClusterId,
+        [ValidateNotNull()][Hashtable] $placementMap = @{},
+        [ValidateRange(1, 3600)][Int] $pollIntervalSeconds = 30,
+        [ValidateRange(1, 1440)][Int] $timeoutMinutes = 30
+    )
+
+    $taskName = $MyInvocation.MyCommand.Name
+    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    LogMessage -type NOTE -message "[$(hostname)] Starting Task $taskName"
+    $vcenterConnection = $null
+    try {
+        $answers = Get-VCFIRAnswerSet -FunctionName $taskName
+        $answerIndex = 0
+        $headers = VCFIRCreateHeader -username $nsxManagerAdmin -password $nsxManagerAdminPassword
+        $nsxOrigin = "https://$nsxManagerFqdn"
+        $policyOrigin = "$nsxOrigin/policy/api/v1"
+        $escapedSite = [Uri]::EscapeDataString($siteId)
+        $escapedEnforcementPoint = [Uri]::EscapeDataString($enforcementPointId)
+        $clusterCollectionUri = "$policyOrigin/infra/sites/$escapedSite/enforcement-points/$escapedEnforcementPoint/virtual-network-appliance-clusters"
+
+        $getCollection = {
+            param([String] $uri)
+
+            $pageUri = $uri
+            do {
+                $page = Invoke-RestMethod -Method Get -Uri $pageUri -Headers $headers -TimeoutSec 60 -ErrorAction Stop
+                $page.results
+                if ($page.cursor) {
+                    $pageUri = "${uri}?cursor=$([Uri]::EscapeDataString($page.cursor))"
+                }
+            } while ($page.cursor)
+        }
+
+        $computeManagers = @(& $getCollection "$nsxOrigin/api/v1/fabric/compute-managers" | Where-Object {
+            $_.origin_type -eq 'vCenter' -and $_.server -eq $vCenterFQDN -and $_.id
+        })
+        if ($computeManagers.Count -ne 1) {
+            throw "Expected one NSX Compute Manager registered with address '$vCenterFQDN', found $($computeManagers.Count)."
+        }
+        $computeManagerId = $computeManagers[0].id
+
+        $vcenterConnection = Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -NotDefault -ErrorAction Stop
+        $clusters = @(Get-Cluster -Server $vcenterConnection -Name $clusterName -ErrorAction Stop | Where-Object Name -EQ $clusterName)
+        if ($clusters.Count -ne 1) {
+            throw "Expected one vSphere cluster named '$clusterName' on '$vCenterFQDN', found $($clusters.Count)."
+        }
+        $cluster = $clusters[0]
+        $clusterView = Get-View -Server $vcenterConnection -Id $cluster.ExtensionData.MoRef -Property Datastore, Network -ErrorAction Stop
+        $resourcePools = @(Get-ResourcePool -Server $vcenterConnection -Location $cluster -ErrorAction Stop)
+        $computeIds = @($cluster.ExtensionData.MoRef.Value) + @($resourcePools | ForEach-Object { $_.ExtensionData.MoRef.Value })
+
+        $resolvePlacementId = {
+            param([String] $savedId)
+
+            if ($placementMap.ContainsKey($savedId)) {
+                return [String]$placementMap[$savedId]
+            }
+            return $savedId
+        }
+
+        $testVmPresent = {
+            param($appliance, $state, $inventory)
+
+            $instanceUuid = $state.virtual_network_appliance_state.vm_placement_state.vm_instance_uuid
+            $names = @($appliance.display_name, $appliance.hostname, ($appliance.hostname -split '\.', 2)[0]) | Where-Object { $_ }
+            return [bool]($inventory | Where-Object {
+                ($instanceUuid -and $_.Config.InstanceUuid -eq $instanceUuid) -or $_.Name -in $names
+            } | Select-Object -First 1)
+        }
+
+        if ($vnaClusterId) {
+            $vnaClusterUri = "$clusterCollectionUri/$([Uri]::EscapeDataString($vnaClusterId))"
+            $vnaClusters = @(Invoke-RestMethod -Method Get -Uri $vnaClusterUri -Headers $headers -TimeoutSec 60 -ErrorAction Stop)
+        } else {
+            $vnaClusters = @(& $getCollection $clusterCollectionUri)
+        }
+
+        $inventory = @(Get-View -Server $vcenterConnection -ViewType VirtualMachine -Property Name, Config.InstanceUuid -ErrorAction Stop)
+        $candidates = @(foreach ($vnaCluster in $vnaClusters | Sort-Object id) {
+            $vnaClusterUri = "$clusterCollectionUri/$([Uri]::EscapeDataString($vnaCluster.id))"
+            foreach ($appliance in (& $getCollection "$vnaClusterUri/virtual-network-appliances" | Sort-Object id)) {
+                $placement = $appliance.vm_deployment_config
+                if ($placement.compute_manager_id -ne $computeManagerId -or
+                    (& $resolvePlacementId $placement.cluster_or_resource_pool_id) -notin $computeIds) {
+                    continue
+                }
+
+                $memberUri = "$vnaClusterUri/virtual-network-appliances/$([Uri]::EscapeDataString($appliance.id))"
+                $state = Invoke-RestMethod -Method Get -Uri "$memberUri/state" -Headers $headers -TimeoutSec 60 -ErrorAction Stop
+                [PSCustomObject]@{
+                    Appliance = $appliance
+                    VnaCluster = $vnaCluster.id
+                    MemberUri = $memberUri
+                    StatusUri = "$vnaClusterUri/status"
+                    VmPresent = (& $testVmPresent $appliance $state $inventory)
+                }
+            }
+        })
+
+        $rows = for ($index = 0; $index -lt $candidates.Count; $index++) {
+            [PSCustomObject]@{
+                ID = $index + 1
+                'VNA Cluster' = $candidates[$index].VnaCluster
+                VNA = $candidates[$index].Appliance.display_name
+                'VM Present' = $candidates[$index].VmPresent
+            }
+        }
+        if ($rows) {
+            Write-Host ($rows | Format-Table -AutoSize | Out-String)
+        }
+        $missingIds = @($rows | Where-Object { -not $_.'VM Present' } | ForEach-Object { [String]$_.ID })
+        if ($missingIds.Count -eq 0) {
+            LogMessage -type INFO -message "[$nsxManagerFqdn] No missing VNAs found for vSphere cluster '$clusterName'."
+            return
+        }
+
+        Write-Host 'Enter comma-separated IDs of missing VNAs to recover, or C to cancel: ' -ForegroundColor Yellow -NoNewline
+        $selection = (Get-VCFIRAnswer -AnswerSet $answers -Index ([ref]$answerIndex)).Trim()
+        if ($selection -eq 'C') {
+            LogMessage -type INFO -message "[$nsxManagerFqdn] VNA recovery cancelled."
+            return
+        }
+        $selectedIds = @($selection -split ',' | ForEach-Object { $_.Trim() } | Select-Object -Unique)
+        if (@($selectedIds | Where-Object { $_ -notin $missingIds }).Count -gt 0) {
+            throw "Invalid VNA selection '$selection'. Select only IDs of missing VNAs."
+        }
+
+        # Validate the entire selection before issuing the first redeploy request.
+        $redeployments = @(foreach ($selectedId in $selectedIds) {
+            $candidate = $candidates[([Int]$selectedId - 1)]
+            $appliance = Invoke-RestMethod -Method Get -Uri $candidate.MemberUri -Headers $headers -TimeoutSec 60 -ErrorAction Stop
+            $placement = $appliance.vm_deployment_config
+            $computeId = & $resolvePlacementId $placement.cluster_or_resource_pool_id
+            $datastoreId = & $resolvePlacementId $placement.datastore_id
+            $networkId = & $resolvePlacementId $appliance.management_interface.network_id
+            if ($placement.compute_manager_id -ne $computeManagerId -or !$computeId -or $computeId -notin $computeIds) {
+                throw "VNA '$($appliance.id)' has no verified compute placement in vSphere cluster '$clusterName'."
+            }
+            if (!$datastoreId -or $datastoreId -notin $clusterView.Datastore.Value) {
+                throw "Datastore '$datastoreId' for VNA '$($appliance.id)' is unavailable in '$clusterName'. Supply a placement mapping if its ID changed."
+            }
+            if ($networkId -match '^/infra/') {
+                $null = Invoke-RestMethod -Method Get -Uri "$policyOrigin$networkId" -Headers $headers -TimeoutSec 60 -ErrorAction Stop
+            } elseif (!$networkId -or $networkId -notin $clusterView.Network.Value) {
+                throw "Management network '$networkId' for VNA '$($appliance.id)' is unavailable in '$clusterName'. Supply a placement mapping if its ID changed."
+            }
+
+            $placement.cluster_or_resource_pool_id = $computeId
+            $placement.datastore_id = $datastoreId
+            $appliance.management_interface.network_id = $networkId
+            [PSCustomObject]@{ Candidate = $candidate; Appliance = $appliance }
+        })
+
+        foreach ($redeployment in $redeployments) {
+            $candidate = $redeployment.Candidate
+            $appliance = $redeployment.Appliance
+            if (!$PSCmdlet.ShouldProcess($appliance.path, 'Redeploy missing VNA')) {
+                continue
+            }
+
+            $state = Invoke-RestMethod -Method Get -Uri "$($candidate.MemberUri)/state" -Headers $headers -TimeoutSec 60 -ErrorAction Stop
+            $inventory = @(Get-View -Server $vcenterConnection -ViewType VirtualMachine -Property Name, Config.InstanceUuid -ErrorAction Stop)
+            if (& $testVmPresent $appliance $state $inventory) {
+                throw "VNA '$($appliance.id)' now has a matching VM on '$vCenterFQDN'. Recovery stopped."
+            }
+
+            $body = $appliance | ConvertTo-Json -Depth 30
+            $null = Invoke-RestMethod -Method Post -Uri "$($candidate.MemberUri)/action/redeploy" -Headers $headers -ContentType 'application/json' -Body $body -TimeoutSec 60 -ErrorAction Stop
+            LogMessage -type WAIT -message "[$nsxManagerFqdn] Waiting for VNA '$($appliance.id)' to reach SUCCESS and UP."
+
+            $wait = [System.Diagnostics.Stopwatch]::StartNew()
+            $timeout = [TimeSpan]::FromMinutes($timeoutMinutes)
+            do {
+                $state = Invoke-RestMethod -Method Get -Uri "$($candidate.MemberUri)/state" -Headers $headers -TimeoutSec 60 -ErrorAction Stop
+                $applianceState = $state.virtual_network_appliance_state
+                $configuration = $applianceState.configuration_state
+                $clusterStatus = Invoke-RestMethod -Method Get -Uri $candidate.StatusUri -Headers $headers -TimeoutSec 60 -ErrorAction Stop
+                $memberStatus = $clusterStatus.member_status | Where-Object appliance_path -CEQ $appliance.path | Select-Object -First 1
+                $newVmUuid = $applianceState.vm_placement_state.vm_instance_uuid
+                $replacementVm = $null
+                if ($configuration.consolidated_status -eq 'SUCCESS' -and $memberStatus.status -eq 'UP' -and $newVmUuid) {
+                    $uuidPattern = '^' + [Regex]::Escape($newVmUuid) + '$'
+                    $replacementVm = Get-View -Server $vcenterConnection -ViewType VirtualMachine -Filter @{'Config.InstanceUuid' = $uuidPattern} -Property Name -ErrorAction Stop
+                }
+                if ($replacementVm) {
+                    LogMessage -type INFO -message "[$nsxManagerFqdn] VNA '$($appliance.id)' is deployed and UP."
+                    break
+                }
+                $remaining = $timeout - $wait.Elapsed
+                if ($remaining.TotalMilliseconds -le 0) {
+                    $details = ($configuration.details | ForEach-Object { "[$($_.state)] $($_.message)" }) -join ', '
+                    throw "Timed out waiting for VNA '$($appliance.id)' to reach SUCCESS and UP with a VM in vCenter. Configuration: $($configuration.consolidated_status). Status: $($memberStatus.status). $details"
+                }
+                $delay = [Math]::Min($pollIntervalSeconds * 1000, $remaining.TotalMilliseconds)
+                Start-Sleep -Milliseconds ([Int]$delay)
+            } while ($true)
+        }
+    } catch {
+        LogMessage -type ERROR -message "[$nsxManagerFqdn] $taskName failed. $($_.Exception.Message)"
+        throw
+    } finally {
+        try {
+            if ($vcenterConnection) {
+                Disconnect-VIServer -Server $vcenterConnection -Confirm:$false -WhatIf:$false -ErrorAction SilentlyContinue
+            }
+        } finally {
+            Complete-TaskIfOpen -TaskName $taskName -Stopwatch $stopwatch
+        }
+    }
+}
+Export-ModuleMember -Function Invoke-NSXVirtualNetworkApplianceRecoverySelective
+
 Function Add-AdditionalNSXManagers {
     <#
     .SYNOPSIS

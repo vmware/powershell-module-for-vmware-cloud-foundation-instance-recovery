@@ -3389,27 +3389,23 @@ function Get-ReferencedVariableNames([string[]]$CommandLines) {
     return $names
 }
 
-# One-line description of a variable, for its Variables-panel tooltip, from the shared
-# templates\variable-files\variable-descriptions.json (name -> text; every plan's variables file draws
-# from the same vocabulary, so one file serves all). Looked up case-insensitively because plans spell
-# some names differently (sddcManagerFqdn). Loaded once; returns $null for a name with
-# no entry, or when the file is missing/unreadable -- the tooltip then just shows the name.
-function Get-VariableDescription([string]$Name) {
-    if ($null -eq $script:variableDescriptions) {
-        $script:variableDescriptions = @{}
+# Load the shared Variables panel metadata once and look up names case-insensitively.
+function Get-VariableMetadata([string]$Name) {
+    if ($null -eq $script:variableMetadata) {
+        $script:variableMetadata = @{}
         $descriptionsPath = Join-Path (Join-Path (Join-Path $ModuleRoot 'templates') 'variable-files') 'variable-descriptions.json'
         if (Test-Path -LiteralPath $descriptionsPath) {
             try {
-                $parsed = Get-Content -LiteralPath $descriptionsPath -Raw | ConvertFrom-Json
+                $parsed = Get-Content -LiteralPath $descriptionsPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
                 foreach ($property in $parsed.PSObject.Properties) {
-                    $script:variableDescriptions[$property.Name] = [string]$property.Value
+                    $script:variableMetadata[$property.Name] = $property.Value
                 }
             } catch {
-                # Descriptions are cosmetic -- never let a bad file break the Variables panel.
+                # Rows without metadata use a plain text field and show the variable name as the tooltip.
             }
         }
     }
-    return $script:variableDescriptions[$Name]
+    return $script:variableMetadata[$Name]
 }
 
 # $OnValueChanged (optional, but every real call site supplies one) is given the edited name/value
@@ -3457,16 +3453,24 @@ function New-EyeIcon([switch]$Slashed) {
     return $viewbox
 }
 
-# Only variables that point to local files get a picker. Backup paths on remote servers are text fields.
-$script:variableFileFilters = @{
-    vCenterOvaFile            = 'OVA files (*.ova)|*.ova'
-    nsxManagerOvaFile         = 'OVA files (*.ova)|*.ova'
-    sddcManagerOvaFile        = 'OVA files (*.ova)|*.ova'
-    opsRestoreScriptPath      = 'PowerShell scripts (*.ps1)|*.ps1'
-    dnsScriptPath             = 'PowerShell scripts (*.ps1)|*.ps1'
-    vsanWitnessScriptPath     = 'PowerShell scripts (*.ps1)|*.ps1'
-    vcfBackupFilePath         = 'SDDC Manager backups (*.tar.gz)|*.tar.gz'
-    localArchivePath          = 'VCFMS backup archives (*.base.tgz)|*.base.tgz'
+function New-FolderIcon {
+    $outline = New-Object System.Windows.Shapes.Path
+    $outline.Width = 20
+    $outline.Height = 14
+    $outline.Data = [System.Windows.Media.Geometry]::Parse('M1.5,12.5 V2.5 H7 L9,4.5 H18.5 V12.5 Z')
+    $outline.Stroke = [System.Windows.Media.Brushes]::White
+    $outline.StrokeThickness = 1.5
+    $outline.StrokeLineJoin = 'Round'
+    return $outline
+}
+
+function New-VariableRowIconButton {
+    $button = New-Object System.Windows.Controls.Button
+    $button.Width = 30
+    $button.Padding = '0'
+    $button.Margin = '4,0,0,0'
+    [System.Windows.Controls.DockPanel]::SetDock($button, [System.Windows.Controls.Dock]::Right)
+    return $button
 }
 
 function New-VariableRow([string]$Name, [string]$Value, [scriptblock]$OnValueChanged, [string[]]$TemplateKeys) {
@@ -3476,7 +3480,8 @@ function New-VariableRow([string]$Name, [string]$Value, [scriptblock]$OnValueCha
     $label = New-Object System.Windows.Controls.TextBlock
     $label.Text = $Name
     # Full name first (the label above is truncated at 150px), then the description if one is known.
-    $description = Get-VariableDescription $Name
+    $metadata = Get-VariableMetadata $Name
+    $description = $metadata.description
     $label.ToolTip = if ($description) { "$Name`n$description" } else { $Name }
     $label.FontFamily = New-Object System.Windows.Media.FontFamily('Consolas')
     $label.VerticalAlignment = 'Center'
@@ -3485,12 +3490,7 @@ function New-VariableRow([string]$Name, [string]$Value, [scriptblock]$OnValueCha
     $label.TextTrimming = 'CharacterEllipsis'
     [System.Windows.Controls.DockPanel]::SetDock($label, [System.Windows.Controls.Dock]::Left)
 
-    # Password/passphrase-looking variable names (SDDC Manager admin password, root password,
-    # encryption passphrase, ...) get a real PasswordBox -- masked characters, never rendered as
-    # plaintext -- instead of a plain TextBox. These are real credentials, and this panel is on
-    # screen any time Variables is open, so showing them in the clear is an unnecessary shoulder-
-    # surfing/screenshot risk.
-    $isPassword = $Name -match '(?i)password|passphrase'
+    $isPassword = $metadata.masked -eq $true
     # Password rows hold a masked PasswordBox plus a hidden TextBox in the same grid cell; an eye
     # button beside them swaps which one is visible (WPF's PasswordBox has no built-in reveal).
     # $reveal.On tracks which is active so $applyEdit reads the right one.
@@ -3556,15 +3556,11 @@ function New-VariableRow([string]$Name, [string]$Value, [scriptblock]$OnValueCha
         $textBox.Add_LostFocus($applyEdit)
         $textBox.Add_KeyDown($keyHandler)
 
-        $eyeButton = New-Object System.Windows.Controls.Button
+        $eyeButton = New-VariableRowIconButton
         $eyeButton.Content = New-EyeIcon
         $eyeButton.ToolTip = 'Show value'
-        $eyeButton.Width = 30
-        $eyeButton.Padding = '0'
-        $eyeButton.Margin = '4,0,0,0'
         # Not focusable, so clicking it doesn't steal focus from (and prematurely apply) the edit box.
         $eyeButton.Focusable = $false
-        [System.Windows.Controls.DockPanel]::SetDock($eyeButton, [System.Windows.Controls.Dock]::Right)
         $eyeButton.Add_Click({
                 if (-not $reveal.On) {
                     $textBox.Text = $valueBox.Password
@@ -3589,18 +3585,19 @@ function New-VariableRow([string]$Name, [string]$Value, [scriptblock]$OnValueCha
         [void]$grid.Children.Add($textBox)
         [void]$panel.Children.Add($grid)
     } else {
-        $fileFilter = $script:variableFileFilters[$Name]
-        if ($fileFilter -and $Name -in $TemplateKeys) {
-            $fileButton = New-Object System.Windows.Controls.Button
-            $fileButton.Content = 'Browse...'
+        if ($metadata.browse -eq $true -and $Name -in $TemplateKeys) {
+            $fileFilter = 'All files (*.*)|*.*'
+            if ($metadata.fileFilter) {
+                $fileFilter = "$($metadata.fileFilter)|$fileFilter"
+            }
+            $fileButton = New-VariableRowIconButton
+            $fileButton.Content = New-FolderIcon
             $fileButton.ToolTip = "Select a local file for $Name"
-            $fileButton.Width = 80
-            $fileButton.Margin = '4,0,0,0'
-            [System.Windows.Controls.DockPanel]::SetDock($fileButton, [System.Windows.Controls.Dock]::Right)
+            [System.Windows.Automation.AutomationProperties]::SetName($fileButton, $fileButton.ToolTip)
             $fileButton.Add_Click({
                     $dialog = New-Object Microsoft.Win32.OpenFileDialog
                     $dialog.Title = "Select a file for $Name"
-                    $dialog.Filter = "$fileFilter|All files (*.*)|*.*"
+                    $dialog.Filter = $fileFilter
                     if ($dialog.ShowDialog() -eq $true) {
                         $valueBox.Text = $dialog.FileName
                         & $applyEdit
