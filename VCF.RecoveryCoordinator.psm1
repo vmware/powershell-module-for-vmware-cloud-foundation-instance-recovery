@@ -11978,10 +11978,10 @@ Function New-ServicesRuntime {
     (ByParameter) Gateway CIDR in IPv4 format (e.g. 10.11.99.1/24).
 
     .PARAMETER extractedSDDCDataFile
-    (ByParameter) Relative or absolute path to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup). Used to look up the cluster ID from the original deployment, by matching -PlatformFqdn against the primaryFqdn of the entries in the file's vspClusters section.
+    (ByParameter) Relative or absolute path to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup). Used to look up the cluster ID from the original deployment, by matching -PlatformFqdn against the primaryFqdn of the entries in the file's vspClusters section. Mutually exclusive with -opsRegisteredComponentsFile.
 
     .PARAMETER opsRegisteredComponentsFile
-    (ByParameter) Relative or absolute path to the opsRegisteredComponentsFile.json file (previously created by Get-OpsRegisteredComponents). Used to look up the cluster ID.
+    (ByParameter) Path to the VCF Operations registered components JSON created by Get-VcfOperationsRegisteredComponents. Used to look up the cluster ID. Mutually exclusive with -extractedSDDCDataFile. For -Type CONSUMPTION, vcfa-restore-payload.json in the working directory supplies the deployment version from the path segment immediately before /vsp/.
 
     .PARAMETER clusterId
     (ByParameter) Explicit clusterId specification
@@ -12073,12 +12073,32 @@ Function New-ServicesRuntime {
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
     try {
-    $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
-    [int]$__ansIdx = 0
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
+    if ($PSBoundParameters.ContainsKey('extractedSDDCDataFile') -and $PSBoundParameters.ContainsKey('opsRegisteredComponentsFile')) {
+        throw 'Supply only one of -extractedSDDCDataFile and -opsRegisteredComponentsFile.'
+    }
+
+    $runtimeVersion = $null
+    if ($PSBoundParameters.ContainsKey('opsRegisteredComponentsFile') -and $Type -eq 'CONSUMPTION') {
+        $restorePayloadFile = '.\vcfa-restore-payload.json'
+        $restorePayload = Get-Content -LiteralPath $restorePayloadFile -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        foreach ($component in $restorePayload.components) {
+            if ($component.path -match '(?:^|/)([0-9]+(?:\.[0-9]+){4})/vsp/') {
+                $runtimeVersion = $Matches[1]
+                break
+            }
+        }
+        if (-not $runtimeVersion) {
+            throw "No five-part version immediately before /vsp/ was found in a component path in '$restorePayloadFile'."
+        }
+    }
+
+    $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
+    [int]$__ansIdx = 0
+
     if (-not $SddcManagerFqdn) {
-        if (-not $extractedSDDCDataFile -and $opsRegisteredComponentsFile) {
+        if ($opsRegisteredComponentsFile) {
             $SddcManagerFqdn = Get-OpsRegisteredComponentValue -Name SddcManagerFqdn -opsRegisteredComponentsFile $opsRegisteredComponentsFile -ServicesRuntimeFqdn $ServicesRuntimeFqdn
         } else {
             $SddcManagerFqdn = Get-ExtractedSddcDataValue -Name SddcManagerFqdn -extractedSDDCDataFile $extractedSDDCDataFile
@@ -12221,17 +12241,21 @@ Function New-ServicesRuntime {
             return
         }
 
-        $payloadHash = @{
+        $payloadHash = [ordered]@{
             domainId                = $domainId
             platformFqdn            = $PlatformFqdn
             systemUserPassword      = $SystemUserPassword
             type                    = $Type
             ipv4Pool                = @{ addresses = $Ipv4Addresses }
             size                    = $Size
+            version                 = $runtimeVersion
             networkMoId             = $NetworkMoId
             gatewayCidrIpv4         = $GatewayCidrIpv4
             clusterId               = $ClusterId
             internalClusterCidrIpv4 = $InternalClusterCidrIpv4
+        }
+        if (-not $runtimeVersion) {
+            $payloadHash.Remove('version')
         }
         if (-not [string]::IsNullOrWhiteSpace($InstanceFqdn)) {
             $payloadHash['instanceFqdn'] = $InstanceFqdn

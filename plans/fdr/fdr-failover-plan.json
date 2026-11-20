@@ -68,6 +68,33 @@
     "visible": true
   },
   {
+    "description": "Retrieve a List of Backups for VCF Management Services Fleet Components",
+    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -ServicesRuntimeFqdn $sourceVcfmsServicesRuntimeFqdn -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -Type vcfms -componentNames \"vcf-fleet-lcm\",\"vcf-fleet-depot\",\"salt-raas\",\"vidb\" -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
+    "displayName": "Retrieve VCFMS Backups",
+    "condition": [],
+    "threadId": "1",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Retrieve a List of Backups for Log Management",
+    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -ServicesRuntimeFqdn $sourceVcfmsServicesRuntimeFqdn -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -Type opsLogs -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
+    "displayName": "Retrieve Log Management Backups",
+    "condition": [],
+    "threadId": "1",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Retrieve a List of Backups for VCF Automation",
+    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -Type vcfa -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
+    "displayName": "Retrieve VCF Automation Backups",
+    "condition": [],
+    "threadId": "1",
+    "interactive": true,
+    "visible": true
+  },
+  {
     "description": "Extract Fleet VIP Address Configuration from the Source Services Runtime Backup",
     "commandLine": "New-ExtractVcfmsBackup -LocalArchivePath $localArchivePath -EncryptionPassphrase $encryptionPassphrase -OutputDir \".\\backup-yaml\" -ServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $targetVcfmsServicesRuntimePassword",
     "displayName": "Extract VCFMS Backup",
@@ -98,15 +125,6 @@
     "visible": true
   },
   {
-    "description": "Retrieve a List of Backups for VCF Management Services Fleet Components ($vspId is the ID of the VCF Management Services instance from the \"Retrieve Component Details from VCF Operations\" step above)",
-    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -ServicesRuntimeFqdn $sourceVcfmsServicesRuntimeFqdn -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -componentNames \"vcf-fleet-lcm\",\"vcf-fleet-depot\",\"salt-raas\",\"vidb\" -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
-    "displayName": "Retrieve VCFMS Backups",
-    "condition": [],
-    "threadId": "2",
-    "interactive": true,
-    "visible": true
-  },
-  {
     "description": "Trust the Offline Depot Certificate on the VCF Management Services Services Runtime (needed to retrieve the packages from the offline depot during restore)",
     "commandLine": "Add-VcfmsTrustedCertificate -ServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $targetVcfmsServicesRuntimePassword -RemoteHostFqdn $offlineDepotFqdn -RemoteHostPort $offlineDepotPort",
     "displayName": "Trust Offline Depot Certificate on VCF Management Services Services Runtime",
@@ -117,7 +135,7 @@
   },
   {
     "description": "Restore the Fleet Components on the Recovery VCF Management Services Instance",
-    "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $targetVcfmsServicesRuntimePassword",
+    "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $targetVcfmsServicesRuntimePassword -RestoreJsonFile \".\\vcfms-restore-payload.json\"",
     "displayName": "Restore VCFMS Backups",
     "condition": [],
     "threadId": "2",
@@ -170,17 +188,8 @@
     "visible": true
   },
   {
-    "description": "Retrieve a List of Backups for Log Management",
-    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -ServicesRuntimeFqdn $sourceVcfmsServicesRuntimeFqdn -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -componentNames \"ops-logs\" -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
-    "displayName": "Retrieve Log Management Backups",
-    "condition": [],
-    "threadId": "2",
-    "interactive": true,
-    "visible": true
-  },
-  {
     "description": "Restore Log Management",
-    "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $targetVcfmsServicesRuntimePassword",
+    "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $targetVcfmsServicesRuntimePassword -RestoreJsonFile \".\\opsLogs-restore-payload.json\"",
     "displayName": "Restore Log Management Backup",
     "condition": [],
     "threadId": "2",
@@ -206,6 +215,14 @@
     "visible": true
   },
   {
+    "description": "Repoint SDDC Manager to the Unauthorized Offline Depot",
+    "commandLine": "Set-SDDCManagerOfflineDepot -sddcManagerFqdn $sddcManagerFqdn -sddcManagerUser $sddcManagerAdmin -sddcManagerPassword $sddcManagerAdminPassword -vcfUserPassword $vcfUserPassword -localUserPassword $localUserPassword -rootPassword $rootPassword -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort -unauthorizedDepot",
+    "displayName": "Set SDDC Manager Unauthorized Offline Depot",
+    "threadId": "3",
+    "interactive": false,
+    "visible": true
+  },
+  {
     "description": "Deploy a VCF Automation Services Runtime Cluster",
     "commandLine": "New-ServicesRuntime -SddcManagerUser $sddcManagerAdmin -SddcManagerPassword $sddcManagerAdminPassword -ServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -SystemUserPassword $vcfaServicesRuntimePassword -Ipv4Addresses ($vcfaIpv4Addresses.Split(',').Trim()) -Size $vcfaSize -NetworkMoId $vcfaNetworkMoId -GatewayCidrIpv4 $vcfaGatewayCidrIpv4 -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -InternalClusterCidrIpv4 $vcfaInternalClusterCidrIpv4 -Type CONSUMPTION",
     "displayName": "Create New Services Runtime for VCF Automation",
@@ -227,15 +244,6 @@
     "visible": true
   },
   {
-    "description": "Retrieve a List of Backups for VCF Automation",
-    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -componentNames \"vcfa\" -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
-    "displayName": "Retrieve VCF Automation Backups",
-    "condition": [],
-    "threadId": "3",
-    "interactive": true,
-    "visible": true
-  },
-  {
     "description": "Trust the Offline Depot Certificate on the VCF Automation Services Runtime (needed to retrieve the packages from the offline depot during restore)",
     "commandLine": "Add-VcfmsTrustedCertificate -Type CONSUMPTION -ServicesRuntimePassword $vcfaServicesRuntimePassword -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -RemoteHostFqdn $offlineDepotFqdn -RemoteHostPort $offlineDepotPort",
     "displayName": "Trust Offline Depot Certificate on VCF Automation Services Runtime",
@@ -246,7 +254,7 @@
   },
   {
     "description": "Restore VCF Automation for VCF Fleet Disaster Recovery",
-    "commandLine": "Restore-ServicesRuntimeComponentBackup -Type CONSUMPTION -ServicesRuntimePassword $vcfaServicesRuntimePassword -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\"",
+    "commandLine": "Restore-ServicesRuntimeComponentBackup -Type CONSUMPTION -ServicesRuntimePassword $vcfaServicesRuntimePassword -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -RestoreJsonFile \".\\vcfa-restore-payload.json\"",
     "displayName": "Restore VCF Automation Backup",
     "condition": [],
     "threadId": "3",
@@ -260,6 +268,15 @@
     "condition": [],
     "threadId": "3",
     "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Point SDDC Manager to the FDS Depot",
+    "commandLine": "Set-SDDCManagerFDSDepot -sddcManagerFqdn $sddcManagerFqdn -sddcManagerUser $sddcManagerAdmin -sddcManagerPassword $sddcManagerAdminPassword",
+    "displayName": "Set SDDC Manager FDS Depot",
+    "condition": [],
+    "threadId": "3",
+    "interactive": false,
     "visible": true
   },
   {

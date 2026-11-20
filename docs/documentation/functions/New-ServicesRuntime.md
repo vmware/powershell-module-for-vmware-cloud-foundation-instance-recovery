@@ -11,7 +11,7 @@ Deploys a new VCF Management Services (VCFMS) runtime instance via the SDDC Mana
 New-ServicesRuntime [-SddcManagerFqdn] <String> [-SddcManagerUser] <String> [-SddcManagerPassword] <String> [-Type] <String> [-JsonFile] <String> [[-PollIntervalSeconds] <Int32>] [<CommonParameters>]
 
 # By individual parameters
-New-ServicesRuntime [-SddcManagerFqdn] <String> [-SddcManagerUser] <String> [-SddcManagerPassword] <String> [-Type] <String> [-PlatformFqdn] <String> [-SystemUserPassword] <String> [-Ipv4Addresses] <String[]> [-Size] <String> [[-NetworkMoId] <String>] [-GatewayCidrIpv4] <String> [-extractedSDDCDataFile] <String> [-InternalClusterCidrIpv4] <String> [[-InstanceFqdn] <String>] [[-FleetFqdn] <String>] [[-PollIntervalSeconds] <Int32>] [<CommonParameters>]
+New-ServicesRuntime [-SddcManagerFqdn <String>] -SddcManagerUser <String> -SddcManagerPassword <String> -Type <String> [-PlatformFqdn <String>] -SystemUserPassword <String> -Ipv4Addresses <String[]> -Size <String> [-NetworkMoId <String>] -GatewayCidrIpv4 <String> [-extractedSDDCDataFile <String> | -opsRegisteredComponentsFile <String>] [-ServicesRuntimeFqdn <String>] [-clusterId <String>] -InternalClusterCidrIpv4 <String> [-InstanceFqdn <String>] [-FleetFqdn <String>] [-PollIntervalSeconds <Int32>] [-autoConfirm] [<CommonParameters>]
 ```
 
 ## Description
@@ -264,19 +264,25 @@ Accept wildcard characters: False
 
 ### -extractedSDDCDataFile
 
-Relative or absolute path to the `extracted-sddc-data.json` file (previously created by `New-ExtractDataFromSDDCBackup`). Used to look up the cluster ID from the original deployment, by matching `-PlatformFqdn` against the `primaryFqdn` of the entries in the file's `vspClusters` section. Used with the `ByParameter` parameter set.
+Relative or absolute path to the `extracted-sddc-data.json` file (previously created by `New-ExtractDataFromSDDCBackup`). Used to look up the cluster ID from the original deployment by matching `-PlatformFqdn` against the `primaryFqdn` of the entries in the file's `vspClusters` section. Used with the `ByParameter` parameter set and mutually exclusive with `-opsRegisteredComponentsFile`.
 
 ```yaml
 Type: String
 Parameter Sets: ByParameter
 Aliases:
 
-Required: True
+Required: False
 Position: Named
 Default value: None
 Accept pipeline input: False
 Accept wildcard characters: False
 ```
+
+### -opsRegisteredComponentsFile
+
+Path to the VCF Operations registered components JSON created by `Get-VcfOperationsRegisteredComponents`. Used with the `ByParameter` parameter set to look up the cluster ID. Mutually exclusive with `-extractedSDDCDataFile`.
+
+For `-Type CONSUMPTION`, this option also requires `vcfa-restore-payload.json` in the working directory. The cmdlet reads the five-part version immediately before `/vsp/` in a component's backup path and sends it as `version` in the deployment payload.
 
 ### -InternalClusterCidrIpv4
 
