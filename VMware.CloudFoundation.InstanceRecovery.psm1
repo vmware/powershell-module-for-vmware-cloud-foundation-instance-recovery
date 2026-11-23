@@ -11351,8 +11351,11 @@ Function Set-ServicesRuntimeSftpBackupSettings {
     .PARAMETER ServicesRuntimeUsername
     Username for the Services Runtime token. Default is "admin@vsp.local".
 
+    .PARAMETER ComponentId
+    ID of the VCFMS component (vsp cluster ID) to apply the SFTP settings to. Mutually exclusive with -extractedSDDCDataFile.
+
     .PARAMETER extractedSDDCDataFile
-    Relative or absolute path to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup). Used to look up the component ID (vsp cluster ID) to apply the SFTP settings to, by matching -ServicesRuntimeFqdn against the primaryFqdn of the entries in the file's vspClusters section.
+    Mutually exclusive with -ComponentId. Relative or absolute path to the extracted-sddc-data.json file (previously created by New-ExtractDataFromSDDCBackup). Used to look up the component ID (vsp cluster ID) to apply the SFTP settings to, by matching -ServicesRuntimeFqdn against the primaryFqdn of the entries in the file's vspClusters section.
 
     .PARAMETER SftpHost
     IP address or FQDN of the SFTP server.
@@ -11383,7 +11386,8 @@ Function Set-ServicesRuntimeSftpBackupSettings {
         [Parameter(Mandatory = $true)][String] $ServicesRuntimeFqdn,
         [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
         [Parameter(Mandatory = $false)][String] $ServicesRuntimeUsername = "admin@vsp.local",
-        [Parameter(Mandatory = $true)][String] $extractedSDDCDataFile,
+        [Parameter(Mandatory = $true, ParameterSetName = "ComponentId")][String] $ComponentId,
+        [Parameter(Mandatory = $true, ParameterSetName = "ExtractedData")][String] $extractedSDDCDataFile,
         [Parameter(Mandatory = $true)][String] $SftpHost,
         [Parameter(Mandatory = $false)][String] $SftpPort = "22",
         [Parameter(Mandatory = $true)][String] $SftpUsername,
@@ -11401,14 +11405,17 @@ Function Set-ServicesRuntimeSftpBackupSettings {
 
     # Look up the component ID (vsp cluster ID) by matching the Services Runtime FQDN against the
     # vspClusters section of the extracted SDDC data, rather than requiring it to be passed directly.
-    $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
-    $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-Json
-    $ComponentId = ($extractedSddcData.vspClusters | Where-Object { $_.primaryFqdn -eq $ServicesRuntimeFqdn }).vspClusterID
+
     if (-not $ComponentId) {
-        LogMessage -type ERROR -message "[$jumpboxName] No vspClusters entry in '$extractedSDDCDataFile' matches ServicesRuntimeFqdn '$ServicesRuntimeFqdn'. Aborting."
+        $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
+        $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-Json
+        $ComponentId = ($extractedSddcData.vspClusters | Where-Object { $_.primaryFqdn -eq $ServicesRuntimeFqdn }).vspClusterID
+        LogMessage -type INFO -message "[$jumpboxName] Resolved component ID '$ComponentId' for '$ServicesRuntimeFqdn'"
+    }
+    if (-not $ComponentId) {
+        LogMessage -type ERROR -message "[$jumpboxName] No vspClusters entry passed or available in '$extractedSDDCDataFile' matches ServicesRuntimeFqdn '$ServicesRuntimeFqdn'. Aborting."
         return
     }
-    LogMessage -type INFO -message "[$jumpboxName] Resolved component ID '$ComponentId' for '$ServicesRuntimeFqdn'"
 
     # Retrieve the SFTP fingerprint if not provided
     if (-not $SftpFingerprint) {
