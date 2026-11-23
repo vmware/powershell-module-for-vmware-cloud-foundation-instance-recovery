@@ -13235,7 +13235,6 @@ Function Set-ServicesRuntimeSftpBackupSettings {
     .PARAMETER Type
     MANAGEMENT (VCFMS Services Runtime) or CONSUMPTION (VCF Automation Services Runtime). Used with -extractedSDDCDataFile to resolve -ServicesRuntimeFqdn when it is not supplied.
 
-
     .PARAMETER opsRegisteredComponentsFile
     Path to the VCFOps-Registered-Component-Details.json file (created by Get-VcfOperationsRegisteredComponents). Used to resolve -ServicesRuntimeFqdn (with -Type CONSUMPTION) when it is not supplied directly and no -extractedSDDCDataFile is given.
 
