@@ -16567,7 +16567,7 @@ Function Update-VcfmsVcfaRegistration {
          via node-agent.conf automatically).
       2. Base64-encodes the bundled update_vcfa_registration.sh script, along with its two
          companion scripts (create_vcfa_service_account.sh and update_registration_in_ops.sh,
-         which it invokes internally via its own directory), and uploads all three to /tmp
+         which it invokes internally via its own directory), and uploads all three to /home/vmware-system-user
          on the control plane node via the existing SSH session — no SCP binary required.
       3. Executes update_vcfa_registration.sh under sudo with
          KUBECONFIG=/etc/kubernetes/admin.conf so that all kubectl calls use the local
@@ -16698,7 +16698,7 @@ Function Update-VcfmsVcfaRegistration {
     LogMessage -type INFO -message "[$jumpboxName] VCFA runtime FQDN   : $VcfaRuntimeFqdn"
     LogMessage -type INFO -message "[$jumpboxName] VCF Operations FQDN : $OpsFqdn"
     if ($DryRun) {
-        LogMessage -type INFO -message "[$jumpboxName] Mode                : DRY RUN (no changes will be written)"
+        LogMessage -type INFO -message "[$jumpboxName] Mode: DRY RUN (no changes will be written)"
     }
 
     # -------------------------------------------------------------------------
@@ -16707,19 +16707,19 @@ Function Update-VcfmsVcfaRegistration {
     $SecurePassword = ConvertTo-SecureString -String $ServicesRuntimePassword -AsPlainText -Force
     $creds = New-Object System.Management.Automation.PSCredential ('vmware-system-user', $SecurePassword)
     $session = $null
-    $remotePaths = $scriptNames | ForEach-Object { "/tmp/$_" }
-    $remoteMain = "/tmp/update_vcfa_registration.sh"
+    $remotePaths = $scriptNames | ForEach-Object { "/home/vmware-system-user/$_" }
+    $remoteMain = "/home/vmware-system-user/update_vcfa_registration.sh"
 
     try {
         $session = Open-VcfmsSshSession -Fqdn $controlPlaneHost -Creds $creds
 
         # -------------------------------------------------------------------------
         # Upload all three scripts via base64 pipe — avoids any SCP binary
-        # dependency. All three land in /tmp alongside each other so the main
+        # dependency. All three land in /home/vmware-system-user alongside each other so the main
         # script's "$(dirname "$0")/<companion>.sh" lookups resolve correctly.
         # -------------------------------------------------------------------------
         foreach ($scriptName in $scriptNames) {
-            $remotePath = "/tmp/$scriptName"
+            $remotePath = "/home/vmware-system-user/$scriptName"
             LogMessage -type INFO -message "[$controlPlaneHost] Uploading script to $remotePath"
             $scriptBytes = [System.IO.File]::ReadAllBytes($localScripts[$scriptName])
             # Strip CR bytes so the file always has Unix line endings on the remote node,
