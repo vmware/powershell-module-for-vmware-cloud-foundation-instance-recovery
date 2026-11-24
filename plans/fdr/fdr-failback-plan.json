@@ -27,152 +27,12 @@
     "visible": true
   },
   {
-    "description": "Retrieve Component Details from VCF Operations",
-    "commandLine": "Get-VcfOperationsRegisteredComponents -VcfOperationsFqdn $vcfOperationsFqdn -Password $vcfOperationsAdminPassword",
-    "displayName": "Get VCF Operations Registered Components",
-    "condition": [],
-    "threadId": "1",
-    "interactive": false,
-    "visible": true
-  },
-  {
     "description": "Back up the recovered components to a highly available SFTP server (manual)",
     "commandLine": "Confirm-ManualStep -Message 'Press Enter once the recovered components have been backed up to the SFTP server' -AnswerKey 'recovered-components-backed-up'",
     "displayName": "Confirm Manual Step: recovered components have been backed up",
     "condition": [],
     "threadId": "1",
     "interactive": true,
-    "visible": true
-  },
-  {
-    "description": "Trust the Offline Depot Certificate on this machine (needed to read the offline depot's directory index)",
-    "commandLine": "Add-OfflineDepotTrustedCertificate -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
-    "displayName": "Trust Offline Depot Certificate on Jumpbox",
-    "condition": [],
-    "threadId": "1",
-    "interactive": false,
-    "visible": true
-  },
-  {
-    "description": "Retrieve a List of Backups for the VCF Management Services Fleet Components",
-    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -ServicesRuntimeFqdn $sourceVcfmsServicesRuntimeFqdn -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -componentNames \"vcf-fleet-lcm\",\"vcf-fleet-depot\",\"salt-raas\",\"vidb\" -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
-    "displayName": "Retrieve VCFMS Backups",
-    "condition": [],
-    "threadId": "1",
-    "interactive": true,
-    "visible": true
-  },
-  {
-    "description": "Clean up the recovered fleet components on the recovery-site VCF Management Services instance",
-    "commandLine": "Remove-VcfmsRecoveredComponents -ServicesRuntimeFqdn $sourceVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $targetVcfmsServicesRuntimePassword",
-    "displayName": "Remove VCFMS Recovered Components",
-    "condition": [],
-    "threadId": "1",
-    "interactive": false,
-    "visible": true
-  },
-  {
-    "description": "Clear the fleet VIP on the recovery-site VCF Management Services instance before failback",
-    "commandLine": "Clear-VcfmsFleetIdentity -ServicesRuntimeFqdn $sourceVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $targetVcfmsServicesRuntimePassword",
-    "displayName": "Clear VCFMS Fleet Identity",
-    "condition": [],
-    "threadId": "1",
-    "interactive": false,
-    "visible": true
-  },
-  {
-    "description": "Modify the fleet component VIP DNS entries for failback using the user-provided script (must exit 0 on success and non-zero on failure)",
-    "commandLine": "Invoke-UserScript -ScriptPath $dnsScriptPath",
-    "displayName": "Run User-Provided DNS Entry Modification Script",
-    "condition": [
-      {
-        "type": "variable",
-        "name": "userProvidedDnsScript",
-        "operator": "eq",
-        "value": "true"
-      }
-    ],
-    "threadId": "1",
-    "interactive": false,
-    "visible": true
-  },
-  {
-    "description": "Modify the DNS entries for the fleet component VIPs (manual, no PowerShell equivalent)",
-    "commandLine": "Confirm-ManualStep -Message 'Press Enter once the DNS entries for the fleet component VIPs have been modified' -AnswerKey 'fleet-vip-dns-updated'",
-    "displayName": "Confirm Manual Step: fleet component VIP DNS entries have been modified",
-    "condition": [
-      {
-        "type": "variable",
-        "name": "userProvidedDnsScript",
-        "operator": "eq",
-        "value": "false"
-      }
-    ],
-    "threadId": "1",
-    "interactive": true,
-    "visible": true
-  },
-  {
-    "description": "Power on the VCF Management Services instance VMs on the original protected site in vCenter",
-    "commandLine": "Confirm-ManualStep -Message 'Press Enter once the VCF Management Services VMs on the original protected site have been powered on' -AnswerKey 'vcfms-powered-on'",
-    "displayName": "Confirm Manual Step: VCF Management Services VMs have been powered on",
-    "condition": [],
-    "threadId": "1",
-    "interactive": true,
-    "visible": true
-  },
-  {
-    "description": "Trust the Offline Depot Certificate on the VCF Management Services Services Runtime (needed to retrieve the packages from the offline depot during restore)",
-    "commandLine": "Add-VcfmsTrustedCertificate -ServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $targetVcfmsServicesRuntimePassword -RemoteHostFqdn $offlineDepotFqdn -RemoteHostPort $offlineDepotPort",
-    "displayName": "Trust Offline Depot Certificate on VCF Management Services Services Runtime",
-    "condition": [],
-    "threadId": "1",
-    "interactive": false,
-    "visible": true
-  },
-  {
-    "description": "Restore the Fleet Components on the Original VCF Management Services Instance (only required if components were changed while failed over)",
-    "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $targetVcfmsServicesRuntimePassword",
-    "displayName": "Restore VCFMS Backups",
-    "condition": [],
-    "threadId": "1",
-    "interactive": true,
-    "visible": true
-  },
-  {
-    "description": "Update SDDC LCM in the target site with credentials from the source site (manual, no PowerShell equivalent)",
-    "commandLine": "Confirm-ManualStep -Message 'Press Enter once SDDC LCM has been updated with the credentials from the source site' -AnswerKey 'sddc-lcm-credentials-updated'",
-    "displayName": "Confirm Manual Step: SDDC LCM has been updated with source site credentials",
-    "condition": [],
-    "threadId": "1",
-    "interactive": true,
-    "visible": true
-  },
-  {
-    "description": "Update the Identity Broker VIP Address",
-    "commandLine": "Set-ServicesRuntimeComponentVips -ServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $targetVcfmsServicesRuntimePassword -ComponentType \"vidb\" -Vips $vidbVip",
-    "displayName": "Set Services Runtime Component VIPs",
-    "condition": [],
-    "threadId": "1",
-    "interactive": true,
-    "visible": true
-  },
-  {
-    "description": "Update the Identity Broker VCF Instance Association (service registration can take up to 15 minutes to complete)",
-    "commandLine": "Invoke-VcfOpsVidbVcfInstanceUpdate -VcfOpsFqdn $vcfOperationsFqdn -VcfUserPassword $vcfUserPassword -VcfOpsAdminPassword $vcfOperationsAdminPassword -ServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -SddcManagerUser $sddcManagerAdmin -SddcManagerPassword $sddcManagerAdminPassword -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\"",
-    "displayName": "Invoke VCF Ops VIDB VCF Instance Update",
-    "condition": [],
-    "threadId": "1",
-    "interactive": false,
-    "visible": true
-  },
-  {
-    "description": "Update Fleet Component Registration",
-    "commandLine": "Invoke-VcfmsFleetComponentRegistration -ServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $targetVcfmsServicesRuntimePassword -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -ConfirmOpsMove -ConfirmOpsNetworksMove",
-    "displayName": "Invoke VCFMS Fleet Component Registration",
-    "condition": [],
-    "threadId": "1",
-    "interactive": false,
     "visible": true
   },
   {
@@ -212,8 +72,67 @@
     "visible": true
   },
   {
+    "description": "Modify the fleet component VIP DNS entries for failback using the user-provided script (must exit 0 on success and non-zero on failure)",
+    "commandLine": "Invoke-UserScript -ScriptPath $dnsScriptPath",
+    "displayName": "Run User-Provided DNS Entry Modification Script",
+    "condition": [
+      {
+        "type": "variable",
+        "name": "userProvidedDnsScript",
+        "operator": "eq",
+        "value": "true"
+      }
+    ],
+    "threadId": "1",
+    "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "Modify the DNS entries for the fleet component VIPs (manual, no PowerShell equivalent)",
+    "commandLine": "Confirm-ManualStep -Message 'Press Enter once the DNS entries for the fleet component VIPs have been modified' -AnswerKey 'fleet-vip-dns-updated'",
+    "displayName": "Confirm Manual Step: fleet component VIP DNS entries have been modified",
+    "condition": [
+      {
+        "type": "variable",
+        "name": "userProvidedDnsScript",
+        "operator": "eq",
+        "value": "false"
+      }
+    ],
+    "threadId": "1",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Retrieve Component Details from VCF Operations",
+    "commandLine": "Get-VcfOperationsRegisteredComponents -VcfOperationsFqdn $vcfOperationsFqdn -Password $vcfOperationsAdminPassword",
+    "displayName": "Get VCF Operations Registered Components",
+    "condition": [],
+    "threadId": "1",
+    "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "Trust the Offline Depot Certificate on this machine (needed to read the offline depot's directory index)",
+    "commandLine": "Add-OfflineDepotTrustedCertificate -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
+    "displayName": "Trust Offline Depot Certificate on Jumpbox",
+    "condition": [],
+    "threadId": "1",
+    "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "Retrieve a List of Backups for the VCF Management Services Fleet Components",
+    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -ServicesRuntimeFqdn $sourceVcfmsServicesRuntimeFqdn -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -componentNames \"vcf-fleet-lcm\",\"vcf-fleet-depot\",\"salt-raas\",\"vidb\" -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
+    "displayName": "Retrieve VCFMS Backups",
+    "condition": [],
+    "threadId": "1",
+    "interactive": true,
+    "visible": true
+  },
+  {
     "description": "Retrieve a List of Backups for VCF Automation",
-    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -componentNames \"vcfa\" -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
+    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -type \"vcfa\" -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
     "displayName": "Retrieve VCF Automation Backups",
     "condition": [],
     "threadId": "1",
@@ -221,11 +140,98 @@
     "visible": true
   },
   {
+    "description": "Clean up the recovered fleet components on the recovery-site VCF Management Services instance",
+    "commandLine": "Remove-VcfmsRecoveredComponents -ServicesRuntimeFqdn $sourceVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $targetVcfmsServicesRuntimePassword",
+    "displayName": "Remove VCFMS Recovered Components",
+    "condition": [],
+    "threadId": "2",
+    "waitOn": [
+      "1"
+    ],
+    "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "Clear the fleet VIP on the recovery-site VCF Management Services instance before failback",
+    "commandLine": "Clear-VcfmsFleetIdentity -ServicesRuntimeFqdn $sourceVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $targetVcfmsServicesRuntimePassword",
+    "displayName": "Clear VCFMS Fleet Identity",
+    "condition": [],
+    "threadId": "2",
+    "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "Power on the VCF Management Services instance VMs on the original protected site in vCenter",
+    "commandLine": "Confirm-ManualStep -Message 'Press Enter once the VCF Management Services VMs on the original protected site have been powered on' -AnswerKey 'vcfms-powered-on'",
+    "displayName": "Confirm Manual Step: VCF Management Services VMs have been powered on",
+    "condition": [],
+    "threadId": "2",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Trust the Offline Depot Certificate on the VCF Management Services Services Runtime (needed to retrieve the packages from the offline depot during restore)",
+    "commandLine": "Add-VcfmsTrustedCertificate -ServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $targetVcfmsServicesRuntimePassword -RemoteHostFqdn $offlineDepotFqdn -RemoteHostPort $offlineDepotPort",
+    "displayName": "Trust Offline Depot Certificate on VCF Management Services Services Runtime",
+    "condition": [],
+    "threadId": "2",
+    "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "Restore the Fleet Components on the Original VCF Management Services Instance (only required if components were changed while failed over)",
+    "commandLine": "Restore-ServicesRuntimeComponentBackup -ServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $targetVcfmsServicesRuntimePassword",
+    "displayName": "Restore VCFMS Backups",
+    "condition": [],
+    "threadId": "2",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Update SDDC LCM in the target site with credentials from the source site (manual, no PowerShell equivalent)",
+    "commandLine": "Confirm-ManualStep -Message 'Press Enter once SDDC LCM has been updated with the credentials from the source site' -AnswerKey 'sddc-lcm-credentials-updated'",
+    "displayName": "Confirm Manual Step: SDDC LCM has been updated with source site credentials",
+    "condition": [],
+    "threadId": "2",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Update the Identity Broker VIP Address",
+    "commandLine": "Set-ServicesRuntimeComponentVips -ServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $targetVcfmsServicesRuntimePassword -ComponentType \"vidb\" -Vips $vidbVip",
+    "displayName": "Set Services Runtime Component VIPs",
+    "condition": [],
+    "threadId": "2",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Update the Identity Broker VCF Instance Association (service registration can take up to 15 minutes to complete)",
+    "commandLine": "Invoke-VcfOpsVidbVcfInstanceUpdate -VcfOpsFqdn $vcfOperationsFqdn -VcfUserPassword $vcfUserPassword -VcfOpsAdminPassword $vcfOperationsAdminPassword -ServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -SddcManagerUser $sddcManagerAdmin -SddcManagerPassword $sddcManagerAdminPassword -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\"",
+    "displayName": "Invoke VCF Ops VIDB VCF Instance Update",
+    "condition": [],
+    "threadId": "2",
+    "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "Update Fleet Component Registration",
+    "commandLine": "Invoke-VcfmsFleetComponentRegistration -ServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $targetVcfmsServicesRuntimePassword -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -ConfirmOpsMove -ConfirmOpsNetworksMove",
+    "displayName": "Invoke VCFMS Fleet Component Registration",
+    "condition": [],
+    "threadId": "2",
+    "interactive": false,
+    "visible": true
+  },
+  {
     "description": "Trust the Offline Depot Certificate on the VCF Automation Services Runtime (needed to retrieve the packages from the offline depot during restore)",
     "commandLine": "Add-VcfmsTrustedCertificate -Type CONSUMPTION -ServicesRuntimePassword $vcfaServicesRuntimePassword -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -RemoteHostFqdn $offlineDepotFqdn -RemoteHostPort $offlineDepotPort",
     "displayName": "Trust Offline Depot Certificate on VCF Automation Services Runtime",
+    "waitOn": [
+      "1"
+    ],
     "condition": [],
-    "threadId": "1",
+    "threadId": "3",
     "interactive": false,
     "visible": true
   },
@@ -234,7 +240,7 @@
     "commandLine": "Restore-ServicesRuntimeComponentBackup -Type CONSUMPTION -ServicesRuntimePassword $vcfaServicesRuntimePassword -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\"",
     "displayName": "Restore VCF Automation Backup",
     "condition": [],
-    "threadId": "1",
+    "threadId": "3",
     "interactive": true,
     "visible": true
   },
@@ -243,7 +249,7 @@
     "commandLine": "Set-ServicesRuntimeComponentVips -ServicesRuntimePassword $vcfaServicesRuntimePassword -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -ComponentType \"vcfa\" -Vips $vcfaVip",
     "displayName": "Set Services Runtime Component VIPs",
     "condition": [],
-    "threadId": "1",
+    "threadId": "3",
     "interactive": true,
     "visible": true
   },
@@ -252,7 +258,7 @@
     "commandLine": "Update-VcfmsVcfaRegistration -ServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $targetVcfmsServicesRuntimePassword -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -OpsFqdn $vcfOperationsFqdn -VspPassword $vcfaServicesRuntimePassword -VcfaSystemPassword $vcfaSystemPassword -OpsPassword $vcfOperationsAdminPassword",
     "displayName": "Update VCFMS VCFA Registration",
     "condition": [],
-    "threadId": "1",
+    "threadId": "3",
     "interactive": false,
     "visible": true
   },
@@ -260,6 +266,10 @@
     "description": "Update the backup schedule configuration for the recovered components (manual)",
     "commandLine": "Confirm-ManualStep -Message 'Press Enter once the backup schedule configuration for the recovered components has been updated' -AnswerKey 'backup-schedule-updated'",
     "displayName": "Confirm Manual Step: backup schedule configuration has been updated",
+    "waitOn": [
+      "2",
+      "3"
+    ],
     "condition": [],
     "threadId": "1",
     "interactive": true,

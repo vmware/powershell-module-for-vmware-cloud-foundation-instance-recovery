@@ -578,16 +578,16 @@ Function cidrToMask {
 #EndRegion Supporting Functions
 
 #Region Pre-Requisites
-Function Confirm-VCFInstanceRecoveryPreReqs {
+Function Confirm-VCFRecoveryCoordinatorPrerequisites {
     <#
     .SYNOPSIS
     Checks for the presence of supporting software and modules leveraged by VCF.RecoveryCoordinator
 
     .DESCRIPTION
-    The Confirm-VCFInstanceRecoveryPreReqs cmdlet checks for the presence of supporting software and modules leveraged by VCF.RecoveryCoordinator
+    The Confirm-VCFRecoveryCoordinatorPrerequisites cmdlet checks for the presence of supporting software and modules leveraged by VCF.RecoveryCoordinator
 
     .EXAMPLE
-    Confirm-VCFInstanceRecoveryPreReqs
+    Confirm-VCFRecoveryCoordinatorPrerequisites
     #>
 
     #Check Dependencies
@@ -608,7 +608,7 @@ Function Confirm-VCFInstanceRecoveryPreReqs {
         LogMessage -type INFO -message "[$jumpboxName] Posh-SSH Module found"
     }
 
-    $isPowerCLIInstalled = Get-InstalledModule -name "VCF.PowerCLI" -ErrorAction SilentlyContinue
+    $isPowerCLIInstalled = Get-Module -Name "VCF.PowerCLI" -ListAvailable
     If (!$isPowerCLIInstalled) {
         LogMessage -type WARNING -message "[$jumpboxName] VCF PowerCLI Module Missing. Please install"
     } else {
@@ -653,7 +653,7 @@ Function Confirm-VCFInstanceRecoveryPreReqs {
         LogMessage -type WARNING -message "[$jumpboxName] DefaultVIServerMode is not correctly set. Please run 'Set-PowerCLIConfiguration -DefaultVIServerMode Multiple' to correct"
     }
 }
-Export-ModuleMember -Function Confirm-VCFInstanceRecoveryPreReqs
+Export-ModuleMember -Function Confirm-VCFRecoveryCoordinatorPrerequisites
 #EndRegion Pre-Requisites
 
 #Region Data Gathering
