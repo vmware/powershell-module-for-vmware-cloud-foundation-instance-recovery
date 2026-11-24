@@ -20853,19 +20853,14 @@ Function Remove-VcfmsRecoveredComponents {
 
     .DESCRIPTION
     The Remove-VcfmsRecoveredComponents cmdlet performs the cleanup of recovered fleet components
-    from a VCFMS Services Runtime cluster as part of the failback preparation process. It connects
-    to the control plane node via SSH and runs two cleanup operations:
+    from a VCFMS Services Runtime cluster as part of the failback preparation process. It uses SSH to retrieve the kubeconfig when needed and runs two cleanup operations using local kubectl:
 
       Step 1a — Delete component resources from Kubernetes:
         kubectl delete component ops-logs salt-raas vidb vcf-fleet-depot vcf-fleet-lcm
 
-      Step 1b — Remove matching rows from the vcf-sddc-lcm postgres database:
-        kubectl exec vcf-sddc-lcm-db-0 ... psql DELETE FROM component WHERE component_type IN (...)
-        kubectl exec vcf-sddc-lcm-db-1 ... psql DELETE FROM component WHERE component_type IN (...)
-
-        Only one of the two database pods (db-0, db-1) is active at any given time — the command
-        against the standby pod will fail. Both are attempted and the failure of either is treated
-        as expected; the cmdlet reports which succeeded and which failed without aborting.
+      Step 1b — Discover the PostgreSQL leader with patronictl and clean up vcfsddclcmdb:
+        Delete node rows associated with OPS and OPS_NETWORKS, then delete the seven
+        recovered component types in a single transaction on the leader.
 
     The kubeconfig is resolved in this order:
       1. -KubeconfigPath if supplied
@@ -20956,33 +20951,38 @@ Function Remove-VcfmsRecoveredComponents {
     }
 
     # -------------------------------------------------------------------------
-    # Step 1b: Remove rows from the vcf-sddc-lcm postgres database
-    # Both db-0 and db-1 are attempted. Only one pod will be active; the
-    # command against the standby is expected to fail and is handled gracefully.
+    # Step 1b: Discover the database leader and delete dependent rows first.
     # -------------------------------------------------------------------------
-    $deleteTypes = "DELETE FROM component WHERE component_type IN ('VIDB', 'OPS_LOGS', 'SALT_RAAS', 'VCF_FLEET_LCM', 'VCF_FLEET_DEPOT');"
-    $dbPods = @("vcf-sddc-lcm-db-0", "vcf-sddc-lcm-db-1")
+    $dbNamespace = "vcf-sddc-lcm"
+    LogMessage -type INFO -message "[$controlPlaneHost] Step 1b: Discovering the PostgreSQL leader"
+    $patroniOutput = & kubectl --kubeconfig $resolvedKubeconfig exec vcf-sddc-lcm-db-0 `
+        -n $dbNamespace -c postgres -- patronictl list 2>&1
+    $patroniExit = $LASTEXITCODE
+    if ($patroniExit -ne 0) {
+        throw "patronictl list failed with exit code ${patroniExit}: $($patroniOutput -join ' ')"
+    }
 
-    foreach ($dbPod in $dbPods) {
-        LogMessage -type INFO -message "[$controlPlaneHost] Step 1b: Running DELETE on $dbPod"
-        try {
-            # -i (no -t): non-interactive stdin; -- separates kubectl args from container command
-            $dbOutput = & kubectl --kubeconfig $resolvedKubeconfig exec $dbPod `
-                -n vcf-sddc-lcm -i -- psql -U postgres -d vcfsddclcmdb -c $deleteTypes 2>&1
-            $dbExit = $LASTEXITCODE
-
-            if ($dbOutput) {
-                $dbOutput | ForEach-Object { Write-Host "   $_" }
-            }
-
-            if ($dbExit -eq 0) {
-                LogMessage -type INFO -message "[$controlPlaneHost] DELETE succeeded on $dbPod (active pod)"
-            } else {
-                LogMessage -type WARNING -message "[$controlPlaneHost] DELETE on $dbPod exited with code $dbExit — this pod is likely the standby (expected)"
-            }
-        } catch {
-            LogMessage -type WARNING -message "[$controlPlaneHost] DELETE on $dbPod failed (likely standby pod): $($_.Exception.Message)"
+    $dbLeaders = @(foreach ($line in $patroniOutput) {
+        if ($line -match '^\s*\|\s*(vcf-sddc-lcm-db-\d+)\s*\|[^|]*\|\s*Leader\s*\|') {
+            $Matches[1]
         }
+    })
+    if ($dbLeaders.Count -ne 1) {
+        throw "Expected exactly one PostgreSQL leader in patronictl list, found $($dbLeaders.Count)."
+    }
+    $dbLeader = $dbLeaders[0]
+
+    $deleteNodes = "DELETE FROM node WHERE component_id IN (SELECT id FROM component WHERE component_type IN ('OPS', 'OPS_NETWORKS'));"
+    $deleteComponents = "DELETE FROM component WHERE component_type IN ('OPS', 'VIDB', 'OPS_LOGS', 'SALT_RAAS', 'VCF_FLEET_LCM', 'VCF_FLEET_DEPOT', 'OPS_NETWORKS');"
+
+    LogMessage -type INFO -message "[$controlPlaneHost] Step 1b: Deleting node and component rows on $dbLeader"
+    $dbOutput = & kubectl --kubeconfig $resolvedKubeconfig exec $dbLeader `
+        -n $dbNamespace -c postgres -- psql -U postgres -d vcfsddclcmdb `
+        --set=ON_ERROR_STOP=1 --single-transaction -c $deleteNodes -c $deleteComponents 2>&1
+    $dbExit = $LASTEXITCODE
+    $dbOutput | ForEach-Object { Write-Host "   $_" }
+    if ($dbExit -ne 0) {
+        throw "Database cleanup on $dbLeader failed with exit code $dbExit."
     }
 
     $StopWatch.Stop()
