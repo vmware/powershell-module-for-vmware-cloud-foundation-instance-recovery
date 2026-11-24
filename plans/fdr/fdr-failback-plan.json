@@ -63,12 +63,12 @@
     "visible": true
   },
   {
-    "description": "Prepare to fail back VCF Automation (manual)",
-    "commandLine": "Confirm-ManualStep -Message 'Press Enter once the preparation to fail back VCF Automation is complete' -AnswerKey 'vcfa-failback-prepared'",
-    "displayName": "Confirm Manual Step: VCF Automation failback has been prepared",
+    "description": "Prepare to Restore VCF Automation (remove the existing VSP cluster entry)",
+    "commandLine": "Remove-SddcManagerVspClusterEntry -extractedSDDCDataFile $extractedSddcDataFile -VcfUserPassword $vcfUserPassword -RootPassword $rootPassword -ClusterType CONSUMPTION -autoConfirm",
+    "displayName": "Remove VCFA Services Runtime Cluster Entry",
     "condition": [],
     "threadId": "1",
-    "interactive": true,
+    "interactive": false,
     "visible": true
   },
   {
@@ -99,7 +99,7 @@
   {
     "description": "Modify the DNS entries for the fleet component VIPs (manual, no PowerShell equivalent)",
     "commandLine": "Confirm-ManualStep -Message 'Press Enter once the DNS entries for the fleet component VIPs have been modified' -AnswerKey 'fleet-vip-dns-updated'",
-    "displayName": "Confirm Manual Step: fleet component VIP DNS entries have been modified",
+    "displayName": "Confirm Manual Step: Fleet component VIP DNS entries have been modified",
     "condition": [
       {
         "type": "variable",

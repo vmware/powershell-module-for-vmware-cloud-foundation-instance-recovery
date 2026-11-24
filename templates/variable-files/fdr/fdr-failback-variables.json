@@ -1,4 +1,5 @@
 {
+  "dnsScriptPath": "",
   "vcfOperationsFqdn": "",
   "vcfOperationsAdminPassword": "",
   "offlineDepotFqdn": "",
@@ -9,11 +10,11 @@
   "sftpDirectory": "",
   "sourceVcfmsServicesRuntimeFqdn": "",
   "sourceVcfmsServicesRuntimePassword": "",
-  "dnsScriptPath": "",
   "targetVcfmsServicesRuntimeFqdn": "",
   "targetVcfmsServicesRuntimePassword": "",
   "vidbVip": "",
   "vcfUserPassword": "",
+  "rootPassword": "",
   "sddcManagerAdmin": "",
   "sddcManagerAdminPassword": "",
   "vcfaServicesRuntimePassword": "",
