@@ -55,7 +55,7 @@
   },
   {
     "description": "Retrieve a List of Backups for the VCF Management Services Fleet Components",
-    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -ServicesRuntimeFqdn $sourceVcfmsServicesRuntimeFqdn -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -componentNames \"vcf-fleet-lcm\",\"vcf-fleet-depot\",\"salt-raas\",\"vidb\" -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
+    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -ServicesRuntimeFqdn $sourceVcfmsServicesRuntimeFqdn -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -componentNames \"vcf-fleet-lcm\",\"vcf-fleet-depot\",\"salt-raas\",\"vidb\",\"opsLogs\" -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
     "displayName": "Retrieve VCFMS Backups",
     "condition": [],
     "threadId": "1",
@@ -188,6 +188,15 @@
     "visible": true
   },
   {
+    "description": "Power off the VCF Automation VMs on the recovery site and verify that they are powered off",
+    "commandLine": "Stop-VcfaVMs -SddcManagerUser $sddcManagerAdmin -SddcManagerPassword $sddcManagerAdminPassword -OpsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\"",
+    "displayName": "Power Off VCF Automation VMs on Source Instance",
+    "condition": [],
+    "threadId": "3",
+    "interactive": true,
+    "visible": true
+  },
+  {
     "description": "Remove VCF Automation runtime nodes and component registrations from SDDC LCM on the recovery site",
     "commandLine": "Remove-VcfmsVcfaRegistration -ServicesRuntimeFqdn $sourceVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $sourceVcfmsServicesRuntimePassword -OpsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\"",
     "displayName": "Remove VCF Automation Registration from SDDC LCM",
@@ -206,15 +215,6 @@
     "condition": [],
     "threadId": "3",
     "interactive": false,
-    "visible": true
-  },
-  {
-    "description": "Power off the VCF Automation VMs on the recovery site and verify that they are powered off",
-    "commandLine": "Stop-VcfaVMs -SddcManagerUser $sddcManagerAdmin -SddcManagerPassword $sddcManagerAdminPassword -OpsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\"",
-    "displayName": "Power Off VCF Automation VMs on Source Instance",
-    "condition": [],
-    "threadId": "3",
-    "interactive": true,
     "visible": true
   },
   {
@@ -258,7 +258,11 @@
     "commandLine": "Update-VcfmsVcfaRegistration -ServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $targetVcfmsServicesRuntimePassword -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -OpsFqdn $vcfOperationsFqdn -VspPassword $vcfaServicesRuntimePassword -VcfaSystemPassword $vcfaSystemPassword -OpsPassword $vcfOperationsAdminPassword",
     "displayName": "Update VCFMS VCFA Registration",
     "condition": [],
-    "threadId": "3",
+    "waitOn": [
+      "2",
+      "3"
+    ],
+    "threadId": "1",
     "interactive": false,
     "visible": true
   },
@@ -266,10 +270,7 @@
     "description": "Update the backup schedule configuration for the recovered components (manual)",
     "commandLine": "Confirm-ManualStep -Message 'Press Enter once the backup schedule configuration for the recovered components has been updated' -AnswerKey 'backup-schedule-updated'",
     "displayName": "Confirm Manual Step: backup schedule configuration has been updated",
-    "waitOn": [
-      "2",
-      "3"
-    ],
+
     "condition": [],
     "threadId": "1",
     "interactive": true,
