@@ -182,6 +182,7 @@
     {
       "id": "FailbackFleet",
       "label": "Failback Fleet Components",
+      "beta": true,
       "recoveryType": "FDR",
       "target": "recoverFleet",
       "default": false,
