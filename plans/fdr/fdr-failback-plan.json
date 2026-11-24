@@ -29,7 +29,7 @@
   {
     "description": "Back up the recovered components to a highly available SFTP server (manual)",
     "commandLine": "Confirm-ManualStep -Message 'Press Enter once the recovered components have been backed up to the SFTP server' -AnswerKey 'recovered-components-backed-up'",
-    "displayName": "Confirm Manual Step: recovered components have been backed up",
+    "displayName": "Confirm Manual Step: Recovered components have been backed up",
     "condition": [],
     "threadId": "1",
     "interactive": true,
@@ -45,12 +45,12 @@
     "visible": true
   },
   {
-    "description": "Delete the VCF Automation component from the recovery site (manual, no PowerShell equivalent)",
-    "commandLine": "Confirm-ManualStep -Message 'Press Enter once VCF Automation has been deleted from the recovery site' -AnswerKey 'vcfa-deleted-from-recovery-site'",
-    "displayName": "Confirm Manual Step: VCF Automation has been deleted from the recovery site",
+    "description": "Remove VCF Automation runtime nodes and component registrations from SDDC LCM on the recovery site",
+    "commandLine": "Remove-VcfmsVcfaRegistration -ServicesRuntimeFqdn $sourceVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $sourceVcfmsServicesRuntimePassword -VcfaServicesRuntimeFqdn $vcfaServicesRuntimeFqdn",
+    "displayName": "Remove VCF Automation Registration from SDDC LCM",
     "condition": [],
     "threadId": "1",
-    "interactive": true,
+    "interactive": false,
     "visible": true
   },
   {
@@ -188,12 +188,12 @@
     "visible": true
   },
   {
-    "description": "Update SDDC LCM in the target site with credentials from the source site (manual, no PowerShell equivalent)",
-    "commandLine": "Confirm-ManualStep -Message 'Press Enter once SDDC LCM has been updated with the credentials from the source site' -AnswerKey 'sddc-lcm-credentials-updated'",
-    "displayName": "Confirm Manual Step: SDDC LCM has been updated with source site credentials",
+    "description": "Update SDDC LCM with Credentials",
+    "commandLine": "Update-VcfmsSddcLcmCredentials -ServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $targetVcfmsServicesRuntimePassword -SftpHost $sftpHost -SftpUser $sftpUsername -SftpPassword $sftpPassword -SftpRemoteDir $sddcLcmSftpRemoteDir -EncryptionPassphrase $encryptionPassphrase",
+    "displayName": "Update SDDC LCM Backup Secrets",
     "condition": [],
     "threadId": "2",
-    "interactive": true,
+    "interactive": false,
     "visible": true
   },
   {

@@ -20846,6 +20846,29 @@ Function Install-VcfaMigrationServiceEngine {
 }
 Export-ModuleMember -Function Install-VcfaMigrationServiceEngine
 
+Function Get-VcfmsSddcLcmDatabaseLeader {
+    Param(
+        [Parameter(Mandatory = $true)][String] $KubeconfigPath
+    )
+
+    $patroniOutput = & kubectl --kubeconfig $KubeconfigPath exec vcf-sddc-lcm-db-0 `
+        -n vcf-sddc-lcm -c postgres -- patronictl list 2>&1
+    $patroniExit = $LASTEXITCODE
+    if ($patroniExit -ne 0) {
+        throw "patronictl list failed with exit code ${patroniExit}: $($patroniOutput -join ' ')"
+    }
+
+    $dbLeaders = @(foreach ($line in $patroniOutput) {
+        if ($line -match '^\s*\|\s*(vcf-sddc-lcm-db-\d+)\s*\|[^|]*\|\s*Leader\s*\|') {
+            $Matches[1]
+        }
+    })
+    if ($dbLeaders.Count -ne 1) {
+        throw "Expected exactly one PostgreSQL leader in patronictl list, found $($dbLeaders.Count)."
+    }
+    return $dbLeaders[0]
+}
+
 Function Remove-VcfmsRecoveredComponents {
     <#
     .SYNOPSIS
@@ -20955,22 +20978,7 @@ Function Remove-VcfmsRecoveredComponents {
     # -------------------------------------------------------------------------
     $dbNamespace = "vcf-sddc-lcm"
     LogMessage -type INFO -message "[$controlPlaneHost] Step 1b: Discovering the PostgreSQL leader"
-    $patroniOutput = & kubectl --kubeconfig $resolvedKubeconfig exec vcf-sddc-lcm-db-0 `
-        -n $dbNamespace -c postgres -- patronictl list 2>&1
-    $patroniExit = $LASTEXITCODE
-    if ($patroniExit -ne 0) {
-        throw "patronictl list failed with exit code ${patroniExit}: $($patroniOutput -join ' ')"
-    }
-
-    $dbLeaders = @(foreach ($line in $patroniOutput) {
-        if ($line -match '^\s*\|\s*(vcf-sddc-lcm-db-\d+)\s*\|[^|]*\|\s*Leader\s*\|') {
-            $Matches[1]
-        }
-    })
-    if ($dbLeaders.Count -ne 1) {
-        throw "Expected exactly one PostgreSQL leader in patronictl list, found $($dbLeaders.Count)."
-    }
-    $dbLeader = $dbLeaders[0]
+    $dbLeader = Get-VcfmsSddcLcmDatabaseLeader -KubeconfigPath $resolvedKubeconfig
 
     $deleteNodes = "DELETE FROM node WHERE component_id IN (SELECT id FROM component WHERE component_type IN ('OPS', 'OPS_NETWORKS'));"
     $deleteComponents = "DELETE FROM component WHERE component_type IN ('OPS', 'VIDB', 'OPS_LOGS', 'SALT_RAAS', 'VCF_FLEET_LCM', 'VCF_FLEET_DEPOT', 'OPS_NETWORKS');"
@@ -20997,6 +21005,80 @@ Function Remove-VcfmsRecoveredComponents {
     }
 }
 Export-ModuleMember -Function Remove-VcfmsRecoveredComponents
+
+Function Remove-VcfmsVcfaRegistration {
+    <#
+    .SYNOPSIS
+    Removes VCF Automation registration records from SDDC LCM during fleet failback.
+
+    .DESCRIPTION
+    Finds the SDDC LCM PostgreSQL leader with patronictl. In one transaction, deletes
+    node rows linked to the supplied VCF Automation Services Runtime FQDN, then deletes
+    component rows of type VCFA or VCD_MIGRATOR and any component row matching that FQDN.
+
+    .PARAMETER VcfaServicesRuntimeFqdn
+    FQDN of the VCF Automation Services Runtime as recorded in SDDC LCM.
+
+    .PARAMETER ServicesRuntimeFqdn
+    FQDN or IP address of the VCF Management Services runtime that hosts SDDC LCM.
+
+    .PARAMETER ServicesRuntimePassword
+    Password for the vmware-system-user SSH account on the VCF Management Services runtime.
+
+    .PARAMETER KubeconfigPath
+    Path to an existing kubeconfig for the VCF Management Services runtime.
+
+    .EXAMPLE
+    Remove-VcfmsVcfaRegistration -VcfaServicesRuntimeFqdn "flt-vcfa-sr01.rainpole.io" -KubeconfigPath ".\recovery-site.kubeconfig" -WhatIf
+    #>
+    [CmdletBinding(SupportsShouldProcess, DefaultParameterSetName = 'Runtime')]
+    Param(
+        [Parameter(Mandatory = $true)]
+        [ValidatePattern('\A[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+\.?\z')]
+        [String] $VcfaServicesRuntimeFqdn,
+        [Parameter(Mandatory = $true, ParameterSetName = 'Runtime')][String] $ServicesRuntimeFqdn,
+        [Parameter(Mandatory = $true, ParameterSetName = 'Runtime')][String] $ServicesRuntimePassword,
+        [Parameter(Mandatory = $true, ParameterSetName = 'Kubeconfig')][String] $KubeconfigPath
+    )
+
+    $jumpboxName = hostname
+    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
+    try {
+        $target = if ($KubeconfigPath) { $KubeconfigPath } else { $ServicesRuntimeFqdn }
+        if (-not $PSCmdlet.ShouldProcess($target, "Delete SDDC LCM registration records for $VcfaServicesRuntimeFqdn, VCFA, and VCD_MIGRATOR")) {
+            return
+        }
+
+        if (-not $KubeconfigPath) {
+            $kubeconfigResult = Get-VcfmsServicesRuntimeKubeconfig -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Password $ServicesRuntimePassword
+            $KubeconfigPath = $kubeconfigResult.KubeconfigPath
+            if (-not $KubeconfigPath) {
+                throw "Could not retrieve the kubeconfig from $ServicesRuntimeFqdn."
+            }
+        }
+
+        $dbLeader = Get-VcfmsSddcLcmDatabaseLeader -KubeconfigPath $KubeconfigPath
+        $deleteNodes = "DELETE FROM node WHERE component_id IN (SELECT id FROM component WHERE fqdn='$VcfaServicesRuntimeFqdn');"
+        $deleteComponents = "DELETE FROM component WHERE component_type IN ('VCFA', 'VCD_MIGRATOR') OR fqdn='$VcfaServicesRuntimeFqdn';"
+
+        LogMessage -type INFO -message "[$dbLeader] Deleting SDDC LCM registration records for $VcfaServicesRuntimeFqdn"
+        $dbOutput = & kubectl --kubeconfig $KubeconfigPath exec $dbLeader `
+            -n vcf-sddc-lcm -c postgres -- psql -X -U postgres -d vcfsddclcmdb `
+            --set=ON_ERROR_STOP=1 --single-transaction -c $deleteNodes -c $deleteComponents 2>&1
+        $dbExit = $LASTEXITCODE
+        $dbOutput | ForEach-Object { Write-Host "   $_" }
+        if ($dbExit -ne 0) {
+            throw "Database cleanup on $dbLeader failed with exit code $dbExit."
+        }
+    } catch {
+        LogMessage -type ERROR -message "[$jumpboxName] $($_.Exception.Message)"
+        throw
+    } finally {
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $stopwatch
+    }
+}
+Export-ModuleMember -Function Remove-VcfmsVcfaRegistration
 
 #EndRegion Services Runtime
 

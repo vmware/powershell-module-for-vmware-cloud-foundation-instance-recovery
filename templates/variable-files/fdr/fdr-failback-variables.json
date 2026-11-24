@@ -8,6 +8,7 @@
   "sftpPassword": "",
   "sftpDirectory": "",
   "sourceVcfmsServicesRuntimeFqdn": "",
+  "sourceVcfmsServicesRuntimePassword": "",
   "dnsScriptPath": "",
   "targetVcfmsServicesRuntimeFqdn": "",
   "targetVcfmsServicesRuntimePassword": "",
@@ -15,6 +16,7 @@
   "vcfUserPassword": "",
   "sddcManagerAdmin": "",
   "sddcManagerAdminPassword": "",
+  "vcfaServicesRuntimeFqdn": "",
   "vcfaServicesRuntimePassword": "",
   "vcfaVip": "",
   "vcfaSystemPassword": ""

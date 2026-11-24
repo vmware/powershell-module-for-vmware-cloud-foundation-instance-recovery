@@ -312,6 +312,11 @@
     "masked": false,
     "browse": false
   },
+  "vcfaServicesRuntimeFqdn": {
+    "description": "FQDN of the VCF Automation Services Runtime as recorded in the recovery-site SDDC LCM database.",
+    "masked": false,
+    "browse": false
+  },
   "vcfaServicesRuntimePassword": {
     "description": "Password of the VCF Automation Services Runtime system user (admin@vsp.local). Set on the new runtime when it is created, and used to connect to it afterwards.",
     "masked": true,
@@ -375,6 +380,11 @@
   "sourceVcfmsServicesRuntimeFqdn": {
     "description": "FQDN of the SOURCE VCF Management Services Services Runtime, as registered in VCF Operations. Failover: the primary site, used only to locate its backups on the SFTP server. Failback: the recovery site, used to locate the post-failover backups and as the runtime the recovered components are removed from.",
     "masked": false,
+    "browse": false
+  },
+  "sourceVcfmsServicesRuntimePassword": {
+    "description": "Password for the vmware-system-user SSH account on the recovery-site VCF Management Services runtime. Used to retrieve its kubeconfig for VCF Automation registration cleanup during failback.",
+    "masked": true,
     "browse": false
   },
   "targetVcfmsServicesRuntimeFqdn": {
