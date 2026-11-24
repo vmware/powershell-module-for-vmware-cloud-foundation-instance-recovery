@@ -27,18 +27,9 @@
     "visible": true
   },
   {
-    "description": "Back up the recovered components to a highly available SFTP server (manual)",
-    "commandLine": "Confirm-ManualStep -Message 'Press Enter once the recovered components have been backed up to the SFTP server' -AnswerKey 'recovered-components-backed-up'",
-    "displayName": "Confirm Manual Step: Recovered components have been backed up",
-    "condition": [],
-    "threadId": "1",
-    "interactive": true,
-    "visible": true
-  },
-  {
-    "description": "Perform an on-demand backup of VCF Automation in the recovery site (manual)",
-    "commandLine": "Confirm-ManualStep -Message 'Press Enter once the on-demand VCF Automation backup has completed' -AnswerKey 'vcfa-backed-up'",
-    "displayName": "Confirm Manual Step: VCF Automation has been backed up on the recovery site",
+    "description": "Back up components to be failed over to a highly available SFTP server (manual)",
+    "commandLine": "Confirm-ManualStep -Message 'Press Enter once the components to be failed back have been backed up to the SFTP server' -AnswerKey 'recovered-components-backed-up'",
+    "displayName": "Confirm Manual Step: Components to be failed over have been backed up",
     "condition": [],
     "threadId": "1",
     "interactive": true,
@@ -54,27 +45,27 @@
     "visible": true
   },
   {
-    "description": "Remove VCF Automation runtime nodes and component registrations from SDDC LCM on the recovery site",
-    "commandLine": "Remove-VcfmsVcfaRegistration -ServicesRuntimeFqdn $sourceVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $sourceVcfmsServicesRuntimePassword -OpsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\"",
-    "displayName": "Remove VCF Automation Registration from SDDC LCM",
+    "description": "Trust the Offline Depot Certificate on this machine (needed to read the offline depot's directory index)",
+    "commandLine": "Add-OfflineDepotTrustedCertificate -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
+    "displayName": "Trust Offline Depot Certificate on Jumpbox",
     "condition": [],
     "threadId": "1",
     "interactive": false,
     "visible": true
   },
   {
-    "description": "Prepare to Restore VCF Automation (remove the existing VSP cluster entry)",
-    "commandLine": "Remove-SddcManagerVspClusterEntry -extractedSDDCDataFile $extractedSddcDataFile -VcfUserPassword $vcfUserPassword -RootPassword $rootPassword -ClusterType CONSUMPTION -autoConfirm",
-    "displayName": "Remove VCFA Services Runtime Cluster Entry",
+    "description": "Retrieve a List of Backups for the VCF Management Services Fleet Components",
+    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -ServicesRuntimeFqdn $sourceVcfmsServicesRuntimeFqdn -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -componentNames \"vcf-fleet-lcm\",\"vcf-fleet-depot\",\"salt-raas\",\"vidb\" -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
+    "displayName": "Retrieve VCFMS Backups",
     "condition": [],
     "threadId": "1",
-    "interactive": false,
+    "interactive": true,
     "visible": true
   },
   {
-    "description": "Power on the VCF Automation instance on the original protected site in vCenter",
-    "commandLine": "Confirm-ManualStep -Message 'Press Enter once the VCF Automation instance on the original protected site has been powered on' -AnswerKey 'vcfa-powered-on'",
-    "displayName": "Confirm Manual Step: VCF Automation has been powered on",
+    "description": "Retrieve a List of Backups for VCF Automation",
+    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -type \"vcfa\" -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
+    "displayName": "Retrieve VCF Automation Backups",
     "condition": [],
     "threadId": "1",
     "interactive": true,
@@ -108,33 +99,6 @@
         "value": "false"
       }
     ],
-    "threadId": "1",
-    "interactive": true,
-    "visible": true
-  },
-  {
-    "description": "Trust the Offline Depot Certificate on this machine (needed to read the offline depot's directory index)",
-    "commandLine": "Add-OfflineDepotTrustedCertificate -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
-    "displayName": "Trust Offline Depot Certificate on Jumpbox",
-    "condition": [],
-    "threadId": "1",
-    "interactive": false,
-    "visible": true
-  },
-  {
-    "description": "Retrieve a List of Backups for the VCF Management Services Fleet Components",
-    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -ServicesRuntimeFqdn $sourceVcfmsServicesRuntimeFqdn -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -componentNames \"vcf-fleet-lcm\",\"vcf-fleet-depot\",\"salt-raas\",\"vidb\" -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
-    "displayName": "Retrieve VCFMS Backups",
-    "condition": [],
-    "threadId": "1",
-    "interactive": true,
-    "visible": true
-  },
-  {
-    "description": "Retrieve a List of Backups for VCF Automation",
-    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -type \"vcfa\" -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
-    "displayName": "Retrieve VCF Automation Backups",
-    "condition": [],
     "threadId": "1",
     "interactive": true,
     "visible": true
@@ -224,12 +188,48 @@
     "visible": true
   },
   {
+    "description": "Remove VCF Automation runtime nodes and component registrations from SDDC LCM on the recovery site",
+    "commandLine": "Remove-VcfmsVcfaRegistration -ServicesRuntimeFqdn $sourceVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $sourceVcfmsServicesRuntimePassword -OpsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\"",
+    "displayName": "Remove VCF Automation Registration from SDDC LCM",
+    "condition": [],
+    "waitFor": [
+      "1"
+    ],
+    "threadId": "3",
+    "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "Remove VCFA Services Runtime Cluster Entry",
+    "commandLine": "Remove-SddcManagerVspClusterEntry -extractedSDDCDataFile $extractedSddcDataFile -VcfUserPassword $vcfUserPassword -RootPassword $rootPassword -ClusterType CONSUMPTION -autoConfirm",
+    "displayName": "Remove VCFA Services Runtime Cluster Entry",
+    "condition": [],
+    "threadId": "3",
+    "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "Power off the VCF Automation VMs on the recovery site and verify that they are powered off",
+    "commandLine": "Stop-VcfaVMs -SddcManagerUser $sddcManagerAdmin -SddcManagerPassword $sddcManagerAdminPassword -OpsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\"",
+    "displayName": "Power Off VCF Automation VMs on Source Instance",
+    "condition": [],
+    "threadId": "3",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Power on the VCF Automation instance on the original protected site in vCenter",
+    "commandLine": "Confirm-ManualStep -Message 'Press Enter once the VCF Automation instance on the original protected site has been powered on' -AnswerKey 'vcfa-powered-on'",
+    "displayName": "Confirm Manual Step: VCF Automation has been powered on",
+    "condition": [],
+    "threadId": "3",
+    "interactive": true,
+    "visible": true
+  },
+  {
     "description": "Trust the Offline Depot Certificate on the VCF Automation Services Runtime (needed to retrieve the packages from the offline depot during restore)",
     "commandLine": "Add-VcfmsTrustedCertificate -Type CONSUMPTION -ServicesRuntimePassword $vcfaServicesRuntimePassword -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -RemoteHostFqdn $offlineDepotFqdn -RemoteHostPort $offlineDepotPort",
     "displayName": "Trust Offline Depot Certificate on VCF Automation Services Runtime",
-    "waitOn": [
-      "1"
-    ],
     "condition": [],
     "threadId": "3",
     "interactive": false,
