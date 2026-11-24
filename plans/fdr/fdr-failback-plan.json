@@ -45,8 +45,17 @@
     "visible": true
   },
   {
+    "description": "Retrieve Component Details from VCF Operations",
+    "commandLine": "Get-VcfOperationsRegisteredComponents -VcfOperationsFqdn $vcfOperationsFqdn -Password $vcfOperationsAdminPassword",
+    "displayName": "Get VCF Operations Registered Components",
+    "condition": [],
+    "threadId": "1",
+    "interactive": false,
+    "visible": true
+  },
+  {
     "description": "Remove VCF Automation runtime nodes and component registrations from SDDC LCM on the recovery site",
-    "commandLine": "Remove-VcfmsVcfaRegistration -ServicesRuntimeFqdn $sourceVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $sourceVcfmsServicesRuntimePassword -VcfaServicesRuntimeFqdn $vcfaServicesRuntimeFqdn",
+    "commandLine": "Remove-VcfmsVcfaRegistration -ServicesRuntimeFqdn $sourceVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $sourceVcfmsServicesRuntimePassword -OpsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\"",
     "displayName": "Remove VCF Automation Registration from SDDC LCM",
     "condition": [],
     "threadId": "1",
@@ -101,15 +110,6 @@
     ],
     "threadId": "1",
     "interactive": true,
-    "visible": true
-  },
-  {
-    "description": "Retrieve Component Details from VCF Operations",
-    "commandLine": "Get-VcfOperationsRegisteredComponents -VcfOperationsFqdn $vcfOperationsFqdn -Password $vcfOperationsAdminPassword",
-    "displayName": "Get VCF Operations Registered Components",
-    "condition": [],
-    "threadId": "1",
-    "interactive": false,
     "visible": true
   },
   {

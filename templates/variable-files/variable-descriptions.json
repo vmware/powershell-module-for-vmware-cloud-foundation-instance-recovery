@@ -312,11 +312,6 @@
     "masked": false,
     "browse": false
   },
-  "vcfaServicesRuntimeFqdn": {
-    "description": "FQDN of the VCF Automation Services Runtime as recorded in the recovery-site SDDC LCM database.",
-    "masked": false,
-    "browse": false
-  },
   "vcfaServicesRuntimePassword": {
     "description": "Password of the VCF Automation Services Runtime system user (admin@vsp.local). Set on the new runtime when it is created, and used to connect to it afterwards.",
     "masked": true,
