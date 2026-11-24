@@ -19,7 +19,7 @@ The `Remove-VcfmsRecoveredComponents` cmdlet performs the cleanup of recovered f
 kubectl delete component ops-logs salt-raas vidb vcf-fleet-depot vcf-fleet-lcm
 ```
 
-**Step 1b** — Removes matching rows from the `vcf-sddc-lcm` postgres database. Both `vcf-sddc-lcm-db-0` and `vcf-sddc-lcm-db-1` are attempted, since only one pod is active at any given time. The failure of the standby pod is expected and treated as a warning rather than an error.
+**Step 1b** — Discovers the PostgreSQL leader with `patronictl`. On that leader, it deletes `node` rows associated with `OPS` and `OPS_NETWORKS`, then deletes the corresponding seven component types from the `component` table. Both deletes run in one transaction. Leader discovery and SQL failures are reported as errors.
 
 The kubeconfig is resolved in this order:
 1. `-KubeconfigPath` if supplied.
