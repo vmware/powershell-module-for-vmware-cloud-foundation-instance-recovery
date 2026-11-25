@@ -9226,18 +9226,53 @@ Function Restore-ClusterVMLocations {
         $vmInventory = Get-ClusterRestoreVMInventory $vCenterServer
         If (Test-Path -path $jsonFile) {
             $vmLocations = Get-Content -path $jsonFile | ConvertFrom-Json
+            $folders = $null
             Foreach ($vmLocation in $vmLocations) {
                 If ($vmLocation.name -notlike "vCLS*") {
                     $vm = Find-ClusterRestoreVMs $vmInventory $vmLocation.name
                     if (-not $vm) { continue }
 
-                    If ($vm.folder -ne $vmLocation.folder) {
-                        LogMessage -type INFO -message "[$($vmLocation.name)] Setting VM Folder Location to $($vmLocation.folder)"
-                        Move-VM -Server $vCenterServer -VM $vm -InventoryLocation $vmLocation.folder -confirm:$false
+                    if ($null -eq $folders) {
+                        $clusters = @(Get-Cluster -Server $vCenterServer -Name $clusterName -ErrorAction Stop | Where-Object Name -eq $clusterName)
+                        if ($clusters.Count -ne 1) {
+                            throw "Could not resolve a unique cluster named '$clusterName' on '$vCenterFQDN'."
+                        }
+                        $cluster = $clusters[0]
+                        $datacenter = Get-Datacenter -Server $vCenterServer -Cluster $cluster -ErrorAction Stop
+                        $folders = Get-Folder -Server $vCenterServer -Location $datacenter -Type VM -ErrorAction Stop |
+                            Group-Object -Property Name -AsHashTable -AsString
+                        $resourcePools = Get-ResourcePool -Server $vCenterServer -Location $cluster -ErrorAction Stop |
+                            Group-Object -Property Name -AsHashTable -AsString
+                        $folders = $folders ?? @{}
+                        $resourcePools = $resourcePools ?? @{}
+
+                        # Resolve the default folder and pool by ID even when their names match other inventory objects.
+                        $vmFolderId = "Folder-$($datacenter.ExtensionData.VmFolder.Value)"
+                        $rootResourcePoolId = "ResourcePool-$($cluster.ExtensionData.ResourcePool.Value)"
+                        $folders['vm'] = @(Get-Folder -Server $vCenterServer -Id $vmFolderId -ErrorAction Stop)
+                        $resourcePools['Resources'] = @(Get-ResourcePool -Server $vCenterServer -Id $rootResourcePoolId -ErrorAction Stop)
                     }
-                    If ($vm.resourcePool -ne $vmLocation.resourcePool) {
+
+                    $targetFolders = $folders[[string]$vmLocation.folder]
+                    $targetPools = $resourcePools[[string]$vmLocation.resourcePool]
+                    if ($targetFolders.Count -ne 1) {
+                        Write-Error "[$($vm.Name)] Expected one VM folder named '$($vmLocation.folder)' in datacenter '$($datacenter.Name)', found $($targetFolders.Count)."
+                        continue
+                    }
+                    if ($targetPools.Count -ne 1) {
+                        Write-Error "[$($vm.Name)] Expected one resource pool named '$($vmLocation.resourcePool)' in cluster '$clusterName', found $($targetPools.Count)."
+                        continue
+                    }
+
+                    $targetFolder = $targetFolders[0]
+                    $targetPool = $targetPools[0]
+                    If ($vm.Folder.Id -ne $targetFolder.Id) {
+                        LogMessage -type INFO -message "[$($vmLocation.name)] Setting VM Folder Location to $($vmLocation.folder)"
+                        Move-VM -Server $vCenterServer -VM $vm -InventoryLocation $targetFolder -confirm:$false
+                    }
+                    If ($vm.ResourcePool.Id -ne $targetPool.Id) {
                         LogMessage -type INFO -message "[$($vmLocation.name)] Setting ResourcePool to $($vmLocation.resourcePool)"
-                        Move-VM -Server $vCenterServer -VM $vm -Destination $vmLocation.resourcePool -confirm:$false
+                        Move-VM -Server $vCenterServer -VM $vm -Destination $targetPool -confirm:$false
                     }
                 }
             }
