@@ -228,9 +228,8 @@ Function Import-VCFIRAnswerFile {
     Loads a JSON answer file used to drive this module's interactive (Read-Host) recovery tasks without user input
 
     .DESCRIPTION
-    The Import-VCFIRAnswerFile cmdlet loads a JSON file containing pre-recorded answers for the small number of cmdlets in this module
-    that otherwise prompt interactively (currently New-PrepareManagementHostNetworking, New-SingleHostVsanDatastore,
-    New-NSXManagerOvaDeployment and Invoke-NSXManagerRestore), allowing a full recovery plan to run unattended.
+    The Import-VCFIRAnswerFile cmdlet loads pre-recorded selections and confirmations for interactive recovery cmdlets.
+    Use the templates under templates/answer-files for the prompts in each plan.
 
     The JSON is a single object keyed by cmdlet name. Each value is an array of "answer sets" - one answer set per invocation of that
     cmdlet, in the order the plan calls it (this matters for a cmdlet like New-NSXManagerOvaDeployment that a plan may call more than
@@ -378,10 +377,10 @@ Function Confirm-VCFIRAnswer {
     Param(
         [Parameter (Mandatory = $false)] $AnswerSet,
         [Parameter (Mandatory = $true)] [bool] $IsValid,
-        [Parameter (Mandatory = $true)] [String] $Value,
+        [Parameter (Mandatory = $true)] [AllowEmptyString()] [String] $Value,
         [Parameter (Mandatory = $true)] [String] $PromptDescription
     )
-    If ($AnswerSet -and -not $IsValid) {
+    If ($null -ne $AnswerSet -and -not $IsValid) {
         Throw "Answer file supplied invalid value '$Value' for $PromptDescription"
     }
 }
@@ -5937,9 +5936,6 @@ Function Add-DiskgroupsToManagementHosts {
 
     .PARAMETER serial
     If specified, disk groups are created on each host one at a time in the current session instead of launching a parallel background job per host
-
-    .PARAMETER autoConfirm
-    If specified, creates the proposed disk groups without prompting for confirmation
     #>
 
     Param(
@@ -5948,14 +5944,16 @@ Function Add-DiskgroupsToManagementHosts {
         [Parameter (Mandatory = $true)][String] $targetAdminPassword,
         [Parameter (Mandatory = $true)][String] $clusterName,
         [Parameter (Mandatory = $true)][String] $extractedSDDCDataFile,
-        [Parameter (Mandatory = $false)][Switch] $serial,
-        [Parameter (Mandatory = $false)][Switch] $autoConfirm
+        [Parameter (Mandatory = $false)][Switch] $serial
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    $vCenterConnection = $null
     try {
+    $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
+    [int]$__ansIdx = 0
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
     $extractedSddcData = Get-Content $extractedDataFilePath | ConvertFrom-JSON
@@ -6163,19 +6161,18 @@ Function Add-DiskgroupsToManagementHosts {
         Write-Host ""
         $proposedDisplayRows | Format-Table -Property @{Expression = " " }, Host, DG, Status, CTL, Type, Role, CapacityGB -AutoSize -HideTableHeaders | Out-String | ForEach-Object { $_.Trim("`r", "`n") }
         Write-Host ""
-        If (-not $autoConfirm) {
-            Write-Host " Do you wish to proceed? (Y/N): " -ForegroundColor Yellow -nonewline
-            Do {
-                $proceedAccepted = Read-Host
-            } Until ($proceedAccepted -in "Y", "N")
+        Write-Host " Do you wish to proceed? (Y/N): " -ForegroundColor Yellow -nonewline
+        Do {
+            $proceedAccepted = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
+            Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid ($proceedAccepted -in "Y", "N") -Value $proceedAccepted -PromptDescription "disk group creation confirmation"
+        } Until ($proceedAccepted -in "Y", "N")
 
-            If ($proceedAccepted -eq "N") {
-                LogMessage -type INFO -message "[$clusterName] User cancelled. No changes made."
-                Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
-                $StopWatch.Stop()
-                LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
-                return
-            }
+        If ($proceedAccepted -eq "N") {
+            LogMessage -type INFO -message "[$clusterName] User cancelled. No changes made."
+            Disconnect-VIServer -Server $global:DefaultVIServers -Force -Confirm:$false
+            $StopWatch.Stop()
+            LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
+            return
         }
 
         $diskGroupNumber = $referenceConfig.Count
@@ -6346,6 +6343,9 @@ Function Add-DiskgroupsToManagementHosts {
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
     } catch {
+        if ($vCenterConnection) {
+            Disconnect-VIServer -Server $vCenterConnection -Force -Confirm:$false -ErrorAction SilentlyContinue
+        }
         LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
         throw
     } finally {
@@ -8188,7 +8188,10 @@ Function New-ReconfiguredVsanStretchedCluster {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    $vCenterConnection = $null
     try {
+    $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
+    [int]$__ansIdx = 0
 
     LogMessage -type INFO -message "[$jumpboxName] Reading Extracted Data"
     $extractedDataFilePath = (Resolve-Path -Path $extractedSDDCDataFile).path
@@ -8226,7 +8229,7 @@ Function New-ReconfiguredVsanStretchedCluster {
     }
 
     LogMessage -type INFO -message "[$vCenterFQDN] Connecting to vCenter"
-    Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop | Out-Null
+    $vCenterConnection = Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop
 
     # This cmdlet reconfigures the stretched cluster against whatever witness host it finds registered
     # and connected at the time -- rather than asking the operator to self-report that the old witness
@@ -8236,7 +8239,9 @@ Function New-ReconfiguredVsanStretchedCluster {
     $witnessVMHost = Get-VMHost -Name $witnessFqdn -ErrorAction SilentlyContinue
     While (-not $witnessVMHost -or $witnessVMHost.ConnectionState -ne 'Connected') {
         LogMessage -type INFO -message "[$witnessFqdn] Witness host is not registered and connected in $vCenterFQDN. Register/reconnect the witness host, then press Enter to continue."
-        Read-Host "Press Enter once the witness host is registered and connected" | Out-Null
+        Write-Host " Press Enter once the witness host is registered and connected: " -ForegroundColor Yellow -NoNewline
+        $witnessAnswer = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
+        Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid ($witnessAnswer -eq "") -Value $witnessAnswer -PromptDescription "witness host acknowledgement"
         $witnessVMHost = Get-VMHost -Name $witnessFqdn -ErrorAction SilentlyContinue
     }
     LogMessage -type INFO -message "[$witnessFqdn] Witness host is registered and connected in $vCenterFQDN"
@@ -8375,13 +8380,15 @@ Function New-ReconfiguredVsanStretchedCluster {
         LogMessage -type INFO -message "[$clusterName] Stretched cluster configuration enabled"
     }
 
-    Disconnect-VIServer -Server $vCenterFQDN -Force -Confirm:$false
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
     } catch {
         LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
         throw
     } finally {
+        if ($vCenterConnection) {
+            Disconnect-VIServer -Server $vCenterConnection -Force -Confirm:$false -ErrorAction SilentlyContinue
+        }
         # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
         Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
     }
@@ -10668,9 +10675,6 @@ Function Remove-SddcManagerVspClusterEntry {
     .PARAMETER ClusterType
     Type of vsp_cluster entry to remove. Valid values are MANAGEMENT or CONSUMPTION.
 
-    .PARAMETER autoConfirm
-    If specified, deletes the proposed vsp_cluster entry without prompting for confirmation.
-
     .PARAMETER extractedSDDCDataFile
     Path to the extracted-sddc-data.json file. Used when -SddcManagerFqdn is omitted. Mutually exclusive with -opsRegisteredComponentsFile.
 
@@ -10688,7 +10692,6 @@ Function Remove-SddcManagerVspClusterEntry {
         [Parameter(Mandatory = $true)][String] $VcfUserPassword,
         [Parameter(Mandatory = $true)][String] $RootPassword,
         [Parameter(Mandatory = $true)][ValidateSet("MANAGEMENT", "CONSUMPTION")][String] $ClusterType,
-        [Parameter(Mandatory = $false)][Switch] $autoConfirm,
         [Parameter(Mandatory = $false)][String] $opsRegisteredComponentsFile,
         [Parameter(Mandatory = $false)][String] $ServicesRuntimeFqdn
     )
@@ -10696,7 +10699,10 @@ Function Remove-SddcManagerVspClusterEntry {
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    $sshSession = $null
     try {
+    $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
+    [int]$__ansIdx = 0
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     if ($PSBoundParameters.ContainsKey('opsRegisteredComponentsFile')) {
@@ -10769,7 +10775,6 @@ Function Remove-SddcManagerVspClusterEntry {
         LogMessage -type INFO -message "[$SddcManagerFqdn] No $ClusterType entry found in vsp_cluster table. Nothing to delete."
         LogMessage -type INFO -message "[$SddcManagerFqdn] Raw output for diagnostics:"
         Write-Host (& $cleanSshOutput $rawOutput)
-        Remove-SSHSession -SSHSession $sshSession | Out-Null
         Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
         return
     }
@@ -10783,18 +10788,16 @@ Function Remove-SddcManagerVspClusterEntry {
     Write-Host "   vsp_cluster_id:   $vspClusterId"
     Write-Host "   Credential user:  $credentialUsername"
     Write-Host ""
-    if (-not $autoConfirm) {
-        Do {
-            Write-Host " Proceed with deletion? (Y/N): " -ForegroundColor Yellow -NoNewline
-            $confirmation = Read-Host
-        } Until ($confirmation -in @("Y", "y", "N", "n"))
+    Do {
+        Write-Host " Proceed with deletion? (Y/N): " -ForegroundColor Yellow -NoNewline
+        $confirmation = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
+        Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid ($confirmation -in "Y", "N") -Value $confirmation -PromptDescription "Services Runtime cluster entry deletion"
+    } Until ($confirmation -in @("Y", "y", "N", "n"))
 
-        if ($confirmation -in @("N", "n")) {
-            LogMessage -type INFO -message "[$SddcManagerFqdn] Operation cancelled by user."
-            Remove-SSHSession -SSHSession $sshSession | Out-Null
-            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
-            return
-        }
+    if ($confirmation -in @("N", "n")) {
+        LogMessage -type INFO -message "[$SddcManagerFqdn] Operation cancelled by user."
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+        return
     }
 
     # Delete the entry from vsp_cluster
@@ -10815,9 +10818,6 @@ Function Remove-SddcManagerVspClusterEntry {
     #Write-Host $cleanDeleteCred
     LogMessage -type INFO -message "[$SddcManagerFqdn] credential DELETE result: $($cleanDeleteCred.Trim())"
 
-    # Close SSH session
-    Remove-SSHSession -SSHSession $sshSession | Out-Null
-
     LogMessage -type INFO -message "[$SddcManagerFqdn] $ClusterType vsp_cluster_id was: $vspClusterId"
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
@@ -10827,6 +10827,9 @@ Function Remove-SddcManagerVspClusterEntry {
         LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
         throw
     } finally {
+        if ($sshSession) {
+            Remove-SSHSession -SSHSession $sshSession -ErrorAction SilentlyContinue | Out-Null
+        }
         # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
         Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
     }
@@ -10843,8 +10846,8 @@ Function Update-DomainDatastoreID {
     finds the named cluster within that domain, reads its primary datastore name from the extracted SDDC data,
     queries vCenter for the current MoRef of that datastore, then connects to the SDDC Manager appliance via
     SSH and updates the primary_datastore_source_id column in the cluster table. If the value is already
-    correct no change is made. A confirmation prompt is shown before any change is written, unless -autoConfirm
-    is specified.
+    correct no change is made. Otherwise, the cmdlet asks for confirmation before writing changes. A loaded
+    answer file can supply the confirmation.
 
     .EXAMPLE
     Update-DomainDatastoreID -extractedSDDCDataFile ".\extracted-sddc-data.json" -vCenterFQDN "sfo-m01-vc01.sfo.rainpole.io" -clusterName "sfo-m01-cl01" -VcfUserPassword "VMw@re1!VMw@re1!" -RootPassword "VMw@re1!VMw@re1!"
@@ -10864,8 +10867,6 @@ Function Update-DomainDatastoreID {
     .PARAMETER RootPassword
     Root password for the SDDC Manager appliance (used for su elevation).
 
-    .PARAMETER autoConfirm
-    If specified, applies the update without prompting for confirmation.
     #>
 
     Param(
@@ -10873,14 +10874,16 @@ Function Update-DomainDatastoreID {
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $clusterName,
         [Parameter (Mandatory = $true)][String] $VcfUserPassword,
-        [Parameter (Mandatory = $true)][String] $RootPassword,
-        [Parameter (Mandatory = $false)][Switch] $autoConfirm
+        [Parameter (Mandatory = $true)][String] $RootPassword
     )
 
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    $sshSession = $null
     try {
+    $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
+    [int]$__ansIdx = 0
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     # Load extracted SDDC data
@@ -10990,7 +10993,6 @@ Function Update-DomainDatastoreID {
 
     if ($currentDatastoreMoRef -eq $newDatastoreMoRef) {
         LogMessage -type INFO -message "[$SddcManagerFqdn] primary_datastore_source_id is already '$newDatastoreMoRef' — nothing to do"
-        Remove-SSHSession -SSHSession $sshSession | Out-Null
         $StopWatch.Stop()
         $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
         LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
@@ -11006,18 +11008,16 @@ Function Update-DomainDatastoreID {
     Write-Host "   New datastore MoRef:       $newDatastoreMoRef"
     Write-Host "   Datastore name:            $datastoreName"
     Write-Host ""
-    if (-not $autoConfirm) {
-        Do {
-            Write-Host " Proceed with update? (Y/N): " -ForegroundColor Yellow -NoNewline
-            $confirmation = Read-Host
-        } Until ($confirmation -in @("Y", "y", "N", "n"))
+    Do {
+        Write-Host " Proceed with update? (Y/N): " -ForegroundColor Yellow -NoNewline
+        $confirmation = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
+        Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid ($confirmation -in "Y", "N") -Value $confirmation -PromptDescription "datastore ID update confirmation"
+    } Until ($confirmation -in @("Y", "y", "N", "n"))
 
-        if ($confirmation -in @("N", "n")) {
-            LogMessage -type INFO -message "[$SddcManagerFqdn] Operation cancelled by user."
-            Remove-SSHSession -SSHSession $sshSession | Out-Null
-            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
-            return
-        }
+    if ($confirmation -in @("N", "n")) {
+        LogMessage -type INFO -message "[$SddcManagerFqdn] Operation cancelled by user."
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+        return
     }
 
     # Execute the UPDATE
@@ -11040,8 +11040,6 @@ Function Update-DomainDatastoreID {
         LogMessage -type WARNING -message "[$SddcManagerFqdn] UPDATE could not be verified. Expected: $newDatastoreMoRef | Got: $verifiedMoRef"
     }
 
-    Remove-SSHSession -SSHSession $sshSession | Out-Null
-
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
@@ -11049,6 +11047,9 @@ Function Update-DomainDatastoreID {
         LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
         throw
     } finally {
+        if ($sshSession) {
+            Remove-SSHSession -SSHSession $sshSession -ErrorAction SilentlyContinue | Out-Null
+        }
         # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
         Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
     }
@@ -11067,8 +11068,8 @@ Function Update-ClusterHostSourceIDs {
     every host currently in that cluster along with its current MoRef, then connects to the SDDC
     Manager appliance via SSH and compares each host's persisted source_id (in the public.host table,
     keyed by hostname) against the live MoRef. Hosts already matching are skipped. A summary of all
-    planned changes is shown and confirmed once before any UPDATE is executed, unless -autoConfirm is
-    specified, then each change is applied and verified individually.
+    planned changes is shown and confirmed once before any UPDATE is executed.
+    After confirmation, each change is applied and verified individually.
 
     This mirrors the same class of problem Update-DomainDatastoreID resolves for
     cluster.primary_datastore_source_id -- after a cluster's hosts are rebuilt (new vCenter, new
@@ -11095,8 +11096,6 @@ Function Update-ClusterHostSourceIDs {
     .PARAMETER RootPassword
     Root password for the SDDC Manager appliance (used for su elevation).
 
-    .PARAMETER autoConfirm
-    If specified, applies the update(s) without prompting for confirmation.
     #>
 
     Param(
@@ -11104,14 +11103,16 @@ Function Update-ClusterHostSourceIDs {
         [Parameter (Mandatory = $true)][String] $vCenterFQDN,
         [Parameter (Mandatory = $true)][String] $clusterName,
         [Parameter (Mandatory = $true)][String] $VcfUserPassword,
-        [Parameter (Mandatory = $true)][String] $RootPassword,
-        [Parameter (Mandatory = $false)][Switch] $autoConfirm
+        [Parameter (Mandatory = $true)][String] $RootPassword
     )
 
     $jumpboxName = hostname
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
+    $sshSession = $null
     try {
+    $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
+    [int]$__ansIdx = 0
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     # Load extracted SDDC data
@@ -11244,7 +11245,6 @@ Function Update-ClusterHostSourceIDs {
 
     if ($plannedChanges.Count -eq 0) {
         LogMessage -type INFO -message "[$SddcManagerFqdn] All host source_id values already match their live vCenter MoRef -- nothing to do"
-        Remove-SSHSession -SSHSession $sshSession | Out-Null
         $StopWatch.Stop()
         $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
         LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
@@ -11255,18 +11255,16 @@ Function Update-ClusterHostSourceIDs {
     Write-Host ""
     Write-Host " Summary - the following updates will be applied on $SddcManagerFqdn" -ForegroundColor Yellow
     $plannedChanges | Format-Table -Property Hostname, SddcManagerHostId, CurrentSourceId, NewSourceId -AutoSize | Out-String | Write-Host
-    if (-not $autoConfirm) {
-        Do {
-            Write-Host " Proceed with update of $($plannedChanges.Count) host(s)? (Y/N): " -ForegroundColor Yellow -NoNewline
-            $confirmation = Read-Host
-        } Until ($confirmation -in @("Y", "y", "N", "n"))
+    Do {
+        Write-Host " Proceed with update of $($plannedChanges.Count) host(s)? (Y/N): " -ForegroundColor Yellow -NoNewline
+        $confirmation = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
+        Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid ($confirmation -in "Y", "N") -Value $confirmation -PromptDescription "host source ID update confirmation"
+    } Until ($confirmation -in @("Y", "y", "N", "n"))
 
-        if ($confirmation -in @("N", "n")) {
-            LogMessage -type INFO -message "[$SddcManagerFqdn] Operation cancelled by user."
-            Remove-SSHSession -SSHSession $sshSession | Out-Null
-            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
-            return
-        }
+    if ($confirmation -in @("N", "n")) {
+        LogMessage -type INFO -message "[$SddcManagerFqdn] Operation cancelled by user."
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+        return
     }
 
     # Execute and verify each UPDATE
@@ -11289,8 +11287,6 @@ Function Update-ClusterHostSourceIDs {
         }
     }
 
-    Remove-SSHSession -SSHSession $sshSession | Out-Null
-
     $StopWatch.Stop()
     $minutes = (($StopWatch.Elapsed.Hours * 60) + $StopWatch.Elapsed.Minutes)
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $minutes minutes and $($StopWatch.Elapsed.Seconds) seconds"
@@ -11298,6 +11294,9 @@ Function Update-ClusterHostSourceIDs {
         LogMessage -type ERROR -message "[$(hostname)] Unhandled error in $($MyInvocation.MyCommand.Name): $($_.Exception.Message)"
         throw
     } finally {
+        if ($sshSession) {
+            Remove-SSHSession -SSHSession $sshSession -ErrorAction SilentlyContinue | Out-Null
+        }
         # Guarantees the UI sees "Completed Task" even if the function exited without logging it.
         Complete-TaskIfOpen -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
     }
@@ -12015,9 +12014,6 @@ Function New-ServicesRuntime {
     .PARAMETER PollIntervalSeconds
     Interval in seconds to poll the task status. Default is 300 (5 minutes).
 
-    .PARAMETER autoConfirm
-    If specified, submits the proposed deployment payload without prompting for confirmation.
-
     .PARAMETER ServicesRuntimeFqdn
     (ByParameter) FQDN of an existing Services Runtime in the same VCF instance. Only used with -opsRegisteredComponentsFile, to pick which registered VCF instance to take the SDDC Manager FQDN from when -SddcManagerFqdn is not supplied.
 
@@ -12085,11 +12081,7 @@ Function New-ServicesRuntime {
 
         [Parameter(Mandatory = $false, ParameterSetName = "ByFile")]
         [Parameter(Mandatory = $false, ParameterSetName = "ByParameter")]
-        [Int] $PollIntervalSeconds = 300,
-
-        [Parameter(Mandatory = $false, ParameterSetName = "ByFile")]
-        [Parameter(Mandatory = $false, ParameterSetName = "ByParameter")]
-        [Switch] $autoConfirm
+        [Int] $PollIntervalSeconds = 300
     )
 
     $jumpboxName = hostname
@@ -12296,18 +12288,16 @@ Function New-ServicesRuntime {
     Write-Host $displayBody
     Write-Host ""
 
-    if (-not $autoConfirm) {
-        Do {
-            Write-Host " Proceed with deployment? (Y/N): " -ForegroundColor Yellow -NoNewline
-            $confirmation = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
-            Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid ($confirmation -in @("Y", "y", "N", "n")) -Value $confirmation -PromptDescription "deployment confirmation"
-        } Until ($confirmation -in @("Y", "y", "N", "n"))
+    Do {
+        Write-Host " Proceed with deployment? (Y/N): " -ForegroundColor Yellow -NoNewline
+        $confirmation = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
+        Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid ($confirmation -in @("Y", "y", "N", "n")) -Value $confirmation -PromptDescription "deployment confirmation"
+    } Until ($confirmation -in @("Y", "y", "N", "n"))
 
-        if ($confirmation -in @("N", "n")) {
-            LogMessage -type INFO -message "[$SddcManagerFqdn] VCFMS runtime deployment cancelled by user."
-            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
-            return
-        }
+    if ($confirmation -in @("N", "n")) {
+        LogMessage -type INFO -message "[$SddcManagerFqdn] VCFMS runtime deployment cancelled by user."
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+        return
     }
 
     $vspClustersUri = "https://$SddcManagerFqdn/v1/vsp-clusters"
@@ -13896,6 +13886,8 @@ Function Get-ServicesRuntimeComponentBackups {
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
     try {
+    $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
+    [int]$__ansIdx = 0
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     # -Components wins if both are supplied. Resolved into a SEPARATE
@@ -14163,7 +14155,7 @@ Function Get-ServicesRuntimeComponentBackups {
     $customMode = $false
     Do {
         Write-Host " Enter the ID of the backup group to use, or C to Cancel: " -ForegroundColor Yellow -NoNewline
-        $selection = Read-Host
+        $selection = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
         if ($selection -in @("C", "c")) {
             LogMessage -type INFO -message "[$jumpboxName] Cancelled by user."
             $StopWatch.Stop()
@@ -14180,6 +14172,7 @@ Function Get-ServicesRuntimeComponentBackups {
         } else {
             Write-Host " Invalid selection. Enter a number between 1 and $($groupList.Count), or C to Cancel." -ForegroundColor Yellow
         }
+        Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid ($null -ne $selectedGroup) -Value $selection -PromptDescription "backup group selection"
     } Until ($null -ne $selectedGroup)
 
     # Build the final list of chosen entries: either the picked rank group, or a per-component custom selection
@@ -14217,7 +14210,7 @@ Function Get-ServicesRuntimeComponentBackups {
             $chosenEntry = $null
             Do {
                 Write-Host " Enter the ID of the backup point to use for '$componentType', or C to Cancel: " -ForegroundColor Yellow -NoNewline
-                $optSelection = Read-Host
+                $optSelection = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
                 if ($optSelection -in @("C", "c")) {
                     LogMessage -type INFO -message "[$jumpboxName] Cancelled by user."
                     $StopWatch.Stop()
@@ -14231,6 +14224,7 @@ Function Get-ServicesRuntimeComponentBackups {
                 } else {
                     Write-Host " Invalid selection. Enter a number between 1 and $($options.Count), or C to Cancel." -ForegroundColor Yellow
                 }
+                Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid ($null -ne $chosenEntry) -Value $optSelection -PromptDescription "backup point selection for '$componentType'"
             } Until ($null -ne $chosenEntry)
 
             $finalEntries += $chosenEntry
@@ -14283,7 +14277,8 @@ Function Get-ServicesRuntimeComponentBackups {
     # Offer to construct a restore JSON for the selected backup group
     Do {
         Write-Host " Would you like to construct a restore JSON for this backup group? (Y/N): " -ForegroundColor Yellow -NoNewline
-        $buildJson = Read-Host
+        $buildJson = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
+        Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid ($buildJson -in "Y", "N") -Value $buildJson -PromptDescription "restore JSON build confirmation"
     } Until ($buildJson -in @("Y", "y", "N", "n"))
 
     if ($buildJson -in @("Y", "y")) {
@@ -14373,9 +14368,6 @@ Function Restore-ServicesRuntimeComponentBackup {
     .PARAMETER RestoreJsonFile
     Path to a JSON file containing the restore payload. Defaults to .\restore-payload.json (the file Get-BackupsFromSFTPServer writes when -Type is not used). The file must contain a "components" array with "path" and "point" for each component to restore.
 
-    .PARAMETER autoConfirm
-    If specified, submits the proposed restore payload without prompting for confirmation.
-
     .PARAMETER ReadyRetryIntervalSeconds
     Seconds to wait between retries while the Services Runtime is not yet ready to accept a restore request (e.g. immediately after Set-ServicesRuntimeScale, before the scaled cluster has finished coming up). Default is 120 (2 minutes).
 
@@ -14402,7 +14394,6 @@ Function Restore-ServicesRuntimeComponentBackup {
         [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
         [Parameter(Mandatory = $false)][String] $ServicesRuntimeUsername = "admin@vsp.local",
         [Parameter(Mandatory = $false)][String] $RestoreJsonFile = ".\restore-payload.json",
-        [Parameter(Mandatory = $false)][Switch] $autoConfirm,
         [Parameter(Mandatory = $false)][Int] $ReadyRetryIntervalSeconds = 120,
         [Parameter(Mandatory = $false)][Int] $ReadyTimeoutMinutes = 30
     )
@@ -14474,18 +14465,16 @@ Function Restore-ServicesRuntimeComponentBackup {
     }
     Write-Host ""
 
-    if (-not $autoConfirm) {
-        Do {
-            Write-Host " Proceed with restore? (Y/N): " -ForegroundColor Yellow -NoNewline
-            $confirmation = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
-            Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid ($confirmation -in @("Y", "y", "N", "n")) -Value $confirmation -PromptDescription "restore confirmation"
-        } Until ($confirmation -in @("Y", "y", "N", "n"))
+    Do {
+        Write-Host " Proceed with restore? (Y/N): " -ForegroundColor Yellow -NoNewline
+        $confirmation = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
+        Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid ($confirmation -in @("Y", "y", "N", "n")) -Value $confirmation -PromptDescription "restore confirmation"
+    } Until ($confirmation -in @("Y", "y", "N", "n"))
 
-        if ($confirmation -in @("N", "n")) {
-            LogMessage -type INFO -message "[$jumpboxName] Restore cancelled by user."
-            Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
-            return
-        }
+    if ($confirmation -in @("N", "n")) {
+        LogMessage -type INFO -message "[$jumpboxName] Restore cancelled by user."
+        Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
+        return
     }
 
     # Get Services Runtime token
@@ -15293,6 +15282,8 @@ Function Start-ServicesRuntimeComponentBackup {
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
     try {
+    $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
+    [int]$__ansIdx = 0
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
     # Get Fleet LCM token and enumerate components
@@ -15390,7 +15381,7 @@ Function Start-ServicesRuntimeComponentBackup {
         $selectedGroup = $null
         Do {
             Write-Host " Enter the ID of the VCF instance to back up, or C to Cancel: " -ForegroundColor Yellow -NoNewline
-            $instanceSelection = Read-Host
+            $instanceSelection = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
             if ($instanceSelection -in @("C", "c")) {
                 LogMessage -type INFO -message "[$jumpboxName] Cancelled by user."
                 $StopWatch.Stop()
@@ -15404,6 +15395,7 @@ Function Start-ServicesRuntimeComponentBackup {
             } else {
                 Write-Host " Invalid selection. Enter a number between 1 and $($instanceGroups.Count), or C to Cancel." -ForegroundColor Yellow
             }
+            Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid ($null -ne $selectedGroup) -Value $instanceSelection -PromptDescription "VCF instance selection"
         } Until ($null -ne $selectedGroup)
 
         $componentList = [System.Collections.Generic.List[PSCustomObject]]::new()
@@ -15432,7 +15424,7 @@ Function Start-ServicesRuntimeComponentBackup {
 
         Do {
             Write-Host " Enter component ID(s) to back up (comma-separated), 'ALL', or C to Cancel: " -ForegroundColor Yellow -NoNewline
-            $selection = Read-Host
+            $selection = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
             if ($selection -in @("C", "c")) {
                 LogMessage -type INFO -message "[$jumpboxName] Cancelled by user."
                 $StopWatch.Stop()
@@ -15459,6 +15451,7 @@ Function Start-ServicesRuntimeComponentBackup {
                     $selectedComponents = @()
                 }
             }
+            Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid ($selectedComponents.Count -gt 0) -Value $selection -PromptDescription "component selection"
         } Until ($selectedComponents.Count -gt 0)
     }
 
@@ -15471,7 +15464,8 @@ Function Start-ServicesRuntimeComponentBackup {
 
     Do {
         Write-Host " Proceed with backup? (Y/N): " -ForegroundColor Yellow -NoNewline
-        $confirmation = Read-Host
+        $confirmation = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
+        Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid ($confirmation -in "Y", "N") -Value $confirmation -PromptDescription "backup confirmation"
     } Until ($confirmation -in @("Y", "y", "N", "n"))
 
     if ($confirmation -in @("N", "n")) {
@@ -15585,6 +15579,8 @@ Function Remove-VcfmsComponent {
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
     try {
+    $__answers = Get-VCFIRAnswerSet -FunctionName $MyInvocation.MyCommand.Name
+    [int]$__ansIdx = 0
     $terminalStates = @("COMPLETED", "FAILED", "CANCELLED", "ERROR", "SUCCESS", "SUCCESSFUL", "Succeeded", "Failed")
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     LogMessage -type INFO -message "[$jumpboxName] $($ComponentIds.Count) component(s) to delete (serial processing)"
@@ -15599,7 +15595,8 @@ Function Remove-VcfmsComponent {
     Write-Host ""
     Do {
         Write-Host " Proceed with deletion? (Y/N): " -ForegroundColor Yellow -NoNewline
-        $confirmation = Read-Host
+        $confirmation = Get-VCFIRAnswer -AnswerSet $__answers -Index ([ref]$__ansIdx)
+        Confirm-VCFIRAnswer -AnswerSet $__answers -IsValid ($confirmation -in "Y", "N") -Value $confirmation -PromptDescription "component deletion confirmation"
     } Until ($confirmation -in @("Y", "y", "N", "n"))
 
     if ($confirmation -in @("N", "n")) {

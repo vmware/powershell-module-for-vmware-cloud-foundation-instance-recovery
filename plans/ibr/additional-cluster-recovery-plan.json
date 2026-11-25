@@ -137,7 +137,7 @@
       }
     ],
     "threadId": "1",
-    "interactive": false,
+    "interactive": true,
     "visible": true
   },
   {
@@ -169,20 +169,20 @@
   },
   {
     "description": "Update Datastore ID",
-    "commandLine": "Update-DomainDatastoreID -extractedSDDCDataFile $extractedSddcDataFile -vCenterFqdn $restoredVcenterFqdn -clusterName $clusterName -VcfUserPassword $vcfUserPassword -RootPassword $rootPassword -autoConfirm",
+    "commandLine": "Update-DomainDatastoreID -extractedSDDCDataFile $extractedSddcDataFile -vCenterFqdn $restoredVcenterFqdn -clusterName $clusterName -VcfUserPassword $vcfUserPassword -RootPassword $rootPassword",
     "displayName": "Update Domain Datastore ID",
     "condition": [],
     "threadId": "1",
-    "interactive": false,
+    "interactive": true,
     "visible": true
   },
   {
     "description": "Update Host IDs",
-    "commandLine": "Update-ClusterHostSourceIDs -extractedSDDCDataFile $extractedSddcDataFile -vCenterFqdn $restoredVcenterFqdn -clusterName $clusterName -VcfUserPassword $vcfUserPassword -RootPassword $rootPassword -autoConfirm",
+    "commandLine": "Update-ClusterHostSourceIDs -extractedSDDCDataFile $extractedSddcDataFile -vCenterFqdn $restoredVcenterFqdn -clusterName $clusterName -VcfUserPassword $vcfUserPassword -RootPassword $rootPassword",
     "displayName": "Update Cluster Host Source IDs",
     "condition": [],
     "threadId": "1",
-    "interactive": false,
+    "interactive": true,
     "visible": true
   },
   {

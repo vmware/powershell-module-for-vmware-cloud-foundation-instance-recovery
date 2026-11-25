@@ -9,20 +9,20 @@ Removes a stale Services Runtime cluster entry and its associated credential fro
 ```powershell
 Remove-SddcManagerVspClusterEntry -SddcManagerFqdn <String>
     -VcfUserPassword <String> -RootPassword <String>
-    -ClusterType <String> [-autoConfirm] [<CommonParameters>]
+    -ClusterType <String> [<CommonParameters>]
 
 Remove-SddcManagerVspClusterEntry -extractedSDDCDataFile <String>
     -VcfUserPassword <String> -RootPassword <String>
-    -ClusterType <String> [-autoConfirm] [<CommonParameters>]
+    -ClusterType <String> [<CommonParameters>]
 
 Remove-SddcManagerVspClusterEntry -OpsRegisteredComponentsFile <String> -ServicesRuntimeFqdn <String>
     -VcfUserPassword <String> -RootPassword <String>
-    -ClusterType <String> [-autoConfirm] [<CommonParameters>]
+    -ClusterType <String> [<CommonParameters>]
 ```
 
 ## Description
 
-The cmdlet connects to SDDC Manager via SSH as the `vcf` user, elevates to root, and finds the `vsp_cluster` entry for the requested cluster type. It shows the cluster entry and credential it will remove and prompts for confirmation unless you specify `-autoConfirm`.
+The cmdlet connects to SDDC Manager via SSH as the `vcf` user, elevates to root, and finds the `vsp_cluster` entry for the requested cluster type. It shows the cluster entry and credential it will remove and asks for a Y/N confirmation. A loaded answer file can supply that confirmation under `Remove-SddcManagerVspClusterEntry`.
 
 ## Example
 
@@ -50,4 +50,3 @@ Remove-SddcManagerVspClusterEntry @cleanup
 | `-VcfUserPassword` | Password for the `vcf` SSH user. |
 | `-RootPassword` | Password for root elevation on the SDDC Manager appliance. |
 | `-ClusterType` | Type of cluster entry to remove. Valid values are `MANAGEMENT` and `CONSUMPTION`. |
-| `-autoConfirm` | Skip the deletion confirmation prompt. |

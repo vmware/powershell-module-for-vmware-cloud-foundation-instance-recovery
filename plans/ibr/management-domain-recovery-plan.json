@@ -225,7 +225,7 @@
   },
   {
     "description": "",
-    "commandLine": "Add-DiskgroupsToManagementHosts -targetFqdn $restoredVcenterFqdn -targetAdmin $restoredVcenterAdmin -targetAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSddcDataFile -serial -autoConfirm",
+    "commandLine": "Add-DiskgroupsToManagementHosts -targetFqdn $restoredVcenterFqdn -targetAdmin $restoredVcenterAdmin -targetAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -extractedSDDCDataFile $extractedSddcDataFile -serial",
     "displayName": "Add Diskgroups to Management Hosts",
     "condition": [
       {
@@ -236,7 +236,7 @@
       }
     ],
     "threadId": "1",
-    "interactive": false,
+    "interactive": true,
     "visible": true
   },
   {
@@ -296,7 +296,7 @@
       }
     ],
     "threadId": "1",
-    "interactive": false,
+    "interactive": true,
     "visible": true
   },
   {
@@ -392,20 +392,20 @@
   },
   {
     "description": "",
-    "commandLine": "Update-DomainDatastoreID -extractedSDDCDataFile $extractedSddcDataFile -vCenterFqdn $restoredVcenterFqdn -clusterName $clusterName -VcfUserPassword $newSddcManagerPassword -RootPassword $newSddcManagerPassword -autoConfirm",
+    "commandLine": "Update-DomainDatastoreID -extractedSDDCDataFile $extractedSddcDataFile -vCenterFqdn $restoredVcenterFqdn -clusterName $clusterName -VcfUserPassword $newSddcManagerPassword -RootPassword $newSddcManagerPassword",
     "displayName": "Update Domain Datastore ID",
     "condition": [],
     "threadId": "1",
-    "interactive": false,
+    "interactive": true,
     "visible": true
   },
   {
     "description": "",
-    "commandLine": "Update-ClusterHostSourceIDs -extractedSDDCDataFile $extractedSddcDataFile -vCenterFqdn $restoredVcenterFqdn -clusterName $clusterName -VcfUserPassword $newSddcManagerPassword -RootPassword $newSddcManagerPassword -autoConfirm",
+    "commandLine": "Update-ClusterHostSourceIDs -extractedSDDCDataFile $extractedSddcDataFile -vCenterFqdn $restoredVcenterFqdn -clusterName $clusterName -VcfUserPassword $newSddcManagerPassword -RootPassword $newSddcManagerPassword",
     "displayName": "Update Cluster Host Source IDs",
     "condition": [],
     "threadId": "1",
-    "interactive": false,
+    "interactive": true,
     "visible": true
   },
   {

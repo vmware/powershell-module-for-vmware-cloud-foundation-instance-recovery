@@ -7,7 +7,18 @@
     "New-RebuiltVdsConfiguration asks for one comma-separated NIC list per VDS discovered on the reference host, then a final Y/N - the sample below assumes a single VDS.",
     "Invoke-NSXEdgeClusterRecoverySelective asks for one comma-separated list of Edge IDs to recover, or C to Cancel - the sample below recovers Edge 1 only.",
     "The exact number of prompts (and so the length of each answer set) depends on your environment's discovered NIC/disk/VDS/edge counts - the values below MUST be reviewed against your own environment's real prompts before use. Run each task interactively once first to see its real prompts/IDs, then transcribe your answers here in the same order.",
+    "New-ReconfiguredVsanStretchedCluster uses an empty string for Enter if the witness is disconnected. It checks the live connection again and requires another empty answer for each retry. Omit the key to wait for an operator.",
+    "The datastore ID and host source ID tasks each take one Y/N answer when they have changes to apply.",
     "This key is ignored by Import-VCFIRAnswerFile - only the cmdlet-name keys below are read."
+  ],
+  "New-ReconfiguredVsanStretchedCluster": [
+    [""]
+  ],
+  "Update-DomainDatastoreID": [
+    ["Y"]
+  ],
+  "Update-ClusterHostSourceIDs": [
+    ["Y"]
   ],
   "New-RebuiltVdsConfiguration": [
     ["1,2", "Y"]

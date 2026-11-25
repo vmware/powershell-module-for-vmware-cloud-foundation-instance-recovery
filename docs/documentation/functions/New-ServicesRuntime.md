@@ -11,7 +11,7 @@ Deploys a new VCF Management Services (VCFMS) runtime instance via the SDDC Mana
 New-ServicesRuntime [-SddcManagerFqdn] <String> [-SddcManagerUser] <String> [-SddcManagerPassword] <String> [-Type] <String> [-JsonFile] <String> [[-PollIntervalSeconds] <Int32>] [<CommonParameters>]
 
 # By individual parameters
-New-ServicesRuntime [-SddcManagerFqdn <String>] -SddcManagerUser <String> -SddcManagerPassword <String> -Type <String> [-PlatformFqdn <String>] -SystemUserPassword <String> -Ipv4Addresses <String[]> -Size <String> [-NetworkMoId <String>] -GatewayCidrIpv4 <String> [-extractedSDDCDataFile <String> | -opsRegisteredComponentsFile <String>] [-ServicesRuntimeFqdn <String>] [-clusterId <String>] -InternalClusterCidrIpv4 <String> [-InstanceFqdn <String>] [-FleetFqdn <String>] [-PollIntervalSeconds <Int32>] [-autoConfirm] [<CommonParameters>]
+New-ServicesRuntime [-SddcManagerFqdn <String>] -SddcManagerUser <String> -SddcManagerPassword <String> -Type <String> [-PlatformFqdn <String>] -SystemUserPassword <String> -Ipv4Addresses <String[]> -Size <String> [-NetworkMoId <String>] -GatewayCidrIpv4 <String> [-extractedSDDCDataFile <String> | -opsRegisteredComponentsFile <String>] [-ServicesRuntimeFqdn <String>] [-clusterId <String>] -InternalClusterCidrIpv4 <String> [-InstanceFqdn <String>] [-FleetFqdn <String>] [-PollIntervalSeconds <Int32>] [<CommonParameters>]
 ```
 
 ## Description

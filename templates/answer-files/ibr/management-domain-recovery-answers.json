@@ -8,7 +8,21 @@
     "The exact number of prompts (and so the length of each answer set) depends on your environment's discovered NIC/disk/VDS/edge counts - the values below match a common 2-VDS, single-disk-group, 3-NSX-Manager management domain and MUST be reviewed against your own environment's prompts before use.",
     "Run each task interactively once first to see its real prompts/IDs, then transcribe your answers here in the same order.",
     "New-SingleHostVsanDatastore prompts only apply to vSAN OSA (disk group count, then cache/capacity disk IDs per group, then Y/N) - it asks nothing at all for vSAN ESA, in which case you can just omit its key entirely instead of listing one.",
+    "New-ReconfiguredVsanStretchedCluster uses an empty string for Enter if the witness is disconnected. It checks the live connection again and requires another empty answer for each retry. Omit the key to wait for an operator.",
+    "The disk group, datastore ID and host source ID tasks each take one Y/N answer when they have changes to apply.",
     "This key is ignored by Import-VCFIRAnswerFile - only the cmdlet-name keys below are read."
+  ],
+  "Add-DiskgroupsToManagementHosts": [
+    ["Y"]
+  ],
+  "New-ReconfiguredVsanStretchedCluster": [
+    [""]
+  ],
+  "Update-DomainDatastoreID": [
+    ["Y"]
+  ],
+  "Update-ClusterHostSourceIDs": [
+    ["Y"]
   ],
   "New-PrepareManagementHostNetworking": [
     ["", "2,3", "Y"]

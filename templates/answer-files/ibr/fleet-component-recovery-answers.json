@@ -5,13 +5,28 @@
     "Get-BackupsFromSFTPServer's own prompts (pick a backup group, optional per-component custom picks, final Y/N) vary with how many backups/components are found on the SFTP server - the values below assume a single matching backup and no custom overrides, and MUST be reviewed against your own environment's real prompts before use.",
     "Confirm-ManualStep is different from every other key here: its value is a single FLAT array of pre-approved -AnswerKey strings, not an array of answer sets. This plan has 5 manual 'Press Enter once X is done' gates. Only 4 are pre-approved below, on purpose: this demonstrates SELECTIVE answering - a gate whose key is omitted always still blocks for a real Enter press, even with this answer file loaded and every other cmdlet running unattended. 'license-server-redeployed' is deliberately left OUT here as an example of a gate an operator might always want to confirm by hand regardless of what else is automated.",
     "Run each task interactively once first to see its real prompts/IDs, then transcribe your answers here in the same order.",
-    "Every key below is OPTIONAL: if you omit a cmdlet entirely, it just prompts normally (exactly as if no answer file were loaded at all) if it's ever actually reached with a real prompt. Once you DO list a key, though, it's a real claim of coverage - an answer set that runs out of values, or supplies an invalid one, fails the run immediately rather than hanging or silently misusing a later answer (Confirm-ManualStep is the one exception - see above). Restore-ServicesRuntimeComponentBackup and New-ServicesRuntime always pass -autoConfirm in every one of their invocations in this plan, so they never actually reach their own prompt at all - they're deliberately NOT listed here, since there's nothing for them to ever need. Set-ServicesRuntimeScale, unlike those two, does NOT pass -Force in this plan's single invocation ('Apply Services Runtime Configuration'), so it is genuinely reachable despite being marked interactive:false, and gets a real Y/N answer below."
+    "Every key below is optional. Omit a cmdlet to answer at the console. A listed cmdlet fails if its answers run out or a supplied value is invalid.",
+    "The confirmations below correspond to two cluster-entry removals and two runtime deployments (VCFMS, then VCF Automation), one scale operation, and four restores (VCFMS, Log Management, VCF Automation, Telemetry)."
   ],
   "Get-BackupsFromSFTPServer": [
     ["1", "Y"],
     ["1", "Y"],
     ["1", "Y"],
     ["1", "Y"]
+  ],
+  "Remove-SddcManagerVspClusterEntry": [
+    ["Y"],
+    ["Y"]
+  ],
+  "New-ServicesRuntime": [
+    ["Y"],
+    ["Y"]
+  ],
+  "Restore-ServicesRuntimeComponentBackup": [
+    ["Y"],
+    ["Y"],
+    ["Y"],
+    ["Y"]
   ],
   "Set-ServicesRuntimeScale": [
     ["Y"]
