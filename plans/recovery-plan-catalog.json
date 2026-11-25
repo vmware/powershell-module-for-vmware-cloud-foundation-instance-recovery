@@ -162,6 +162,22 @@
       ]
     },
     {
+      "id": "RestoreClusterSettings",
+      "label": "Restore Cluster settings after Domain Restore",
+      "recoveryType": "IBR",
+      "target": "workloadDomain",
+      "planFolder": "ibr",
+      "planFile": "restore-cluster-settings-plan.json",
+      "variablesFile": "restore-cluster-settings-variables.json",
+      "dataSources": [
+        "LoadExtractedData"
+      ],
+      "defaultDataSource": "LoadExtractedData",
+      "selectionList": "domains",
+      "domainFilter": "ALL",
+      "tabHeaderLabel": "Domains"
+    },
+    {
       "id": "FailoverFleet",
       "label": "Failover Fleet Components",
       "recoveryType": "FDR",

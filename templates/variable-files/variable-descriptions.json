@@ -158,6 +158,30 @@
     "masked": true,
     "browse": false
   },
+  "clusterVMOverridesJsonFile": {
+    "description": "Path to the JSON backup of VM overrides for the selected cluster.",
+    "masked": false,
+    "browse": true,
+    "fileFilter": "JSON files (*.json)|*.json"
+  },
+  "clusterVMLocationsJsonFile": {
+    "description": "Path to the JSON backup of VM folder and resource pool locations for the selected cluster.",
+    "masked": false,
+    "browse": true,
+    "fileFilter": "JSON files (*.json)|*.json"
+  },
+  "clusterDRSConfigurationJsonFile": {
+    "description": "Path to the JSON backup of DRS groups and rules for the selected cluster.",
+    "masked": false,
+    "browse": true,
+    "fileFilter": "JSON files (*.json)|*.json"
+  },
+  "clusterVMTagsJsonFile": {
+    "description": "Path to the JSON backup of VM tag assignments for the selected cluster.",
+    "masked": false,
+    "browse": true,
+    "fileFilter": "JSON files (*.json)|*.json"
+  },
   "restoredNsxManagerFqdn": {
     "description": "FQDN of the restored NSX Manager.",
     "masked": false,
