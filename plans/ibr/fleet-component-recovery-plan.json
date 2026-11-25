@@ -433,6 +433,45 @@
     "visible": true
   },
   {
+    "description": "Restore the Cluster Settings in the Restored vCenter",
+    "commandLine": "Restore-ClusterVMOverrides -extractedSDDCDataFile $extractedSddcDataFile -ManagementDefaultCluster",
+    "displayName": "Restore Cluster VM Overrides",
+    "condition": [],
+    "threadId": "2",
+    "interactive": false,
+    "visible": true,
+    "waitFor": [
+      "1"
+    ]
+  },
+  {
+    "description": "",
+    "commandLine": "Restore-ClusterVMLocations -extractedSDDCDataFile $extractedSddcDataFile -ManagementDefaultCluster",
+    "displayName": "Restore Cluster VM Locations",
+    "condition": [],
+    "threadId": "2",
+    "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "",
+    "commandLine": "Restore-ClusterDRSGroupsAndRules -extractedSDDCDataFile $extractedSddcDataFile -ManagementDefaultCluster",
+    "displayName": "Restore Cluster DRS Groups and Rules",
+    "condition": [],
+    "threadId": "2",
+    "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "",
+    "commandLine": "Restore-ClusterVMTags -extractedSDDCDataFile $extractedSddcDataFile -ManagementDefaultCluster",
+    "displayName": "Restore Cluster VM Tags",
+    "condition": [],
+    "threadId": "2",
+    "interactive": false,
+    "visible": true
+  },
+  {
     "description": "Update Connections in VCF Automation (manual step)",
     "commandLine": "Confirm-ManualStep -Message 'Press Enter once connections in VCF Automation have been updated' -AnswerKey 'vcf-automation-connections-updated'",
     "displayName": "Confirm Manual Step: VCF Automation connections have been updated",

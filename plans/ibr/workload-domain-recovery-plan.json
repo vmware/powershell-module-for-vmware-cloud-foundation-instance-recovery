@@ -319,6 +319,42 @@
     "visible": true
   },
   {
+    "description": "Restore the Cluster Settings in the Restored vCenter",
+    "commandLine": "Restore-ClusterVMOverrides -extractedSDDCDataFile $extractedSddcDataFile -workloadDomain $workloadDomain -clusterName $clusterName -jsonFile \"$clusterName-vmOverrides.json\"",
+    "displayName": "Restore Cluster VM Overrides",
+    "condition": [],
+    "threadId": "1",
+    "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "",
+    "commandLine": "Restore-ClusterVMLocations -extractedSDDCDataFile $extractedSddcDataFile -workloadDomain $workloadDomain -clusterName $clusterName -jsonFile \"$clusterName-vmLocations.json\"",
+    "displayName": "Restore Cluster VM Locations",
+    "condition": [],
+    "threadId": "1",
+    "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "",
+    "commandLine": "Restore-ClusterDRSGroupsAndRules -extractedSDDCDataFile $extractedSddcDataFile -workloadDomain $workloadDomain -clusterName $clusterName -jsonFile \"$clusterName-drsConfiguration.json\"",
+    "displayName": "Restore Cluster DRS Groups and Rules",
+    "condition": [],
+    "threadId": "1",
+    "interactive": false,
+    "visible": true
+  },
+  {
+    "description": "",
+    "commandLine": "Restore-ClusterVMTags -extractedSDDCDataFile $extractedSddcDataFile -workloadDomain $workloadDomain -clusterName $clusterName -jsonFile \"$clusterName-vmTags.json\"",
+    "displayName": "Restore Cluster VM Tags",
+    "condition": [],
+    "threadId": "1",
+    "interactive": false,
+    "visible": true
+  },
+  {
     "description": "",
     "commandLine": "Clear-vCenterAlarms -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword",
     "displayName": "Clear vCenter Alarms",
