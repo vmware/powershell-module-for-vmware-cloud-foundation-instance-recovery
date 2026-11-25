@@ -246,7 +246,7 @@
   },
   {
     "description": "Restore VCF Automation (only required if VCF Automation was changed while failed over)",
-    "commandLine": "Restore-ServicesRuntimeComponentBackup -Type CONSUMPTION -ServicesRuntimePassword $vcfaServicesRuntimePassword -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\"",
+    "commandLine": "Restore-ServicesRuntimeComponentBackup -Type CONSUMPTION -ServicesRuntimePassword $vcfaServicesRuntimePassword -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -RestoreJsonFile \".\\vcfa-restore-payload.json\"",
     "displayName": "Restore VCF Automation Backup",
     "condition": [],
     "threadId": "3",
