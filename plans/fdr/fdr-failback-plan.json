@@ -55,7 +55,7 @@
   },
   {
     "description": "Retrieve a List of Backups for the VCF Management Services Fleet Components",
-    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -ServicesRuntimeFqdn $sourceVcfmsServicesRuntimeFqdn -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -componentNames \"vcf-fleet-lcm\",\"vcf-fleet-depot\",\"salt-raas\",\"vidb\",\"opsLogs\" -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
+    "commandLine": "Get-BackupsFromSFTPServer -sftpServer $sftpHost -sftpUser $sftpUsername -sftpPassword $sftpPassword -sftpServerBackupPath $sftpDirectory -ServicesRuntimeFqdn $sourceVcfmsServicesRuntimeFqdn -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -componentNames \"vcf-fleet-lcm\",\"vcf-fleet-depot\",\"salt-raas\",\"vidb\",\"ops-logs\" -unauthorizedDepot -offlineDepotFqdn $offlineDepotFqdn -offlineDepotPort $offlineDepotPort",
     "displayName": "Retrieve VCFMS Backups",
     "condition": [],
     "threadId": "1",
@@ -163,7 +163,16 @@
   {
     "description": "Update the Identity Broker VIP Address",
     "commandLine": "Set-ServicesRuntimeComponentVips -ServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $targetVcfmsServicesRuntimePassword -ComponentType \"vidb\" -Vips $vidbVip",
-    "displayName": "Set Services Runtime Component VIPs",
+    "displayName": "Update the Identity Broker VIP Address",
+    "condition": [],
+    "threadId": "2",
+    "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Update the Log Management VIP Address",
+    "commandLine": "Set-ServicesRuntimeComponentVips -ServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $targetVcfmsServicesRuntimePassword -ComponentType \"ops-logs\" -Vips $logManagementVip",
+    "displayName": "Update the  Log Management VIP Address",
     "condition": [],
     "threadId": "2",
     "interactive": true,

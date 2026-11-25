@@ -19,5 +19,6 @@
   "sddcManagerAdminPassword": "",
   "vcfaServicesRuntimePassword": "",
   "vcfaVip": "",
-  "vcfaSystemPassword": ""
+  "vcfaSystemPassword": "",
+  "logManagementVip": ""
 }
