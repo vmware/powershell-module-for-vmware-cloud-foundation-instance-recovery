@@ -8895,6 +8895,27 @@ function Get-ClusterRestoreVCenterConnection([string]$ExtractedSDDCDataFile, [st
     }
 }
 
+function Get-ClusterRestoreVMInventory($VCenterServer) {
+    $inventory = Get-VM -Server $VCenterServer -ErrorAction Stop | Group-Object -Property Name -AsHashTable -AsString
+    return ($inventory ?? @{})
+}
+
+function Find-ClusterRestoreVMs([hashtable]$Inventory, [string[]]$Names) {
+    foreach ($name in $Names) {
+        if ([string]::IsNullOrEmpty($name)) {
+            continue
+        }
+        $matchingVMs = $Inventory[$name]
+        if (-not $matchingVMs) {
+            LogMessage -type INFO -message "[$name] Skipping VM because it has not yet been restored."
+            continue
+        }
+            throw "More than one VM named '$name' exists in the target vCenter. The backup name does not identify a unique VM."
+        }
+        $matchingVMs[0]
+    }
+}
+
 Function Restore-ClusterVMOverrides {
     <#
     .SYNOPSIS
@@ -8950,12 +8971,16 @@ Function Restore-ClusterVMOverrides {
         $vCenterAdminPassword = $connection.Password
     }
     LogMessage -type INFO -message "[$vCenterFQDN] Connecting to vCenter"
-    Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop | Out-Null
+    $vCenterServer = Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop
     try {
+        $vmInventory = Get-ClusterRestoreVMInventory $vCenterServer
         If (Test-Path -path $jsonFile) {
             $vmOverRideInstances = Get-Content -path $jsonFile | ConvertFrom-Json
             Foreach ($vmOverRideInstance in $vmOverRideInstances) {
                 If ($vmOverRideInstance.name -notlike "vCLS*") {
+                    $vm = Find-ClusterRestoreVMs $vmInventory $vmOverRideInstance.name
+                    if (-not $vm) { continue }
+
                     LogMessage -type INFO -message "[$($vmOverRideInstance.name)] Restoring VM Overide Settings"
                     $dasVmConfigSpecRequired = $false
                     $drsVmConfigSpecRequired = $false
@@ -8976,8 +9001,7 @@ Function Restore-ClusterVMOverrides {
                             $vmOverRideInstanceOrchestrationSpecRequired = $true
                         }
                     }
-                    $cluster = Get-Cluster -Name $clusterName
-                    $vm = Get-VM $vmOverRideInstance.name
+                    $cluster = Get-Cluster -Name $clusterName -Server $vCenterServer -ErrorAction Stop
                     $spec = New-Object VMware.Vim.ClusterConfigSpecEx
                     If ($dasVmConfigSpecRequired) {
                         $spec.dasVmConfigSpec = New-Object VMware.Vim.ClusterDasVmConfigSpec[] (1)
@@ -9073,8 +9097,9 @@ Function Restore-ClusterVMOverrides {
         }
     } catch {
         catchWriter -object $_
+    } finally {
+        Disconnect-VIServer -Server $vCenterServer -Force -Confirm:$false
     }
-    Disconnect-VIServer -Server $vCenterFQDN -Force -Confirm:$false
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
     } catch {
@@ -9142,24 +9167,23 @@ Function Restore-ClusterVMLocations {
         $vCenterAdminPassword = $connection.Password
     }
     LogMessage -type INFO -message "[$vCenterFQDN] Connecting to vCenter"
-    Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop | Out-Null
+    $vCenterServer = Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop
     try {
+        $vmInventory = Get-ClusterRestoreVMInventory $vCenterServer
         If (Test-Path -path $jsonFile) {
             $vmLocations = Get-Content -path $jsonFile | ConvertFrom-Json
             Foreach ($vmLocation in $vmLocations) {
                 If ($vmLocation.name -notlike "vCLS*") {
-                    $vm = Get-VM -name $vmLocation.name -errorAction SilentlyContinue
-                    If ($vm) {
-                        If ($vm.folder -ne $vmLocation.folder) {
-                            LogMessage -type INFO -message "[$($vmLocation.name)] Setting VM Folder Location to $($vmLocation.folder)"
-                            Move-VM -VM $vm -InventoryLocation $vmLocation.folder -confirm:$false
-                        }
-                        If ($vm.resourcePool -ne $vmLocation.resourcePool) {
-                            LogMessage -type INFO -message "[$($vmLocation.name)] Setting ResourcePool to $($vmLocation.resourcePool)"
-                            Move-VM -VM $vm -Destination $vmLocation.resourcePool -confirm:$false
-                        }
-                    } else {
-                        Write-Error "[$(Get-VM -name $vmLocation.name)] Not found. Check that it has been restored"
+                    $vm = Find-ClusterRestoreVMs $vmInventory $vmLocation.name
+                    if (-not $vm) { continue }
+
+                    If ($vm.folder -ne $vmLocation.folder) {
+                        LogMessage -type INFO -message "[$($vmLocation.name)] Setting VM Folder Location to $($vmLocation.folder)"
+                        Move-VM -Server $vCenterServer -VM $vm -InventoryLocation $vmLocation.folder -confirm:$false
+                    }
+                    If ($vm.resourcePool -ne $vmLocation.resourcePool) {
+                        LogMessage -type INFO -message "[$($vmLocation.name)] Setting ResourcePool to $($vmLocation.resourcePool)"
+                        Move-VM -Server $vCenterServer -VM $vm -Destination $vmLocation.resourcePool -confirm:$false
                     }
                 }
             }
@@ -9169,8 +9193,9 @@ Function Restore-ClusterVMLocations {
         }
     } catch {
         catchWriter -object $_
+    } finally {
+        Disconnect-VIServer -Server $vCenterServer -Force -Confirm:$false
     }
-    Disconnect-VIServer -Server $vCenterFQDN -Force -Confirm:$false
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
     } catch {
@@ -9238,61 +9263,79 @@ Function Restore-ClusterDRSGroupsAndRules {
         $vCenterAdminPassword = $connection.Password
     }
     LogMessage -type INFO -message "[$vCenterFQDN] Connecting to vCenter"
-    Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop | Out-Null
+    $vCenterServer = Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop
     try {
+        $vmInventory = Get-ClusterRestoreVMInventory $vCenterServer
         If (Test-Path -path $jsonFile) {
             $drsRulesAndGroups = Get-Content -path $jsonFile | ConvertFrom-Json
+            $skippedVMGroups = @{}
             Foreach ($vmDrsGroup in $drsRulesAndGroups.vmDrsGroups) {
-                $group = Get-DrsClusterGroup -name $vmDrsGroup.name -errorAction SilentlyContinue
-                If ($group) {
-                    If ($vmDrsGroup.type -eq "VMHostGroup") {
+                If ($vmDrsGroup.type -eq "VMHostGroup") {
+                    $group = Get-DrsClusterGroup -Server $vCenterServer -Cluster $clusterName -Name $vmDrsGroup.name -ErrorAction SilentlyContinue
+                    If ($group) {
                         Foreach ($member in $vmDrsGroup.members) {
                             LogMessage -type INFO -message "[$member] Adding to VMHostGroup $($vmDrsGroup.name)"
-                            Set-DrsClusterGroup -DrsClusterGroup $vmDrsGroup.name -Add -VMHost $member -confirm:$false | Out-Null
+                            Set-DrsClusterGroup -Server $vCenterServer -DrsClusterGroup $group -Add -VMHost $member -Confirm:$false | Out-Null
                         }
-                    } elseif ($vmDrsGroup.type -eq "VMGroup") {
-                        Foreach ($member in $vmDrsGroup.members) {
-                            LogMessage -type INFO -message "[$member] Adding to VMGroup $($vmDrsGroup.name)"
-                            Set-DrsClusterGroup -DrsClusterGroup $vmDrsGroup.name -Add -VM $member -confirm:$false | Out-Null
-                        }
-                    }
-                } else {
-                    If ($vmDrsGroup.type -eq "VMHostGroup") {
+                    } else {
                         LogMessage -type INFO -message "[$($vmDrsGroup.name)] Creating VMHostGroup with Members $($vmDrsGroup.members)"
-                        New-DrsClusterGroup -Name $vmDrsGroup.name -VMHost $vmDrsGroup.members -Cluster $clusterName | Out-Null
-                    } elseif ($vmDrsGroup.type -eq "VMGroup") {
-                        LogMessage -type INFO -message "[$($vmDrsGroup.name)] Creating VMGroup with Members $($vmDrsGroup.members)"
-                        New-DrsClusterGroup -Name $vmDrsGroup.name -VM $vmDrsGroup.members -Cluster $clusterName | Out-Null
+                        New-DrsClusterGroup -Server $vCenterServer -Name $vmDrsGroup.name -VMHost $vmDrsGroup.members -Cluster $clusterName | Out-Null
+                    }
+                } elseif ($vmDrsGroup.type -eq "VMGroup") {
+                    $members = @(Find-ClusterRestoreVMs $vmInventory $vmDrsGroup.members)
+                    if ($members.Count -eq 0) {
+                        $skippedVMGroups[$vmDrsGroup.name] = $true
+                        continue
+                    }
+
+                    $group = Get-DrsClusterGroup -Server $vCenterServer -Cluster $clusterName -Name $vmDrsGroup.name -ErrorAction SilentlyContinue
+                    If ($group) {
+                        LogMessage -type INFO -message "[$($vmDrsGroup.name)] Adding VMGroup Members $($members.Name -join ', ')"
+                        Set-DrsClusterGroup -Server $vCenterServer -DrsClusterGroup $group -Add -VM $members -Confirm:$false | Out-Null
+                    } else {
+                        LogMessage -type INFO -message "[$($vmDrsGroup.name)] Creating VMGroup with Members $($members.Name -join ', ')"
+                        New-DrsClusterGroup -Server $vCenterServer -Name $vmDrsGroup.name -VM $members -Cluster $clusterName | Out-Null
                     }
                 }
             }
             Foreach ($vmAffinityRule in $drsRulesAndGroups.vmAffinityRules) {
-                If ($vmAffinityRule.members.count -gt 1) {
-                    $vmRule = Get-DrsRule -name $vmAffinityRule.name -cluster $clusterName -errorAction SilentlyContinue
-                    If ($vmRule) {
-                        LogMessage -type INFO -message "[$($vmAffinityRule.name)] Setting VM Rule with Members $($vmAffinityRule.members)"
-                        Set-DrsRule -rule $vmRule -VM $vmAffinityRule.members -Enabled $true -confirm:$false | Out-Null
-                    } else {
-                        LogMessage -type INFO -message "[$($vmAffinityRule.name)] Creating VM Rule with Members $($vmAffinityRule.members)"
-                        New-DrsRule -cluster $clusterName -name $vmAffinityRule.name -VM $vmAffinityRule.members -keepTogether $vmAffinityRule.keepTogether -Enabled $true | Out-Null
-                    }
+                $members = @(Find-ClusterRestoreVMs $vmInventory $vmAffinityRule.members)
+                if ($members.Count -lt 2) { continue }
+
+                $vmRule = Get-DrsRule -Server $vCenterServer -Name $vmAffinityRule.name -Cluster $clusterName -ErrorAction SilentlyContinue
+                If ($vmRule) {
+                    LogMessage -type INFO -message "[$($vmAffinityRule.name)] Setting VM Rule with Members $($members.Name -join ', ')"
+                    Set-DrsRule -Server $vCenterServer -Rule $vmRule -VM $members -Enabled $true -Confirm:$false | Out-Null
+                } else {
+                    LogMessage -type INFO -message "[$($vmAffinityRule.name)] Creating VM Rule with Members $($members.Name -join ', ')"
+                    New-DrsRule -Server $vCenterServer -Cluster $clusterName -Name $vmAffinityRule.name -VM $members -KeepTogether $vmAffinityRule.keepTogether -Enabled $true | Out-Null
                 }
             }
             Foreach ($vmHostAffinityRule in $drsRulesAndGroups.vmHostAffinityRules) {
-                $hostRule = Get-DrsVMHostRule -Cluster $clusterName -name $vmHostAffinityRule.name -errorAction SilentlyContinue
+                if ($skippedVMGroups[$vmHostAffinityRule.vmGroupName]) {
+                    LogMessage -type INFO -message "[$($vmHostAffinityRule.name)] Skipping VM-host rule because its VM group has no restored members."
+                    continue
+                }
+
+                $hostRule = Get-DrsVMHostRule -Server $vCenterServer -Cluster $clusterName -Name $vmHostAffinityRule.name -ErrorAction SilentlyContinue
                 If ($hostRule) {
                     LogMessage -type INFO -message "[$($vmHostAffinityRule.name)] Setting VMHost Rule with VM Group $($vmHostAffinityRule.vmGroupName) and Host Group $($vmHostAffinityRule.hostGroupName)"
-                    Set-DrsVMHostRule -rule $hostRule -VMGroup $vmHostAffinityRule.vmGroupName -VMHostGroup $vmHostAffinityRule.hostGroupName -Type $vmHostAffinityRule.variant -confirm:$false | Out-Null
+                    Set-DrsVMHostRule -Server $vCenterServer -Rule $hostRule -VMGroup $vmHostAffinityRule.vmGroupName -VMHostGroup $vmHostAffinityRule.hostGroupName -Type $vmHostAffinityRule.variant -Confirm:$false | Out-Null
                 } else {
                     LogMessage -type INFO -message "[$($vmHostAffinityRule.name)] Creating VMHost Rule with VM Group $($vmHostAffinityRule.vmGroupName) and Host Group $($vmHostAffinityRule.hostGroupName)"
-                    New-DrsVMHostRule -Name $vmHostAffinityRule.name -Cluster $clusterName -VMGroup $vmHostAffinityRule.vmGroupName -VMHostGroup $vmHostAffinityRule.hostGroupName -Type $vmHostAffinityRule.variant | Out-Null
+                    New-DrsVMHostRule -Server $vCenterServer -Name $vmHostAffinityRule.name -Cluster $clusterName -VMGroup $vmHostAffinityRule.vmGroupName -VMHostGroup $vmHostAffinityRule.hostGroupName -Type $vmHostAffinityRule.variant | Out-Null
                 }
             }
             Foreach ($vmToVmDependencyRule in $drsRulesAndGroups.vmToVmDependencyRules) {
-                $dependencyRule = (Get-Cluster -Name $clusterName).ExtensionData.Configuration.Rule | Where-Object { $_.DependsOnVmGroup -and $_.name -eq $vmToVmDependencyRule.name -and $_.vmGroup -eq $vmToVmDependencyRule.vmGroup -and $_.DependsOnVmGroup -eq $vmToVmDependencyRule.DependsOnVmGroup }
+                if ($skippedVMGroups[$vmToVmDependencyRule.vmGroup] -or $skippedVMGroups[$vmToVmDependencyRule.DependsOnVmGroup]) {
+                    LogMessage -type INFO -message "[$($vmToVmDependencyRule.name)] Skipping VM dependency rule because a VM group has no restored members."
+                    continue
+                }
+
+                $cluster = Get-Cluster -Name $clusterName -Server $vCenterServer -ErrorAction Stop
+                $dependencyRule = $cluster.ExtensionData.Configuration.Rule | Where-Object { $_.DependsOnVmGroup -and $_.name -eq $vmToVmDependencyRule.name -and $_.vmGroup -eq $vmToVmDependencyRule.vmGroup -and $_.DependsOnVmGroup -eq $vmToVmDependencyRule.DependsOnVmGroup }
                 If (!$dependencyRule) {
                     LogMessage -type INFO -message "[$($vmToVmDependencyRule.vmGroup)] Creating VM to VM Dependency Rule to depend on $($vmToVmDependencyRule.DependsOnVmGroup) "
-                    $cluster = Get-Cluster -Name $clusterName
                     $spec = New-Object VMware.Vim.ClusterConfigSpecEx
                     $newRule = New-Object VMware.Vim.ClusterDependencyRuleInfo
                     $newRule.VmGroup = $vmToVmDependencyRule.vmGroup
@@ -9313,8 +9356,9 @@ Function Restore-ClusterDRSGroupsAndRules {
         }
     } catch {
         catchWriter -object $_
+    } finally {
+        Disconnect-VIServer -Server $vCenterServer -Force -Confirm:$false
     }
-    Disconnect-VIServer -Server $vCenterFQDN -Force -Confirm:$false
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
     } catch {
@@ -9382,19 +9426,18 @@ Function Restore-ClusterVMTags {
         $vCenterAdminPassword = $connection.Password
     }
     LogMessage -type INFO -message "[$vCenterFQDN] Connecting to vCenter"
-    Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop | Out-Null
+    $vCenterServer = Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop
     try {
+        $vmInventory = Get-ClusterRestoreVMInventory $vCenterServer
         If (Test-Path -path $jsonFile) {
             $vmTags = Get-Content -path $jsonFile | ConvertFrom-Json
             Foreach ($vmTag in $vmTags) {
                 If ($vmTag.Entity -notlike "vCLS*") {
-                    $vm = Get-VM -name $vmTag.Entity -errorAction SilentlyContinue
-                    If ($vm) {
-                        LogMessage -type INFO -message "[$($vmTag.Entity)] Setting VM Tag to $($vmTag.Tag)"
-                        New-TagAssignment -Entity $vm -Tag $vmTag.Tag -confirm:$false | Out-Null
-                    } else {
-                        Write-Error "[$(Get-VM -name $vmTag.Entity)] Not found. Check that it has been restored"
-                    }
+                    $vm = Find-ClusterRestoreVMs $vmInventory $vmTag.Entity
+                    if (-not $vm) { continue }
+
+                    LogMessage -type INFO -message "[$($vmTag.Entity)] Setting VM Tag to $($vmTag.Tag)"
+                    New-TagAssignment -Server $vCenterServer -Entity $vm -Tag $vmTag.Tag -confirm:$false | Out-Null
                 }
             }
         } else {
@@ -9403,8 +9446,9 @@ Function Restore-ClusterVMTags {
         }
     } catch {
         catchWriter -object $_
+    } finally {
+        Disconnect-VIServer -Server $vCenterServer -Force -Confirm:$false
     }
-    Disconnect-VIServer -Server $vCenterFQDN -Force -Confirm:$false
     $StopWatch.Stop()
     LogMessage -type NOTE -message "[$jumpboxName] Completed Task $($MyInvocation.MyCommand) in $([int][Math]::Floor($Stopwatch.Elapsed.TotalMinutes)) minutes and $($Stopwatch.Elapsed.seconds) seconds"
     } catch {
