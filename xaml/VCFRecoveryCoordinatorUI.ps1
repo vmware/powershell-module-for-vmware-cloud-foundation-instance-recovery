@@ -219,7 +219,7 @@ function Reset-CurrentRecoveryPlanContext([string]$PlanId) {
 # Raw, unfiltered domain list from the currently loaded extracted-sddc-data.json (see
 # Import-ExtractedSddcDataFile) -- Sync-RecoveryPlanSelection re-filters this into
 # $domainsListBox every time the selected Recovery Plan changes, per that plan's own catalog
-# "domainFilter" (MANAGEMENT/NOT_MANAGEMENT/none), without needing to re-read the file.
+# "domainFilter" (MANAGEMENT/NOT_MANAGEMENT/ALL), without needing to re-read the file.
 $global:allDiscoveredDomains = @()
 # Live ToggleButton controls currently shown in $extraRunOptionsPanel, keyed by their catalog
 # "extraToggleDefinitions" id -- rebuilt by Update-ExtraTogglesPanel every time the selected plan
@@ -522,8 +522,10 @@ function Set-UIMode([string]$Mode) {
     # "function" statement has executed (see Update-TaskListHeaderText) -- at that point nothing is selected yet.
     if ($recoveryTypeComboBox.SelectedItem) { Sync-RecoveryPlanComboBetaItems }
 
-    # Storage/compute clusters only appear in Discovered Infrastructure in Engineering mode.
-    if ($global:extractedDataLoaded) { Update-AdditionalClustersList }
+    # Additional Cluster Recovery filters storage/compute clusters by mode.
+    if ($global:extractedDataLoaded -and (Get-CurrentRecoveryPlanEntry).selectionList -eq 'clusters') {
+        Update-AdditionalClustersList
+    }
 }
 
 # Help: opens the shipped HTML user guide in the default browser. Start-Process on the .html path hands it
@@ -1106,24 +1108,21 @@ function Add-EngineeringBreakPointStep([object[]]$Steps, $AfterStep) {
 # triggered by the pause-point drop-zone can happen AFTER Resume has already restored prior "Done"
 # (or live "Failed"/"Skipped"/"Running") state onto the OLD row objects. Without this, clicking to set
 # or clear a pause point would silently wipe every one of those states back to blank, making a resumed
-# -- or actively running -- plan look like it had never started. Matches on CommandLine, same as
-# Resume's own CompletedCommandLines restore (see the Resume handler) -- same accepted limitation
-# noted there: two steps sharing an identical CommandLine are indistinguishable by this matching alone.
+# -- or actively running -- plan look like it had never started.
 function Copy-StepRowCompletionState([object[]]$PreviousRows, [object[]]$NewRows) {
     if (-not $PreviousRows) {
         return 
     }
-    # Keyed on CommandLine PLUS which occurrence of that CommandLine the row is (1st, 2nd, ...), so a
-    # command that appears several times in a plan (e.g. Get VCF Operations Registered Components)
-    # carries over each instance's own state instead of every copy inheriting whichever one was
-    # recorded last -- previously one Done instance marked all of them Done.
+    # Track occurrences separately for plan tasks and breakpoints so adding or removing a
+    # breakpoint preserves the state of every plan task, including identical commands.
     $completedStates = @{}
     $occurrences = @{}
     foreach ($row in $PreviousRows) {
-        $occurrence = [int]$occurrences[$row.CommandLine] + 1
-        $occurrences[$row.CommandLine] = $occurrence
+        $commandKey = "$($row.IsBreakPoint)`0$($row.CommandLine)"
+        $occurrence = [int]$occurrences[$commandKey] + 1
+        $occurrences[$commandKey] = $occurrence
         if ($row.PlanButton.Content -in @('Done', 'Failed', 'Skipped', 'Running')) {
-            $completedStates["$($row.CommandLine)`0$occurrence"] = @{ Content = $row.PlanButton.Content; Background = $row.PlanButton.Background; Duration = $row.PlanButton.Tag.Content; Started = $row.PlanButton.Tag.Tag }
+            $completedStates["$commandKey`0$occurrence"] = @{ Content = $row.PlanButton.Content; Background = $row.PlanButton.Background; Duration = $row.PlanButton.Tag.Content; Started = $row.PlanButton.Tag.Tag }
         }
     }
     if ($completedStates.Count -eq 0) {
@@ -1131,9 +1130,10 @@ function Copy-StepRowCompletionState([object[]]$PreviousRows, [object[]]$NewRows
     }
     $occurrences = @{}
     foreach ($row in $NewRows) {
-        $occurrence = [int]$occurrences[$row.CommandLine] + 1
-        $occurrences[$row.CommandLine] = $occurrence
-        $key = "$($row.CommandLine)`0$occurrence"
+        $commandKey = "$($row.IsBreakPoint)`0$($row.CommandLine)"
+        $occurrence = [int]$occurrences[$commandKey] + 1
+        $occurrences[$commandKey] = $occurrence
+        $key = "$commandKey`0$occurrence"
         if ($completedStates.ContainsKey($key)) {
             $state = $completedStates[$key]
             Set-StepButtonsState @($row.PlanButton, $row.ManualButton) $state.Content $state.Background
@@ -3249,6 +3249,7 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
             @()
         }
         Interactive                = $Interactive
+        IsBreakPoint               = $IsBreakPoint
         Id                         = $Id
         Condition                  = $Condition
     }
@@ -3696,14 +3697,33 @@ function Start-StepCompletionWatcher {
     $checkTimer.Start()
 }
 
-# Fills the Additional Clusters list from $global:allAdditionalClusters. Cluster types the catalog
-# lists under the Additional Cluster plan's engineeringOnlyClusterTypes (storage/compute clusters)
-# are left out entirely unless the UI is in Engineering mode (see Set-UIMode, which re-runs this on
-# every mode switch). Skips the rebuild when the visible set hasn't changed, so toggling the mode
-# never clears a selection (or disturbs a run) needlessly; otherwise the current selection is
-# restored if that cluster is still visible.
+function New-DiscoveredCluster($Domain, $Cluster) {
+    [PSCustomObject]@{
+        ClusterName          = $Cluster.name
+        DomainName           = $Domain.domainName
+        IsDefault            = $Cluster.isDefault
+        PrimaryDatastoreType = $Cluster.primaryDatastoreType
+        IsStretched          = $Cluster.isStretched
+        DependentOn          = Get-ClusterDependencies $Domain $Cluster $global:allDiscoveredDomains
+    }
+}
+
+# The Clusters tab reuses the Additional Clusters table. Domain-based cluster selection
+# includes the default cluster and uses all named clusters in the selected domain.
 function Update-AdditionalClustersList([switch]$Force) {
-    $visible = @($global:allAdditionalClusters | Where-Object { $global:uiMode -eq 'Engineering' -or -not (Test-ClusterEngineeringOnly $_) })
+    $selectsDomainCluster = (Get-CurrentRecoveryPlanEntry).selectionList -eq 'domainClusters'
+    $visible = @(
+        if ($selectsDomainCluster) {
+            $domain = $domainsListBox.SelectedItem.Tag
+            foreach ($cluster in $domain.vsphereClusterDetails) {
+                if (-not [string]::IsNullOrWhiteSpace($cluster.name)) {
+                    New-DiscoveredCluster $domain $cluster
+                }
+            }
+        } else {
+            $global:allAdditionalClusters | Where-Object { $global:uiMode -eq 'Engineering' -or -not (Test-ClusterEngineeringOnly $_) }
+        }
+    )
     $keyOf = { param($c) "$($c.DomainName)|$($c.ClusterName)" }
     if (-not $Force) {
         $currentKeys = @($additionalClustersListBox.Items | Where-Object { $_ -is [System.Windows.Controls.ListBoxItem] } | ForEach-Object { & $keyOf $_.Tag })
@@ -3712,11 +3732,11 @@ function Update-AdditionalClustersList([switch]$Force) {
     }
     $previousKey = if ($additionalClustersListBox.SelectedItem -is [System.Windows.Controls.ListBoxItem]) { & $keyOf $additionalClustersListBox.SelectedItem.Tag }
     $additionalClustersListBox.Items.Clear()
-    $additionalClusters = $visible
-    if ($additionalClusters.Count -eq 0) {
-        [void]$additionalClustersListBox.Items.Add('No additional clusters detected.')
+    if ($visible.Count -eq 0) {
+        $emptyMessage = if ($selectsDomainCluster) { 'No named clusters found in this domain. Load extracted SDDC data that includes cluster names.' } else { 'No additional clusters detected.' }
+        [void]$additionalClustersListBox.Items.Add($emptyMessage)
     } else {
-        foreach ($cluster in $additionalClusters) {
+        foreach ($cluster in $visible) {
             $stretchedText = if ($cluster.IsStretched -eq 't') {
                 'Y' 
             } else {
@@ -3729,7 +3749,7 @@ function Update-AdditionalClustersList([switch]$Force) {
             }
             $columnGroups = @('AdditionalClustersCol0', 'AdditionalClustersCol1', 'AdditionalClustersCol2', 'AdditionalClustersCol3', 'AdditionalClustersCol4')
             $row = New-TableRow -Values @($clusterNameText, $cluster.DomainName, (Get-DisplayDatastoreType $cluster.PrimaryDatastoreType), $stretchedText, $cluster.DependentOn) -ColumnGroups $columnGroups
-            if (Test-ClusterEngineeringOnly $cluster) {
+            if (-not $selectsDomainCluster -and (Test-ClusterEngineeringOnly $cluster)) {
                 # Only reachable in Engineering mode (User mode filters these out above). Move the
                 # Type cell's text into a horizontal panel alongside a BETA pill (same pill style as
                 # the Recovery Parameters combos' badge).
@@ -3807,19 +3827,11 @@ function Import-ExtractedSddcDataFile([string]$Path) {
         foreach ($domain in $extractedSddcData.workloadDomains) {
             foreach ($cluster in $domain.vsphereClusterDetails) {
                 if ($cluster.isDefault -eq 'f') {
-                    [PSCustomObject]@{
-                        ClusterName          = $cluster.name
-                        DomainName           = $domain.domainName
-                        PrimaryDatastoreType = $cluster.primaryDatastoreType
-                        IsStretched          = $cluster.isStretched
-                        DependentOn          = Get-ClusterDependencies $domain $cluster $extractedSddcData.workloadDomains
-                    }
+                    New-DiscoveredCluster $domain $cluster
                 }
             }
         }
     )
-    Update-AdditionalClustersList -Force
-
     $global:extractedDataLoaded = $true
     Sync-RecoveryPlanSelection
 
@@ -4385,14 +4397,17 @@ function Update-SelectedClusterNameFromDisk {
 # a domain or additional cluster picked (for a plan with a selection list), or immediately/once data
 # is loaded (for a plan with none -- see the catalog's own "selectionList"/"dataSources" per plan).
 function Update-ExecutionVisibility {
+    $entry = Get-CurrentRecoveryPlanEntry
     $hasDomainSelected = $null -ne $domainsListBox.SelectedItem
     $hasClusterSelected = $additionalClustersListBox.SelectedItem -is [System.Windows.Controls.ListBoxItem]
-    $entry = Get-CurrentRecoveryPlanEntry
-    $isStandaloneTargetReady = $false
-    if ($entry -and $entry.selectionList -eq 'none') {
-        $isStandaloneTargetReady = (@($entry.dataSources).Count -eq 0) -or $global:extractedDataLoaded
+    $targetReady = switch ($entry.selectionList) {
+        'domains' { $hasDomainSelected }
+        'clusters' { $hasClusterSelected }
+        'domainClusters' { $hasDomainSelected -and $hasClusterSelected }
+        'none' { (@($entry.dataSources).Count -eq 0) -or $global:extractedDataLoaded }
+        default { $false }
     }
-    $stepsVariablesGroupBox.Visibility = if ($hasDomainSelected -or $hasClusterSelected -or $isStandaloneTargetReady) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
+    $stepsVariablesGroupBox.Visibility = if ($targetReady) { [System.Windows.Visibility]::Visible } else { [System.Windows.Visibility]::Collapsed }
 }
 
 # A plain named function (not a closure) -- New-StepRow invokes it by name via "&", which works
@@ -4476,6 +4491,23 @@ function Sync-DomainSteps {
     $global:stepRunStatus = @{}
 
     $selected = $domainsListBox.SelectedItem
+    if ($planEntry.selectionList -eq 'domainClusters') {
+        $additionalClustersListBox.SelectedItem = $null
+        $global:conditionDataContext = @{}
+        Update-ExtraTogglesPanel $null
+        if ($selected) {
+            Update-AdditionalClustersList -Force
+            $additionalClustersTabItem.Visibility = [System.Windows.Visibility]::Visible
+            $discoveredInfrastructureTabControl.SelectedItem = $additionalClustersTabItem
+        } else {
+            $additionalClustersListBox.Items.Clear()
+            $discoveredInfrastructureTabControl.SelectedItem = $workloadDomainsTabItem
+            $additionalClustersTabItem.Visibility = [System.Windows.Visibility]::Collapsed
+        }
+        Update-ExecutionVisibility
+        return
+    }
+
     if ($null -ne $selected) {
         # A domain and an additional cluster are mutually exclusive selections -- picking a domain
         # always deselects whichever additional cluster was picked before, which (via
@@ -4532,11 +4564,8 @@ $domainsListBox.Add_SelectionChanged({
         }
     }.GetNewClosure())
 
-# Mutually exclusive with a domain selection above -- picking a real additional cluster always
-# deselects whichever domain was picked before, which (via Sync-DomainSteps) collapses its panel so
-# only Recover Additional Cluster shows. The "No additional clusters detected." placeholder row (a
-# plain string, not a ListBoxItem -- see Import-ExtractedSddcDataFile) is deliberately not treated
-# as a real selection here.
+# Additional Cluster Recovery selects a cluster directly. A domain-scoped cluster selection
+# keeps its parent domain selected so the operator can return to the Domains tab.
 function Sync-AdditionalClusterSteps {
     $planEntry = Get-CurrentRecoveryPlanEntry
     Reset-CurrentRecoveryPlanContext ([string]$planEntry.id)
@@ -4546,8 +4575,10 @@ function Sync-AdditionalClusterSteps {
 
     $selected = $additionalClustersListBox.SelectedItem
     $isRealClusterSelected = $selected -is [System.Windows.Controls.ListBoxItem]
-    if ($isRealClusterSelected) {
-        if ($null -ne $domainsListBox.SelectedItem) {
+    $selectsDomainCluster = $planEntry.selectionList -eq 'domainClusters'
+    $domain = $domainsListBox.SelectedItem.Tag
+    if ($isRealClusterSelected -and ($planEntry.selectionList -eq 'clusters' -or ($selectsDomainCluster -and $domain -and $selected.Tag.DomainName -eq $domain.domainName))) {
+        if (-not $selectsDomainCluster -and $null -ne $domainsListBox.SelectedItem) {
             $domainsListBox.SelectedItem = $null
         }
         if ($planEntry) {
@@ -4562,10 +4593,10 @@ function Sync-AdditionalClusterSteps {
         # property names, which would otherwise make a "dataPath" condition's path depend on which
         # scope populated it.
         $global:conditionDataContext = @{
-            selectedDomain  = $null
+            selectedDomain  = if ($selectsDomainCluster) { $domain } else { $null }
             selectedCluster = [PSCustomObject]@{
                 name                 = $selected.Tag.ClusterName
-                isDefault            = 'f'
+                isDefault            = $selected.Tag.IsDefault
                 isStretched          = $selected.Tag.IsStretched
                 primaryDatastoreType = $selected.Tag.PrimaryDatastoreType
                 domainName           = $selected.Tag.DomainName
@@ -4687,19 +4718,19 @@ function Sync-RecoveryPlanSelection {
 
     if ($entry.selectionList -eq 'clusters') {
         $workloadDomainsTabItem.Visibility = [System.Windows.Visibility]::Collapsed
+        $additionalClustersTabItem.Header = 'Additional Clusters'
+        Update-AdditionalClustersList -Force
         $additionalClustersTabItem.Visibility = [System.Windows.Visibility]::Visible
         $discoveredInfrastructureTabControl.SelectedItem = $additionalClustersTabItem
-        # AdditionalClustersListBox's own contents are unaffected by which plan is active --
-        # already populated by Import-ExtractedSddcDataFile. There's only ever at most one match in
-        # the common case (a single additional cluster) -- auto-select it rather than making the
-        # user click the sole row in an otherwise-empty-feeling list.
+        # Auto-select a sole additional cluster.
         $realClusterItems = @($additionalClustersListBox.Items | Where-Object { $_ -is [System.Windows.Controls.ListBoxItem] })
         if ($realClusterItems.Count -eq 1) {
             $additionalClustersListBox.SelectedItem = $realClusterItems[0]
         }
     } else {
-        # 'domains' -- e.g. Management Domain Recovery/Workload Domain Recovery.
+        # Domain plans either target the domain directly or reveal its clusters on selection.
         $additionalClustersTabItem.Visibility = [System.Windows.Visibility]::Collapsed
+        $additionalClustersTabItem.Header = 'Clusters'
         $workloadDomainsTabItem.Visibility = [System.Windows.Visibility]::Visible
         $discoveredInfrastructureTabControl.SelectedItem = $workloadDomainsTabItem
         $workloadDomainsTabItem.Header = if ($entry.tabHeaderLabel) { [string]$entry.tabHeaderLabel } else { 'Workload Domains' }
@@ -4725,9 +4756,8 @@ function Sync-RecoveryPlanSelection {
             $item.Tag = $domain
             [void]$domainsListBox.Items.Add($item)
         }
-        # Auto-select the sole match, same reasoning as the clusters list above -- innate behavior
-        # of this selection list, not a flag any one plan has to declare.
-        if ($domainsListBox.Items.Count -eq 1) {
+        # Keep the existing auto-selection for plans that target a domain directly.
+        if ($domainsListBox.Items.Count -eq 1 -and $entry.selectionList -eq 'domains') {
             $domainsListBox.SelectedIndex = 0
         }
     }
@@ -4777,20 +4807,18 @@ $runAllButton.Add_Click({
         }
     }.GetNewClosure())
 
-# Saves everything Resume needs to put the window back the way it was: the extracted data file, the
-# variable answers file, which domain was selected (by index into the just-reloaded domain list, the
-# only stable handle available since domains aren't otherwise named uniquely), and which steps had
-# already reached Done. Only the file paths and cmdlet names are saved, never variable values or
-# command lines themselves -- Resume re-derives everything else by re-running the exact same loaders
-# Browse/Load Variables use.
 # Keyed by the current plan's own catalog id, not a hardcoded name -- since only one plan is ever
 # loaded at a time (see $global:currentPlanContext), there's only ever one entry, but the shape
 # (an id-keyed dictionary) is kept so a save file naturally distinguishes which plan it was saved
 # against.
-function Get-StepRowGroups {
+function Get-StepRowGroups([switch]$PlanTasksOnly) {
     $groups = [ordered]@{}
     if ($global:currentPlanContext.PlanId) {
-        $groups[$global:currentPlanContext.PlanId] = @($global:currentPlanContext.StepRows)
+        $rows = @($global:currentPlanContext.StepRows)
+        if ($PlanTasksOnly) {
+            $rows = @($rows | Where-Object { -not $_.IsBreakPoint })
+        }
+        $groups[$global:currentPlanContext.PlanId] = $rows
     }
     return $groups
 }
@@ -4813,7 +4841,7 @@ $exitButton.Add_Click({
             # EVERY step in the plan is saved, each with a Completed true/false flag (and a Name for
             # readability), not just the completed ones -- so when a step has been remediated out of
             # band, the save file can simply be edited ("Completed": false -> true) before Resume.
-            $stepRowGroups = Get-StepRowGroups
+            $stepRowGroups = Get-StepRowGroups -PlanTasksOnly
             $savedSteps = @(
                 foreach ($groupName in $stepRowGroups.Keys) {
                     $rows = $stepRowGroups[$groupName]
@@ -4866,6 +4894,8 @@ $exitButton.Add_Click({
                 # different file from VariablesAnswersFilePath above.
                 InteractiveAnswerFilePath = $global:currentPlanContext.InteractiveAnswerFilePath
                 SelectedDomainIndex      = $domainsListBox.SelectedIndex
+                SelectedDomainName       = if ($currentPlanEntry.selectionList -eq 'domainClusters') { $domainsListBox.SelectedItem.Tag.domainName }
+                SelectedClusterName      = if ($currentPlanEntry.selectionList -eq 'domainClusters') { $additionalClustersListBox.SelectedItem.Tag.ClusterName }
                 Steps                    = $savedSteps
             }
 
@@ -4896,8 +4926,8 @@ $exitButton.Add_Click({
         }
     }.GetNewClosure())
 
-# Replays the same three loaders a manual session would call (Import-ExtractedSddcDataFile, domain
-# selection, Import-VariablesAnswersFile), in the same order, then marks whichever steps were Done
+# Reloads the extracted data, selects the saved target, and loads the variables in that order.
+# It then marks whichever steps were Done
 # last time as Done again -- without adding them to $global:activeStepWatches, since nothing is being
 # (re-)run for them here.
 $resumeButton.Add_Click({
@@ -4933,7 +4963,19 @@ $resumeButton.Add_Click({
                 Import-ExtractedSddcDataFile $state.ExtractedDataFilePath
             }
 
-            if ($null -ne $state.SelectedDomainIndex -and $state.SelectedDomainIndex -ge 0 -and $state.SelectedDomainIndex -lt $domainsListBox.Items.Count) {
+            if ((Get-CurrentRecoveryPlanEntry).selectionList -eq 'domainClusters') {
+                $domainItem = $domainsListBox.Items | Where-Object { $_.Tag.domainName -eq $state.SelectedDomainName } | Select-Object -First 1
+                $domainsListBox.SelectedItem = $domainItem
+                $clusterItem = $null
+                if ($domainItem -and $state.SelectedClusterName) {
+                    $clusterItem = $additionalClustersListBox.Items | Where-Object { $_.Tag.ClusterName -eq $state.SelectedClusterName } | Select-Object -First 1
+                    $additionalClustersListBox.SelectedItem = $clusterItem
+                }
+                if (-not $clusterItem -and ($state.SelectedClusterName -or $state.VariablesAnswersFilePath -or $state.Steps)) {
+                    New-Advisory 'The saved restore target could not be selected. Select a domain and cluster, then load the variables for that cluster.' -Failure
+                    return
+                }
+            } elseif ($null -ne $state.SelectedDomainIndex -and $state.SelectedDomainIndex -ge 0 -and $state.SelectedDomainIndex -lt $domainsListBox.Items.Count) {
                 $domainsListBox.SelectedIndex = $state.SelectedDomainIndex
             }
 
@@ -5002,7 +5044,10 @@ $resumeButton.Add_Click({
                 }
             }
 
-            $stepRowGroups = Get-StepRowGroups
+            if ($global:currentPlanContext.PausePointAfterStep) {
+                Set-BreakPointAfter $null
+            }
+            $stepRowGroups = Get-StepRowGroups -PlanTasksOnly
             # Current format: "Steps" lists every step with a Completed flag (see the Exit handler) -- only
             # the ones flagged true are restored. The previous format, "CompletedSteps", listed just the
             # completed ones; it is handled the same way below.

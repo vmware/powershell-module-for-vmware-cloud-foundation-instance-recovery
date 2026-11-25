@@ -938,6 +938,7 @@ to remove it*). Only one breakpoint can be set at a time, and you cannot set one
 run, or while a run is in progress.
 
 Switching back to **User** mode hides the controls, but does not remove a breakpoint you have set.
+Breakpoints apply to the current session. **Resume** clears the breakpoint and restores completed task progress.
 
 ---
 

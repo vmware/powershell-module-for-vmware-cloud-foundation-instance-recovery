@@ -10657,7 +10657,7 @@ Function Remove-SddcManagerVspClusterEntry {
 
     .PARAMETER SddcManagerFqdn
     FQDN of the SDDC Manager appliance to connect to.
-    Optional when -extractedSDDCDataFile is supplied: it is then taken from the extracted SDDC data.
+    Omit this parameter to discover the FQDN from -extractedSDDCDataFile or -opsRegisteredComponentsFile.
 
     .PARAMETER VcfUserPassword
     Password for the vcf SSH user on the SDDC Manager appliance.
@@ -10672,7 +10672,13 @@ Function Remove-SddcManagerVspClusterEntry {
     If specified, deletes the proposed vsp_cluster entry without prompting for confirmation.
 
     .PARAMETER extractedSDDCDataFile
-    Path to the extracted-sddc-data.json file. Used to resolve values that are not supplied explicitly.
+    Path to the extracted-sddc-data.json file. Used when -SddcManagerFqdn is omitted. Mutually exclusive with -opsRegisteredComponentsFile.
+
+    .PARAMETER opsRegisteredComponentsFile
+    Path to VCFOps-Registered-Component-Details.json. Requires -ServicesRuntimeFqdn to resolve the SDDC Manager FQDN.
+
+    .PARAMETER ServicesRuntimeFqdn
+    FQDN of the source VCFMS Services Runtime. Used with -opsRegisteredComponentsFile to select its VCF instance's SDDC Manager.
 
     #>
 
@@ -10682,7 +10688,9 @@ Function Remove-SddcManagerVspClusterEntry {
         [Parameter(Mandatory = $true)][String] $VcfUserPassword,
         [Parameter(Mandatory = $true)][String] $RootPassword,
         [Parameter(Mandatory = $true)][ValidateSet("MANAGEMENT", "CONSUMPTION")][String] $ClusterType,
-        [Parameter(Mandatory = $false)][Switch] $autoConfirm
+        [Parameter(Mandatory = $false)][Switch] $autoConfirm,
+        [Parameter(Mandatory = $false)][String] $opsRegisteredComponentsFile,
+        [Parameter(Mandatory = $false)][String] $ServicesRuntimeFqdn
     )
 
     $jumpboxName = hostname
@@ -10691,9 +10699,24 @@ Function Remove-SddcManagerVspClusterEntry {
     try {
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
 
-    if (-not $sddcManagerFqdn) {
-        $sddcManagerFqdn = Get-ExtractedSddcDataValue -Name SddcManagerFqdn -extractedSDDCDataFile $extractedSDDCDataFile
-        if (-not $sddcManagerFqdn) {
+    if ($PSBoundParameters.ContainsKey('opsRegisteredComponentsFile')) {
+        if ($PSBoundParameters.ContainsKey('extractedSDDCDataFile') -or $PSBoundParameters.ContainsKey('SddcManagerFqdn')) {
+            throw 'Supply -opsRegisteredComponentsFile separately from -extractedSDDCDataFile and -SddcManagerFqdn.'
+        }
+        if ([string]::IsNullOrWhiteSpace($opsRegisteredComponentsFile) -or [string]::IsNullOrWhiteSpace($ServicesRuntimeFqdn)) {
+            throw 'Supply both -opsRegisteredComponentsFile and the source -ServicesRuntimeFqdn to resolve the SDDC Manager.'
+        }
+        $SddcManagerFqdn = Get-OpsRegisteredComponentValue -Name SddcManagerFqdn -opsRegisteredComponentsFile $opsRegisteredComponentsFile -ServicesRuntimeFqdn $ServicesRuntimeFqdn
+        if ($SddcManagerFqdn -isnot [string] -or [string]::IsNullOrWhiteSpace($SddcManagerFqdn)) {
+            throw "Could not resolve the SDDC Manager for source Services Runtime '$ServicesRuntimeFqdn' from '$opsRegisteredComponentsFile'."
+        }
+    } elseif (-not $SddcManagerFqdn) {
+        if (-not $extractedSDDCDataFile) {
+            LogMessage -type ERROR -message "[$jumpboxName] Supply -SddcManagerFqdn, -extractedSDDCDataFile, or -opsRegisteredComponentsFile with -ServicesRuntimeFqdn. Aborting."
+            return
+        }
+        $SddcManagerFqdn = Get-ExtractedSddcDataValue -Name SddcManagerFqdn -extractedSDDCDataFile $extractedSDDCDataFile
+        if (-not $SddcManagerFqdn) {
             Write-TaskCompleted -TaskName $MyInvocation.MyCommand.Name -Stopwatch $StopWatch
             return
         }

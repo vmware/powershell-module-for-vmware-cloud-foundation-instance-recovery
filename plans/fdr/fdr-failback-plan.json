@@ -219,7 +219,7 @@
   },
   {
     "description": "Remove VCFA Services Runtime Cluster Entry",
-    "commandLine": "Remove-SddcManagerVspClusterEntry -extractedSDDCDataFile $extractedSddcDataFile -VcfUserPassword $vcfUserPassword -RootPassword $rootPassword -ClusterType CONSUMPTION -autoConfirm",
+    "commandLine": "Remove-SddcManagerVspClusterEntry -OpsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -ServicesRuntimeFqdn $sourceVcfmsServicesRuntimeFqdn -VcfUserPassword $vcfUserPassword -RootPassword $rootPassword -ClusterType CONSUMPTION -autoConfirm",
     "displayName": "Remove VCFA Services Runtime Cluster Entry",
     "condition": [],
     "threadId": "3",

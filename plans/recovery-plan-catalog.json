@@ -173,7 +173,7 @@
         "LoadExtractedData"
       ],
       "defaultDataSource": "LoadExtractedData",
-      "selectionList": "domains",
+      "selectionList": "domainClusters",
       "domainFilter": "ALL",
       "tabHeaderLabel": "Domains"
     },
