@@ -1,7 +1,7 @@
 [
   {
     "description": "Restore the Cluster Settings in the Restored vCenter",
-    "commandLine": "Restore-ClusterVMOverrides -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -jsonFile $clusterVMOverridesJsonFile",
+    "commandLine": "Restore-ClusterVMOverrides -extractedSDDCDataFile $extractedSddcDataFile -workloadDomain $workloadDomain -clusterName $clusterName -jsonFile $clusterVMOverridesJsonFile",
     "displayName": "Restore Cluster VM Overrides",
     "condition": [],
     "threadId": "1",
@@ -10,7 +10,7 @@
   },
   {
     "description": "",
-    "commandLine": "Restore-ClusterVMLocations -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -jsonFile $clusterVMLocationsJsonFile",
+    "commandLine": "Restore-ClusterVMLocations -extractedSDDCDataFile $extractedSddcDataFile -workloadDomain $workloadDomain -clusterName $clusterName -jsonFile $clusterVMLocationsJsonFile",
     "displayName": "Restore Cluster VM Locations",
     "condition": [],
     "threadId": "1",
@@ -19,7 +19,7 @@
   },
   {
     "description": "",
-    "commandLine": "Restore-ClusterDRSGroupsAndRules -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -jsonFile $clusterDRSConfigurationJsonFile",
+    "commandLine": "Restore-ClusterDRSGroupsAndRules -extractedSDDCDataFile $extractedSddcDataFile -workloadDomain $workloadDomain -clusterName $clusterName -jsonFile $clusterDRSConfigurationJsonFile",
     "displayName": "Restore Cluster DRS Groups and Rules",
     "condition": [],
     "threadId": "1",
@@ -28,7 +28,7 @@
   },
   {
     "description": "",
-    "commandLine": "Restore-ClusterVMTags -vCenterFQDN $restoredVcenterFqdn -vCenterAdmin $restoredVcenterAdmin -vCenterAdminPassword $restoredVcenterAdminPassword -clusterName $clusterName -jsonFile $clusterVMTagsJsonFile",
+    "commandLine": "Restore-ClusterVMTags -extractedSDDCDataFile $extractedSddcDataFile -workloadDomain $workloadDomain -clusterName $clusterName -jsonFile $clusterVMTagsJsonFile",
     "displayName": "Restore Cluster VM Tags",
     "condition": [],
     "threadId": "1",

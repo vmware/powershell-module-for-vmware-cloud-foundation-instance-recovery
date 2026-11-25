@@ -8858,6 +8858,43 @@ Function Backup-ClusterVMTags {
 }
 Export-ModuleMember -Function Backup-ClusterVMTags
 
+function Get-ClusterRestoreVCenterConnection([string]$ExtractedSDDCDataFile, [string]$WorkloadDomain, [string]$ClusterName) {
+    $json = Get-Content -LiteralPath $ExtractedSDDCDataFile -Raw -ErrorAction Stop
+    try {
+        $data = ConvertFrom-Json -InputObject $json -ErrorAction Stop
+    } catch {
+        throw "Could not read extracted SDDC data as JSON from '$ExtractedSDDCDataFile'."
+    }
+
+    $domains = @($data.workloadDomains | Where-Object { $_.domainName -eq $WorkloadDomain })
+    if ($domains.Count -ne 1) {
+        throw "Could not resolve a unique domain named '$WorkloadDomain' in extracted SDDC data."
+    }
+
+    $domain = $domains[0]
+    if ($domain.vsphereClusterDetails.name -notcontains $ClusterName) {
+        throw "Cluster '$ClusterName' was not found in domain '$WorkloadDomain' in extracted SDDC data."
+    }
+
+    $fqdn = $domain.vCenterDetails.fqdn
+    if ([string]::IsNullOrWhiteSpace($fqdn)) {
+        throw "No vCenter FQDN found for domain '$WorkloadDomain' in extracted SDDC data."
+    }
+
+    $credentials = @($data.passwords | Where-Object {
+        $_.credentialType -eq 'SSO' -and $_.entityType -eq 'PSC' -and $_.entityName -eq $fqdn
+    })
+    if ($credentials.Count -ne 1 -or [string]::IsNullOrWhiteSpace($credentials[0].username) -or [string]::IsNullOrWhiteSpace($credentials[0].password)) {
+        throw "Could not resolve a unique, complete SSO credential for vCenter '$fqdn' in extracted SDDC data. Load an extraction that includes credentials."
+    }
+
+    @{
+        Fqdn     = $fqdn
+        User     = $credentials[0].username
+        Password = $credentials[0].password
+    }
+}
+
 Function Restore-ClusterVMOverrides {
     <#
     .SYNOPSIS
@@ -8878,6 +8915,12 @@ Function Restore-ClusterVMOverrides {
     .PARAMETER vCenterAdminPassword
     Admin password for the vCenter instance hosting the cluster
 
+    .PARAMETER extractedSDDCDataFile
+    Extracted SDDC data containing the domain, cluster, vCenter FQDN, and SSO credentials.
+
+    .PARAMETER workloadDomain
+    Name of the management or workload domain that contains the cluster.
+
     .PARAMETER clusterName
     Cluster whose VM Overrides you wish to restore
 
@@ -8885,18 +8928,27 @@ Function Restore-ClusterVMOverrides {
     Path to the JSON File that contains the backup for the VM Overrides for the Cluster
     #>
 
+    [CmdletBinding(DefaultParameterSetName = 'ExplicitVCenter')]
     Param(
-        [Parameter(Mandatory = $true)][String]$vCenterFQDN,
-        [Parameter(Mandatory = $true)][String]$vCenterAdmin,
-        [Parameter(Mandatory = $true)][String]$vCenterAdminPassword,
-        [Parameter(Mandatory = $true)][String]$clusterName,
-        [Parameter(Mandatory = $true)][String]$jsonFile
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExplicitVCenter', Position = 0)][String]$vCenterFQDN,
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExplicitVCenter', Position = 1)][String]$vCenterAdmin,
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExplicitVCenter', Position = 2)][String]$vCenterAdminPassword,
+        [Parameter(Mandatory = $true, Position = 3)][String]$clusterName,
+        [Parameter(Mandatory = $true, Position = 4)][String]$jsonFile,
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExtractedData')][String]$extractedSDDCDataFile,
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExtractedData')][String]$workloadDomain
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
     try {
+    if ($PSCmdlet.ParameterSetName -eq 'ExtractedData') {
+        $connection = Get-ClusterRestoreVCenterConnection $extractedSDDCDataFile $workloadDomain $clusterName
+        $vCenterFQDN = $connection.Fqdn
+        $vCenterAdmin = $connection.User
+        $vCenterAdminPassword = $connection.Password
+    }
     LogMessage -type INFO -message "[$vCenterFQDN] Connecting to vCenter"
     Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop | Out-Null
     try {
@@ -9055,6 +9107,12 @@ Function Restore-ClusterVMLocations {
     .PARAMETER vCenterAdminPassword
     Admin password for the vCenter instance hosting the cluster
 
+    .PARAMETER extractedSDDCDataFile
+    Extracted SDDC data containing the domain, cluster, vCenter FQDN, and SSO credentials.
+
+    .PARAMETER workloadDomain
+    Name of the management or workload domain that contains the cluster.
+
     .PARAMETER clusterName
     Cluster whose VM Locations you wish to restore
 
@@ -9062,18 +9120,27 @@ Function Restore-ClusterVMLocations {
     Path to the JSON File that contains the backup for the VM Locations for the Cluster
     #>
 
+    [CmdletBinding(DefaultParameterSetName = 'ExplicitVCenter')]
     Param(
-        [Parameter(Mandatory = $true)][String]$vCenterFQDN,
-        [Parameter(Mandatory = $true)][String]$vCenterAdmin,
-        [Parameter(Mandatory = $true)][String]$vCenterAdminPassword,
-        [Parameter(Mandatory = $true)][String]$clusterName,
-        [Parameter(Mandatory = $true)][String]$jsonFile
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExplicitVCenter', Position = 0)][String]$vCenterFQDN,
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExplicitVCenter', Position = 1)][String]$vCenterAdmin,
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExplicitVCenter', Position = 2)][String]$vCenterAdminPassword,
+        [Parameter(Mandatory = $true, Position = 3)][String]$clusterName,
+        [Parameter(Mandatory = $true, Position = 4)][String]$jsonFile,
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExtractedData')][String]$extractedSDDCDataFile,
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExtractedData')][String]$workloadDomain
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
     try {
+    if ($PSCmdlet.ParameterSetName -eq 'ExtractedData') {
+        $connection = Get-ClusterRestoreVCenterConnection $extractedSDDCDataFile $workloadDomain $clusterName
+        $vCenterFQDN = $connection.Fqdn
+        $vCenterAdmin = $connection.User
+        $vCenterAdminPassword = $connection.Password
+    }
     LogMessage -type INFO -message "[$vCenterFQDN] Connecting to vCenter"
     Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop | Out-Null
     try {
@@ -9136,6 +9203,12 @@ Function Restore-ClusterDRSGroupsAndRules {
     .PARAMETER vCenterAdminPassword
     Admin password for the vCenter instance hosting the cluster
 
+    .PARAMETER extractedSDDCDataFile
+    Extracted SDDC data containing the domain, cluster, vCenter FQDN, and SSO credentials.
+
+    .PARAMETER workloadDomain
+    Name of the management or workload domain that contains the cluster.
+
     .PARAMETER clusterName
     Cluster whose DRS Groups and Rules you wish to restore
 
@@ -9143,18 +9216,27 @@ Function Restore-ClusterDRSGroupsAndRules {
     Path to the JSON File that contains the backup for the DRS Groups and Rules for the Cluster
     #>
 
+    [CmdletBinding(DefaultParameterSetName = 'ExplicitVCenter')]
     Param(
-        [Parameter(Mandatory = $true)][String]$vCenterFQDN,
-        [Parameter(Mandatory = $true)][String]$vCenterAdmin,
-        [Parameter(Mandatory = $true)][String]$vCenterAdminPassword,
-        [Parameter(Mandatory = $true)][String]$clusterName,
-        [Parameter(Mandatory = $true)][String]$jsonFile
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExplicitVCenter', Position = 0)][String]$vCenterFQDN,
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExplicitVCenter', Position = 1)][String]$vCenterAdmin,
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExplicitVCenter', Position = 2)][String]$vCenterAdminPassword,
+        [Parameter(Mandatory = $true, Position = 3)][String]$clusterName,
+        [Parameter(Mandatory = $true, Position = 4)][String]$jsonFile,
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExtractedData')][String]$extractedSDDCDataFile,
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExtractedData')][String]$workloadDomain
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
     try {
+    if ($PSCmdlet.ParameterSetName -eq 'ExtractedData') {
+        $connection = Get-ClusterRestoreVCenterConnection $extractedSDDCDataFile $workloadDomain $clusterName
+        $vCenterFQDN = $connection.Fqdn
+        $vCenterAdmin = $connection.User
+        $vCenterAdminPassword = $connection.Password
+    }
     LogMessage -type INFO -message "[$vCenterFQDN] Connecting to vCenter"
     Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop | Out-Null
     try {
@@ -9265,6 +9347,12 @@ Function Restore-ClusterVMTags {
     .PARAMETER vCenterAdminPassword
     Admin password for the vCenter instance hosting the cluster
 
+    .PARAMETER extractedSDDCDataFile
+    Extracted SDDC data containing the domain, cluster, vCenter FQDN, and SSO credentials.
+
+    .PARAMETER workloadDomain
+    Name of the management or workload domain that contains the cluster.
+
     .PARAMETER clusterName
     Cluster whose VM tags you wish to restore
 
@@ -9272,18 +9360,27 @@ Function Restore-ClusterVMTags {
     Path to the JSON File that contains the backup for the VM tags for the Cluster
     #>
 
+    [CmdletBinding(DefaultParameterSetName = 'ExplicitVCenter')]
     Param(
-        [Parameter(Mandatory = $true)][String]$vCenterFQDN,
-        [Parameter(Mandatory = $true)][String]$vCenterAdmin,
-        [Parameter(Mandatory = $true)][String]$vCenterAdminPassword,
-        [Parameter(Mandatory = $true)][String]$clusterName,
-        [Parameter(Mandatory = $true)][String]$jsonFile
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExplicitVCenter', Position = 0)][String]$vCenterFQDN,
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExplicitVCenter', Position = 1)][String]$vCenterAdmin,
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExplicitVCenter', Position = 2)][String]$vCenterAdminPassword,
+        [Parameter(Mandatory = $true, Position = 3)][String]$clusterName,
+        [Parameter(Mandatory = $true, Position = 4)][String]$jsonFile,
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExtractedData')][String]$extractedSDDCDataFile,
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExtractedData')][String]$workloadDomain
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
     try {
+    if ($PSCmdlet.ParameterSetName -eq 'ExtractedData') {
+        $connection = Get-ClusterRestoreVCenterConnection $extractedSDDCDataFile $workloadDomain $clusterName
+        $vCenterFQDN = $connection.Fqdn
+        $vCenterAdmin = $connection.User
+        $vCenterAdminPassword = $connection.Password
+    }
     LogMessage -type INFO -message "[$vCenterFQDN] Connecting to vCenter"
     Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop | Out-Null
     try {

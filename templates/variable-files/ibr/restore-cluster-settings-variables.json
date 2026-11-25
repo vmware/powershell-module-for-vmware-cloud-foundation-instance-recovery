@@ -1,7 +1,4 @@
 {
-  "restoredVcenterFqdn": "",
-  "restoredVcenterAdmin": "",
-  "restoredVcenterAdminPassword": "",
   "clusterVMOverridesJsonFile": "",
   "clusterVMLocationsJsonFile": "",
   "clusterDRSConfigurationJsonFile": "",

@@ -4012,13 +4012,15 @@ function Import-VariablesAnswersFile([string]$Path) {
         # cluster selection, not the answers file -- an answer file that happens to also define
         # either must not overwrite the live selection or show up as an editable row here. See
         # $script:selectionDrivenVariables.
+        $entry = Get-CurrentRecoveryPlanEntry
         foreach ($ownedName in $script:selectionDrivenVariables) { $answerMap.Remove($ownedName) }
+        foreach ($obsoleteName in $entry.obsoleteVariables) { $answerMap.Remove($obsoleteName) }
 
         # Reject the file outright -- before anything on screen changes -- if its variable names
         # don't match the selected plan's own template. Checked ahead of the panel clear/rebuild
         # below so a bad file leaves the Variables tab exactly as it was, with only the advisory
         # noting why.
-        $templateKeys = Get-VariablesTemplateKeys (Get-CurrentRecoveryPlanEntry)
+        $templateKeys = Get-VariablesTemplateKeys $entry
         if ($null -ne $templateKeys) {
             $mismatch = Get-VariablesStructureMismatch @($answerMap.Keys) $templateKeys
             if ($null -ne $mismatch) {

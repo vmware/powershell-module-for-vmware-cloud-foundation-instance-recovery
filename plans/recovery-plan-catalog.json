@@ -169,6 +169,11 @@
       "planFolder": "ibr",
       "planFile": "restore-cluster-settings-plan.json",
       "variablesFile": "restore-cluster-settings-variables.json",
+      "obsoleteVariables": [
+        "restoredVcenterFqdn",
+        "restoredVcenterAdmin",
+        "restoredVcenterAdminPassword"
+      ],
       "dataSources": [
         "LoadExtractedData"
       ],
