@@ -109,7 +109,7 @@
     "displayName": "Remove VCFMS Recovered Components",
     "condition": [],
     "threadId": "2",
-    "waitOn": [
+    "waitFor": [
       "1"
     ],
     "interactive": false,
@@ -201,6 +201,9 @@
     "commandLine": "Stop-VcfaVMs -SddcManagerUser $sddcManagerAdmin -SddcManagerPassword $sddcManagerAdminPassword -OpsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\"",
     "displayName": "Power Off VCF Automation VMs on Source Instance",
     "condition": [],
+    "waitFor": [
+      "1"
+    ],
     "threadId": "3",
     "interactive": true,
     "visible": true
@@ -210,9 +213,6 @@
     "commandLine": "Remove-VcfmsVcfaRegistration -ServicesRuntimeFqdn $sourceVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $sourceVcfmsServicesRuntimePassword -OpsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\"",
     "displayName": "Remove VCF Automation Registration from SDDC LCM",
     "condition": [],
-    "waitFor": [
-      "1"
-    ],
     "threadId": "3",
     "interactive": false,
     "visible": true
@@ -267,7 +267,7 @@
     "commandLine": "Update-VcfmsVcfaRegistration -VcfmsServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -VMwareSystemUserPassword $targetVcfmsVmwareSystemUserPassword -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -OpsFqdn $vcfOperationsFqdn -VcfmsServicesRuntimePassword $targetVcfmsServicesRuntimePassword -VcfaServicesRuntimePassword $vcfaServicesRuntimePassword -OpsPassword $vcfOperationsAdminPassword",
     "displayName": "Update VCFMS VCFA Registration",
     "condition": [],
-    "waitOn": [
+    "waitFor": [
       "2",
       "3"
     ],
