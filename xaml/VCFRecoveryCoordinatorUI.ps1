@@ -5077,28 +5077,30 @@ $resumeButton.Add_Click({
                 # See the matching comment on $savedSteps in the Exit handler for why this has to be
                 # position (group + index), not just CommandLine text: two different steps in a plan
                 # can share byte-identical CommandLine.
-                $skippedSteps = 0
                 foreach ($savedStep in $completedSavedSteps) {
-                    $rows = $stepRowGroups[[string]$savedStep.Group]
-                    if (-not $rows) { $skippedSteps++; continue }
+                    $groupName = [string]$savedStep.Group
+                    $rows = $stepRowGroups[$groupName]
                     $stepIndex = [int]$savedStep.Index
-                    if ($stepIndex -lt 0 -or $stepIndex -ge $rows.Count) { $skippedSteps++; continue }
-                    $row = $rows[$stepIndex]
-                    # Only trust the saved position if this exact row still has the same CommandLine
-                    # it did when saved -- otherwise the plan file changed since this save (a step
-                    # inserted/removed/reordered) and Index no longer points at the same step.
-                    if ($row.CommandLine -eq [string]$savedStep.CommandLine) {
+                    $savedCommandLine = [string]$savedStep.CommandLine
+                    $row = if ($rows -and $stepIndex -ge 0 -and $stepIndex -lt $rows.Count) { $rows[$stepIndex] }
+                    # Only trust the saved position if the row still has its saved command line.
+                    # Plan edits and Run Options can change which step appears at that index.
+                    if ($row -and $row.CommandLine -eq $savedCommandLine) {
                         Set-StepButtonsState @($row.PlanButton, $row.ManualButton) 'Done' ([System.Windows.Media.Brushes]::Green)
                         # Older saves have no Duration -- those steps simply stay blank.
                         if ($savedStep.Duration) {
                             Set-StepDuration @($row.PlanButton, $row.ManualButton) ([string]$savedStep.Duration)
                         }
-                    } else {
-                        $skippedSteps++
+                        continue
                     }
-                }
-                if ($skippedSteps -gt 0) {
-                    New-Advisory "$skippedSteps saved completed step(s) were not restored because the current task list no longer matches the saved one (plan file or Run Options changed since the save)." -Failure
+
+                    $stepName = if ($savedStep.Name) { " '$($savedStep.Name)'" } else { '' }
+                    $reason = if ($row) {
+                        "Current command line: $($row.CommandLine)"
+                    } else {
+                        'The current task list has no step at that index for this plan.'
+                    }
+                    New-Advisory "Could not restore saved completed step$stepName (plan '$groupName', index $stepIndex). Saved command line: $savedCommandLine`n$reason" -Failure
                 }
             } else {
                 $allRows = @($stepRowGroups.Values | ForEach-Object { $_ })
