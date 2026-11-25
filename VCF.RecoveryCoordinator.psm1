@@ -8858,7 +8858,7 @@ Function Backup-ClusterVMTags {
 }
 Export-ModuleMember -Function Backup-ClusterVMTags
 
-function Get-ClusterRestoreVCenterConnection([string]$ExtractedSDDCDataFile, [string]$WorkloadDomain, [string]$ClusterName) {
+function Get-ClusterRestoreVCenterConnection([string]$ExtractedSDDCDataFile, [string]$WorkloadDomain, [string]$ClusterName, [switch]$ManagementDefaultCluster) {
     $json = Get-Content -LiteralPath $ExtractedSDDCDataFile -Raw -ErrorAction Stop
     try {
         $data = ConvertFrom-Json -InputObject $json -ErrorAction Stop
@@ -8866,12 +8866,26 @@ function Get-ClusterRestoreVCenterConnection([string]$ExtractedSDDCDataFile, [st
         throw "Could not read extracted SDDC data as JSON from '$ExtractedSDDCDataFile'."
     }
 
-    $domains = @($data.workloadDomains | Where-Object { $_.domainName -eq $WorkloadDomain })
+    $domains = @(if ($ManagementDefaultCluster) {
+        $data.workloadDomains | Where-Object { $_.domainType -eq 'MANAGEMENT' }
+    } else {
+        $data.workloadDomains | Where-Object { $_.domainName -eq $WorkloadDomain }
+    })
     if ($domains.Count -ne 1) {
+        if ($ManagementDefaultCluster) {
+            throw 'Could not resolve a unique management domain in extracted SDDC data.'
+        }
         throw "Could not resolve a unique domain named '$WorkloadDomain' in extracted SDDC data."
     }
 
     $domain = $domains[0]
+    if ($ManagementDefaultCluster) {
+        $defaultClusters = @($domain.vsphereClusterDetails | Where-Object { $_.isDefault -eq 't' })
+        if ($defaultClusters.Count -ne 1 -or [string]::IsNullOrWhiteSpace($defaultClusters[0].name)) {
+            throw "Could not resolve a unique, named default cluster for management domain '$($domain.domainName)' in extracted SDDC data."
+        }
+        $ClusterName = $defaultClusters[0].name
+    }
     if ($domain.vsphereClusterDetails.name -notcontains $ClusterName) {
         throw "Cluster '$ClusterName' was not found in domain '$WorkloadDomain' in extracted SDDC data."
     }
@@ -8889,9 +8903,10 @@ function Get-ClusterRestoreVCenterConnection([string]$ExtractedSDDCDataFile, [st
     }
 
     @{
-        Fqdn     = $fqdn
-        User     = $credentials[0].username
-        Password = $credentials[0].password
+        Fqdn        = $fqdn
+        User        = $credentials[0].username
+        Password    = $credentials[0].password
+        ClusterName = $ClusterName
     }
 }
 
@@ -8910,6 +8925,7 @@ function Find-ClusterRestoreVMs([hashtable]$Inventory, [string[]]$Names) {
             LogMessage -type INFO -message "[$name] Skipping VM because it has not yet been restored."
             continue
         }
+        if ($matchingVMs.Count -gt 1) {
             throw "More than one VM named '$name' exists in the target vCenter. The backup name does not identify a unique VM."
         }
         $matchingVMs[0]
@@ -8942,6 +8958,10 @@ Function Restore-ClusterVMOverrides {
     .PARAMETER workloadDomain
     Name of the management or workload domain that contains the cluster.
 
+    .PARAMETER managementDefaultCluster
+    Uses the management domain's default cluster from the extracted SDDC data.
+    If jsonFile is omitted, reads the corresponding cluster backup from the working directory.
+
     .PARAMETER clusterName
     Cluster whose VM Overrides you wish to restore
 
@@ -8954,21 +8974,30 @@ Function Restore-ClusterVMOverrides {
         [Parameter(Mandatory = $true, ParameterSetName = 'ExplicitVCenter', Position = 0)][String]$vCenterFQDN,
         [Parameter(Mandatory = $true, ParameterSetName = 'ExplicitVCenter', Position = 1)][String]$vCenterAdmin,
         [Parameter(Mandatory = $true, ParameterSetName = 'ExplicitVCenter', Position = 2)][String]$vCenterAdminPassword,
-        [Parameter(Mandatory = $true, Position = 3)][String]$clusterName,
-        [Parameter(Mandatory = $true, Position = 4)][String]$jsonFile,
-        [Parameter(Mandatory = $true, ParameterSetName = 'ExtractedData')][String]$extractedSDDCDataFile,
-        [Parameter(Mandatory = $true, ParameterSetName = 'ExtractedData')][String]$workloadDomain
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExplicitVCenter', Position = 3)]
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExtractedData', Position = 3)][String]$clusterName,
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExplicitVCenter', Position = 4)]
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExtractedData', Position = 4)]
+        [Parameter(ParameterSetName = 'ManagementDefaultCluster')][ValidateNotNullOrEmpty()][String]$jsonFile,
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExtractedData')]
+        [Parameter(Mandatory = $true, ParameterSetName = 'ManagementDefaultCluster')][String]$extractedSDDCDataFile,
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExtractedData')][String]$workloadDomain,
+        [Parameter(Mandatory = $true, ParameterSetName = 'ManagementDefaultCluster')][switch]$managementDefaultCluster
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
     try {
-    if ($PSCmdlet.ParameterSetName -eq 'ExtractedData') {
-        $connection = Get-ClusterRestoreVCenterConnection $extractedSDDCDataFile $workloadDomain $clusterName
+    if ($PSCmdlet.ParameterSetName -ne 'ExplicitVCenter') {
+        $connection = Get-ClusterRestoreVCenterConnection $extractedSDDCDataFile $workloadDomain $clusterName -ManagementDefaultCluster:$managementDefaultCluster
         $vCenterFQDN = $connection.Fqdn
         $vCenterAdmin = $connection.User
         $vCenterAdminPassword = $connection.Password
+        $clusterName = $connection.ClusterName
+        if (-not $PSBoundParameters.ContainsKey('jsonFile')) {
+            $jsonFile = "$clusterName-vmOverrides.json"
+        }
     }
     LogMessage -type INFO -message "[$vCenterFQDN] Connecting to vCenter"
     $vCenterServer = Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop
@@ -9138,6 +9167,10 @@ Function Restore-ClusterVMLocations {
     .PARAMETER workloadDomain
     Name of the management or workload domain that contains the cluster.
 
+    .PARAMETER managementDefaultCluster
+    Uses the management domain's default cluster from the extracted SDDC data.
+    If jsonFile is omitted, reads the corresponding cluster backup from the working directory.
+
     .PARAMETER clusterName
     Cluster whose VM Locations you wish to restore
 
@@ -9150,21 +9183,30 @@ Function Restore-ClusterVMLocations {
         [Parameter(Mandatory = $true, ParameterSetName = 'ExplicitVCenter', Position = 0)][String]$vCenterFQDN,
         [Parameter(Mandatory = $true, ParameterSetName = 'ExplicitVCenter', Position = 1)][String]$vCenterAdmin,
         [Parameter(Mandatory = $true, ParameterSetName = 'ExplicitVCenter', Position = 2)][String]$vCenterAdminPassword,
-        [Parameter(Mandatory = $true, Position = 3)][String]$clusterName,
-        [Parameter(Mandatory = $true, Position = 4)][String]$jsonFile,
-        [Parameter(Mandatory = $true, ParameterSetName = 'ExtractedData')][String]$extractedSDDCDataFile,
-        [Parameter(Mandatory = $true, ParameterSetName = 'ExtractedData')][String]$workloadDomain
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExplicitVCenter', Position = 3)]
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExtractedData', Position = 3)][String]$clusterName,
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExplicitVCenter', Position = 4)]
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExtractedData', Position = 4)]
+        [Parameter(ParameterSetName = 'ManagementDefaultCluster')][ValidateNotNullOrEmpty()][String]$jsonFile,
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExtractedData')]
+        [Parameter(Mandatory = $true, ParameterSetName = 'ManagementDefaultCluster')][String]$extractedSDDCDataFile,
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExtractedData')][String]$workloadDomain,
+        [Parameter(Mandatory = $true, ParameterSetName = 'ManagementDefaultCluster')][switch]$managementDefaultCluster
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
     try {
-    if ($PSCmdlet.ParameterSetName -eq 'ExtractedData') {
-        $connection = Get-ClusterRestoreVCenterConnection $extractedSDDCDataFile $workloadDomain $clusterName
+    if ($PSCmdlet.ParameterSetName -ne 'ExplicitVCenter') {
+        $connection = Get-ClusterRestoreVCenterConnection $extractedSDDCDataFile $workloadDomain $clusterName -ManagementDefaultCluster:$managementDefaultCluster
         $vCenterFQDN = $connection.Fqdn
         $vCenterAdmin = $connection.User
         $vCenterAdminPassword = $connection.Password
+        $clusterName = $connection.ClusterName
+        if (-not $PSBoundParameters.ContainsKey('jsonFile')) {
+            $jsonFile = "$clusterName-vmLocations.json"
+        }
     }
     LogMessage -type INFO -message "[$vCenterFQDN] Connecting to vCenter"
     $vCenterServer = Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop
@@ -9234,6 +9276,10 @@ Function Restore-ClusterDRSGroupsAndRules {
     .PARAMETER workloadDomain
     Name of the management or workload domain that contains the cluster.
 
+    .PARAMETER managementDefaultCluster
+    Uses the management domain's default cluster from the extracted SDDC data.
+    If jsonFile is omitted, reads the corresponding cluster backup from the working directory.
+
     .PARAMETER clusterName
     Cluster whose DRS Groups and Rules you wish to restore
 
@@ -9246,21 +9292,30 @@ Function Restore-ClusterDRSGroupsAndRules {
         [Parameter(Mandatory = $true, ParameterSetName = 'ExplicitVCenter', Position = 0)][String]$vCenterFQDN,
         [Parameter(Mandatory = $true, ParameterSetName = 'ExplicitVCenter', Position = 1)][String]$vCenterAdmin,
         [Parameter(Mandatory = $true, ParameterSetName = 'ExplicitVCenter', Position = 2)][String]$vCenterAdminPassword,
-        [Parameter(Mandatory = $true, Position = 3)][String]$clusterName,
-        [Parameter(Mandatory = $true, Position = 4)][String]$jsonFile,
-        [Parameter(Mandatory = $true, ParameterSetName = 'ExtractedData')][String]$extractedSDDCDataFile,
-        [Parameter(Mandatory = $true, ParameterSetName = 'ExtractedData')][String]$workloadDomain
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExplicitVCenter', Position = 3)]
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExtractedData', Position = 3)][String]$clusterName,
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExplicitVCenter', Position = 4)]
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExtractedData', Position = 4)]
+        [Parameter(ParameterSetName = 'ManagementDefaultCluster')][ValidateNotNullOrEmpty()][String]$jsonFile,
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExtractedData')]
+        [Parameter(Mandatory = $true, ParameterSetName = 'ManagementDefaultCluster')][String]$extractedSDDCDataFile,
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExtractedData')][String]$workloadDomain,
+        [Parameter(Mandatory = $true, ParameterSetName = 'ManagementDefaultCluster')][switch]$managementDefaultCluster
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
     try {
-    if ($PSCmdlet.ParameterSetName -eq 'ExtractedData') {
-        $connection = Get-ClusterRestoreVCenterConnection $extractedSDDCDataFile $workloadDomain $clusterName
+    if ($PSCmdlet.ParameterSetName -ne 'ExplicitVCenter') {
+        $connection = Get-ClusterRestoreVCenterConnection $extractedSDDCDataFile $workloadDomain $clusterName -ManagementDefaultCluster:$managementDefaultCluster
         $vCenterFQDN = $connection.Fqdn
         $vCenterAdmin = $connection.User
         $vCenterAdminPassword = $connection.Password
+        $clusterName = $connection.ClusterName
+        if (-not $PSBoundParameters.ContainsKey('jsonFile')) {
+            $jsonFile = "$clusterName-drsConfiguration.json"
+        }
     }
     LogMessage -type INFO -message "[$vCenterFQDN] Connecting to vCenter"
     $vCenterServer = Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop
@@ -9397,6 +9452,10 @@ Function Restore-ClusterVMTags {
     .PARAMETER workloadDomain
     Name of the management or workload domain that contains the cluster.
 
+    .PARAMETER managementDefaultCluster
+    Uses the management domain's default cluster from the extracted SDDC data.
+    If jsonFile is omitted, reads the corresponding cluster backup from the working directory.
+
     .PARAMETER clusterName
     Cluster whose VM tags you wish to restore
 
@@ -9409,21 +9468,30 @@ Function Restore-ClusterVMTags {
         [Parameter(Mandatory = $true, ParameterSetName = 'ExplicitVCenter', Position = 0)][String]$vCenterFQDN,
         [Parameter(Mandatory = $true, ParameterSetName = 'ExplicitVCenter', Position = 1)][String]$vCenterAdmin,
         [Parameter(Mandatory = $true, ParameterSetName = 'ExplicitVCenter', Position = 2)][String]$vCenterAdminPassword,
-        [Parameter(Mandatory = $true, Position = 3)][String]$clusterName,
-        [Parameter(Mandatory = $true, Position = 4)][String]$jsonFile,
-        [Parameter(Mandatory = $true, ParameterSetName = 'ExtractedData')][String]$extractedSDDCDataFile,
-        [Parameter(Mandatory = $true, ParameterSetName = 'ExtractedData')][String]$workloadDomain
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExplicitVCenter', Position = 3)]
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExtractedData', Position = 3)][String]$clusterName,
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExplicitVCenter', Position = 4)]
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExtractedData', Position = 4)]
+        [Parameter(ParameterSetName = 'ManagementDefaultCluster')][ValidateNotNullOrEmpty()][String]$jsonFile,
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExtractedData')]
+        [Parameter(Mandatory = $true, ParameterSetName = 'ManagementDefaultCluster')][String]$extractedSDDCDataFile,
+        [Parameter(Mandatory = $true, ParameterSetName = 'ExtractedData')][String]$workloadDomain,
+        [Parameter(Mandatory = $true, ParameterSetName = 'ManagementDefaultCluster')][switch]$managementDefaultCluster
     )
     $jumpboxName = hostname
     LogMessage -type NOTE -message "[$jumpboxName] Starting Task $($MyInvocation.MyCommand)"
     $StopWatch = New-Object -TypeName System.Diagnostics.Stopwatch
     $StopWatch.Start()
     try {
-    if ($PSCmdlet.ParameterSetName -eq 'ExtractedData') {
-        $connection = Get-ClusterRestoreVCenterConnection $extractedSDDCDataFile $workloadDomain $clusterName
+    if ($PSCmdlet.ParameterSetName -ne 'ExplicitVCenter') {
+        $connection = Get-ClusterRestoreVCenterConnection $extractedSDDCDataFile $workloadDomain $clusterName -ManagementDefaultCluster:$managementDefaultCluster
         $vCenterFQDN = $connection.Fqdn
         $vCenterAdmin = $connection.User
         $vCenterAdminPassword = $connection.Password
+        $clusterName = $connection.ClusterName
+        if (-not $PSBoundParameters.ContainsKey('jsonFile')) {
+            $jsonFile = "$clusterName-vmTags.json"
+        }
     }
     LogMessage -type INFO -message "[$vCenterFQDN] Connecting to vCenter"
     $vCenterServer = Connect-VIServer -Server $vCenterFQDN -User $vCenterAdmin -Password $vCenterAdminPassword -ErrorAction Stop
