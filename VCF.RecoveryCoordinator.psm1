@@ -22101,8 +22101,8 @@ Function Start-VCFRecoveryCoordinator {
     $catalogPath = Join-Path (Join-Path $moduleRoot 'plans') 'recovery-plan-catalog.json'
     # Captured here, not inside the UI script: that runs in a separate process which has no notion
     # of "the caller's current directory" of its own. The console process is started with this as
-    # its own working directory (see Set-Location in the UI script), and transcripts are written
-    # here too, so both land wherever the user ran this cmdlet from.
+    # its own working directory (see Set-Location in the UI script), and transcripts go in its
+    # logs subfolder.
     $launchDirectory = (Get-Location).Path
 
     if (-not (Test-Path $xamlPath)) {

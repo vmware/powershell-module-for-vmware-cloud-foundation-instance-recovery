@@ -798,7 +798,7 @@ you need to do to answer prompts.</li>
 keyboard focus so you can answer straight away.</li>
 <li>After a group of parallel tasks finishes, the view returns to the <strong>Thread 1</strong> tab.</li>
 </ul>
-<p>Console transcripts are written to your working directory so you have a record of every run.</p>
+<p>The application automatically creates a <code>logs</code> folder in your working directory and writes one transcript per console there.</p>
 <h3 id="advisories">Advisories</h3>
 <p>The <strong>Advisories</strong> panel is the application's own log. Each message is stamped with the date and time, in the
 same format as the console log lines, so you can match an advisory to the console output around the same
@@ -1426,9 +1426,9 @@ run, or while a run is in progress.</p>
 <td>Credentials retrieved from SDDC Manager. Sensitive.</td>
 </tr>
 <tr>
-<td><code>vcf-recoverycoordinator-transcript-&lt;date&gt;-&lt;time&gt;-&lt;id&gt;-&lt;n&gt;.log</code></td>
+<td><code>logs/vcf-rc-logs-&lt;date&gt;-&lt;threadnumber&gt;.log</code></td>
 <td>Each console</td>
-<td>One transcript per console (Thread 1 and each other thread). Your record of what ran.</td>
+<td><code>&lt;date&gt;</code> is the console start timestamp in <code>yyyyMMdd-HHmmss</code> format. <code>&lt;threadnumber&gt;</code> matches the console tab.</td>
 </tr>
 <tr>
 <td><code>vcf-recoverycoordinator-state-&lt;date&gt;-&lt;time&gt;.json</code></td>
@@ -1484,7 +1484,7 @@ variables files. Tasks you had completed will show as not done. Before running t
 to see what they did and check each is safe to repeat. Use <strong>Save &amp; Exit</strong> in future.</p>
 <h3 id="where-do-i-find-out-what-happened">Where do I find out what happened?</h3>
 <p>Three places, from broadest to most detailed: the <strong>Advisories</strong> panel (application messages), the <strong>Console</strong>
-tabs (live output), and the transcript files in your working directory.</p>
+tabs (live output), and the transcript files in the <code>logs</code> folder of your working directory.</p>
 
 <h2 id="quick-reference">Quick reference</h2>
 <h3 id="the-recovery-in-seven-clicks">The recovery in seven clicks</h3>

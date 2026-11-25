@@ -461,7 +461,7 @@ The **Console** panel on the right shows what is happening.
   keyboard focus so you can answer straight away.
 - After a group of parallel tasks finishes, the view returns to the **Thread 1** tab.
 
-Console transcripts are written to your working directory so you have a record of every run.
+The application automatically creates a `logs` folder in your working directory and writes one transcript per console there.
 
 ### Advisories
 
@@ -950,7 +950,7 @@ Everything below is created in your **working directory**, the folder you launch
 |---|---|---|
 | `extracted-sddc-data.json` | Extracting the SDDC Manager backup | Created in the **same folder as the backup file**. Updated by later tasks. Contains passwords once credentials are merged. |
 | `vcf-credentials-*.json` | *Retrieve SDDC Credentials Payload* | Credentials retrieved from SDDC Manager. Sensitive. |
-| `vcf-recoverycoordinator-transcript-<date>-<time>-<id>-<n>.log` | Each console | One transcript per console (Thread 1 and each other thread). Your record of what ran. |
+| `logs/vcf-rc-logs-<date>-<threadnumber>.log` | Each console | `<date>` is the console start timestamp in `yyyyMMdd-HHmmss` format. `<threadnumber>` matches the console tab. |
 | `vcf-recoverycoordinator-state-<date>-<time>.json` | **Save & Exit** | Session state for **Resume**. Holds no passwords. |
 | Your variables file | **New Variables File** or edits | Holds passwords in plain text. |
 | `backup-yaml\` and similar | Fleet Component Recovery tasks | Working files used while recovering fleet components. |
@@ -1012,7 +1012,7 @@ to see what they did and check each is safe to repeat. Use **Save & Exit** in fu
 ### Where do I find out what happened?
 
 Three places, from broadest to most detailed: the **Advisories** panel (application messages), the **Console**
-tabs (live output), and the transcript files in your working directory.
+tabs (live output), and the transcript files in the `logs` folder of your working directory.
 
 ---
 

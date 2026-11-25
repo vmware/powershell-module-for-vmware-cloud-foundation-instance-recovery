@@ -299,11 +299,8 @@ $global:resumedElapsedSeconds = 0
 # (that was the whole point of using a transcript in the first place: a plain text file that
 # PowerShell itself appends to, read back on a timer, confirmed correct even on builds where the
 # on-screen rendering was garbled). Every console (Main, and every parallel one Run All spawns --
-# see New-EmbeddedConsole) gets its own transcript file, saved in the launch directory (not
-# $env:TEMP) with a timestamp and a per-console sequence number in the name, so past runs -- and
-# every console within a single run -- can be told apart and reviewed later instead of being
-# overwritten or left to rot in a temp folder.
-$global:consoleSequence = 0
+# see New-EmbeddedConsole) gets its own transcript under the launch directory's logs folder, with
+# the console's start timestamp and its plan thread ID in the file name.
 # Steps currently being watched for their own "Completed Task <cmdlet>" line, one entry per Run
 # click; each is removed (stopping that row's watch) once its text is found. See Add-StepWatch.
 $global:activeStepWatches = [System.Collections.Generic.List[object]]::new()
@@ -1559,9 +1556,25 @@ function Find-ConsoleWindowHandle([int]$ProcessId) {
     return $script:found
 }
 
-function New-EmbeddedConsole([string]$TabHeader, [switch]$Bootstrap) {
-    $global:consoleSequence++
-    $transcriptPath = Join-Path $WorkingDirectory "vcf-recoverycoordinator-transcript-$(Get-Date -Format 'yyyyMMdd-HHmmss')-$PID-$($global:consoleSequence).log"
+function New-EmbeddedConsole([string]$ThreadId, [switch]$Bootstrap) {
+    $logsDirectory = Join-Path $WorkingDirectory 'logs'
+    [void][System.IO.Directory]::CreateDirectory($logsDirectory)
+    $fileThreadId = [Uri]::EscapeDataString($ThreadId)
+    # Reserve the filename before launching the console. If another session claimed this thread
+    # in the same second, wait for a free timestamp to keep each transcript in its own file.
+    while ($true) {
+        $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+        $transcriptPath = Join-Path $logsDirectory "vcf-rc-logs-$timestamp-$fileThreadId.log"
+        try {
+            [System.IO.File]::Open($transcriptPath, [System.IO.FileMode]::CreateNew).Dispose()
+            break
+        } catch [System.IO.IOException] {
+            if (-not [System.IO.File]::Exists($transcriptPath)) {
+                throw
+            }
+            Start-Sleep -Milliseconds 100
+        }
+    }
     $escapedWorkingDirectory = Protect-SingleQuotes $WorkingDirectory
     $escapedTranscriptPath = Protect-SingleQuotes $transcriptPath
     # $ErrorView = 'NormalView' matters, not just cosmetics: PowerShell 7's default, ConciseView,
@@ -1569,7 +1582,7 @@ function New-EmbeddedConsole([string]$TabHeader, [switch]$Bootstrap) {
     # anywhere in it, which is exactly the marker Test-StepTranscriptClean's gate 3 looks for -- on
     # ConciseView a real, uncaught error would silently pass every gate. NormalView is the one that
     # always includes it.
-    $consoleStartupCommand = "Set-Location -LiteralPath '$escapedWorkingDirectory'; Remove-Module PSReadLine -Force -ErrorAction SilentlyContinue; `$ErrorView = 'NormalView'; Start-Transcript -Path '$escapedTranscriptPath' -Force | Out-Null"
+    $consoleStartupCommand = "Set-Location -LiteralPath '$escapedWorkingDirectory'; Remove-Module PSReadLine -Force -ErrorAction SilentlyContinue; `$ErrorView = 'NormalView'; Start-Transcript -LiteralPath '$escapedTranscriptPath' -Append | Out-Null"
 
     # Launched via the Start-Process cmdlet, not System.Diagnostics.ProcessStartInfo + Process.Start().
     # This isn't a style choice -- it's the actual fix for "console window never appears". Confirmed
@@ -1618,7 +1631,7 @@ function New-EmbeddedConsole([string]$TabHeader, [switch]$Bootstrap) {
     }
 
     $tabItem = New-Object System.Windows.Controls.TabItem
-    $tabItem.Header = $TabHeader
+    $tabItem.Header = "Thread $ThreadId"
     $hostBorder = New-Object System.Windows.Controls.Border
     $hostBorder.Background = [System.Windows.Media.Brushes]::Black
     $tabItem.Content = $hostBorder
@@ -1798,7 +1811,7 @@ function Initialize-ConsoleVariables($Console) {
     $targetText = "Completed Task $lastCmdletSent"
     $deadline = (Get-Date).AddSeconds(60)
     while ((Get-Date) -lt $deadline) {
-        $transcriptText = Get-Content -Path $Console.TranscriptPath -Raw -ErrorAction SilentlyContinue
+        $transcriptText = Get-Content -LiteralPath $Console.TranscriptPath -Raw -ErrorAction SilentlyContinue
         if ($transcriptText -and $transcriptText.Contains($targetText)) {
             return
         }
@@ -2022,7 +2035,7 @@ function Show-ModuleUpdateStatus {
     Show-UpdateBanner
 }
 
-$global:mainConsole = New-EmbeddedConsole -TabHeader 'Thread 1'
+$global:mainConsole = New-EmbeddedConsole -ThreadId '1'
 $consoleTabControl.SelectedIndex = 0
 
 # WPF's own default (focus the first focusable control in the visual tree) would land on something
@@ -2173,8 +2186,8 @@ function Add-StepWatch($Buttons, [string]$CmdletName, [scriptblock]$OnComplete, 
         $Console = $global:mainConsole
     }
     $currentText = ''
-    if (Test-Path $Console.TranscriptPath) {
-        $currentText = Get-Content -Path $Console.TranscriptPath -Raw -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $Console.TranscriptPath) {
+        $currentText = Get-Content -LiteralPath $Console.TranscriptPath -Raw -ErrorAction SilentlyContinue
         if ($null -eq $currentText) {
             $currentText = '' 
         }
@@ -2209,8 +2222,8 @@ function Add-CompletionWatch([string]$CmdletName, [scriptblock]$OnComplete, $Con
         $Console = $global:mainConsole
     }
     $currentText = ''
-    if (Test-Path $Console.TranscriptPath) {
-        $currentText = Get-Content -Path $Console.TranscriptPath -Raw -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $Console.TranscriptPath) {
+        $currentText = Get-Content -LiteralPath $Console.TranscriptPath -Raw -ErrorAction SilentlyContinue
         if ($null -eq $currentText) {
             $currentText = '' 
         }
@@ -2884,7 +2897,7 @@ function Get-ThreadConsole([string]$ThreadId) {
     }
     $console = $global:threadConsoles[$ThreadId]
     if (-not $console) {
-        $console = New-EmbeddedConsole -TabHeader "Thread $ThreadId" -Bootstrap
+        $console = New-EmbeddedConsole -ThreadId $ThreadId -Bootstrap
         $global:threadConsoles[$ThreadId] = $console
         $global:parallelConsoles.Add($console)
     }
@@ -3627,11 +3640,11 @@ function Start-StepCompletionWatcher {
             }
             $transcriptCache = @{}
             foreach ($path in ($global:activeStepWatches | Select-Object -ExpandProperty TranscriptPath -Unique)) {
-                if (-not (Test-Path $path)) {
+                if (-not (Test-Path -LiteralPath $path)) {
                     continue 
                 }
                 try {
-                    $text = Get-Content -Path $path -Raw -ErrorAction Stop
+                    $text = Get-Content -LiteralPath $path -Raw -ErrorAction Stop
                 } catch {
                     continue
                 }
