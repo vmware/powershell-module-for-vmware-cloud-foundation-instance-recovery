@@ -264,7 +264,7 @@
   },
   {
     "description": "Update VCF Automation Registration to VCF Operations",
-    "commandLine": "Update-VcfmsVcfaRegistration -ServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $targetVcfmsServicesRuntimePassword -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -OpsFqdn $vcfOperationsFqdn -VspPassword $vcfaServicesRuntimePassword -VcfaSystemPassword $vcfaSystemPassword -OpsPassword $vcfOperationsAdminPassword",
+    "commandLine": "Update-VcfmsVcfaRegistration -VcfmsServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -VMwareSystemUserPassword $targetVcfmsServicesRuntimePassword -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -OpsFqdn $vcfOperationsFqdn -VcfmsServicesRuntimePassword $vcfaServicesRuntimePassword -VcfaSystemPassword $vcfaSystemPassword -OpsPassword $vcfOperationsAdminPassword",
     "displayName": "Update VCFMS VCFA Registration",
     "condition": [],
     "waitOn": [

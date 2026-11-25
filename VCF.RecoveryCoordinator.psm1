@@ -19029,9 +19029,8 @@ Function Update-VcfmsVcfaRegistration {
          on the control plane node via the existing SSH session — no SCP binary required.
       3. Executes update_vcfa_registration.sh under sudo with
          KUBECONFIG=/etc/kubernetes/admin.conf so that all kubectl calls use the local
-         cluster admin credentials. The three passwords are passed as environment
-         variables (VCFA_ADMIN_PASSWORD, VCFA_SYSTEM_PASSWORD, OPS_ADMIN_PASSWORD) to
-         avoid shell-quoting issues and keep them out of the process command line.
+         cluster admin credentials. The registration scripts receive the passwords through
+         VCFA_ADMIN_PASSWORD, VCFA_SYSTEM_PASSWORD, OPS_ADMIN_PASSWORD, and FLEET_ADMIN_PASSWORD.
       4. Streams script output to the console in real time.
       5. Removes the temporary scripts from the remote node on completion.
 
@@ -19045,32 +19044,32 @@ Function Update-VcfmsVcfaRegistration {
 
     .EXAMPLE
     Update-VcfmsVcfaRegistration `
-        -ServicesRuntimeFqdn     "lax-sr01.lax.rainpole.io" `
-        -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
+        -VcfmsServicesRuntimeFqdn     "lax-sr01.lax.rainpole.io" `
+        -VMwareSystemUserPassword     "VMw@re1!VMw@re1!" `
         -VcfaRuntimeFqdn         "flt-vcfa-sr01.rainpole.io" `
         -OpsFqdn                 "lax-ops01a.lax.rainpole.io" `
-        -VspPassword             "VMw@re1!VMw@re1!" `
+        -VcfmsServicesRuntimePassword "VMw@re1!VMw@re1!" `
         -VcfaSystemPassword      "VMw@re1!VMw@re1!" `
         -OpsPassword             "VMw@re1!VMw@re1!"
 
     .EXAMPLE
     # Dry run — show what would be changed without writing anything
     Update-VcfmsVcfaRegistration `
-        -ServicesRuntimeFqdn     "lax-sr01.lax.rainpole.io" `
-        -ServicesRuntimePassword "VMw@re1!VMw@re1!" `
+        -VcfmsServicesRuntimeFqdn     "lax-sr01.lax.rainpole.io" `
+        -VMwareSystemUserPassword     "VMw@re1!VMw@re1!" `
         -VcfaRuntimeFqdn         "flt-vcfa-sr01.rainpole.io" `
         -OpsFqdn                 "lax-ops01a.lax.rainpole.io" `
-        -VspPassword             "VMw@re1!VMw@re1!" `
+        -VcfmsServicesRuntimePassword "VMw@re1!VMw@re1!" `
         -VcfaSystemPassword      "VMw@re1!VMw@re1!" `
         -OpsPassword             "VMw@re1!VMw@re1!" `
         -DryRun
 
-    .PARAMETER ServicesRuntimeFqdn
+    .PARAMETER VcfmsServicesRuntimeFqdn
     FQDN or IP of any Services Runtime cluster node. If a worker node is supplied the
     function automatically resolves and connects to the control plane.
 
-    .PARAMETER ServicesRuntimePassword
-    Password for vmware-system-user (SSH login and sudo elevation).
+    .PARAMETER VMwareSystemUserPassword
+    Password for vmware-system-user SSH login and sudo elevation.
 
     .PARAMETER VcfaRuntimeFqdn
     FQDN of the VCFA consumption ("VCF services runtime" / VSP) cluster. Passed as
@@ -19080,9 +19079,9 @@ Function Update-VcfmsVcfaRegistration {
     FQDN or IP of the VCF Operations appliance to re-register VCFA with. Passed as
     --ops-fqdn to the script.
 
-    .PARAMETER VspPassword
-    admin@vsp.local password for the consumption cluster. Passed to the remote script as
-    the VCFA_ADMIN_PASSWORD environment variable.
+    .PARAMETER VcfmsServicesRuntimePassword
+    admin@vsp.local password passed as VCFA_ADMIN_PASSWORD for consumption cluster
+    authentication and FLEET_ADMIN_PASSWORD for Fleet LCM authentication.
 
     .PARAMETER VcfaSystemPassword
     admin@System password for the VCFA application. Passed to the remote script as the
@@ -19106,12 +19105,12 @@ Function Update-VcfmsVcfaRegistration {
     #>
 
     Param(
-        [Parameter(Mandatory = $true)][String]  $ServicesRuntimeFqdn,
-        [Parameter(Mandatory = $true)][String]  $ServicesRuntimePassword,
+        [Parameter(Mandatory = $true)][Alias("ServicesRuntimeFqdn")][String]  $VcfmsServicesRuntimeFqdn,
+        [Parameter(Mandatory = $true)][Alias("ServicesRuntimePassword")][String]  $VMwareSystemUserPassword,
         [Parameter(Mandatory = $false)][String] $VcfaRuntimeFqdn,
         [Parameter(Mandatory = $false)][String] $opsRegisteredComponentsFile,
         [Parameter(Mandatory = $true)][String]  $OpsFqdn,
-        [Parameter(Mandatory = $true)][String]  $VspPassword,
+        [Parameter(Mandatory = $true)][Alias("VspPassword")][String]  $VcfmsServicesRuntimePassword,
         [Parameter(Mandatory = $true)][String]  $VcfaSystemPassword,
         [Parameter(Mandatory = $true)][String]  $OpsPassword,
         [Parameter(Mandatory = $false)][Switch] $DryRun,
@@ -19159,10 +19158,10 @@ Function Update-VcfmsVcfaRegistration {
     # Reuse Get-VcfmsServicesRuntimeKubeconfig which handles worker → CP redirect.
     # The kubeconfig is written as a useful side effect; we primarily need ControlPlaneHost.
     # -------------------------------------------------------------------------
-    LogMessage -type INFO -message "[$jumpboxName] Resolving control plane node from $ServicesRuntimeFqdn"
+    LogMessage -type INFO -message "[$jumpboxName] Resolving control plane node from $VcfmsServicesRuntimeFqdn"
     $kubeconfigResult = Get-VcfmsServicesRuntimeKubeconfig `
-        -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
-        -Password $ServicesRuntimePassword `
+        -ServicesRuntimeFqdn $VcfmsServicesRuntimeFqdn `
+        -Password $VMwareSystemUserPassword `
         -OutputDir "."
     if (-not $kubeconfigResult) {
         LogMessage -type ERROR -message "[$jumpboxName] Could not resolve control plane node. Aborting."
@@ -19179,7 +19178,7 @@ Function Update-VcfmsVcfaRegistration {
     # -------------------------------------------------------------------------
     # Open SSH session to the control plane node
     # -------------------------------------------------------------------------
-    $SecurePassword = ConvertTo-SecureString -String $ServicesRuntimePassword -AsPlainText -Force
+    $SecurePassword = ConvertTo-SecureString -String $VMwareSystemUserPassword -AsPlainText -Force
     $creds = New-Object System.Management.Automation.PSCredential ('vmware-system-user', $SecurePassword)
     $session = $null
     $remotePaths = $scriptNames | ForEach-Object { "/home/vmware-system-user/$_" }
@@ -19215,18 +19214,19 @@ Function Update-VcfmsVcfaRegistration {
 
         # -------------------------------------------------------------------------
         # Build and execute the remote command
-        # sudo -S reads the password from stdin; env preserves KUBECONFIG and the
-        # three secrets across the sudo boundary. Passwords are passed as
-        # environment variables rather than CLI args to keep them off the process
-        # command line and avoid shell-quoting issues with special characters.
+        # sudo -S reads the login password from stdin. The registration helper
+        # inherits FLEET_ADMIN_PASSWORD for Fleet LCM authentication.
         # -------------------------------------------------------------------------
         $scriptArgs = "--vcfa-runtime-fqdn '$VcfaRuntimeFqdn' --ops-fqdn '$OpsFqdn'"
         if ($DryRun) {
             $scriptArgs += " --dry-run"
         }
 
-        $execCmd = "echo '$ServicesRuntimePassword' | sudo -S env KUBECONFIG=/etc/kubernetes/admin.conf " +
-        "VCFA_ADMIN_PASSWORD='$VspPassword' VCFA_SYSTEM_PASSWORD='$VcfaSystemPassword' OPS_ADMIN_PASSWORD='$OpsPassword' " +
+        $shellRuntimePassword = $VMwareSystemUserPassword.Replace("'", "'\''")
+        $shellVcfmsPassword = $VcfmsServicesRuntimePassword.Replace("'", "'\''")
+        $execCmd = "printf '%s\n' '$shellRuntimePassword' | sudo -S env KUBECONFIG=/etc/kubernetes/admin.conf " +
+        "VCFA_ADMIN_PASSWORD='$shellVcfmsPassword' VCFA_SYSTEM_PASSWORD='$VcfaSystemPassword' OPS_ADMIN_PASSWORD='$OpsPassword' " +
+        "FLEET_ADMIN_PASSWORD='$shellVcfmsPassword' " +
         "bash $remoteMain $scriptArgs 2>&1"
 
         LogMessage -type INFO -message "[$controlPlaneHost] Executing update_vcfa_registration.sh (timeout: ${RemoteScriptTimeout}s)"
