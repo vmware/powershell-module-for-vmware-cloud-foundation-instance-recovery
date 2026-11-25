@@ -9010,7 +9010,6 @@ Function Restore-ClusterVMOverrides {
                     $vm = Find-ClusterRestoreVMs $vmInventory $vmOverRideInstance.name
                     if (-not $vm) { continue }
 
-                    LogMessage -type INFO -message "[$($vmOverRideInstance.name)] Restoring VM Overide Settings"
                     $dasVmConfigSpecRequired = $false
                     $drsVmConfigSpecRequired = $false
                     $vmOverRideInstanceOrchestrationSpecRequired = $false
@@ -9031,15 +9030,30 @@ Function Restore-ClusterVMOverrides {
                         }
                     }
                     $cluster = Get-Cluster -Name $clusterName -Server $vCenterServer -ErrorAction Stop
+                    $configuration = $cluster.ExtensionData.ConfigurationEx
+                    $vmMoRef = $vm.ExtensionData.MoRef
+                    if ($dasVmConfigSpecRequired -and $configuration.DasVmConfig.Key.Value -contains $vmMoRef.Value) {
+                        LogMessage -type INFO -message "[$($vm.Name)] Skipping HA override because it already exists."
+                        $dasVmConfigSpecRequired = $false
+                    }
+                    if ($drsVmConfigSpecRequired -and $configuration.DrsVmConfig.Key.Value -contains $vmMoRef.Value) {
+                        LogMessage -type INFO -message "[$($vm.Name)] Skipping DRS override because it already exists."
+                        $drsVmConfigSpecRequired = $false
+                    }
+                    if ($vmOverRideInstanceOrchestrationSpecRequired -and $configuration.VmOrchestration.Vm.Value -contains $vmMoRef.Value) {
+                        LogMessage -type INFO -message "[$($vm.Name)] Skipping orchestration override because it already exists."
+                        $vmOverRideInstanceOrchestrationSpecRequired = $false
+                    }
+                    if (-not ($dasVmConfigSpecRequired -or $drsVmConfigSpecRequired -or $vmOverRideInstanceOrchestrationSpecRequired)) { continue }
+
+                    LogMessage -type INFO -message "[$($vm.Name)] Restoring VM Override Settings"
                     $spec = New-Object VMware.Vim.ClusterConfigSpecEx
                     If ($dasVmConfigSpecRequired) {
                         $spec.dasVmConfigSpec = New-Object VMware.Vim.ClusterDasVmConfigSpec[] (1)
                         $spec.dasVmConfigSpec[0] = New-Object VMware.Vim.ClusterDasVmConfigSpec
                         $spec.dasVmConfigSpec[0].operation = "add"
                         $spec.dasVmConfigSpec[0].info = New-Object VMware.Vim.ClusterDasVmConfigInfo
-                        $spec.dasVmConfigSpec[0].info.key = New-Object VMware.Vim.ManagedObjectReference
-                        $spec.dasVmConfigSpec[0].info.key.type = "VirtualMachine"
-                        $spec.dasVmConfigSpec[0].info.key.value = $vm.ExtensionData.MoRef.Value
+                        $spec.dasVmConfigSpec[0].info.key = $vmMoRef
                         $spec.dasVmConfigSpec[0].info.dasSettings = New-Object VMware.Vim.ClusterDasVmSettings
                     }
                     If ($drsVmConfigSpecRequired) {
@@ -9047,18 +9061,14 @@ Function Restore-ClusterVMOverrides {
                         $spec.drsVmConfigSpec[0] = New-Object VMware.Vim.ClusterDrsVmConfigSpec
                         $spec.drsVmConfigSpec[0].operation = "add"
                         $spec.drsVmConfigSpec[0].info = New-Object VMware.Vim.ClusterDrsVmConfigInfo
-                        $spec.drsVmConfigSpec[0].info.key = New-Object VMware.Vim.ManagedObjectReference
-                        $spec.drsVmConfigSpec[0].info.key.type = "VirtualMachine"
-                        $spec.drsVmConfigSpec[0].info.key.value = $vm.ExtensionData.MoRef.Value
+                        $spec.drsVmConfigSpec[0].info.key = $vmMoRef
                     }
                     If ($vmOverRideInstanceOrchestrationSpecRequired) {
                         $spec.vmOrchestrationSpec = New-Object VMware.Vim.ClusterVmOrchestrationSpec[] (1)
                         $spec.vmOrchestrationSpec[0] = New-Object VMware.Vim.ClusterVmOrchestrationSpec
                         $spec.vmOrchestrationSpec[0].operation = "add"
                         $spec.vmOrchestrationSpec[0].info = New-Object VMware.Vim.ClusterVmOrchestrationInfo
-                        $spec.vmOrchestrationSpec[0].info.vm = New-Object VMware.Vim.ManagedObjectReference
-                        $spec.vmOrchestrationSpec[0].info.vm.type = "VirtualMachine"
-                        $spec.vmOrchestrationSpec[0].info.vm.value = $vm.ExtensionData.MoRef.Value
+                        $spec.vmOrchestrationSpec[0].info.vm = $vmMoRef
                     }
 
                     #Set VM Monitoring settings [Done]
@@ -9069,7 +9079,7 @@ Function Restore-ClusterVMOverrides {
                             $vmOverRideInstanceMonitoringRequired = $true
                         }
                     }
-                    If ($vmOverRideInstanceMonitoringRequired) {
+                    If ($dasVmConfigSpecRequired -and $vmOverRideInstanceMonitoringRequired) {
                         $spec.dasVmConfigSpec[0].info.dasSettings.vmToolsMonitoringSettings = New-Object VMware.Vim.ClusterVmToolsMonitoringSettings
                         Foreach ($vmOverRideInstanceMonitoringSetting in $vmOverRideInstanceMonitoringSettings) {
                             If ($vmOverRideInstance.$vmOverRideInstanceMonitoringSetting -ne $null) {
@@ -9085,7 +9095,7 @@ Function Restore-ClusterVMOverrides {
                             $vmOverRideInstanceComponentProtectionRequired = $true
                         }
                     }
-                    If ($vmOverRideInstanceComponentProtectionRequired) {
+                    If ($dasVmConfigSpecRequired -and $vmOverRideInstanceComponentProtectionRequired) {
                         $spec.dasVmConfigSpec[0].info.dasSettings.vmComponentProtectionSettings = New-Object VMware.Vim.ClusterVmComponentProtectionSettings
                         Foreach ($vmOverRideInstanceComponentProtectionSetting in $vmOverRideInstanceComponentProtectionSettings) {
                             If ($vmOverRideInstance.$vmOverRideInstanceComponentProtectionSetting -ne $null) {
@@ -9095,7 +9105,7 @@ Function Restore-ClusterVMOverrides {
                     }
 
                     #Set DRS Level [Done]
-                    If (($vmOverRideInstance.DrsAutomationLevel -ne "AsSpecifiedByCluster") -AND ($vmOverRideInstance.DrsAutomationLevel -ne $null)) {
+                    If ($drsVmConfigSpecRequired) {
                         $spec.drsVmConfigSpec[0].info.Behavior = $vmOverRideInstance.DrsAutomationLevel #$vmOverRideInstance.DrsAutomationLevel AsSpecifiedByCluster
                         $spec.drsVmConfigSpec[0].info.enabled = $true
                     }
@@ -9110,10 +9120,12 @@ Function Restore-ClusterVMOverrides {
                         }
 
                     }
-                    $haDasVmConfigSpecSettings = @("RestartPriority", "RestartPriorityTimeout", "IsolationResponse")
-                    Foreach ($haDasVmConfigSpecSetting in $haDasVmConfigSpecSettings) {
-                        If ($vmOverRideInstance.$haDasVmConfigSpecSetting -ne $null) {
-                            $spec.dasVmConfigSpec[0].info.dasSettings.$haDasVmConfigSpecSetting = $vmOverRideInstance.$haDasVmConfigSpecSetting
+                    If ($dasVmConfigSpecRequired) {
+                        $haDasVmConfigSpecSettings = @("RestartPriority", "RestartPriorityTimeout", "IsolationResponse")
+                        Foreach ($haDasVmConfigSpecSetting in $haDasVmConfigSpecSettings) {
+                            If ($vmOverRideInstance.$haDasVmConfigSpecSetting -ne $null) {
+                                $spec.dasVmConfigSpec[0].info.dasSettings.$haDasVmConfigSpecSetting = $vmOverRideInstance.$haDasVmConfigSpecSetting
+                            }
                         }
                     }
 
