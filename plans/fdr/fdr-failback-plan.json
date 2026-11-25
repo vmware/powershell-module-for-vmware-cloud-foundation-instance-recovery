@@ -197,8 +197,8 @@
     "visible": true
   },
   {
-    "description": "Power off the VCF Automation VMs in the management vCenter associated with the target VCFMS Services Runtime and verify that they are powered off",
-    "commandLine": "Stop-VcfaVMs -ServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -SddcManagerUser $sddcManagerAdmin -SddcManagerPassword $sddcManagerAdminPassword -OpsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\"",
+    "description": "Power off the VCF Automation VMs in the management vCenter associated with the source VCFMS Services Runtime and verify that they are powered off",
+    "commandLine": "Stop-VcfaVMs -ServicesRuntimeFqdn $sourceVcfmsServicesRuntimeFqdn -SddcManagerUser $sddcManagerAdmin -SddcManagerPassword $sddcManagerAdminPassword -OpsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\"",
     "displayName": "Power Off VCF Automation VMs",
     "condition": [],
     "waitFor": [
