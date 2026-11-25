@@ -10766,7 +10766,7 @@ Function Remove-SddcManagerVspClusterEntry {
     $vspClusterId = ($rawOutput | Select-String -Pattern $guidPattern -AllMatches).Matches | Select-Object -First 1 -ExpandProperty Value
 
     if (-not $vspClusterId) {
-        LogMessage -type WARNING -message "[$SddcManagerFqdn] No $ClusterType entry found in vsp_cluster table. Nothing to delete."
+        LogMessage -type INFO -message "[$SddcManagerFqdn] No $ClusterType entry found in vsp_cluster table. Nothing to delete."
         LogMessage -type INFO -message "[$SddcManagerFqdn] Raw output for diagnostics:"
         Write-Host (& $cleanSshOutput $rawOutput)
         Remove-SSHSession -SSHSession $sshSession | Out-Null
