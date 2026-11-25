@@ -18778,7 +18778,7 @@ Function Invoke-VcfmsVcfaRegistration {
         -VcfaRuntimeFqdn         "lax-vsp01.lax.rainpole.io" `
         -OpsFqdn                 "lax-ops01a.lax.rainpole.io" `
         -VspPassword             "VMw@re1!VMw@re1!" `
-        -VcfaSystemPassword      "VMw@re1!VMw@re1!" `
+        -VcfaServicesRuntimePassword  "VMw@re1!VMw@re1!" `
         -OpsPassword             "VMw@re1!VMw@re1!"
 
     .EXAMPLE
@@ -18789,7 +18789,7 @@ Function Invoke-VcfmsVcfaRegistration {
         -VcfaRuntimeFqdn         "lax-vsp01.lax.rainpole.io" `
         -OpsFqdn                 "lax-ops01a.lax.rainpole.io" `
         -VspPassword             "VMw@re1!VMw@re1!" `
-        -VcfaSystemPassword      "VMw@re1!VMw@re1!" `
+        -VcfaServicesRuntimePassword  "VMw@re1!VMw@re1!" `
         -OpsPassword             "VMw@re1!VMw@re1!" `
         -DryRun
 
@@ -18812,8 +18812,8 @@ Function Invoke-VcfmsVcfaRegistration {
     admin@vsp.local password for the consumption cluster. Passed to the remote script as
     the VCFA_ADMIN_PASSWORD environment variable.
 
-    .PARAMETER VcfaSystemPassword
-    admin@System password for the VCFA application. Passed to the remote script as the
+    .PARAMETER VcfaServicesRuntimePassword
+    admin@vsp.local password for the VCF Automation Services Runtime. Passed to the remote script as the
     VCFA_SYSTEM_PASSWORD environment variable.
 
     .PARAMETER OpsPassword
@@ -18840,7 +18840,7 @@ Function Invoke-VcfmsVcfaRegistration {
         [Parameter(Mandatory = $false)][String] $opsRegisteredComponentsFile,
         [Parameter(Mandatory = $true)][String]  $OpsFqdn,
         [Parameter(Mandatory = $true)][String]  $VspPassword,
-        [Parameter(Mandatory = $true)][String]  $VcfaSystemPassword,
+        [Parameter(Mandatory = $true)][String]  $VcfaServicesRuntimePassword,
         [Parameter(Mandatory = $true)][String]  $OpsPassword,
         [Parameter(Mandatory = $false)][Switch] $DryRun,
         [Parameter(Mandatory = $false)][Int]    $RemoteScriptTimeout = 600
@@ -18954,7 +18954,7 @@ Function Invoke-VcfmsVcfaRegistration {
         }
 
         $execCmd = "echo '$ServicesRuntimePassword' | sudo -S env KUBECONFIG=/etc/kubernetes/admin.conf " +
-        "VCFA_ADMIN_PASSWORD='$VspPassword' VCFA_SYSTEM_PASSWORD='$VcfaSystemPassword' OPS_ADMIN_PASSWORD='$OpsPassword' " +
+        "VCFA_ADMIN_PASSWORD='$VspPassword' VCFA_SYSTEM_PASSWORD='$VcfaServicesRuntimePassword' OPS_ADMIN_PASSWORD='$OpsPassword' " +
         "bash $remoteMain $scriptArgs 2>&1"
 
         LogMessage -type INFO -message "[$controlPlaneHost] Executing create_vcfa_registration.sh (timeout: ${RemoteScriptTimeout}s)"
@@ -19049,7 +19049,7 @@ Function Update-VcfmsVcfaRegistration {
         -VcfaRuntimeFqdn         "flt-vcfa-sr01.rainpole.io" `
         -OpsFqdn                 "lax-ops01a.lax.rainpole.io" `
         -VcfmsServicesRuntimePassword "VMw@re1!VMw@re1!" `
-        -VcfaSystemPassword      "VMw@re1!VMw@re1!" `
+        -VcfaServicesRuntimePassword  "VMw@re1!VMw@re1!" `
         -OpsPassword             "VMw@re1!VMw@re1!"
 
     .EXAMPLE
@@ -19060,7 +19060,7 @@ Function Update-VcfmsVcfaRegistration {
         -VcfaRuntimeFqdn         "flt-vcfa-sr01.rainpole.io" `
         -OpsFqdn                 "lax-ops01a.lax.rainpole.io" `
         -VcfmsServicesRuntimePassword "VMw@re1!VMw@re1!" `
-        -VcfaSystemPassword      "VMw@re1!VMw@re1!" `
+        -VcfaServicesRuntimePassword  "VMw@re1!VMw@re1!" `
         -OpsPassword             "VMw@re1!VMw@re1!" `
         -DryRun
 
@@ -19080,12 +19080,11 @@ Function Update-VcfmsVcfaRegistration {
     --ops-fqdn to the script.
 
     .PARAMETER VcfmsServicesRuntimePassword
-    admin@vsp.local password passed as VCFA_ADMIN_PASSWORD for consumption cluster
-    authentication and FLEET_ADMIN_PASSWORD for Fleet LCM authentication.
+    admin@vsp.local password for the target VCF Management Services Runtime. Passed as
+    FLEET_ADMIN_PASSWORD for Fleet LCM authentication.
 
-    .PARAMETER VcfaSystemPassword
-    admin@System password for the VCFA application. Passed to the remote script as the
-    VCFA_SYSTEM_PASSWORD environment variable.
+    .PARAMETER VcfaServicesRuntimePassword
+    admin@vsp.local password for the VCF Automation Services Runtime. Passed as VCFA_ADMIN_PASSWORD and VCFA_SYSTEM_PASSWORD.
 
     .PARAMETER OpsPassword
     VCF Operations admin password. Passed to the remote script as the OPS_ADMIN_PASSWORD
@@ -19105,13 +19104,13 @@ Function Update-VcfmsVcfaRegistration {
     #>
 
     Param(
-        [Parameter(Mandatory = $true)][Alias("ServicesRuntimeFqdn")][String]  $VcfmsServicesRuntimeFqdn,
-        [Parameter(Mandatory = $true)][Alias("ServicesRuntimePassword")][String]  $VMwareSystemUserPassword,
+        [Parameter(Mandatory = $true)][String]  $VcfmsServicesRuntimeFqdn,
+        [Parameter(Mandatory = $true)][String]  $VMwareSystemUserPassword,
         [Parameter(Mandatory = $false)][String] $VcfaRuntimeFqdn,
         [Parameter(Mandatory = $false)][String] $opsRegisteredComponentsFile,
         [Parameter(Mandatory = $true)][String]  $OpsFqdn,
-        [Parameter(Mandatory = $true)][Alias("VspPassword")][String]  $VcfmsServicesRuntimePassword,
-        [Parameter(Mandatory = $true)][String]  $VcfaSystemPassword,
+        [Parameter(Mandatory = $true)][String]  $VcfmsServicesRuntimePassword,
+        [Parameter(Mandatory = $true)][String]  $VcfaServicesRuntimePassword,
         [Parameter(Mandatory = $true)][String]  $OpsPassword,
         [Parameter(Mandatory = $false)][Switch] $DryRun,
         [Parameter(Mandatory = $false)][Int]    $RemoteScriptTimeout = 600
@@ -19224,8 +19223,9 @@ Function Update-VcfmsVcfaRegistration {
 
         $shellRuntimePassword = $VMwareSystemUserPassword.Replace("'", "'\''")
         $shellVcfmsPassword = $VcfmsServicesRuntimePassword.Replace("'", "'\''")
+        $shellVcfaPassword = $VcfaServicesRuntimePassword.Replace("'", "'\''")
         $execCmd = "printf '%s\n' '$shellRuntimePassword' | sudo -S env KUBECONFIG=/etc/kubernetes/admin.conf " +
-        "VCFA_ADMIN_PASSWORD='$shellVcfmsPassword' VCFA_SYSTEM_PASSWORD='$VcfaSystemPassword' OPS_ADMIN_PASSWORD='$OpsPassword' " +
+        "VCFA_ADMIN_PASSWORD='$shellVcfaPassword' VCFA_SYSTEM_PASSWORD='$shellVcfaPassword' OPS_ADMIN_PASSWORD='$OpsPassword' " +
         "FLEET_ADMIN_PASSWORD='$shellVcfmsPassword' " +
         "bash $remoteMain $scriptArgs 2>&1"
 

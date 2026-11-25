@@ -70,12 +70,9 @@ UUIDV7_SQL="(WITH src AS (
 # ---- args -------------------------------------------------------------------
 VCFA_RUNTIME_FQDN=""
 PASSWORD="${VCFA_ADMIN_PASSWORD:-}"
-VCFA_SYSTEM_PASSWORD="${VCFA_SYSTEM_PASSWORD:-}"   # admin@System on the VCFA app itself -
-                                                    # distinct from $PASSWORD (admin@vsp.local
-                                                    # on the consumption cluster) - do not conflate.
+VCFA_SYSTEM_PASSWORD="${VCFA_SYSTEM_PASSWORD:-}"   # VCFA service-account bootstrap credential.
 OPS_FQDN=""
-OPS_PASSWORD="${OPS_ADMIN_PASSWORD:-}"             # VCF Operations admin password - a third,
-                                                    # distinct credential from the two above.
+OPS_PASSWORD="${OPS_ADMIN_PASSWORD:-}"
 DRY_RUN=false
 
 usage() {
@@ -102,14 +99,12 @@ Options:
   --password PW              admin@vsp.local password for that consumption cluster.
                              If omitted, taken from $VCFA_ADMIN_PASSWORD, else
                              prompted. Never echoed; passed to the pod via stdin.
-  --vcfa-system-password PW  admin@System password for the VCFA app itself (a
-                             different account on a different system than
-                             --password). Used only for step 5, creating
+  --vcfa-system-password PW  admin@vsp.local password for the VCF Automation Services
+                             Runtime. Used in step 5 for creating
                              the VCFA service accounts needed for VCFA-Ops
                              registration. If omitted, taken from
                              $VCFA_SYSTEM_PASSWORD, else prompted.
-  --ops-password PW          VCF Operations admin password (a third, distinct
-                             credential from --password/--vcfa-system-password).
+  --ops-password PW          VCF Operations admin password.
                              If omitted, taken from $OPS_ADMIN_PASSWORD, else
                              prompted.
   --dry-run                  Show what would be done without making changes.
@@ -563,7 +558,7 @@ else
     log "     VCFA-Ops registration will fail without it; run it manually."
   else
     if [[ -z "$VCFA_SYSTEM_PASSWORD" ]]; then
-      read -rs -p "admin@System password for VCFA (${VCFA_VFQDN}): " VCFA_SYSTEM_PASSWORD; echo
+      read -rs -p "admin@vsp.local password for VCFA (${VCFA_VFQDN}): " VCFA_SYSTEM_PASSWORD; echo
     fi
     STEP5_RC=0
     DRY_FLAG=(); $DRY_RUN && DRY_FLAG=(--dry-run)

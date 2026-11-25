@@ -20,7 +20,7 @@
 # secret ever leaves the pod or appears in this script's own output.
 #
 # Bootstraps a VCFA bearer token one of two ways:
-#   --admin-password / $VCFA_ADMIN_PASSWORD   admin@System login (simplest;
+#   --admin-password / $VCFA_ADMIN_PASSWORD   admin@vsp.local login (simplest;
 #                                              works with nothing pre-existing)
 #   (neither given)                           reuse the existing
 #                                              vcf-iam-vcfa-admin secret's
@@ -59,7 +59,7 @@ Options:
   --account-type TYPE   (required) "admin" (SBS's own VCFA login) or
                          "adminextra" (the OPS_SR account needed to register
                          VCFA with VCF Operations).
-  --admin-password PW   admin@System password for the VCFA app. If omitted,
+  --admin-password PW   admin@vsp.local password for the VCF Automation Services Runtime. If omitted,
                          taken from $VCFA_ADMIN_PASSWORD, else falls back to
                          reusing the existing vcf-iam-vcfa-admin secret's
                          refresh token (must already exist in vcf-sddc-lcm -
@@ -170,7 +170,7 @@ POD_SCRIPT='
 
   if [ "$MODE" = "password" ]; then
     HDRS=$(curl -sk -D - -o /dev/null -X POST "https://$VCFA/tm/cloudapi/1.0.0/sessions/provider" \
-      -u "admin@System:$SECRET_ARG" -H "Accept: $VER" -H "Content-Type: application/json")
+      -u "admin@vsp.local:$SECRET_ARG" -H "Accept: $VER" -H "Content-Type: application/json")
     TOKEN=$(printf "%s" "$HDRS" | grep -i "^x-vmware-vcloud-access-token:" | sed "s/^[^:]*:[[:space:]]*//" | tr -d "\r")
   else
     S=$(curl -sk "$KAPI/api/v1/namespaces/$NS/secrets/vcf-iam-vcfa-admin" --cacert "$CACRT" -H "Authorization: Bearer $KTOK")

@@ -12,6 +12,7 @@
   "sourceVcfmsServicesRuntimePassword": "",
   "targetVcfmsServicesRuntimeFqdn": "",
   "targetVcfmsServicesRuntimePassword": "",
+  "targetVcfmsVmwareSystemUserPassword": "",
   "vidbVip": "",
   "vcfUserPassword": "",
   "rootPassword": "",
@@ -19,6 +20,5 @@
   "sddcManagerAdminPassword": "",
   "vcfaServicesRuntimePassword": "",
   "vcfaVip": "",
-  "vcfaSystemPassword": "",
   "logManagementVip": ""
 }

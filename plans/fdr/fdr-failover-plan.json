@@ -290,8 +290,8 @@
   },
   {
     "description": "Update VCFA Registration",
-    "commandLine": "Invoke-VcfmsVcfaRegistration -ServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $targetVcfmsServicesRuntimePassword -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -OpsFqdn $vcfOperationsFqdn -VspPassword $vcfaServicesRuntimePassword -VcfaSystemPassword $vcfaSystemPassword -OpsPassword $vcfOperationsAdminPassword",
-    "displayName": "Invoke VCFMS VCFA Registration",
+    "commandLine": "Update-VcfmsVcfaRegistration -VcfmsServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -VMwareSystemUserPassword $targetVcfmsVmwareSystemUserPassword -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -OpsFqdn $vcfOperationsFqdn -VcfmsServicesRuntimePassword $targetVcfmsServicesRuntimePassword -VcfaServicesRuntimePassword $vcfaServicesRuntimePassword -OpsPassword $vcfOperationsAdminPassword",
+    "displayName": "Update VCFMS VCFA Registration",
     "condition": [],
     "waitFor": [
       "2",

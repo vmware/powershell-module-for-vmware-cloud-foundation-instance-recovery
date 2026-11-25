@@ -60,7 +60,7 @@ Options:
   --vcfa-runtime-fqdn FQDN   (required) FQDN of the VCFA consumption cluster.
   --ops-fqdn FQDN            (required) FQDN/IP of the VCF Operations appliance.
   --password PW              admin@vsp.local password for consumption cluster.
-  --vcfa-system-password PW  admin@System password for VCFA application.
+  --vcfa-system-password PW  admin@vsp.local password for the VCF Automation Services Runtime.
   --ops-password PW          VCF Operations admin password.
   --dry-run                  Preview database operations without applying.
   -h, --help                 Show help and exit.
@@ -313,7 +313,7 @@ if [[ ! -x "$CREATE_SA_SCRIPT" ]]; then
   log "     VCFA-Ops registration will fail without it; run it manually."
 else
   if [[ -z "$VCFA_SYSTEM_PASSWORD" ]]; then
-    read -rs -p "admin@System password for VCFA (${VCFA_VFQDN}): " VCFA_SYSTEM_PASSWORD; echo
+    read -rs -p "admin@vsp.local password for VCFA (${VCFA_VFQDN}): " VCFA_SYSTEM_PASSWORD; echo
   fi
   STEP5_RC=0
   DRY_FLAG=(); $DRY_RUN && DRY_FLAG=(--dry-run)

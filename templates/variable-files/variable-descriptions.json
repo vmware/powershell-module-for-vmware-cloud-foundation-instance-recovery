@@ -347,8 +347,8 @@
     "masked": false,
     "browse": false
   },
-  "vcfaSystemPassword": {
-    "description": "Password of the admin@System account on VCF Automation.",
+  "targetVcfmsVmwareSystemUserPassword": {
+    "description": "SSH and sudo password for vmware-system-user on the target VCF Management Services Services Runtime.",
     "masked": true,
     "browse": false
   },
