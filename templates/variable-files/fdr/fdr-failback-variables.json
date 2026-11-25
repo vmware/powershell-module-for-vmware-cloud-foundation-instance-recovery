@@ -8,6 +8,8 @@
   "sftpUsername": "",
   "sftpPassword": "",
   "sftpDirectory": "",
+  "sddcLcmSftpRemoteDir": "",
+  "encryptionPassphrase": "",
   "sourceVcfmsServicesRuntimeFqdn": "",
   "sourceVcfmsServicesRuntimePassword": "",
   "targetVcfmsServicesRuntimeFqdn": "",
