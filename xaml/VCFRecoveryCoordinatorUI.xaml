@@ -683,11 +683,32 @@
                      style below and New-Advisory) and Padding/PagePadding are zero, so Height = 6 x 18
                      + 2px border and the viewport always ends on a line boundary, never showing a
                      sliver of the line above. VerticalScrollBarVisibility="Auto" only shows the bar
-                     once there's actually more history than that to scroll through. Newest advisory is inserted at the
-                     TOP (see New-Advisory), so the most recent is always the one on screen.
+                     once there's actually more history than that to scroll through. New advisories
+                     are appended at the bottom (see New-Advisory).
                      The Paragraph style zeroes the default paragraph margin, which would otherwise
                      put a blank line's worth of space between every advisory. -->
                 <GroupBox Grid.Row="1" Header="Advisories" Margin="0,12,0,0" Padding="10,10,10,10">
+                    <GroupBox.Tag>
+                        <TextBlock FontSize="14">
+                            <Hyperlink x:Name="ClearAdvisoriesLink" Cursor="Hand">
+                                <Hyperlink.Style>
+                                    <Style TargetType="Hyperlink">
+                                        <Setter Property="Foreground" Value="{StaticResource AccentHoverBrush}" />
+                                        <Setter Property="TextDecorations" Value="{x:Null}" />
+                                        <Style.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter Property="TextDecorations" Value="Underline" />
+                                            </Trigger>
+                                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                                <Setter Property="TextDecorations" Value="Underline" />
+                                            </Trigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Hyperlink.Style>
+                                <Run Text="Clear Advisories" />
+                            </Hyperlink>
+                        </TextBlock>
+                    </GroupBox.Tag>
                     <RichTextBox x:Name="AdvisoriesRichTextBox" IsReadOnly="True" IsReadOnlyCaretVisible="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" FontSize="12" Padding="0" BorderThickness="1" Height="110">
                         <RichTextBox.Resources>
                             <Style TargetType="Paragraph">

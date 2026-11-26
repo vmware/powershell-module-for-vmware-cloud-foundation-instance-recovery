@@ -95,6 +95,7 @@ $dataSourceComboBox = $window.FindName('DataSourceComboBox')
 $browseButton = $window.FindName('BrowseButton')
 $filePathTextBox = $window.FindName('FilePathTextBox')
 $advisoriesRichTextBox = $window.FindName('AdvisoriesRichTextBox')
+$clearAdvisoriesLink = $window.FindName('ClearAdvisoriesLink')
 $discoveredInfrastructureGroupBox = $window.FindName('DiscoveredInfrastructureGroupBox')
 $discoveredInfrastructureTabControl = $window.FindName('DiscoveredInfrastructureTabControl')
 $workloadDomainsTabItem = $window.FindName('WorkloadDomainsTabItem')
@@ -135,8 +136,7 @@ $consoleTabControl = $window.FindName('ConsoleTabControl')
 # Posts $Message to the Advisories pane (below the Console pane) -- the single place every status/
 # error/informational message in this app surfaces to the operator, replacing the old single-line
 # StatusTextBlock that used to sit inside Data Source and get silently overwritten by whatever ran
-# next. Kept as a running history instead: nothing here ever clears it, so an earlier warning stays
-# visible (scroll down) even after something later succeeds.
+# next. The pane keeps a running history until the operator uses Clear Advisories.
 #
 # NEWEST LAST: each advisory is appended BELOW the previous one, so the history reads top-to-bottom
 # in the order it happened, and the pane is scrolled to the end so the most recent message is still
@@ -2007,7 +2007,7 @@ $updateBannerCloseButton.Add_Click({
 # console after launch and polled a temp file for an answer -- which meant a real wait on every launch
 # with nothing on screen to show for it. Nothing here does any actual lookup work; it only parses
 # already-known answers and posts the resulting advisories/banner, which is instant.
-function Show-ModuleUpdateStatus {
+function Show-ModuleUpdateStatus([switch]$AdvisoriesOnly) {
     $lines = @($ModuleUpdateStatus) | Where-Object { $_ }
     if ($lines.Count -eq 0) {
         New-Advisory 'Update check skipped: no installed module versions were passed to the UI.'
@@ -2031,9 +2031,16 @@ function Show-ModuleUpdateStatus {
             New-Advisory "$name $installed is up to date."
         }
     }
-    $global:updateBannerItems = $updates
-    Show-UpdateBanner
+    if (-not $AdvisoriesOnly) {
+        $global:updateBannerItems = $updates
+        Show-UpdateBanner
+    }
 }
+
+$clearAdvisoriesLink.Add_Click({
+        $advisoriesRichTextBox.Document.Blocks.Clear()
+        Show-ModuleUpdateStatus -AdvisoriesOnly
+    })
 
 $global:mainConsole = New-EmbeddedConsole -ThreadId '1'
 $consoleTabControl.SelectedIndex = 0
