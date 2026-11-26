@@ -170,21 +170,21 @@
     "visible": true
   },
   {
-    "description": "Trigger SDDC LCM discovery of VCF Operations nodes on the recovery site",
-    "commandLine": "Invoke-VcfmsOpsNodeDiscovery -ServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -VMwareSystemUserPassword $targetVcfmsVmwareSystemUserPassword -VspAdminPassword $targetVcfmsServicesRuntimePassword",
-    "displayName": "Trigger VCF Operations Node Discovery",
+    "description": "Update Fleet Component Registration",
+    "commandLine": "Invoke-VcfmsFleetComponentRegistration -ServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $targetVcfmsServicesRuntimePassword -opsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -ConfirmOpsMove -ConfirmOpsNetworksMove",
+    "displayName": "Invoke VCFMS Fleet Component Registration",
     "condition": [],
     "threadId": "2",
     "interactive": false,
     "visible": true
   },
   {
-    "description": "Update VCF Operations Inventory (manual step)",
-    "commandLine": "Confirm-ManualStep -Message 'Press Enter once VCF Operations inventory has been updated' -AnswerKey 'vcf-ops-inventory-updated'",
-    "displayName": "Confirm Manual Step: VCF Operations inventory has been updated",
+    "description": "Trigger SDDC LCM discovery of VCF Operations nodes on the recovery site",
+    "commandLine": "Invoke-VcfmsOpsNodeDiscovery -ServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -VMwareSystemUserPassword $targetVcfmsVmwareSystemUserPassword -VspAdminPassword $targetVcfmsServicesRuntimePassword",
+    "displayName": "Trigger VCF Operations Node Discovery",
     "condition": [],
     "threadId": "2",
-    "interactive": true,
+    "interactive": false,
     "visible": true
   },
   {

@@ -5,7 +5,7 @@
     "Each answer set is an ordered array of the values you would otherwise type at that cmdlet's Read-Host prompts, in the same order the prompts appear.",
     "The runtime scale, restore, VIP update and deployment tasks each take one Y/N confirmation.",
     "Get-BackupsFromSFTPServer uses group 1 and Y to build the restore JSON. If you choose custom group 0 when offered, supply one backup point ID per component in the order prompted before the final Y/N.",
-    "Confirm-ManualStep is different from every other key here: its value is a single FLAT array of pre-approved -AnswerKey strings, not an array of answer sets. The manual 'Press Enter once X is done' gates in this plan are: nsx-federation-tasks-complete, vcf-ops-recovered, fleet-vip-dns-updated, vcf-ops-inventory-updated, log-management-state-updated, license-server-redeployed, backup-schedule-updated, nsx-federation-post-failover-complete, vcf-ops-reprotected and recovered-components-backed-up. All of these gates are pre-approved below so the plan can run unattended; remove a key from the array if you want that specific gate to still block for a real Enter press (SELECTIVE answering - an omitted key always blocks, even with this answer file loaded). Each gate confirms real-world work done outside this tool, so only leave a key listed if you will have completed that work before the plan reaches it.",
+    "Confirm-ManualStep is different from every other key here: its value is a single FLAT array of pre-approved -AnswerKey strings, not an array of answer sets. The manual 'Press Enter once X is done' gates in this plan are: nsx-federation-tasks-complete, vcf-ops-recovered, fleet-vip-dns-updated, log-management-state-updated, license-server-redeployed, backup-schedule-updated, nsx-federation-post-failover-complete, vcf-ops-reprotected and recovered-components-backed-up. All of these gates are pre-approved below so the plan can run unattended; remove a key from the array if you want that specific gate to still block for a real Enter press (SELECTIVE answering - an omitted key always blocks, even with this answer file loaded). Each gate confirms real-world work done outside this tool, so only leave a key listed if you will have completed that work before the plan reaches it.",
     "Run each task interactively once first to see its real prompts/IDs, then transcribe your answers here in the same order. Every key below is OPTIONAL - omitting one just means that cmdlet prompts normally if actually reached - but once a key IS listed, running out of values or supplying an invalid one fails the run immediately rather than hanging or silently misusing a later answer (Confirm-ManualStep is the one exception - see above)."
   ],
   "Set-ServicesRuntimeScale": [
@@ -33,7 +33,6 @@
     "nsx-federation-tasks-complete",
     "vcf-ops-recovered",
     "fleet-vip-dns-updated",
-    "vcf-ops-inventory-updated",
     "log-management-state-updated",
     "license-server-redeployed",
     "backup-schedule-updated",
