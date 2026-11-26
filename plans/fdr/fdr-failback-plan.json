@@ -125,9 +125,9 @@
     "visible": true
   },
   {
-    "description": "Power on the VCF Management Services instance VMs on the original protected site in vCenter",
-    "commandLine": "Confirm-ManualStep -Message 'Press Enter once the VCF Management Services VMs on the original protected site have been powered on' -AnswerKey 'vcfms-powered-on'",
-    "displayName": "Confirm Manual Step: VCF Management Services VMs have been powered on",
+    "description": "List the VCF Management Services Runtime VMs on the original protected site and power them on after confirmation",
+    "commandLine": "Start-ServicesRuntimeVMs -TargetVcfServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -Type VCFMS -SddcManagerUser $sddcManagerAdmin -SddcManagerPassword $sddcManagerAdminPassword -OpsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\"",
+    "displayName": "Power On VCF Management Services Runtime VMs",
     "condition": [],
     "threadId": "2",
     "interactive": true,
@@ -236,9 +236,9 @@
     "visible": true
   },
   {
-    "description": "Power on the VCF Automation instance on the original protected site in vCenter",
-    "commandLine": "Confirm-ManualStep -Message 'Press Enter once the VCF Automation instance on the original protected site has been powered on' -AnswerKey 'vcfa-powered-on'",
-    "displayName": "Confirm Manual Step: VCF Automation has been powered on",
+    "description": "List the VCF Automation Services Runtime VMs on the original protected site and power them on after confirmation",
+    "commandLine": "Start-ServicesRuntimeVMs -TargetVcfServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -Type VCFA -SddcManagerUser $sddcManagerAdmin -SddcManagerPassword $sddcManagerAdminPassword -OpsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\"",
+    "displayName": "Power On VCF Automation Services Runtime VMs",
     "condition": [],
     "threadId": "3",
     "interactive": true,

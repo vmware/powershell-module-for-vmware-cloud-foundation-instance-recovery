@@ -21379,6 +21379,41 @@ Function Remove-VcfmsRecoveredComponents {
 }
 Export-ModuleMember -Function Remove-VcfmsRecoveredComponents
 
+Function Connect-ServicesRuntimeManagementVcenter {
+    Param(
+        [Parameter(Mandatory)][String] $SddcManagerFqdn,
+        [Parameter(Mandatory)][String] $SddcManagerUser,
+        [Parameter(Mandatory)][String] $SddcManagerPassword
+    )
+
+    $token = Get-SddcManagerToken -SddcManagerFqdn $sddcManagerFqdn -Username $SddcManagerUser -Password $SddcManagerPassword
+    if (-not $token) {
+        throw "Could not authenticate to SDDC Manager '$sddcManagerFqdn'."
+    }
+    $headers = @{ Authorization = "Bearer $token"; Accept = 'application/json' }
+    $domains = Invoke-RestMethod -Uri "https://$sddcManagerFqdn/v1/domains?type=MANAGEMENT" -Method GET -Headers $headers -SkipCertificateCheck -ErrorAction Stop
+    $managementDomains = @($domains.elements | Where-Object { $_.type -eq 'MANAGEMENT' })
+    if ($managementDomains.Count -ne 1) {
+        throw "Expected one management domain on SDDC Manager '$sddcManagerFqdn' but found $($managementDomains.Count)."
+    }
+    $managementVcenters = @($managementDomains[0].vcenters | Where-Object { $_.fqdn })
+    if ($managementVcenters.Count -ne 1) {
+        throw "Expected one management domain vCenter with an FQDN on SDDC Manager '$sddcManagerFqdn' but found $($managementVcenters.Count)."
+    }
+    $vcenterFqdn = $managementVcenters[0].fqdn
+    $resourceName = [Uri]::EscapeDataString($vcenterFqdn)
+    $credentials = Invoke-RestMethod -Uri "https://$sddcManagerFqdn/v1/credentials?resourceName=$resourceName" -Method GET -Headers $headers -SkipCertificateCheck -ErrorAction Stop
+    $vcenterCredentials = @($credentials.elements | Where-Object {
+        $_.credentialType -eq 'SSO' -and $_.resource.resourceType -eq 'PSC' -and $_.resource.resourceName -eq $vcenterFqdn
+    })
+    if ($vcenterCredentials.Count -ne 1 -or -not ($vcenterCredentials[0].username -and $vcenterCredentials[0].password)) {
+        throw "Could not resolve a unique SSO credential for management vCenter '$vcenterFqdn'."
+    }
+
+    $credential = $vcenterCredentials[0]
+    Connect-VIServer -Server $vcenterFqdn -User $credential.username -Password $credential.password -NotDefault -ErrorAction Stop
+}
+
 Function Stop-VcfaVMs {
     <#
     .SYNOPSIS
@@ -21435,32 +21470,8 @@ Function Stop-VcfaVMs {
         }
         $vmPattern = ($platformFqdn -split '\.', 2)[0] + '*'
 
-        $token = Get-SddcManagerToken -SddcManagerFqdn $sddcManagerFqdn -Username $SddcManagerUser -Password $SddcManagerPassword
-        if (-not $token) {
-            throw "Could not authenticate to SDDC Manager '$sddcManagerFqdn'."
-        }
-        $headers = @{ Authorization = "Bearer $token"; Accept = 'application/json' }
-        $domains = Invoke-RestMethod -Uri "https://$sddcManagerFqdn/v1/domains?type=MANAGEMENT" -Method GET -Headers $headers -SkipCertificateCheck -ErrorAction Stop
-        $managementDomains = @($domains.elements | Where-Object { $_.type -eq 'MANAGEMENT' })
-        if ($managementDomains.Count -ne 1) {
-            throw "Expected one management domain on SDDC Manager '$sddcManagerFqdn' but found $($managementDomains.Count)."
-        }
-        $managementVcenters = @($managementDomains[0].vcenters | Where-Object { $_.fqdn })
-        if ($managementVcenters.Count -ne 1) {
-            throw "Expected one management domain vCenter with an FQDN on SDDC Manager '$sddcManagerFqdn' but found $($managementVcenters.Count)."
-        }
-        $vcenterFqdn = $managementVcenters[0].fqdn
-        $resourceName = [Uri]::EscapeDataString($vcenterFqdn)
-        $credentials = Invoke-RestMethod -Uri "https://$sddcManagerFqdn/v1/credentials?resourceName=$resourceName" -Method GET -Headers $headers -SkipCertificateCheck -ErrorAction Stop
-        $vcenterCredentials = @($credentials.elements | Where-Object {
-            $_.credentialType -eq 'SSO' -and $_.resource.resourceType -eq 'PSC' -and $_.resource.resourceName -eq $vcenterFqdn
-        })
-        if ($vcenterCredentials.Count -ne 1 -or -not ($vcenterCredentials[0].username -and $vcenterCredentials[0].password)) {
-            throw "Could not resolve a unique SSO credential for management vCenter '$vcenterFqdn'."
-        }
-
-        $credential = $vcenterCredentials[0]
-        $vcenterConnection = Connect-VIServer -Server $vcenterFqdn -User $credential.username -Password $credential.password -NotDefault -ErrorAction Stop
+        $vcenterConnection = Connect-ServicesRuntimeManagementVcenter -SddcManagerFqdn $sddcManagerFqdn -SddcManagerUser $SddcManagerUser -SddcManagerPassword $SddcManagerPassword
+        $vcenterFqdn = $vcenterConnection.Name
         LogMessage -type INFO -message "[$vcenterFqdn] Looking for VCF Automation VMs matching '$vmPattern'"
         $vms = @(Get-VM -Server $vcenterConnection -Name $vmPattern -ErrorAction Stop | Sort-Object Name)
         if ($vms.Count -eq 0) {
@@ -21507,6 +21518,123 @@ Function Stop-VcfaVMs {
     }
 }
 Export-ModuleMember -Function Stop-VcfaVMs
+
+Function Start-ServicesRuntimeVMs {
+    <#
+    .SYNOPSIS
+    Powers on the selected Services Runtime VMs after operator confirmation.
+
+    .DESCRIPTION
+    Matches the target VCFMS Services Runtime FQDN in the VCF Operations registered
+    components file to locate the SDDC Manager and its management vCenter. Lists
+    VMs whose names start with the selected runtime's short hostname. After
+    confirmation, powers on the listed VMs that are offline and verifies their
+    power state. Declining stops the task.
+
+    .PARAMETER TargetVcfServicesRuntimeFqdn
+    Target VCFMS Services Runtime FQDN to match against vsp[].fqdn in either mode.
+
+    .PARAMETER Type
+    VCFMS uses the matched VSP hostname. VCFA uses vcfa.platformFqdn from the file.
+
+    .PARAMETER SddcManagerUser
+    SDDC Manager API user with permission to read domains and credentials.
+
+    .PARAMETER SddcManagerPassword
+    Password for the SDDC Manager API user.
+
+    .PARAMETER OpsRegisteredComponentsFile
+    Path to the inventory generated by Get-VcfOperationsRegisteredComponents.
+
+    .EXAMPLE
+    Start-ServicesRuntimeVMs -TargetVcfServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -Type VCFA -SddcManagerUser $sddcManagerAdmin -SddcManagerPassword $sddcManagerAdminPassword
+    #>
+    [CmdletBinding()]
+    Param(
+        [Parameter(Mandatory)][Alias('TargetVcfmsServicesRuntimeFqdn')][String] $TargetVcfServicesRuntimeFqdn,
+        [Parameter(Mandatory)][ValidateSet('VCFMS', 'VCFA')][String] $Type,
+        [Parameter(Mandatory)][String] $SddcManagerUser,
+        [Parameter(Mandatory)][String] $SddcManagerPassword,
+        [ValidateNotNullOrEmpty()][String] $OpsRegisteredComponentsFile = "./VCFOps-Registered-Component-Details.json"
+    )
+
+    $taskName = $MyInvocation.MyCommand.Name
+    $jumpboxName = hostname
+    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $vcenterConnection = $null
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $taskName"
+    try {
+        $answers = Get-VCFIRAnswerSet -FunctionName $taskName
+        $answerIndex = 0
+        $opsComponents = Get-Content -LiteralPath $OpsRegisteredComponentsFile -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        $fqdnPattern = '\A[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+\.?\z'
+        $matchingVsp = @($opsComponents.vsp | Where-Object {
+            $_.fqdn -is [String] -and $_.fqdn.TrimEnd('.') -eq $TargetVcfServicesRuntimeFqdn.TrimEnd('.')
+        })
+        if ($matchingVsp.Count -ne 1) {
+            throw "Expected one VSP with FQDN '$TargetVcfServicesRuntimeFqdn' in '$OpsRegisteredComponentsFile' but found $($matchingVsp.Count)."
+        }
+        $sddcManagerFqdn = $matchingVsp[0].vcfInstanceFqdn
+        if ($sddcManagerFqdn -isnot [String] -or $sddcManagerFqdn -notmatch $fqdnPattern) {
+            throw "The VSP '$TargetVcfServicesRuntimeFqdn' has no valid SDDC Manager FQDN in vcfInstanceFqdn."
+        }
+        $runtimeFqdn = if ($Type -eq 'VCFA') { $opsComponents.vcfa.platformFqdn } else { $matchingVsp[0].fqdn }
+        if ($runtimeFqdn -isnot [String] -or $runtimeFqdn -notmatch $fqdnPattern) {
+            throw "Expected a valid $Type Services Runtime FQDN in '$OpsRegisteredComponentsFile'."
+        }
+        $vmPattern = ($runtimeFqdn -split '\.', 2)[0] + '*'
+
+        $vcenterConnection = Connect-ServicesRuntimeManagementVcenter -SddcManagerFqdn $sddcManagerFqdn -SddcManagerUser $SddcManagerUser -SddcManagerPassword $SddcManagerPassword
+        $vcenterFqdn = $vcenterConnection.Name
+        LogMessage -type INFO -message "[$vcenterFqdn] Looking for $Type Services Runtime '$runtimeFqdn' VMs matching '$vmPattern'"
+        $vms = @(Get-VM -Server $vcenterConnection -Name $vmPattern -ErrorAction Stop | Sort-Object Name, Id)
+        if ($vms.Count -eq 0) {
+            throw "No VMs matching '$vmPattern' were found on '$vcenterFqdn'."
+        }
+        $vms | Format-Table -Property Name, PowerState, Id -AutoSize | Out-String -Width 240 | Write-Host
+        if (@($vms | Where-Object { $_.PowerState -ne 'PoweredOn' }).Count -eq 0) {
+            LogMessage -type INFO -message "[$vcenterFqdn] All matching $Type Services Runtime VMs are already powered on."
+            return
+        }
+
+        do {
+            Write-Host " Power on the listed $Type Services Runtime VMs that are offline? (Y/N): " -ForegroundColor Yellow -NoNewline
+            $confirmation = ([String](Get-VCFIRAnswer -AnswerSet $answers -Index ([ref]$answerIndex))).Trim()
+            Confirm-VCFIRAnswer -AnswerSet $answers -IsValid ($confirmation -in 'Y', 'N') -Value $confirmation -PromptDescription "$Type Services Runtime VM power-on confirmation"
+        } until ($confirmation -in 'Y', 'N')
+        if ($confirmation -eq 'N') {
+            throw "$Type Services Runtime VM power-on was declined."
+        }
+
+        $vmIds = $vms.Id
+        $currentVms = @(Get-VM -Server $vcenterConnection -Id $vmIds -ErrorAction Stop)
+        if ($currentVms.Count -ne $vms.Count) {
+            throw "Could not retrieve all confirmed VMs on '$vcenterFqdn'."
+        }
+        $vmsToStart = @($currentVms | Where-Object { $_.PowerState -ne 'PoweredOn' })
+        if ($vmsToStart.Count -gt 0) {
+            LogMessage -type WAIT -message "[$vcenterFqdn] Waiting for $($vmsToStart.Count) $Type Services Runtime VM(s) to power on"
+            Start-VM -Server $vcenterConnection -VM $vmsToStart -Confirm:$false -ErrorAction Stop | Out-Null
+            $currentVms = @(Get-VM -Server $vcenterConnection -Id $vmIds -ErrorAction Stop)
+        }
+        if ($currentVms.Count -ne $vms.Count -or @($currentVms | Where-Object { $_.PowerState -ne 'PoweredOn' }).Count -gt 0) {
+            throw "Could not verify that all confirmed VMs on '$vcenterFqdn' are powered on."
+        }
+        LogMessage -type INFO -message "[$vcenterFqdn] All $($vms.Count) confirmed $Type Services Runtime VM(s) are powered on."
+    } catch {
+        LogMessage -type ERROR -message "[$jumpboxName] $($_.Exception.Message)"
+        throw
+    } finally {
+        try {
+            if ($vcenterConnection) {
+                Disconnect-VIServer -Server $vcenterConnection -Confirm:$false -ErrorAction SilentlyContinue | Out-Null
+            }
+        } finally {
+            Write-TaskCompleted -TaskName $taskName -Stopwatch $stopwatch
+        }
+    }
+}
+Export-ModuleMember -Function Start-ServicesRuntimeVMs
 
 Function Remove-VcfmsVcfaRegistration {
     <#
