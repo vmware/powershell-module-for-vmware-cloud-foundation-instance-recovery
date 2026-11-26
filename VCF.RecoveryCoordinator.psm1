@@ -15170,8 +15170,8 @@ Function Wait-FleetLcmTask {
     Waits for a Fleet LCM task to finish.
 
     .DESCRIPTION
-    Discovers the running VCFA refresh task when no ID is supplied, then polls
-    that task by ID. The cmdlet refreshes the bearer token after an HTTP 401 and
+    Polls a Fleet LCM task by ID or discovers a running task by wildcard pattern
+    before polling it by ID. The cmdlet refreshes the bearer token after an HTTP 401 and
     returns the completed task on success. Multiple matching tasks, failed or
     cancelled tasks, and timeouts raise an error.
 
@@ -15188,8 +15188,12 @@ Function Wait-FleetLcmTask {
     Username for the token request. Defaults to admin@vsp.local.
 
     .PARAMETER TaskId
-    ID of the Fleet LCM task to monitor. When omitted, the cmdlet searches for
-    a running task whose description starts with "Refresh component VCF Automation".
+    ID of the Fleet LCM task to monitor.
+
+    .PARAMETER TaskPattern
+    Case-insensitive PowerShell wildcard pattern matched against the name, localized
+    description, or default description of a running task. Use a trailing * to match
+    a prefix, for example 'Refresh component VCF Automation*'.
 
     .PARAMETER PollIntervalSeconds
     Seconds between status checks. Defaults to 60.
@@ -15197,13 +15201,27 @@ Function Wait-FleetLcmTask {
     .PARAMETER TimeoutMinutes
     Maximum polling time in minutes. Defaults to 60.
     #>
-    [CmdletBinding(DefaultParameterSetName = 'Fqdn')]
+    [CmdletBinding(DefaultParameterSetName = 'FqdnById')]
     Param(
-        [Parameter(Mandatory, ParameterSetName = 'Fqdn')][ValidateNotNullOrEmpty()][String] $FleetLCMFqdn,
-        [Parameter(Mandatory, ParameterSetName = 'RegisteredComponents')][ValidateNotNullOrEmpty()][String] $OpsRegisteredComponentsFile,
+        [Parameter(Mandatory, ParameterSetName = 'FqdnById')]
+        [Parameter(Mandatory, ParameterSetName = 'FqdnByPattern')]
+        [ValidateNotNullOrEmpty()][String] $FleetLCMFqdn,
+
+        [Parameter(Mandatory, ParameterSetName = 'RegisteredComponentsById')]
+        [Parameter(Mandatory, ParameterSetName = 'RegisteredComponentsByPattern')]
+        [ValidateNotNullOrEmpty()][String] $OpsRegisteredComponentsFile,
+
         [Parameter(Mandatory)][String] $FleetLCMPassword,
         [String] $FleetLCMUsername = 'admin@vsp.local',
-        [ValidateNotNullOrEmpty()][String] $TaskId,
+
+        [Parameter(Mandatory, ParameterSetName = 'FqdnById')]
+        [Parameter(Mandatory, ParameterSetName = 'RegisteredComponentsById')]
+        [ValidateScript({ -not [string]::IsNullOrWhiteSpace($_) })][String] $TaskId,
+
+        [Parameter(Mandatory, ParameterSetName = 'FqdnByPattern')]
+        [Parameter(Mandatory, ParameterSetName = 'RegisteredComponentsByPattern')]
+        [ValidateScript({ -not [string]::IsNullOrWhiteSpace($_) })][String] $TaskPattern,
+
         [ValidateRange(1, 3600)][Int] $PollIntervalSeconds = 60,
         [ValidateRange(1, 1440)][Int] $TimeoutMinutes = 60
     )
@@ -15223,7 +15241,6 @@ Function Wait-FleetLcmTask {
             $TaskId = $TaskId.Trim()
         }
         $tasksUri = "https://$FleetLCMFqdn/fleet-lcm/v1/tasks"
-        $taskPrefix = 'Refresh component VCF Automation'
         $tokenParameters = @{ FleetLCMFqdn = $FleetLCMFqdn; Username = $FleetLCMUsername; Password = $FleetLCMPassword }
         $token = $null
         $deadline = $stopwatch.Elapsed.TotalSeconds + 60 * $TimeoutMinutes
@@ -15234,7 +15251,7 @@ Function Wait-FleetLcmTask {
         if ($TaskId) {
             LogMessage -type WAIT -message "[$FleetLCMFqdn] Waiting for Fleet LCM task $TaskId"
         } else {
-            LogMessage -type WAIT -message "[$FleetLCMFqdn] Looking for a running Fleet LCM task starting with '$taskPrefix'"
+            LogMessage -type WAIT -message "[$FleetLCMFqdn] Looking for a running Fleet LCM task matching '$TaskPattern'"
         }
         while ($stopwatch.Elapsed.TotalSeconds -lt $deadline) {
             if (-not $token) {
@@ -15263,9 +15280,9 @@ Function Wait-FleetLcmTask {
                         $page = Invoke-RestMethod @request -Uri "${tasksUri}?pageNumber=$pageNumber&pageSize=100&includeSystemTasks=true"
                         foreach ($candidate in $page.elements) {
                             if ($candidate.id -and $candidate.status -in 'RUNNING', 'IN_PROGRESS' -and
-                                ($candidate.description.localizedMessage -like "$taskPrefix*" -or
-                                 $candidate.description.defaultMessage -like "$taskPrefix*" -or
-                                 $candidate.name -like "$taskPrefix*")) {
+                                ($candidate.description.localizedMessage -like $TaskPattern -or
+                                 $candidate.description.defaultMessage -like $TaskPattern -or
+                                 $candidate.name -like $TaskPattern)) {
                                 $matchingIds[$candidate.id] = $true
                             }
                         }
@@ -15286,11 +15303,11 @@ Function Wait-FleetLcmTask {
             }
 
             if (-not $TaskId -and $matchingIds.Count -gt 1) {
-                throw "Multiple running Fleet LCM tasks start with '$taskPrefix'. Matching task IDs: $($matchingIds.Keys -join ', ')."
+                throw "Multiple running Fleet LCM tasks match '$TaskPattern'. Matching task IDs: $($matchingIds.Keys -join ', ')."
             }
             if (-not $TaskId -and $matchingIds.Count -eq 1 -and $stopwatch.Elapsed.TotalSeconds -lt $deadline) {
                 $TaskId = @($matchingIds.Keys)[0]
-                LogMessage -type INFO -message "[$FleetLCMFqdn] Found Fleet LCM task $TaskId for '$taskPrefix'"
+                LogMessage -type INFO -message "[$FleetLCMFqdn] Found Fleet LCM task $TaskId matching '$TaskPattern'"
                 continue
             }
 
@@ -15313,7 +15330,7 @@ Function Wait-FleetLcmTask {
             }
         }
         if (-not $TaskId) {
-            throw "Timed out after $TimeoutMinutes minutes looking for a running Fleet LCM task starting with '$taskPrefix'."
+            throw "Timed out after $TimeoutMinutes minutes looking for a running Fleet LCM task matching '$TaskPattern'."
         }
         throw "Timed out after $TimeoutMinutes minutes waiting for Fleet LCM task $TaskId."
     } catch {
@@ -16628,7 +16645,8 @@ Function Get-VcfmsRemoteFileContent {
     # Fetches a remote file via sudo -S base64 and returns decoded UTF-8 text, or $null on failure.
     # Unexported — used by Get-VcfmsServicesRuntimeKubeconfig.
     param([int]$SessionId, [String]$RemotePath, [String]$Pwd)
-    $cmd = "echo '$Pwd' | sudo -S base64 -w 0 $RemotePath"
+    $shellPassword = $Pwd.Replace("'", "'\''")
+    $cmd = "printf '%s\n' '$shellPassword' | sudo -S base64 -w 0 $RemotePath"
     $result = Invoke-SSHCommand -SessionId $SessionId -Command $cmd -TimeOut 30
     if ($result.ExitStatus -ne 0) {
         return $null
@@ -16654,9 +16672,9 @@ Function Get-VcfmsServicesRuntimeKubeconfig {
     clusters[].cluster.server field, connects to that address, and retrieves admin.conf from
     there instead.
 
-    The kubeconfig is written locally as <ClusterName>.kubeconfig in OutputDir.
-
-    Returns the full path to the written file, or $null on failure.
+    Returns the control plane host and the path to <ClusterName>.kubeconfig in OutputDir.
+    With ControlPlaneOnly, returns only the control plane host and skips the local write.
+    Returns $null on failure.
 
     This is an unexported helper — use it from other functions in this module; it is not
     surfaced via Export-ModuleMember.
@@ -16665,7 +16683,8 @@ Function Get-VcfmsServicesRuntimeKubeconfig {
         [Parameter(Mandatory = $true)][String] $ServicesRuntimeFqdn,
         [Parameter(Mandatory = $true)][String] $Password,
         [Parameter(Mandatory = $false)][String] $ClusterName,
-        [Parameter(Mandatory = $false)][String] $OutputDir = "."
+        [Parameter(Mandatory = $false)][String] $OutputDir = ".",
+        [Switch] $ControlPlaneOnly
     )
 
     # Derive short name from FQDN when ClusterName is not explicitly supplied
@@ -16725,6 +16744,10 @@ Function Get-VcfmsServicesRuntimeKubeconfig {
             LogMessage -type INFO -message "[$controlPlaneHost] admin.conf retrieved from control plane"
         } else {
             LogMessage -type INFO -message "[$ServicesRuntimeFqdn] admin.conf retrieved (node is a control plane)"
+        }
+
+        if ($ControlPlaneOnly) {
+            return [PSCustomObject]@{ ControlPlaneHost = $controlPlaneHost }
         }
 
         # Write locally — resolve OutputDir to an absolute path so .NET WriteAllText lands in $PWD
@@ -20760,6 +20783,120 @@ kubectl exec -n vcf-fleet-lcm "$FLEET_DB_POD" -c postgres -- \
     }
 }
 Export-ModuleMember -Function Get-VcfmsFleetComponentRegistration
+
+Function Invoke-VcfmsOpsNodeDiscovery {
+    <#
+    .SYNOPSIS
+    Triggers SDDC LCM discovery of VCF Operations nodes after recovery.
+
+    .DESCRIPTION
+    Uploads trigger_ops_node_discovery.sh to the Services Runtime control plane and runs it
+    under sudo with the local Kubernetes admin kubeconfig. The script seeds an OPS MASTER
+    node if needed and requests an SDDC LCM inventory refresh.
+
+    .PARAMETER ServicesRuntimeFqdn
+    FQDN or IP of a Services Runtime node. Worker nodes are resolved to the control plane.
+
+    .PARAMETER VMwareSystemUserPassword
+    Password for the vmware-system-user SSH login and sudo.
+
+    .PARAMETER VspAdminPassword
+    Password for admin@vsp.local on the Services Runtime cluster.
+
+    .PARAMETER DryRun
+    Passes --dry-run to preview the database insert and refresh request.
+
+    .PARAMETER RemoteScriptTimeout
+    Seconds to wait for remote execution. Defaults to 600.
+    #>
+    [CmdletBinding()]
+    Param(
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][String] $ServicesRuntimeFqdn,
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][String] $VMwareSystemUserPassword,
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][String] $VspAdminPassword,
+        [Switch] $DryRun,
+        [ValidateRange(1, [int]::MaxValue)][Int] $RemoteScriptTimeout = 600
+    )
+
+    $jumpboxName = hostname
+    $taskName = $MyInvocation.MyCommand.Name
+    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $session = $null
+    $remotePath = $null
+
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $taskName"
+    try {
+        $scriptName = 'trigger_ops_node_discovery.sh'
+        $localScript = Join-Path -Path $PSScriptRoot -ChildPath "scripts/$scriptName"
+        $scriptBytes = [System.IO.File]::ReadAllBytes($localScript)
+        $scriptBytes = [byte[]]($scriptBytes | Where-Object { $_ -ne 0x0D })
+        $base64Script = [Convert]::ToBase64String($scriptBytes)
+
+        $runtime = Get-VcfmsServicesRuntimeKubeconfig -ServicesRuntimeFqdn $ServicesRuntimeFqdn `
+            -Password $VMwareSystemUserPassword -ControlPlaneOnly
+        $controlPlaneHost = $runtime.ControlPlaneHost
+        if (-not $controlPlaneHost) {
+            throw "Could not resolve the Services Runtime control plane from '$ServicesRuntimeFqdn'."
+        }
+
+        $securePassword = ConvertTo-SecureString -String $VMwareSystemUserPassword -AsPlainText -Force
+        $creds = [pscredential]::new('vmware-system-user', $securePassword)
+        $session = Open-VcfmsSshSession -Fqdn $controlPlaneHost -Creds $creds
+
+        $tempFile = Invoke-SSHCommand -SessionId $session.SessionId `
+            -Command "mktemp /tmp/$scriptName.XXXXXX" -TimeOut 15 -ErrorAction Stop
+        $tempPath = ($tempFile.Output -join '').Trim()
+        if ($tempFile.ExitStatus -ne 0 -or $tempPath -cnotmatch '^/tmp/trigger_ops_node_discovery\.sh\.[a-zA-Z0-9]{6}$') {
+            throw "Could not create a temporary script on '$controlPlaneHost'."
+        }
+        $remotePath = $tempPath
+
+        LogMessage -type INFO -message "[$controlPlaneHost] Uploading $scriptName to $remotePath"
+        $uploadCmd = "printf '%s' '$base64Script' | base64 -d > '$remotePath'"
+        $upload = Invoke-SSHCommand -SessionId $session.SessionId -Command $uploadCmd -TimeOut 60 -ErrorAction Stop
+        if ($upload.ExitStatus -ne 0) {
+            throw "[$controlPlaneHost] Script upload failed (exit $($upload.ExitStatus)): $($upload.Error -join ' ')"
+        }
+
+        $shellRuntimePassword = $VMwareSystemUserPassword.Replace("'", "'\''")
+        $shellVspPassword = $VspAdminPassword.Replace("'", "'\''")
+        $scriptArgs = if ($DryRun) { ' --dry-run' }
+        $execCmd = "printf '%s\n' '$shellRuntimePassword' | sudo -S -p '' env KUBECONFIG=/etc/kubernetes/admin.conf " +
+            "VSP_ADMIN_PASSWORD='$shellVspPassword' bash '$remotePath'$scriptArgs 2>&1"
+
+        LogMessage -type INFO -message "[$controlPlaneHost] Executing $scriptName (timeout: ${RemoteScriptTimeout}s)"
+        $result = Invoke-SSHCommand -SessionId $session.SessionId -Command $execCmd -TimeOut $RemoteScriptTimeout -ErrorAction Stop
+        $result.Output | ForEach-Object { Write-Host "  $_" }
+        $result.Error | ForEach-Object { Write-Host "  $_" -ForegroundColor Yellow }
+        if ($result.ExitStatus -ne 0) {
+            throw "[$controlPlaneHost] $scriptName exited with code $($result.ExitStatus)."
+        }
+        LogMessage -type INFO -message "[$controlPlaneHost] $scriptName completed successfully"
+    } catch {
+        LogMessage -type ERROR -message "[$jumpboxName] $($_.Exception.Message)"
+        throw
+    } finally {
+        try {
+            if ($remotePath) {
+                $cleanup = Invoke-SSHCommand -SessionId $session.SessionId -Command "rm -f '$remotePath'" -TimeOut 15 -ErrorAction Stop
+                if ($cleanup.ExitStatus -ne 0) {
+                    throw "Remote cleanup exited with code $($cleanup.ExitStatus)."
+                }
+            }
+        } catch {
+            LogMessage -type WARNING -message "[$controlPlaneHost] Could not remove temporary script '$remotePath'. $($_.Exception.Message)"
+        } finally {
+            try {
+                if ($session) {
+                    Remove-SSHSession -SSHSession $session | Out-Null
+                }
+            } finally {
+                Complete-TaskIfOpen -TaskName $taskName -Stopwatch $stopwatch
+            }
+        }
+    }
+}
+Export-ModuleMember -Function Invoke-VcfmsOpsNodeDiscovery
 
 Function Invoke-VcfOpsVidbVcfInstanceUpdate {
     <#

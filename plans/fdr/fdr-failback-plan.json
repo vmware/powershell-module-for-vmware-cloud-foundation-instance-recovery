@@ -295,7 +295,7 @@
   },
   {
     "description": "Find the running Fleet LCM task for the VCFA registration refresh and wait for it to complete",
-    "commandLine": "Wait-FleetLcmTask -OpsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -FleetLCMPassword $targetVcfmsServicesRuntimePassword",
+    "commandLine": "Wait-FleetLcmTask -OpsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -FleetLCMPassword $targetVcfmsServicesRuntimePassword -TaskPattern 'Refresh component VCF Automation*'",
     "displayName": "Wait for VCFA Registration Task",
     "condition": [],
     "threadId": "1",
