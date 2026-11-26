@@ -12843,34 +12843,131 @@ Function Get-VcfmsServicesRuntimeToken {
 
     .PARAMETER Password
     Password for the services runtime user.
+
+    .PARAMETER Quiet
+    Suppresses token request status messages so callers can handle retries.
+
+    .PARAMETER RequestTimeoutSeconds
+    Timeout in seconds for the token request. If omitted, uses the web cmdlet's defaults.
     #>
 
     Param(
         [Parameter(Mandatory = $true)][String] $ServicesRuntimeFqdn,
         [Parameter(Mandatory = $false)][String] $Username = "admin@vsp.local",
-        [Parameter(Mandatory = $true)][String] $Password
+        [Parameter(Mandatory = $true)][String] $Password,
+        [Switch] $Quiet,
+        [ValidateRange(1, [int]::MaxValue)][Int] $RequestTimeoutSeconds
     )
 
-    $jumpboxName = hostname
-    LogMessage -type INFO -message "[$jumpboxName] Requesting Services Runtime token from $ServicesRuntimeFqdn"
+    if (-not $Quiet) {
+        LogMessage -type INFO -message "[$(hostname)] Requesting Services Runtime token from $ServicesRuntimeFqdn"
+    }
 
     $tokenUri = "https://$ServicesRuntimeFqdn/api/v1/identity/token"
     $tokenBody = "grant_type=password&username=$([uri]::EscapeDataString($Username))&password=$([uri]::EscapeDataString($Password))"
+    $requestOptions = @{ ErrorAction = 'Stop' }
+    if ($Quiet) {
+        $requestOptions.WarningAction = 'SilentlyContinue'
+    }
+    if ($RequestTimeoutSeconds) {
+        $requestOptions.TimeoutSec = $RequestTimeoutSeconds
+        # Newer PowerShell versions expose a separate timeout for reading the response.
+        if ((Get-Command Invoke-RestMethod).Parameters.ContainsKey('OperationTimeoutSeconds')) {
+            $requestOptions.OperationTimeoutSeconds = $RequestTimeoutSeconds
+        }
+    }
 
     try {
-        $tokenResponse = Invoke-RestMethod -Uri $tokenUri -Method POST -ContentType "application/x-www-form-urlencoded" -Body $tokenBody -SkipCertificateCheck
+        $tokenResponse = Invoke-RestMethod -Uri $tokenUri -Method POST -ContentType "application/x-www-form-urlencoded" -Body $tokenBody -SkipCertificateCheck @requestOptions
         $accessToken = $tokenResponse.access_token
-        if (-not $accessToken) {
-            LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Token response did not contain an access_token."
-            return $null
+        if ($accessToken) {
+            if (-not $Quiet) {
+                LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Services Runtime token retrieved successfully"
+            }
+            return $accessToken
         }
-        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Services Runtime token retrieved successfully"
-        return $accessToken
+        $failureMessage = "Token response did not contain an access_token."
     } catch {
-        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Failed to retrieve Services Runtime token: $($_.Exception.Message)"
-        return $null
+        $failureMessage = "Failed to retrieve Services Runtime token: $($_.Exception.Message)"
+    }
+    if (-not $Quiet) {
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] $failureMessage"
+    }
+    return $null
+}
+
+Function Wait-ServicesRuntimeReady {
+    <#
+    .SYNOPSIS
+    Waits for a Services Runtime to issue an access token.
+
+    .DESCRIPTION
+    Attempts to authenticate immediately and retries every 60 seconds for up to 30 minutes.
+    Retry messages are informational. The task reports an error if the wait expires.
+
+    .PARAMETER ServicesRuntimeFqdn
+    FQDN of the Services Runtime to check.
+
+    .PARAMETER OpsRegisteredComponentsFile
+    Registered components JSON file from which to resolve the VCF Automation Services Runtime FQDN.
+
+    .PARAMETER ServicesRuntimePassword
+    Password for the Services Runtime user.
+
+    .PARAMETER ServicesRuntimeUsername
+    Username for the token request. Defaults to admin@vsp.local.
+    #>
+    [CmdletBinding(DefaultParameterSetName = 'Fqdn')]
+    Param(
+        [Parameter(Mandatory = $true, ParameterSetName = 'Fqdn')][String] $ServicesRuntimeFqdn,
+        [Parameter(Mandatory = $true, ParameterSetName = 'RegisteredComponents')][String] $OpsRegisteredComponentsFile,
+        [Parameter(Mandatory = $true)][String] $ServicesRuntimePassword,
+        [String] $ServicesRuntimeUsername = "admin@vsp.local"
+    )
+
+    $taskName = $MyInvocation.MyCommand.Name
+    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $taskName"
+
+    try {
+        if ($OpsRegisteredComponentsFile) {
+            $ServicesRuntimeFqdn = Get-OpsRegisteredComponentValue -Name VcfaRuntimeFqdn -opsRegisteredComponentsFile $OpsRegisteredComponentsFile
+            if (-not $ServicesRuntimeFqdn) {
+                return
+            }
+        }
+
+        $retryIntervalSeconds = 60
+        $timeoutMinutes = 30
+        $maxRequestTimeoutSeconds = 20
+        $deadlineSeconds = $stopwatch.Elapsed.TotalSeconds + 60 * $timeoutMinutes
+        LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Waiting for the Services Runtime to issue an access token"
+
+        while ($stopwatch.Elapsed.TotalSeconds -lt $deadlineSeconds) {
+            $attemptStart = $stopwatch.Elapsed.TotalSeconds
+            $requestTimeout = [Math]::Max(1, [Math]::Floor([Math]::Min($maxRequestTimeoutSeconds, $deadlineSeconds - $attemptStart)))
+            if (Get-VcfmsServicesRuntimeToken -ServicesRuntimeFqdn $ServicesRuntimeFqdn -Username $ServicesRuntimeUsername -Password $ServicesRuntimePassword -Quiet -RequestTimeoutSeconds $requestTimeout) {
+                LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Services Runtime is ready and issued an access token"
+                return
+            }
+
+            $nextAttempt = $attemptStart + $retryIntervalSeconds
+            $waitSeconds = [Math]::Min($nextAttempt, $deadlineSeconds) - $stopwatch.Elapsed.TotalSeconds
+            if ($waitSeconds -gt 0) {
+                if ($nextAttempt -lt $deadlineSeconds) {
+                    LogMessage -type INFO -message "[$ServicesRuntimeFqdn] Services Runtime has not issued an access token yet. Retrying in $([Math]::Ceiling($waitSeconds)) seconds"
+                }
+                Start-Sleep -Milliseconds ([int][Math]::Ceiling(1000 * $waitSeconds))
+            }
+        }
+
+        LogMessage -type ERROR -message "[$ServicesRuntimeFqdn] Services Runtime did not issue an access token within $timeoutMinutes minutes"
+    } finally {
+        Write-TaskCompleted -TaskName $taskName -Stopwatch $stopwatch
     }
 }
+Export-ModuleMember -Function Wait-ServicesRuntimeReady
 
 Function Get-VcfOperationsToken {
     <#

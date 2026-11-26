@@ -134,6 +134,15 @@
     "visible": true
   },
   {
+    "description": "Wait for the VCF Management Services Services Runtime on the original protected site to issue an access token",
+    "commandLine": "Wait-ServicesRuntimeReady -ServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $targetVcfmsServicesRuntimePassword",
+    "displayName": "Wait for VCF Management Services Runtime",
+    "condition": [],
+    "threadId": "2",
+    "interactive": false,
+    "visible": true
+  },
+  {
     "description": "Trust the Offline Depot Certificate on the VCF Management Services Services Runtime (needed to retrieve the packages from the offline depot during restore)",
     "commandLine": "Add-VcfmsTrustedCertificate -ServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $targetVcfmsServicesRuntimePassword -RemoteHostFqdn $offlineDepotFqdn -RemoteHostPort $offlineDepotPort",
     "displayName": "Trust Offline Depot Certificate on VCF Management Services Services Runtime",
@@ -233,6 +242,15 @@
     "condition": [],
     "threadId": "3",
     "interactive": true,
+    "visible": true
+  },
+  {
+    "description": "Wait for the VCF Automation Services Runtime on the original protected site to issue an access token",
+    "commandLine": "Wait-ServicesRuntimeReady -OpsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -ServicesRuntimePassword $vcfaServicesRuntimePassword",
+    "displayName": "Wait for VCF Automation Services Runtime",
+    "condition": [],
+    "threadId": "3",
+    "interactive": false,
     "visible": true
   },
   {
