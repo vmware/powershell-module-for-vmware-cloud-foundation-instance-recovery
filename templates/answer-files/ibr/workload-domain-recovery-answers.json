@@ -1,6 +1,7 @@
 {
   "_readme": [
     "Sample answer file for the interactive tasks in workload-domain-recovery-plan.json, consumed via Import-VCFIRAnswerFile.",
+    "Confirm-ManualStep pre-approves the vSAN Witness deployment gate. Keep the key only if deployment and registration will be complete and the witness will be connected before the plan reaches that gate. Remove the key to wait for Enter.",
     "Keyed by cmdlet name. Each value is an array of answer sets - one answer set per invocation of that cmdlet in the plan (New-NSXManagerOvaDeployment runs up to 3 times: First/Second/Third NSX Manager OVA Deployment).",
     "Each answer set is an ordered array of the values you would otherwise type at that cmdlet's Read-Host prompts, in the same order the prompts appear.",
     "The exact number of prompts (and so the length of each answer set) depends on your environment's discovered NIC/disk/VDS counts - the values below match a common 1-VDS, single-disk-group, 3-NSX-Manager workload domain and MUST be reviewed against your own environment's prompts before use.",
@@ -41,5 +42,8 @@
   ],
   "Invoke-NSXEdgeClusterRecoverySelective": [
     ["1"]
+  ],
+  "Confirm-ManualStep": [
+    "vsan-witness-deployed"
   ]
 }
