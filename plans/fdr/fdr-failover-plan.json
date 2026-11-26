@@ -95,7 +95,7 @@
     "visible": true
   },
   {
-    "description": "Extract Fleet VIP Address Configuration from the Source Services Runtime Backup",
+    "description": "Extract the fleet VIP address configuration from the Services Runtime backup for the original protected site",
     "commandLine": "New-ExtractVcfmsBackup -LocalArchivePath $localArchivePath -EncryptionPassphrase $encryptionPassphrase -OutputDir \".\\backup-yaml\" -ServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $targetVcfmsServicesRuntimePassword",
     "displayName": "Extract VCFMS Backup",
     "condition": [],
@@ -107,7 +107,7 @@
     "visible": true
   },
   {
-    "description": "Scale Target Cluster Size",
+    "description": "Scale the Services Runtime cluster at the original recovery site",
     "commandLine": "Set-ServicesRuntimeScale -ServicesRuntimeFqdn $targetVcfmsServicesRuntimeFqdn -ServicesRuntimePassword $targetVcfmsServicesRuntimePassword -KubeconfigOutputDir \".\\backup-yaml\" -BackupYamlDir \".\\backup-yaml\"",
     "displayName": "Set Services Runtime Scale",
     "condition": [],

@@ -1,7 +1,7 @@
 {
   "_readme": [
     "Sample answers for Services Runtime cmdlets run outside a recovery plan. Load the file with Import-VCFIRAnswerFile.",
-    "Get-ServicesRuntimeComponentBackups uses the backup group ID, any custom backup point IDs, then Y/N to build the restore JSON. The sample selects group 1.",
+    "Get-ServicesRuntimeComponentBackups uses group 1 and Y to build the restore JSON. If you choose custom group 0 when offered, supply one backup point ID per component in the order prompted before the final Y/N.",
     "Start-ServicesRuntimeComponentBackup uses the VCF instance ID, component IDs or ALL, then Y/N. The sample selects all components in instance 1 and declines submission. When passing -ComponentIds, provide only the final Y/N answer.",
     "Remove-VcfmsComponent takes one Y/N confirmation. The sample declines deletion. Set it to Y only after reviewing the selected component IDs."
   ],

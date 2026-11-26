@@ -429,7 +429,7 @@
                         <TextBlock x:Name="EngineeringModeLink" Text="Engineering" Foreground="#B9C2CC" FontSize="14" Cursor="Hand" VerticalAlignment="Center" />
                     </StackPanel>
                     <ToggleButton x:Name="ThemeToggleButton" Style="{StaticResource ThemeToggleStyle}" Margin="0,0,12,0" VerticalAlignment="Center" />
-                    <Button x:Name="ResumeButton" Content="Resume" Width="90" Margin="0,0,8,0" />
+                    <Button x:Name="OpenSavedSessionButton" Content="Open Saved Session" MinWidth="90" Margin="0,0,8,0" />
                     <Button x:Name="ExitButton" Content="Save &amp; Exit" Width="90" />
                 </StackPanel>
                 <StackPanel Orientation="Horizontal">

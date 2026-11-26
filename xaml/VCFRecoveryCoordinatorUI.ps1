@@ -128,7 +128,7 @@ if ($vmwLogoImage) {
     $window.Icon = $windowIconBitmap
 }
 
-$resumeButton = $window.FindName('ResumeButton')
+$openSavedSessionButton = $window.FindName('OpenSavedSessionButton')
 $exitButton = $window.FindName('ExitButton')
 $helpLink = $window.FindName('HelpLink')
 $userModeLink = $window.FindName('UserModeLink')
@@ -254,6 +254,7 @@ function Reset-CurrentRecoveryPlanContext([string]$PlanId) {
     # Resume re-checks it afterward (see the Resume handler) once the plan has been re-selected.
     Reset-AnswerFileToggle $runAllAnswerFileCheckBox
     $global:currentPlanContext = New-RecoveryPlanContext $PlanId
+    $runAllButton.Content = 'Run Plan'
     $recoveryPlanStepsListBox.Items.Clear()
     $recoveryManualStepsListBox.Items.Clear()
     $variablesItemsPanel.Children.Clear()
@@ -1198,6 +1199,9 @@ function Copy-StepRowCompletionState([object[]]$PreviousRows, [object[]]$NewRows
 function Update-BucketStepsListBox([System.Windows.Controls.ListBox]$PlanListBox, [System.Windows.Controls.ListBox]$ManualListBox, [object[]]$ApplicableSteps, $PausePointAfterStep, [string]$InteractiveAnswerFilePath, $OnSetBreakPointAfter, [System.Windows.Controls.TextBlock]$HeaderTextBlock, [object[]]$PreviousRows = $null) {
     $rows = Set-PlanStepsListBox $PlanListBox $ManualListBox (Add-EngineeringBreakPointStep $ApplicableSteps $PausePointAfterStep) $OnSetBreakPointAfter
     Copy-StepRowCompletionState $PreviousRows $rows
+    if ($runAllButton.Content -eq 'Retry' -and 'Failed' -notin $rows.PlanButton.Content) {
+        $runAllButton.Content = 'Run Plan'
+    }
     Update-StepRowAutoAnsweredBadges $rows $InteractiveAnswerFilePath
     Update-TaskListHeaderText $HeaderTextBlock $PausePointAfterStep
     return $rows
@@ -3171,6 +3175,7 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
 
         $variantLabel = New-Object System.Windows.Controls.TextBlock
         $variantLabel.Text = $DisplayName
+        $variantLabel.SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty, 'HeaderTextBrush')
         $variantLabel.VerticalAlignment = 'Center'
         [System.Windows.Controls.Grid]::SetColumn($variantLabel, 0)
 
@@ -4863,6 +4868,12 @@ $runAllButton.Add_Click({
             Sync-InteractiveAnswerFiles
             $runTimer = Start-RunTimer
             Invoke-StepChain $global:currentPlanContext.StepRows -IgnoreThreads:(-not $runAllParallelCheckBox.IsChecked) -OnChainComplete {
+                param($isClean)
+                $runAllButton.Content = if (-not $isClean -and 'Failed' -in $global:currentPlanContext.StepRows.PlanButton.Content) {
+                    'Retry'
+                } else {
+                    'Run Plan'
+                }
                 Set-AllStepButtonsEnabled $true
                 Unlock-ElementSelection
                 Stop-RunTimer $runTimer
@@ -4998,11 +5009,11 @@ $exitButton.Add_Click({
 # It then marks whichever steps were Done
 # last time as Done again -- without adding them to $global:activeStepWatches, since nothing is being
 # (re-)run for them here.
-$resumeButton.Add_Click({
+$openSavedSessionButton.Add_Click({
         try {
             $dialog = New-Object Microsoft.Win32.OpenFileDialog
             $dialog.Filter = 'JSON files (*.json)|*.json|All files (*.*)|*.*'
-            $dialog.Title = 'Select saved orchestrator state'
+            $dialog.Title = 'Open Saved Session'
             if ($dialog.ShowDialog() -ne $true) {
                 return
             }
@@ -5191,9 +5202,10 @@ $resumeButton.Add_Click({
                 $overallRecoveryTimePanel.Visibility = 'Visible'
             }
 
-            New-Advisory "Resumed state from '$($dialog.FileName)'."
+            $runAllButton.Content = 'Run Plan'
+            New-Advisory "Opened saved session from '$($dialog.FileName)'."
         } catch {
-            New-Advisory "Resume failed: $($_.Exception.Message)" -Failure
+            New-Advisory "Could not open saved session: $($_.Exception.Message)" -Failure
         }
     }.GetNewClosure())
 

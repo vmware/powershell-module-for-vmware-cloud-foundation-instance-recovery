@@ -125,7 +125,7 @@ The left column scrolls if your window is short.
 |---|---|
 | **Help** | Opens this guide, as a standalone HTML page, in your default web browser. It works offline. |
 | **User \| Engineering** | Switches between the normal view and [Engineering mode](#engineering-mode-and-the-advanced-tab). |
-| **Resume** | Restores a previously saved session. See [Saving your progress and resuming](#saving-your-progress-and-resuming). |
+| **Open Saved Session** | Restores a previously saved session. See [Saving your progress and resuming](#saving-your-progress-and-resuming). |
 | **Save & Exit** | Saves your session to a file and closes the application. |
 
 ---
@@ -443,9 +443,10 @@ shows a red message such as:
 
 ### Retrying and continuing
 
-After you have investigated and fixed the cause, select **Run Plan** again. The Recovery Coordinator skips
-tasks at the top of the list that are already **Done** and carries on from the first task that is not. The
-failed task is run again from the beginning, so check that the failed task is safe to repeat before you do.
+When a task fails, **Run Plan** changes to **Retry** once the run has stopped. Fix the cause, then select
+**Retry** in the same session. The Recovery Coordinator skips leading **Done** tasks in each thread
+(or in the plan if run sequentially). It reruns the failed task from the beginning and continues if it
+succeeds. Check that the task is safe to repeat before retrying.
 
 The same behaviour is what lets you continue after [resuming a saved session](#saving-your-progress-and-resuming).
 
@@ -566,18 +567,18 @@ The state file records:
 It does **not** record passwords or other variable values. Those stay in your variables file.
 
 If you fix a task outside the application, open the state file in a text editor and change that task's
-`"Completed": false` to `"Completed": true` before you **Resume**. Leave the other fields as they are: the
-`CommandLine` is how **Resume** confirms the task list still matches. Each entry's `Name` is only there to
+`"Completed": false` to `"Completed": true` before opening the saved session. Leave the other fields as they are.
+The Recovery Coordinator uses `CommandLine` to confirm the task list still matches. Each entry's `Name` is only there to
 help you find the task.
 
 !!! warning
     Closing the window with the **✕** instead of **Save & Exit** ends the console sessions and does **not**
     save your progress. Use **Save & Exit**.
 
-### Resume
+### Open a saved session
 
 1. Start the application again, from the same working directory.
-2. Select **Resume** (top right).
+2. Select **Open Saved Session** (top right).
 3. Choose the state file you saved.
 
 The Recovery Coordinator reloads your plan, data, domain selection, variables and answer file, then marks
@@ -783,7 +784,7 @@ If your script returns while VCF Operations is still starting up, the next task 
 | Wait inside the script until VCF Operations is ready, with **your own timeout**, then exit non-zero if it never is. | Return immediately after starting a restore, or wait forever. The Recovery Coordinator imposes no time limit of its own. |
 | Run unattended. Take all input from files, environment variables or a secure store. | Use `Read-Host`, `Pause`, or anything that prompts. The script will hang. |
 | Print progress regularly so you can see it is alive. | Stay silent for a long time. |
-| Make the script **safe to run again**. After a failure, **Run Plan** runs the whole script again from the top. | Assume it will only ever run once. |
+| Make the script **safe to run again**. After a failure, **Retry** runs the whole script again from the top. | Assume it will only ever run once. |
 | Use absolute paths, and `Import-Module` what you need. | Rely on the current directory, your profile, or modules the console happened to load. |
 | Keep credentials in a secure store, or protect the script file. | Leave passwords in a script that other people can read. |
 
@@ -938,7 +939,7 @@ to remove it*). Only one breakpoint can be set at a time, and you cannot set one
 run, or while a run is in progress.
 
 Switching back to **User** mode hides the controls, but does not remove a breakpoint you have set.
-Breakpoints apply to the current session. **Resume** clears the breakpoint and restores completed task progress.
+Breakpoints apply to the current session. **Open Saved Session** clears the breakpoint and restores completed task progress.
 
 ---
 
@@ -951,7 +952,7 @@ Everything below is created in your **working directory**, the folder you launch
 | `extracted-sddc-data.json` | Extracting the SDDC Manager backup | Created in the **same folder as the backup file**. Updated by later tasks. Contains passwords once credentials are merged. |
 | `vcf-credentials-*.json` | *Retrieve SDDC Credentials Payload* | Credentials retrieved from SDDC Manager. Sensitive. |
 | `logs/vcf-rc-log-<date>-<threadnumber>.log` | Each console | `<date>` is the console start timestamp in `yyyyMMdd-HHmmss` format. `<threadnumber>` matches the console tab. |
-| `vcf-recoverycoordinator-state-<date>-<time>.json` | **Save & Exit** | Session state for **Resume**. Holds no passwords. |
+| `vcf-recoverycoordinator-state-<date>-<time>.json` | **Save & Exit** | Session state for **Open Saved Session**. Holds no passwords. |
 | Your variables file | **New Variables File** or edits | Holds passwords in plain text. |
 | `backup-yaml\` and similar | Fleet Component Recovery tasks | Working files used while recovering fleet components. |
 
@@ -983,7 +984,7 @@ Variables. If your plan has run options (such as Fleet Component Recovery's), th
 ### Run Plan stopped
 
 Look at the red message in Advisories to see which task stopped it, then read that task's output in the
-console, and the transcript if you need more. Fix the cause, then select **Run Plan** again. A task counts as
+console, and the transcript if you need more. Fix the cause, then select **Retry**. A task counts as
 failed if it produced **any** warning or error, not only if it crashed.
 
 ### A task is waiting and nothing is happening
@@ -998,7 +999,7 @@ answer by hand, then correct the answer file.
 
 ### The application says my saved files no longer exist
 
-**Resume** needs the extracted data, variables, answer and credentials files at their original paths. Restore
+**Open Saved Session** needs the extracted data, variables, answer and credentials files at their original paths. Restore
 or recreate them and resume again. For a missing credentials file, run **Retrieve SDDC Credentials Payload**
 again.
 
@@ -1036,7 +1037,8 @@ tabs (live output), and the transcript files in the `logs` folder of your workin
 | **Load Variables File** | Variables tab | Load a prepared variables file |
 | **New Variables File** | Variables tab | Create a variables file and fill it in |
 | **Run Plan** | Recovery Plan tab | Run all tasks in order |
-| **Resume** | Title bar | Restore a saved session |
+| **Retry** | Recovery Plan tab | Retry the plan after a task fails |
+| **Open Saved Session** | Title bar | Restore a saved session |
 | **Save & Exit** | Title bar | Save the session and close |
 | **Help** | Title bar | Open this guide in your web browser |
 | **User \| Engineering** | Title bar | Switch mode (password required for Engineering) |

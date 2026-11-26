@@ -83,7 +83,7 @@ figcaption { margin-top: 8px; font-size: 13px; color: var(--subtle); text-align:
 <header class="header">
   <div class="brand"><span class="l1">VMware Cloud Foundation</span><span class="l2">Recovery Coordinator</span></div>
   <div class="spacer"></div>
-  <span class="version">v9.1.2.1001</span>
+  <span class="version">v9.1.2.1003</span>
 </header>
 <div class="layout">
   <nav class="sidenav" aria-label="Contents">
@@ -124,7 +124,7 @@ figcaption { margin-top: 8px; font-size: 13px; color: var(--subtle); text-align:
 <a class="nav-link nav-l2" href="#parallel-threads">Parallel threads</a>
 <a class="nav-link nav-l2" href="#saving-your-progress-and-resuming">Saving your progress and resuming</a>
 <a class="nav-link nav-l3" href="#save-exit">Save &amp; Exit</a>
-<a class="nav-link nav-l3" href="#resume">Resume</a>
+<a class="nav-link nav-l3" href="#open-a-saved-session">Open a saved session</a>
 <a class="nav-link nav-l2" href="#recovery-plans-in-detail">Recovery plans in detail</a>
 <a class="nav-link nav-l3" href="#management-domain-recovery">Management Domain Recovery</a>
 <a class="nav-link nav-l3" href="#workload-domain-recovery">Workload Domain Recovery</a>
@@ -166,7 +166,7 @@ figcaption { margin-top: 8px; font-size: 13px; color: var(--subtle); text-align:
   <main class="content">
     <div class="content-inner">
       <h1 class="doc-title">Recovery Coordinator User Guide</h1>
-      <p class="doc-sub">Generated from the module documentation on 2026-11-19.</p>
+      <p class="doc-sub">Generated from the module documentation on 2026-11-26.</p>
 
 <p>The <strong>VMware Cloud Foundation Recovery Coordinator</strong> is a Windows desktop application, shipped with the
 <code>VCF.RecoveryCoordinator</code> module, that walks you through recovering a VMware Cloud Foundation instance
@@ -320,7 +320,7 @@ recovering. <strong>Do not upgrade in the middle of a recovery.</strong></p>
 <td>Switches between the normal view and <a href="#engineering-mode-and-the-advanced-tab">Engineering mode</a>.</td>
 </tr>
 <tr>
-<td><strong>Resume</strong></td>
+<td><strong>Open Saved Session</strong></td>
 <td>Restores a previously saved session. See <a href="#saving-your-progress-and-resuming">Saving your progress and resuming</a>.</td>
 </tr>
 <tr>
@@ -783,9 +783,10 @@ warnings, errors, or a PowerShell error record before retrying.</p>
 task before deciding what to do.</p>
 </div></div>
 <h3 id="retrying-and-continuing">Retrying and continuing</h3>
-<p>After you have investigated and fixed the cause, select <strong>Run Plan</strong> again. The Recovery Coordinator skips
-tasks at the top of the list that are already <strong>Done</strong> and carries on from the first task that is not. The
-failed task is run again from the beginning, so check that the failed task is safe to repeat before you do.</p>
+<p>When a task fails, <strong>Run Plan</strong> changes to <strong>Retry</strong> once the run has stopped. Fix the cause, then select
+<strong>Retry</strong> in the same session. The Recovery Coordinator skips leading <strong>Done</strong> tasks in each thread
+(or in the plan if run sequentially). It reruns the failed task from the beginning and continues if it
+succeeds. Check that the task is safe to repeat before retrying.</p>
 <p>The same behaviour is what lets you continue after <a href="#saving-your-progress-and-resuming">resuming a saved session</a>.</p>
 <h3 id="watching-the-console">Watching the console</h3>
 <p>The <strong>Console</strong> panel on the right shows what is happening.</p>
@@ -898,16 +899,16 @@ Thread 1 console. This is slower but simpler to follow, which can be useful when
 </ul>
 <p>It does <strong>not</strong> record passwords or other variable values. Those stay in your variables file.</p>
 <p>If you fix a task outside the application, open the state file in a text editor and change that task's
-<code>&quot;Completed&quot;: false</code> to <code>&quot;Completed&quot;: true</code> before you <strong>Resume</strong>. Leave the other fields as they are: the
-<code>CommandLine</code> is how <strong>Resume</strong> confirms the task list still matches. Each entry's <code>Name</code> is only there to
+<code>&quot;Completed&quot;: false</code> to <code>&quot;Completed&quot;: true</code> before opening the saved session. Leave the other fields as they are.
+The Recovery Coordinator uses <code>CommandLine</code> to confirm the task list still matches. Each entry's <code>Name</code> is only there to
 help you find the task.</p>
 <div class="alert alert-warning" role="note"><div class="alert-icon" aria-hidden="true"></div><div class="alert-content"><div class="alert-title">Warning</div><p>Closing the window with the <strong>✕</strong> instead of <strong>Save &amp; Exit</strong> ends the console sessions and does <strong>not</strong>
 save your progress. Use <strong>Save &amp; Exit</strong>.</p>
 </div></div>
-<h3 id="resume">Resume</h3>
+<h3 id="open-a-saved-session">Open a saved session</h3>
 <ol>
 <li>Start the application again, from the same working directory.</li>
-<li>Select <strong>Resume</strong> (top right).</li>
+<li>Select <strong>Open Saved Session</strong> (top right).</li>
 <li>Choose the state file you saved.</li>
 </ol>
 <p>The Recovery Coordinator reloads your plan, data, domain selection, variables and answer file, then marks
@@ -1234,7 +1235,7 @@ on. The very next tasks read from VCF Operations using the connection details on
 <td>Stay silent for a long time.</td>
 </tr>
 <tr>
-<td>Make the script <strong>safe to run again</strong>. After a failure, <strong>Run Plan</strong> runs the whole script again from the top.</td>
+<td>Make the script <strong>safe to run again</strong>. After a failure, <strong>Retry</strong> runs the whole script again from the top.</td>
 <td>Assume it will only ever run once.</td>
 </tr>
 <tr>
@@ -1402,7 +1403,8 @@ Plan</strong> reaches it, the run pauses with <em>Press Enter to Continue</em> i
 environment before carrying on. To remove it, click the orange row (the heading changes to <em>Click on Breakpoint
 to remove it</em>). Only one breakpoint can be set at a time, and you cannot set one after a task that has already
 run, or while a run is in progress.</p>
-<p>Switching back to <strong>User</strong> mode hides the controls, but does not remove a breakpoint you have set.</p>
+<p>Switching back to <strong>User</strong> mode hides the controls, but does not remove a breakpoint you have set.
+Breakpoints apply to the current session. <strong>Open Saved Session</strong> clears the breakpoint and restores completed task progress.</p>
 
 <h2 id="files-the-recovery-coordinator-creates">Files the Recovery Coordinator creates</h2>
 <p>Everything below is created in your <strong>working directory</strong>, the folder you launched from, unless noted.</p>
@@ -1433,7 +1435,7 @@ run, or while a run is in progress.</p>
 <tr>
 <td><code>vcf-recoverycoordinator-state-&lt;date&gt;-&lt;time&gt;.json</code></td>
 <td><strong>Save &amp; Exit</strong></td>
-<td>Session state for <strong>Resume</strong>. Holds no passwords.</td>
+<td>Session state for <strong>Open Saved Session</strong>. Holds no passwords.</td>
 </tr>
 <tr>
 <td>Your variables file</td>
@@ -1465,7 +1467,7 @@ one), that the <strong>Discovered Infrastructure</strong> panel shows your domai
 Variables. If your plan has run options (such as Fleet Component Recovery's), the list also changes with them.</p>
 <h3 id="run-plan-stopped">Run Plan stopped</h3>
 <p>Look at the red message in Advisories to see which task stopped it, then read that task's output in the
-console, and the transcript if you need more. Fix the cause, then select <strong>Run Plan</strong> again. A task counts as
+console, and the transcript if you need more. Fix the cause, then select <strong>Retry</strong>. A task counts as
 failed if it produced <strong>any</strong> warning or error, not only if it crashed.</p>
 <h3 id="a-task-is-waiting-and-nothing-is-happening">A task is waiting and nothing is happening</h3>
 <p>Look for a <strong>Requires Input</strong> badge on the running task, then click into the console tab it is running in and
@@ -1474,7 +1476,7 @@ check for a prompt. If you are using parallel threads, check each <strong>Thread
 <p>The answer file does not have enough, or the right, answers for what the task asked. Turn the toggle off and
 answer by hand, then correct the answer file.</p>
 <h3 id="the-application-says-my-saved-files-no-longer-exist">The application says my saved files no longer exist</h3>
-<p><strong>Resume</strong> needs the extracted data, variables, answer and credentials files at their original paths. Restore
+<p><strong>Open Saved Session</strong> needs the extracted data, variables, answer and credentials files at their original paths. Restore
 or recreate them and resume again. For a missing credentials file, run <strong>Retrieve SDDC Credentials Payload</strong>
 again.</p>
 <h3 id="i-closed-the-window-by-mistake">I closed the window by mistake</h3>
@@ -1528,7 +1530,12 @@ tabs (live output), and the transcript files in the <code>logs</code> folder of 
 <td>Run all tasks in order</td>
 </tr>
 <tr>
-<td><strong>Resume</strong></td>
+<td><strong>Retry</strong></td>
+<td>Recovery Plan tab</td>
+<td>Retry the plan after a task fails</td>
+</tr>
+<tr>
+<td><strong>Open Saved Session</strong></td>
 <td>Title bar</td>
 <td>Restore a saved session</td>
 </tr>

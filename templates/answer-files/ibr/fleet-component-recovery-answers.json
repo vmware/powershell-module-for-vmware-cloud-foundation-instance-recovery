@@ -1,8 +1,8 @@
 {
   "_readme": [
     "Sample answer file for the interactive tasks in fleet-component-recovery-plan.json, consumed via Import-VCFIRAnswerFile.",
-    "Keyed by cmdlet name. Get-BackupsFromSFTPServer is called 4 times in this plan (VCFMS, Log Management, VCF Automation, Telemetry, in that order) - each value is an array of answer sets, one per invocation.",
-    "Get-BackupsFromSFTPServer's own prompts (pick a backup group, optional per-component custom picks, final Y/N) vary with how many backups/components are found on the SFTP server - the values below assume a single matching backup and no custom overrides, and MUST be reviewed against your own environment's real prompts before use.",
+    "Provide one answer set per cmdlet invocation. Both depot modes use four Get-BackupsFromSFTPServer answer sets in the same order: VCFMS, Log Management, VCF Automation, Telemetry.",
+    "Get-BackupsFromSFTPServer uses group 1 and Y to build the restore JSON. If you choose custom group 0 when offered, supply one backup point ID per component in the order prompted before the final Y/N.",
     "Confirm-ManualStep is a flat list of pre-approved AnswerKey strings. Keep a key only if the work at that gate will be complete before the plan reaches it. Remove a key to wait for Enter at that gate.",
     "Run each task interactively once first to see its real prompts/IDs, then transcribe your answers here in the same order.",
     "Every key below is optional. Omit a cmdlet to answer at the console. A listed cmdlet fails if its answers run out or a supplied value is invalid.",
