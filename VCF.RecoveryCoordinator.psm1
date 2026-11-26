@@ -9268,11 +9268,11 @@ Function Restore-ClusterVMLocations {
                     $targetPool = $targetPools[0]
                     If ($vm.Folder.Id -ne $targetFolder.Id) {
                         LogMessage -type INFO -message "[$($vmLocation.name)] Setting VM Folder Location to $($vmLocation.folder)"
-                        Move-VM -Server $vCenterServer -VM $vm -InventoryLocation $targetFolder -confirm:$false
+                        Move-VM -Server $vCenterServer -VM $vm -InventoryLocation $targetFolder -confirm:$false | Out-Null
                     }
                     If ($vm.ResourcePool.Id -ne $targetPool.Id) {
                         LogMessage -type INFO -message "[$($vmLocation.name)] Setting ResourcePool to $($vmLocation.resourcePool)"
-                        Move-VM -Server $vCenterServer -VM $vm -Destination $targetPool -confirm:$false
+                        Move-VM -Server $vCenterServer -VM $vm -Destination $targetPool -confirm:$false | Out-Null
                     }
                 }
             }
