@@ -1564,7 +1564,7 @@ function New-EmbeddedConsole([string]$ThreadId, [switch]$Bootstrap) {
     # in the same second, wait for a free timestamp to keep each transcript in its own file.
     while ($true) {
         $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-        $transcriptPath = Join-Path $logsDirectory "vcf-rc-logs-$timestamp-$fileThreadId.log"
+        $transcriptPath = Join-Path $logsDirectory "vcf-rc-log-$timestamp-$fileThreadId.log"
         try {
             [System.IO.File]::Open($transcriptPath, [System.IO.FileMode]::CreateNew).Dispose()
             break

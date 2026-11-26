@@ -950,7 +950,7 @@ Everything below is created in your **working directory**, the folder you launch
 |---|---|---|
 | `extracted-sddc-data.json` | Extracting the SDDC Manager backup | Created in the **same folder as the backup file**. Updated by later tasks. Contains passwords once credentials are merged. |
 | `vcf-credentials-*.json` | *Retrieve SDDC Credentials Payload* | Credentials retrieved from SDDC Manager. Sensitive. |
-| `logs/vcf-rc-logs-<date>-<threadnumber>.log` | Each console | `<date>` is the console start timestamp in `yyyyMMdd-HHmmss` format. `<threadnumber>` matches the console tab. |
+| `logs/vcf-rc-log-<date>-<threadnumber>.log` | Each console | `<date>` is the console start timestamp in `yyyyMMdd-HHmmss` format. `<threadnumber>` matches the console tab. |
 | `vcf-recoverycoordinator-state-<date>-<time>.json` | **Save & Exit** | Session state for **Resume**. Holds no passwords. |
 | Your variables file | **New Variables File** or edits | Holds passwords in plain text. |
 | `backup-yaml\` and similar | Fleet Component Recovery tasks | Working files used while recovering fleet components. |
