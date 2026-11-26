@@ -21,6 +21,11 @@
         <SolidColorBrush x:Key="PanelBackgroundBrush" Color="#FFFFFF" />
         <SolidColorBrush x:Key="WindowBackgroundBrush" Color="#F5F5F5" />
         <SolidColorBrush x:Key="PanelBorderBrush" Color="#E0E0E0" />
+        <LinearGradientBrush x:Key="ComboBoxBackgroundBrush" StartPoint="0,0" EndPoint="0,1">
+            <GradientStop Color="#F0F0F0" Offset="0" />
+            <GradientStop Color="#E5E5E5" Offset="1" />
+        </LinearGradientBrush>
+        <SolidColorBrush x:Key="ComboBoxBorderBrush" Color="#ACACAC" />
         <SolidColorBrush x:Key="HeaderTextBrush" Color="#22313F" />
         <SolidColorBrush x:Key="SubtleTextBrush" Color="#6B7280" />
         <SolidColorBrush x:Key="InactiveTabTextBrush" Color="#565656" />
@@ -215,6 +220,76 @@
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="Background" Value="{DynamicResource PanelBackgroundBrush}" />
             <Setter Property="Foreground" Value="{DynamicResource HeaderTextBrush}" />
+        </Style>
+
+        <!-- The recovery dropdowns share classic spacing and alignment in both palettes. -->
+        <Style x:Key="RecoveryComboBoxStyle" TargetType="ComboBox">
+            <Setter Property="Padding" Value="6,4" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{DynamicResource HeaderTextBrush}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid x:Name="DropDownRoot" SnapsToDevicePixels="True">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="0" MinWidth="{DynamicResource {x:Static SystemParameters.VerticalScrollBarWidthKey}}" />
+                            </Grid.ColumnDefinitions>
+                            <Popup x:Name="PART_Popup" Grid.ColumnSpan="2" Placement="Bottom" Focusable="False"
+                                   AllowsTransparency="True" Margin="1"
+                                   IsOpen="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}"
+                                   PopupAnimation="{DynamicResource {x:Static SystemParameters.ComboBoxPopupAnimationKey}}">
+                                <Border Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource ComboBoxBorderBrush}"
+                                        BorderThickness="1" MinWidth="{Binding ActualWidth, ElementName=DropDownRoot}"
+                                        MaxHeight="{TemplateBinding MaxDropDownHeight}" RenderOptions.ClearTypeHint="Enabled">
+                                    <ScrollViewer>
+                                        <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained" />
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                            <ToggleButton Grid.ColumnSpan="2" Focusable="False" IsTabStop="False" ClickMode="Press"
+                                          BorderThickness="{TemplateBinding BorderThickness}"
+                                          IsChecked="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border x:Name="Chrome" Background="{DynamicResource ComboBoxBackgroundBrush}"
+                                                BorderBrush="{DynamicResource ComboBoxBorderBrush}" BorderThickness="{TemplateBinding BorderThickness}">
+                                            <Grid HorizontalAlignment="Right" Width="{DynamicResource {x:Static SystemParameters.VerticalScrollBarWidthKey}}">
+                                                <Path Data="M 0,0 L 2.5,2.5 L 5,0" Stroke="{DynamicResource HeaderTextBrush}"
+                                                      HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                            </Grid>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource HoverBackgroundBrush}" />
+                                                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource AccentTextBrush}" />
+                                            </Trigger>
+                                            <Trigger Property="IsChecked" Value="True">
+                                                <Setter TargetName="Chrome" Property="Background" Value="{DynamicResource HoverBackgroundBrush}" />
+                                                <Setter TargetName="Chrome" Property="BorderBrush" Value="{DynamicResource AccentTextBrush}" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+                            <ContentPresenter Content="{TemplateBinding SelectionBoxItem}"
+                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                              ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
+                                              ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}"
+                                              Margin="{TemplateBinding Padding}" IsHitTestVisible="False"
+                                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="DropDownRoot" Property="Opacity" Value="0.55" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
         <Style TargetType="ListBox">
@@ -434,15 +509,13 @@
                 <GroupBox Grid.Row="0" Header="Recovery Parameters" Margin="0,0,0,12">
                     <StackPanel Margin="0,-8,0,0">
                         <TextBlock Text="Recovery Type" FontWeight="SemiBold" Margin="0,0,0,4" />
-                        <ComboBox x:Name="RecoveryTypeComboBox" Padding="6,4" BorderThickness="1"
-                                  Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource PanelBorderBrush}" Margin="0,0,0,10" />
+                        <ComboBox x:Name="RecoveryTypeComboBox" Style="{StaticResource RecoveryComboBoxStyle}" Margin="0,0,0,10" />
 
                         <TextBlock Text="Recovery Plan" FontWeight="SemiBold" Margin="0,0,0,4" />
                         <!-- Repopulated by RecoveryTypeComboBox's own SelectionChanged - its
                              Items are always just whichever plans the catalog lists under the
                              currently selected Recovery Type. -->
-                        <ComboBox x:Name="RecoveryPlanComboBox" Padding="6,4" BorderThickness="1"
-                                  Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource PanelBorderBrush}" Margin="0,0,0,10" />
+                        <ComboBox x:Name="RecoveryPlanComboBox" Style="{StaticResource RecoveryComboBoxStyle}" Margin="0,0,0,10" />
 
                         <!-- Collapsed entirely for a plan whose catalog entry permits no data
                              source at all (Recover Fleet, FDR's only plan) - see the "FDR should
@@ -450,8 +523,7 @@
                              in the .ps1, which is what actually toggles this. -->
                         <StackPanel x:Name="DataSourceRowPanel">
                             <TextBlock Text="Data Source" FontWeight="SemiBold" Margin="0,0,0,4" />
-                            <ComboBox x:Name="DataSourceComboBox" Padding="6,4" BorderThickness="1"
-                                      Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource PanelBorderBrush}" Margin="0,0,0,6" />
+                            <ComboBox x:Name="DataSourceComboBox" Style="{StaticResource RecoveryComboBoxStyle}" Margin="0,0,0,6" />
                             <DockPanel Margin="0,4,0,0">
                                 <Button x:Name="BrowseButton" Content="Browse..." Width="80" DockPanel.Dock="Right" />
                                 <TextBox x:Name="FilePathTextBox" IsReadOnly="True" Margin="0,0,8,0" VerticalContentAlignment="Center" />

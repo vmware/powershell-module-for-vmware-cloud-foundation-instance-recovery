@@ -70,6 +70,8 @@ $darkThemeColors = @{
     PanelBackgroundBrush    = '#1E2B34'
     WindowBackgroundBrush   = '#152129'
     PanelBorderBrush        = '#425764'
+    ComboBoxBackgroundBrush = '#22323C'
+    ComboBoxBorderBrush     = '#536A78'
     HeaderTextBrush         = '#E6EEF2'
     SubtleTextBrush         = '#AABAC5'
     InactiveTabTextBrush    = '#B9C7CF'
@@ -99,14 +101,8 @@ $themeToggleButton = $window.FindName('ThemeToggleButton')
 $themeToggleButton.Add_Click({
     param($sender, $eventArgs)
 
-    # Fluent supplies matching native styles for controls such as drop-downs and scrollbars.
-    $themeBrushes = if ($sender.IsChecked) {
-        $app.ThemeMode = [System.Windows.ThemeMode]::Dark
-        $darkThemeBrushes
-    } else {
-        $app.ThemeMode = [System.Windows.ThemeMode]::None
-        $lightThemeBrushes
-    }
+    # Keep WPF's control styles active in both modes so fonts and layout stay fixed.
+    $themeBrushes = if ($sender.IsChecked) { $darkThemeBrushes } else { $lightThemeBrushes }
     foreach ($key in $themeBrushes.Keys) {
         $window.Resources[$key] = $themeBrushes[$key]
     }
