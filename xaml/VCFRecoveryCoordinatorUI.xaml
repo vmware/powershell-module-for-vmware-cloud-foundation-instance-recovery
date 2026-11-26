@@ -16,6 +16,8 @@
         <SolidColorBrush x:Key="HeaderBarBrush" Color="#1D2731" />
         <SolidColorBrush x:Key="AccentBrush" Color="#0095D3" />
         <SolidColorBrush x:Key="AccentHoverBrush" Color="#0077AA" />
+        <SolidColorBrush x:Key="AccentTextBrush" Color="#0095D3" />
+        <SolidColorBrush x:Key="LinkTextBrush" Color="#0077AA" />
         <SolidColorBrush x:Key="PanelBackgroundBrush" Color="#FFFFFF" />
         <SolidColorBrush x:Key="WindowBackgroundBrush" Color="#F5F5F5" />
         <SolidColorBrush x:Key="PanelBorderBrush" Color="#E0E0E0" />
@@ -25,15 +27,68 @@
         <SolidColorBrush x:Key="HoverBackgroundBrush" Color="#EAF6FC" />
         <SolidColorBrush x:Key="ToggleOnBrush" Color="#43A047" />
         <SolidColorBrush x:Key="ToggleOffBrush" Color="#D3D3D3" />
+        <SolidColorBrush x:Key="AdvisoryTextBrush" Color="#000000" />
+        <SolidColorBrush x:Key="AdvisoryFailureBrush" Color="#FF0000" />
+        <SolidColorBrush x:Key="DurationBackgroundBrush" Color="#80D3D3D3" />
+        <SolidColorBrush x:Key="DurationTextBrush" Color="#696969" />
+        <SolidColorBrush x:Key="DurationRunningBrush" Color="#CC6600" />
+        <SolidColorBrush x:Key="DurationDoneBrush" Color="#008000" />
+        <SolidColorBrush x:Key="DurationFailedBrush" Color="#B22222" />
+        <SolidColorBrush x:Key="WarningBackgroundBrush" Color="#FFF3CD" />
+        <SolidColorBrush x:Key="WarningBorderBrush" Color="#E0A800" />
+        <SolidColorBrush x:Key="WarningTextBrush" Color="#664D03" />
+
+        <Style x:Key="ThemeToggleStyle" TargetType="ToggleButton">
+            <Setter Property="Width" Value="34" />
+            <Setter Property="Height" Value="34" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="AutomationProperties.Name" Value="Switch to dark mode" />
+            <Setter Property="ToolTip" Value="Switch to dark mode" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="Surface" Background="Transparent" BorderBrush="Transparent" BorderThickness="1" CornerRadius="4">
+                            <Grid Width="20" Height="20">
+                                <Path x:Name="Moon" Fill="#49ACD0"
+                                      Data="M 10,1 A 9,9 0 1 0 19,11 A 6,6 0 0 1 10,1 Z" />
+                                <Grid x:Name="Sun" Visibility="Collapsed">
+                                    <Ellipse Width="10" Height="10" Fill="#ADBDC2" />
+                                    <Path Stroke="#ADBDC2" StrokeThickness="1.5" StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                          Data="M 10,1 V 3 M 10,17 V 19 M 1,10 H 3 M 17,10 H 19 M 3.6,3.6 L 5,5 M 15,15 L 16.4,16.4 M 3.6,16.4 L 5,15 M 15,5 L 16.4,3.6" />
+                                </Grid>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Moon" Property="Visibility" Value="Collapsed" />
+                                <Setter TargetName="Sun" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Surface" Property="Background" Value="#24FFFFFF" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Surface" Property="BorderBrush" Value="#49ACD0" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsChecked" Value="True">
+                    <Setter Property="AutomationProperties.Name" Value="Switch to light mode" />
+                    <Setter Property="ToolTip" Value="Switch to light mode" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
 
         <Style TargetType="Window">
-            <Setter Property="Background" Value="{StaticResource WindowBackgroundBrush}" />
+            <Setter Property="Background" Value="{DynamicResource WindowBackgroundBrush}" />
             <Setter Property="FontFamily" Value="Segoe UI" />
             <Setter Property="FontSize" Value="13" />
         </Style>
 
         <Style TargetType="TextBlock">
-            <Setter Property="Foreground" Value="{StaticResource HeaderTextBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource HeaderTextBrush}" />
         </Style>
 
         <!-- Plain white card with a bold title directly on it (no separate header-bar strip),
@@ -43,8 +98,8 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="GroupBox">
-                        <Border Background="{StaticResource PanelBackgroundBrush}"
-                                BorderBrush="{StaticResource PanelBorderBrush}"
+                        <Border Background="{DynamicResource PanelBackgroundBrush}"
+                                BorderBrush="{DynamicResource PanelBorderBrush}"
                                 BorderThickness="1"
                                 CornerRadius="4"
                                 SnapsToDevicePixels="True">
@@ -55,7 +110,7 @@
                                 </Grid.RowDefinitions>
                                 <TextBlock Grid.Row="0"
                                            Text="{TemplateBinding Header}"
-                                           Foreground="{StaticResource HeaderTextBrush}"
+                                           Foreground="{DynamicResource HeaderTextBrush}"
                                            FontWeight="Bold"
                                            FontSize="15"
                                            Margin="{TemplateBinding Padding}"
@@ -73,7 +128,7 @@
         </Style>
 
         <Style TargetType="Button">
-            <Setter Property="Background" Value="{StaticResource AccentBrush}" />
+            <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
             <Setter Property="Foreground" Value="White" />
             <Setter Property="BorderThickness" Value="0" />
             <Setter Property="Padding" Value="10,5" />
@@ -86,7 +141,7 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="ButtonBorder" Property="Background" Value="{StaticResource AccentHoverBrush}" />
+                                <Setter TargetName="ButtonBorder" Property="Background" Value="{DynamicResource AccentHoverBrush}" />
                             </Trigger>
                             <Trigger Property="IsEnabled" Value="False">
                                 <Setter TargetName="ButtonBorder" Property="Opacity" Value="0.5" />
@@ -131,7 +186,7 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ToggleButton">
-                        <Border x:Name="Track" Background="{StaticResource ToggleOffBrush}" CornerRadius="8">
+                        <Border x:Name="Track" Background="{DynamicResource ToggleOffBrush}" CornerRadius="8">
                             <Ellipse x:Name="Knob" Width="12" Height="12" Fill="White" HorizontalAlignment="Left" Margin="2,0,0,0" />
                         </Border>
                         <ControlTemplate.Triggers>
@@ -148,30 +203,18 @@
 
         <Style TargetType="TextBox">
             <Setter Property="Padding" Value="6,4" />
-            <Setter Property="BorderBrush" Value="{StaticResource PanelBorderBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource PanelBorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="Background" Value="White" />
+            <Setter Property="Background" Value="{DynamicResource PanelBackgroundBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource HeaderTextBrush}" />
         </Style>
 
         <Style TargetType="PasswordBox">
             <Setter Property="Padding" Value="6,4" />
-            <Setter Property="BorderBrush" Value="{StaticResource PanelBorderBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource PanelBorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="Background" Value="White" />
-        </Style>
-
-        <!-- Left at its native ComboBox chrome (toggle button/popup arrow) - only Padding/
-             BorderBrush/Background are overridden, to match TextBox/PasswordBox above, rather than
-             a full ControlTemplate replacement like Button/GroupBox get. This is the first ComboBox
-             in the app (Recovery Type/Recovery Plan/Data Source, added when those three were
-             collapsed from stacks of RadioButtons into one "Recovery Parameters" card - see the
-             .ps1's Sync-RecoveryPlanSelection), so a "visual approximation" is good enough here, the
-             same standard this file's own header comment already sets for the app as a whole. -->
-        <Style TargetType="ComboBox">
-            <Setter Property="Padding" Value="6,4" />
-            <Setter Property="BorderBrush" Value="{StaticResource PanelBorderBrush}" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="Background" Value="White" />
+            <Setter Property="Background" Value="{DynamicResource PanelBackgroundBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource HeaderTextBrush}" />
         </Style>
 
         <Style TargetType="ListBox">
@@ -200,10 +243,10 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="ItemBorder" Property="Background" Value="{StaticResource HoverBackgroundBrush}" />
+                                <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource HoverBackgroundBrush}" />
                             </Trigger>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="ItemBorder" Property="Background" Value="{StaticResource HoverBackgroundBrush}" />
+                                <Setter TargetName="ItemBorder" Property="Background" Value="{DynamicResource HoverBackgroundBrush}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -221,7 +264,7 @@
                              with unlimited width, so a long label never wraps and gets clipped instead. -->
                         <DockPanel Background="Transparent">
                             <Grid DockPanel.Dock="Left" Width="16" Height="16" VerticalAlignment="Center">
-                                <Ellipse x:Name="Ring" Stroke="{StaticResource ToggleOffBrush}" StrokeThickness="1.5" Fill="White" />
+                                <Ellipse x:Name="Ring" Stroke="{DynamicResource ToggleOffBrush}" StrokeThickness="1.5" Fill="{DynamicResource PanelBackgroundBrush}" />
                                 <Ellipse x:Name="Dot" Width="8" Height="8" Fill="{StaticResource ToggleOnBrush}" Visibility="Collapsed" />
                             </Grid>
                             <ContentPresenter Margin="8,0,0,0" VerticalAlignment="Center" RecognizesAccessKey="True" />
@@ -243,17 +286,17 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TabItem">
-                        <Border x:Name="TabBorder" Background="Transparent" BorderBrush="{StaticResource AccentBrush}" BorderThickness="0,0,0,2" Margin="0,0,16,0">
+                        <Border x:Name="TabBorder" Background="Transparent" BorderBrush="{DynamicResource AccentTextBrush}" BorderThickness="0,0,0,2" Margin="0,0,16,0">
                             <ContentPresenter x:Name="TabContent" ContentSource="Header" Margin="2,6,2,8" />
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="TabContent" Property="TextElement.Foreground" Value="{StaticResource AccentBrush}" />
+                                <Setter TargetName="TabContent" Property="TextElement.Foreground" Value="{DynamicResource AccentTextBrush}" />
                                 <Setter TargetName="TabContent" Property="TextElement.FontWeight" Value="SemiBold" />
                             </Trigger>
                             <Trigger Property="IsSelected" Value="False">
                                 <Setter TargetName="TabBorder" Property="BorderThickness" Value="0" />
-                                <Setter TargetName="TabContent" Property="TextElement.Foreground" Value="{StaticResource InactiveTabTextBrush}" />
+                                <Setter TargetName="TabContent" Property="TextElement.Foreground" Value="{DynamicResource InactiveTabTextBrush}" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -292,7 +335,7 @@
         </Grid.RowDefinitions>
 
         <!-- Header bar, modeled on the vSphere Client dark top bar -->
-        <Border Grid.Row="0" Background="{StaticResource HeaderBarBrush}" Padding="18,12">
+        <Border Grid.Row="0" Background="{DynamicResource HeaderBarBrush}" Padding="18,12">
             <DockPanel>
                 <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                     <!-- Help: opens the shipped HTML user guide (help\VCF-RecoveryCoordinator-UserGuide.html) in
@@ -304,12 +347,13 @@
                          and, only in Engineering mode, the Recovery Plan tab's pause-point drop-zone
                          (see Set-UIMode in the .ps1). Styled to match the header's own "Recovery
                          Coordinator" subtitle: same FontSize, same grey (#B9C2CC) for whichever side
-                         is inactive; the active side uses AccentBrush, the app's "Clarity blue". -->
+                         is inactive; the active side uses AccentTextBrush. -->
                     <StackPanel Orientation="Horizontal" Margin="0,0,16,0" VerticalAlignment="Center">
-                        <TextBlock x:Name="UserModeLink" Text="User" Foreground="{StaticResource AccentBrush}" FontSize="14" Cursor="Hand" VerticalAlignment="Center" />
+                        <TextBlock x:Name="UserModeLink" Text="User" Foreground="{DynamicResource AccentTextBrush}" FontSize="14" Cursor="Hand" VerticalAlignment="Center" />
                         <TextBlock Text=" | " Foreground="#B9C2CC" FontSize="14" VerticalAlignment="Center" />
                         <TextBlock x:Name="EngineeringModeLink" Text="Engineering" Foreground="#B9C2CC" FontSize="14" Cursor="Hand" VerticalAlignment="Center" />
                     </StackPanel>
+                    <ToggleButton x:Name="ThemeToggleButton" Style="{StaticResource ThemeToggleStyle}" Margin="0,0,12,0" VerticalAlignment="Center" />
                     <Button x:Name="ResumeButton" Content="Resume" Width="90" Margin="0,0,8,0" />
                     <Button x:Name="ExitButton" Content="Save &amp; Exit" Width="90" />
                 </StackPanel>
@@ -390,13 +434,15 @@
                 <GroupBox Grid.Row="0" Header="Recovery Parameters" Margin="0,0,0,12">
                     <StackPanel Margin="0,-8,0,0">
                         <TextBlock Text="Recovery Type" FontWeight="SemiBold" Margin="0,0,0,4" />
-                        <ComboBox x:Name="RecoveryTypeComboBox" Margin="0,0,0,10" />
+                        <ComboBox x:Name="RecoveryTypeComboBox" Padding="6,4" BorderThickness="1"
+                                  Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource PanelBorderBrush}" Margin="0,0,0,10" />
 
                         <TextBlock Text="Recovery Plan" FontWeight="SemiBold" Margin="0,0,0,4" />
                         <!-- Repopulated by RecoveryTypeComboBox's own SelectionChanged - its
                              Items are always just whichever plans the catalog lists under the
                              currently selected Recovery Type. -->
-                        <ComboBox x:Name="RecoveryPlanComboBox" Margin="0,0,0,10" />
+                        <ComboBox x:Name="RecoveryPlanComboBox" Padding="6,4" BorderThickness="1"
+                                  Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource PanelBorderBrush}" Margin="0,0,0,10" />
 
                         <!-- Collapsed entirely for a plan whose catalog entry permits no data
                              source at all (Recover Fleet, FDR's only plan) - see the "FDR should
@@ -404,7 +450,8 @@
                              in the .ps1, which is what actually toggles this. -->
                         <StackPanel x:Name="DataSourceRowPanel">
                             <TextBlock Text="Data Source" FontWeight="SemiBold" Margin="0,0,0,4" />
-                            <ComboBox x:Name="DataSourceComboBox" Margin="0,0,0,6" />
+                            <ComboBox x:Name="DataSourceComboBox" Padding="6,4" BorderThickness="1"
+                                      Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource PanelBorderBrush}" Margin="0,0,0,6" />
                             <DockPanel Margin="0,4,0,0">
                                 <Button x:Name="BrowseButton" Content="Browse..." Width="80" DockPanel.Dock="Right" />
                                 <TextBox x:Name="FilePathTextBox" IsReadOnly="True" Margin="0,0,8,0" VerticalContentAlignment="Center" />
@@ -422,7 +469,7 @@
                      show in either tab before then. -->
                 <GroupBox x:Name="DiscoveredInfrastructureGroupBox" Grid.Row="1" Header="Discovered Infrastructure" Margin="0,0,0,12" Visibility="Collapsed">
                     <DockPanel Margin="0,-8,0,0">
-                    <TextBlock DockPanel.Dock="Top" Text="Click on the element you wish to recover" FontWeight="Normal" Foreground="{StaticResource SubtleTextBrush}" Margin="0,0,0,8" />
+                    <TextBlock DockPanel.Dock="Top" Text="Click on the element you wish to recover" FontWeight="Normal" Foreground="{DynamicResource SubtleTextBrush}" Margin="0,0,0,8" />
                     <TabControl x:Name="DiscoveredInfrastructureTabControl" Background="Transparent" BorderThickness="0">
                         <!-- Column headers are static markup; the ListBox's own rows are built to
                              match, using the same SharedSizeGroup names, in the .ps1 (see
@@ -522,9 +569,9 @@
                     <GroupBox.Tag>
                         <StackPanel Orientation="Horizontal">
                             <Border x:Name="LegendRequiresInputBadge" Width="22" Height="22" CornerRadius="11" VerticalAlignment="Center" />
-                            <TextBlock Text="Requires input" Foreground="Gray" FontSize="11" Margin="5,0,16,0" VerticalAlignment="Center" />
+                            <TextBlock Text="Requires input" Foreground="{DynamicResource SubtleTextBrush}" FontSize="11" Margin="5,0,16,0" VerticalAlignment="Center" />
                             <Border x:Name="LegendAutoAnsweredBadge" Width="22" Height="22" CornerRadius="11" VerticalAlignment="Center" />
-                            <TextBlock Text="Auto-answered" Foreground="Gray" FontSize="11" Margin="5,0,0,0" VerticalAlignment="Center" />
+                            <TextBlock Text="Auto-answered" Foreground="{DynamicResource SubtleTextBrush}" FontSize="11" Margin="5,0,0,0" VerticalAlignment="Center" />
                         </StackPanel>
                     </GroupBox.Tag>
                     <TabControl x:Name="StepsVariablesTabControl" Background="Transparent" BorderThickness="0" Margin="0,-8,0,0">
@@ -541,7 +588,7 @@
                                     <Button x:Name="LoadVariablesButton" Content="Load Variables File" Margin="0,0,8,0" />
                                     <Button x:Name="NewVariablesFileButton" Content="New Variables File" />
                                 </StackPanel>
-                                <TextBlock x:Name="LoadedVariablesTextBlock" DockPanel.Dock="Top" Margin="0,0,0,8" TextWrapping="Wrap" Foreground="{StaticResource SubtleTextBrush}" Text="No variables loaded yet." />
+                                <TextBlock x:Name="LoadedVariablesTextBlock" DockPanel.Dock="Top" Margin="0,0,0,8" TextWrapping="Wrap" Foreground="{DynamicResource SubtleTextBrush}" Text="No variables loaded yet." />
                                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                                     <StackPanel x:Name="VariablesItemsPanel" />
                                 </ScrollViewer>
@@ -578,7 +625,7 @@
                                              divider are populated/shown by Update-ExtraTogglesPanel in the
                                              .ps1 from the plan's catalog "extraToggles"/"extraRadioGroups"
                                              and stay collapsed for a plan that declares none. -->
-                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="RUN OPTIONS" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource InactiveTabTextBrush}" Margin="0,0,0,6" />
+                                        <TextBlock Grid.Row="0" Grid.Column="0" Text="RUN OPTIONS" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource InactiveTabTextBrush}" Margin="0,0,0,6" />
                                         <StackPanel Grid.Row="1" Grid.Column="0">
                                             <DockPanel Margin="0,0,0,6">
                                                 <ToggleButton x:Name="RunAllParallelCheckBox" DockPanel.Dock="Left" IsChecked="True" Style="{StaticResource ToggleSwitchStyle}" VerticalAlignment="Center" />
@@ -592,8 +639,8 @@
                                                  Update-ExtraTogglesPanel, so they sit with the other Run Options. -->
                                             <StackPanel x:Name="ExtraRunOptionsPanel" />
                                         </StackPanel>
-                                        <Border x:Name="ExtraTogglesDivider" Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" Width="1" Background="{StaticResource PanelBorderBrush}" Margin="16,0,16,0" Visibility="Collapsed" />
-                                        <TextBlock x:Name="ExtraTogglesHeader" Grid.Row="0" Grid.Column="2" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource InactiveTabTextBrush}" Margin="0,0,0,6" Visibility="Collapsed" />
+                                        <Border x:Name="ExtraTogglesDivider" Grid.Row="0" Grid.RowSpan="2" Grid.Column="1" Width="1" Background="{DynamicResource PanelBorderBrush}" Margin="16,0,16,0" Visibility="Collapsed" />
+                                        <TextBlock x:Name="ExtraTogglesHeader" Grid.Row="0" Grid.Column="2" FontSize="11" FontWeight="SemiBold" Foreground="{DynamicResource InactiveTabTextBrush}" Margin="0,0,0,6" Visibility="Collapsed" />
                                         <StackPanel x:Name="ExtraTogglesPanel" Grid.Row="1" Grid.Column="2" VerticalAlignment="Top" />
                                     </Grid>
                                     <!-- "Task List" heading, the "Duration" column header and Run Plan share one row,
@@ -612,7 +659,7 @@
                                     <DockPanel DockPanel.Dock="Top" Margin="0,8,0,0" LastChildFill="False">
                                         <TextBlock x:Name="RecoveryTaskListHeader" Text="Task List" FontWeight="Bold" FontSize="14" DockPanel.Dock="Left" VerticalAlignment="Center" />
                                         <Button x:Name="RunAllButton" Content="Run Plan" Width="80" Margin="0,0,6,0" DockPanel.Dock="Right" VerticalAlignment="Center" />
-                                        <TextBlock Text="Duration" Width="80" TextAlignment="Center" Foreground="Gray" FontSize="11" FontWeight="SemiBold" Margin="0,0,8,0" DockPanel.Dock="Right" VerticalAlignment="Center" />
+                                        <TextBlock Text="Duration" Width="80" TextAlignment="Center" Foreground="{DynamicResource SubtleTextBrush}" FontSize="11" FontWeight="SemiBold" Margin="0,0,8,0" DockPanel.Dock="Right" VerticalAlignment="Center" />
                                     </DockPanel>
                                 </DockPanel>
                                 <ListBox x:Name="RecoveryPlanStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
@@ -620,8 +667,8 @@
                         </TabItem>
                         <TabItem Header="Advanced">
                             <DockPanel Margin="0,8,0,0">
-                                <Border DockPanel.Dock="Top" Background="#FFF3CD" BorderBrush="#E0A800" BorderThickness="1" CornerRadius="3" Padding="10,7" Margin="0,0,0,8">
-                                    <TextBlock TextWrapping="Wrap" FontWeight="SemiBold" Foreground="#664D03" Text="FOR ADVANCED USE ONLY: Use only on advice from Broadcom Support. Running a step out of sequence may leave the environment in an inconsistent state." />
+                                <Border DockPanel.Dock="Top" Background="{DynamicResource WarningBackgroundBrush}" BorderBrush="{DynamicResource WarningBorderBrush}" BorderThickness="1" CornerRadius="3" Padding="10,7" Margin="0,0,0,8">
+                                    <TextBlock TextWrapping="Wrap" FontWeight="SemiBold" Foreground="{DynamicResource WarningTextBrush}" Text="FOR ADVANCED USE ONLY: Use only on advice from Broadcom Support. Running a step out of sequence may leave the environment in an inconsistent state." />
                                 </Border>
                                 <ListBox x:Name="RecoveryManualStepsListBox" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="False" />
                             </DockPanel>
@@ -663,7 +710,7 @@
                              treatment (matching the Button style's own CornerRadius, and the same green
                              used for a completed step's Button.Background). -->
                         <StackPanel x:Name="OverallRecoveryTimePanel" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,4,4,0" Panel.ZIndex="1" Visibility="Collapsed">
-                            <TextBlock Text="Overall Recovery Time" FontWeight="Bold" Foreground="Black" VerticalAlignment="Center" Margin="0,0,6,0" />
+                            <TextBlock Text="Overall Recovery Time" FontWeight="Bold" Foreground="{DynamicResource HeaderTextBrush}" VerticalAlignment="Center" Margin="0,0,6,0" />
                             <Border Background="Green" CornerRadius="3" Padding="8,3">
                                 <TextBlock x:Name="OverallRecoveryTimeTextBlock" Text="00:00:00" FontFamily="Consolas" FontWeight="Bold" Foreground="White" VerticalAlignment="Center" />
                             </Border>
@@ -674,7 +721,7 @@
                 <!-- Runs every message that used to be the single-line, overwritten StatusTextBlock
                      (formerly sitting inside Data Source) - see New-Advisory in the .ps1. A
                      read-only RichTextBox rather than a TextBox: each advisory needs its OWN
-                     formatting (bold black normally, bold red for a failure), which a TextBox
+                     formatting (bold red for a failure), which a TextBox
                      cannot do since Foreground/FontWeight there apply to the whole control. It
                      still gets a working, independently-scrollable vertical scrollbar for free,
                      entirely separate from the Console pane's own native console window/scrolling
@@ -693,7 +740,7 @@
                             <Hyperlink x:Name="ClearAdvisoriesLink" Cursor="Hand">
                                 <Hyperlink.Style>
                                     <Style TargetType="Hyperlink">
-                                        <Setter Property="Foreground" Value="{StaticResource AccentHoverBrush}" />
+                                        <Setter Property="Foreground" Value="{DynamicResource LinkTextBrush}" />
                                         <Setter Property="TextDecorations" Value="{x:Null}" />
                                         <Style.Triggers>
                                             <Trigger Property="IsMouseOver" Value="True">
@@ -709,7 +756,8 @@
                             </Hyperlink>
                         </TextBlock>
                     </GroupBox.Tag>
-                    <RichTextBox x:Name="AdvisoriesRichTextBox" IsReadOnly="True" IsReadOnlyCaretVisible="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" FontSize="12" Padding="0" BorderThickness="1" Height="110">
+                    <RichTextBox x:Name="AdvisoriesRichTextBox" IsReadOnly="True" IsReadOnlyCaretVisible="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" FontSize="12" Padding="0" BorderThickness="1" Height="110"
+                                 Background="{DynamicResource PanelBackgroundBrush}" BorderBrush="{DynamicResource PanelBorderBrush}">
                         <RichTextBox.Resources>
                             <Style TargetType="Paragraph">
                                 <Setter Property="Margin" Value="0" />

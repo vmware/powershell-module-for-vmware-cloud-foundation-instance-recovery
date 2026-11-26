@@ -60,6 +60,58 @@ $app = New-Object System.Windows.Application
 $xamlReader = New-Object System.Xml.XmlNodeReader $xamlDocument
 $window = [System.Windows.Markup.XamlReader]::Load($xamlReader)
 
+# Keep the light palette from XAML and swap only the brushes that change in dark mode.
+$darkThemeColors = @{
+    HeaderBarBrush          = '#101C24'
+    AccentBrush             = '#0076A6'
+    AccentHoverBrush        = '#006088'
+    AccentTextBrush         = '#55BFE5'
+    LinkTextBrush           = '#64C4E5'
+    PanelBackgroundBrush    = '#1E2B34'
+    WindowBackgroundBrush   = '#152129'
+    PanelBorderBrush        = '#425764'
+    HeaderTextBrush         = '#E6EEF2'
+    SubtleTextBrush         = '#AABAC5'
+    InactiveTabTextBrush    = '#B9C7CF'
+    HoverBackgroundBrush    = '#2B4655'
+    ToggleOffBrush          = '#576B78'
+    AdvisoryTextBrush       = '#E6EEF2'
+    AdvisoryFailureBrush    = '#FF9292'
+    DurationBackgroundBrush = '#34444E'
+    DurationTextBrush       = '#D1DDE3'
+    DurationRunningBrush    = '#FFC278'
+    DurationDoneBrush       = '#89DE95'
+    DurationFailedBrush     = '#FF9A9A'
+    WarningBackgroundBrush  = '#392D19'
+    WarningBorderBrush      = '#9B6F27'
+    WarningTextBrush        = '#FFD88E'
+}
+$lightThemeBrushes = @{}
+$darkThemeBrushes = @{}
+foreach ($key in $darkThemeColors.Keys) {
+    $lightThemeBrushes[$key] = $window.Resources[$key]
+    $brush = [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.ColorConverter]::ConvertFromString($darkThemeColors[$key]))
+    $brush.Freeze()
+    $darkThemeBrushes[$key] = $brush
+}
+
+$themeToggleButton = $window.FindName('ThemeToggleButton')
+$themeToggleButton.Add_Click({
+    param($sender, $eventArgs)
+
+    # Fluent supplies matching native styles for controls such as drop-downs and scrollbars.
+    $themeBrushes = if ($sender.IsChecked) {
+        $app.ThemeMode = [System.Windows.ThemeMode]::Dark
+        $darkThemeBrushes
+    } else {
+        $app.ThemeMode = [System.Windows.ThemeMode]::None
+        $lightThemeBrushes
+    }
+    foreach ($key in $themeBrushes.Keys) {
+        $window.Resources[$key] = $themeBrushes[$key]
+    }
+}.GetNewClosure())
+
 # Without this, the taskbar button for this window shows pwsh.exe's own icon -- Windows uses the
 # window's own icon (set here via WM_SETICON, which assigning Window.Icon triggers) for its taskbar
 # button, not the hosting process's icon, as long as nothing else overrides the icon association.
@@ -144,7 +196,7 @@ $consoleTabControl = $window.FindName('ConsoleTabControl')
 # in the same "MM-dd-yyyy HH:mm:ss" format LogMessage stamps its console output with, so an advisory
 # here can be lined up against the matching line in a console transcript.
 #
-# -Failure renders the message bold RED; everything else is plain BLACK. This is a deliberate explicit
+# -Failure renders the message in bold red. This is a deliberate explicit
 # switch rather than sniffing the text for words like "failed": several genuine failures don't
 # contain any such word ("Console process isn't running.", "Console window did not appear within 10
 # seconds."), and a plan-authored advisory (see the New-Advisory pseudo-command in Invoke-Step) is
@@ -152,7 +204,8 @@ $consoleTabControl = $window.FindName('ConsoleTabControl')
 function New-Advisory([string]$Message, [switch]$Failure) {
     $run = New-Object System.Windows.Documents.Run("[$(Get-Date -Format 'MM-dd-yyyy HH:mm:ss')] $Message")
     $run.FontWeight = if ($Failure) { [System.Windows.FontWeights]::Bold } else { [System.Windows.FontWeights]::Normal }
-    $run.Foreground = if ($Failure) { [System.Windows.Media.Brushes]::Red } else { [System.Windows.Media.Brushes]::Black }
+    $textBrush = if ($Failure) { 'AdvisoryFailureBrush' } else { 'AdvisoryTextBrush' }
+    $run.SetResourceReference([System.Windows.Documents.TextElement]::ForegroundProperty, $textBrush)
 
     $paragraph = New-Object System.Windows.Documents.Paragraph($run)
     $paragraph.Margin = New-Object System.Windows.Thickness(0)
@@ -495,17 +548,13 @@ function Set-UIMode([string]$Mode) {
         }
         $advancedTab.Visibility = $advancedVisibility
     }
-    $accentBrush = $window.TryFindResource('AccentBrush')
     $inactiveBrush = [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.Color]::FromRgb(0xB9, 0xC2, 0xCC))
-    $userModeLink.Foreground = if ($isEngineering) {
-        $inactiveBrush 
+    if ($isEngineering) {
+        $userModeLink.Foreground = $inactiveBrush
+        $engineeringModeLink.SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty, 'AccentTextBrush')
     } else {
-        $accentBrush 
-    }
-    $engineeringModeLink.Foreground = if ($isEngineering) {
-        $accentBrush 
-    } else {
-        $inactiveBrush 
+        $engineeringModeLink.Foreground = $inactiveBrush
+        $userModeLink.SetResourceReference([System.Windows.Controls.TextBlock]::ForegroundProperty, 'AccentTextBrush')
     }
 
     # The "Task List" heading reflects the NEW mode immediately, not just on the next click/render --
@@ -2415,12 +2464,13 @@ function Set-StepButtonsState($Buttons, [string]$Content, $Background) {
                 $stepButton.Tag.Tag = Get-Date
             }
             # Text color follows the status pill: orange Running, green Done, red Failed.
-            $stepButton.Tag.Foreground = switch ($Content) {
-                'Running' { [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.Color]::FromRgb(0xCC, 0x66, 0x00)) }
-                'Done' { [System.Windows.Media.Brushes]::Green }
-                'Failed' { [System.Windows.Media.Brushes]::Firebrick }
-                default { [System.Windows.Media.Brushes]::DimGray }
+            $durationBrush = switch ($Content) {
+                'Running' { 'DurationRunningBrush' }
+                'Done' { 'DurationDoneBrush' }
+                'Failed' { 'DurationFailedBrush' }
+                default { 'DurationTextBrush' }
             }
+            $stepButton.Tag.SetResourceReference([System.Windows.Controls.Control]::ForegroundProperty, $durationBrush)
         }
     }
 }
@@ -3150,8 +3200,8 @@ function New-StepRow([string]$CommandLine, [string]$ThreadId, [string]$Descripti
         # The Pending button is LightGray but DISABLED, which the app's button style renders at 50%
         # opacity -- so a plain LightGray here would look darker. Half-alpha LightGray gives the same
         # look over any backdrop, without dimming the (colored) text the way Opacity would.
-        $durationText.Background = [System.Windows.Media.SolidColorBrush]::new([System.Windows.Media.Color]::FromArgb(0x80, 0xD3, 0xD3, 0xD3))
-        $durationText.Foreground = [System.Windows.Media.Brushes]::DimGray
+        $durationText.SetResourceReference([System.Windows.Controls.Control]::BackgroundProperty, 'DurationBackgroundBrush')
+        $durationText.SetResourceReference([System.Windows.Controls.Control]::ForegroundProperty, 'DurationTextBrush')
         $durationText.FontSize = 11
         $durationText.FontWeight = 'SemiBold'
         $durationText.Width = 80
