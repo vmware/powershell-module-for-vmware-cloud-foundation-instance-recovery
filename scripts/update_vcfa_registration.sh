@@ -103,7 +103,7 @@ Options:
                              Runtime. Used in step 5 for creating
                              the VCFA service accounts needed for VCFA-Ops
                              registration. If omitted, taken from
-                             $VCFA_SYSTEM_PASSWORD, else prompted.
+                             $VCFA_SYSTEM_PASSWORD.
   --ops-password PW          VCF Operations admin password.
                              If omitted, taken from $OPS_ADMIN_PASSWORD, else
                              prompted.
@@ -557,19 +557,21 @@ else
     log "WARN $CREATE_SA_SCRIPT not found/executable — skipping."
     log "     VCFA-Ops registration will fail without it; run it manually."
   else
-    if [[ -z "$VCFA_SYSTEM_PASSWORD" ]]; then
-      read -rs -p "admin@vsp.local password for VCFA (${VCFA_VFQDN}): " VCFA_SYSTEM_PASSWORD; echo
-    fi
-    STEP5_RC=0
     DRY_FLAG=(); $DRY_RUN && DRY_FLAG=(--dry-run)
     for ACCOUNT_TYPE in admin adminextra; do
       log "-- account-type=$ACCOUNT_TYPE --"
+      ACCOUNT_ARGS=(--account-type "$ACCOUNT_TYPE")
+      if [[ "$ACCOUNT_TYPE" == "admin" ]]; then
+        ACCOUNT_ARGS+=(--admin-password "$VCFA_SYSTEM_PASSWORD")
+      fi
       "$CREATE_SA_SCRIPT" --vcfa-fqdn "$VCFA_VFQDN" --component-id "$VCFA_CID" \
-        --account-type "$ACCOUNT_TYPE" \
-        --admin-password "$VCFA_SYSTEM_PASSWORD" "${DRY_FLAG[@]}" 2>&1 | sed 's/^/  /'
-      [[ ${PIPESTATUS[0]} -eq 0 ]] || STEP5_RC=1
+        "${ACCOUNT_ARGS[@]}" "${DRY_FLAG[@]}" 2>&1 | sed 's/^/  /'
+      SA_RC=${PIPESTATUS[0]}
+      if [[ $SA_RC -ne 0 ]]; then
+        log "ERROR failed to provision the VCFA $ACCOUNT_TYPE service account."
+        exit "$SA_RC"
+      fi
     done
-    [[ $STEP5_RC -eq 0 ]] || log "ERROR one or more service-account creations failed (see above)."
   fi
 fi
 

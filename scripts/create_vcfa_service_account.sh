@@ -20,9 +20,8 @@
 # secret ever leaves the pod or appears in this script's own output.
 #
 # Bootstraps a VCFA bearer token one of two ways:
-#   --admin-password / $VCFA_ADMIN_PASSWORD   admin@vsp.local login (simplest;
-#                                              works with nothing pre-existing)
-#   (neither given)                           reuse the existing
+#   admin                                    admin@vsp.local password login
+#   adminextra                               reuse the existing
 #                                              vcf-iam-vcfa-admin secret's
 #                                              refresh token, if present
 #
@@ -59,9 +58,9 @@ Options:
   --account-type TYPE   (required) "admin" (SBS's own VCFA login) or
                          "adminextra" (the OPS_SR account needed to register
                          VCFA with VCF Operations).
-  --admin-password PW   admin@vsp.local password for the VCF Automation Services Runtime. If omitted,
-                         taken from $VCFA_ADMIN_PASSWORD, else falls back to
-                         reusing the existing vcf-iam-vcfa-admin secret's
+  --admin-password PW   admin@vsp.local password for creating the admin secret.
+                         Defaults to $VCFA_ADMIN_PASSWORD. Creating adminextra
+                         uses the existing vcf-iam-vcfa-admin secret's
                          refresh token (must already exist in vcf-sddc-lcm -
                          so it cannot be used to create the "admin" account
                          itself the first time; pass --admin-password then).
@@ -77,13 +76,13 @@ Environment:
 Examples:
   export KUBECONFIG=~/Downloads/inst2.kubeconfig
 
-  # nothing pre-exists (no DR backup) - create both, in either order
+  # nothing pre-exists (no DR backup) - create admin first
   ./create_vcfa_service_account.sh --vcfa-fqdn inst1-vcfa.fst.com \
       --component-id c30cac8a-f1d3-44e7-bb06-46b56d77489d \
       --account-type admin --admin-password '...'
   ./create_vcfa_service_account.sh --vcfa-fqdn inst1-vcfa.fst.com \
       --component-id c30cac8a-f1d3-44e7-bb06-46b56d77489d \
-      --account-type adminextra --admin-password '...'
+      --account-type adminextra
 
   # vcf-iam-vcfa-admin already exists - bootstrap adminextra from it instead
   ./create_vcfa_service_account.sh --vcfa-fqdn inst1-vcfa.fst.com \
@@ -122,13 +121,10 @@ KC=(kubectl)
 }
 
 MODE="secret"
-if [[ -n "$ADMIN_PASSWORD" ]]; then
+if [[ "$ACCOUNT_TYPE" == "admin" ]]; then
   MODE="password"
-elif [[ "$ACCOUNT_TYPE" == "admin" ]]; then
-  echo "ERROR: --account-type admin has nothing to bootstrap from - pass --admin-password." >&2
-  exit 1
 else
-  echo "No --admin-password given; will bootstrap from the existing vcf-iam-vcfa-admin secret." >&2
+  ADMIN_PASSWORD=""
 fi
 
 echo "======================================================================"
@@ -169,13 +165,14 @@ POD_SCRIPT='
   if [ "$DRY" = "true" ]; then echo "[DRY-RUN] would create $SECRET_NAME"; exit 0; fi
 
   if [ "$MODE" = "password" ]; then
+    [ -n "$SECRET_ARG" ] || { echo "ERR: creating the admin secret requires --admin-password"; exit 3; }
     HDRS=$(curl -sk -D - -o /dev/null -X POST "https://$VCFA/tm/cloudapi/1.0.0/sessions/provider" \
       -u "admin@vsp.local:$SECRET_ARG" -H "Accept: $VER" -H "Content-Type: application/json")
     TOKEN=$(printf "%s" "$HDRS" | grep -i "^x-vmware-vcloud-access-token:" | sed "s/^[^:]*:[[:space:]]*//" | tr -d "\r")
   else
     S=$(curl -sk "$KAPI/api/v1/namespaces/$NS/secrets/vcf-iam-vcfa-admin" --cacert "$CACRT" -H "Authorization: Bearer $KTOK")
     ADMIN_CS=$(printf "%s" "$S" | tr "," "\n" | grep "\"clientSecret\"" | sed "s/.*\"clientSecret\"[: ]*\"//; s/\".*//" | base64 -d)
-    [ -n "$ADMIN_CS" ] || { echo "ERR: vcf-iam-vcfa-admin secret not found - pass --admin-password instead"; exit 3; }
+    [ -n "$ADMIN_CS" ] || { echo "ERR: vcf-iam-vcfa-admin secret is missing or has no clientSecret"; exit 3; }
     TOKEN=$(curl -sk -X POST "https://$VCFA/tm/oauth/provider/token" -H "Accept: $VER" \
       --data-urlencode "refresh_token=$ADMIN_CS" --data-urlencode "grant_type=refresh_token" \
       | sed -n "s/.*\"access_token\":\"\([^\"]*\)\".*/\1/p")
@@ -240,7 +237,9 @@ POD_SCRIPT='
   if [ "$KHC" = "201" ]; then
     echo "[5] created k8s secret $SECRET_NAME (clientId=$NEW_CID)"
   else
-    echo "[5] ERR create-secret HTTP $KHC: $(head -c 200 /tmp/k.$$)"
+    echo "[5] ERR create-secret HTTP $KHC"
+    rm -f /tmp/k.$$
+    exit 3
   fi
   rm -f /tmp/k.$$
 '
