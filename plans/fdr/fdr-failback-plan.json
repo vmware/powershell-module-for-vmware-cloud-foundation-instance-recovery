@@ -294,6 +294,15 @@
     "visible": true
   },
   {
+    "description": "Find the running Fleet LCM task for the VCFA registration refresh and wait for it to complete",
+    "commandLine": "Wait-FleetLcmTask -OpsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -FleetLCMPassword $targetVcfmsServicesRuntimePassword",
+    "displayName": "Wait for VCFA Registration Task",
+    "condition": [],
+    "threadId": "1",
+    "interactive": false,
+    "visible": true
+  },
+  {
     "description": "Update the backup schedule configuration for the recovered components (manual)",
     "commandLine": "Confirm-ManualStep -Message 'Press Enter once the backup schedule configuration for the recovered components has been updated' -AnswerKey 'backup-schedule-updated'",
     "displayName": "Confirm Manual Step: backup schedule configuration has been updated",

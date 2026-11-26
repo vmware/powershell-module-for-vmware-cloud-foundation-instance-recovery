@@ -15164,6 +15164,167 @@ Function Get-VcfmsFleetLCMToken {
     }
 }
 
+Function Wait-FleetLcmTask {
+    <#
+    .SYNOPSIS
+    Waits for a Fleet LCM task to finish.
+
+    .DESCRIPTION
+    Discovers the running VCFA refresh task when no ID is supplied, then polls
+    that task by ID. The cmdlet refreshes the bearer token after an HTTP 401 and
+    returns the completed task on success. Multiple matching tasks, failed or
+    cancelled tasks, and timeouts raise an error.
+
+    .PARAMETER FleetLCMFqdn
+    FQDN of the Fleet LCM instance that owns the task.
+
+    .PARAMETER OpsRegisteredComponentsFile
+    Registered components JSON file from which to resolve the Fleet LCM FQDN.
+
+    .PARAMETER FleetLCMPassword
+    Password for the Fleet LCM user.
+
+    .PARAMETER FleetLCMUsername
+    Username for the token request. Defaults to admin@vsp.local.
+
+    .PARAMETER TaskId
+    ID of the Fleet LCM task to monitor. When omitted, the cmdlet searches for
+    a running task whose description starts with "Refresh component VCF Automation".
+
+    .PARAMETER PollIntervalSeconds
+    Seconds between status checks. Defaults to 60.
+
+    .PARAMETER TimeoutMinutes
+    Maximum polling time in minutes. Defaults to 60.
+    #>
+    [CmdletBinding(DefaultParameterSetName = 'Fqdn')]
+    Param(
+        [Parameter(Mandatory, ParameterSetName = 'Fqdn')][ValidateNotNullOrEmpty()][String] $FleetLCMFqdn,
+        [Parameter(Mandatory, ParameterSetName = 'RegisteredComponents')][ValidateNotNullOrEmpty()][String] $OpsRegisteredComponentsFile,
+        [Parameter(Mandatory)][String] $FleetLCMPassword,
+        [String] $FleetLCMUsername = 'admin@vsp.local',
+        [ValidateNotNullOrEmpty()][String] $TaskId,
+        [ValidateRange(1, 3600)][Int] $PollIntervalSeconds = 60,
+        [ValidateRange(1, 1440)][Int] $TimeoutMinutes = 60
+    )
+
+    $taskName = $MyInvocation.MyCommand.Name
+    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    $jumpboxName = hostname
+    LogMessage -type NOTE -message "[$jumpboxName] Starting Task $taskName"
+    try {
+        if ($OpsRegisteredComponentsFile) {
+            $FleetLCMFqdn = Get-OpsRegisteredComponentValue -Name FleetFqdn -OpsRegisteredComponentsFile $OpsRegisteredComponentsFile
+            if (-not $FleetLCMFqdn) {
+                throw 'Could not resolve the Fleet LCM FQDN from the registered components file.'
+            }
+        }
+        if ($TaskId) {
+            $TaskId = $TaskId.Trim()
+        }
+        $tasksUri = "https://$FleetLCMFqdn/fleet-lcm/v1/tasks"
+        $taskPrefix = 'Refresh component VCF Automation'
+        $tokenParameters = @{ FleetLCMFqdn = $FleetLCMFqdn; Username = $FleetLCMUsername; Password = $FleetLCMPassword }
+        $token = $null
+        $deadline = $stopwatch.Elapsed.TotalSeconds + 60 * $TimeoutMinutes
+        $successStates = @('COMPLETED', 'SUCCESS', 'SUCCESSFUL', 'SUCCEEDED')
+        $failureStates = @('FAILED', 'CANCELLED', 'CANCELED', 'ERROR')
+        $nextStatusLog = 0
+
+        if ($TaskId) {
+            LogMessage -type WAIT -message "[$FleetLCMFqdn] Waiting for Fleet LCM task $TaskId"
+        } else {
+            LogMessage -type WAIT -message "[$FleetLCMFqdn] Looking for a running Fleet LCM task starting with '$taskPrefix'"
+        }
+        while ($stopwatch.Elapsed.TotalSeconds -lt $deadline) {
+            if (-not $token) {
+                $token = Get-VcfmsFleetLCMToken @tokenParameters
+                if (-not $token) {
+                    throw "Could not obtain a Fleet LCM token from $FleetLCMFqdn."
+                }
+            }
+
+            $task = $null
+            try {
+                $request = @{
+                    Method = 'Get'
+                    Headers = @{ Authorization = "Bearer $token"; Accept = 'application/json' }
+                    SkipCertificateCheck = $true
+                    ConnectionTimeoutSeconds = 30
+                    OperationTimeoutSeconds = 30
+                    ErrorAction = 'Stop'
+                }
+                if ($TaskId) {
+                    $task = Invoke-RestMethod @request -Uri "$tasksUri/$([uri]::EscapeDataString($TaskId))"
+                } else {
+                    $matchingIds = @{}
+                    $pageNumber = 1
+                    do {
+                        $page = Invoke-RestMethod @request -Uri "${tasksUri}?pageNumber=$pageNumber&pageSize=100&includeSystemTasks=true"
+                        foreach ($candidate in $page.elements) {
+                            if ($candidate.id -and $candidate.status -in 'RUNNING', 'IN_PROGRESS' -and
+                                ($candidate.description.localizedMessage -like "$taskPrefix*" -or
+                                 $candidate.description.defaultMessage -like "$taskPrefix*" -or
+                                 $candidate.name -like "$taskPrefix*")) {
+                                $matchingIds[$candidate.id] = $true
+                            }
+                        }
+                        $pageNumber++
+                    } while ($pageNumber -le $page.pageMetadata.totalPages -and $stopwatch.Elapsed.TotalSeconds -lt $deadline)
+                }
+            } catch {
+                $statusCode = [Int]$_.Exception.Response.StatusCode
+                if ($statusCode -eq 401) {
+                    $token = $null
+                    LogMessage -type INFO -message "[$FleetLCMFqdn] Fleet LCM rejected the token. Refreshing it before the next poll."
+                } elseif ($statusCode -eq 0 -or $statusCode -in 408, 429 -or $statusCode -ge 500) {
+                    LogMessage -type INFO -message "[$FleetLCMFqdn] Fleet LCM task status is temporarily unavailable. Retrying."
+                } else {
+                    throw
+                }
+                $matchingIds = $null
+            }
+
+            if (-not $TaskId -and $matchingIds.Count -gt 1) {
+                throw "Multiple running Fleet LCM tasks start with '$taskPrefix'. Matching task IDs: $($matchingIds.Keys -join ', ')."
+            }
+            if (-not $TaskId -and $matchingIds.Count -eq 1 -and $stopwatch.Elapsed.TotalSeconds -lt $deadline) {
+                $TaskId = @($matchingIds.Keys)[0]
+                LogMessage -type INFO -message "[$FleetLCMFqdn] Found Fleet LCM task $TaskId for '$taskPrefix'"
+                continue
+            }
+
+            if ($task.status -in $failureStates) {
+                throw "Fleet LCM task $TaskId ended with status $($task.status). $($task.description.localizedMessage)"
+            }
+            if ($task.status -in $successStates) {
+                LogMessage -type INFO -message "[$FleetLCMFqdn] Task $TaskId status: $($task.status)"
+                return $task
+            }
+            if ($task.status -and $stopwatch.Elapsed.TotalSeconds -ge $nextStatusLog) {
+                LogMessage -type INFO -message "[$FleetLCMFqdn] Task $TaskId status: $($task.status)"
+                $nextStatusLog = $stopwatch.Elapsed.TotalSeconds + 300
+            }
+
+            $interval = if ($TaskId) { $PollIntervalSeconds } else { [Math]::Min(5, $PollIntervalSeconds) }
+            $waitSeconds = [Math]::Min($interval, $deadline - $stopwatch.Elapsed.TotalSeconds)
+            if ($waitSeconds -gt 0) {
+                Start-Sleep -Seconds $waitSeconds
+            }
+        }
+        if (-not $TaskId) {
+            throw "Timed out after $TimeoutMinutes minutes looking for a running Fleet LCM task starting with '$taskPrefix'."
+        }
+        throw "Timed out after $TimeoutMinutes minutes waiting for Fleet LCM task $TaskId."
+    } catch {
+        LogMessage -type ERROR -message "[$jumpboxName] $($_.Exception.Message)"
+        throw
+    } finally {
+        Write-TaskCompleted -TaskName $taskName -Stopwatch $stopwatch
+    }
+}
+Export-ModuleMember -Function Wait-FleetLcmTask
+
 Function Get-VcfmsComponents {
     <#
     .SYNOPSIS

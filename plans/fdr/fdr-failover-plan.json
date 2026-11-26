@@ -302,6 +302,15 @@
     "visible": true
   },
   {
+    "description": "Find the running Fleet LCM task for the VCFA registration refresh and wait for it to complete",
+    "commandLine": "Wait-FleetLcmTask -OpsRegisteredComponentsFile \".\\VCFOps-Registered-Component-Details.json\" -FleetLCMPassword $targetVcfmsServicesRuntimePassword",
+    "displayName": "Wait for VCFA Registration Task",
+    "condition": [],
+    "threadId": "1",
+    "interactive": false,
+    "visible": true
+  },
+  {
     "description": "Redeploy a license server for VCF Instance backup and restore (manual, only required if the failover will last more than 90 days)",
     "commandLine": "Confirm-ManualStep -Message 'Press Enter once the license server has been redeployed (or not applicable)' -AnswerKey 'license-server-redeployed'",
     "displayName": "Confirm Manual Step: License server has been redeployed (if applicable)",
