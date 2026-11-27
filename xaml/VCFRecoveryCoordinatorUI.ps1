@@ -435,17 +435,8 @@ function Show-PasswordPromptDialog([string]$Title, [string]$Message) {
     return $null
 }
 
-# The expected value is kept as numeric character codes rather than a literal string so it doesn't
-# show up verbatim in a text search of this file; it's only ever joined back into a string here, at
-# the moment of comparison.
-function Test-EngineeringModePassword([string]$Candidate) {
-    $expected = -join ((116, 104, 105, 115, 105, 115, 117, 110, 115, 97, 102, 101) | ForEach-Object { [char]$_ })
-    return ($Candidate -ceq $expected) -or (Test-EngineeringModeOtp $Candidate)
-}
-
 # Public half of the engineer's ECDSA P-256 keypair (base64 SubjectPublicKeyInfo), printed by
-# helper\New-EngineeringOtpKeyPair.ps1. Safe to ship: it can only verify one-time codes, never create
-# them. While empty, one-time codes are simply rejected and only the password above works.
+# helper\New-EngineeringOtpKeyPair.ps1. The UI uses this key to verify signed unlock codes.
 $script:EngineeringOtpPublicKey = 'MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEvI2FFlc8iZHmH8yNFzMq4v0By1/b6kKBold6wgRxtvFMp6Pebf4WExm4hzAkNACjyeeWirh3K0xFm/uee9EV+w=='
 $script:EngineeringOtpValidMinutes = 720
 $script:EngineeringOtpClockSkewMinutes = 2
@@ -607,12 +598,12 @@ $engineeringModeLink.Add_MouseLeftButtonUp({
             Set-UIMode 'Engineering'
             return
         }
-        $entered = Show-PasswordPromptDialog -Title 'Unlock Engineering Mode' -Message 'Enter the engineering mode password or one-time code to access the Advanced tab.'
-        if ($entered -and (Test-EngineeringModePassword $entered)) {
+        $entered = Show-PasswordPromptDialog -Title 'Unlock Engineering Mode' -Message 'Enter a signed engineering access code to unlock Engineering mode.'
+        if ($entered -and (Test-EngineeringModeOtp $entered)) {
             $global:engineeringModeUnlocked = $true
             Set-UIMode 'Engineering'
         } elseif ($entered) {
-            New-Advisory 'Incorrect or expired engineering mode password/one-time code.' -Failure
+            New-Advisory 'Invalid or expired engineering access code.' -Failure
         }
     }.GetNewClosure())
 

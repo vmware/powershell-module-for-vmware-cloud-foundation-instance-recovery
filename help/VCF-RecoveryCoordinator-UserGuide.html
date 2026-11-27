@@ -412,8 +412,8 @@ problem.</li>
 <p>Recovery plans are sequenced. A full recovery normally runs <strong>Management Domain Recovery</strong> first, then
 <strong>Workload Domain Recovery</strong> for each workload domain, then <strong>Additional Cluster Recovery</strong> for any
 additional clusters, then <strong>Fleet Component Recovery</strong>. See <a href="#recovery-plans-in-detail">Recovery plans in detail</a>.</p>
-<div class="alert alert-info" role="note"><div class="alert-icon" aria-hidden="true"></div><div class="alert-content"><div class="alert-title">Note</div><p>A plan or type marked <em>Engineering only</em> asks for the engineering password or one-time code when you
-select it. If you cancel, or the code is wrong, the previous selection is restored.</p>
+<div class="alert alert-info" role="note"><div class="alert-icon" aria-hidden="true"></div><div class="alert-content"><div class="alert-title">Note</div><p>To see engineering-only plans and cluster types, unlock <strong>Engineering</strong> mode with a signed access
+code.</p>
 </div></div>
 
 <h2 id="step-2-provide-the-data-source">Step 2: Provide the data source</h2>
@@ -1379,9 +1379,10 @@ registered and connected in the restored vCenter, because <em>Reconfigure vSAN S
 <p>By default the application is in <strong>User</strong> mode. <strong>Engineering</strong> mode adds capabilities meant for engineers
 working with Broadcom Support.</p>
 <p>Switch between the two with <strong>User | Engineering</strong> at the top right. The active mode is shown in blue.</p>
-<p>The first time you select <strong>Engineering</strong> in a session, a dialog asks for the <strong>engineering password or a
-one-time code</strong>. These are provided by Broadcom Support or the engineering team. Once unlocked, you can switch
-back and forth freely for the rest of the session without being asked again.</p>
+<p>The first time you select <strong>Engineering</strong> in a session, a dialog asks for a <strong>signed engineering access
+code</strong>. Broadcom Support or the engineering team can provide a code, which is valid for 12 hours from
+issuance. Once unlocked, you can switch back and forth freely for the rest of the session without being
+asked again.</p>
 <p>Engineering mode:</p>
 <ul>
 <li>Shows <strong>storage clusters and compute clusters</strong> in the <strong>Discovered Infrastructure</strong> pane for Additional Cluster
@@ -1552,7 +1553,7 @@ tabs (live output), and the transcript files in the <code>logs</code> folder of 
 <tr>
 <td><strong>User | Engineering</strong></td>
 <td>Title bar</td>
-<td>Switch mode (password required for Engineering)</td>
+<td>Switch mode (signed access code required to unlock Engineering)</td>
 </tr>
 </tbody>
 </table></div>

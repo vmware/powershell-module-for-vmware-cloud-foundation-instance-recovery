@@ -178,8 +178,8 @@ Recovery plans are sequenced. A full recovery normally runs **Management Domain 
 additional clusters, then **Fleet Component Recovery**. See [Recovery plans in detail](#recovery-plans-in-detail).
 
 !!! note
-    A plan or type marked *Engineering only* asks for the engineering password or one-time code when you
-    select it. If you cancel, or the code is wrong, the previous selection is restored.
+    To see engineering-only plans and cluster types, unlock **Engineering** mode with a signed access
+    code.
 
 ---
 
@@ -908,9 +908,10 @@ working with Broadcom Support.
 
 Switch between the two with **User | Engineering** at the top right. The active mode is shown in blue.
 
-The first time you select **Engineering** in a session, a dialog asks for the **engineering password or a
-one-time code**. These are provided by Broadcom Support or the engineering team. Once unlocked, you can switch
-back and forth freely for the rest of the session without being asked again.
+The first time you select **Engineering** in a session, a dialog asks for a **signed engineering access
+code**. Broadcom Support or the engineering team can provide a code, which is valid for 12 hours from
+issuance. Once unlocked, you can switch back and forth freely for the rest of the session without being
+asked again.
 
 Engineering mode:
 
@@ -1041,7 +1042,7 @@ tabs (live output), and the transcript files in the `logs` folder of your workin
 | **Open Saved Session** | Title bar | Restore a saved session |
 | **Save & Exit** | Title bar | Save the session and close |
 | **Help** | Title bar | Open this guide in your web browser |
-| **User \| Engineering** | Title bar | Switch mode (password required for Engineering) |
+| **User \| Engineering** | Title bar | Switch mode (signed access code required to unlock Engineering) |
 
 ### Task states
 
