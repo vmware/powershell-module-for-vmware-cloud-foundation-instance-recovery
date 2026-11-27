@@ -28,8 +28,8 @@ param(
     [string]$WorkingDirectory,
     [string]$ModuleRoot,
     [string]$ModuleVersion,
-    # Already-computed "Name|Installed|Latest|Repository" (or "...|ERROR|message") results from
-    # Get-VCFIRModuleUpdateStatus, run by Start-VCFRecoveryCoordinator in its own console BEFORE this
+    # Already-computed status from Get-VCFIRModuleUpdateStatus (see Show-ModuleUpdateStatus).
+    # The lookup is run by Start-VCFRecoveryCoordinator in its own console BEFORE this
     # process was even started -- see Show-ModuleUpdateStatus below. A single scalar string,
     # since a pwsh.exe -File launch does not bind multiple ArgumentList entries under one parameter
     # name into an array the way an ordinary in-process call would (confirmed directly: only the
@@ -2051,8 +2051,8 @@ $updateBannerCloseButton.Add_Click({
 
 # The lookup itself already ran, in Start-VCFRecoveryCoordinator's own console, BEFORE this process
 # was even started -- -ModuleUpdateStatus already holds its result
-# ("Name|Installed|Latest|Repository", or "Name|Installed|ERROR|message" if that module's own lookup
-# failed). This used to be the other way around -- the UI typed a lookup command into its own embedded
+# ("Name|Installed|Latest|Repository", "Name|Installed|SKIPPED|reason", or "Name|Installed|ERROR|message").
+# This used to be the other way around -- the UI typed a lookup command into its own embedded
 # console after launch and polled a temp file for an answer -- which meant a real wait on every launch
 # with nothing on screen to show for it. Nothing here does any actual lookup work; it only parses
 # already-known answers and posts the resulting advisories/banner, which is instant.
@@ -2068,6 +2068,10 @@ function Show-ModuleUpdateStatus([switch]$AdvisoriesOnly) {
         $name, $installed, $latest, $detail = $line -split '\|', 4
         if ($latest -eq 'ERROR') {
             New-Advisory "Update check for $name failed: $detail"
+            continue
+        }
+        if ($latest -eq 'SKIPPED') {
+            New-Advisory "Update check for $name skipped. $detail"
             continue
         }
         $latestVersion = $null; $installedVersion = $null

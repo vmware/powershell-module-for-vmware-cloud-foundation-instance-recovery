@@ -22677,27 +22677,12 @@ Function Get-VCFIRModuleUpdateStatus {
     Returns each module's latest available version, for the Recovery Coordinator UI's update banner
 
     .DESCRIPTION
-    The Get-VCFIRModuleUpdateStatus cmdlet looks up, for each "Name|InstalledVersion" pair in -Module,
-    the repository that module was actually installed from and the newest version available there
-    (Find-Module -Repository <that repository>) -- no hard-coded repository name, so this works the
-    same way whether that repository is the public PSGallery or an internal one. One
-    "Name|Installed|Latest|Repository" string is returned per module, or "Name|Installed|ERROR|message"
-    if that module's own lookup failed.
+    For each "Name|InstalledVersion" pair in -Module, the cmdlet reads PSGetModuleInfo.xml from
+    the matching module directory and checks that repository for the newest available version.
+    The running Recovery Coordinator module takes precedence when checking its own version.
 
-    Called from Start-VCFRecoveryCoordinator, in the caller's own interactive console, BEFORE the UI
-    process is ever started -- not from inside the UI itself. The UI used to run this lookup later, in
-    its own embedded console via injected keystrokes, polling a result file for an answer; running it
-    here instead means the UI can be launched already knowing the answer (see
-    -ModuleUpdateStatus there), with no console injection, no
-    temp file, and no polling delay at all.
-
-    Local install info comes from Get-Module -ListAvailable, not Get-InstalledModule -- confirmed
-    directly (Measure-Command) that Get-InstalledModule takes ~3.9s per module here regardless of
-    cold/warm cache, a known PowerShellGet v2 performance issue, versus ~1.6s for Get-Module
-    -ListAvailable. The repository a module was installed from isn't part of a module's own manifest
-    (Get-Module has no notion of it), so that one piece still has to come from PowerShellGet's own
-    per-module record -- read directly from the ModuleBase's own PSGetModuleInfo.xml (the file
-    Install-Module itself already writes there) rather than via Get-InstalledModule's full scan.
+    The cmdlet returns "Name|Installed|Latest|Repository", "Name|Installed|SKIPPED|reason" if the
+    repository is unknown, or "Name|Installed|ERROR|message" if the lookup fails.
 
     .PARAMETER Module
     One or more "Name|InstalledVersion" strings, e.g. 'VCF.RecoveryCoordinator|1.0.3'.
@@ -22711,15 +22696,30 @@ Function Get-VCFIRModuleUpdateStatus {
     foreach ($entry in $Module) {
         $name, $installed = $entry -split '\|', 2
         try {
-            $installedModule = Get-Module -ListAvailable -Name $name -ErrorAction Stop | Sort-Object Version -Descending | Select-Object -First 1
+            $version = $installed -replace '[-+].*$', ''
+            $installedModule = $ExecutionContext.SessionState.Module
+            if ($installedModule.Name -ne $name -or [string]$installedModule.Version -ne $version) {
+                $installedModule = Get-Module -Name $name -ErrorAction Stop |
+                    Where-Object { [string]$_.Version -eq $version } |
+                    Select-Object -First 1
+                if (-not $installedModule) {
+                    $installedModule = Get-Module -ListAvailable -Name $name -ErrorAction Stop |
+                        Where-Object { [string]$_.Version -eq $version } |
+                        Select-Object -First 1
+                }
+            }
             if (-not $installedModule) {
-                throw "No installed module named '$name' was found."
+                throw "Module '$name' version '$installed' was not found."
             }
             $metadataPath = Join-Path $installedModule.ModuleBase 'PSGetModuleInfo.xml'
-            if (-not (Test-Path -LiteralPath $metadataPath)) {
-                throw "'$name' has no PSGetModuleInfo.xml (not installed via Install-Module) -- its repository can't be determined."
+            $repository = $null
+            if (Test-Path -LiteralPath $metadataPath -PathType Leaf -ErrorAction Stop) {
+                $repository = (Import-Clixml -LiteralPath $metadataPath -ErrorAction Stop).Repository
             }
-            $repository = (Import-Clixml -LiteralPath $metadataPath).Repository
+            if ([string]::IsNullOrWhiteSpace($repository)) {
+                "$name|$installed|SKIPPED|This copy has no recorded package repository."
+                continue
+            }
             $latest = Find-Module -Name $name -Repository $repository -ErrorAction Stop
             "$name|$installed|$($latest.Version)|$repository"
         } catch {
