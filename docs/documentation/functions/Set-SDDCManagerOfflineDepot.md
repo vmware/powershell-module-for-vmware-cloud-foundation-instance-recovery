@@ -16,7 +16,7 @@ Set-SDDCManagerOfflineDepot [-sddcManagerFqdn] <String> [-sddcManagerUser] <Stri
 
 The `Set-SDDCManagerOfflineDepot` cmdlet reconfigures the SDDC Manager depot to use an offline (air-gapped) depot. It removes the existing depot services configuration, trusts the offline depot's TLS certificate on the SDDC Manager appliance via SSH, and then applies the new offline depot configuration via the SDDC Manager API.
 
-The original depot configuration is saved to `originalDepotServicesconfig.json` in the current directory before any changes are made. Use `Set-SDDCManagerFDSDepot` to revert to the original configuration.
+The original depot configuration is saved to `originalDepotServicesconfig.json` in the current directory before any changes are made. If that file already exists, it is renamed with a date-time suffix, for example `originalDepotServicesconfig-20261127-143015-123.json`, before the new backup is written. Use `Set-SDDCManagerFDSDepot` with `-originalConfigurationFile` to restore from a timestamped backup.
 
 ## Examples
 

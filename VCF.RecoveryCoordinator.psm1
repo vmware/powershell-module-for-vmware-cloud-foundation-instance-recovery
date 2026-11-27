@@ -4124,7 +4124,20 @@ Function Set-SDDCManagerOfflineDepot {
     #Get Current Depot Services Configuration
     LogMessage -type INFO -message "[$sddcManagerFqdn] Capturing Original Depot Fleet Depot Configuration"
     $currentDepotServicesConfig = Invoke-RestMethod -Uri $servicesConfigUri -Method GET -Headers $headers -SkipCertificateCheck
-    $currentDepotServicesConfig | ConvertTo-Json -depth 10 > originalDepotServicesconfig.json
+    $backupFile = 'originalDepotServicesconfig.json'
+    if (Test-Path -LiteralPath $backupFile -PathType Leaf) {
+        $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss-fff'
+        $archiveBase = "originalDepotServicesconfig-$timestamp"
+        $archiveFile = "$archiveBase.json"
+        $archiveIndex = 1
+        while (Test-Path -LiteralPath $archiveFile) {
+            $archiveFile = "$archiveBase-$archiveIndex.json"
+            $archiveIndex++
+        }
+        Rename-Item -LiteralPath $backupFile -NewName $archiveFile -Force -ErrorAction Stop
+        LogMessage -type INFO -message "[$sddcManagerFqdn] Archived existing depot configuration to $archiveFile"
+    }
+    $currentDepotServicesConfig | ConvertTo-Json -Depth 10 | Out-File -LiteralPath $backupFile -ErrorAction Stop
 
     #Delete Services Configuration
     LogMessage -type INFO -message "[$sddcManagerFqdn] Removing Original Depot Fleet Depot Configuration"
